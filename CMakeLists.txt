@@ -19,6 +19,10 @@ set(PROJECT_SOURCES
         mainwindow.cpp
         mainwindow.h
         mainwindow.ui
+        datatypecombobox.h
+        datatypecombobox.cpp
+        finddialog.cpp
+        finddialog.h
         settings.cpp
         settings.h
         statusbar.cpp
@@ -33,6 +37,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
     qt_add_executable(qexed
         MANUAL_FINALIZATION
         ${PROJECT_SOURCES}
+        finddialog.ui
     )
 # Define target properties for Android with Qt 6 as:
 #    set_property(TARGET qexed APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR

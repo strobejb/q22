@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "./ui_mainwindow.h"
 #include "HexView/hexview.h"
+#include "finddialog.h"
 #include "settings.h"
 #include "statusbar.h"
 #include "titlebar.h"
@@ -11,6 +12,7 @@
 #include <QIcon>
 #include <QMenu>
 #include <QMouseEvent>
+#include <QVBoxLayout>
 #include <QWindow>
 
 static const int RESIZE_MARGIN = 5;
@@ -111,7 +113,16 @@ MainWindow::MainWindow(QWidget *parent)
     m_hv->setGrouping(2);
     m_hv->setPadding(3, 3);
     m_hv->setFontSpacing(2, 2);
-    setCentralWidget(m_hv);
+    // Container: HexView fills available space; FindDialog sits flush above
+    // the status bar, hidden until activated.
+    auto *central = new QWidget(this);
+    auto *vlay    = new QVBoxLayout(central);
+    vlay->setContentsMargins(0, 0, 0, 0);
+    vlay->setSpacing(0);
+    vlay->addWidget(m_hv, 1);
+    m_findDialog = new FindDialog(central);
+    vlay->addWidget(m_findDialog, 0);
+    setCentralWidget(central);
 
     // Build a standalone Edit menu for the HexView context menu, sharing the
     // same QActions so any connections added later apply automatically.
@@ -179,6 +190,10 @@ MainWindow::MainWindow(QWidget *parent)
             [this](size_w, size_w) { m_statusBar->update(); });
     connect(m_hv, &HexView::lengthChanged, this,
             [this](size_w) { m_statusBar->update(); });
+
+    connect(ui->actionFind, &QAction::triggered, this, [this]() {
+        m_findDialog->activate();
+    });
 
     connect(ui->actionOpen, &QAction::triggered, this, [this]() {
         const QString path = QFileDialog::getOpenFileName(this, tr("Open File"));

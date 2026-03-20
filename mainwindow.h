@@ -7,6 +7,7 @@ QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
 
+class FindDialog;
 class HexView;
 class QMenu;
 class StatusBar;
@@ -32,6 +33,7 @@ private:
     StatusBar      *m_statusBar    = nullptr;
     TitleBar       *m_titleBar     = nullptr;
     QMenu          *m_recentMenu   = nullptr;
+    FindDialog     *m_findDialog   = nullptr;
     bool            m_inResizeZone = false;
 };
 
