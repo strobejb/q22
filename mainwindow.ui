@@ -1,0 +1,387 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>800</width>
+    <height>322</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>MainWindow</string>
+  </property>
+  <widget class="QWidget" name="centralwidget"/>
+  <widget class="QMenuBar" name="menubar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>800</width>
+     <height>24</height>
+    </rect>
+   </property>
+   <widget class="QMenu" name="menuFile">
+    <property name="title">
+     <string>File</string>
+    </property>
+    <addaction name="actionNew"/>
+    <addaction name="actionOpen"/>
+    <addaction name="actionSave"/>
+    <addaction name="actionSave_As"/>
+    <addaction name="separator"/>
+    <addaction name="actionImport"/>
+    <addaction name="actionExport"/>
+    <addaction name="separator"/>
+    <addaction name="actionRecent"/>
+    <addaction name="separator"/>
+    <addaction name="actionExit"/>
+    <addaction name="separator"/>
+   </widget>
+   <widget class="QMenu" name="menuEdit">
+    <property name="title">
+     <string>Edit</string>
+    </property>
+    <addaction name="actionUndo"/>
+    <addaction name="actionRedo"/>
+    <addaction name="separator"/>
+    <addaction name="actionC_ut"/>
+    <addaction name="action_Copy"/>
+    <addaction name="actionCopy_As"/>
+    <addaction name="separator"/>
+    <addaction name="action_Paste"/>
+    <addaction name="actionPaste_Special"/>
+    <addaction name="separator"/>
+    <addaction name="action_Delete"/>
+   </widget>
+   <widget class="QMenu" name="menuView">
+    <property name="title">
+     <string>View</string>
+    </property>
+    <addaction name="actionHexadecimal"/>
+    <addaction name="actionDecimal"/>
+    <addaction name="actionOctal"/>
+    <addaction name="actionBinary"/>
+    <addaction name="separator"/>
+    <addaction name="action8_Bit_Byte"/>
+    <addaction name="action16_bit_Byte"/>
+    <addaction name="action32_bit_Dword"/>
+    <addaction name="action64_bit_QWord"/>
+    <addaction name="separator"/>
+   </widget>
+   <widget class="QMenu" name="menuSearh">
+    <property name="title">
+     <string>Search</string>
+    </property>
+    <addaction name="actionFind"/>
+    <addaction name="actionFind_Next"/>
+    <addaction name="actionFind_Previous"/>
+    <addaction name="action_Replace"/>
+    <addaction name="separator"/>
+    <addaction name="action_Goto"/>
+   </widget>
+   <widget class="QMenu" name="menuTools">
+    <property name="title">
+     <string>Tools</string>
+    </property>
+    <widget class="QMenu" name="menuView_2">
+     <property name="title">
+      <string>View</string>
+     </property>
+     <addaction name="actionHexadecimal_2"/>
+     <addaction name="actionDecimal_2"/>
+     <addaction name="actionOctal_2"/>
+     <addaction name="actionBinary_2"/>
+     <addaction name="separator"/>
+     <addaction name="action8_bit_Byte"/>
+     <addaction name="action16_bit_Word"/>
+     <addaction name="action32_bit_Dword_2"/>
+     <addaction name="action64_bit_Qword"/>
+    </widget>
+    <addaction name="separator"/>
+    <addaction name="menuView_2"/>
+    <addaction name="separator"/>
+    <addaction name="actionPreferences"/>
+   </widget>
+   <widget class="QMenu" name="menuHelp">
+    <property name="title">
+     <string>Help</string>
+    </property>
+   </widget>
+   <addaction name="menuFile"/>
+   <addaction name="menuEdit"/>
+   <addaction name="menuSearh"/>
+   <addaction name="menuView"/>
+   <addaction name="menuTools"/>
+   <addaction name="menuHelp"/>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+  <action name="actionNew">
+   <property name="text">
+    <string>&amp;New</string>
+   </property>
+  </action>
+  <action name="actionOpen">
+   <property name="icon">
+    <iconset theme="QIcon::ThemeIcon::DocumentOpen"/>
+   </property>
+   <property name="text">
+    <string>&amp;Open...</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+O</string>
+   </property>
+  </action>
+  <action name="actionSave">
+   <property name="text">
+    <string>Save</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+S</string>
+   </property>
+  </action>
+  <action name="actionSave_As">
+   <property name="text">
+    <string>Save As...</string>
+   </property>
+  </action>
+  <action name="actionImport">
+   <property name="text">
+    <string>Import</string>
+   </property>
+  </action>
+  <action name="actionExport">
+   <property name="text">
+    <string>Export</string>
+   </property>
+  </action>
+  <action name="actionExit">
+   <property name="text">
+    <string>Exit</string>
+   </property>
+  </action>
+  <action name="actionUndo">
+   <property name="text">
+    <string>Undo</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+U</string>
+   </property>
+  </action>
+  <action name="actionRedo">
+   <property name="text">
+    <string>Redo</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Y</string>
+   </property>
+  </action>
+  <action name="actionHexadecimal">
+   <property name="text">
+    <string>Hexadecimal</string>
+   </property>
+  </action>
+  <action name="actionDecimal">
+   <property name="text">
+    <string>Decimal</string>
+   </property>
+  </action>
+  <action name="actionOctal">
+   <property name="text">
+    <string>Octal</string>
+   </property>
+  </action>
+  <action name="actionBinary">
+   <property name="text">
+    <string>Binary</string>
+   </property>
+  </action>
+  <action name="action8_Bit_Byte">
+   <property name="text">
+    <string>8-bit Byte</string>
+   </property>
+  </action>
+  <action name="action16_bit_Byte">
+   <property name="text">
+    <string>16-bit Word</string>
+   </property>
+  </action>
+  <action name="action32_bit_Dword">
+   <property name="text">
+    <string>32-bit Dword</string>
+   </property>
+  </action>
+  <action name="action64_bit_QWord">
+   <property name="text">
+    <string>64-bit QWord</string>
+   </property>
+  </action>
+  <action name="actionPreferences">
+   <property name="text">
+    <string>Preferences...</string>
+   </property>
+  </action>
+  <action name="actionFind">
+   <property name="text">
+    <string>&amp;Find</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+F</string>
+   </property>
+  </action>
+  <action name="actionFind_Next">
+   <property name="text">
+    <string>Find &amp;Next</string>
+   </property>
+   <property name="shortcut">
+    <string>F3</string>
+   </property>
+  </action>
+  <action name="actionFind_Previous">
+   <property name="text">
+    <string>Find &amp;Previous</string>
+   </property>
+   <property name="shortcut">
+    <string>Shift+F3</string>
+   </property>
+  </action>
+  <action name="action_Replace">
+   <property name="text">
+    <string>&amp;Replace</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+H</string>
+   </property>
+  </action>
+  <action name="actionC_ut">
+   <property name="text">
+    <string>C&amp;ut</string>
+   </property>
+  </action>
+  <action name="action_Copy">
+   <property name="text">
+    <string>&amp;Copy</string>
+   </property>
+  </action>
+  <action name="actionCopy_As">
+   <property name="text">
+    <string>Copy &amp;As...</string>
+   </property>
+  </action>
+  <action name="action_Paste">
+   <property name="text">
+    <string>&amp;Paste</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+V</string>
+   </property>
+  </action>
+  <action name="actionPaste_Special">
+   <property name="text">
+    <string>Paste Special...</string>
+   </property>
+  </action>
+  <action name="action_Goto">
+   <property name="text">
+    <string>&amp;Goto Offset...</string>
+   </property>
+  </action>
+  <action name="action_Delete">
+   <property name="text">
+    <string>&amp;Delete</string>
+   </property>
+   <property name="shortcut">
+    <string>Del</string>
+   </property>
+  </action>
+  <action name="actionRecent">
+   <property name="text">
+    <string>Recent</string>
+   </property>
+  </action>
+  <action name="actionHexadecimal_2">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Hexadecimal</string>
+   </property>
+  </action>
+  <action name="actionDecimal_2">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Decimal</string>
+   </property>
+  </action>
+  <action name="actionOctal_2">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Octal</string>
+   </property>
+  </action>
+  <action name="actionBinary_2">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Binary</string>
+   </property>
+  </action>
+  <action name="action8_bit_Byte">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>8-bit Byte</string>
+   </property>
+  </action>
+  <action name="action16_bit_Word">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>16-bit Word</string>
+   </property>
+  </action>
+  <action name="action32_bit_Dword_2">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>32-bit Dword</string>
+   </property>
+  </action>
+  <action name="action64_bit_Qword">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>64-bit Qword</string>
+   </property>
+  </action>
+  <action name="actionFloat_32_bit_IEEE">
+   <property name="text">
+    <string>Float (32-bit IEEE)</string>
+   </property>
+  </action>
+  <action name="actionDouble_64_bit_IEEE">
+   <property name="text">
+    <string>Double (64-bit IEEE)</string>
+   </property>
+  </action>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

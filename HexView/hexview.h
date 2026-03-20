@@ -1,0 +1,411 @@
+#ifndef HEXVIEW_H
+#define HEXVIEW_H
+
+#include <QWidget>
+#include <QFont>
+#include <QRawFont>
+
+#include <QTimer>
+#include <cstdint>
+#include <QAbstractScrollArea>
+#include "sequence.h"
+
+// ── Colour indices ────────────────────────────────────────────────────────────
+#define HVC_BACKGROUND      0
+#define HVC_SELECTION       1
+#define HVC_SELECTION2      2
+#define HVC_ADDRESS         3
+#define HVC_HEXODD          4
+#define HVC_HEXODDSEL       5
+#define HVC_HEXODDSEL2      6
+#define HVC_HEXEVEN         7
+#define HVC_HEXEVENSEL      8
+#define HVC_HEXEVENSEL2     9
+#define HVC_ASCII           10
+#define HVC_ASCIISEL        11
+#define HVC_ASCIISEL2       12
+#define HVC_MODIFY          13
+#define HVC_MODIFYSEL       14
+#define HVC_MODIFYSEL2      15
+#define HVC_BOOKMARK_FG     16
+#define HVC_BOOKMARK_BG     17
+#define HVC_BOOKSEL         18
+#define HVC_RESIZEBAR       19
+#define HVC_SELECTION3      20
+#define HVC_SELECTION4      21
+#define HVC_MATCHED         22
+#define HVC_MATCHEDSEL      23
+#define HVC_MATCHEDSEL2     24
+#define HVC_MAX_COLOURS     25
+#define HV_MAX_COLS         64
+
+// ── System-colour encoding (mirrors Win32 HEX_SYSCOLOR) ──────────────────────
+#define HEX_GET_COLOR       0x00ffffff
+#define HEX_SYS_COLOR       0x80000000u
+#define HEX_SYSCOLOR(code)  (HEX_SYS_COLOR | (code))
+
+// System-colour indices (same numeric values as Win32 COLOR_* constants)
+#define COLOR_WINDOW        5
+#define COLOR_WINDOWTEXT    8
+#define COLOR_HIGHLIGHT     13
+#define COLOR_HIGHLIGHTTEXT 14
+#define COLOR_BTNFACE       15
+#define COLOR_BTNSHADOW     16
+#define COLOR_GRAYTEXT      17
+#define COLOR_BTNHIGHLIGHT  20
+#define COLOR_GRADIENTACTIVECAPTION 27
+
+// ── Style flags ───────────────────────────────────────────────────────────────
+#define HVS_FORMAT_HEX      0x0000
+#define HVS_FORMAT_DEC      0x0001
+#define HVS_FORMAT_OCT      0x0002
+#define HVS_FORMAT_BIN      0x0003
+#define HVS_FORMAT_MASK     0x0003
+
+#define HVS_ADDR_HEX        0x0000
+#define HVS_ADDR_VISIBLE    0x0000
+#define HVS_ADDR_DEC        0x0004
+#define HVS_ADDR_ENDCOLON   0x0010
+#define HVS_ADDR_MIDCOLON   0x0020
+#define HVS_ADDR_INVISIBLE  0x0040
+
+#define HVS_ENDIAN_LITTLE   0x0000
+#define HVS_ENDIAN_BIG      0x0400
+
+#define HVS_ASCII_VISIBLE   0x0000
+#define HVS_ASCII_SHOWCTRLS 0x0800
+#define HVS_ASCII_SHOWEXTD  0x1000
+#define HVS_ASCII_INVISIBLE 0x2000
+
+#define HVS_FORCE_FIXEDCOLS 0x0080
+#define HVS_FIXED_EDITMODE  0x0100
+#define HVS_DISABLE_UNDO    0x0200
+#define HVS_ALWAYSDELETE    0x4000
+#define HVS_LOWERCASEHEX    0x010000
+#define HVS_FITTOWINDOW     0x020000
+#define HVS_SHOWMODS        0x040000
+#define HVS_REPLACESEL      0x080000
+#define HVS_ENABLEDRAGDROP  0x100000
+#define HVS_HEX_INVISIBLE   0x8000
+#define HVS_RESIZEBAR       0x40000000
+#define HVS_INVERTSELECTION 0x80000000
+
+// Edit modes
+#define HVMODE_READONLY     0
+#define HVMODE_INSERT       1
+#define HVMODE_OVERWRITE    2
+
+// Content-change methods
+#define HVMETHOD_INSERT     1
+#define HVMETHOD_OVERWRITE  2
+#define HVMETHOD_DELETE     3
+
+// Open-file flags
+#define HVOF_DEFAULT        0
+#define HVOF_READONLY       1
+#define HVOF_QUICKLOAD      2
+#define HVOF_QUICKSAVE      4
+
+// Hit-test regions
+#define HVHT_NONE       0x00
+#define HVHT_MAIN       0x01
+#define HVHT_SELECTION  0x02
+#define HVHT_RESIZE     0x10
+#define HVHT_RESIZE0    (0x20 | HVHT_RESIZE)
+#define HVHT_BOOKMARK   0x100
+
+// ── Data structures ───────────────────────────────────────────────────────────
+struct HEXCOL {
+    QRgb colFG;
+    QRgb colBG;
+};
+typedef HEXCOL ATTR;
+
+struct BOOKMARK {
+    uint32_t  flags;
+    size_w    offset;
+    size_w    length;
+    QRgb      col;
+    QRgb      backcol;
+    QString  *pszText;
+    uint32_t  nMaxText;
+    QString  *pszTitle;
+    uint32_t  nMaxTitle;
+};
+
+struct BOOKNODE {
+    BOOKNODE() : prev(nullptr), next(nullptr) {
+        memset(&bookmark, 0, sizeof(bookmark));
+    }
+    BOOKMARK  bookmark;
+    BOOKNODE *prev;
+    BOOKNODE *next;
+};
+
+enum SELMODE { SEL_NONE, SEL_NORMAL, SEL_MARGIN, SEL_DRAGDROP };
+
+// ── HexView widget ────────────────────────────────────────────────────────────
+//class HexView : public QWidget
+class HexView : public QAbstractScrollArea
+{
+    Q_OBJECT
+
+public:
+    explicit HexView(QWidget *parent = nullptr);
+    ~HexView();
+
+    bool   initBuf(const uint8_t *buf, size_t len, bool copy, bool readonly);
+    bool   openFile(const QString &path, uint flags = HVOF_DEFAULT);
+    bool   saveFile(const QString &path, uint flags = HVOF_DEFAULT);
+    bool   clearFile();
+
+    size_w selectionStart() const;
+    size_w selectionEnd()   const;
+    size_w selectionSize()  const;
+    size_w size()           const;
+
+    QRgb   getHexColour(uint index);
+    bool   setHexColour(uint index, QRgb col);
+
+    uint   setStyle(uint mask, uint styles);
+    uint   getStyle(uint mask = ~0u);
+    bool   checkStyle(uint flag) const;
+
+    uint   setGrouping(uint bytes);
+    uint   getGrouping() const { return m_nBytesPerColumn; }
+    uint   setLineLen(uint len);
+    uint   getLineLen() const   { return m_nBytesPerLine;  }
+    void   setPadding(int left, int right);
+
+
+    void   refreshWindow();
+
+    // Undo / redo
+    bool   undo();
+    bool   redo();
+    bool   canUndo() const;
+    bool   canRedo() const;
+
+    // Cursor / selection
+    bool   setCurSel(size_w selStart, size_w selEnd);
+    bool   setCurPos(size_w pos);
+    bool   setSelStart(size_w pos);
+    bool   setSelEnd(size_w pos);
+    void   selectAll();
+
+    // Scroll
+    bool   scrollTo(size_w offset);
+    bool   scrollTop(size_w offset);
+
+    // Data access
+    size_t getData(size_w offset, uint8_t *buf, size_t len);
+    size_t setData(size_w offset, uint8_t *buf, size_t len);
+
+    // State accessors
+    size_w cursorOffset() const { return m_nCursorOffset; }
+    uint   editMode()     const { return m_nEditMode; }
+    void   setEditMode(uint mode) { m_nEditMode = mode; viewport()->update(); }
+
+    // Clipboard
+    bool   copy();
+    bool   cut();
+    bool   paste();
+    bool   clear();
+
+    void   setFont(const QFont &font);
+    void   setFontSpacing(int x, int y);
+
+    // Provide an external menu to use instead of the built-in context menu.
+    // Pass nullptr to restore the built-in behaviour.  Ownership stays with
+    // the caller; HexView only holds a non-owning pointer.
+    void   setContextMenu(QMenu *menu) { m_contextMenu = menu; }
+
+
+signals:
+    void cursorChanged(size_w offset);
+    void selectionChanged(size_w start, size_w end);
+    void contentChanged(size_w offset, size_w length, uint method);
+    void lengthChanged(size_w length);
+
+protected:
+    void paintEvent(QPaintEvent *event)        override;
+    void resizeEvent(QResizeEvent *event)      override;
+    void focusInEvent(QFocusEvent *event)      override;
+    void focusOutEvent(QFocusEvent *event)     override;
+    void keyPressEvent(QKeyEvent *event)       override;
+    void mousePressEvent(QMouseEvent *event)   override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event)    override;
+    void mouseDoubleClickEvent(QMouseEvent *event) override;
+    void wheelEvent(QWheelEvent *event)        override;
+    void contextMenuEvent(QContextMenuEvent *event) override;
+
+private slots:
+    void onScrollTimer();
+    void onLengthChanged(size_w length);
+
+private:
+    // ── Rendering ────────────────────────────────────────────────────────────
+    QRgb   realiseColour(QRgb cr);
+    int    unitWidth() const;
+    int    logToPhyXCoord(int x, int pane) const;
+    void   updateResizeBarPos();
+    void   updateMetrics();
+    void   recalcPositions();
+    int    calcTotalWidth();
+    void   emitResize();
+
+    size_t formatAddress(size_w addr, char *buf, size_t buflen);
+    size_t formatHexUnit(uint8_t *data, char *buf, size_t buflen);
+    size_t formatLine(uint8_t *data, size_t length, size_w offset, size_t dataShift,
+                      char *szBuf, size_t nBufLen,
+                      ATTR *attrList, seqchar_info *infobuf,
+                      bool fIncSelection);
+
+    bool   getHighlightCol(size_w offset, int pane, BOOKNODE *itemStart,
+                           HEXCOL *col1, HEXCOL *col2,
+                           bool fModified, bool fMatched,
+                           bool fIncSelection = true);
+
+    void   identifySearchPatterns(uint8_t *data, size_t len, seqchar_info *infobuf);
+    int    paintLine(QPainter &painter, size_w nLineNo,
+                     uint8_t *data, size_t datalen, seqchar_info *infobuf, size_t datashift);
+    void   paintCaret(QPainter &painter);
+    void   drawVLine(QPainter &painter, const QRect &paintRect, QRgb col, int pos);
+    void   invalidateRange(size_w start, size_w finish);
+    void drawTextFixed(QPainter &p, QPoint origin,
+                       const QString &text, const QRawFont &rawFont, int cellWidth);
+
+
+    BOOKNODE *findBookmark(size_w startoff, size_w endoff);
+    void      drawNoteStrip(QPainter &painter, int nx, int ny, BOOKNODE *pbn);
+
+    // ── Coordinate / caret helpers ────────────────────────────────────────────
+    int    getLogicalX(int x, int *pane, int *subitem = nullptr) const;
+    int    getLogicalY(int y) const;
+    void   caretPosFromOffset(size_w offset, int *x, int *y) const;
+    size_w offsetFromPhysCoord(int mx, int my, int *pane = nullptr,
+                               int *lx = nullptr, int *ly = nullptr,
+                               int *subitem = nullptr);
+
+
+    void   setCaretPos(int x, int y);
+    void   positionCaret(int x, int y, int pane);
+    void   repositionCaret();
+    void   scrollToCaret();
+
+    // ── Hit testing ───────────────────────────────────────────────────────────
+    uint   hitTest(int x, int y, BOOKNODE **pbnp = nullptr);
+    bool   isOverResizeBar(int x) const;
+
+    // ── Scroll ────────────────────────────────────────────────────────────────
+    void   scroll(int dx, int dy);
+    void   setupScrollbars();
+    void   updatePinnedOffset();
+    void   pinToOffset(size_w offset);
+    bool   pinToBottomCorner();
+
+    size_w numFileLines(size_w length) const;
+
+    // ── Editing ───────────────────────────────────────────────────────────────
+    void   fireChanged(size_w offset, size_w length, uint method);
+    bool   allowChange(size_w offset, size_w length, uint method);
+    size_w enterData(uint8_t *pSource, size_w nLength,
+                     bool fAdvanceCaret, bool fReplaceSelection, bool fSelectData);
+    size_t fillData(uint8_t *buf, size_t buflen, size_w len);
+    bool   forwardDelete();
+    bool   backDelete();
+    void   onChar(uint nChar);
+
+    // ── Clipboard ─────────────────────────────────────────────────────────────
+    bool   onCopy();
+    bool   onCut();
+    bool   onPaste();
+    bool   onClear();
+
+    // ── State ─────────────────────────────────────────────────────────────────
+    QMenu      *m_contextMenu   = nullptr;  // nullptr → use built-in menu
+    sequence    *m_pDataSeq     = nullptr;
+    QString      m_filePath;
+
+    uint    m_nControlStyles    = 0;
+    uint    m_nEditMode         = HVMODE_OVERWRITE;
+
+    // Cursor & selection
+    size_w  m_nCursorOffset     = 0;
+    int     m_nCaretX           = 0;
+    int     m_nCaretY           = 0;
+    int     m_nWhichPane        = 0;   // 0=hex, 1=ascii
+    int     m_nSubItem          = 0;
+    bool    m_fCursorAdjustment = false;
+    bool    m_fCursorMoved      = true;
+    size_w  m_nAddressOffset    = 0;
+    size_w  m_nLastEditOffset   = 0;
+
+    size_w  m_nSelectionStart   = 0;
+    size_w  m_nSelectionEnd     = 0;
+    SELMODE m_nSelectionMode    = SEL_NONE;
+
+    int     m_nDataShift        = 0;
+
+    // Font
+    QFont   m_font;
+    QRawFont m_rawFont;
+    int     m_nFontHeight       = 0;
+    int     m_nFontWidth        = 0;
+
+    // View dimensions
+    int     m_nWindowLines      = 0;
+    int     m_nWindowColumns    = 0;
+    int     m_nBytesPerLine     = 16;
+    int     m_nBytesPerColumn   = 1;
+
+    // Scrollbar state
+    size_w  m_nVScrollPos       = 0;
+    size_w  m_nVScrollMax       = 0;
+    int     m_nHScrollPos       = 0;
+    int     m_nHScrollMax       = 0;
+    size_w  m_nVScrollPinned    = 0;
+
+    // Column widths (in character units)
+    int     m_nAddressWidth     = 0;
+    int     m_nAddressDigits    = 8;
+    int     m_nHexWidth         = 0;
+    int     m_nHexPaddingLeft   = 1;
+    int     m_nHexPaddingRight  = 1;
+    int     m_nTotalWidth       = 0;
+    int     m_nResizeBarPos     = 0;
+
+    // Colours
+    QRgb    m_ColourList[HV_MAX_COLS] = {};
+
+    // Bookmarks
+    BOOKNODE *m_BookHead        = nullptr;
+    BOOKNODE *m_BookTail        = nullptr;
+    BOOKNODE *m_HighlightCurrent = nullptr;
+    BOOKNODE *m_HighlightHot    = nullptr;
+
+    // Mouse / interaction
+    bool    m_fResizeBar        = false;
+    bool    m_fResizeAddr       = false;
+    bool    m_fStartDrag        = false;
+    uint    m_HitTestCurrent    = 0;
+    uint    m_HitTestHot        = 0;
+
+    // Scroll timer (for auto-scroll during mouse drag)
+    QTimer  m_scrollTimer;
+    int     m_nScrollCounter    = 0;
+    int     m_nScrollMouseRemainder = 0;
+
+    // Search
+    uint8_t m_pSearchPat[64]    = {};
+    uint    m_nSearchLen        = 0;
+
+    // Caret
+    QTimer  m_caretTimer;
+    bool    m_caretVisible      = false;
+
+    bool    m_fRedrawChanges    = true;
+};
+
+#endif // HEXVIEW_H
