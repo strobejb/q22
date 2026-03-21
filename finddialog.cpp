@@ -5,6 +5,7 @@
 #include <QApplication>
 #include <QKeyEvent>
 #include <QMenu>
+#include <QStyle>
 #include <QToolButton>
 
 FindDialog::FindDialog(QWidget *parent)
@@ -72,6 +73,19 @@ FindDialog::FindDialog(QWidget *parent)
     });
 
     connect(ui->btnClose, &QToolButton::clicked, this, &QWidget::hide);
+
+#ifdef Q_OS_WIN
+    // QIcon::fromTheme() returns null on Windows; set fallback icons via QStyle.
+    auto *s = QApplication::style();
+    ui->btnPrevious->setIcon(s->standardIcon(QStyle::SP_ArrowUp));
+    ui->btnNext->setIcon(s->standardIcon(QStyle::SP_ArrowDown));
+    ui->btnClose->setIcon(s->standardIcon(QStyle::SP_TitleBarCloseButton));
+    // No great SP_ for a find-options menu button; show a text indicator instead.
+    ui->btnOptions->setIcon(QIcon());
+    ui->btnOptions->setText("☰");
+    for (auto *b : {ui->btnPrevious, ui->btnNext, ui->btnClose})
+        b->setIconSize(QSize(16, 16));
+#endif
 }
 
 FindDialog::~FindDialog()

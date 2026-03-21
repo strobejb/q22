@@ -11,6 +11,7 @@
 #include <QFileDialog>
 #include <QIcon>
 #include <QMenu>
+#include <QStyle>
 #include <QMouseEvent>
 #include <QVBoxLayout>
 #include <QWindow>
@@ -86,7 +87,8 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), ui(new Ui::MainWindow) {
     ui->setupUi(this);
 
-    ui->actionOpen->setIcon(QIcon::fromTheme("document-open-symbolic"));
+    ui->actionOpen->setIcon(QIcon::fromTheme("document-open-symbolic",
+        QApplication::style()->standardIcon(QStyle::SP_DirOpenIcon)));
 
     // Remove native title bar.
     // On Windows, keep the native WS_OVERLAPPEDWINDOW (which includes

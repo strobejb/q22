@@ -149,7 +149,7 @@ TitleBar::TitleBar(QWidget *parent)
 
     m_hamburger = new QToolButton(this);
     m_hamburger->setObjectName("hamburger");
-    QIcon hamburgerIcon = QIcon::fromTheme("document-open-symbolic");
+    QIcon hamburgerIcon = QIcon::fromTheme("open-menu-symbolic");
     if (!hamburgerIcon.isNull())
         m_hamburger->setIcon(hamburgerIcon);
 #ifdef Q_OS_WIN
