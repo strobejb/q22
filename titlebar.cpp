@@ -1,13 +1,15 @@
 #include "titlebar.h"
 #include "theme.h"
+#include <QApplication>
 #include <QHBoxLayout>
+#include <QIcon>
 #include <QLabel>
-#include <QToolButton>
 #include <QMenu>
 #include <QMouseEvent>
+#include <QPalette>
+#include <QStyle>
+#include <QToolButton>
 #include <QWindow>
-#include <QApplication>
-#include <QIcon>
 
 #ifdef Q_OS_LINUX
 #include <QProcess>
