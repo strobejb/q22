@@ -20,6 +20,11 @@ FindDialog::FindDialog(QWidget *parent)
     bool dark     = QApplication::palette().window().color().lightness() < 128;
     QString hover   = dark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.10)";
     QString pressed = dark ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.18)";
+    // Use the palette mid colour for the QLineEdit border so it matches the
+    // combobox border defined in theme.cpp's buildStylesheet().  Once any
+    // border property is set via stylesheet Qt stops drawing the platform
+    // default border, so we must declare it explicitly.
+    QString borderCol = QApplication::palette().mid().color().name();
     setStyleSheet(QString(R"(
         QToolButton {
             border: none;
@@ -29,8 +34,12 @@ FindDialog::FindDialog(QWidget *parent)
         QToolButton:hover   { background: %1; }
         QToolButton:pressed { background: %2; }
         QToolButton::menu-indicator { image: none; width: 0; }
-        QLineEdit { margin: 2px 0; border-radius: 6px; }
-    )").arg(hover, pressed));
+        QLineEdit {
+            margin: 2px 0;
+            border: 1px solid %3;
+            border-radius: 6px;
+        }
+    )").arg(hover, pressed, borderCol));
 
     // Options menu
     auto *optMenu = new QMenu(this);
