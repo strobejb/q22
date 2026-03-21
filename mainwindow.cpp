@@ -15,6 +15,44 @@
 #include <QVBoxLayout>
 #include <QWindow>
 
+#ifdef Q_OS_WIN
+#include <windows.h>
+#include <dwmapi.h>
+
+// DWMWA_WINDOW_CORNER_PREFERENCE and DWMWA_BORDER_COLOR were added in the
+// Windows 11 SDK.  Define them ourselves so the build works with older SDKs
+// and MinGW headers as well.
+#ifndef DWMWA_WINDOW_CORNER_PREFERENCE
+#  define DWMWA_WINDOW_CORNER_PREFERENCE 33
+#  define DWMWCP_ROUND 2
+#endif
+#ifndef DWMWA_BORDER_COLOR
+#  define DWMWA_BORDER_COLOR 34
+#endif
+
+// The window is created as WS_OVERLAPPEDWINDOW (no Qt::FramelessWindowHint on
+// Windows), so DWM already owns the rounded corners, accent border, and
+// drop-shadow.  This function just makes the corner preference explicit so it
+// isn't accidentally overridden by a future style change, and optionally pins
+// the border colour to the Adwaita palette instead of the system accent.
+static void applyWindows11Styling(HWND hwnd, bool dark)
+{
+    // Rounded corners — Win11 Build 22000+ enables this for WS_OVERLAPPEDWINDOW
+    // by default, but be explicit so a style-change can't reset it.
+    DWORD cornerPref = DWMWCP_ROUND;
+    DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+                          &cornerPref, sizeof(cornerPref));
+
+    // Override the 1-pixel DWM border with Adwaita palette colours instead of
+    // the system accent colour.  COLORREF format is 0x00BBGGRR.
+    // Light: #cdc7c2 → R=0xCD G=0xC7 B=0xC2
+    // Dark:  #4a4a4a → R=G=B=0x4A
+    COLORREF borderColor = dark ? 0x004A4A4A : 0x00C2C7CD;
+    DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR,
+                          &borderColor, sizeof(borderColor));
+}
+#endif
+
 static const int RESIZE_MARGIN = 5;
 
 static Qt::Edges edgesFromPos(const QPoint &pos, const QRect &rect) {
@@ -50,8 +88,15 @@ MainWindow::MainWindow(QWidget *parent)
 
     ui->actionOpen->setIcon(QIcon::fromTheme("document-open-symbolic"));
 
-    // Remove native title bar
+    // Remove native title bar.
+    // On Windows, keep the native WS_OVERLAPPEDWINDOW (which includes
+    // WS_THICKFRAME) so DWM automatically applies rounded corners, the accent
+    // border, and drop-shadow.  nativeEvent() handles WM_NCCALCSIZE to
+    // collapse the NC area to zero so the title-bar chrome never appears.
+    // On all other platforms, use Qt's own frameless hint.
+#ifndef Q_OS_WIN
     setWindowFlag(Qt::FramelessWindowHint);
+#endif
     setWindowTitle("qexed");
 
     // Custom title bar
@@ -285,3 +330,42 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
 
     return false;
 }
+
+#ifdef Q_OS_WIN
+void MainWindow::showEvent(QShowEvent *e)
+{
+    QMainWindow::showEvent(e);
+    bool dark = palette().window().color().lightness() < 128;
+    applyWindows11Styling(reinterpret_cast<HWND>(winId()), dark);
+}
+
+bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr *result)
+{
+    MSG *msg = reinterpret_cast<MSG *>(message);
+    if (msg->message == WM_NCCALCSIZE && msg->wParam == TRUE) {
+        // Collapse the non-client area to zero: the title-bar and resize-border
+        // chrome never appear, but DWM still sees WS_THICKFRAME and applies its
+        // rounded corners, accent border, and drop-shadow.
+        //
+        // When maximized, Windows extends the window rect slightly off-screen
+        // (by the frame thickness) to hide the thick-frame border.  Without
+        // compensation our client area would bleed under the taskbar.  Trim it
+        // back by the DPI-aware frame size so the content stays on-screen.
+        if (IsZoomed(msg->hwnd)) {
+            auto *params = reinterpret_cast<NCCALCSIZE_PARAMS *>(msg->lParam);
+            UINT dpi  = GetDpiForWindow(msg->hwnd);
+            int  bx   = GetSystemMetricsForDpi(SM_CXFRAME, dpi)
+                      + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+            int  by   = GetSystemMetricsForDpi(SM_CYFRAME, dpi)
+                      + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+            params->rgrc[0].left   += bx;
+            params->rgrc[0].right  -= bx;
+            params->rgrc[0].top    += by;
+            params->rgrc[0].bottom -= by;
+        }
+        *result = 0;
+        return true;
+    }
+    return QMainWindow::nativeEvent(eventType, message, result);
+}
+#endif

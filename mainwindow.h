@@ -23,6 +23,10 @@ public:
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
+#ifdef Q_OS_WIN
+    void showEvent(QShowEvent *e) override;
+    bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
+#endif
 
 private:
     void openFile(const QString &path);
