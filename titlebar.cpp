@@ -129,6 +129,17 @@ TitleBar::TitleBar(QWidget *parent)
             dark ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.18)",
             border));
 
+#ifdef Q_OS_WIN
+    // Windows 11 caption-button style: square corners, red close button.
+    setStyleSheet(styleSheet() + R"(
+        #TitleBar QToolButton#close,
+        #TitleBar QToolButton#minimize,
+        #TitleBar QToolButton#maximize  { border-radius: 0; }
+        #TitleBar QToolButton#close:hover   { background: #c42b1c; color: white; }
+        #TitleBar QToolButton#close:pressed { background: #9a1c10; color: white; }
+    )");
+#endif
+
     // ── Hamburger button (always far-left) ────────────────────────────────
     m_menu = new QMenu(this);
     themeMenu(m_menu);
@@ -146,6 +157,7 @@ TitleBar::TitleBar(QWidget *parent)
         m_hamburger->setText("≡");
     m_hamburger->setAutoRaise(true);
     m_hamburger->setFixedSize(32, 32);
+    m_hamburger->setIconSize(QSize(16, 16));
     m_hamburger->setMenu(m_menu);
     m_hamburger->setPopupMode(QToolButton::InstantPopup);
 
@@ -166,6 +178,7 @@ TitleBar::TitleBar(QWidget *parent)
         m_searchBtn->setText("🔍");
     m_searchBtn->setAutoRaise(true);
     m_searchBtn->setFixedSize(32, 32);
+    m_searchBtn->setIconSize(QSize(16, 16));
     m_searchBtn->setMenu(m_searchMenu);
     m_searchBtn->setPopupMode(QToolButton::InstantPopup);
 
@@ -184,6 +197,11 @@ TitleBar::TitleBar(QWidget *parent)
     auto *rightLay   = new QHBoxLayout(rightGroup);
     leftLay ->setContentsMargins(0,0,0,0);  leftLay ->setSpacing(2);
     rightLay->setContentsMargins(0,0,0,0);  rightLay->setSpacing(2);
+#ifdef Q_OS_WIN
+    // Windows 11: caption buttons sit flush against each other with no gap.
+    leftLay ->setSpacing(0);
+    rightLay->setSpacing(0);
+#endif
 
     addWindowButtons(leftLay,  leftBtns);
     addWindowButtons(rightLay, rightBtns);
@@ -205,6 +223,7 @@ TitleBar::TitleBar(QWidget *parent)
         m_viewBtn->setText("☰");
     m_viewBtn->setAutoRaise(true);
     m_viewBtn->setFixedSize(32, 32);
+    m_viewBtn->setIconSize(QSize(16, 16));
     m_viewBtn->setMenu(m_viewMenu);
     m_viewBtn->setPopupMode(QToolButton::InstantPopup);
     // Reposition to right-align when the menu is shown.
@@ -242,7 +261,15 @@ QToolButton *TitleBar::makeWindowButton(const QString &name)
     auto *btn = new QToolButton(this);
     btn->setObjectName(s.objName);
     btn->setAutoRaise(true);
+#ifdef Q_OS_WIN
+    // Windows 11: caption buttons are full title-bar height, ~46 px wide,
+    // flush with no gap between them (set in the layout above).
+    btn->setFixedSize(46, 40);
+    btn->setIconSize(QSize(10, 10));
+#else
     btn->setFixedSize(28, 28);
+    btn->setIconSize(QSize(12, 12));
+#endif
 
     QIcon icon = QIcon::fromTheme(s.icon);
 #ifdef Q_OS_WIN
@@ -257,7 +284,7 @@ QToolButton *TitleBar::makeWindowButton(const QString &name)
         const bool dark = QApplication::palette().window().color().lightness() < 128;
         const QColor fg = dark ? QColor("#ffffff") : QColor("#2e3436");
         if (segoeGlyphs.contains(name))
-            icon = segoeIcon(segoeGlyphs[name], fg, 12);
+            icon = segoeIcon(segoeGlyphs[name], fg, 10);
     }
 #endif
     if (!icon.isNull())
@@ -316,7 +343,7 @@ void TitleBar::updateMaxButton()
         // ChromeRestore (0xE923) / ChromeMaximize (0xE922)
         const bool dark = QApplication::palette().window().color().lightness() < 128;
         const QColor fg = dark ? QColor("#ffffff") : QColor("#2e3436");
-        icon = segoeIcon(maximized ? 0xE923 : 0xE922, fg, 12);
+        icon = segoeIcon(maximized ? 0xE923 : 0xE922, fg, 10);
     }
 #endif
     if (!icon.isNull())
