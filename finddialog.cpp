@@ -79,6 +79,10 @@ FindDialog::FindDialog(QWidget *parent)
 
     m_comboDataType->buildMenu();
     m_comboDataType->setDisplayText(m_comboDataType->selectionText());
+
+    // Keep the search field's font in sync with the Type combo so both
+    // controls render text at the same size.
+    ui->editFind->setFont(m_comboDataType->font());
     connect(m_comboDataType, &DataTypeComboBox::selectionChanged, this, [this](int) {
         m_comboDataType->setDisplayText(m_comboDataType->selectionText());
     });
