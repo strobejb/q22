@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <QComboBox>
+#include <QEnterEvent>
 #include <QMenu>
 #include <QAction>
 #include <QActionGroup>
@@ -34,6 +35,9 @@ public:
     QSize sizeHint() const override;
 
 protected:
+    void enterEvent(QEnterEvent *e) override { m_hovered = true;  update(); QComboBox::enterEvent(e); }
+    void leaveEvent(QEvent       *e) override { m_hovered = false; update(); QComboBox::leaveEvent(e); }
+
     void popupRight(QMenu *menu)
     {
         QPoint pos = mapToGlobal(QPoint(width() - menu->sizeHint().width(), height()));
@@ -47,9 +51,18 @@ protected:
         opt.currentText = m_displayText;
         painter.drawComplexControl(QStyle::CC_ComboBox, opt);
         painter.drawControl(QStyle::CE_ComboBoxLabel, opt);
+        // The global stylesheet suppresses the native drop-down arrow.
+        // Draw it explicitly, but only while the mouse is over the widget.
+        if (m_hovered) {
+            QStyleOptionComboBox arrowOpt = opt;
+            arrowOpt.rect = style()->subControlRect(
+                QStyle::CC_ComboBox, &opt, QStyle::SC_ComboBoxArrow, this);
+            painter.drawPrimitive(QStyle::PE_IndicatorArrowDown, arrowOpt);
+        }
     }
 private:
     QString m_displayText;
+    bool    m_hovered = false;
 };
 
 // ── RadioComboBox ─────────────────────────────────────────────────────────────
