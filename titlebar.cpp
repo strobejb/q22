@@ -34,12 +34,15 @@ static QIcon segoeIcon(uint codePoint, const QColor &color, int logicalPx = 14)
     }();
     if (s_family.isEmpty()) return {};
 
-    // Create a device-pixel-ratio–aware pixmap so the icon is sharp on
-    // high-DPI screens.
-    const qreal dpr     = qApp->devicePixelRatio();
-    const int   physPx  = qRound(logicalPx * dpr);
+    // Create a DPR-aware pixmap so the glyph is sharp on high-DPI screens.
+    // IMPORTANT: QPainter on a DPR-aware pixmap works in *logical* coordinates;
+    // it applies the DPR scale internally.  The font size and draw rect must
+    // therefore be in logical pixels — using physPx here would render the glyph
+    // at dpr× the intended size (e.g. 1.5× too large at 150 % scaling).
+    const qreal dpr    = qApp->devicePixelRatio();
+    const int   physPx = qRound(logicalPx * dpr);
     QFont font(s_family);
-    font.setPixelSize(physPx);
+    font.setPixelSize(logicalPx);                   // logical px
 
     QPixmap pm(physPx, physPx);
     pm.setDevicePixelRatio(dpr);
@@ -47,7 +50,7 @@ static QIcon segoeIcon(uint codePoint, const QColor &color, int logicalPx = 14)
     QPainter p(&pm);
     p.setFont(font);
     p.setPen(color);
-    p.drawText(QRect(0, 0, physPx, physPx), Qt::AlignCenter,
+    p.drawText(QRect(0, 0, logicalPx, logicalPx), Qt::AlignCenter,   // logical px
                QString(QChar(codePoint)));
     return QIcon(pm);
 }
@@ -150,14 +153,14 @@ TitleBar::TitleBar(QWidget *parent)
     if (!hamburgerIcon.isNull())
         m_hamburger->setIcon(hamburgerIcon);
 #ifdef Q_OS_WIN
-    else if (QIcon si = segoeIcon(0xE700, QColor(fg), 16); !si.isNull()) // GlobalNavButton
+    else if (QIcon si = segoeIcon(0xE700, QColor(fg), 14); !si.isNull()) // GlobalNavButton
         m_hamburger->setIcon(si);
 #endif
     else
         m_hamburger->setText("≡");
     m_hamburger->setAutoRaise(true);
     m_hamburger->setFixedSize(32, 32);
-    m_hamburger->setIconSize(QSize(16, 16));
+    m_hamburger->setIconSize(QSize(14, 14));
     m_hamburger->setMenu(m_menu);
     m_hamburger->setPopupMode(QToolButton::InstantPopup);
 
@@ -171,14 +174,14 @@ TitleBar::TitleBar(QWidget *parent)
     if (!searchIcon.isNull())
         m_searchBtn->setIcon(searchIcon);
 #ifdef Q_OS_WIN
-    else if (QIcon si = segoeIcon(0xE721, QColor(fg), 16); !si.isNull()) // Search
+    else if (QIcon si = segoeIcon(0xE721, QColor(fg), 14); !si.isNull()) // Search
         m_searchBtn->setIcon(si);
 #endif
     else
         m_searchBtn->setText("🔍");
     m_searchBtn->setAutoRaise(true);
     m_searchBtn->setFixedSize(32, 32);
-    m_searchBtn->setIconSize(QSize(16, 16));
+    m_searchBtn->setIconSize(QSize(14, 14));
     m_searchBtn->setMenu(m_searchMenu);
     m_searchBtn->setPopupMode(QToolButton::InstantPopup);
 
@@ -216,14 +219,14 @@ TitleBar::TitleBar(QWidget *parent)
     if (!viewIcon.isNull())
         m_viewBtn->setIcon(viewIcon);
 #ifdef Q_OS_WIN
-    else if (QIcon si = segoeIcon(0xE712, QColor(fg), 16); !si.isNull()) // More
+    else if (QIcon si = segoeIcon(0xE712, QColor(fg), 14); !si.isNull()) // More
         m_viewBtn->setIcon(si);
 #endif
     else
         m_viewBtn->setText("☰");
     m_viewBtn->setAutoRaise(true);
     m_viewBtn->setFixedSize(32, 32);
-    m_viewBtn->setIconSize(QSize(16, 16));
+    m_viewBtn->setIconSize(QSize(14, 14));
     m_viewBtn->setMenu(m_viewMenu);
     m_viewBtn->setPopupMode(QToolButton::InstantPopup);
     // Reposition to right-align when the menu is shown.
