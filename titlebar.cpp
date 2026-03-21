@@ -231,15 +231,19 @@ TitleBar::TitleBar(QWidget *parent)
 
     m_hamburger = new QToolButton(this);
     m_hamburger->setObjectName("hamburger");
-    QIcon hamburgerIcon = QIcon::fromTheme("open-menu-symbolic");
-    if (!hamburgerIcon.isNull())
-        m_hamburger->setIcon(hamburgerIcon);
 #ifdef Q_OS_WIN
-    else if (QIcon si = segoeIcon(0xE700, QColor(fg), 14); !si.isNull()) // GlobalNavButton
-        m_hamburger->setIcon(si);
+    // Use the same ☰ text the Find dialog uses — it renders reliably on all
+    // Windows versions without depending on Segoe glyph availability.
+    m_hamburger->setText("☰");
+#else
+    {
+        QIcon hamburgerIcon = QIcon::fromTheme("open-menu-symbolic");
+        if (!hamburgerIcon.isNull())
+            m_hamburger->setIcon(hamburgerIcon);
+        else
+            m_hamburger->setText("☰");
+    }
 #endif
-    else
-        m_hamburger->setText("≡");
     m_hamburger->setAutoRaise(true);
     m_hamburger->setFixedSize(32, 32);
     m_hamburger->setIconSize(QSize(14, 14));
@@ -297,15 +301,18 @@ TitleBar::TitleBar(QWidget *parent)
 
     m_viewBtn = new QToolButton(this);
     m_viewBtn->setObjectName("viewMenu");
-    QIcon viewIcon = QIcon::fromTheme("open-menu-symbolic");
-    if (!viewIcon.isNull())
-        m_viewBtn->setIcon(viewIcon);
 #ifdef Q_OS_WIN
-    else if (QIcon si = segoeIcon(0xE712, QColor(fg), 14); !si.isNull()) // More
-        m_viewBtn->setIcon(si);
+    // Same approach as m_hamburger and the Find dialog options button.
+    m_viewBtn->setText("☰");
+#else
+    {
+        QIcon viewIcon = QIcon::fromTheme("open-menu-symbolic");
+        if (!viewIcon.isNull())
+            m_viewBtn->setIcon(viewIcon);
+        else
+            m_viewBtn->setText("☰");
+    }
 #endif
-    else
-        m_viewBtn->setText("☰");
     m_viewBtn->setAutoRaise(true);
     m_viewBtn->setFixedSize(32, 32);
     m_viewBtn->setIconSize(QSize(14, 14));

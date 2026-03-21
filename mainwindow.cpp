@@ -87,8 +87,14 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), ui(new Ui::MainWindow) {
     ui->setupUi(this);
 
-    ui->actionOpen->setIcon(QIcon::fromTheme("document-open-symbolic",
-        QApplication::style()->standardIcon(QStyle::SP_DirOpenIcon)));
+    // On Windows QIcon::fromTheme() may return an unexpected fallback icon from
+    // Qt's built-in theme; use the standard style icon directly on that platform.
+#ifdef Q_OS_WIN
+    ui->actionOpen->setIcon(
+        QApplication::style()->standardIcon(QStyle::SP_DirOpenIcon));
+#else
+    ui->actionOpen->setIcon(QIcon::fromTheme("document-open-symbolic"));
+#endif
 
     // Remove native title bar.
     // On Windows, keep the native WS_OVERLAPPEDWINDOW (which includes
@@ -99,7 +105,7 @@ MainWindow::MainWindow(QWidget *parent)
 #ifndef Q_OS_WIN
     setWindowFlag(Qt::FramelessWindowHint);
 #endif
-    setWindowTitle("qexed");
+    setWindowTitle("qeXed");
 
     // Custom title bar
     m_titleBar = new TitleBar(this);
