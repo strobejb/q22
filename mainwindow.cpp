@@ -87,11 +87,18 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), ui(new Ui::MainWindow) {
     ui->setupUi(this);
 
-    // On Windows QIcon::fromTheme() may return an unexpected fallback icon from
-    // Qt's built-in theme; use the standard style icon directly on that platform.
+    // On Windows use the Segoe MDL2 FolderOpen glyph (0xED25) so the icon
+    // matches the monochrome Segoe style used throughout the title bar.
+    // fromTheme() can return unexpected icons from Qt's built-in fallback theme.
 #ifdef Q_OS_WIN
-    ui->actionOpen->setIcon(
-        QApplication::style()->standardIcon(QStyle::SP_DirOpenIcon));
+    {
+        const bool   dark = palette().window().color().lightness() < 128;
+        const QColor fg   = dark ? QColor("#ffffff") : QColor("#000000");
+        QIcon icon = segoeIcon(0xED25, fg, 16);   // FolderOpen, slightly larger for menu
+        if (icon.isNull())
+            icon = QApplication::style()->standardIcon(QStyle::SP_DirOpenIcon);
+        ui->actionOpen->setIcon(icon);
+    }
 #else
     ui->actionOpen->setIcon(QIcon::fromTheme("document-open-symbolic"));
 #endif

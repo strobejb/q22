@@ -1,12 +1,47 @@
 #include "theme.h"
-#include <QMenu>
 #include <QApplication>
-#include <QGuiApplication>
-#include <QStyleFactory>
-#include <QStyleHints>
-#include <QPalette>
 #include <QFont>
 #include <QFontDatabase>
+#include <QGuiApplication>
+#include <QMenu>
+#include <QPalette>
+#include <QStyleFactory>
+#include <QStyleHints>
+
+#ifdef Q_OS_WIN
+#include <QColor>
+#include <QIcon>
+#include <QPainter>
+#include <QPixmap>
+
+QIcon segoeIcon(uint codePoint, const QColor &color, int logicalPx)
+{
+    static const QString s_family = []() -> QString {
+        const auto &fams = QFontDatabase::families();
+        for (const QString &f : {QStringLiteral("Segoe Fluent Icons"),
+                                  QStringLiteral("Segoe MDL2 Assets")})
+            if (fams.contains(f)) return f;
+        return {};
+    }();
+    if (s_family.isEmpty()) return {};
+
+    // QPainter on a DPR-aware pixmap works in *logical* coordinates;
+    // font size and draw rect must be in logical px (not physical px).
+    const qreal dpr    = qApp->devicePixelRatio();
+    const int   physPx = qRound(logicalPx * dpr);
+    QFont font(s_family);
+    font.setPixelSize(logicalPx);
+    QPixmap pm(physPx, physPx);
+    pm.setDevicePixelRatio(dpr);
+    pm.fill(Qt::transparent);
+    QPainter p(&pm);
+    p.setFont(font);
+    p.setPen(color);
+    p.drawText(QRect(0, 0, logicalPx, logicalPx), Qt::AlignCenter,
+               QString(QChar(codePoint)));
+    return QIcon(pm);
+}
+#endif
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 

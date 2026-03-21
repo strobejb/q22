@@ -17,8 +17,6 @@
 #endif
 
 #ifdef Q_OS_WIN
-#include <QPainter>
-#include <QFontDatabase>
 #include <windows.h>
 #include <dwmapi.h>
 
@@ -72,47 +70,6 @@ static QColor windowsTitleBarBg()
     }
     return windowsIsLightMode() ? QColor(0xF3, 0xF3, 0xF3)
                                 : QColor(0x20, 0x20, 0x20);
-}
-#endif
-
-
-#ifdef Q_OS_WIN
-
-// Render a single glyph from Segoe MDL2 Assets or Segoe Fluent Icons as a
-// QIcon.  Both fonts ship with Windows 10/11 and provide the same native
-// symbols that Windows itself uses for title-bar buttons and toolbars.
-// Falls back to an empty QIcon if neither font is present (text fallbacks
-// in the calling code then take over).
-static QIcon segoeIcon(uint codePoint, const QColor &color, int logicalPx = 14)
-{
-    static const QString s_family = []() -> QString {
-        const auto &fams = QFontDatabase::families();
-        for (const QString &f : {QStringLiteral("Segoe Fluent Icons"),
-                                  QStringLiteral("Segoe MDL2 Assets")})
-            if (fams.contains(f)) return f;
-        return {};
-    }();
-    if (s_family.isEmpty()) return {};
-
-    // Create a DPR-aware pixmap so the glyph is sharp on high-DPI screens.
-    // IMPORTANT: QPainter on a DPR-aware pixmap works in *logical* coordinates;
-    // it applies the DPR scale internally.  The font size and draw rect must
-    // therefore be in logical pixels — using physPx here would render the glyph
-    // at dpr× the intended size (e.g. 1.5× too large at 150 % scaling).
-    const qreal dpr    = qApp->devicePixelRatio();
-    const int   physPx = qRound(logicalPx * dpr);
-    QFont font(s_family);
-    font.setPixelSize(logicalPx);                   // logical px
-
-    QPixmap pm(physPx, physPx);
-    pm.setDevicePixelRatio(dpr);
-    pm.fill(Qt::transparent);
-    QPainter p(&pm);
-    p.setFont(font);
-    p.setPen(color);
-    p.drawText(QRect(0, 0, logicalPx, logicalPx), Qt::AlignCenter,   // logical px
-               QString(QChar(codePoint)));
-    return QIcon(pm);
 }
 #endif
 
@@ -236,8 +193,13 @@ TitleBar::TitleBar(QWidget *parent)
     // Both platforms use the file-open icon: the button opens the File menu
     // and should visually match the Open action inside it.
 #ifdef Q_OS_WIN
-    m_hamburger->setIcon(
-        QApplication::style()->standardIcon(QStyle::SP_DirOpenIcon));
+    // 0xED25 = FolderOpen in Segoe MDL2 Assets / Segoe Fluent Icons —
+    // same monochrome Segoe style as the search and caption buttons.
+    if (QIcon si = segoeIcon(0xED25, QColor(fg), 14); !si.isNull())
+        m_hamburger->setIcon(si);
+    else
+        m_hamburger->setIcon(
+            QApplication::style()->standardIcon(QStyle::SP_DirOpenIcon));
 #else
     {
         QIcon hamburgerIcon = QIcon::fromTheme("document-open-symbolic");
