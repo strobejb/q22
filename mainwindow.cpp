@@ -5,6 +5,7 @@
 #include "settings.h"
 #include "statusbar.h"
 #include "titlebar.h"
+#include "theme.h"
 #include <QActionGroup>
 #include <QApplication>
 #include <QDir>
