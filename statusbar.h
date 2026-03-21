@@ -35,11 +35,33 @@ public:
     QSize sizeHint() const override;
 
 protected:
-    void enterEvent(QEnterEvent *e) override { m_hovered = true;  update(); QComboBox::enterEvent(e); }
-    void leaveEvent(QEvent       *e) override { m_hovered = false; update(); QComboBox::leaveEvent(e); }
+    void enterEvent(QEnterEvent *e) override { m_hovered = true; update(); QComboBox::enterEvent(e); }
+    void leaveEvent(QEvent       *e) override
+    {
+        // Don't drop the hover highlight while the popup is open — the mouse
+        // leaving the widget to reach the menu should not clear the state.
+        if (!m_popupOpen) { m_hovered = false; update(); }
+        QComboBox::leaveEvent(e);
+    }
 
     void popupRight(QMenu *menu)
     {
+        // Toggle: clicking again while the menu is open closes it.
+        if (menu->isVisible()) { menu->hide(); return; }
+
+        m_popupOpen = true;
+        m_hovered   = true;
+        update();
+
+        // When the menu closes, restore hover from actual cursor position and
+        // clear the open flag.  SingleShotConnection auto-removes after one fire
+        // so repeated open/close cycles don't accumulate connections.
+        connect(menu, &QMenu::aboutToHide, this, [this]() {
+            m_popupOpen = false;
+            m_hovered   = underMouse();
+            update();
+        }, Qt::SingleShotConnection);
+
         QPoint pos = mapToGlobal(QPoint(width() - menu->sizeHint().width(), height()));
         menu->popup(pos);
     }
@@ -62,7 +84,8 @@ protected:
     }
 private:
     QString m_displayText;
-    bool    m_hovered = false;
+    bool    m_hovered    = false;
+    bool    m_popupOpen  = false;
 };
 
 // ── RadioComboBox ─────────────────────────────────────────────────────────────
