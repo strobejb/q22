@@ -1,6 +1,7 @@
 #include "datatypecombobox.h"
 #include "theme.h"
 #include <QActionGroup>
+#include <QApplication>
 #include <QEvent>
 #include <QImage>
 #include <QMenu>
