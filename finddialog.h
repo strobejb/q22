@@ -23,6 +23,10 @@ public:
     bool    isWrapAround() const;
     QString dataType()    const;
 
+signals:
+    void findPrevious();
+    void findNext();
+
 protected:
     void keyPressEvent(QKeyEvent *e) override;
 

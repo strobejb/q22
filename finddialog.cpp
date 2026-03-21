@@ -89,17 +89,26 @@ FindDialog::FindDialog(QWidget *parent)
 
     connect(ui->btnClose, &QToolButton::clicked, this, &QWidget::hide);
 
+    // Navigation popup menu (Find Previous / Find Next)
+    auto *navMenu = new QMenu(this);
+    themeMenu(navMenu);
+    auto *actPrev = navMenu->addAction(tr("Find Previous\tShift+F3"));
+    auto *actNext = navMenu->addAction(tr("Find Next\tF3"));
+    ui->btnNavigate->setMenu(navMenu);
+    connect(actPrev, &QAction::triggered, this, &FindDialog::findPrevious);
+    connect(actNext, &QAction::triggered, this, &FindDialog::findNext);
+
 #ifdef Q_OS_WIN
-    // QIcon::fromTheme() returns null on Windows; set fallback icons via QStyle.
-    auto *s = QApplication::style();
-    ui->btnPrevious->setIcon(s->standardIcon(QStyle::SP_ArrowUp));
-    ui->btnNext->setIcon(s->standardIcon(QStyle::SP_ArrowDown));
-    ui->btnClose->setIcon(s->standardIcon(QStyle::SP_TitleBarCloseButton));
+    // QIcon::fromTheme() returns null on Windows; use Segoe MDL2 / QStyle fallbacks.
+    ui->btnNavigate->setIcon(segoeIcon(0xEBE8,
+        QApplication::palette().buttonText().color(), 14));
+    ui->btnClose->setIcon(QApplication::style()->standardIcon(
+        QStyle::SP_TitleBarCloseButton));
     // No great SP_ for a find-options menu button; show a text indicator instead.
     ui->btnOptions->setIcon(QIcon());
     ui->btnOptions->setText("☰");
-    for (auto *b : {ui->btnPrevious, ui->btnNext, ui->btnClose})
-        b->setIconSize(QSize(16, 16));
+    ui->btnNavigate->setIconSize(QSize(16, 16));
+    ui->btnClose->setIconSize(QSize(16, 16));
 #endif
 }
 
