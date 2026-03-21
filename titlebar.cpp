@@ -231,17 +231,19 @@ TitleBar::TitleBar(QWidget *parent)
 
     m_hamburger = new QToolButton(this);
     m_hamburger->setObjectName("hamburger");
+    // Both platforms use the file-open icon: the button opens the File menu
+    // and should visually match the Open action inside it.
 #ifdef Q_OS_WIN
-    // Use the same ☰ text the Find dialog uses — it renders reliably on all
-    // Windows versions without depending on Segoe glyph availability.
-    m_hamburger->setText("☰");
+    m_hamburger->setIcon(
+        QApplication::style()->standardIcon(QStyle::SP_DirOpenIcon));
 #else
     {
-        QIcon hamburgerIcon = QIcon::fromTheme("open-menu-symbolic");
+        QIcon hamburgerIcon = QIcon::fromTheme("document-open-symbolic");
         if (!hamburgerIcon.isNull())
             m_hamburger->setIcon(hamburgerIcon);
         else
-            m_hamburger->setText("☰");
+            m_hamburger->setIcon(
+                QApplication::style()->standardIcon(QStyle::SP_DirOpenIcon));
     }
 #endif
     m_hamburger->setAutoRaise(true);
