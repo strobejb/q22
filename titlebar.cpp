@@ -73,6 +73,9 @@ static QColor windowsTitleBarBg()
 }
 #endif
 
+
+#ifdef Q_OS_WIN
+
 // Render a single glyph from Segoe MDL2 Assets or Segoe Fluent Icons as a
 // QIcon.  Both fonts ship with Windows 10/11 and provide the same native
 // symbols that Windows itself uses for title-bar buttons and toolbars.
@@ -177,6 +180,15 @@ TitleBar::TitleBar(QWidget *parent)
         fg     = dark ? "#ffffff" : "#000000";
         hover  = dark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
         border = dark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.12)";
+
+        // Qt plain QWidget subclasses don't paint stylesheet background-color
+        // unless WA_StyledBackground is explicitly set.  Painting via palette
+        // + autoFillBackground is always reliable regardless of platform style.
+        QPalette pal = palette();
+        pal.setColor(QPalette::Window, winBg);
+        setPalette(pal);
+        setAutoFillBackground(true);
+        setAttribute(Qt::WA_StyledBackground, true);
     }
 #endif
 
