@@ -174,11 +174,22 @@ TitleBar::TitleBar(QWidget *parent)
             border));
 
 #ifdef Q_OS_WIN
-    // Windows 11 caption-button style: square corners, red close button.
+    // Windows 11 style additions:
+    //  • Toolbar buttons (File/Search/Tools): square, full-height hover area.
+    //  • Caption buttons: square, Segoe icon font rendered as *text* so that
+    //    CSS color: applies and the close icon turns white on the red hover bg.
     setStyleSheet(styleSheet() + R"(
+        #TitleBar QToolButton#hamburger,
+        #TitleBar QToolButton#searchBtn,
+        #TitleBar QToolButton#viewMenu  { border-radius: 0; }
+
         #TitleBar QToolButton#close,
         #TitleBar QToolButton#minimize,
-        #TitleBar QToolButton#maximize  { border-radius: 0; }
+        #TitleBar QToolButton#maximize  {
+            border-radius: 0;
+            font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets";
+            font-size: 10px;
+        }
         #TitleBar QToolButton#close:hover   { background: #c42b1c; color: white; }
         #TitleBar QToolButton#close:pressed { background: #9a1c10; color: white; }
     )");
@@ -211,7 +222,11 @@ TitleBar::TitleBar(QWidget *parent)
     }
 #endif
     m_hamburger->setAutoRaise(true);
+#ifdef Q_OS_WIN
+    m_hamburger->setFixedSize(40, 40);
+#else
     m_hamburger->setFixedSize(32, 32);
+#endif
     m_hamburger->setIconSize(QSize(14, 14));
     m_hamburger->setMenu(m_menu);
     m_hamburger->setPopupMode(QToolButton::InstantPopup);
@@ -232,7 +247,11 @@ TitleBar::TitleBar(QWidget *parent)
     else
         m_searchBtn->setText("🔍");
     m_searchBtn->setAutoRaise(true);
+#ifdef Q_OS_WIN
+    m_searchBtn->setFixedSize(40, 40);
+#else
     m_searchBtn->setFixedSize(32, 32);
+#endif
     m_searchBtn->setIconSize(QSize(14, 14));
     m_searchBtn->setMenu(m_searchMenu);
     m_searchBtn->setPopupMode(QToolButton::InstantPopup);
@@ -280,7 +299,11 @@ TitleBar::TitleBar(QWidget *parent)
     }
 #endif
     m_viewBtn->setAutoRaise(true);
+#ifdef Q_OS_WIN
+    m_viewBtn->setFixedSize(40, 40);
+#else
     m_viewBtn->setFixedSize(32, 32);
+#endif
     m_viewBtn->setIconSize(QSize(14, 14));
     m_viewBtn->setMenu(m_viewMenu);
     m_viewBtn->setPopupMode(QToolButton::InstantPopup);
@@ -329,26 +352,31 @@ QToolButton *TitleBar::makeWindowButton(const QString &name)
     btn->setIconSize(QSize(12, 12));
 #endif
 
-    QIcon icon = QIcon::fromTheme(s.icon);
 #ifdef Q_OS_WIN
-    if (icon.isNull()) {
-        // Segoe MDL2 Assets / Segoe Fluent Icons glyphs — same ones Windows
-        // uses in its own title bars (ChromeClose / ChromeMinimize / ChromeMaximize).
+    // Use setText() with the raw Segoe glyph rather than a pre-rendered
+    // pixmap icon.  The stylesheet sets font-family to Segoe MDL2/Fluent so
+    // the glyph renders correctly, and CSS color: applies to text — which is
+    // how the close button icon turns white over the red hover background.
+    {
         static const QMap<QString, uint> segoeGlyphs = {
             {"close",    0xE8BB},   // ChromeClose
             {"minimize", 0xE921},   // ChromeMinimize
             {"maximize", 0xE922},   // ChromeMaximize
         };
-        const bool dark = QApplication::palette().window().color().lightness() < 128;
-        const QColor fg = dark ? QColor("#ffffff") : QColor("#2e3436");
         if (segoeGlyphs.contains(name))
-            icon = segoeIcon(segoeGlyphs[name], fg, 10);
+            btn->setText(QString(QChar(segoeGlyphs[name])));
+        else
+            btn->setText(s.fallback);
+    }
+#else
+    {
+        QIcon icon = QIcon::fromTheme(s.icon);
+        if (!icon.isNull())
+            btn->setIcon(icon);
+        else
+            btn->setText(s.fallback);
     }
 #endif
-    if (!icon.isNull())
-        btn->setIcon(icon);
-    else
-        btn->setText(s.fallback);
 
     if (name == "close") {
         m_btnClose = btn;
@@ -394,20 +422,20 @@ void TitleBar::updateMaxButton()
 {
     if (!m_btnMax) return;
     const bool maximized = window()->isMaximized();
-    QIcon icon = QIcon::fromTheme(maximized ? "window-restore-symbolic"
-                                            : "window-maximize-symbolic");
 #ifdef Q_OS_WIN
-    if (icon.isNull()) {
-        // ChromeRestore (0xE923) / ChromeMaximize (0xE922)
-        const bool dark = QApplication::palette().window().color().lightness() < 128;
-        const QColor fg = dark ? QColor("#ffffff") : QColor("#2e3436");
-        icon = segoeIcon(maximized ? 0xE923 : 0xE922, fg, 10);
+    // Caption buttons use text rendering; update the glyph directly.
+    // ChromeRestore = 0xE923, ChromeMaximize = 0xE922 (Segoe MDL2/Fluent).
+    m_btnMax->setText(QString(QChar(maximized ? 0xE923 : 0xE922)));
+#else
+    {
+        QIcon icon = QIcon::fromTheme(maximized ? "window-restore-symbolic"
+                                                : "window-maximize-symbolic");
+        if (!icon.isNull())
+            m_btnMax->setIcon(icon);
+        else
+            m_btnMax->setText(maximized ? "❐" : "□");
     }
 #endif
-    if (!icon.isNull())
-        m_btnMax->setIcon(icon);
-    else
-        m_btnMax->setText(maximized ? "❐" : "□");
 }
 
 bool TitleBar::eventFilter(QObject *obj, QEvent *e)
