@@ -128,10 +128,14 @@ void FindDialog::activate(const QString &initialText)
 
 void FindDialog::keyPressEvent(QKeyEvent *e)
 {
-    if (e->key() == Qt::Key_Escape)
-        hide();
-    else
+    if (e->key() == Qt::Key_Escape) {
+        if (ui->editFind->text().isEmpty())
+            hide();
+        else
+            ui->editFind->clear();
+    } else {
         QWidget::keyPressEvent(e);
+    }
 }
 
 bool    FindDialog::isRegex()     const { return m_actRegex->isChecked(); }

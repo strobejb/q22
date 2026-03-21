@@ -33,11 +33,16 @@ set(PROJECT_SOURCES
         theme.h
 )
 
+if(WIN32)
+    list(APPEND PROJECT_SOURCES qexed.rc)
+endif()
+
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
     qt_add_executable(qexed
         MANUAL_FINALIZATION
         ${PROJECT_SOURCES}
         finddialog.ui
+        resources.qrc
     )
 # Define target properties for Android with Qt 6 as:
 #    set_property(TARGET qexed APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
@@ -53,6 +58,7 @@ else()
     else()
         add_executable(qexed
             ${PROJECT_SOURCES}
+            resources.qrc
         )
     endif()
 endif()
@@ -97,6 +103,15 @@ install(TARGETS qexed
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
+
+if(UNIX AND NOT APPLE)
+    install(FILES qexed.desktop
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/applications
+    )
+    install(FILES qexed.png
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/256x256/apps
+    )
+endif()
 
 if(QT_VERSION_MAJOR EQUAL 6)
     qt_finalize_executable(qexed)

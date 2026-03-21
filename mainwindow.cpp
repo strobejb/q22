@@ -113,7 +113,7 @@ MainWindow::MainWindow(QWidget *parent)
 #ifndef Q_OS_WIN
     setWindowFlag(Qt::FramelessWindowHint);
 #endif
-    setWindowTitle("qeXed");
+    setWindowTitle("q22");
 
     // Custom title bar
     m_titleBar = new TitleBar(this);

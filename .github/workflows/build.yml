@@ -39,7 +39,8 @@ jobs:
             --appdir AppDir \
             --plugin qt \
             --output appimage \
-            --desktop-file qexed.desktop
+            --desktop-file qexed.desktop \
+            --icon-file qexed.png
           mv qexed-*.AppImage qexed-linux-x86_64.AppImage
 
       - name: Upload artifact
@@ -52,6 +53,11 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Convert PNG to ICO
+        shell: pwsh
+        run: |
+          magick qexed.png -define icon:auto-resize=256,128,64,48,32,16 qexed.ico
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
