@@ -14,6 +14,45 @@
 #include <QProcessEnvironment>
 #endif
 
+#ifdef Q_OS_WIN
+#include <QPainter>
+#include <QFontDatabase>
+
+// Render a single glyph from Segoe MDL2 Assets or Segoe Fluent Icons as a
+// QIcon.  Both fonts ship with Windows 10/11 and provide the same native
+// symbols that Windows itself uses for title-bar buttons and toolbars.
+// Falls back to an empty QIcon if neither font is present (text fallbacks
+// in the calling code then take over).
+static QIcon segoeIcon(uint codePoint, const QColor &color, int logicalPx = 14)
+{
+    static const QString s_family = []() -> QString {
+        const auto &fams = QFontDatabase::families();
+        for (const QString &f : {QStringLiteral("Segoe Fluent Icons"),
+                                  QStringLiteral("Segoe MDL2 Assets")})
+            if (fams.contains(f)) return f;
+        return {};
+    }();
+    if (s_family.isEmpty()) return {};
+
+    // Create a device-pixel-ratio–aware pixmap so the icon is sharp on
+    // high-DPI screens.
+    const qreal dpr     = qApp->devicePixelRatio();
+    const int   physPx  = qRound(logicalPx * dpr);
+    QFont font(s_family);
+    font.setPixelSize(physPx);
+
+    QPixmap pm(physPx, physPx);
+    pm.setDevicePixelRatio(dpr);
+    pm.fill(Qt::transparent);
+    QPainter p(&pm);
+    p.setFont(font);
+    p.setPen(color);
+    p.drawText(QRect(0, 0, physPx, physPx), Qt::AlignCenter,
+               QString(QChar(codePoint)));
+    return QIcon(pm);
+}
+#endif
+
 // ── Platform: detect GNOME button layout ─────────────────────────────────────
 
 // Returns a layout string like ":minimize,maximize,close" or "close:"
@@ -99,8 +138,12 @@ TitleBar::TitleBar(QWidget *parent)
     QIcon hamburgerIcon = QIcon::fromTheme("document-open-symbolic");
     if (!hamburgerIcon.isNull())
         m_hamburger->setIcon(hamburgerIcon);
+#ifdef Q_OS_WIN
+    else if (QIcon si = segoeIcon(0xE700, QColor(fg), 16); !si.isNull()) // GlobalNavButton
+        m_hamburger->setIcon(si);
+#endif
     else
-        m_hamburger->setText("…");
+        m_hamburger->setText("≡");
     m_hamburger->setAutoRaise(true);
     m_hamburger->setFixedSize(32, 32);
     m_hamburger->setMenu(m_menu);
@@ -115,6 +158,10 @@ TitleBar::TitleBar(QWidget *parent)
     QIcon searchIcon = QIcon::fromTheme("edit-find-symbolic");
     if (!searchIcon.isNull())
         m_searchBtn->setIcon(searchIcon);
+#ifdef Q_OS_WIN
+    else if (QIcon si = segoeIcon(0xE721, QColor(fg), 16); !si.isNull()) // Search
+        m_searchBtn->setIcon(si);
+#endif
     else
         m_searchBtn->setText("🔍");
     m_searchBtn->setAutoRaise(true);
@@ -150,6 +197,10 @@ TitleBar::TitleBar(QWidget *parent)
     QIcon viewIcon = QIcon::fromTheme("open-menu-symbolic");
     if (!viewIcon.isNull())
         m_viewBtn->setIcon(viewIcon);
+#ifdef Q_OS_WIN
+    else if (QIcon si = segoeIcon(0xE712, QColor(fg), 16); !si.isNull()) // More
+        m_viewBtn->setIcon(si);
+#endif
     else
         m_viewBtn->setText("☰");
     m_viewBtn->setAutoRaise(true);
@@ -194,6 +245,21 @@ QToolButton *TitleBar::makeWindowButton(const QString &name)
     btn->setFixedSize(28, 28);
 
     QIcon icon = QIcon::fromTheme(s.icon);
+#ifdef Q_OS_WIN
+    if (icon.isNull()) {
+        // Segoe MDL2 Assets / Segoe Fluent Icons glyphs — same ones Windows
+        // uses in its own title bars (ChromeClose / ChromeMinimize / ChromeMaximize).
+        static const QMap<QString, uint> segoeGlyphs = {
+            {"close",    0xE8BB},   // ChromeClose
+            {"minimize", 0xE921},   // ChromeMinimize
+            {"maximize", 0xE922},   // ChromeMaximize
+        };
+        const bool dark = QApplication::palette().window().color().lightness() < 128;
+        const QColor fg = dark ? QColor("#ffffff") : QColor("#2e3436");
+        if (segoeGlyphs.contains(name))
+            icon = segoeIcon(segoeGlyphs[name], fg, 12);
+    }
+#endif
     if (!icon.isNull())
         btn->setIcon(icon);
     else
@@ -242,14 +308,21 @@ void TitleBar::setSearchMenu(QMenu *menu)
 void TitleBar::updateMaxButton()
 {
     if (!m_btnMax) return;
-    const char *iconName = window()->isMaximized()
-        ? "window-restore-symbolic"
-        : "window-maximize-symbolic";
-    QIcon icon = QIcon::fromTheme(iconName);
+    const bool maximized = window()->isMaximized();
+    QIcon icon = QIcon::fromTheme(maximized ? "window-restore-symbolic"
+                                            : "window-maximize-symbolic");
+#ifdef Q_OS_WIN
+    if (icon.isNull()) {
+        // ChromeRestore (0xE923) / ChromeMaximize (0xE922)
+        const bool dark = QApplication::palette().window().color().lightness() < 128;
+        const QColor fg = dark ? QColor("#ffffff") : QColor("#2e3436");
+        icon = segoeIcon(maximized ? 0xE923 : 0xE922, fg, 12);
+    }
+#endif
     if (!icon.isNull())
         m_btnMax->setIcon(icon);
     else
-        m_btnMax->setText(window()->isMaximized() ? "❐" : "□");
+        m_btnMax->setText(maximized ? "❐" : "□");
 }
 
 bool TitleBar::eventFilter(QObject *obj, QEvent *e)
