@@ -29,6 +29,7 @@ FindDialog::FindDialog(QWidget *parent)
         QToolButton:hover   { background: %1; }
         QToolButton:pressed { background: %2; }
         QToolButton::menu-indicator { image: none; width: 0; }
+        QLineEdit { margin: 2px 0; }
     )").arg(hover, pressed));
 
     // Options menu
@@ -49,7 +50,8 @@ FindDialog::FindDialog(QWidget *parent)
 
     ui->btnOptions->setMenu(optMenu);
 
-    static constexpr int kPad = 3;
+    // Scale inner padding with screen DPI: 2 px at 100 %, 3 px at 150 %, 4 px at 200 %.
+    const int kPad = qMax(1, qRound(qApp->devicePixelRatio() * 2.0));
     ui->editFind->setTextMargins(kPad + 2, kPad, kPad + 2, kPad);
     ui->editFind->setMinimumHeight(ui->editFind->minimumSizeHint().height() + 2 * kPad);
 

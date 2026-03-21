@@ -95,18 +95,19 @@ static int measureMenuItemTextX(QMenu *menu, QAction *action)
     return 0;
 }
 
-static constexpr int kPad = 3;
+// Scale padding with screen DPI so the combo height stays visually consistent.
+static int kPad() { return qMax(1, qRound(qApp->devicePixelRatio() * 2.0)); }
 
 QSize DataTypeComboBox::sizeHint() const
 {
     QSize s = ValueComboBox::sizeHint();
-    return { s.width(), s.height() + 2 * kPad };
+    return { s.width(), s.height() + 2 * kPad() };
 }
 
 QSize DataTypeComboBox::minimumSizeHint() const
 {
     QSize s = ValueComboBox::minimumSizeHint();
-    return { s.width(), s.height() + 2 * kPad };
+    return { s.width(), s.height() + 2 * kPad() };
 }
 
 void DataTypeComboBox::paintEvent(QPaintEvent *)
@@ -115,13 +116,23 @@ void DataTypeComboBox::paintEvent(QPaintEvent *)
     QStyleOptionComboBox opt;
     initStyleOption(&opt);
     opt.currentText = selectionText();
+    const int pad = kPad();
     // Draw the frame at full widget size.
     painter.drawComplexControl(QStyle::CC_ComboBox, opt);
-    // Draw text inset by kPad within the edit-field subcontrol.
+    // The global QComboBox::drop-down stylesheet rule suppresses the native
+    // arrow unless ::down-arrow is also specified.  Draw it explicitly so the
+    // combo always shows a drop indicator regardless of the theme stylesheet.
+    {
+        QStyleOptionComboBox arrowOpt = opt;
+        arrowOpt.rect = style()->subControlRect(
+            QStyle::CC_ComboBox, &opt, QStyle::SC_ComboBoxArrow, this);
+        painter.drawPrimitive(QStyle::PE_IndicatorArrowDown, arrowOpt);
+    }
+    // Draw text inset by pad within the edit-field subcontrol.
     const QRect textRect = style()->subControlRect(
                                QStyle::CC_ComboBox, &opt,
                                QStyle::SC_ComboBoxEditField, this)
-                           .adjusted(kPad + 2, kPad, -(kPad + 2), -kPad);
+                           .adjusted(pad + 2, pad, -(pad + 2), -pad);
     style()->drawItemText(&painter, textRect,
                           Qt::AlignLeft | Qt::AlignVCenter,
                           opt.palette, isEnabled(),
