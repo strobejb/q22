@@ -17,6 +17,61 @@
 #ifdef Q_OS_WIN
 #include <QPainter>
 #include <QFontDatabase>
+#include <windows.h>
+#include <dwmapi.h>
+
+// ── Windows native colour helpers ─────────────────────────────────────────────
+
+// Returns true when Windows is configured to use a light app theme.
+static bool windowsIsLightMode()
+{
+    HKEY key;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER,
+                      L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+                      0, KEY_READ, &key) == ERROR_SUCCESS) {
+        DWORD val = 1, sz = sizeof(val);
+        RegQueryValueExW(key, L"AppsUseLightTheme", nullptr, nullptr,
+                         reinterpret_cast<LPBYTE>(&val), &sz);
+        RegCloseKey(key);
+        return val != 0;
+    }
+    return true;
+}
+
+// Returns the native Windows 11 title-bar background colour.
+//
+// When the user has "Show accent colour on title bars and window borders"
+// enabled (DWM\ColorPrevalence = 1), the accent colour is returned.
+// Otherwise the Mica neutral tones (#F3F3F3 light / #202020 dark) are used —
+// these match what Windows 11 paints on its own title bars.
+static QColor windowsTitleBarBg()
+{
+    DWORD colorPrevalence = 0;
+    {
+        HKEY key;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER,
+                          L"SOFTWARE\\Microsoft\\Windows\\DWM",
+                          0, KEY_READ, &key) == ERROR_SUCCESS) {
+            DWORD sz = sizeof(colorPrevalence);
+            RegQueryValueExW(key, L"ColorPrevalence", nullptr, nullptr,
+                             reinterpret_cast<LPBYTE>(&colorPrevalence), &sz);
+            RegCloseKey(key);
+        }
+    }
+    if (colorPrevalence) {
+        DWORD colorization = 0;
+        BOOL  opaque       = FALSE;
+        if (SUCCEEDED(DwmGetColorizationColor(&colorization, &opaque))) {
+            // DWM COLORREF-like value: 0xAARRGGBB
+            return QColor(static_cast<int>((colorization >> 16) & 0xFF),
+                          static_cast<int>((colorization >>  8) & 0xFF),
+                          static_cast<int>((colorization >>  0) & 0xFF));
+        }
+    }
+    return windowsIsLightMode() ? QColor(0xF3, 0xF3, 0xF3)
+                                : QColor(0x20, 0x20, 0x20);
+}
+#endif
 
 // Render a single glyph from Segoe MDL2 Assets or Segoe Fluent Icons as a
 // QIcon.  Both fonts ship with Windows 10/11 and provide the same native
@@ -109,6 +164,21 @@ TitleBar::TitleBar(QWidget *parent)
     QString fg      = dark ? "#ffffff" : "#2e3436";
     QString hover   = dark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.10)";
     QString border  = dark ? "#1e1e2e" : "#c4c4c4";
+
+#ifdef Q_OS_WIN
+    {
+        // Override with native Windows colours.  windowsTitleBarBg() reads the
+        // DWM colorization registry key and returns either the system accent
+        // colour (when "show accent on title bars" is on) or the Mica neutral
+        // tones (#F3F3F3 / #202020) that Windows 11 uses on its own title bars.
+        const QColor winBg = windowsTitleBarBg();
+        dark   = winBg.lightness() < 128;
+        bg     = winBg.name();
+        fg     = dark ? "#ffffff" : "#000000";
+        hover  = dark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
+        border = dark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.12)";
+    }
+#endif
 
     setStyleSheet(QString(R"(
         #TitleBar {

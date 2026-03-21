@@ -60,7 +60,7 @@ endif()
 target_link_libraries(qexed PRIVATE Qt${QT_VERSION_MAJOR}::Widgets HexView)
 
 if(WIN32)
-    target_link_libraries(qexed PRIVATE dwmapi)
+    target_link_libraries(qexed PRIVATE dwmapi advapi32)
 endif()
 
 find_file(ADWAITA_QT6_PLUGIN adwaita.so
