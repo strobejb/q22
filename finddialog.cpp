@@ -29,7 +29,7 @@ FindDialog::FindDialog(QWidget *parent)
         QToolButton:hover   { background: %1; }
         QToolButton:pressed { background: %2; }
         QToolButton::menu-indicator { image: none; width: 0; }
-        QLineEdit { margin: 2px 0; }
+        QLineEdit { margin: 2px 0; border-radius: 6px; }
     )").arg(hover, pressed));
 
     // Options menu
