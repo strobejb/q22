@@ -4,10 +4,13 @@
 #include <QFontDatabase>
 #include <QGuiApplication>
 #include <QMenu>
+#include <QPainter>
 #include <QPalette>
+#include <QProxyStyle>
 #include <QScreen>
 #include <QStyleFactory>
 #include <QStyleHints>
+#include <QStyleOption>
 #include <QWidget>
 
 #ifdef Q_OS_WIN
@@ -217,7 +220,7 @@ QMenu {
     padding: 6px 0;
 }
 QMenu::item {
-    padding: 6px 28px 6px 22px;
+    padding: 6px 28px 6px 8px;
     min-width: 180px;
     border-radius: 4px;
     margin: 1px 4px;
@@ -233,14 +236,14 @@ QMenu::separator {
     margin: 4px 8px;
 }
 QMenu::icon {
-    width: 16px;
-    height: 16px;
-    margin-left: 4px;
+    width: 14px;
+    height: 14px;
+    margin-left: 0;
 }
 QMenu::indicator {
-    width: 16px;
-    height: 16px;
-    margin-left: 4px;
+    width: 14px;
+    height: 14px;
+    margin-left: 0;
 }
 
 /* ── ComboBox ────────────────────────────────────────────────── */
@@ -345,12 +348,64 @@ QToolTip {
 
 // ── Public entry point ────────────────────────────────────────────────────────
 
+// ── Compact check-column style ────────────────────────────────────────────────
+// QStyleSheetStyle uses the QSS rules only to *paint* the item background; it
+// delegates text/indicator *layout* back to the base Fusion style.  Overriding
+// PM_SmallIconSize (what Fusion uses for check-column width) and zeroing out
+// maxIconWidth in the CE_MenuItem option removes the excess dead space so the
+// check mark sits flush within the existing left padding.
+namespace {
+struct TightMenuStyle : public QProxyStyle
+{
+    explicit TightMenuStyle(QStyle *base) : QProxyStyle(base) {}
+
+    int pixelMetric(PixelMetric m, const QStyleOption *opt,
+                    const QWidget *w) const override
+    {
+        // Fusion bases the check/icon column on PM_SmallIconSize.  Return a
+        // compact value so the column exactly fits a 14 px checkmark glyph.
+        if (m == PM_SmallIconSize) return 14;
+        return QProxyStyle::pixelMetric(m, opt, w);
+    }
+
+    void drawControl(ControlElement ce, const QStyleOption *opt,
+                     QPainter *p, const QWidget *w) const override
+    {
+        if (ce == CE_MenuItem) {
+            if (const auto *mi = qstyleoption_cast<const QStyleOptionMenuItem *>(opt)) {
+                // maxIconWidth drives the minimum check-column width in Fusion.
+                // Force it to zero so the column is sized only by the indicator.
+                QStyleOptionMenuItem tight = *mi;
+                tight.maxIconWidth = 0;
+                QProxyStyle::drawControl(ce, &tight, p, w);
+                return;
+            }
+        }
+        QProxyStyle::drawControl(ce, opt, p, w);
+    }
+};
+} // namespace
+
+static TightMenuStyle *tightMenuStyle()
+{
+    // Lazily created, parented to qApp so it is cleaned up on exit.
+    static TightMenuStyle *s = nullptr;
+    if (!s) {
+        s = new TightMenuStyle(qApp->style());
+        s->setParent(qApp);
+    }
+    return s;
+}
+
 void themeMenu(QMenu *menu)
 {
     // A frameless, transparent window lets the QSS border-radius actually clip
     // the corners.  Qt::Popup is preserved so click-outside still closes the menu.
     menu->setWindowFlags(Qt::Popup | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint);
     menu->setAttribute(Qt::WA_TranslucentBackground);
+    // Apply the compact check-column style.  widget::setStyle() does not
+    // transfer ownership, so we use a long-lived singleton parented to qApp.
+    menu->setStyle(tightMenuStyle());
 }
 
 void applyAdwaitaTheme()
