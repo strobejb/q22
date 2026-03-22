@@ -359,12 +359,16 @@ struct TightMenuStyle : public QProxyStyle
 {
     explicit TightMenuStyle(QStyle *base) : QProxyStyle(base) {}
 
+    // Extra pixels between the selection-box left edge and the glyph.
+    static constexpr int kGlyphInset = 4;
+
     int pixelMetric(PixelMetric m, const QStyleOption *opt,
                     const QWidget *w) const override
     {
-        // Fusion bases the check/icon column on PM_SmallIconSize.  Return a
-        // compact value so the column exactly fits a 14 px checkmark glyph.
-        if (m == PM_SmallIconSize) return 14;
+        // Fusion bases the check/icon column on PM_SmallIconSize.  We keep
+        // the column compact (14 px for the glyph) but add kGlyphInset so
+        // the column is exactly wide enough after the inset shift below.
+        if (m == PM_SmallIconSize) return 14 + kGlyphInset;
         return QProxyStyle::pixelMetric(m, opt, w);
     }
 
@@ -382,6 +386,22 @@ struct TightMenuStyle : public QProxyStyle
             }
         }
         QProxyStyle::drawControl(ce, opt, p, w);
+    }
+
+    void drawPrimitive(PrimitiveElement pe, const QStyleOption *opt,
+                       QPainter *p, const QWidget *w) const override
+    {
+        if (pe == PE_IndicatorMenuCheckMark) {
+            // Shift the glyph kGlyphInset px right so it has breathing room
+            // from the selection-box left edge.  The column was widened by
+            // the same amount in pixelMetric, so the gap to the item text is
+            // unchanged.
+            QStyleOption shifted = *opt;
+            shifted.rect = opt->rect.translated(kGlyphInset, 0);
+            QProxyStyle::drawPrimitive(pe, &shifted, p, w);
+            return;
+        }
+        QProxyStyle::drawPrimitive(pe, opt, p, w);
     }
 };
 } // namespace
