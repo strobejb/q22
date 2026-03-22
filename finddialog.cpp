@@ -3,6 +3,7 @@
 #include "datatypecombobox.h"
 #include "theme.h"
 #include <QApplication>
+#include <QCursor>
 #include <QKeyEvent>
 #include <QMenu>
 #include <QStyle>
@@ -58,6 +59,14 @@ FindDialog::FindDialog(QWidget *parent)
     m_actWrap->setChecked(true);
 
     connect(ui->btnOptions, &QToolButton::clicked, this, [this, optMenu]() {
+        if (optMenu->isVisible()) { optMenu->hide(); return; }
+        const QPoint cur = QCursor::pos();
+        const bool same  = (m_optMenuClosePos == cur);
+        m_optMenuClosePos = {-1, -1};
+        if (same) return;
+        connect(optMenu, &QMenu::aboutToHide, this,
+                [this]() { m_optMenuClosePos = QCursor::pos(); },
+                Qt::SingleShotConnection);
         optMenu->popup(smartMenuPos(ui->btnOptions, optMenu));
     });
 
@@ -97,6 +106,14 @@ FindDialog::FindDialog(QWidget *parent)
     auto *actPrev = navMenu->addAction(tr("Find Previous\tShift+F3"));
     auto *actNext = navMenu->addAction(tr("Find Next\tF3"));
     connect(ui->btnNavigate, &QToolButton::clicked, this, [this, navMenu]() {
+        if (navMenu->isVisible()) { navMenu->hide(); return; }
+        const QPoint cur = QCursor::pos();
+        const bool same  = (m_navMenuClosePos == cur);
+        m_navMenuClosePos = {-1, -1};
+        if (same) return;
+        connect(navMenu, &QMenu::aboutToHide, this,
+                [this]() { m_navMenuClosePos = QCursor::pos(); },
+                Qt::SingleShotConnection);
         navMenu->popup(smartMenuPos(ui->btnNavigate, navMenu));
     });
     connect(actPrev, &QAction::triggered, this, &FindDialog::findPrevious);

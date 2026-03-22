@@ -1,6 +1,7 @@
 #ifndef FINDDIALOG_H
 #define FINDDIALOG_H
 
+#include <QPoint>
 #include <QWidget>
 
 class DataTypeComboBox;
@@ -36,6 +37,8 @@ private:
     QAction          *m_actWholeWord   = nullptr;
     QAction          *m_actWrap        = nullptr;
     DataTypeComboBox *m_comboDataType  = nullptr;
+    QPoint            m_optMenuClosePos { -1, -1 };
+    QPoint            m_navMenuClosePos { -1, -1 };
 };
 
 #endif // FINDDIALOG_H
