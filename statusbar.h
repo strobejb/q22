@@ -81,6 +81,23 @@ protected:
         QPoint pos = smartMenuPos(this, menu, /*rightAlign=*/true);
         menu->popup(pos);
     }
+    // ── Same-click-reopen guard ───────────────────────────────────────────
+    // Subclasses that manage their own popup menu call isSameClickReopen()
+    // at the top of showPopup() and recordMenuClose() in their aboutToHide
+    // handler to get the same toggle behaviour as popupRight().
+
+    // Returns true (and consumes the guard) when showPopup() was triggered
+    // by the same click that just dismissed the popup via Qt::Popup auto-close.
+    bool isSameClickReopen() {
+        const QPoint cur = QCursor::pos();
+        const bool same = (m_closePos == cur);
+        m_closePos = {-1, -1};
+        return same;
+    }
+    // Record the cursor position at close time so isSameClickReopen() can
+    // detect the next showPopup() call that belongs to the same click.
+    void recordMenuClose() { m_closePos = QCursor::pos(); }
+
     void paintEvent(QPaintEvent *) override
     {
         QStylePainter painter(this);

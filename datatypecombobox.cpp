@@ -142,11 +142,19 @@ void DataTypeComboBox::paintEvent(QPaintEvent *)
 
 void DataTypeComboBox::showPopup()
 {
+    if (m_menu->isVisible()) { m_menu->hide(); return; }
+    if (isSameClickReopen()) return;
+
     QStyleOptionComboBox cbOpt;
     initStyleOption(&cbOpt);
     int comboTextX = style()->subControlRect(QStyle::CC_ComboBox, &cbOpt,
                                              QStyle::SC_ComboBoxEditField, this).left();
     m_targetTextScreenX = mapToGlobal(QPoint(comboTextX, 0)).x();
+
+    connect(m_menu, &QMenu::aboutToHide, this,
+            [this]() { recordMenuClose(); },
+            Qt::SingleShotConnection);
+
     m_menu->popup(smartMenuPos(this, m_menu, /*rightAlign=*/false));
 }
 
