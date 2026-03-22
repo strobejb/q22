@@ -147,7 +147,7 @@ void DataTypeComboBox::showPopup()
     int comboTextX = style()->subControlRect(QStyle::CC_ComboBox, &cbOpt,
                                              QStyle::SC_ComboBoxEditField, this).left();
     m_targetTextScreenX = mapToGlobal(QPoint(comboTextX, 0)).x();
-    m_menu->popup(mapToGlobal(QPoint(0, height())));
+    m_menu->popup(smartMenuPos(this, m_menu, /*rightAlign=*/false));
 }
 
 bool DataTypeComboBox::eventFilter(QObject *obj, QEvent *e)

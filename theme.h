@@ -1,6 +1,8 @@
 #ifndef THEME_H
 #define THEME_H
 
+#include <QPoint>
+
 // Applies Adwaita Light or Dark (auto-detected from Qt colour scheme hint)
 // using the built-in Fusion style + palette + QSS.  No system packages needed.
 void applyAdwaitaTheme();
@@ -9,6 +11,13 @@ class QMenu;
 // Call on every QMenu after construction so the stylesheet (including
 // border-radius) renders correctly via a transparent frameless window.
 void themeMenu(QMenu *menu);
+
+class QWidget;
+// Compute the global position for a menu anchored to a widget.  The menu is
+// placed immediately below the anchor when there is enough space, and
+// immediately above when there is not — so it never obscures the anchor.
+// Pass rightAlign=true to pin the menu's right edge to the anchor's right edge.
+QPoint smartMenuPos(const QWidget *anchor, const QMenu *menu, bool rightAlign = false);
 
 #ifdef Q_OS_WIN
 class QIcon;

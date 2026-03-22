@@ -5,8 +5,10 @@
 #include <QGuiApplication>
 #include <QMenu>
 #include <QPalette>
+#include <QScreen>
 #include <QStyleFactory>
 #include <QStyleHints>
+#include <QWidget>
 
 #ifdef Q_OS_WIN
 #include <QColor>
@@ -42,6 +44,35 @@ QIcon segoeIcon(uint codePoint, const QColor &color, int logicalPx)
     return QIcon(pm);
 }
 #endif
+
+// ── Smart menu positioning ────────────────────────────────────────────────────
+
+QPoint smartMenuPos(const QWidget *anchor, const QMenu *menu, bool rightAlign)
+{
+    const QSize sz    = menu->sizeHint();
+    const QRect ag    = QRect(anchor->mapToGlobal(QPoint(0, 0)), anchor->size());
+    QScreen *screen   = QGuiApplication::screenAt(ag.center());
+    if (!screen) screen = QGuiApplication::primaryScreen();
+    const QRect avail = screen->availableGeometry();
+
+    // Horizontal: align left or right edge to anchor, then clamp to screen.
+    int x = rightAlign ? ag.right() - sz.width() + 1 : ag.left();
+    x = qBound(avail.left(), x, avail.right() - sz.width());
+
+    // Vertical: prefer immediately below; fall back to immediately above.
+    // If neither fits fully, pick whichever side has the most space.
+    const int yBelow = ag.bottom() + 1;
+    const int yAbove = ag.top() - sz.height();
+    int y;
+    if (yBelow + sz.height() <= avail.bottom() + 1)
+        y = yBelow;
+    else if (yAbove >= avail.top())
+        y = yAbove;
+    else
+        y = (avail.bottom() + 1 - yBelow >= ag.top() - avail.top()) ? yBelow : yAbove;
+
+    return {x, y};
+}
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 

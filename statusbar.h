@@ -1,6 +1,7 @@
 #ifndef STATUSBAR_H
 #define STATUSBAR_H
 
+#include "theme.h"
 #include <QObject>
 #include <QComboBox>
 #include <QEnterEvent>
@@ -62,7 +63,7 @@ protected:
             update();
         }, Qt::SingleShotConnection);
 
-        QPoint pos = mapToGlobal(QPoint(width() - menu->sizeHint().width(), height()));
+        QPoint pos = smartMenuPos(this, menu, /*rightAlign=*/true);
         menu->popup(pos);
     }
     void paintEvent(QPaintEvent *) override

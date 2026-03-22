@@ -57,7 +57,9 @@ FindDialog::FindDialog(QWidget *parent)
     m_actWrap->setCheckable(true);
     m_actWrap->setChecked(true);
 
-    ui->btnOptions->setMenu(optMenu);
+    connect(ui->btnOptions, &QToolButton::clicked, this, [this, optMenu]() {
+        optMenu->popup(smartMenuPos(ui->btnOptions, optMenu));
+    });
 
     // Scale inner padding with screen DPI: 2 px at 100 %, 3 px at 150 %, 4 px at 200 %.
     const int kPad = qMax(1, qRound(qApp->devicePixelRatio() * 2.0));
@@ -94,7 +96,9 @@ FindDialog::FindDialog(QWidget *parent)
     themeMenu(navMenu);
     auto *actPrev = navMenu->addAction(tr("Find Previous\tShift+F3"));
     auto *actNext = navMenu->addAction(tr("Find Next\tF3"));
-    ui->btnNavigate->setMenu(navMenu);
+    connect(ui->btnNavigate, &QToolButton::clicked, this, [this, navMenu]() {
+        navMenu->popup(smartMenuPos(ui->btnNavigate, navMenu));
+    });
     connect(actPrev, &QAction::triggered, this, &FindDialog::findPrevious);
     connect(actNext, &QAction::triggered, this, &FindDialog::findNext);
 
