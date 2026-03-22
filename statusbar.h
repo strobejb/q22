@@ -11,6 +11,7 @@
 #include <QStylePainter>
 #include <QStyleOption>
 #include <QStatusBar>
+#include <QTimer>
 
 class HexView;
 
@@ -47,8 +48,18 @@ protected:
 
     void popupRight(QMenu *menu)
     {
-        // Toggle: clicking again while the menu is open closes it.
+        // Explicit toggle: handle the case where the user clicked the menu
+        // arrow while it was already visible.
         if (menu->isVisible()) { menu->hide(); return; }
+
+        // Suppress re-open when the same left-click that dismissed the menu
+        // via Qt::Popup auto-close also triggers showPopup() on this combo.
+        // The sequence is: (1) Qt::Popup closes the menu synchronously and
+        // fires aboutToHide — which sets m_justClosed=true; (2) Qt then
+        // delivers the click to the combobox and showPopup() calls popupRight
+        // again.  m_justClosed is still true at that point, so we bail out.
+        // A singleShot(0) clears the flag on the next event-loop iteration.
+        if (m_justClosed) return;
 
         m_popupOpen = true;
         m_hovered   = true;
@@ -58,8 +69,10 @@ protected:
         // clear the open flag.  SingleShotConnection auto-removes after one fire
         // so repeated open/close cycles don't accumulate connections.
         connect(menu, &QMenu::aboutToHide, this, [this]() {
-            m_popupOpen = false;
-            m_hovered   = underMouse();
+            m_popupOpen  = false;
+            m_justClosed = true;
+            QTimer::singleShot(0, this, [this]() { m_justClosed = false; });
+            m_hovered = underMouse();
             update();
         }, Qt::SingleShotConnection);
 
@@ -87,6 +100,7 @@ private:
     QString m_displayText;
     bool    m_hovered    = false;
     bool    m_popupOpen  = false;
+    bool    m_justClosed = false;  // suppresses showPopup() re-open after Qt::Popup auto-dismiss
 };
 
 // ── RadioComboBox ─────────────────────────────────────────────────────────────
