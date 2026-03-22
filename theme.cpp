@@ -217,7 +217,7 @@ QMenu {
     padding: 6px 0;
 }
 QMenu::item {
-    padding: 6px 28px 6px 28px;
+    padding: 6px 28px 6px 22px;
     min-width: 180px;
     border-radius: 4px;
     margin: 1px 4px;
@@ -235,12 +235,12 @@ QMenu::separator {
 QMenu::icon {
     width: 16px;
     height: 16px;
-    margin-left: 20px;
+    margin-left: 4px;
 }
 QMenu::indicator {
     width: 16px;
     height: 16px;
-    margin-left: 8px;
+    margin-left: 4px;
 }
 
 /* ── ComboBox ────────────────────────────────────────────────── */
