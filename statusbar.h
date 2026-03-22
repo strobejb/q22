@@ -10,8 +10,8 @@
 #include <QActionGroup>
 #include <QStylePainter>
 #include <QStyleOption>
+#include <QCursor>
 #include <QStatusBar>
-#include <QTimer>
 
 class HexView;
 
@@ -48,31 +48,33 @@ protected:
 
     void popupRight(QMenu *menu)
     {
-        // Explicit toggle: handle the case where the user clicked the menu
-        // arrow while it was already visible.
+        // Explicit toggle: close if already visible (e.g. keyboard-triggered).
         if (menu->isVisible()) { menu->hide(); return; }
 
-        // Suppress re-open when the same left-click that dismissed the menu
-        // via Qt::Popup auto-close also triggers showPopup() on this combo.
-        // The sequence is: (1) Qt::Popup closes the menu synchronously and
-        // fires aboutToHide — which sets m_justClosed=true; (2) Qt then
-        // delivers the click to the combobox and showPopup() calls popupRight
-        // again.  m_justClosed is still true at that point, so we bail out.
-        // A singleShot(0) clears the flag on the next event-loop iteration.
-        if (m_justClosed) return;
+        // Detect the "same click" pattern: when a Qt::Popup menu is open and
+        // the user left-clicks the combobox, Qt closes the popup first (firing
+        // aboutToHide which records the cursor position), then delivers the
+        // click to the combobox which calls showPopup() → popupRight().
+        // Because the mouse hasn't moved between those two steps, the current
+        // cursor position equals the recorded close position — so we know this
+        // is the same click and suppress the re-open.  We consume m_closePos
+        // immediately so the very next click opens normally.
+        const QPoint curPos = QCursor::pos();
+        const bool   sameClick = (m_closePos == curPos);
+        m_closePos = QPoint(-1, -1);
+        if (sameClick) return;
 
         m_popupOpen = true;
         m_hovered   = true;
         update();
 
-        // When the menu closes, restore hover from actual cursor position and
-        // clear the open flag.  SingleShotConnection auto-removes after one fire
-        // so repeated open/close cycles don't accumulate connections.
+        // When the menu closes, record the cursor position and restore hover.
+        // SingleShotConnection auto-removes after one fire so repeated
+        // open/close cycles don't accumulate connections.
         connect(menu, &QMenu::aboutToHide, this, [this]() {
-            m_popupOpen  = false;
-            m_justClosed = true;
-            QTimer::singleShot(0, this, [this]() { m_justClosed = false; });
-            m_hovered = underMouse();
+            m_popupOpen = false;
+            m_closePos  = QCursor::pos();
+            m_hovered   = underMouse();
             update();
         }, Qt::SingleShotConnection);
 
@@ -98,9 +100,9 @@ protected:
     }
 private:
     QString m_displayText;
-    bool    m_hovered    = false;
-    bool    m_popupOpen  = false;
-    bool    m_justClosed = false;  // suppresses showPopup() re-open after Qt::Popup auto-dismiss
+    bool    m_hovered   = false;
+    bool    m_popupOpen = false;
+    QPoint  m_closePos  { -1, -1 };  // cursor pos when menu last closed; used to detect same-click re-open
 };
 
 // ── RadioComboBox ─────────────────────────────────────────────────────────────
