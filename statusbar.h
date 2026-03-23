@@ -2,8 +2,14 @@
 #define STATUSBAR_H
 
 #include "theme.h"
+#include "HexView/seqbase.h"
+#include <QGuiApplication>
 #include <QObject>
 #include <QComboBox>
+#include <QScreen>
+#include <QFrame>
+#include <QLabel>
+#include <QProgressBar>
 #include <QEnterEvent>
 #include <QMenu>
 #include <QAction>
@@ -37,6 +43,7 @@ public:
     QSize sizeHint() const override;
 
 protected:
+    bool eventFilter(QObject *obj, QEvent *e) override;
     void enterEvent(QEnterEvent *e) override { m_hovered = true; update(); QComboBox::enterEvent(e); }
     void leaveEvent(QEvent       *e) override
     {
@@ -51,14 +58,6 @@ protected:
         // Explicit toggle: close if already visible (e.g. keyboard-triggered).
         if (menu->isVisible()) { menu->hide(); return; }
 
-        // Detect the "same click" pattern: when a Qt::Popup menu is open and
-        // the user left-clicks the combobox, Qt closes the popup first (firing
-        // aboutToHide which records the cursor position), then delivers the
-        // click to the combobox which calls showPopup() → popupRight().
-        // Because the mouse hasn't moved between those two steps, the current
-        // cursor position equals the recorded close position — so we know this
-        // is the same click and suppress the re-open.  We consume m_closePos
-        // immediately so the very next click opens normally.
         const QPoint curPos = QCursor::pos();
         const bool   sameClick = (m_closePos == curPos);
         m_closePos = QPoint(-1, -1);
@@ -68,9 +67,6 @@ protected:
         m_hovered   = true;
         update();
 
-        // When the menu closes, record the cursor position and restore hover.
-        // SingleShotConnection auto-removes after one fire so repeated
-        // open/close cycles don't accumulate connections.
         connect(menu, &QMenu::aboutToHide, this, [this]() {
             m_popupOpen = false;
             m_closePos  = QCursor::pos();
@@ -78,7 +74,14 @@ protected:
             update();
         }, Qt::SingleShotConnection);
 
-        QPoint pos = smartMenuPos(this, menu, /*rightAlign=*/true);
+        const QPoint pos = smartMenuPos(this, menu, /*rightAlign=*/true);
+        // On Wayland the compositor may reposition the popup window; move() in
+        // the QEvent::Show handler overrides the compositor's placement.
+        if (!m_menuFilterInstalled) {
+            menu->installEventFilter(this);
+            m_menuFilterInstalled = true;
+        }
+        m_pendingMenuPos = pos;
         menu->popup(pos);
     }
     // ── Same-click-reopen guard ───────────────────────────────────────────
@@ -104,6 +107,11 @@ protected:
         QStyleOptionComboBox opt;
         initStyleOption(&opt);
         opt.currentText = m_displayText;
+        // Preserve hover appearance while the popup is open: Qt delivers a
+        // Leave event when the popup window appears, which clears State_MouseOver
+        // in initStyleOption even though the combo should still look active.
+        if (m_hovered || m_popupOpen)
+            opt.state |= QStyle::State_MouseOver;
         painter.drawComplexControl(QStyle::CC_ComboBox, opt);
         painter.drawControl(QStyle::CE_ComboBoxLabel, opt);
         // The global stylesheet suppresses the native drop-down arrow.
@@ -117,9 +125,11 @@ protected:
     }
 private:
     QString m_displayText;
-    bool    m_hovered   = false;
-    bool    m_popupOpen = false;
-    QPoint  m_closePos  { -1, -1 };  // cursor pos when menu last closed; used to detect same-click re-open
+    bool    m_hovered             = false;
+    bool    m_popupOpen           = false;
+    bool    m_menuFilterInstalled = false;
+    QPoint  m_closePos     { -1, -1 };
+    QPoint  m_pendingMenuPos { -1, -1 };
 };
 
 // ── RadioComboBox ─────────────────────────────────────────────────────────────
@@ -212,15 +222,26 @@ public:
 
 public slots:
     void update();
+    void onFindProgress(size_w pos, size_w len, double mbPerSec);
+    void onFindDone();
+    void showSearchHex(const QString &hex);  // "" hides the preview
+    void showMessage(const QString &msg);    // show arbitrary text in pattern label; "" hides
 
 private:
     QString computeValueText() const;
 
     HexView              *m_hv;
-    RadioComboBox        *m_comboCursor = nullptr;
-    RadioComboBox        *m_comboLength = nullptr;
-    ValueOptionsComboBox *m_comboValue  = nullptr;
-    RadioComboBox        *m_comboMode   = nullptr;
+    RadioComboBox        *m_comboCursor  = nullptr;
+    RadioComboBox        *m_comboLength  = nullptr;
+    ValueOptionsComboBox *m_comboValue   = nullptr;
+    RadioComboBox        *m_comboMode    = nullptr;
+
+    QWidget      *m_searchWidget  = nullptr;
+    QLabel       *m_searchLabel   = nullptr;
+    QProgressBar *m_searchBar     = nullptr;
+    QFrame       *m_searchSep     = nullptr;
+    QLabel       *m_patternLabel  = nullptr;
+    QFrame       *m_patternSep    = nullptr;
 };
 
 #endif // STATUSBAR_H

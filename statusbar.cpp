@@ -1,9 +1,24 @@
 #include "statusbar.h"
 #include "HexView/hexview.h"
 #include "theme.h"
+#include <QApplication>
 #include <QEvent>
+#include <QFontDatabase>
+#include <QHBoxLayout>
+#include <QRegularExpression>
 #include <algorithm>
 #include <cstring>
+
+bool ValueComboBox::eventFilter(QObject *obj, QEvent *e)
+{
+    // On Wayland the compositor may reposition popup windows; move() here
+    // overrides the compositor's placement with the position we computed.
+    if (e->type() == QEvent::Show && m_pendingMenuPos.x() >= 0) {
+        static_cast<QWidget *>(obj)->move(m_pendingMenuPos);
+        m_pendingMenuPos = {-1, -1};
+    }
+    return QComboBox::eventFilter(obj, e);
+}
 
 QSize ValueComboBox::sizeHint() const
 {
@@ -135,7 +150,8 @@ void PanelStrip::layoutPanels()
 {
     // Place panels right-to-left at their preferred widths.
     // Panels that overflow the left edge are clipped at the widget boundary.
-    int x = width();
+    static constexpr int kRightMargin = 12;
+    int x = width() - kRightMargin;
     for (int i = m_panels.count() - 1; i >= 0; --i) {
         QWidget *p  = m_panels[i];
         int      pw = p->sizeHint().width();
@@ -201,7 +217,46 @@ StatusBar::StatusBar(HexView *hv, QStatusBar *bar, QObject *parent)
     strip->addPanel(m_comboValue);
     strip->addPanel(m_comboMode);
 
-    bar->addPermanentWidget(strip, 1); // stretch=1: strip fills full status bar width
+    const QColor borderColor = QApplication::palette().mid().color();
+
+    auto makeSep = [&]() {
+        auto *sep = new QFrame(bar);
+        sep->setFrameShape(QFrame::VLine);
+        sep->setFrameShadow(QFrame::Plain);
+        sep->setFixedWidth(1);
+        sep->setStyleSheet(QString("QFrame { background: %1; }").arg(borderColor.name()));
+        sep->hide();
+        return sep;
+    };
+
+    // Search progress widget — shown on the left side of the status bar during active searches
+    auto *searchContainer = new QWidget(bar);
+    auto *searchLayout    = new QHBoxLayout(searchContainer);
+    searchLayout->setContentsMargins(8, 0, 8, 0);
+    searchLayout->setSpacing(6);
+    m_searchLabel = new QLabel("Searching:", searchContainer);
+    m_searchBar   = new QProgressBar(searchContainer);
+    m_searchBar->setRange(0, 100);
+    m_searchBar->setValue(0);
+    m_searchBar->setFixedWidth(160);
+    m_searchBar->setTextVisible(false);
+    searchLayout->addWidget(m_searchLabel);
+    searchLayout->addWidget(m_searchBar);
+    m_searchWidget = searchContainer;
+    bar->addWidget(m_searchWidget);
+    m_searchWidget->hide();
+    m_searchSep = makeSep();
+    bar->addWidget(m_searchSep);
+
+    // Search hex preview — shows live byte representation of the current pattern
+    m_patternLabel = new QLabel(bar);
+    m_patternLabel->setContentsMargins(8, 0, 8, 0);
+    bar->addWidget(m_patternLabel);
+    m_patternLabel->hide();
+    m_patternSep = makeSep();
+    bar->addWidget(m_patternSep);
+
+    bar->addPermanentWidget(strip, 1); // stretch=1: strip fills remaining width
     bar->setMinimumWidth(0);           // prevent status bar from enforcing a floor
 
     update();
@@ -250,6 +305,59 @@ QString StatusBar::computeValueText() const
         return QString("Value: %1").arg(v);
     }
     return QString("Value: %1").arg(raw);
+}
+
+void StatusBar::onFindProgress(size_w pos, size_w len, double mbPerSec)
+{
+    if (!m_searchWidget->isVisible()) {
+        m_searchWidget->show();
+        m_searchSep->show();
+    }
+    int pct = (len > 0) ? (int)((double)pos / (double)len * 100.0) : 0;
+    m_searchBar->setValue(qBound(0, pct, 100));
+    m_searchLabel->setText(QString("Searching %1 MB/s:").arg(mbPerSec, 0, 'f', 1));
+}
+
+void StatusBar::onFindDone()
+{
+    m_searchWidget->hide();
+    m_searchSep->hide();
+}
+
+void StatusBar::showSearchHex(const QString &hex)
+{
+    if (hex.isEmpty()) {
+        m_patternLabel->hide();
+        m_patternSep->hide();
+        return;
+    }
+    static const QRegularExpression rxHex("^[0-9A-Fa-f ]+$");
+    if(rxHex.match(hex).hasMatch()) {
+        m_patternLabel->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+        //m_patternLabel->setForegroundRole(QPalette::ColorRole::WindowText);//
+        //m_patternLabel->setStyleSheet("color:black");
+    }
+    else {
+        m_patternLabel->setFont(QApplication::font());
+        //m_patternLabel->setStyleSheet("color:darkred; border-right:1px solid #ddd");
+    }
+    m_patternLabel->setText(hex);
+
+    m_patternLabel->show();
+    m_patternSep->show();
+}
+
+void StatusBar::showMessage(const QString &msg)
+{
+    if (msg.isEmpty()) {
+        m_patternLabel->hide();
+        m_patternSep->hide();
+        return;
+    }
+    m_patternLabel->setFont(QApplication::font());
+    m_patternLabel->setText(msg);
+    m_patternLabel->show();
+    m_patternSep->show();
 }
 
 void StatusBar::update()

@@ -76,6 +76,9 @@
          <height>28</height>
         </size>
        </property>
+       <property name="focusPolicy">
+        <enum>Qt::FocusPolicy::NoFocus</enum>
+       </property>
        <property name="toolTip">
         <string>Find options</string>
        </property>
@@ -98,9 +101,6 @@
        <property name="placeholderText">
         <string>Search…</string>
        </property>
-       <property name="clearButtonEnabled">
-        <bool>true</bool>
-       </property>
       </widget>
      </item>
      <item>
@@ -117,14 +117,17 @@
          <height>28</height>
         </size>
        </property>
+       <property name="focusPolicy">
+        <enum>Qt::FocusPolicy::NoFocus</enum>
+       </property>
        <property name="toolTip">
-        <string>Find Previous / Find Next</string>
+        <string>Previous / Next</string>
        </property>
        <property name="text">
         <string/>
        </property>
        <property name="icon">
-        <iconset theme="go-up-symbolic"/>
+        <iconset theme="object-flip-vertical-symbolic"/>
        </property>
        <property name="popupMode">
         <enum>QToolButton::ToolButtonPopupMode::InstantPopup</enum>
@@ -151,7 +154,26 @@
       </spacer>
      </item>
      <item>
+      <widget class="QLabel" name="label">
+       <property name="text">
+        <string>Type:</string>
+       </property>
+      </widget>
+     </item>
+     <item>
       <widget class="QComboBox" name="comboDataType">
+       <property name="minimumSize">
+        <size>
+         <width>100</width>
+         <height>0</height>
+        </size>
+       </property>
+       <property name="focusPolicy">
+        <enum>Qt::FocusPolicy::NoFocus</enum>
+       </property>
+       <property name="sizeAdjustPolicy">
+        <enum>QComboBox::SizeAdjustPolicy::AdjustToContentsOnFirstShow</enum>
+       </property>
        <item>
         <property name="text">
          <string>Hex</string>
@@ -225,6 +247,9 @@
          <width>28</width>
          <height>28</height>
         </size>
+       </property>
+       <property name="focusPolicy">
+        <enum>Qt::FocusPolicy::NoFocus</enum>
        </property>
        <property name="toolTip">
         <string>Close</string>

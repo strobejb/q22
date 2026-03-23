@@ -106,6 +106,11 @@
 #define HVOF_QUICKLOAD      2
 #define HVOF_QUICKSAVE      4
 
+// Find flags
+#define HVFF_SCOPE_SELECTION    0x0001
+#define HVFF_CASE_INSENSITIVE   0x0002
+#define HVFF_BACKWARD           0x0004
+
 // Hit-test regions
 #define HVHT_NONE       0x00
 #define HVHT_MAIN       0x01
@@ -201,6 +206,11 @@ public:
     size_t getData(size_w offset, uint8_t *buf, size_t len);
     size_t setData(size_w offset, uint8_t *buf, size_t len);
 
+    // Find
+    bool   findInit(const uint8_t *pat, size_t length);
+    bool   findNext(size_w *result, uint options = 0);
+    void   cancelFind() { m_findCancelled = true; }
+
     // State accessors
     size_w cursorOffset() const { return m_nCursorOffset; }
     uint   editMode()     const { return m_nEditMode; }
@@ -226,6 +236,7 @@ signals:
     void selectionChanged(size_w start, size_w end);
     void contentChanged(size_w offset, size_w length, uint method);
     void lengthChanged(size_w length);
+    void findProgress(size_w pos, size_w len, double mbPerSec);
 
 protected:
     void paintEvent(QPaintEvent *event)        override;
@@ -268,6 +279,11 @@ private:
                            bool fIncSelection = true);
 
     void   identifySearchPatterns(uint8_t *data, size_t len, seqchar_info *infobuf);
+
+    // Find (Boyer-Moore)
+    bool   searchCompile(const uint8_t *pat, size_t length);
+    int    searchBlock(const uint8_t *block, int start, int length, int *partial, bool matchCase) const;
+    void   queryProgressNotify(size_w pos, size_w len, double mbPerSec);
     int    paintLine(QPainter &painter, size_w nLineNo,
                      uint8_t *data, size_t datalen, seqchar_info *infobuf, size_t datashift);
     void   paintCaret(QPainter &painter);
@@ -398,8 +414,13 @@ private:
     int     m_nScrollMouseRemainder = 0;
 
     // Search
-    uint8_t m_pSearchPat[64]    = {};
-    uint    m_nSearchLen        = 0;
+    uint8_t  m_pSearchPat[256]  = {};
+    uint     m_nSearchLen       = 0;
+
+    // Boyer-Moore search tables (populated by searchCompile)
+    unsigned m_bmSkip[256]      = {};
+    unsigned m_bmD[256]         = {};
+    bool     m_findCancelled    = false;
 
     // Caret
     QTimer  m_caretTimer;

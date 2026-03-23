@@ -21,6 +21,8 @@ set(PROJECT_SOURCES
         mainwindow.ui
         datatypecombobox.h
         datatypecombobox.cpp
+        gotodialog.cpp
+        gotodialog.h
         finddialog.cpp
         finddialog.h
         settings.cpp
@@ -43,6 +45,9 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         ${PROJECT_SOURCES}
         finddialog.ui
         resources.qrc
+        gotodialog.ui
+        gotodialog.cpp
+        gotodialog.h
     )
 # Define target properties for Android with Qt 6 as:
 #    set_property(TARGET qexed APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR

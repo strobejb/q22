@@ -1,7 +1,9 @@
 #include "mainwindow.h"
 #include "./ui_mainwindow.h"
 #include "HexView/hexview.h"
+#include "HexView/seqbase.h"
 #include "finddialog.h"
+#include "gotodialog.h"
 #include "settings.h"
 #include "statusbar.h"
 #include "titlebar.h"
@@ -184,7 +186,9 @@ MainWindow::MainWindow(QWidget *parent)
     vlay->setSpacing(0);
     vlay->addWidget(m_hv, 1);
     m_findDialog = new FindDialog(central);
+    m_gotoDialog = new GotoDialog(m_hv, central);
     vlay->addWidget(m_findDialog, 0);
+    vlay->addWidget(m_gotoDialog, 0);
     setCentralWidget(central);
 
     // Build a standalone Edit menu for the HexView context menu, sharing the
@@ -256,8 +260,35 @@ MainWindow::MainWindow(QWidget *parent)
             [this](size_w) { m_statusBar->update(); });
 
     connect(ui->actionFind, &QAction::triggered, this, [this]() {
-        m_findDialog->activate();
+        QWidget *fw = QApplication::focusWidget();
+        if (m_findDialog->isVisible() && fw && m_findDialog->isAncestorOf(fw))
+            m_findDialog->hide();
+        else
+            m_findDialog->activate();
     });
+
+    connect(ui->action_Goto, &QAction::triggered, this, [this]() {
+        QWidget *fw = QApplication::focusWidget();
+        if (m_gotoDialog->isVisible() && fw && m_gotoDialog->isAncestorOf(fw))
+            m_gotoDialog->hide();
+        else
+            m_gotoDialog->activate();
+    });
+
+    connect(m_findDialog, &FindDialog::searchRequested, this,
+            [this](const QByteArray &pattern, uint flags) {
+                m_hv->findInit(reinterpret_cast<const uint8_t *>(pattern.constData()),
+                               (size_t)pattern.size());
+                execFind(pattern, flags);
+            });
+
+    connect(ui->actionFind_Next,          &QAction::triggered,  this, [this] { runFind(true);  });
+    connect(ui->actionFind_Previous,      &QAction::triggered,  this, [this] { runFind(false); });
+    connect(m_findDialog, &FindDialog::findNext,     this, [this] { runFind(true);  });
+    connect(m_findDialog, &FindDialog::findPrevious, this, [this] { runFind(false); });
+
+    connect(m_hv, &HexView::findProgress, m_statusBar, &StatusBar::onFindProgress);
+    connect(m_findDialog, &FindDialog::searchHexChanged, m_statusBar, &StatusBar::showSearchHex);
 
     connect(ui->actionOpen, &QAction::triggered, this, [this]() {
         const QString path = QFileDialog::getOpenFileName(this, tr("Open File"));
@@ -293,6 +324,29 @@ void MainWindow::updateRecentMenu() {
         a->setToolTip(path);
         connect(a, &QAction::triggered, this, [this, path] { openFile(path); });
     }
+}
+
+void MainWindow::execFind(const QByteArray &pattern, uint flags)
+{
+    m_lastPattern   = pattern;
+    m_lastFindFlags = flags & ~HVFF_BACKWARD; // strip direction; stored flags are always "forward"
+    size_w result   = 0;
+    if (m_hv->findNext(&result, flags)) {
+        m_hv->setCurSel(result, result + (size_t)pattern.size());
+        m_hv->scrollTo(result);
+        m_statusBar->showMessage({});
+    } else {
+        m_statusBar->showMessage(tr("Could not find any more data"));
+    }
+    m_statusBar->onFindDone();
+}
+
+void MainWindow::runFind(bool forward)
+{
+    if (m_lastPattern.isEmpty())
+        return;
+    uint flags = m_lastFindFlags | (forward ? 0 : HVFF_BACKWARD);
+    execFind(m_lastPattern, flags);
 }
 
 bool MainWindow::eventFilter(QObject *obj, QEvent *event) {

@@ -2,12 +2,110 @@
 #include "ui_finddialog.h"
 #include "datatypecombobox.h"
 #include "theme.h"
+#include "HexView/hexview.h"
 #include <QApplication>
 #include <QCursor>
 #include <QKeyEvent>
 #include <QMenu>
 #include <QStyle>
 #include <QToolButton>
+#include <QRegularExpression>
+#include <algorithm>
+#include <cstring>
+
+// ── Search-pattern helpers (ported from HexEdit/HexFind.c) ───────────────────
+
+// Parse a hex string (spaces/tabs ignored) into bytes.
+// Each pair of hex digits forms one byte; an odd trailing nibble is treated as
+// the low nibble of a byte (e.g. "F" → 0x0F).  Returns empty on bad input.
+static QByteArray hex2Binary(const QString &text)
+{
+    const QString hex = QString(text).remove(u' ').remove(u'\t');
+    if (hex.isEmpty()) return {};
+    QByteArray result;
+    result.reserve((hex.size() + 1) / 2);
+    for (int i = 0; i < hex.size(); i += 2) {
+        bool ok;
+        uint v = hex.mid(i, qMin(2, hex.size() - i)).toUInt(&ok, 16);
+        if (!ok) return {};
+        result.append((char)(uint8_t)v);
+    }
+    return result;
+}
+
+// Encode a Unicode string as UTF-8, UTF-16LE, or UTF-32LE.
+// bigEndian reverses each code unit for UTF-16/32.
+static QByteArray text2Binary(const QString &text, SearchDataType type, bool bigEndian)
+{
+    switch (type) {
+    case SearchUTF8:
+        return text.toUtf8();
+    case SearchUTF16: {
+        QByteArray ba(text.size() * 2, '\0');
+        memcpy(ba.data(), text.constData(), text.size() * 2);
+        if (bigEndian)
+            for (int i = 0; i < ba.size(); i += 2)
+                std::reverse(ba.data() + i, ba.data() + i + 2);
+        return ba;
+    }
+    case SearchUTF32: {
+        const std::u32string u32 = text.toStdU32String();
+        QByteArray ba((int)u32.size() * 4, '\0');
+        memcpy(ba.data(), u32.data(), u32.size() * 4);
+        if (bigEndian)
+            for (int i = 0; i < ba.size(); i += 4)
+                std::reverse(ba.data() + i, ba.data() + i + 4);
+        return ba;
+    }
+    default:
+        return {};
+    }
+}
+
+// Parse a comma- or space-separated list of integer or floating-point values
+// into a packed byte array.  width is 1, 2, 4, or 8; isInt selects integer vs
+// float parsing; bigEndian byte-swaps each element.
+static QByteArray num2Binary(const QString &text, int width, bool isInt, bool bigEndian)
+{
+    if (text.trimmed().isEmpty()) return {};
+    const QStringList tokens =
+        text.split(QRegularExpression(QString("[,\\s]+")), Qt::SkipEmptyParts);
+    QByteArray result;
+    result.reserve(tokens.size() * width);
+    for (const QString &tok : tokens) {
+        char buf[8] = {};
+        if (isInt) {
+            bool ok;
+            quint64 v = tok.toULongLong(&ok, 0);
+            if (!ok) return {};
+            memcpy(buf, &v, width);
+        } else {
+            bool ok;
+            double d = tok.toDouble(&ok);
+            if (!ok) return {};
+            if (width == 4) { float f = (float)d; memcpy(buf, &f, 4); }
+            else             {                      memcpy(buf, &d, 8); }
+        }
+        if (bigEndian) std::reverse(buf, buf + width);
+        result.append(buf, width);
+    }
+    return result;
+}
+
+// Format a byte array as space-separated uppercase hex pairs ("41 42 43").
+static QString dumpHex(const QByteArray &ba)
+{
+    if (ba.isEmpty()) return {};
+    QString s;
+    s.reserve(ba.size() * 3 - 1);
+    for (int i = 0; i < ba.size(); ++i) {
+        if (i) s += u' ';
+        s += QString::number((uint8_t)ba[i], 16).rightJustified(2, u'0').toUpper();
+    }
+    return s;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 FindDialog::FindDialog(QWidget *parent)
     : QWidget(parent)
@@ -86,9 +184,17 @@ FindDialog::FindDialog(QWidget *parent)
     for (int i = 0; i < ui->comboDataType->count(); ++i)
         m_comboDataType->addItem(ui->comboDataType->itemText(i));
     ui->horizontalLayout->replaceWidget(ui->comboDataType, m_comboDataType);
+    m_comboDataType->setFixedWidth(ui->comboDataType->minimumWidth());
     ui->comboDataType->hide();
 
     m_comboDataType->buildMenu();
+    m_comboDataType->setActionData("Hex",    SearchHex);
+    m_comboDataType->setActionData("UTF-8",  SearchUTF8);
+    m_comboDataType->setActionData("UTF-16", SearchUTF16);
+    m_comboDataType->setActionData("UTF-32", SearchUTF32);
+    m_comboDataType->setActionData("Byte",   SearchByte);
+    m_comboDataType->setActionData("Word",   SearchWord);
+    m_comboDataType->setActionData("Dword",  SearchDword);
     m_comboDataType->setDisplayText(m_comboDataType->selectionText());
 
     // Keep the search field's font in sync with the Type combo so both
@@ -96,7 +202,9 @@ FindDialog::FindDialog(QWidget *parent)
     ui->editFind->setFont(m_comboDataType->font());
     connect(m_comboDataType, &DataTypeComboBox::selectionChanged, this, [this](int) {
         m_comboDataType->setDisplayText(m_comboDataType->selectionText());
+        updateSearchHexPreview();
     });
+    connect(ui->editFind, &QLineEdit::textChanged, this, [this] { updateSearchHexPreview(); });
 
     connect(ui->btnClose, &QToolButton::clicked, this, &QWidget::hide);
 
@@ -118,6 +226,8 @@ FindDialog::FindDialog(QWidget *parent)
     });
     connect(actPrev, &QAction::triggered, this, &FindDialog::findPrevious);
     connect(actNext, &QAction::triggered, this, &FindDialog::findNext);
+
+    connect(ui->editFind, &QLineEdit::returnPressed, this, [this] { triggerSearch(0); });
 
 #ifdef Q_OS_WIN
     // QIcon::fromTheme() returns null on Windows; use Segoe MDL2 / QStyle fallbacks.
@@ -163,3 +273,61 @@ bool    FindDialog::isRegex()     const { return m_actRegex->isChecked(); }
 bool    FindDialog::isWholeWord() const { return m_actWholeWord->isChecked(); }
 bool    FindDialog::isWrapAround() const { return m_actWrap->isChecked(); }
 QString FindDialog::dataType()    const { return m_comboDataType->selectionText(); }
+
+QByteArray FindDialog::buildPattern() const
+{
+    const QString text = ui->editFind->text();
+    if (text.isEmpty())
+        return {};
+
+    switch (m_comboDataType->selectionData().value<SearchDataType>()) {
+    case SearchHex:
+        return hex2Binary(text);
+    case SearchUTF8:
+    case SearchUTF16:
+    case SearchUTF32:
+        return text2Binary(text, m_comboDataType->selectionData().value<SearchDataType>(), /*bigEndian=*/false);
+    case SearchByte:
+        return num2Binary(text, 1, /*isInt=*/true, /*bigEndian=*/false);
+    case SearchWord:
+        return num2Binary(text, 2, /*isInt=*/true, /*bigEndian=*/false);
+    case SearchDword:
+        return num2Binary(text, 4, /*isInt=*/true, /*bigEndian=*/false);
+    }
+    return {};
+}
+
+void FindDialog::triggerSearch(uint flags)
+{
+    QByteArray pat = buildPattern();
+    if (!pat.isEmpty())
+        emit searchRequested(pat, flags);
+}
+
+void FindDialog::updateSearchHexPreview()
+{
+    const QString text = ui->editFind->text();
+    if (text.isEmpty()) {
+        ui->editFind->setStyleSheet({});
+        emit searchHexChanged({});
+        return;
+    }
+    const QByteArray pat = buildPattern();
+    if (pat.isEmpty()) {
+        const QString border = QApplication::palette().mid().color().name();
+        ui->editFind->setStyleSheet(QString(
+            "color: #c01c28; border: 1px solid %1; border-radius: 6px; margin: 2px 0;")
+            .arg(border));
+        emit searchHexChanged(tr("Invalid search pattern"));
+    } else {
+        ui->editFind->setStyleSheet({});
+        emit searchHexChanged(dumpHex(pat));
+    }
+}
+
+void FindDialog::hideEvent(QHideEvent *e)
+{
+    ui->editFind->setStyleSheet({});
+    emit searchHexChanged({});
+    QWidget::hideEvent(e);
+}

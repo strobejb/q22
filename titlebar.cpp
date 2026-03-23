@@ -221,6 +221,7 @@ TitleBar::TitleBar(QWidget *parent)
                 QApplication::style()->standardIcon(QStyle::SP_DirOpenIcon));
     }
 #endif
+    m_hamburger->setFocusPolicy(Qt::NoFocus);
     m_hamburger->setAutoRaise(true);
 #ifdef Q_OS_WIN
     m_hamburger->setFixedSize(40, 40);
@@ -246,6 +247,7 @@ TitleBar::TitleBar(QWidget *parent)
 #endif
     else
         m_searchBtn->setText("🔍");
+    m_searchBtn->setFocusPolicy(Qt::NoFocus);
     m_searchBtn->setAutoRaise(true);
 #ifdef Q_OS_WIN
     m_searchBtn->setFixedSize(40, 40);
@@ -298,6 +300,7 @@ TitleBar::TitleBar(QWidget *parent)
             m_viewBtn->setText("☰");
     }
 #endif
+    m_viewBtn->setFocusPolicy(Qt::NoFocus);
     m_viewBtn->setAutoRaise(true);
 #ifdef Q_OS_WIN
     m_viewBtn->setFixedSize(40, 40);
@@ -341,6 +344,7 @@ QToolButton *TitleBar::makeWindowButton(const QString &name)
     const Spec &s = specs[name];
     auto *btn = new QToolButton(this);
     btn->setObjectName(s.objName);
+    btn->setFocusPolicy(Qt::NoFocus);
     btn->setAutoRaise(true);
 #ifdef Q_OS_WIN
     // Windows 11: caption buttons are full title-bar height, ~46 px wide,

@@ -8,6 +8,7 @@ qt_add_library(HexView STATIC
     hexviewmouse.cpp
     hexviewkeyboard.cpp
     hexviewclipboard.cpp
+    hexviewfind.cpp
     seqbase.h
     sequence.h
     sequence.cpp

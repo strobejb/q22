@@ -51,6 +51,19 @@ QString DataTypeComboBox::selectionText() const
     return {};
 }
 
+void DataTypeComboBox::setActionData(const QString &text, const QVariant &data)
+{
+    for (QAction *a : m_actions)
+        if (a->text() == text) { a->setData(data); return; }
+}
+
+QVariant DataTypeComboBox::selectionData() const
+{
+    if (m_selection >= 0 && m_selection < m_actions.size())
+        return m_actions[m_selection]->data();
+    return {};
+}
+
 // Render a menu item twice — once with text, once without — and return the x
 // of the first pixel column where they differ. This is the exact text start
 // position regardless of style, theme, or DPI.
@@ -117,7 +130,6 @@ void DataTypeComboBox::paintEvent(QPaintEvent *)
     QStyleOptionComboBox opt;
     initStyleOption(&opt);
     opt.currentText = selectionText();
-    const int pad = kPad();
     // Draw the frame at full widget size.
     painter.drawComplexControl(QStyle::CC_ComboBox, opt);
     // The global QComboBox::drop-down stylesheet rule suppresses the native
@@ -129,11 +141,11 @@ void DataTypeComboBox::paintEvent(QPaintEvent *)
             QStyle::CC_ComboBox, &opt, QStyle::SC_ComboBoxArrow, this);
         painter.drawPrimitive(QStyle::PE_IndicatorArrowDown, arrowOpt);
     }
-    // Draw text inset by pad within the edit-field subcontrol.
+    // SC_ComboBoxEditField already has the stylesheet's padding: 3px 8px applied,
+    // so use the rect directly — no additional inset needed.
     const QRect textRect = style()->subControlRect(
                                QStyle::CC_ComboBox, &opt,
-                               QStyle::SC_ComboBoxEditField, this)
-                           .adjusted(pad + 2, pad, -(pad + 2), -pad);
+                               QStyle::SC_ComboBoxEditField, this);
     style()->drawItemText(&painter, textRect,
                           Qt::AlignLeft | Qt::AlignVCenter,
                           opt.palette, isEnabled(),
@@ -155,7 +167,9 @@ void DataTypeComboBox::showPopup()
             [this]() { recordMenuClose(); },
             Qt::SingleShotConnection);
 
-    m_menu->popup(smartMenuPos(this, m_menu, /*rightAlign=*/false));
+    const QPoint pos = smartMenuPos(this, m_menu, /*rightAlign=*/false);
+    m_targetMenuY = pos.y();
+    m_menu->popup(pos);
 }
 
 bool DataTypeComboBox::eventFilter(QObject *obj, QEvent *e)
@@ -163,7 +177,7 @@ bool DataTypeComboBox::eventFilter(QObject *obj, QEvent *e)
     if (obj == m_menu && e->type() == QEvent::Show && !m_actions.isEmpty()) {
         const int menuTextX = measureMenuItemTextX(m_menu, m_actions.first());
         if (menuTextX > 0)
-            m_menu->move(m_targetTextScreenX - menuTextX, m_menu->pos().y());
+            m_menu->move(m_targetTextScreenX - menuTextX, m_targetMenuY);
     }
     return ValueComboBox::eventFilter(obj, e);
 }

@@ -1,12 +1,23 @@
 #ifndef FINDDIALOG_H
 #define FINDDIALOG_H
 
+#include <QByteArray>
 #include <QPoint>
 #include <QWidget>
 
 class DataTypeComboBox;
 class QAction;
 namespace Ui { class FindDialog; }
+
+enum SearchDataType {
+    SearchHex,
+    SearchUTF8,
+    SearchUTF16,
+    SearchUTF32,
+    SearchByte,
+    SearchWord,
+    SearchDword,
+};
 
 class FindDialog : public QWidget
 {
@@ -27,11 +38,18 @@ public:
 signals:
     void findPrevious();
     void findNext();
+    void searchRequested(const QByteArray &pattern, uint flags);
+    void searchHexChanged(const QString &hex);  // live hex-tuple preview of current pattern
 
 protected:
     void keyPressEvent(QKeyEvent *e) override;
+    void hideEvent(QHideEvent *e)    override;
 
 private:
+    QByteArray buildPattern() const;
+    void       triggerSearch(uint flags);
+    void       updateSearchHexPreview();
+
     Ui::FindDialog   *ui;
     QAction          *m_actRegex       = nullptr;
     QAction          *m_actWholeWord   = nullptr;
