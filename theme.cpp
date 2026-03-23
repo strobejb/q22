@@ -4,6 +4,7 @@
 #include <QFontDatabase>
 #include <QGuiApplication>
 #include <QMenu>
+#include <QPlatformSurfaceEvent>
 #include <QPainter>
 #include <QPalette>
 #include <QProxyStyle>
@@ -18,6 +19,13 @@
 #include <QIcon>
 #include <QPainter>
 #include <QPixmap>
+#include <windows.h>
+#include <dwmapi.h>
+
+#ifndef DWMWA_WINDOW_CORNER_PREFERENCE
+#  define DWMWA_WINDOW_CORNER_PREFERENCE 33
+#  define DWMWCP_ROUND 2
+#endif
 
 QIcon segoeIcon(uint codePoint, const QColor &color, int logicalPx)
 {
@@ -47,6 +55,46 @@ QIcon segoeIcon(uint codePoint, const QColor &color, int logicalPx)
     return QIcon(pm);
 }
 #endif
+
+// ── DWM shadow for popup menus (Win11) ───────────────────────────────────────
+// Qt's NoDropShadowWindowHint removes CS_DROPSHADOW, which we need to keep
+// off because it paints a rectangular shadow that clips rounded corners.
+// Instead, we use DwmExtendFrameIntoClientArea with {-1,-1,-1,-1} margins
+// to enable the DWM composition shadow — this is the proper Win11 shadow
+// that respects the window shape.  We also hint rounded corners via
+// DWMWA_WINDOW_CORNER_PREFERENCE so DWM co-operates with our border-radius.
+namespace {
+struct MenuShadowFilter : public QObject
+{
+    explicit MenuShadowFilter(QObject *parent) : QObject(parent) {}
+
+    bool eventFilter(QObject *obj, QEvent *e) override
+    {
+#ifdef Q_OS_WIN
+        if (e->type() == QEvent::PlatformSurface) {
+            auto *pse = static_cast<QPlatformSurfaceEvent *>(e);
+            if (pse->surfaceEventType() == QPlatformSurfaceEvent::SurfaceCreated) {
+                auto *w = qobject_cast<QWidget *>(obj);
+                if (w) {
+                    HWND hwnd = reinterpret_cast<HWND>(w->winId());
+                    // Enable DWM composition shadow via extended frame
+                    MARGINS margins = {-1, -1, -1, -1};
+                    DwmExtendFrameIntoClientArea(hwnd, &margins);
+                    // Hint rounded corners to DWM
+                    DWORD cornerPref = DWMWCP_ROUND;
+                    DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+                                          &cornerPref, sizeof(cornerPref));
+                }
+            }
+        }
+#else
+        Q_UNUSED(obj);
+        Q_UNUSED(e);
+#endif
+        return false;
+    }
+};
+} // namespace
 
 // ── Smart menu positioning ────────────────────────────────────────────────────
 
@@ -220,7 +268,7 @@ QMenu {
     padding: 6px 0;
 }
 QMenu::item {
-    padding: 6px 28px 6px 8px;
+    padding: 6px 28px 6px 16px;
     min-width: 180px;
     border-radius: 4px;
     margin: 1px 4px;
@@ -239,6 +287,7 @@ QMenu::icon {
     width: 14px;
     height: 14px;
     margin-left: 0;
+    left: 4px;
 }
 QMenu::indicator {
     width: 14px;
@@ -348,54 +397,24 @@ QToolTip {
 
 // ── Public entry point ────────────────────────────────────────────────────────
 
-// ── Compact check-column style ────────────────────────────────────────────────
-// QStyleSheetStyle uses the QSS rules only to *paint* the item background; it
-// delegates text/indicator *layout* back to the base Fusion style.  Overriding
-// PM_SmallIconSize (what Fusion uses for check-column width) and zeroing out
-// maxIconWidth in the CE_MenuItem option removes the excess dead space so the
-// check mark sits flush within the existing left padding.
+// ── Check-mark inset style ────────────────────────────────────────────────────
+// When qApp->setStyleSheet() is active, QStyleSheetStyle becomes the effective
+// style for all QMenu drawing — per-widget setStyle() overrides for drawControl
+// and pixelMetric are bypassed.  The one thing that IS reliably dispatched
+// through the per-widget style is drawPrimitive(PE_IndicatorMenuCheckMark),
+// which Fusion calls via proxy() during CE_MenuItem.  We use that single hook
+// to nudge checkmark glyphs right so they sit inside the selection box.
 namespace {
 struct TightMenuStyle : public QProxyStyle
 {
     explicit TightMenuStyle(QStyle *base) : QProxyStyle(base) {}
 
-    // Extra pixels between the selection-box left edge and the glyph.
     static constexpr int kGlyphInset = 4;
-
-    int pixelMetric(PixelMetric m, const QStyleOption *opt,
-                    const QWidget *w) const override
-    {
-        // Fusion bases the check/icon column on PM_SmallIconSize.  We keep
-        // the column compact (14 px for the glyph) but add kGlyphInset so
-        // the column is exactly wide enough after the inset shift below.
-        if (m == PM_SmallIconSize) return 14 + kGlyphInset;
-        return QProxyStyle::pixelMetric(m, opt, w);
-    }
-
-    void drawControl(ControlElement ce, const QStyleOption *opt,
-                     QPainter *p, const QWidget *w) const override
-    {
-        if (ce == CE_MenuItem) {
-            if (const auto *mi = qstyleoption_cast<const QStyleOptionMenuItem *>(opt)) {
-                // maxIconWidth drives the minimum check-column width in Fusion.
-                // Force it to zero so the column is sized only by the indicator.
-                QStyleOptionMenuItem tight = *mi;
-                tight.maxIconWidth = 0;
-                QProxyStyle::drawControl(ce, &tight, p, w);
-                return;
-            }
-        }
-        QProxyStyle::drawControl(ce, opt, p, w);
-    }
 
     void drawPrimitive(PrimitiveElement pe, const QStyleOption *opt,
                        QPainter *p, const QWidget *w) const override
     {
         if (pe == PE_IndicatorMenuCheckMark) {
-            // Shift the glyph kGlyphInset px right so it has breathing room
-            // from the selection-box left edge.  The column was widened by
-            // the same amount in pixelMetric, so the gap to the item text is
-            // unchanged.
             QStyleOption shifted = *opt;
             shifted.rect = opt->rect.translated(kGlyphInset, 0);
             QProxyStyle::drawPrimitive(pe, &shifted, p, w);
@@ -417,6 +436,15 @@ static TightMenuStyle *tightMenuStyle()
     return s;
 }
 
+static MenuShadowFilter *menuShadowFilter()
+{
+    static MenuShadowFilter *s = nullptr;
+    if (!s) {
+        s = new MenuShadowFilter(qApp);
+    }
+    return s;
+}
+
 void themeMenu(QMenu *menu)
 {
     // A frameless, transparent window lets the QSS border-radius actually clip
@@ -426,6 +454,9 @@ void themeMenu(QMenu *menu)
     // Apply the compact check-column style.  widget::setStyle() does not
     // transfer ownership, so we use a long-lived singleton parented to qApp.
     menu->setStyle(tightMenuStyle());
+    // On Windows, install an event filter that applies DWM shadow when the
+    // popup's native surface is created.
+    menu->installEventFilter(menuShadowFilter());
 }
 
 void applyAdwaitaTheme()

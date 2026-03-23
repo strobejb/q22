@@ -121,6 +121,7 @@ MainWindow::MainWindow(QWidget *parent)
     // Recent files submenu — attached to actionRecent before the hamburger
     // menu is built so the shared QAction already carries its submenu.
     m_recentMenu = new QMenu(this);
+    themeMenu(m_recentMenu);
     ui->actionRecent->setMenu(m_recentMenu);
     updateRecentMenu();
 
@@ -153,6 +154,7 @@ MainWindow::MainWindow(QWidget *parent)
             m_titleBar->viewMenu()->addSeparator();
         else if (QMenu *sub = a->menu()) {
             auto *copy = new QMenu(sub->title(), m_titleBar);
+            themeMenu(copy);
             for (QAction *sa : sub->actions())
                 if (sa->isSeparator())
                     copy->addSeparator();
@@ -188,6 +190,7 @@ MainWindow::MainWindow(QWidget *parent)
     // Build a standalone Edit menu for the HexView context menu, sharing the
     // same QActions so any connections added later apply automatically.
     auto *editMenu = new QMenu(this);
+    themeMenu(editMenu);
     for (QAction *a : ui->menuEdit->actions())
         if (a->isSeparator())
             editMenu->addSeparator();
