@@ -80,13 +80,13 @@
         <enum>Qt::FocusPolicy::NoFocus</enum>
        </property>
        <property name="toolTip">
-        <string>Find options</string>
+        <string>Search options</string>
        </property>
        <property name="text">
         <string/>
        </property>
        <property name="icon">
-        <iconset theme="open-menu-symbolic"/>
+        <iconset theme="edit-find-symbolic"/>
        </property>
        <property name="popupMode">
         <enum>QToolButton::ToolButtonPopupMode::InstantPopup</enum>
@@ -98,6 +98,9 @@
      </item>
      <item>
       <widget class="QLineEdit" name="editFind">
+       <property name="toolTip">
+        <string>Search data</string>
+       </property>
        <property name="placeholderText">
         <string>Search…</string>
        </property>
@@ -127,7 +130,7 @@
         <string/>
        </property>
        <property name="icon">
-        <iconset theme="object-flip-vertical-symbolic"/>
+        <iconset theme="mail-send-receive-symbolic"/>
        </property>
        <property name="popupMode">
         <enum>QToolButton::ToolButtonPopupMode::InstantPopup</enum>
@@ -170,6 +173,9 @@
        </property>
        <property name="focusPolicy">
         <enum>Qt::FocusPolicy::NoFocus</enum>
+       </property>
+       <property name="toolTip">
+        <string>Search data type</string>
        </property>
        <property name="sizeAdjustPolicy">
         <enum>QComboBox::SizeAdjustPolicy::AdjustToContentsOnFirstShow</enum>

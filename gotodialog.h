@@ -20,7 +20,11 @@ public:
     // Pass initialText to pre-fill (e.g. from a selection).
     void activate(const QString &initialText = {});
 
+    // Repopulate the bookmarks combo from the HexView's current bookmark list.
+    void refreshBookmarks();
+
 signals:
+    void bookmarkRequested();
 
 protected:
     void keyPressEvent(QKeyEvent *e) override;

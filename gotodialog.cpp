@@ -3,6 +3,7 @@
 #include "datatypecombobox.h"
 #include "theme.h"
 #include "HexView/hexview.h"
+#include "HexView/hexviewbookmark.h"
 #include <QApplication>
 #include <QCursor>
 #include <QKeyEvent>
@@ -10,6 +11,7 @@
 #include <QStyle>
 #include <QToolButton>
 #include <QRegularExpression>
+#include <QRegularExpressionValidator>
 #include <algorithm>
 #include <cstring>
 
@@ -35,7 +37,8 @@ GotoDialog::GotoDialog(HexView *hv, QWidget *parent)
     // combobox border defined in theme.cpp's buildStylesheet().  Once any
     // border property is set via stylesheet Qt stops drawing the platform
     // default border, so we must declare it explicitly.
-    QString borderCol = QApplication::palette().mid().color().name();
+    QString borderCol  = QApplication::palette().mid().color().name();
+    QString accentCol  = QApplication::palette().highlight().color().name();
     setStyleSheet(QString(R"(
         QToolButton {
             border: none;
@@ -50,7 +53,12 @@ GotoDialog::GotoDialog(HexView *hv, QWidget *parent)
             border: 1px solid %3;
             border-radius: 6px;
         }
-    )").arg(hover, pressed, borderCol));
+        QLineEdit:focus {
+            margin: 1px 0;
+            border: 2px solid %4;
+            border-radius: 6px;
+        }
+    )").arg(hover, pressed, borderCol, accentCol));
 
     // Options menu
     auto *optMenu = new QMenu(this);
@@ -62,6 +70,9 @@ GotoDialog::GotoDialog(HexView *hv, QWidget *parent)
     const int kPad = qMax(1, qRound(qApp->devicePixelRatio() * 2.0));
     ui->editOffset->setTextMargins(kPad + 2, kPad, kPad + 2, kPad);
     ui->editOffset->setMinimumHeight(ui->editOffset->minimumSizeHint().height() + 2 * kPad);
+
+    ui->editOffset->setValidator(
+        new QRegularExpressionValidator(QRegularExpression("[0-9A-Fa-f]*"), ui->editOffset));
 
     // Colour the top border line
     ui->topBorder->setStyleSheet(
@@ -78,25 +89,23 @@ GotoDialog::GotoDialog(HexView *hv, QWidget *parent)
     ui->comboBookmarks->hide();
 
     m_comboBookmarks->buildMenu();
-    /*m_comboDataType->setActionData("Hex",    SearchHex);
-    m_comboDataType->setActionData("UTF-8",  SearchUTF8);
-    m_comboDataType->setActionData("UTF-16", SearchUTF16);
-    m_comboDataType->setActionData("UTF-32", SearchUTF32);
-    m_comboDataType->setActionData("Byte",   SearchByte);
-    m_comboDataType->setActionData("Word",   SearchWord);
-    m_comboDataType->setActionData("Dword",  SearchDword);
-    m_comboDataType->setDisplayText(m_comboDataType->selectionText());*/
 
-    // Keep the search field's font in sync with the Type combo so both
-    // controls render text at the same size.
+    // Keep the search field's font in sync with the bookmark combo.
     ui->editOffset->setFont(m_comboBookmarks->font());
+
+    // Navigate to selected bookmark when user picks from the list.
     connect(m_comboBookmarks, &DataTypeComboBox::selectionChanged, this, [this](int) {
-        m_comboBookmarks->setDisplayText(m_comboBookmarks->selectionText());
-        //updateSearchHexPreview();
-        connect(ui->editOffset, &QLineEdit::textChanged, this, [this] { updateSearchHexPreview(); });
+        QVariant data = m_comboBookmarks->selectionData();
+        if (!data.isNull()) {
+            size_w offset = data.value<quint64>();
+            m_hv->setCurPos(offset);
+            m_hv->scrollTo(offset);
+            m_hv->setFocus();
+        }
     });
 
-    connect(ui->btnClose, &QToolButton::clicked, this, &QWidget::hide);
+    connect(ui->btnNewBookmark, &QToolButton::clicked, this, &GotoDialog::bookmarkRequested);
+    connect(ui->btnClose,       &QToolButton::clicked, this, &QWidget::hide);
 
     // Navigation popup menu (Find Previous / Find Next)
 
@@ -125,11 +134,34 @@ GotoDialog::~GotoDialog()
 
 void GotoDialog::activate(const QString &initialText)
 {
+    refreshBookmarks();
     if (!initialText.isEmpty())
         ui->editOffset->setText(initialText);
     show();
     ui->editOffset->setFocus();
     ui->editOffset->selectAll();
+}
+
+void GotoDialog::refreshBookmarks()
+{
+    const QList<Bookmark> &bms = m_hv->bookmarks();
+
+    m_comboBookmarks->clear();
+    QStringList labels;
+    for (const Bookmark &bm : bms) {
+        const QString hex   = QString::number(bm.offset, 16).toUpper();
+        const QString label = bm.name.isEmpty()
+            ? QStringLiteral("(unnamed) (%1)").arg(hex)
+            : QStringLiteral("%1 (%2)").arg(bm.name, hex);
+        m_comboBookmarks->addItem(label);
+        labels.append(label);
+    }
+    m_comboBookmarks->buildMenu();
+
+    for (int i = 0; i < bms.size(); ++i)
+        m_comboBookmarks->setActionData(labels[i], QVariant::fromValue<quint64>(bms[i].offset));
+
+    m_comboBookmarks->setEnabled(!bms.isEmpty());
 }
 
 void GotoDialog::keyPressEvent(QKeyEvent *e)

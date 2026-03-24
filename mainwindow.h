@@ -8,6 +8,7 @@ QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
 
+class BookmarkDialog;
 class FindDialog;
 class GotoDialog;
 class HexView;
@@ -41,8 +42,9 @@ private:
     StatusBar      *m_statusBar    = nullptr;
     TitleBar       *m_titleBar     = nullptr;
     QMenu          *m_recentMenu   = nullptr;
-    FindDialog     *m_findDialog   = nullptr;
-    GotoDialog     *m_gotoDialog   = nullptr;
+    BookmarkDialog *m_bookmarkDialog = nullptr;
+    FindDialog     *m_findDialog     = nullptr;
+    GotoDialog     *m_gotoDialog     = nullptr;
     bool            m_inResizeZone = false;
     QByteArray      m_lastPattern;
     uint            m_lastFindFlags = 0;

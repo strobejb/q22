@@ -44,6 +44,15 @@
     <property name="title">
      <string>Edit</string>
     </property>
+    <widget class="QMenu" name="menuHighlights">
+     <property name="title">
+      <string>Highlight</string>
+     </property>
+     <addaction name="actionBookmark_here"/>
+     <addaction name="actionHighlight_All_Occurances"/>
+     <addaction name="separator"/>
+     <addaction name="actionSelect_All"/>
+    </widget>
     <addaction name="actionUndo"/>
     <addaction name="actionRedo"/>
     <addaction name="separator"/>
@@ -53,8 +62,10 @@
     <addaction name="separator"/>
     <addaction name="action_Paste"/>
     <addaction name="actionPaste_Special"/>
-    <addaction name="separator"/>
     <addaction name="action_Delete"/>
+    <addaction name="separator"/>
+    <addaction name="menuHighlights"/>
+    <addaction name="separator"/>
    </widget>
    <widget class="QMenu" name="menuView">
     <property name="title">
@@ -229,7 +240,7 @@
   </action>
   <action name="actionFind">
    <property name="text">
-    <string>&amp;Find</string>
+    <string>&amp;Find...</string>
    </property>
    <property name="shortcut">
     <string>Ctrl+F</string>
@@ -253,7 +264,7 @@
   </action>
   <action name="action_Replace">
    <property name="text">
-    <string>&amp;Replace</string>
+    <string>&amp;Replace...</string>
    </property>
    <property name="shortcut">
     <string>Ctrl+H</string>
@@ -289,7 +300,7 @@
   </action>
   <action name="action_Goto">
    <property name="text">
-    <string>&amp;Goto Offset...</string>
+    <string>&amp;Goto...</string>
    </property>
    <property name="shortcut">
     <string>Ctrl+G</string>
@@ -386,6 +397,27 @@
   <action name="actionDouble_64_bit_IEEE">
    <property name="text">
     <string>Double (64-bit IEEE)</string>
+   </property>
+  </action>
+  <action name="actionBookmark_here">
+   <property name="text">
+    <string>Bookmark Here</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+B</string>
+   </property>
+  </action>
+  <action name="actionSelect_All">
+   <property name="text">
+    <string>Select &amp;All</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+A</string>
+   </property>
+  </action>
+  <action name="actionHighlight_All_Occurances">
+   <property name="text">
+    <string>Highlight All Occurances</string>
    </property>
   </action>
  </widget>

@@ -1,6 +1,7 @@
 #ifndef THEME_H
 #define THEME_H
 
+#include <QColor>
 #include <QPoint>
 
 // Applies Adwaita Light or Dark (auto-detected from Qt colour scheme hint)
@@ -13,6 +14,9 @@ class QMenu;
 void themeMenu(QMenu *menu);
 
 class QWidget;
+// Returns the border/separator colour used by the current theme.
+QColor themeBorderColor();
+
 // Compute the global position for a menu anchored to a widget.  The menu is
 // placed immediately below the anchor when there is enough space, and
 // immediately above when there is not — so it never obscures the anchor.

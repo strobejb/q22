@@ -7,7 +7,6 @@
 #include <QObject>
 #include <QComboBox>
 #include <QScreen>
-#include <QFrame>
 #include <QLabel>
 #include <QProgressBar>
 #include <QEnterEvent>
@@ -197,6 +196,7 @@ class PanelStrip : public QWidget
 public:
     explicit PanelStrip(QWidget *parent = nullptr);
     void addPanel(QWidget *w);
+    void setOverlapGuard(QWidget *w);
 
     QSize sizeHint()        const override;
     QSize minimumSizeHint() const override;
@@ -204,10 +204,13 @@ public:
 protected:
     void resizeEvent(QResizeEvent *) override;
     bool event(QEvent *) override;
+    bool eventFilter(QObject *, QEvent *) override;
 
 private:
     void layoutPanels();
+    void checkOverlap();
     QList<QWidget *> m_panels;
+    QWidget         *m_overlapGuard = nullptr;
 };
 
 // ── StatusBar ─────────────────────────────────────────────────────────────────
@@ -239,9 +242,9 @@ private:
     QWidget      *m_searchWidget  = nullptr;
     QLabel       *m_searchLabel   = nullptr;
     QProgressBar *m_searchBar     = nullptr;
-    QFrame       *m_searchSep     = nullptr;
+    QWidget      *m_searchSep     = nullptr;
     QLabel       *m_patternLabel  = nullptr;
-    QFrame       *m_patternSep    = nullptr;
+    QWidget      *m_patternSep    = nullptr;
 };
 
 #endif // STATUSBAR_H

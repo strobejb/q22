@@ -130,6 +130,34 @@ void PanelStrip::addPanel(QWidget *w)
     m_panels.append(w);
 }
 
+void PanelStrip::setOverlapGuard(QWidget *w)
+{
+    m_overlapGuard = w;
+    if (w) w->installEventFilter(this);
+}
+
+bool PanelStrip::eventFilter(QObject *obj, QEvent *e)
+{
+    if (obj == m_overlapGuard) {
+        const auto t = e->type();
+        if (t == QEvent::Show || t == QEvent::Hide || t == QEvent::Resize)
+            checkOverlap();
+    }
+    return QWidget::eventFilter(obj, e);
+}
+
+void PanelStrip::checkOverlap()
+{
+    // Both the strip and the guard are children of the same parent (the status bar),
+    // so subtracting their positions gives the guard's rect in strip-local coordinates.
+    QRect guardRect;
+    if (m_overlapGuard && m_overlapGuard->isVisible())
+        guardRect = QRect(m_overlapGuard->pos() - pos(), m_overlapGuard->size());
+
+    for (QWidget *p : m_panels)
+        p->setVisible(guardRect.isEmpty() || !guardRect.intersects(p->geometry()));
+}
+
 QSize PanelStrip::sizeHint() const
 {
     int w = 0, h = 0;
@@ -160,6 +188,7 @@ void PanelStrip::layoutPanels()
         x -= pw;
         p->setGeometry(x, py, pw, ph);
     }
+    checkOverlap();
 }
 
 void PanelStrip::resizeEvent(QResizeEvent *) { layoutPanels(); }
@@ -217,14 +246,12 @@ StatusBar::StatusBar(HexView *hv, QStatusBar *bar, QObject *parent)
     strip->addPanel(m_comboValue);
     strip->addPanel(m_comboMode);
 
-    const QColor borderColor = QApplication::palette().mid().color();
+    const QColor borderColor = themeBorderColor();
 
     auto makeSep = [&]() {
-        auto *sep = new QFrame(bar);
-        sep->setFrameShape(QFrame::VLine);
-        sep->setFrameShadow(QFrame::Plain);
+        auto *sep = new QWidget(bar);
         sep->setFixedWidth(1);
-        sep->setStyleSheet(QString("QFrame { background: %1; }").arg(borderColor.name()));
+        sep->setStyleSheet(QString("background: %1;").arg(borderColor.name()));
         sep->hide();
         return sep;
     };
@@ -258,6 +285,7 @@ StatusBar::StatusBar(HexView *hv, QStatusBar *bar, QObject *parent)
 
     bar->addPermanentWidget(strip, 1); // stretch=1: strip fills remaining width
     bar->setMinimumWidth(0);           // prevent status bar from enforcing a floor
+    strip->setOverlapGuard(m_patternLabel);
 
     update();
 }

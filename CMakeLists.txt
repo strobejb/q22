@@ -19,6 +19,10 @@ set(PROJECT_SOURCES
         mainwindow.cpp
         mainwindow.h
         mainwindow.ui
+        bookmarkdialog.h
+        bookmarkdialog.cpp
+        colourpickerwidget.h
+        colourpickerwidget.cpp
         datatypecombobox.h
         datatypecombobox.cpp
         gotodialog.cpp
@@ -48,6 +52,8 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         gotodialog.ui
         gotodialog.cpp
         gotodialog.h
+        bookmarks.ui
+        preferences.ui
     )
 # Define target properties for Android with Qt 6 as:
 #    set_property(TARGET qexed APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
@@ -68,6 +74,7 @@ else()
     endif()
 endif()
 
+target_include_directories(qexed PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(qexed PRIVATE Qt${QT_VERSION_MAJOR}::Widgets HexView)
 
 if(WIN32)

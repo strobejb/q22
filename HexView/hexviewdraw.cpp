@@ -217,7 +217,7 @@ void HexView::invalidateRange(size_w start, size_w finish)
 //  colour of the inter-byte space that follows (may differ at a group
 //  boundary or selection edge).
 
-bool HexView::getHighlightCol(size_w offset, int pane, BOOKNODE *itemStart,
+bool HexView::getHighlightCol(size_w offset, int pane, int startIdx,
                                HEXCOL *col1, HEXCOL *col2,
                                bool fModified, bool fMatched, bool fIncSelection)
 {
@@ -250,27 +250,26 @@ bool HexView::getHighlightCol(size_w offset, int pane, BOOKNODE *itemStart,
     }
 
     // Check if any bookmark covers this byte
-    BOOKNODE *hi = nullptr;
-    if (itemStart) {
-        for (BOOKNODE *n = itemStart; n != m_BookTail; n = n->next) {
-            if (offset >= n->bookmark.offset &&
-                offset <  n->bookmark.offset + n->bookmark.length) {
-                hi = n;
+    int hiIdx = -1;
+    if (startIdx >= 0) {
+        for (int n = startIdx; n < m_bookmarks.size(); ++n) {
+            const Bookmark &bm = m_bookmarks[n];
+            if (offset >= bm.offset && offset < bm.offset + bm.length) {
+                hiIdx = n;
                 break;
             }
         }
     }
 
-    if (hi &&
-        offset >= hi->bookmark.offset &&
-        offset < hi->bookmark.offset + hi->bookmark.length)// >= 0)
+    if (hiIdx >= 0)
     {
+        const Bookmark &hi = m_bookmarks[hiIdx];
         //col1->colFG = Highlight[idx].colFG;
         //col1->colBG = Highlight[idx].colBG;
 
 
-        col1->colFG = hi->bookmark.col;
-        col1->colBG = hi->bookmark.backcol;
+        col1->colFG = hi.fgColour;
+        col1->colBG = hi.bgColour;
 
         //col1->colFG = RGB(255,255,255);
         //col1->colBG = RGB(128,128,128);
@@ -344,7 +343,7 @@ bool HexView::getHighlightCol(size_w offset, int pane, BOOKNODE *itemStart,
             //col1->colBG = MixRgb(GetHexColour(HVC_SELECTION), GetHexColour(nSchemeIdxBG));
 
             //if(!fModified)
-            col1->colFG = !hi || fModified ? getHexColour(nSchemeIdxFG) :col2->colBG;
+            col1->colFG = hiIdx < 0 || fModified ? getHexColour(nSchemeIdxFG) : col2->colBG;
             col1->colBG = getHexColour(nSchemeIdxBG);
 
 
@@ -398,7 +397,7 @@ size_t HexView::formatLine(uint8_t *data, size_t length, size_w offset, size_t d
             getHexColour(HVC_BACKGROUND),
             (size_t)(ptr - szBuf));
 
-    BOOKNODE *highlight = findBookmark(offset, offset + length);
+    int highlight = findBookmark(offset, offset + length);
 
 
     // ── Hex column ────────────────────────────────────────────────────────────
@@ -731,15 +730,14 @@ void HexView::paintEvent(QPaintEvent *event)
                            datashift);
 
         // Bookmark note strips (stub — implemented in Stage 5)
-        for (BOOKNODE *bnp = m_BookHead->next; bnp != m_BookTail; bnp = bnp->next) {
-            const BOOKMARK &bm = bnp->bookmark;
-            if ((bm.pszText || bm.pszTitle) &&
-                bm.offset >= i  * (size_w)m_nBytesPerLine &&
+        for (const Bookmark &bm : m_bookmarks) {
+            if (!bm.name.isEmpty() &&
+                bm.offset >= i * (size_w)m_nBytesPerLine &&
                 bm.offset <  (i + 1) * (size_w)m_nBytesPerLine &&
                 bm.offset <  m_pDataSeq->size())
             {
                 int ny = (int)(i - m_nVScrollPos) * m_nFontHeight;
-                drawNoteStrip(painter, nx + 30, ny, bnp);
+                drawNoteStrip(painter, nx + 30, ny, bm);
             }
         }
     }

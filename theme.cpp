@@ -98,6 +98,14 @@ struct MenuShadowFilter : public QObject
 
 // ── Smart menu positioning ────────────────────────────────────────────────────
 
+QColor themeBorderColor()
+{
+    return QColor(QApplication::palette().mid().color().name());
+
+    //bool dark = QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
+    //return dark ? QColor("#4a4a4a") : QColor("#cdc7c2");
+}
+
 QPoint smartMenuPos(const QWidget *anchor, const QMenu *menu, bool rightAlign)
 {
     const QSize sz    = menu->sizeHint();
@@ -370,8 +378,8 @@ QToolTip {
     background: palette(tooltip-base);
     color: palette(tooltip-text);
     border: 1px solid {border};
-    border-radius: 4px;
-    padding: 4px 8px;
+    border-radius: 6px;
+    padding: 2px 6px;
 }
 
 )";
@@ -459,6 +467,26 @@ void themeMenu(QMenu *menu)
     menu->installEventFilter(menuShadowFilter());
 }
 
+// ── Tooltip rounded-corner clipping ──────────────────────────────────────────
+//
+// setMask() does not work on Wayland popup surfaces.  Instead, setting
+// WA_TranslucentBackground during QEvent::Polish (before the native window is
+// created) allocates an alpha channel for the window.  Qt's QSS engine then
+// clips the background fill to the border-radius shape through that alpha
+// channel, producing genuinely rounded corners without any custom painting.
+
+class TooltipFilter : public QObject
+{
+public:
+    using QObject::QObject;
+    bool eventFilter(QObject *obj, QEvent *e) override
+    {
+        if (obj->inherits("QTipLabel") && e->type() == QEvent::Polish)
+            static_cast<QWidget *>(obj)->setAttribute(Qt::WA_TranslucentBackground);
+        return false;
+    }
+};
+
 void applyAdwaitaTheme()
 {
     // Fusion is always available — use it as the base style
@@ -477,4 +505,7 @@ void applyAdwaitaTheme()
         f.setFamily("Cantarell");
         QApplication::setFont(f);
     }
+
+    // Install once — the filter is owned by qApp so it lives for the process.
+    qApp->installEventFilter(new TooltipFilter(qApp));
 }

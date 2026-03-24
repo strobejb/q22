@@ -2,6 +2,7 @@
 #include "./ui_mainwindow.h"
 #include "HexView/hexview.h"
 #include "HexView/seqbase.h"
+#include "bookmarkdialog.h"
 #include "finddialog.h"
 #include "gotodialog.h"
 #include "settings.h"
@@ -185,6 +186,7 @@ MainWindow::MainWindow(QWidget *parent)
     vlay->setContentsMargins(0, 0, 0, 0);
     vlay->setSpacing(0);
     vlay->addWidget(m_hv, 1);
+    m_bookmarkDialog = new BookmarkDialog(this);
     m_findDialog = new FindDialog(central);
     m_gotoDialog = new GotoDialog(m_hv, central);
     vlay->addWidget(m_findDialog, 0);
@@ -195,12 +197,27 @@ MainWindow::MainWindow(QWidget *parent)
     // same QActions so any connections added later apply automatically.
     auto *editMenu = new QMenu(this);
     themeMenu(editMenu);
-    for (QAction *a : ui->menuEdit->actions())
-        if (a->isSeparator())
+    for (QAction *a : ui->menuEdit->actions()) {
+        if (a->isSeparator()) {
             editMenu->addSeparator();
-        else
+        } else if (QMenu *sub = a->menu()) {
+            auto *copy = new QMenu(sub->title(), editMenu);
+            themeMenu(copy);
+            for (QAction *sa : sub->actions())
+                if (sa->isSeparator()) copy->addSeparator();
+                else                   copy->addAction(sa);
+            editMenu->addMenu(copy);
+        } else {
             editMenu->addAction(a);
+        }
+    }
     m_hv->setContextMenu(editMenu);
+
+    // Actions in nested submenus of the replaced QMenuBar lose their shortcut
+    // registration when the menubar is hidden. Re-register them on the window.
+    addAction(ui->actionBookmark_here);
+    addAction(ui->actionSelect_All);
+    addAction(ui->actionHighlight_All_Occurances);
 
     // View submenu: exclusive action groups (radio behaviour within each section)
     QActionGroup *fmtGroup = new QActionGroup(this);
@@ -258,6 +275,30 @@ MainWindow::MainWindow(QWidget *parent)
             [this](size_w, size_w) { m_statusBar->update(); });
     connect(m_hv, &HexView::lengthChanged, this,
             [this](size_w) { m_statusBar->update(); });
+
+    connect(ui->actionBookmark_here, &QAction::triggered, this, [this]() {
+        const size_w selSize = m_hv->selectionSize();
+        const size_w offset  = selSize > 0 ? m_hv->selectionStart() : m_hv->cursorOffset();
+        const size_w length  = selSize > 0 ? selSize : 1;
+        m_bookmarkDialog->setOffset(offset);
+        m_bookmarkDialog->setLength(length);
+        m_bookmarkDialog->setForegroundColour(m_hv->palette().text().color());
+        if (m_bookmarkDialog->exec() == QDialog::Accepted) {
+            Bookmark bm;
+            bm.offset   = m_bookmarkDialog->offset();
+            bm.length   = static_cast<size_w>(m_bookmarkDialog->length());
+            bm.name     = m_bookmarkDialog->bookmarkName();
+            bm.fgColour = m_bookmarkDialog->foregroundColour().rgb();
+            bm.bgColour = m_bookmarkDialog->selectedColour().isValid()
+                              ? m_bookmarkDialog->selectedColour().rgb()
+                              : m_hv->getHexColour(HVC_BOOKMARK_BG);
+            m_hv->addBookmark(bm);
+            m_gotoDialog->refreshBookmarks();
+        }
+    });
+
+    connect(m_gotoDialog, &GotoDialog::bookmarkRequested,
+            ui->actionBookmark_here, &QAction::trigger);
 
     connect(ui->actionFind, &QAction::triggered, this, [this]() {
         QWidget *fw = QApplication::focusWidget();

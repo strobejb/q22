@@ -3,6 +3,8 @@ project(HexView VERSION 0.1 LANGUAGES CXX)
 qt_add_library(HexView STATIC
     hexview.h
     hexview.cpp
+    hexviewbookmark.h
+    hexviewbookmark.cpp
     hexviewdraw.cpp
     hexviewscroll.cpp
     hexviewmouse.cpp

@@ -118,7 +118,18 @@ static void parseButtonLayout(const QString &layout,
 TitleBar::TitleBar(QWidget *parent)
     : QWidget(parent)
 {
-    setFixedHeight(40);
+    // Match the system toolbar height rather than hardcoding.
+    // PM_ToolBarIconSize is 24 px on GNOME/Adwaita, giving ~46 px total —
+    // the same as an Adwaita header bar.  On KDE/Windows it scales similarly.
+    const int iconSz    = QApplication::style()->pixelMetric(QStyle::PM_ToolBarIconSize);
+    const int barH      = qMax(36, iconSz + 22);   // 46 on GNOME, ≥36 everywhere
+    // All buttons leave ~6 px margin top/bottom so they sit centred in the bar.
+    // 16 px symbolic icons are the standard for header-bar buttons on GNOME/KDE.
+    const int btnSz     = barH - 12;               // ~34 px on GNOME
+    const int btnIconSz = 16;
+    const int btnRadius = 6;                        // rounded-rect, not circular
+
+    setFixedHeight(barH);
     setObjectName("TitleBar");
 
     bool dark   = QApplication::palette().window().color().lightness() < 128;
@@ -159,7 +170,7 @@ TitleBar::TitleBar(QWidget *parent)
         #TitleBar QLabel { color: %2; font-weight: 600; }
         #TitleBar QToolButton {
             border: none;
-            border-radius: 12px;
+            border-radius: %6px;
             background: transparent;
             color: %2;
             font-size: 13px;
@@ -171,7 +182,8 @@ TitleBar::TitleBar(QWidget *parent)
         #TitleBar QToolButton#searchBtn::menu-indicator  { image: none; width: 0; }
     )").arg(bg, fg, hover,
             dark ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.18)",
-            border));
+            border,
+            QString::number(btnRadius)));
 
 #ifdef Q_OS_WIN
     // Windows 11 style additions:
@@ -224,11 +236,11 @@ TitleBar::TitleBar(QWidget *parent)
     m_hamburger->setFocusPolicy(Qt::NoFocus);
     m_hamburger->setAutoRaise(true);
 #ifdef Q_OS_WIN
-    m_hamburger->setFixedSize(40, 40);
+    m_hamburger->setFixedSize(40, barH);
 #else
-    m_hamburger->setFixedSize(32, 32);
+    m_hamburger->setFixedSize(btnSz, btnSz);
 #endif
-    m_hamburger->setIconSize(QSize(14, 14));
+    m_hamburger->setIconSize(QSize(btnIconSz, btnIconSz));
     m_hamburger->setMenu(m_menu);
     m_hamburger->setPopupMode(QToolButton::InstantPopup);
 
@@ -250,11 +262,11 @@ TitleBar::TitleBar(QWidget *parent)
     m_searchBtn->setFocusPolicy(Qt::NoFocus);
     m_searchBtn->setAutoRaise(true);
 #ifdef Q_OS_WIN
-    m_searchBtn->setFixedSize(40, 40);
+    m_searchBtn->setFixedSize(40, barH);
 #else
-    m_searchBtn->setFixedSize(32, 32);
+    m_searchBtn->setFixedSize(btnSz, btnSz);
 #endif
-    m_searchBtn->setIconSize(QSize(14, 14));
+    m_searchBtn->setIconSize(QSize(btnIconSz, btnIconSz));
     m_searchBtn->setMenu(m_searchMenu);
     m_searchBtn->setPopupMode(QToolButton::InstantPopup);
 
@@ -303,11 +315,11 @@ TitleBar::TitleBar(QWidget *parent)
     m_viewBtn->setFocusPolicy(Qt::NoFocus);
     m_viewBtn->setAutoRaise(true);
 #ifdef Q_OS_WIN
-    m_viewBtn->setFixedSize(40, 40);
+    m_viewBtn->setFixedSize(40, barH);
 #else
-    m_viewBtn->setFixedSize(32, 32);
+    m_viewBtn->setFixedSize(btnSz, btnSz);
 #endif
-    m_viewBtn->setIconSize(QSize(14, 14));
+    m_viewBtn->setIconSize(QSize(btnIconSz, btnIconSz));
     m_viewBtn->setMenu(m_viewMenu);
     m_viewBtn->setPopupMode(QToolButton::InstantPopup);
     // Reposition to right-align when the menu is shown.
@@ -349,11 +361,15 @@ QToolButton *TitleBar::makeWindowButton(const QString &name)
 #ifdef Q_OS_WIN
     // Windows 11: caption buttons are full title-bar height, ~46 px wide,
     // flush with no gap between them (set in the layout above).
-    btn->setFixedSize(46, 40);
+    btn->setFixedSize(46, height());
     btn->setIconSize(QSize(10, 10));
 #else
-    btn->setFixedSize(28, 28);
-    btn->setIconSize(QSize(12, 12));
+    {
+        const int iconSz = QApplication::style()->pixelMetric(QStyle::PM_ToolBarIconSize);
+        const int sz     = qMax(36, iconSz + 22) - 12;   // same formula as constructor
+        btn->setFixedSize(sz, sz);
+        btn->setIconSize(QSize(16, 16));
+    }
 #endif
 
 #ifdef Q_OS_WIN

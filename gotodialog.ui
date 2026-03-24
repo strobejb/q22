@@ -6,12 +6,12 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>600</width>
+    <width>700</width>
     <height>46</height>
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Find</string>
+   <string>Goto</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <property name="spacing">
@@ -80,13 +80,13 @@
         <enum>Qt::FocusPolicy::NoFocus</enum>
        </property>
        <property name="toolTip">
-        <string>Find options</string>
+        <string>Goto options</string>
        </property>
        <property name="text">
         <string/>
        </property>
        <property name="icon">
-        <iconset theme="open-menu-symbolic"/>
+        <iconset theme="document-revert-symbolic-rtl"/>
        </property>
        <property name="popupMode">
         <enum>QToolButton::ToolButtonPopupMode::InstantPopup</enum>
@@ -98,6 +98,15 @@
      </item>
      <item>
       <widget class="QLineEdit" name="editOffset">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
+       <property name="toolTip">
+        <string>File address</string>
+       </property>
        <property name="text">
         <string/>
        </property>
@@ -124,13 +133,13 @@
         <enum>Qt::FocusPolicy::NoFocus</enum>
        </property>
        <property name="toolTip">
-        <string>Find options</string>
+        <string>Goto address</string>
        </property>
        <property name="text">
         <string/>
        </property>
        <property name="icon">
-        <iconset theme="go-jump-symbolic"/>
+        <iconset theme="find-location-symbolic"/>
        </property>
        <property name="popupMode">
         <enum>QToolButton::ToolButtonPopupMode::InstantPopup</enum>
@@ -174,6 +183,9 @@
        <property name="focusPolicy">
         <enum>Qt::FocusPolicy::ClickFocus</enum>
        </property>
+       <property name="toolTip">
+        <string>Bookmarks</string>
+       </property>
        <property name="sizeAdjustPolicy">
         <enum>QComboBox::SizeAdjustPolicy::AdjustToContentsOnFirstShow</enum>
        </property>
@@ -187,6 +199,40 @@
          <string>Bookmark 2</string>
         </property>
        </item>
+      </widget>
+     </item>
+     <item>
+      <widget class="QToolButton" name="btnNewBookmark">
+       <property name="minimumSize">
+        <size>
+         <width>28</width>
+         <height>28</height>
+        </size>
+       </property>
+       <property name="maximumSize">
+        <size>
+         <width>28</width>
+         <height>28</height>
+        </size>
+       </property>
+       <property name="focusPolicy">
+        <enum>Qt::FocusPolicy::NoFocus</enum>
+       </property>
+       <property name="toolTip">
+        <string>New Bookmark</string>
+       </property>
+       <property name="text">
+        <string/>
+       </property>
+       <property name="icon">
+        <iconset theme="bookmark-new-symbolic"/>
+       </property>
+       <property name="popupMode">
+        <enum>QToolButton::ToolButtonPopupMode::InstantPopup</enum>
+       </property>
+       <property name="autoRaise">
+        <bool>true</bool>
+       </property>
       </widget>
      </item>
      <item>

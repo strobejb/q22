@@ -13,6 +13,7 @@
 DataTypeComboBox::DataTypeComboBox(QWidget *parent)
     : ValueComboBox(parent)
 {
+    setFocusPolicy(Qt::ClickFocus);
     m_menu = new QMenu(this);
     themeMenu(m_menu);
     m_menu->installEventFilter(this);

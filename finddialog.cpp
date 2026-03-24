@@ -123,7 +123,8 @@ FindDialog::FindDialog(QWidget *parent)
     // combobox border defined in theme.cpp's buildStylesheet().  Once any
     // border property is set via stylesheet Qt stops drawing the platform
     // default border, so we must declare it explicitly.
-    QString borderCol = QApplication::palette().mid().color().name();
+    QString borderCol  = QApplication::palette().mid().color().name();
+    QString accentCol  = QApplication::palette().highlight().color().name();
     setStyleSheet(QString(R"(
         QToolButton {
             border: none;
@@ -138,7 +139,12 @@ FindDialog::FindDialog(QWidget *parent)
             border: 1px solid %3;
             border-radius: 6px;
         }
-    )").arg(hover, pressed, borderCol));
+        QLineEdit:focus {
+            margin: 1px 0;
+            border: 2px solid %4;
+            border-radius: 6px;
+        }
+    )").arg(hover, pressed, borderCol, accentCol));
 
     // Options menu
     auto *optMenu = new QMenu(this);
@@ -316,7 +322,7 @@ void FindDialog::updateSearchHexPreview()
     if (pat.isEmpty()) {
         const QString border = QApplication::palette().mid().color().name();
         ui->editFind->setStyleSheet(QString(
-            "color: #c01c28; border: 1px solid %1; border-radius: 6px; margin: 2px 0;")
+            "color: #c01c28; border: 1px solid %1; border-radius: 6px; margin: 1px 0;")
             .arg(border));
         emit searchHexChanged(tr("Invalid search pattern"));
     } else {

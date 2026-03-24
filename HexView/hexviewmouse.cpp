@@ -234,11 +234,11 @@ bool HexView::isOverResizeBar(int x) const
     return (x / BARWIDTH) == (m_nResizeBarPos / BARWIDTH);
 }
 
-uint HexView::hitTest(int x, int y, BOOKNODE **pbnp)
+uint HexView::hitTest(int x, int y, int *bookmarkIdx)
 {
     const int BARWIDTH = 8;
 
-    if (pbnp) *pbnp = nullptr;
+    if (bookmarkIdx) *bookmarkIdx = -1;
 
     // Resize bar?
     if (!checkStyle(HVS_FITTOWINDOW) && checkStyle(HVS_RESIZEBAR)) {
@@ -279,10 +279,10 @@ void HexView::mousePressEvent(QMouseEvent *event)
 
     //qDebug() << "press:" << x << y;
 
-    uint ht = hitTest(x, y, &m_HighlightCurrent);
-    m_HighlightHot   = m_HighlightCurrent;
-    m_HitTestCurrent = ht;
-    m_HitTestHot     = ht;
+    uint ht = hitTest(x, y, &m_highlightCurrentIdx);
+    m_highlightHotIdx = m_highlightCurrentIdx;
+    m_HitTestCurrent  = ht;
+    m_HitTestHot      = ht;
 
     if (ht & HVHT_RESIZE) {
         if (ht == HVHT_RESIZE)
@@ -342,7 +342,7 @@ void HexView::mouseReleaseEvent(QMouseEvent *event)
         if (m_nSelectionMode == SEL_NORMAL)
             m_nSelectionMode = SEL_NONE;
     } else {
-        m_HighlightCurrent = nullptr;
+        m_highlightCurrentIdx = -1;
     }
 
     if (mouseGrabber() == viewport())
@@ -465,7 +465,7 @@ void HexView::mouseDoubleClickEvent(QMouseEvent *event)
     int x = event->pos().x();
     int y = event->pos().y();
 
-    uint ht = hitTest(x, y, &m_HighlightCurrent);
+    uint ht = hitTest(x, y, &m_highlightCurrentIdx);
     if (ht & HVHT_BOOKMARK) return;
 
     // Select the alphanumeric word under the cursor

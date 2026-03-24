@@ -20,12 +20,6 @@ HexView::HexView(QWidget *parent)
     m_pDataSeq = new sequence();
     m_pDataSeq->init();
 
-    // Sentinel bookmark nodes (doubly-linked list with head/tail guards)
-    m_BookHead = new BOOKNODE();
-    m_BookTail = new BOOKNODE();
-    m_BookHead->next = m_BookTail;
-    m_BookTail->prev = m_BookHead;
-
     // Default colours
     m_ColourList[HVC_BACKGROUND]  = HEX_SYSCOLOR(COLOR_WINDOW);
     m_ColourList[HVC_SELECTION]   = HEX_SYSCOLOR(COLOR_HIGHLIGHT);
@@ -100,15 +94,6 @@ HexView::HexView(QWidget *parent)
 HexView::~HexView()
 {
     delete m_pDataSeq;
-
-    // Free bookmark list
-    for (BOOKNODE *n = m_BookHead; n; ) {
-        BOOKNODE *next = n->next;
-        delete n->bookmark.pszText;
-        delete n->bookmark.pszTitle;
-        delete n;
-        n = next;
-    }
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -573,21 +558,6 @@ void HexView::focusOutEvent(QFocusEvent *event)
 }
 
 // ── Bookmarks (stubs) ─────────────────────────────────────────────────────────
-
-BOOKNODE *HexView::findBookmark(size_w startoff, size_w endoff)
-{
-    for (BOOKNODE *n = m_BookHead->next; n != m_BookTail; n = n->next) {
-        if (n->bookmark.offset + n->bookmark.length > startoff &&
-            n->bookmark.offset < endoff)
-            return n;
-    }
-    return nullptr;
-}
-
-void HexView::drawNoteStrip(QPainter &/*painter*/, int /*nx*/, int /*ny*/, BOOKNODE */*pbn*/)
-{
-    // stub — not yet implemented
-}
 
 // ── Internal change notification ──────────────────────────────────────────────
 

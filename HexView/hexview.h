@@ -5,10 +5,12 @@
 #include <QFont>
 #include <QRawFont>
 
+#include <QList>
 #include <QTimer>
 #include <cstdint>
 #include <QAbstractScrollArea>
 #include "sequence.h"
+#include "hexviewbookmark.h"
 
 // ── Colour indices ────────────────────────────────────────────────────────────
 #define HVC_BACKGROUND      0
@@ -126,27 +128,6 @@ struct HEXCOL {
 };
 typedef HEXCOL ATTR;
 
-struct BOOKMARK {
-    uint32_t  flags;
-    size_w    offset;
-    size_w    length;
-    QRgb      col;
-    QRgb      backcol;
-    QString  *pszText;
-    uint32_t  nMaxText;
-    QString  *pszTitle;
-    uint32_t  nMaxTitle;
-};
-
-struct BOOKNODE {
-    BOOKNODE() : prev(nullptr), next(nullptr) {
-        memset(&bookmark, 0, sizeof(bookmark));
-    }
-    BOOKMARK  bookmark;
-    BOOKNODE *prev;
-    BOOKNODE *next;
-};
-
 enum SELMODE { SEL_NONE, SEL_NORMAL, SEL_MARGIN, SEL_DRAGDROP };
 
 // ── HexView widget ────────────────────────────────────────────────────────────
@@ -225,6 +206,10 @@ public:
     void   setFont(const QFont &font);
     void   setFontSpacing(int x, int y);
 
+    // Bookmarks
+    void   addBookmark(const Bookmark &bm);
+    const QList<Bookmark> &bookmarks() const { return m_bookmarks; }
+
     // Provide an external menu to use instead of the built-in context menu.
     // Pass nullptr to restore the built-in behaviour.  Ownership stays with
     // the caller; HexView only holds a non-owning pointer.
@@ -273,7 +258,7 @@ private:
                       ATTR *attrList, seqchar_info *infobuf,
                       bool fIncSelection);
 
-    bool   getHighlightCol(size_w offset, int pane, BOOKNODE *itemStart,
+    bool   getHighlightCol(size_w offset, int pane, int startIdx,
                            HEXCOL *col1, HEXCOL *col2,
                            bool fModified, bool fMatched,
                            bool fIncSelection = true);
@@ -293,8 +278,10 @@ private:
                        const QString &text, const QRawFont &rawFont, int cellWidth);
 
 
-    BOOKNODE *findBookmark(size_w startoff, size_w endoff);
-    void      drawNoteStrip(QPainter &painter, int nx, int ny, BOOKNODE *pbn);
+    // ── Bookmarks ─────────────────────────────────────────────────────────────
+    int   findBookmark(size_w startoff, size_w endoff) const;
+    void  drawNoteStrip(QPainter &painter, int nx, int ny, const Bookmark &bm);
+
 
     // ── Coordinate / caret helpers ────────────────────────────────────────────
     int    getLogicalX(int x, int *pane, int *subitem = nullptr) const;
@@ -311,7 +298,7 @@ private:
     void   scrollToCaret();
 
     // ── Hit testing ───────────────────────────────────────────────────────────
-    uint   hitTest(int x, int y, BOOKNODE **pbnp = nullptr);
+    uint   hitTest(int x, int y, int *bookmarkIdx = nullptr);
     bool   isOverResizeBar(int x) const;
 
     // ── Scroll ────────────────────────────────────────────────────────────────
@@ -396,10 +383,9 @@ private:
     QRgb    m_ColourList[HV_MAX_COLS] = {};
 
     // Bookmarks
-    BOOKNODE *m_BookHead        = nullptr;
-    BOOKNODE *m_BookTail        = nullptr;
-    BOOKNODE *m_HighlightCurrent = nullptr;
-    BOOKNODE *m_HighlightHot    = nullptr;
+    QList<Bookmark> m_bookmarks;
+    int  m_highlightCurrentIdx  = -1;
+    int  m_highlightHotIdx      = -1;
 
     // Mouse / interaction
     bool    m_fResizeBar        = false;
