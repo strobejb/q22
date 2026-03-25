@@ -203,8 +203,8 @@ public:
     bool   paste();
     bool   clear();
 
-    void   setFont(const QFont &font);
-    void   setFontSpacing(int x, int y);
+    void   setFont(const QFont &font, int hSpacing=0, int lineSpacing=0);
+    void   setFontSpacing(int hSpacing, int lineSpacing);
 
     // Bookmarks
     void   addBookmark(const Bookmark &bm);

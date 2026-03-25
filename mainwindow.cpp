@@ -5,6 +5,7 @@
 #include "bookmarkdialog.h"
 #include "finddialog.h"
 #include "gotodialog.h"
+#include "preferences.h"
 #include "settings.h"
 #include "statusbar.h"
 #include "titlebar.h"
@@ -15,9 +16,14 @@
 #include <QFileDialog>
 #include <QIcon>
 #include <QMenu>
+#include <QPainter>
+#include <QPainterPath>
 #include <QStyle>
 #include <QMouseEvent>
 #include <QVBoxLayout>
+#include <QHelpEvent>
+#include <QToolTip>
+#include <QWidgetAction>
 #include <QWindow>
 
 #ifdef Q_OS_WIN
@@ -87,6 +93,167 @@ static QCursor cursorForEdges(Qt::Edges edges) {
     return Qt::ArrowCursor;
 }
 
+// ─── ThemePickerWidget ────────────────────────────────────────────────────────
+// Three circles (Light / System / Dark) embedded as a QWidgetAction at the top
+// of the Tools menu.  No Q_OBJECT needed — uses a std::function callback.
+
+class ThemePickerWidget : public QWidget
+{
+public:
+    static constexpr int VPAD     = 14;  // vertical padding above & below
+    static constexpr int TARGET_D = 44;  // desired circle diameter
+
+    ThemePickerWidget(ColorScheme current,
+                      std::function<void(ColorScheme)> cb,
+                      QWidget *parent = nullptr)
+        : QWidget(parent), m_current(current), m_cb(std::move(cb))
+    {
+        setMouseTracking(true);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    }
+
+    QSize sizeHint() const override
+    {
+        // Height drives d() — set it so circles come out TARGET_D tall.
+        // Width is just a sensible minimum; the menu stretches us to its width.
+        return QSize(TARGET_D * 3 + 60, VPAD + TARGET_D + VPAD);
+    }
+
+    void setCurrent(ColorScheme s) { m_current = s; update(); }
+
+    // Always derived from the actual rendered height so it stays in sync.
+    int d() const { return height() - 2 * VPAD; }
+
+private:
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+
+        const QPalette &pal  = palette();
+        const QColor    bord = pal.color(QPalette::Mid);
+        const QColor    sel  = pal.color(QPalette::Highlight);
+
+        static const QColor sLight("#f8f8f8");
+        static const QColor sDark ("#242424");
+
+        for (int i = 0; i < 3; ++i) {
+            const QRectF cr   = QRectF(circleRect(i)).adjusted(0.5, 0.5, -0.5, -0.5);
+            const bool   hov  = (m_hovered == i);
+            const bool   curr = (static_cast<int>(m_current) == i);
+
+            if (i == 1) {
+                // System — left half dark, right half light
+                p.setPen(Qt::NoPen);
+                QPainterPath clip;
+                clip.addEllipse(cr);
+                p.setClipPath(clip);
+                p.setBrush(sDark);
+                p.drawRect(QRectF(cr.left(), cr.top(), cr.width() / 2, cr.height()));
+                p.setBrush(sLight);
+                p.drawRect(QRectF(cr.left() + cr.width() / 2, cr.top(),
+                                  cr.width() / 2, cr.height()));
+                p.setClipping(false);
+            } else {
+                p.setPen(Qt::NoPen);
+                p.setBrush(i == 0 ? sLight : sDark);
+                p.drawEllipse(cr);
+            }
+
+            // Border: accent if selected, hover-lightened if hovered, normal otherwise
+            p.setBrush(Qt::NoBrush);
+            p.setPen(QPen(curr ? sel : (hov ? bord.lighter(140) : bord),
+                          curr ? 2.5 : 1.0));
+            p.drawEllipse(cr);
+        }
+    }
+
+    bool event(QEvent *e) override
+    {
+        if (e->type() == QEvent::ToolTip) {
+            auto *he = static_cast<QHelpEvent *>(e);
+            const int h = hitCircle(he->pos());
+            static const char *tips[] = { "Light", "System", "Dark" };
+            if (h >= 0)
+                QToolTip::showText(he->globalPos(), tips[h], this);
+            else
+                QToolTip::hideText();
+            return true;
+        }
+        return QWidget::event(e);
+    }
+
+    void mouseMoveEvent(QMouseEvent *e) override
+    {
+        const int h = hitCircle(e->pos());
+        if (h != m_hovered) { m_hovered = h; update(); }
+    }
+
+    void leaveEvent(QEvent *) override
+    {
+        if (m_hovered != -1) { m_hovered = -1; update(); }
+    }
+
+    void mousePressEvent(QMouseEvent *e) override
+    {
+        if (e->button() != Qt::LeftButton) return;
+        const int h = hitCircle(e->pos());
+        if (h >= 0) {
+            m_current = static_cast<ColorScheme>(h);
+            update();
+            m_cb(m_current);
+        }
+    }
+
+private:
+    // Circles are evenly distributed across the full widget width in thirds.
+    QRect circleRect(int i) const
+    {
+        const int diam = d();
+        const int colW = width() / 3;
+        const int cx   = colW * i + colW / 2;
+        const int cy   = height() / 2;
+        return QRect(cx - diam / 2, cy - diam / 2, diam, diam);
+    }
+
+    int hitCircle(QPoint pos) const
+    {
+        for (int i = 0; i < 3; ++i)
+            if (circleRect(i).adjusted(-6, -6, 6, 6).contains(pos))
+                return i;
+        return -1;
+    }
+
+    ColorScheme                      m_current;
+    int                              m_hovered = -1;
+    std::function<void(ColorScheme)> m_cb;
+};
+
+// QWidgetAction subclass: overrides createWidget so every menu that receives
+// this action gets its own properly-parented ThemePickerWidget instance.
+// (setDefaultWidget only works for the *first* container added; subsequent
+// containers get null from the default createWidget implementation.)
+class ThemePickerAction : public QWidgetAction
+{
+public:
+    ThemePickerAction(ColorScheme current,
+                      std::function<void(ColorScheme)> cb,
+                      QObject *parent = nullptr)
+        : QWidgetAction(parent), m_current(current), m_cb(std::move(cb)) {}
+
+protected:
+    QWidget *createWidget(QWidget *parent) override
+    {
+        return new ThemePickerWidget(m_current, m_cb, parent);
+    }
+
+private:
+    ColorScheme                      m_current;
+    std::function<void(ColorScheme)> m_cb;
+};
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), ui(new Ui::MainWindow) {
     ui->setupUi(this);
@@ -107,15 +274,6 @@ MainWindow::MainWindow(QWidget *parent)
     ui->actionOpen->setIcon(QIcon::fromTheme("document-open-symbolic"));
 #endif
 
-    // Remove native title bar.
-    // On Windows, keep the native WS_OVERLAPPEDWINDOW (which includes
-    // WS_THICKFRAME) so DWM automatically applies rounded corners, the accent
-    // border, and drop-shadow.  nativeEvent() handles WM_NCCALCSIZE to
-    // collapse the NC area to zero so the title-bar chrome never appears.
-    // On all other platforms, use Qt's own frameless hint.
-#ifndef Q_OS_WIN
-    setWindowFlag(Qt::FramelessWindowHint);
-#endif
     setWindowTitle("q22");
 
     // Custom title bar
@@ -149,6 +307,22 @@ MainWindow::MainWindow(QWidget *parent)
             searchMenu->addAction(a);
     m_titleBar->setSearchMenu(searchMenu);
 
+    // Theme picker — inserted at the top of both the native menubar Tools menu
+    // and the titlebar viewMenu copy.
+    const auto currentScheme = static_cast<ColorScheme>(AppSettings::prefColorScheme());
+    auto themeCb = [this](ColorScheme s) {
+        AppSettings::setPrefColorScheme(static_cast<int>(s));
+        applyAdwaitaTheme(s);
+        m_titleBar->refreshStylesheet();
+    };
+    auto *pickerAction = new ThemePickerAction(currentScheme, themeCb, this);
+
+    ui->menuTools->insertAction(ui->menuTools->actions().first(), pickerAction);
+    ui->menuTools->insertSeparator(ui->menuTools->actions().at(1));
+
+    m_titleBar->viewMenu()->addAction(pickerAction);
+    m_titleBar->viewMenu()->addSeparator();
+
     // Populate the view (right-side) menu with Tools actions.
     // Submenus need standalone QMenu copies (not children of the QMenuBar)
     // so Qt can display them as popups outside the menubar system.
@@ -169,8 +343,6 @@ MainWindow::MainWindow(QWidget *parent)
         }
     }
 
-    setMenuWidget(m_titleBar);
-
     m_hv = new HexView(this);
     m_hv->setObjectName("HexView");
     m_hv->setStyle(HVS_RESIZEBAR | HVS_SHOWMODS, HVS_RESIZEBAR | HVS_SHOWMODS);
@@ -178,13 +350,13 @@ MainWindow::MainWindow(QWidget *parent)
     m_hv->setHexColour(HVC_HEXODD, 0x00000080);
     m_hv->setGrouping(2);
     m_hv->setPadding(3, 3);
-    m_hv->setFontSpacing(2, 2);
     // Container: HexView fills available space; FindDialog sits flush above
     // the status bar, hidden until activated.
     auto *central = new QWidget(this);
     auto *vlay    = new QVBoxLayout(central);
     vlay->setContentsMargins(0, 0, 0, 0);
     vlay->setSpacing(0);
+    vlay->addWidget(m_titleBar);   // sits at the top of the content area in custom-titlebar mode
     vlay->addWidget(m_hv, 1);
     m_bookmarkDialog = new BookmarkDialog(this);
     m_findDialog = new FindDialog(central);
@@ -337,6 +509,32 @@ MainWindow::MainWindow(QWidget *parent)
             openFile(path);
     });
 
+    m_prefsDialog = new PreferencesDialog(this);
+    connect(m_prefsDialog, &PreferencesDialog::fontChanged,
+            this, [this](const QFont &font) {
+        m_hv->setFont(font, AppSettings::prefHorizSpacing(), AppSettings::prefLineSpacing());
+    });
+    connect(m_prefsDialog, &PreferencesDialog::fontSpacingChanged,
+            this, [this](int hSpacing, int lineSpacing) {
+        m_hv->setFont(m_hv->font(), hSpacing, lineSpacing);
+    });
+    connect(m_prefsDialog, &PreferencesDialog::nativeMenuChanged,
+            this, &MainWindow::applyMenuMode);
+    connect(ui->actionPreferences, &QAction::triggered, this, [this]() {
+        m_prefsDialog->show();
+        m_prefsDialog->raise();
+        m_prefsDialog->activateWindow();
+    });
+
+    // Apply saved font (family + size + spacing)
+    const QString savedFamily = AppSettings::prefFontFamily();
+    if (!savedFamily.isEmpty())
+        m_hv->setFont(QFont(savedFamily, AppSettings::prefFontSize()),
+                      AppSettings::prefHorizSpacing(), AppSettings::prefLineSpacing());
+
+    // Apply saved menu mode (may switch away from the default custom titlebar)
+    applyMenuMode(AppSettings::prefNativeMenu());
+
     // Edge-resize event filter: catches mouse events on any child widget
     qApp->installEventFilter(this);
 }
@@ -390,9 +588,48 @@ void MainWindow::runFind(bool forward)
     execFind(m_lastPattern, flags);
 }
 
+void MainWindow::applyMenuMode(bool useCustomTitleBar)
+{
+    m_useCustomTitleBar = useCustomTitleBar;
+
+    // TitleBar lives inside the central-widget layout; the standard QMenuBar
+    // lives in its normal QMainWindow position.  We never swap menu widgets at
+    // runtime (doing so causes Qt to reparent and orphan widgets, which crashes).
+    // Instead we just show/hide each side and toggle the window frame flag.
+    if (useCustomTitleBar) {
+        ui->menubar->hide();
+        m_titleBar->show();
+    } else {
+        m_titleBar->hide();
+        ui->menubar->show();
+    }
+
+#ifndef Q_OS_WIN
+    // Changing FramelessWindowHint requires the platform plugin to destroy and
+    // recreate the native window.  On Linux (xcb / Wayland) doing this at
+    // runtime while a child dialog is open causes a hard platform crash that
+    // the C++ debugger cannot intercept.  Apply the flag only before the window
+    // is first shown; at runtime the frame stays as-is and takes full effect on
+    // the next launch.
+    if (!isVisible())
+        setWindowFlag(Qt::FramelessWindowHint, useCustomTitleBar);
+#else
+    // On Windows the window is never recreated; we just tell DWM to
+    // re-evaluate the NC area so nativeEvent() starts or stops collapsing it.
+    if (isVisible())
+        SetWindowPos(reinterpret_cast<HWND>(winId()), nullptr, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+#endif
+}
+
 bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
     auto *w = qobject_cast<QWidget *>(obj);
     if (!w || w->window() != this)
+        return false;
+
+    // Edge-resize is handled by the custom titlebar only; the native window
+    // frame takes care of it in standard menu mode.
+    if (!m_useCustomTitleBar)
         return false;
 
     const auto type = event->type();
@@ -445,18 +682,22 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
     return false;
 }
 
-#ifdef Q_OS_WIN
 void MainWindow::showEvent(QShowEvent *e)
 {
     QMainWindow::showEvent(e);
-    bool dark = palette().window().color().lightness() < 128;
-    applyWindows11Styling(reinterpret_cast<HWND>(winId()), dark);
+#ifdef Q_OS_WIN
+    if (m_useCustomTitleBar) {
+        bool dark = palette().window().color().lightness() < 128;
+        applyWindows11Styling(reinterpret_cast<HWND>(winId()), dark);
+    }
+#endif
 }
 
+#ifdef Q_OS_WIN
 bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr *result)
 {
     MSG *msg = reinterpret_cast<MSG *>(message);
-    if (msg->message == WM_NCCALCSIZE && msg->wParam == TRUE) {
+    if (m_useCustomTitleBar && msg->message == WM_NCCALCSIZE && msg->wParam == TRUE) {
         // Collapse the non-client area to zero: the title-bar and resize-border
         // chrome never appear, but DWM still sees WS_THICKFRAME and applies its
         // rounded corners, accent border, and drop-shadow.

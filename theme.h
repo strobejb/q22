@@ -4,9 +4,12 @@
 #include <QColor>
 #include <QPoint>
 
-// Applies Adwaita Light or Dark (auto-detected from Qt colour scheme hint)
-// using the built-in Fusion style + palette + QSS.  No system packages needed.
-void applyAdwaitaTheme();
+enum class ColorScheme { System = 0, Light = 1, Dark = 2 };
+
+// Applies Adwaita Light or Dark using the built-in Fusion style + palette + QSS.
+// Pass System to auto-detect from the Qt colour scheme hint (default).
+// Safe to call at runtime to switch themes.
+void applyAdwaitaTheme(ColorScheme scheme = ColorScheme::System);
 
 class QMenu;
 // Call on every QMenu after construction so the stylesheet (including
@@ -16,6 +19,17 @@ void themeMenu(QMenu *menu);
 class QWidget;
 // Returns the border/separator colour used by the current theme.
 QColor themeBorderColor();
+
+#ifndef Q_OS_WIN
+class QIcon;
+// Recolors a symbolic icon by compositing `color` through its alpha channel,
+// the same technique GTK uses for -symbolic icons in Adwaita.  HiDPI-aware.
+QIcon recoloredIcon(const QString &name, const QColor &color, int sz = 16);
+
+// Recolors all QToolButton children of `parent` whose icon has a theme name.
+// Call at construction time and from changeEvent on QEvent::PaletteChange.
+void recolorToolButtons(QWidget *parent);
+#endif
 
 // Compute the global position for a menu anchored to a widget.  The menu is
 // placed immediately below the anchor when there is enough space, and

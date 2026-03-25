@@ -29,6 +29,7 @@ signals:
 protected:
     void keyPressEvent(QKeyEvent *e) override;
     void hideEvent(QHideEvent *e)    override;
+    void changeEvent(QEvent *e)      override;
 
 private:
     QByteArray buildPattern() const;

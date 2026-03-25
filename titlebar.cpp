@@ -132,28 +132,9 @@ TitleBar::TitleBar(QWidget *parent)
     setFixedHeight(barH);
     setObjectName("TitleBar");
 
-    bool dark   = QApplication::palette().window().color().lightness() < 128;
-    QString bg      = dark ? "#3d3846" : "#e8e8e8";
-    QString fg      = dark ? "#ffffff" : "#2e3436";
-    QString hover   = dark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.10)";
-    QString border  = dark ? "#1e1e2e" : "#c4c4c4";
-
 #ifdef Q_OS_WIN
     {
-        // Override with native Windows colours.  windowsTitleBarBg() reads the
-        // DWM colorization registry key and returns either the system accent
-        // colour (when "show accent on title bars" is on) or the Mica neutral
-        // tones (#F3F3F3 / #202020) that Windows 11 uses on its own title bars.
         const QColor winBg = windowsTitleBarBg();
-        dark   = winBg.lightness() < 128;
-        bg     = winBg.name();
-        fg     = dark ? "#ffffff" : "#000000";
-        hover  = dark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
-        border = dark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.12)";
-
-        // Qt plain QWidget subclasses don't paint stylesheet background-color
-        // unless WA_StyledBackground is explicitly set.  Painting via palette
-        // + autoFillBackground is always reliable regardless of platform style.
         QPalette pal = palette();
         pal.setColor(QPalette::Window, winBg);
         setPalette(pal);
@@ -162,50 +143,7 @@ TitleBar::TitleBar(QWidget *parent)
     }
 #endif
 
-    setStyleSheet(QString(R"(
-        #TitleBar {
-            background-color: %1;
-            border-bottom: 1px solid %5;
-        }
-        #TitleBar QLabel { color: %2; font-weight: 600; }
-        #TitleBar QToolButton {
-            border: none;
-            border-radius: %6px;
-            background: transparent;
-            color: %2;
-            font-size: 13px;
-        }
-        #TitleBar QToolButton:hover   { background: %3; }
-        #TitleBar QToolButton:pressed { background: %4; }
-        #TitleBar QToolButton#hamburger::menu-indicator  { image: none; width: 0; }
-        #TitleBar QToolButton#viewMenu::menu-indicator   { image: none; width: 0; }
-        #TitleBar QToolButton#searchBtn::menu-indicator  { image: none; width: 0; }
-    )").arg(bg, fg, hover,
-            dark ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.18)",
-            border,
-            QString::number(btnRadius)));
-
-#ifdef Q_OS_WIN
-    // Windows 11 style additions:
-    //  • Toolbar buttons (File/Search/Tools): square, full-height hover area.
-    //  • Caption buttons: square, Segoe icon font rendered as *text* so that
-    //    CSS color: applies and the close icon turns white on the red hover bg.
-    setStyleSheet(styleSheet() + R"(
-        #TitleBar QToolButton#hamburger,
-        #TitleBar QToolButton#searchBtn,
-        #TitleBar QToolButton#viewMenu  { border-radius: 0; }
-
-        #TitleBar QToolButton#close,
-        #TitleBar QToolButton#minimize,
-        #TitleBar QToolButton#maximize  {
-            border-radius: 0;
-            font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets";
-            font-size: 10px;
-        }
-        #TitleBar QToolButton#close:hover   { background: #c42b1c; color: white; }
-        #TitleBar QToolButton#close:pressed { background: #9a1c10; color: white; }
-    )");
-#endif
+    m_btnRadius = btnRadius;
 
     // ── Hamburger button (always far-left) ────────────────────────────────
     m_menu = new QMenu(this);
@@ -337,6 +275,8 @@ TitleBar::TitleBar(QWidget *parent)
     layout->addWidget(m_searchBtn);
     layout->addWidget(m_viewBtn);
     layout->addWidget(rightGroup);
+
+    refreshStylesheet();
 }
 
 // Creates a window-control button for the given name ("close", "minimize",
@@ -422,6 +362,89 @@ void TitleBar::addWindowButtons(QHBoxLayout *layout, const QStringList &names)
     }
 }
 
+void TitleBar::refreshStylesheet()
+{
+    bool dark   = QApplication::palette().window().color().lightness() < 128;
+    QString bg      = dark ? "#3d3846" : "#e8e8e8";
+    QString fg      = dark ? "#ffffff" : "#2e3436";
+    QString hover   = dark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.10)";
+    QString border  = dark ? "#1e1e2e" : "#c4c4c4";
+
+#ifdef Q_OS_WIN
+    {
+        const QColor winBg = windowsTitleBarBg();
+        dark   = winBg.lightness() < 128;
+        bg     = winBg.name();
+        fg     = dark ? "#ffffff" : "#000000";
+        hover  = dark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
+        border = dark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.12)";
+
+        QPalette pal = palette();
+        pal.setColor(QPalette::Window, winBg);
+        setPalette(pal);
+    }
+#endif
+
+    setStyleSheet(QString(R"(
+        #TitleBar {
+            background-color: %1;
+            border-bottom: 1px solid %5;
+        }
+        #TitleBar QLabel { color: %2; font-weight: 600; }
+        #TitleBar QToolButton {
+            border: none;
+            border-radius: %6px;
+            background: transparent;
+            color: %2;
+            font-size: 13px;
+        }
+        #TitleBar QToolButton:hover   { background: %3; }
+        #TitleBar QToolButton:pressed { background: %4; }
+        #TitleBar QToolButton#hamburger::menu-indicator  { image: none; width: 0; }
+        #TitleBar QToolButton#viewMenu::menu-indicator   { image: none; width: 0; }
+        #TitleBar QToolButton#searchBtn::menu-indicator  { image: none; width: 0; }
+    )").arg(bg, fg, hover,
+            dark ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.18)",
+            border,
+            QString::number(m_btnRadius)));
+
+#ifdef Q_OS_WIN
+    setStyleSheet(styleSheet() + R"(
+        #TitleBar QToolButton#hamburger,
+        #TitleBar QToolButton#searchBtn,
+        #TitleBar QToolButton#viewMenu  { border-radius: 0; }
+
+        #TitleBar QToolButton#close,
+        #TitleBar QToolButton#minimize,
+        #TitleBar QToolButton#maximize  {
+            border-radius: 0;
+            font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets";
+            font-size: 10px;
+        }
+        #TitleBar QToolButton#close:hover   { background: #c42b1c; color: white; }
+        #TitleBar QToolButton#close:pressed { background: #9a1c10; color: white; }
+    )");
+#else
+    // Recolor symbolic icons to match the current foreground color.
+    // QIcon::fromTheme() returns uncolored pixmaps on Linux; we tint via alpha compositing.
+    const QColor fgColor(fg);
+    auto recolor = [&](QToolButton *btn, const QString &name) {
+        if (!btn) return;
+        QIcon ic = recoloredIcon(name, fgColor);
+        if (!ic.isNull()) btn->setIcon(ic);
+    };
+    recolor(m_hamburger, "document-open-symbolic");
+    recolor(m_searchBtn,  "edit-find-symbolic");
+    recolor(m_viewBtn,    "open-menu-symbolic");
+    recolor(m_btnClose,   "window-close-symbolic");
+    recolor(m_btnMin,     "window-minimize-symbolic");
+    if (m_btnMax) {
+        bool maximized = window() && window()->isMaximized();
+        recolor(m_btnMax, maximized ? "window-restore-symbolic" : "window-maximize-symbolic");
+    }
+#endif
+}
+
 void TitleBar::setHamburgerMenu(QMenu *menu)
 {
     themeMenu(menu);
@@ -448,8 +471,10 @@ void TitleBar::updateMaxButton()
     m_btnMax->setText(QString(QChar(maximized ? 0xE923 : 0xE922)));
 #else
     {
-        QIcon icon = QIcon::fromTheme(maximized ? "window-restore-symbolic"
-                                                : "window-maximize-symbolic");
+        const QString name = maximized ? "window-restore-symbolic" : "window-maximize-symbolic";
+        const QColor fg(QApplication::palette().window().color().lightness() < 128
+                        ? "#ffffff" : "#2e3436");
+        QIcon icon = recoloredIcon(name, fg);
         if (!icon.isNull())
             m_btnMax->setIcon(icon);
         else

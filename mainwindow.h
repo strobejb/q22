@@ -11,6 +11,7 @@ QT_END_NAMESPACE
 class BookmarkDialog;
 class FindDialog;
 class GotoDialog;
+class PreferencesDialog;
 class HexView;
 class QMenu;
 class StatusBar;
@@ -26,8 +27,8 @@ public:
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
-#ifdef Q_OS_WIN
     void showEvent(QShowEvent *e) override;
+#ifdef Q_OS_WIN
     bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
 #endif
 
@@ -36,16 +37,19 @@ private:
     void updateRecentMenu();
     void runFind(bool forward);
     void execFind(const QByteArray &pattern, uint flags);
+    void applyMenuMode(bool useCustomTitleBar);
 
     Ui::MainWindow *ui;
     HexView        *m_hv           = nullptr;
     StatusBar      *m_statusBar    = nullptr;
     TitleBar       *m_titleBar     = nullptr;
     QMenu          *m_recentMenu   = nullptr;
-    BookmarkDialog *m_bookmarkDialog = nullptr;
-    FindDialog     *m_findDialog     = nullptr;
-    GotoDialog     *m_gotoDialog     = nullptr;
-    bool            m_inResizeZone = false;
+    BookmarkDialog    *m_bookmarkDialog = nullptr;
+    FindDialog        *m_findDialog     = nullptr;
+    GotoDialog        *m_gotoDialog     = nullptr;
+    PreferencesDialog *m_prefsDialog    = nullptr;
+    bool            m_useCustomTitleBar = true;
+    bool            m_inResizeZone      = false;
     QByteArray      m_lastPattern;
     uint            m_lastFindFlags = 0;
 };

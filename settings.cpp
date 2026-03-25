@@ -24,3 +24,75 @@ void AppSettings::addRecentFile(const QString &path)
     s.setValue("recentFiles", files);
     // QSettings::~QSettings calls sync() automatically on destruction.
 }
+
+QString AppSettings::prefFontFamily()
+{
+    OPEN_SETTINGS;
+    return s.value("preferences/fontFamily", "").toString();
+}
+
+void AppSettings::setPrefFontFamily(const QString &family)
+{
+    OPEN_SETTINGS;
+    s.setValue("preferences/fontFamily", family);
+}
+
+int AppSettings::prefFontSize()
+{
+    OPEN_SETTINGS;
+    return s.value("preferences/fontSize", 13).toInt();
+}
+
+void AppSettings::setPrefFontSize(int size)
+{
+    OPEN_SETTINGS;
+    s.setValue("preferences/fontSize", size);
+}
+
+int AppSettings::prefHorizSpacing()
+{
+    OPEN_SETTINGS;
+    return s.value("preferences/horizSpacing", 2).toInt();
+}
+
+void AppSettings::setPrefHorizSpacing(int px)
+{
+    OPEN_SETTINGS;
+    s.setValue("preferences/horizSpacing", px);
+}
+
+int AppSettings::prefLineSpacing()
+{
+    OPEN_SETTINGS;
+    return s.value("preferences/lineSpacing", 2).toInt();
+}
+
+void AppSettings::setPrefLineSpacing(int px)
+{
+    OPEN_SETTINGS;
+    s.setValue("preferences/lineSpacing", px);
+}
+
+bool AppSettings::prefNativeMenu()
+{
+    OPEN_SETTINGS;
+    return s.value("preferences/nativeMenu", true).toBool();
+}
+
+void AppSettings::setPrefNativeMenu(bool on)
+{
+    OPEN_SETTINGS;
+    s.setValue("preferences/nativeMenu", on);
+}
+
+int AppSettings::prefColorScheme()
+{
+    OPEN_SETTINGS;
+    return s.value("preferences/colorScheme", 0).toInt();
+}
+
+void AppSettings::setPrefColorScheme(int scheme)
+{
+    OPEN_SETTINGS;
+    s.setValue("preferences/colorScheme", scheme);
+}

@@ -5,6 +5,7 @@
 #include "HexView/hexview.h"
 #include <QApplication>
 #include <QCursor>
+#include <QEvent>
 #include <QKeyEvent>
 #include <QMenu>
 #include <QStyle>
@@ -246,7 +247,18 @@ FindDialog::FindDialog(QWidget *parent)
     ui->btnOptions->setText("☰");
     ui->btnNavigate->setIconSize(QSize(16, 16));
     ui->btnClose->setIconSize(QSize(16, 16));
+#else
+    recolorToolButtons(this);
 #endif
+}
+
+void FindDialog::changeEvent(QEvent *e)
+{
+#ifndef Q_OS_WIN
+    if (e->type() == QEvent::PaletteChange)
+        recolorToolButtons(this);
+#endif
+    QWidget::changeEvent(e);
 }
 
 FindDialog::~FindDialog()

@@ -29,6 +29,8 @@ set(PROJECT_SOURCES
         gotodialog.h
         finddialog.cpp
         finddialog.h
+        preferences.cpp
+        preferences.h
         settings.cpp
         settings.h
         statusbar.cpp

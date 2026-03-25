@@ -6,6 +6,7 @@
 #include <QMenu>
 #include <QPlatformSurfaceEvent>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPalette>
 #include <QProxyStyle>
 #include <QScreen>
@@ -105,6 +106,43 @@ QColor themeBorderColor()
     //bool dark = QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
     //return dark ? QColor("#4a4a4a") : QColor("#cdc7c2");
 }
+
+#ifndef Q_OS_WIN
+#include <QIcon>
+#include <QPixmap>
+#include <QToolButton>
+
+QIcon recoloredIcon(const QString &name, const QColor &color, int sz)
+{
+    QIcon icon = QIcon::fromTheme(name);
+    if (icon.isNull()) return icon;
+    // Request a pixmap at the logical size; it may come back at a higher physical
+    // resolution on HiDPI screens, so we copy the devicePixelRatio to dst so that
+    // Qt knows the correct logical size and doesn't scale the result down.
+    QPixmap src = icon.pixmap(sz, sz);
+    QPixmap dst(src.size());
+    dst.setDevicePixelRatio(src.devicePixelRatio());
+    dst.fill(Qt::transparent);
+    QPainter p(&dst);
+    p.drawPixmap(0, 0, src);
+    p.setCompositionMode(QPainter::CompositionMode_SourceIn);
+    p.fillRect(dst.rect(), color);
+    return QIcon(dst);
+}
+
+void recolorToolButtons(QWidget *parent)
+{
+    const QColor fg = parent->palette().buttonText().color();
+    for (auto *btn : parent->findChildren<QToolButton*>()) {
+        const QString name = btn->icon().name();
+        if (name.isEmpty()) continue;
+        const int sz = btn->iconSize().width();
+        QIcon ic = recoloredIcon(name, fg, sz > 0 ? sz : 16);
+        if (!ic.isNull())
+            btn->setIcon(ic);
+    }
+}
+#endif
 
 QPoint smartMenuPos(const QWidget *anchor, const QMenu *menu, bool rightAlign)
 {
@@ -274,6 +312,7 @@ QMenu {
     border: 1px solid {border};
     border-radius: 8px;
     padding: 6px 0;
+    {menuMargin}
 }
 QMenu::item {
     padding: 6px 28px 6px 16px;
@@ -400,10 +439,79 @@ QToolTip {
     ss.replace("{accentHover}",      accentHover);
     ss.replace("{accentFg}",         accentFg);
     ss.replace("{danger}",           danger);
+#ifdef Q_OS_WIN
+    ss.replace("{menuMargin}",       QString());
+#else
+    ss.replace("{menuMargin}",       "margin: 8px;");
+#endif
     return ss;
 }
 
 // ── Public entry point ────────────────────────────────────────────────────────
+
+// ── Self-drawn drop shadow for menus (Linux) ─────────────────────────────────
+// The QMenu QSS adds "margin: 8px" on Linux, which leaves a transparent ring
+// around the menu window (WA_TranslucentBackground makes it truly transparent).
+// MenuShadowOverlay is a child widget that paints a soft shadow into that ring,
+// clipping away the content area so the menu items show through underneath.
+// This mirrors exactly how GTK draws shadows on its own popup menus.
+#ifndef Q_OS_WIN
+namespace {
+struct MenuShadowOverlay : public QWidget
+{
+    static constexpr int S = 8;   // shadow width — must match QSS "margin: 8px"
+    static constexpr int R = 8;   // corner radius — must match QSS border-radius
+
+    explicit MenuShadowOverlay(QWidget *parent) : QWidget(parent)
+    {
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setAttribute(Qt::WA_NoSystemBackground);
+        setGeometry(parent->rect());
+        // Track parent resizes (menu size is calculated lazily at popup time).
+        parent->installEventFilter(this);
+    }
+
+    bool eventFilter(QObject *obj, QEvent *e) override
+    {
+        if (obj == parent() && e->type() == QEvent::Resize)
+            setGeometry(parentWidget()->rect());
+        return false;
+    }
+
+    void paintEvent(QPaintEvent *) override
+    {
+        const QRectF full(rect());
+        const QRectF inner = full.adjusted(S, S, -S, -S);
+        if (!inner.isValid()) return;
+
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+
+        // Restrict painting to the margin ring — leave the content area untouched
+        // so the menu's own paint (background + items) shows through.
+        QPainterPath clip;
+        clip.addRect(full);
+        QPainterPath hole;
+        hole.addRoundedRect(inner, R, R);
+        clip -= hole;
+        p.setClipPath(clip);
+
+        // Draw outer → inner with CompositionMode_Source so each smaller rect
+        // replaces (not accumulates over) the larger one behind it.
+        // This gives a clean gradient: ~2% opacity at the window edge, ~12% at
+        // the menu border — close to GNOME/Mutter's compositor shadow.
+        p.setCompositionMode(QPainter::CompositionMode_Source);
+        p.setPen(Qt::NoPen);
+        for (int i = S; i >= 1; --i) {
+            const int alpha = (S - i + 1) * 4;   // 4 (outer) → 32 (inner, ~12%)
+            p.setBrush(QColor(0, 0, 0, alpha));
+            p.drawRoundedRect(inner.adjusted(-i, -i + 1, i, i),
+                              R + i * 0.4, R + i * 0.4);
+        }
+    }
+};
+} // namespace
+#endif
 
 // ── Check-mark inset style ────────────────────────────────────────────────────
 // When qApp->setStyleSheet() is active, QStyleSheetStyle becomes the effective
@@ -457,7 +565,15 @@ void themeMenu(QMenu *menu)
 {
     // A frameless, transparent window lets the QSS border-radius actually clip
     // the corners.  Qt::Popup is preserved so click-outside still closes the menu.
+    // NoDropShadowWindowHint is only needed on Windows, where we suppress the
+    // rectangular Win32 CS_DROPSHADOW and replace it with a shaped DWM shadow via
+    // the event filter below.  On Linux the compositor provides its own shadow for
+    // popup windows, which already respects the window shape.
+#ifdef Q_OS_WIN
     menu->setWindowFlags(Qt::Popup | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint);
+#else
+    menu->setWindowFlags(Qt::Popup | Qt::FramelessWindowHint);
+#endif
     menu->setAttribute(Qt::WA_TranslucentBackground);
     // Apply the compact check-column style.  widget::setStyle() does not
     // transfer ownership, so we use a long-lived singleton parented to qApp.
@@ -465,6 +581,12 @@ void themeMenu(QMenu *menu)
     // On Windows, install an event filter that applies DWM shadow when the
     // popup's native surface is created.
     menu->installEventFilter(menuShadowFilter());
+#ifndef Q_OS_WIN
+    // Self-drawn shadow: child overlay paints into the 8px transparent QSS margin.
+    auto *overlay = new MenuShadowOverlay(menu);
+    overlay->show();
+    overlay->raise();
+#endif
 }
 
 // ── Tooltip rounded-corner clipping ──────────────────────────────────────────
@@ -487,25 +609,32 @@ public:
     }
 };
 
-void applyAdwaitaTheme()
+void applyAdwaitaTheme(ColorScheme scheme)
 {
-    // Fusion is always available — use it as the base style
+    // Fusion is always available — use it as the base style.
+    // Safe to call multiple times; Qt is idempotent about the same style.
     QApplication::setStyle(QStyleFactory::create("Fusion"));
 
-    // Qt 6.5+ colour scheme hint (reads from GNOME / portal settings)
-    bool dark = QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
+    bool dark;
+    switch (scheme) {
+    case ColorScheme::Light: dark = false; break;
+    case ColorScheme::Dark:  dark = true;  break;
+    default:  // System: read from Qt 6.5+ colour scheme hint
+        dark = QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
+    }
 
     applyPalette(dark);
     qApp->setStyleSheet(buildStylesheet(dark));
 
-    // Prefer Cantarell (GNOME's UI font) if available, otherwise leave as-is.
-    // Preserve the system point size — only switch the family.
-    if (QFontDatabase::families().contains("Cantarell")) {
-        QFont f = QApplication::font();
-        f.setFamily("Cantarell");
-        QApplication::setFont(f);
+    // One-time setup: font preference and tooltip filter.
+    static bool firstRun = true;
+    if (firstRun) {
+        firstRun = false;
+        if (QFontDatabase::families().contains("Cantarell")) {
+            QFont f = QApplication::font();
+            f.setFamily("Cantarell");
+            QApplication::setFont(f);
+        }
+        qApp->installEventFilter(new TooltipFilter(qApp));
     }
-
-    // Install once — the filter is owned by qApp so it lives for the process.
-    qApp->installEventFilter(new TooltipFilter(qApp));
 }

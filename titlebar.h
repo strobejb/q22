@@ -19,6 +19,7 @@ public:
     void   setHamburgerMenu(QMenu *menu);
     QMenu *viewMenu()                   const { return m_viewMenu; }
     void   setSearchMenu(QMenu *menu);
+    void   refreshStylesheet();
 
 protected:
     void mousePressEvent(QMouseEvent *event)       override;
@@ -30,6 +31,8 @@ private:
     void addWindowButtons(QHBoxLayout *layout, const QStringList &names);
     QToolButton *makeWindowButton(const QString &name);
     void updateMaxButton();
+
+    int m_btnRadius = 6;
 
     QToolButton *m_hamburger  = nullptr;
     QToolButton *m_searchBtn  = nullptr;

@@ -1,5 +1,6 @@
 <RCC>
     <qresource prefix="/">
         <file>qexed.png</file>
+        <file>palettes/catch22.palette</file>
     </qresource>
 </RCC>

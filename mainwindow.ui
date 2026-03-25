@@ -315,6 +315,9 @@
    </property>
   </action>
   <action name="actionRecent">
+   <property name="icon">
+    <iconset theme="document-open-recent-symbolic"/>
+   </property>
    <property name="text">
     <string>Recent</string>
    </property>

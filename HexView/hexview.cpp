@@ -206,7 +206,7 @@ bool HexView::checkStyle(uint flag) const
     return (m_nControlStyles & flag) != 0;
 }
 
-void HexView::setFont(const QFont &font)
+void HexView::setFont(const QFont &font, int hSpacing, int lineSpacing)
 {
     m_font = font;
 
@@ -218,20 +218,20 @@ void HexView::setFont(const QFont &font)
 
     m_rawFont = QRawFont::fromFont(m_font);//, QFontDatabase::PreferDefaultHinting);
 
-    QFontMetrics fm(m_font);
-    // Use the advance of a representative character rather than averageCharWidth()
-    // (which averages over the whole glyph set and may differ from the advance
-    // Qt uses when it lays out individual characters for a fixed-pitch font).
-    m_nFontWidth  = fm.horizontalAdvance(QLatin1Char('0'));
-    m_nFontHeight = fm.height();
+    setFontSpacing(hSpacing, lineSpacing);
 }
 
-void HexView::setFontSpacing(int x, int y)
+void HexView::setFontSpacing(int hSpacing, int lineSpacing)
 {
     QFontMetrics fm(m_font);
 
-    m_nFontHeight = fm.height() + y;
-    m_nFontWidth  = fm.horizontalAdvance(QLatin1Char('0')) + x;
+    // Use the advance of a representative character rather than averageCharWidth()
+    // (which averages over the whole glyph set and may differ from the advance
+    // Qt uses when it lays out individual characters for a fixed-pitch font).
+    m_nFontHeight = fm.height() + lineSpacing;
+    m_nFontWidth  = fm.horizontalAdvance(QLatin1Char('0')) + hSpacing;
+
+    updateMetrics();
 }
 
 int HexView::calcTotalWidth()
