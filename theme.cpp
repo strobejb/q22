@@ -248,13 +248,14 @@ static QString buildStylesheet(bool dark)
     const QString accentFg    = "#ffffff";
     const QString danger      = "#e01b24";
 
-    QString fg, border, btnBg, btnHover, btnActive,
+    QString fg, fgDisabled, border, btnBg, btnHover, btnActive,
             menuBg, inputBg,
             scrollHandle, scrollHover,
             statusBg, statusComboHover;
 
     if (!dark) {
         fg              = "#2e3436";
+        fgDisabled      = "#9a9996";
         border          = "#cdc7c2";
         btnBg           = "#e0dedb";
         btnHover        = "#d3d1ce";
@@ -267,6 +268,7 @@ static QString buildStylesheet(bool dark)
         statusComboHover= "#e8e6e3";
     } else {
         fg              = "#deddda";
+        fgDisabled      = "#6c6c6c";
         border          = "#4a4a4a";
         btnBg           = "#3d3d3d";
         btnHover        = "#484848";
@@ -297,7 +299,7 @@ QPushButton {
 }
 QPushButton:hover   { background: {btnHover}; }
 QPushButton:pressed { background: {btnActive}; border-color: {accent}; }
-QPushButton:disabled { color: palette(disabled, windowtext); }
+QPushButton:disabled { color: {fgDisabled}; }
 QPushButton[default="true"] {
     background: {accent};
     color: {accentFg};
@@ -324,7 +326,7 @@ QMenu::item:selected {
     background: palette(highlight);
     color: palette(highlighted-text);
 }
-QMenu::item:disabled { color: palette(disabled, windowtext); }
+QMenu::item:disabled { color: {fgDisabled}; }
 QMenu::separator {
     height: 1px;
     background: {border};
@@ -425,6 +427,7 @@ QToolTip {
 
     QString ss = QString::fromLatin1(TMPL);
     ss.replace("{fg}",               fg);
+    ss.replace("{fgDisabled}",       fgDisabled);
     ss.replace("{border}",           border);
     ss.replace("{btnBg}",            btnBg);
     ss.replace("{btnHover}",         btnHover);

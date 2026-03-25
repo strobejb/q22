@@ -35,6 +35,7 @@ protected:
 private:
     void openFile(const QString &path);
     void updateRecentMenu();
+    void updateEditActions();
     void runFind(bool forward);
     void execFind(const QByteArray &pattern, uint flags);
     void applyMenuMode(bool useCustomTitleBar);

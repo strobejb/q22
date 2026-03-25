@@ -94,6 +94,7 @@ HexView::HexView(QWidget *parent)
 HexView::~HexView()
 {
     delete m_pDataSeq;
+    delete m_lastSnapshot;
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────

@@ -12,7 +12,9 @@
 #include "theme.h"
 #include <QActionGroup>
 #include <QApplication>
+#include <QClipboard>
 #include <QDir>
+#include <QMimeData>
 #include <QFileDialog>
 #include <QIcon>
 #include <QMenu>
@@ -442,6 +444,39 @@ MainWindow::MainWindow(QWidget *parent)
 
     m_statusBar = new StatusBar(m_hv, ui->statusbar, this);
 
+    // ── Edit menu ─────────────────────────────────────────────────────────────
+    // Shortcuts not set in the .ui file are assigned here so they are also
+    // registered on the window (and therefore work even when the menu is hidden).
+    ui->actionC_ut->setShortcut(QKeySequence::Cut);
+    ui->action_Copy->setShortcut(QKeySequence::Copy);
+    // Paste / Delete already have Ctrl+V / Del in the .ui but we add the actions
+    // to the window so the shortcuts fire even when the menu bar is hidden.
+    addAction(ui->actionC_ut);
+    addAction(ui->action_Copy);
+    addAction(ui->action_Paste);
+    addAction(ui->action_Delete);
+    addAction(ui->actionUndo);
+    addAction(ui->actionRedo);
+
+    connect(ui->actionUndo,     &QAction::triggered, this, [this] { m_hv->undo();      });
+    connect(ui->actionRedo,     &QAction::triggered, this, [this] { m_hv->redo();      });
+    connect(ui->actionC_ut,     &QAction::triggered, this, [this] { m_hv->cut();       });
+    connect(ui->action_Copy,    &QAction::triggered, this, [this] { m_hv->copy();      });
+    connect(ui->action_Paste,   &QAction::triggered, this, [this] { m_hv->paste();     });
+    connect(ui->action_Delete,  &QAction::triggered, this, [this] { m_hv->clear();     });
+    connect(ui->actionSelect_All, &QAction::triggered, this, [this] { m_hv->selectAll(); });
+
+    // Keep Edit action enabled-states in sync with HexView and clipboard state.
+    connect(m_hv, &HexView::selectionChanged, this, [this](size_w, size_w) { updateEditActions(); });
+    connect(m_hv, &HexView::contentChanged,   this, [this](size_w, size_w, uint) { updateEditActions(); });
+    connect(m_hv, &HexView::editModeChanged,  this, [this](uint) {
+        m_statusBar->update();
+        updateEditActions();
+    });
+    connect(QApplication::clipboard(), &QClipboard::dataChanged, this, &MainWindow::updateEditActions);
+    connect(ui->menuEdit, &QMenu::aboutToShow, this, &MainWindow::updateEditActions);
+    updateEditActions(); // set initial state
+
     connect(m_hv, &HexView::cursorChanged, m_statusBar, &StatusBar::update);
     connect(m_hv, &HexView::selectionChanged, this,
             [this](size_w, size_w) { m_statusBar->update(); });
@@ -540,6 +575,33 @@ MainWindow::MainWindow(QWidget *parent)
 }
 
 MainWindow::~MainWindow() { delete ui; }
+
+void MainWindow::updateEditActions()
+{
+    const bool hasSel      = m_hv->selectionSize() > 0;
+    const bool insertMode  = m_hv->editMode() == HVMODE_INSERT;
+
+    // Undo / Redo reflect the sequence's event stack.
+    ui->actionUndo->setEnabled(m_hv->canUndo());
+    ui->actionRedo->setEnabled(m_hv->canRedo());
+
+    // Cut requires a selection AND insert mode (overwrite can't remove bytes).
+    ui->actionC_ut->setEnabled(hasSel && insertMode);
+
+    // Copy / Copy As only need a selection.
+    ui->action_Copy->setEnabled(hasSel);
+    ui->actionCopy_As->setEnabled(hasSel);
+
+    // Paste / Paste Special: check whether the clipboard holds anything we can use.
+    const QMimeData *mime = QApplication::clipboard()->mimeData();
+    const bool canPaste   = m_hv->editMode() != HVMODE_READONLY
+                            && mime
+                            && (mime->hasFormat("application/x-hexview-snapshot")
+                                || mime->hasFormat("application/octet-stream")
+                                || mime->hasText());
+    ui->action_Paste->setEnabled(canPaste);
+    ui->actionPaste_Special->setEnabled(canPaste);
+}
 
 void MainWindow::openFile(const QString &path) {
     m_hv->openFile(path);

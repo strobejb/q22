@@ -198,7 +198,8 @@ void HexView::keyPressEvent(QKeyEvent *event)
                 m_nEditMode = HVMODE_OVERWRITE;
             else if (m_nEditMode == HVMODE_OVERWRITE)
                 m_nEditMode = HVMODE_INSERT;
-            // notify mode change (no Win32 parent; emit a signal if needed in future)
+            // notify mode change
+            emit editModeChanged(m_nEditMode);
         }
         return;
 

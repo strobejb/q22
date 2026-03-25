@@ -130,6 +130,24 @@ typedef HEXCOL ATTR;
 
 enum SELMODE { SEL_NONE, SEL_NORMAL, SEL_MARGIN, SEL_DRAGDROP };
 
+// ── HexSnapshot ───────────────────────────────────────────────────────────────
+// A zero-copy snapshot of a contiguous range of the sequence's span-table.
+// Used for in-process clipboard paste without materialising the bytes.
+// Analogous to Win32 HexSnapShot in HexViewInternal.h.
+struct HexSnapshot {
+    sequence::span_desc *m_desclist = nullptr;
+    size_t               m_count    = 0;
+    size_w               m_length   = 0;
+    class HexView       *m_source   = nullptr;  // originating widget — validated on paste
+
+    HexSnapshot() = default;
+    ~HexSnapshot() { delete[] m_desclist; }
+
+    // Non-copyable
+    HexSnapshot(const HexSnapshot &)            = delete;
+    HexSnapshot &operator=(const HexSnapshot &) = delete;
+};
+
 // ── HexView widget ────────────────────────────────────────────────────────────
 //class HexView : public QWidget
 class HexView : public QAbstractScrollArea
@@ -195,7 +213,7 @@ public:
     // State accessors
     size_w cursorOffset() const { return m_nCursorOffset; }
     uint   editMode()     const { return m_nEditMode; }
-    void   setEditMode(uint mode) { m_nEditMode = mode; viewport()->update(); }
+    void   setEditMode(uint mode) { m_nEditMode = mode; viewport()->update(); emit editModeChanged(mode); }
 
     // Clipboard
     bool   copy();
@@ -219,6 +237,7 @@ public:
 signals:
     void cursorChanged(size_w offset);
     void selectionChanged(size_w start, size_w end);
+    void editModeChanged(uint mode);
     void contentChanged(size_w offset, size_w length, uint method);
     void lengthChanged(size_w length);
     void findProgress(size_w pos, size_w len, double mbPerSec);
@@ -325,6 +344,7 @@ private:
     bool   onCut();
     bool   onPaste();
     bool   onClear();
+    HexSnapshot *m_lastSnapshot = nullptr;  // kept alive while our data is on the clipboard
 
     // ── State ─────────────────────────────────────────────────────────────────
     QMenu      *m_contextMenu   = nullptr;  // nullptr → use built-in menu
