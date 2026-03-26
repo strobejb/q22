@@ -116,14 +116,14 @@ GotoDialog::GotoDialog(HexView *hv, QWidget *parent)
 
 #ifdef Q_OS_WIN
     // QIcon::fromTheme() returns null on Windows; use Segoe MDL2 / QStyle fallbacks.
-    ui->btnNavigate->setIcon(segoeIcon(0xEBE8,
+    /*ui->btnNavigate->setIcon(segoeIcon(0xEBE8,
         QApplication::palette().buttonText().color(), 14));
     ui->btnClose->setIcon(QApplication::style()->standardIcon(
         QStyle::SP_TitleBarCloseButton));
     // No great SP_ for a find-options menu button; show a text indicator instead.
     ui->btnOptions->setIcon(QIcon());
     ui->btnOptions->setText("☰");
-    ui->btnNavigate->setIconSize(QSize(16, 16));
+    ui->btnNavigate->setIconSize(QSize(16, 16));*/
     ui->btnClose->setIconSize(QSize(16, 16));
 #else
     recolorToolButtons(this);

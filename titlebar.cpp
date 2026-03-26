@@ -156,7 +156,7 @@ TitleBar::TitleBar(QWidget *parent)
 #ifdef Q_OS_WIN
     // 0xED25 = FolderOpen in Segoe MDL2 Assets / Segoe Fluent Icons —
     // same monochrome Segoe style as the search and caption buttons.
-    if (QIcon si = segoeIcon(0xED25, QColor(fg), 14); !si.isNull())
+    if (QIcon si = segoeIcon(0xED25, palette().windowText().color(), 14); !si.isNull())
         m_hamburger->setIcon(si);
     else
         m_hamburger->setIcon(
@@ -192,7 +192,7 @@ TitleBar::TitleBar(QWidget *parent)
     if (!searchIcon.isNull())
         m_searchBtn->setIcon(searchIcon);
 #ifdef Q_OS_WIN
-    else if (QIcon si = segoeIcon(0xE721, QColor(fg), 14); !si.isNull()) // Search
+    else if (QIcon si = segoeIcon(0xE721, palette().windowText().color(), 14); !si.isNull()) // Search
         m_searchBtn->setIcon(si);
 #endif
     else
