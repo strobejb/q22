@@ -237,6 +237,9 @@
    <property name="text">
     <string>Preferences...</string>
    </property>
+   <property name="shortcut">
+    <string>Ctrl+,</string>
+   </property>
   </action>
   <action name="actionFind">
    <property name="text">

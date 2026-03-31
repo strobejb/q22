@@ -105,7 +105,8 @@ class ThemePickerWidget : public QWidget
 {
 public:
     static constexpr int VPAD     = 14;  // vertical padding above & below
-    static constexpr int TARGET_D = 44;  // desired circle diameter
+    static constexpr int TARGET_D = 52;  // desired circle diameter
+    static constexpr int GAP      = 12;  // fixed gap between circle edges
 
     ThemePickerWidget(ColorScheme current,
                       std::function<void(ColorScheme)> cb,
@@ -120,7 +121,7 @@ public:
     {
         // Height drives d() — set it so circles come out TARGET_D tall.
         // Width is just a sensible minimum; the menu stretches us to its width.
-        return QSize(TARGET_D * 3 + 60, VPAD + TARGET_D + VPAD);
+        return QSize(TARGET_D * 3 + GAP * 2 + TARGET_D, VPAD + TARGET_D + VPAD);
     }
 
     void setCurrent(ColorScheme s) { m_current = s; update(); }
@@ -212,13 +213,14 @@ protected:
     }
 
 private:
-    // Circles are evenly distributed across the full widget width in thirds.
+    // Circles grouped with GAP between them, centered in the widget width.
     QRect circleRect(int i) const
     {
-        const int diam = d();
-        const int colW = width() / 3;
-        const int cx   = colW * i + colW / 2;
-        const int cy   = height() / 2;
+        const int diam   = d();
+        const int groupW = diam * 3 + GAP * 2;
+        const int startX = (width() - groupW) / 2;
+        const int cx     = startX + diam / 2 + i * (diam + GAP);
+        const int cy     = height() / 2;
         return QRect(cx - diam / 2, cy - diam / 2, diam, diam);
     }
 
