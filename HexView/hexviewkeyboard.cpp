@@ -358,8 +358,6 @@ void HexView::keyPressEvent(QKeyEvent *event)
     case Qt::Key_Tab:
         m_nWhichPane ^= 1;
         fForceUpdate = true;
-        if (m_ColourList[HVC_SELECTION] != m_ColourList[HVC_SELECTION2])
-            invalidateRange(m_nSelectionStart, m_nSelectionEnd);
         break;
 
     default:
@@ -457,9 +455,14 @@ void HexView::onChar(uint nChar)
         m_nSubItem++;
 
         if (m_fCursorMoved) {
-            enterData(&b, 1, false, true, false);
+            enterData(&b, 1, (m_nWhichPane == 0 ? false : true), true, false);
             m_nLastEditOffset = m_nCursorOffset;
             m_fCursorMoved    = false;
+            if (m_nSubItem == cl[cf]) {
+                m_nSubItem = 0;
+                m_nCursorOffset++;
+            }
+            repositionCaret();
         } else {
             // In-place edit of the last-modified byte — no new span
             m_pDataSeq->getlastmodref() = b;

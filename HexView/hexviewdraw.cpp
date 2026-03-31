@@ -54,37 +54,56 @@ static size_t intToBin(char *buf, unsigned width, unsigned num)
 
 // ── realiseColour ─────────────────────────────────────────────────────────────
 //
-//  If the high bit (HEX_SYS_COLOR) is set the lower bytes hold a Win32
-//  COLOR_* index; map it to the corresponding QPalette role.
+//  Maps a colour slot to a concrete QColor.
+//
+//  Phase 1 — focus redirection: when the widget is unfocused, selection-related
+//  slots silently redirect to their inactive counterparts so the draw code never
+//  needs to know about focus state.
+//
+//  Phase 2 — custom colour: if the slot has a user-set QColor, return it.
+//
+//  Phase 3 — palette default: map the slot to the appropriate QPalette role.
+//  Chained slots (HVC_HEXODDSEL etc.) call realiseColour(HVC_SELTEXT) recursively;
+//  the redirect in phase 1 ensures this cannot loop.
 
-QRgb HexView::realiseColour(QRgb cr)
+QColor HexView::realiseColour(HvColorSlot slot) const
 {
-    if (!(cr & HEX_SYS_COLOR))
-        return cr & 0x00FFFFFFu;
-
-    // QColor::rgb() returns 0xFFRRGGBB (alpha=0xFF in the high byte).
-    // Strip alpha so all values in attrList have a consistent 0x00RRGGBB form;
-    // otherwise span comparisons falsely split when mixing syscolor-resolved
-    // colours with direct-stored colours (which are already 0x00RRGGBB).
-    const QPalette pal = palette();
-    // Use Active group when focused, Inactive when not — this makes the
-    // selection highlight visually dim when the HexView loses focus.
-    const QPalette::ColorGroup hlGroup =
-        hasFocus() ? QPalette::Active : QPalette::Inactive;
-    QRgb resolved;
-    switch (cr & HEX_GET_COLOR) {
-    case COLOR_WINDOW:        resolved = pal.color(QPalette::Base).rgb();                    break;
-    case COLOR_WINDOWTEXT:    resolved = pal.color(QPalette::WindowText).rgb();              break;
-    case COLOR_HIGHLIGHT:     resolved = pal.color(hlGroup, QPalette::Highlight).rgb();      break;
-    case COLOR_HIGHLIGHTTEXT: resolved = pal.color(hlGroup, QPalette::HighlightedText).rgb();break;
-    case COLOR_BTNFACE:       resolved = pal.color(QPalette::Button).rgb();                  break;
-    case COLOR_BTNSHADOW:     resolved = pal.color(QPalette::Dark).rgb();                    break;
-    case COLOR_GRAYTEXT:      resolved = pal.color(QPalette::Disabled,
-                                                   QPalette::WindowText).rgb();              break;
-    case COLOR_BTNHIGHLIGHT:  resolved = pal.color(QPalette::Light).rgb();                   break;
-    default:                  resolved = pal.color(QPalette::Window).rgb();                  break;
+    // Phase 1: redirect selection slots to inactive variants when unfocused
+    if (!hasFocus()) {
+        switch (slot) {
+        case HVC_SELECTION:
+            slot = HVC_SELECTION_INACTIVE; break;
+        case HVC_SELTEXT:
+        case HVC_HEXODDSEL:
+        case HVC_HEXEVENSEL:
+        case HVC_ASCIISEL:
+            slot = HVC_SELTEXT_INACTIVE;   break;
+        default: break;
+        }
     }
-    return resolved & 0x00FFFFFFu;
+
+    // Phase 2: user-set custom colour
+    const QColor &c = m_ColourList[slot];
+    if (c.isValid()) return c;
+
+    // Phase 3: palette defaults
+    const QPalette &pal = palette();
+    switch (slot) {
+    case HVC_BACKGROUND:         return pal.color(QPalette::Base);
+    case HVC_SELECTION:          return pal.color(QPalette::Active,   QPalette::Highlight);
+    case HVC_SELECTION_INACTIVE: return pal.color(QPalette::Inactive, QPalette::Highlight);
+    case HVC_SELTEXT:            return pal.color(QPalette::Active,   QPalette::HighlightedText);
+    case HVC_SELTEXT_INACTIVE:   return pal.color(QPalette::Inactive, QPalette::HighlightedText);
+    case HVC_HEXODDSEL:
+    case HVC_HEXEVENSEL:
+    case HVC_ASCIISEL:           return realiseColour(HVC_SELTEXT);  // chain; only reached when focused
+    case HVC_ADDRESS:
+    case HVC_HEXODD:
+    case HVC_HEXEVEN:
+    case HVC_ASCII:              return pal.color(QPalette::WindowText);
+    case HVC_RESIZEBAR:          return pal.color(QPalette::Mid);
+    default:                     return pal.color(QPalette::WindowText);
+    }
 }
 
 // ── formatAddress ─────────────────────────────────────────────────────────────
@@ -210,6 +229,17 @@ void HexView::invalidateRange(size_w start, size_w finish)
 
 }
 
+
+QColor blendColor(const QColor &i_color1, const QColor &i_color2, double i_alpha)
+{
+    return QColor(
+        qRound(qreal(i_color1.red())*(1.0-i_alpha) + qreal(i_color2.red())*i_alpha),
+        qRound(qreal(i_color1.green())*(1.0-i_alpha) + qreal(i_color2.green())*i_alpha),
+        qRound(qreal(i_color1.blue())*(1.0-i_alpha) + qreal(i_color2.blue())*i_alpha),
+        qRound(qreal(i_color1.alpha())*(1.0-i_alpha) + qreal(i_color2.alpha())*i_alpha)
+        );
+}
+
 // ── getHighlightCol ───────────────────────────────────────────────────────────
 //
 //  Determines the fg/bg colours for a single byte at `offset` in `pane`
@@ -223,7 +253,6 @@ bool HexView::getHighlightCol(size_w offset, int pane, int startIdx,
 {
     size_w selstart = std::min(m_nSelectionStart, m_nSelectionEnd);
     size_w selend   = std::max(m_nSelectionStart, m_nSelectionEnd);
-    const bool   focused  = hasFocus();
 
     // Default colour indices
     int nSchemeIdxFG;
@@ -245,7 +274,7 @@ bool HexView::getHighlightCol(size_w offset, int pane, int startIdx,
 
     if(fMatched)
     {
-        //nSchemeIdxFG = HVC_BACKGROUND;
+        nSchemeIdxFG = HVC_BACKGROUND;
         nSchemeIdxBG = HVC_MATCHED;
     }
 
@@ -296,40 +325,34 @@ bool HexView::getHighlightCol(size_w offset, int pane, int startIdx,
     // selected data overrides everything else!
     if(fIncSelection && offset >= selstart && offset < selend)
     {
-        // selected colour is next sequential index
-        if(focused)
+        // SEL variant is always +1 (e.g. HVC_HEXODD→HVC_HEXODDSEL).
+        // realiseColour redirects to the inactive variants when unfocused.
+        //if(fGotFocus)
             nSchemeIdxFG++;
 
-        //nSchemeIdxFG = nSchemeIdxBG;
-        //nSchemeIdxBG++;
-        //nSchemeIdxFG++;
-        //nSchemeIdxBG++;
+        // flip BG->FG for matched selection
+        if(nSchemeIdxBG == HVC_MATCHED) {
+            nSchemeIdxFG = HVC_MATCHEDSEL;
+        }
 
-
-        if(nSchemeIdxBG == HVC_MATCHED)
+        if(hiIdx >= 0)
             nSchemeIdxFG = HVC_MATCHEDSEL;
 
-        //nSchemeIdxBG = HVC_SELECTION;
+        nSchemeIdxBG = HVC_SELECTION;  // realiseColour redirects to SELECTION_INACTIVE when unfocused
 
-        if(pane != m_nWhichPane)
-        {
-            //if(nSchemeIdxBG == HVC_BACKGROUND)
-            nSchemeIdxBG = HVC_SELECTION;
-            //	nSchemeIdxFG++;
-            //	nSchemeIdxBG++;
+        if(nSchemeIdxFG == HVC_MATCHEDSEL) {
+            nSchemeIdxBG = HVC_MATCHED;
+            nSchemeIdxFG = HVC_SELTEXT;
+            nSchemeIdxFG = HVC_SELTEXT;
         }
-        else
-        {
-            //if(nSchemeIdxBG == HVC_BACKGROUND)
-            nSchemeIdxBG = HVC_SELECTION;
+        if(nSchemeIdxFG == HVC_MODIFY||nSchemeIdxFG==HVC_MODIFYSEL) {
 
+            nSchemeIdxFG = HVC_SELTEXT;
+            nSchemeIdxBG = HVC_MODIFY;
         }
 
-        if(!focused)
-        {
-            nSchemeIdxBG = HVC_SELECTION3;
-            //nSchemeIdxFG = HVC_SELECTION4;
-        }
+
+
 
 
         if(checkStyle(HVS_INVERTSELECTION))
@@ -345,11 +368,16 @@ bool HexView::getHighlightCol(size_w offset, int pane, int startIdx,
             //if(!fModified)
             col1->colFG = hiIdx < 0 || fModified ? getHexColour(nSchemeIdxFG) : col2->colBG;
             col1->colBG = getHexColour(nSchemeIdxBG);
+            //col1->colFG = blendColor(QColor(col1->colFG), QColor(col1->colBG), 0.2).rgb();
 
-
+            //col1
             //col1->colFG = GetHexColour((idx == -1) ? nSchemeIdxFG : HVC_BOOKSEL);
             //col1->colBG = idx == -1 ? col1->colBG : 0xffffff & ~col1->colFG;
         }
+
+        //QRgb rgb1 = getHexColour(nSchemeIdxBG);
+        //QRgb rgb2 = getHexColour(HVC_SELECTION);
+        //col1->colBG = blendColor(QColor(rgb1), QColor(rgb2), 0.2).rgb();
 
 
 #ifdef SELECTION_USES_HIGHLIGHT
@@ -359,6 +387,9 @@ bool HexView::getHighlightCol(size_w offset, int pane, int startIdx,
             col1->colBG = 0xffffff & ~GetHexColour(HVC_BOOKMARK_BG);
         }
 #endif
+
+        col1->colBG  = nSchemeIdxBG != HVC_SELECTION ? getHexColour(HVC_MATCHED) : getHexColour(HVC_SELECTION);
+        col1->colFG  = nSchemeIdxBG != HVC_SELECTION ? getHexColour(HVC_BACKGROUND) : getHexColour(HVC_SELTEXT);
 
         if(offset < selend - 1 && selend > 0)
             *col2 = *col1;
@@ -767,7 +798,7 @@ void HexView::paintEvent(QPaintEvent *event)
 
 void HexView::paintCaret(QPainter &painter)
 {
-    if (!m_caretVisible || !hasFocus()) return;
+    if (!m_caretVisible || !hasFocus() || QApplication::activeModalWidget()) return;
 
     painter.setCompositionMode(QPainter::RasterOp_SourceXorDestination);
     painter.fillRect(m_nCaretX, m_nCaretY, 2, m_nFontHeight, Qt::white);

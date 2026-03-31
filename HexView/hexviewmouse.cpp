@@ -289,7 +289,6 @@ void HexView::mousePressEvent(QMouseEvent *event)
             m_fResizeBar  = true;
         else if (ht == HVHT_RESIZE0)
             m_fResizeAddr = true;
-        viewport()->grabMouse();
         return;
     }
 
@@ -316,7 +315,6 @@ void HexView::mousePressEvent(QMouseEvent *event)
     positionCaret(x, y, m_nWhichPane);
     emit cursorChanged(m_nCursorOffset);
     viewport()->update();
-    viewport()->grabMouse();
 }
 
 void HexView::mouseReleaseEvent(QMouseEvent *event)
@@ -345,8 +343,8 @@ void HexView::mouseReleaseEvent(QMouseEvent *event)
         m_highlightCurrentIdx = -1;
     }
 
-    if (mouseGrabber() == viewport())
-        viewport()->releaseMouse();
+    // No explicit releaseMouse() needed — Qt's implicit grab ends automatically
+    // when the last mouse button is released.
 }
 
 void HexView::mouseMoveEvent(QMouseEvent *event)
@@ -366,11 +364,8 @@ void HexView::mouseMoveEvent(QMouseEvent *event)
 
     if (m_nSelectionMode) {
         // Pane switch during drag
-        if (pane != m_nWhichPane) {
+        if (pane != m_nWhichPane)
             m_nWhichPane = pane;
-            if (m_ColourList[HVC_SELECTION] != m_ColourList[HVC_SELECTION2])
-                invalidateRange(m_nSelectionStart, m_nSelectionEnd);
-        }
 
         if (m_nSelectionMode != SEL_DRAGDROP && m_nCursorOffset != offset) {
             m_nCursorOffset = offset;
@@ -557,11 +552,8 @@ void HexView::onScrollTimer()
         int pane;
         size_w offset = offsetFromPhysCoord(x, y, &pane, &x, &y);
 
-        if (pane != m_nWhichPane) {
+        if (pane != m_nWhichPane)
             m_nWhichPane = pane;
-            if (m_ColourList[HVC_SELECTION] != m_ColourList[HVC_SELECTION2])
-                invalidateRange(m_nSelectionStart, m_nSelectionEnd);
-        }
 
         if (m_nCursorOffset != offset) {
             m_nCursorOffset = offset;

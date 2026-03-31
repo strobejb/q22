@@ -1,6 +1,7 @@
 #ifndef HEXVIEW_H
 #define HEXVIEW_H
 
+#include <QColor>
 #include <QWidget>
 #include <QFont>
 #include <QRawFont>
@@ -12,50 +13,34 @@
 #include "sequence.h"
 #include "hexviewbookmark.h"
 
-// ── Colour indices ────────────────────────────────────────────────────────────
-#define HVC_BACKGROUND      0
-#define HVC_SELECTION       1
-#define HVC_SELECTION2      2
-#define HVC_ADDRESS         3
-#define HVC_HEXODD          4
-#define HVC_HEXODDSEL       5
-#define HVC_HEXODDSEL2      6
-#define HVC_HEXEVEN         7
-#define HVC_HEXEVENSEL      8
-#define HVC_HEXEVENSEL2     9
-#define HVC_ASCII           10
-#define HVC_ASCIISEL        11
-#define HVC_ASCIISEL2       12
-#define HVC_MODIFY          13
-#define HVC_MODIFYSEL       14
-#define HVC_MODIFYSEL2      15
-#define HVC_BOOKMARK_FG     16
-#define HVC_BOOKMARK_BG     17
-#define HVC_BOOKSEL         18
-#define HVC_RESIZEBAR       19
-#define HVC_SELECTION3      20
-#define HVC_SELECTION4      21
-#define HVC_MATCHED         22
-#define HVC_MATCHEDSEL      23
-#define HVC_MATCHEDSEL2     24
-#define HVC_MAX_COLOURS     25
-#define HV_MAX_COLS         64
-
-// ── System-colour encoding (mirrors Win32 HEX_SYSCOLOR) ──────────────────────
-#define HEX_GET_COLOR       0x00ffffff
-#define HEX_SYS_COLOR       0x80000000u
-#define HEX_SYSCOLOR(code)  (HEX_SYS_COLOR | (code))
-
-// System-colour indices (same numeric values as Win32 COLOR_* constants)
-#define COLOR_WINDOW        5
-#define COLOR_WINDOWTEXT    8
-#define COLOR_HIGHLIGHT     13
-#define COLOR_HIGHLIGHTTEXT 14
-#define COLOR_BTNFACE       15
-#define COLOR_BTNSHADOW     16
-#define COLOR_GRAYTEXT      17
-#define COLOR_BTNHIGHLIGHT  20
-#define COLOR_GRADIENTACTIVECAPTION 27
+// ── Colour slot indices ───────────────────────────────────────────────────────
+//
+// IMPORTANT: the SEL variant of each content slot must immediately follow its
+// normal variant (e.g. HVC_HEXODD+1 == HVC_HEXODDSEL) — the draw code uses
+// arithmetic increment to switch from normal to selected FG.  Do not reorder.
+enum HvColorSlot {
+    HVC_BACKGROUND = 0,
+    HVC_SELECTION,          // selection BG, focused   (→ QPalette::Active Highlight)
+    HVC_SELECTION_INACTIVE, // selection BG, unfocused (→ QPalette::Inactive Highlight)
+    HVC_SELTEXT,            // selection FG, focused   (→ QPalette::Active HighlightedText)
+    HVC_SELTEXT_INACTIVE,   // selection FG, unfocused (→ QPalette::Inactive HighlightedText)
+    HVC_ADDRESS,
+    HVC_HEXODD,
+    HVC_HEXODDSEL,          // must be HVC_HEXODD + 1
+    HVC_HEXEVEN,
+    HVC_HEXEVENSEL,         // must be HVC_HEXEVEN + 1
+    HVC_ASCII,
+    HVC_ASCIISEL,           // must be HVC_ASCII + 1
+    HVC_MODIFY,
+    HVC_MODIFYSEL,          // must be HVC_MODIFY + 1
+    HVC_BOOKMARK_FG,
+    HVC_BOOKMARK_BG,
+    HVC_BOOKSEL,
+    HVC_RESIZEBAR,
+    HVC_MATCHED,
+    HVC_MATCHEDSEL,         // must be HVC_MATCHED + 1
+    HVC_MAX_COLOURS
+};
 
 // ── Style flags ───────────────────────────────────────────────────────────────
 #define HVS_FORMAT_HEX      0x0000
@@ -167,9 +152,10 @@ public:
     size_w selectionEnd()   const;
     size_w selectionSize()  const;
     size_w size()           const;
+    int    activePane()     const { return m_nWhichPane; }  // 0=hex, 1=ascii
 
     QRgb   getHexColour(uint index);
-    bool   setHexColour(uint index, QRgb col);
+    bool   setHexColour(HvColorSlot slot, QColor col);
 
     uint   setStyle(uint mask, uint styles);
     uint   getStyle(uint mask = ~0u);
@@ -261,7 +247,7 @@ private slots:
 
 private:
     // ── Rendering ────────────────────────────────────────────────────────────
-    QRgb   realiseColour(QRgb cr);
+    QColor realiseColour(HvColorSlot slot) const;
     int    unitWidth() const;
     int    logToPhyXCoord(int x, int pane) const;
     void   updateResizeBarPos();
@@ -400,7 +386,7 @@ private:
     int     m_nResizeBarPos     = 0;
 
     // Colours
-    QRgb    m_ColourList[HV_MAX_COLS] = {};
+    QColor  m_ColourList[HVC_MAX_COLOURS] = {};
 
     // Bookmarks
     QList<Bookmark> m_bookmarks;

@@ -276,6 +276,11 @@ TitleBar::TitleBar(QWidget *parent)
     layout->addWidget(m_viewBtn);
     layout->addWidget(rightGroup);
 
+    // WindowTitleChange is delivered to the top-level window, not to child
+    // widgets.  Watch the parent window so we can update our label.
+    if (parent)
+        parent->installEventFilter(this);
+
     refreshStylesheet();
 }
 
@@ -385,6 +390,21 @@ void TitleBar::refreshStylesheet()
     }
 #endif
 
+    // Layer UI palette colour overrides on top of platform defaults.
+    const UiColourOverrides &uiOvr = uiColourOverrides();
+    if (uiOvr.window.isValid()) {
+        dark   = uiOvr.window.lightness() < 128;
+        bg     = uiOvr.window.name();
+        hover  = dark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.10)";
+        border = dark ? "rgba(255,255,255,0.20)" : "rgba(0,0,0,0.12)";
+        QPalette pal = palette();
+        pal.setColor(QPalette::Window, uiOvr.window);
+        setPalette(pal);
+        setAutoFillBackground(true);
+    }
+    if (uiOvr.windowText.isValid())
+        fg = uiOvr.windowText.name();
+
     setStyleSheet(QString(R"(
         #TitleBar {
             background-color: %1;
@@ -445,6 +465,35 @@ void TitleBar::refreshStylesheet()
 #endif
 }
 
+void TitleBar::changeEvent(QEvent *e)
+{
+#ifndef Q_OS_WIN
+    if (e->type() == QEvent::PaletteChange) {
+        // Recolor icons only — do NOT call refreshStylesheet() here, since that
+        // calls setStyleSheet() which modifies the widget palette (via the color:
+        // property) and re-fires PaletteChange, causing infinite recursion.
+        // The full stylesheet is updated via explicit refreshStylesheet() calls
+        // at the mainwindow level whenever the colour scheme actually changes.
+        const QColor fg = palette().windowText().color();
+        auto recolor = [&](QToolButton *btn, const QString &name) {
+            if (!btn) return;
+            QIcon ic = recoloredIcon(name, fg);
+            if (!ic.isNull()) btn->setIcon(ic);
+        };
+        recolor(m_hamburger, "document-open-symbolic");
+        recolor(m_searchBtn,  "edit-find-symbolic");
+        recolor(m_viewBtn,    "open-menu-symbolic");
+        recolor(m_btnClose,   "window-close-symbolic");
+        recolor(m_btnMin,     "window-minimize-symbolic");
+        if (m_btnMax) {
+            const bool maximized = window() && window()->isMaximized();
+            recolor(m_btnMax, maximized ? "window-restore-symbolic" : "window-maximize-symbolic");
+        }
+    }
+#endif
+    QWidget::changeEvent(e);
+}
+
 void TitleBar::setHamburgerMenu(QMenu *menu)
 {
     themeMenu(menu);
@@ -472,8 +521,7 @@ void TitleBar::updateMaxButton()
 #else
     {
         const QString name = maximized ? "window-restore-symbolic" : "window-maximize-symbolic";
-        const QColor fg(QApplication::palette().window().color().lightness() < 128
-                        ? "#ffffff" : "#2e3436");
+        const QColor fg = QApplication::palette().windowText().color();
         QIcon icon = recoloredIcon(name, fg);
         if (!icon.isNull())
             m_btnMax->setIcon(icon);
@@ -485,6 +533,9 @@ void TitleBar::updateMaxButton()
 
 bool TitleBar::eventFilter(QObject *obj, QEvent *e)
 {
+    if (e->type() == QEvent::WindowTitleChange && obj == window())
+        m_title->setText(window()->windowTitle());
+
     if (e->type() == QEvent::Show) {
         QToolButton *btn  = nullptr;
         QMenu       *menu = nullptr;

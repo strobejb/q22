@@ -28,7 +28,9 @@ public:
 
     // Show the bar and give focus to the search field.
     // Pass initialText to pre-fill (e.g. from a selection).
-    void activate(const QString &initialText = {});
+    // pane: 0=hex (selects Hex type), 1=ascii (selects last-used text encoding),
+    //       -1=leave type unchanged.
+    void activate(const QString &initialText = {}, int pane = -1);
 
     bool    isRegex()     const;
     bool    isWholeWord() const;
@@ -58,6 +60,7 @@ private:
     DataTypeComboBox *m_comboDataType  = nullptr;
     QPoint            m_optMenuClosePos { -1, -1 };
     QPoint            m_navMenuClosePos { -1, -1 };
+    SearchDataType    m_lastTextType   = SearchUTF8; // remembered across pane-1 activations
 };
 
 #endif // FINDDIALOG_H

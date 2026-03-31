@@ -99,7 +99,7 @@
     </property>
     <widget class="QMenu" name="menuView_2">
      <property name="title">
-      <string>View</string>
+      <string>Format</string>
      </property>
      <addaction name="actionHexadecimal_2"/>
      <addaction name="actionDecimal_2"/>

@@ -39,7 +39,6 @@ GotoDialog::GotoDialog(HexView *hv, QWidget *parent)
     // border property is set via stylesheet Qt stops drawing the platform
     // default border, so we must declare it explicitly.
     QString borderCol  = QApplication::palette().mid().color().name();
-    QString accentCol  = QApplication::palette().highlight().color().name();
     setStyleSheet(QString(R"(
         QToolButton {
             border: none;
@@ -49,17 +48,17 @@ GotoDialog::GotoDialog(HexView *hv, QWidget *parent)
         QToolButton:hover   { background: %1; }
         QToolButton:pressed { background: %2; }
         QToolButton::menu-indicator { image: none; width: 0; }
-        QLineEdit {
+        #editOffset {
             margin: 2px 0;
             border: 1px solid %3;
             border-radius: 6px;
         }
-        QLineEdit:focus {
+        #editOffset:focus {
             margin: 1px 0;
-            border: 2px solid %4;
+            border: 2px solid palette(highlight);
             border-radius: 6px;
         }
-    )").arg(hover, pressed, borderCol, accentCol));
+    )").arg(hover, pressed, borderCol));
 
     // Options menu
     auto *optMenu = new QMenu(this);
@@ -75,11 +74,6 @@ GotoDialog::GotoDialog(HexView *hv, QWidget *parent)
     ui->editOffset->setValidator(
         new QRegularExpressionValidator(QRegularExpression("[0-9A-Fa-f]*"), ui->editOffset));
 
-    // Colour the top border line
-    ui->topBorder->setStyleSheet(
-        QString("background-color: %1;")
-        .arg(QApplication::palette().mid().color().name()));
-
     // Replace the plain QComboBox placeholder (items defined in .ui) with a
     // DataTypeComboBox, copying the item model across before swapping.
     m_comboBookmarks = new DataTypeComboBox(this);
@@ -89,23 +83,30 @@ GotoDialog::GotoDialog(HexView *hv, QWidget *parent)
     m_comboBookmarks->setFixedWidth(ui->comboBookmarks->minimumWidth());
     ui->comboBookmarks->hide();
 
-    m_comboBookmarks->buildMenu();
-
     // Keep the search field's font in sync with the bookmark combo.
     ui->editOffset->setFont(m_comboBookmarks->font());
 
-    // Navigate to selected bookmark when user picks from the list.
+    // Navigate to selected bookmark; idx=-1 means "New Bookmark..." was chosen.
+    // The display text is intentionally not updated — it always shows "Bookmark...".
     connect(m_comboBookmarks, &DataTypeComboBox::selectionChanged, this, [this](int) {
         QVariant data = m_comboBookmarks->selectionData();
-        if (!data.isNull()) {
-            size_w offset = data.value<quint64>();
-            m_hv->setCurPos(offset);
-            m_hv->scrollTo(offset);
+        if (data.isNull()) return;
+        const int idx = data.toInt();
+        if (idx == -1) {
+            emit bookmarkRequested();
+            return;
+        }
+        const QList<Bookmark> &bms = m_hv->bookmarks();
+        if (idx >= 0 && idx < bms.size()) {
+            const Bookmark &bm = bms[idx];
+            // Select the full bookmark range; cursor stays at the start.
+            m_hv->setCurSel(bm.offset + bm.length, bm.offset);
+            m_hv->scrollTo(bm.offset);
             m_hv->setFocus();
         }
     });
 
-    connect(ui->btnNewBookmark, &QToolButton::clicked, this, &GotoDialog::bookmarkRequested);
+    // connect(ui->btnNewBookmark, &QToolButton::clicked, this, &GotoDialog::bookmarkRequested);
     connect(ui->btnClose,       &QToolButton::clicked, this, &QWidget::hide);
 
     // Navigation popup menu (Find Previous / Find Next)
@@ -159,6 +160,11 @@ void GotoDialog::refreshBookmarks()
     const QList<Bookmark> &bms = m_hv->bookmarks();
 
     m_comboBookmarks->clear();
+    const QString newBmLabel = tr("New Bookmark...\tCtrl+B");
+    m_comboBookmarks->addItem(newBmLabel);
+    if (!bms.isEmpty())
+        m_comboBookmarks->addItem(QString());   // separator
+
     QStringList labels;
     for (const Bookmark &bm : bms) {
         const QString hex   = QString::number(bm.offset, 16).toUpper();
@@ -168,12 +174,14 @@ void GotoDialog::refreshBookmarks()
         m_comboBookmarks->addItem(label);
         labels.append(label);
     }
-    m_comboBookmarks->buildMenu();
+    m_comboBookmarks->buildMenu(/*checkable=*/false);
+    m_comboBookmarks->setDisplayText(tr("Bookmarks..."));
 
+    m_comboBookmarks->setActionData(newBmLabel, QVariant::fromValue<int>(-1));
     for (int i = 0; i < bms.size(); ++i)
-        m_comboBookmarks->setActionData(labels[i], QVariant::fromValue<quint64>(bms[i].offset));
+        m_comboBookmarks->setActionData(labels[i], QVariant::fromValue<int>(i));
 
-    m_comboBookmarks->setEnabled(!bms.isEmpty());
+    m_comboBookmarks->setEnabled(true);   // always enabled; "New Bookmark..." is always present
 }
 
 void GotoDialog::keyPressEvent(QKeyEvent *e)

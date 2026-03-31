@@ -38,6 +38,7 @@ public:
         updateGeometry(); // notify PanelStrip that our preferred width changed
         update();
     }
+    const QString &displayText() const { return m_displayText; }
 
     QSize sizeHint() const override;
 

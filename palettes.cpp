@@ -1,0 +1,591 @@
+#include "palettes.h"
+#include "HexView/hexview.h"
+#include "theme.h"
+
+#include <QDialogButtonBox>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QLineEdit>
+#include <QListWidget>
+#include <QMessageBox>
+#include <QMouseEvent>
+#include <QPainter>
+#include <QPainterPath>
+#include <QPushButton>
+#include <QSettings>
+#include <QVBoxLayout>
+
+// ─── applyPalette ─────────────────────────────────────────────────────────────
+
+// Helper: return c if valid, otherwise fallback.
+static QColor orElse(const QColor &c, const QColor &fallback)
+{
+    return c.isValid() ? c : fallback;
+}
+
+void applyPalette(HexView *hv, const PaletteInfo &info)
+{
+    hv->setHexColour(HVC_BACKGROUND,         info.bg);
+    hv->setHexColour(HVC_ADDRESS,            orElse(info.address,  info.fg));
+    hv->setHexColour(HVC_RESIZEBAR,          orElse(info.resizeBar, info.fg.darker(150)));
+
+    hv->setHexColour(HVC_HEXODD,             info.hexOdd);
+    hv->setHexColour(HVC_HEXEVEN,            info.hexEven);
+    hv->setHexColour(HVC_ASCII,              info.ascii);
+
+    // Selected text — HEXODDSEL/HEXEVENSEL/ASCIISEL left invalid to chain here
+    hv->setHexColour(HVC_SELTEXT,            orElse(info.selectionText, info.fg));
+    hv->setHexColour(HVC_HEXODDSEL,          QColor());
+    hv->setHexColour(HVC_HEXEVENSEL,         QColor());
+    hv->setHexColour(HVC_ASCIISEL,           QColor());
+
+    hv->setHexColour(HVC_MODIFY,             info.modified);
+    hv->setHexColour(HVC_MODIFYSEL,          info.modified);//.lighter(130));
+
+    hv->setHexColour(HVC_SELECTION,          info.selection);
+    hv->setHexColour(HVC_SELECTION_INACTIVE, info.selectionInactive); // QColor() → palette default
+    hv->setHexColour(HVC_SELTEXT_INACTIVE,   info.ascii);
+
+    hv->setHexColour(HVC_MATCHED,            info.matched);
+    hv->setHexColour(HVC_MATCHEDSEL,         info.matched);//.darker(120));
+
+    // Bookmark 1 sets the default bookmark background colour
+    hv->setHexColour(HVC_BOOKMARK_BG, orElse(info.bookmarks[0], QColor(255, 255, 0)));
+
+    hv->viewport()->update();
+}
+
+void applyUiPalette(const PaletteInfo &info)
+{
+    setUiColourOverrides({ info.window, info.windowText, info.toolbar, info.highlight });
+}
+
+// ─── Palette loading ─────────────────────────────────────────────────────────
+
+static PaletteInfo parsePaletteFile(const QString &path)
+{
+    PaletteInfo info;
+    QSettings s(path, QSettings::IniFormat);
+    s.beginGroup("Palette");
+    info.name              = s.value("Name").toString();
+    info.bg                = QColor(s.value("Background").toString());
+    info.fg                = QColor(s.value("Foreground").toString());
+    info.address           = QColor(s.value("Address").toString());
+    info.hexOdd            = QColor(s.value("HexOdd").toString());
+    info.hexEven           = QColor(s.value("HexEven").toString());
+    info.ascii             = QColor(s.value("Ascii").toString());
+    info.selection         = QColor(s.value("Selection", s.value("Color4")).toString());
+    info.selectionText     = QColor(s.value("SelectionText").toString());
+    info.selectionInactive = QColor(s.value("SelectionInactive").toString());
+    info.modified          = QColor(s.value("Modified").toString());
+    info.matched           = QColor(s.value("Matched", s.value("Color3")).toString());
+    info.resizeBar         = QColor(s.value("ResizeBar").toString());
+    for (int i = 0; i < 7; ++i)
+        info.bookmarks[i]  = QColor(s.value(QStringLiteral("Bookmark%1").arg(i + 1)).toString());
+    info.window     = QColor(s.value("Window").toString());
+    info.windowText = QColor(s.value("WindowText").toString());
+    info.toolbar    = QColor(s.value("Toolbar").toString());
+    info.highlight  = QColor(s.value("Highlight").toString());
+    return info;
+}
+
+QList<PaletteInfo> loadEmbeddedPalettes()
+{
+    QList<PaletteInfo> palettes;
+    static const char *kBuiltins[] = {
+        ":/palettes/default.palette",
+        ":/palettes/catch22.palette",
+    };
+    for (const char *path : kBuiltins) {
+        const PaletteInfo p = parsePaletteFile(path);
+        if (p.bg.isValid() && p.fg.isValid() && !p.name.isEmpty())
+            palettes.append(p);
+    }
+    return palettes;
+}
+
+// ─── Custom palette I/O ──────────────────────────────────────────────────────
+
+// Returns the user-writable directory where custom palettes are stored.
+// Linux:   ~/.config/qexed/palettes/
+// Windows: %APPDATA%/qexed/palettes/
+QString paletteStorageDir()
+{
+    QSettings s(QSettings::IniFormat, QSettings::UserScope, "qexed", "qexed");
+    return QFileInfo(s.fileName()).dir().filePath("palettes");
+}
+
+QList<PaletteInfo> loadCustomPalettes()
+{
+    QList<PaletteInfo> result;
+    const QDir dir(paletteStorageDir());
+    if (!dir.exists()) return result;
+    for (const QString &name : dir.entryList({"*.palette"}, QDir::Files)) {
+        const PaletteInfo p = parsePaletteFile(dir.filePath(name));
+        if (p.bg.isValid() && !p.name.isEmpty())
+            result.append(p);
+    }
+    return result;
+}
+
+QString paletteFilePath(const QString &name)
+{
+    QString filename;
+    for (QChar c : name)
+        filename += (c.isLetterOrNumber() || c == '-') ? c : QLatin1Char('_');
+    return QDir(paletteStorageDir()).filePath(filename + ".palette");
+}
+
+// Write a PaletteInfo to the custom palettes directory.
+// Returns false on failure (e.g. permission error).
+bool savePalette(const PaletteInfo &info)
+{
+    if (!QDir().mkpath(paletteStorageDir())) return false;
+
+    auto cs = [](const QColor &c) { return c.isValid() ? c.name().toUpper() : QString(); };
+
+    QSettings s(paletteFilePath(info.name), QSettings::IniFormat);
+    s.beginGroup("Palette");
+    s.setValue("Name",              info.name);
+    s.setValue("Background",        cs(info.bg));
+    s.setValue("Foreground",        cs(info.fg));
+    s.setValue("Address",           cs(info.address));
+    s.setValue("HexOdd",            cs(info.hexOdd));
+    s.setValue("HexEven",           cs(info.hexEven));
+    s.setValue("Ascii",             cs(info.ascii));
+    s.setValue("Modified",          cs(info.modified));
+    s.setValue("Matched",           cs(info.matched));
+    s.setValue("Selection",         cs(info.selection));
+    s.setValue("SelectionText",     cs(info.selectionText));
+    s.setValue("SelectionInactive", cs(info.selectionInactive));
+    s.setValue("ResizeBar",         cs(info.resizeBar));
+    for (int i = 0; i < 7; ++i)
+        s.setValue(QStringLiteral("Bookmark%1").arg(i + 1), cs(info.bookmarks[i]));
+    s.setValue("Window",     cs(info.window));
+    s.setValue("WindowText", cs(info.windowText));
+    s.setValue("Toolbar",    cs(info.toolbar));
+    s.setValue("Highlight",    cs(info.highlight));
+    s.sync();
+    return s.status() == QSettings::NoError;
+}
+
+// ─── ColorPickerWidget ───────────────────────────────────────────────────────
+
+static constexpr int CPW_HUE_H = 20;   // hue strip height
+static constexpr int CPW_GAP   =  8;   // gap between SV rect and hue strip
+static constexpr int CPW_RAD   =  4;   // corner radius
+
+class ColorPickerWidget : public QWidget
+{
+    Q_OBJECT
+public:
+    explicit ColorPickerWidget(QWidget *parent = nullptr) : QWidget(parent)
+    {
+        setMouseTracking(true);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    }
+
+    QSize sizeHint() const override
+    {
+        return QSize(360, 200 + CPW_GAP + CPW_HUE_H);
+    }
+
+    QColor color() const { return m_color; }
+
+    void setColor(const QColor &c)
+    {
+        m_color = c.isValid() ? c : Qt::black;
+        update();
+    }
+
+signals:
+    void colorChanged(const QColor &c);
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter p(this);
+
+        const QRectF sv  = svRectF();
+        const QRectF hr  = hueRectF();
+        const qreal hueF = qBound(0.0, m_color.hsvHueF(), 1.0);
+
+        // ── SV square: horizontal white→hue, vertical transparent→black ──────
+        QLinearGradient gS(sv.left(), 0, sv.right(), 0);
+        gS.setColorAt(0.0, Qt::white);
+        gS.setColorAt(1.0, QColor::fromHsvF(hueF, 1.0, 1.0));
+        p.fillRect(sv, gS);
+
+        QLinearGradient gV(0, sv.top(), 0, sv.bottom());
+        gV.setColorAt(0.0, Qt::transparent);
+        gV.setColorAt(1.0, Qt::black);
+        p.fillRect(sv, gV);
+
+        p.setRenderHint(QPainter::Antialiasing);
+        p.setPen(QPen(palette().color(QPalette::Mid), 1));
+        p.setBrush(Qt::NoBrush);
+        p.drawRoundedRect(sv.adjusted(0.5, 0.5, -0.5, -0.5), CPW_RAD, CPW_RAD);
+
+        // SV cursor
+        const qreal cx = sv.left() + qBound(0.0, m_color.hsvSaturationF(), 1.0) * sv.width();
+        const qreal cy = sv.top()  + (1.0 - qBound(0.0, m_color.valueF(), 1.0)) * sv.height();
+        p.setPen(QPen(Qt::black, 1.5));
+        p.setBrush(Qt::NoBrush);
+        p.drawEllipse(QPointF(cx, cy), 7.0, 7.0);
+        p.setPen(QPen(Qt::white, 1.5));
+        p.drawEllipse(QPointF(cx, cy), 5.5, 5.5);
+
+        // ── Hue strip ─────────────────────────────────────────────────────────
+        QLinearGradient gHue(hr.left(), 0, hr.right(), 0);
+        for (int i = 0; i <= 12; ++i)
+            gHue.setColorAt(i / 12.0, QColor::fromHsvF(i == 12 ? 0.9999 : i / 12.0, 1.0, 1.0));
+
+        QPainterPath huePath;
+        huePath.addRoundedRect(hr, CPW_RAD, CPW_RAD);
+        p.fillPath(huePath, gHue);
+
+        p.setPen(QPen(palette().color(QPalette::Mid), 1));
+        p.setBrush(Qt::NoBrush);
+        p.drawRoundedRect(hr.adjusted(0.5, 0.5, -0.5, -0.5), CPW_RAD, CPW_RAD);
+
+        // Hue cursor
+        const qreal hx = hr.left() + hueF * hr.width();
+        p.setPen(QPen(Qt::black, 2.0));
+        p.drawLine(QPointF(hx, hr.top() + 2), QPointF(hx, hr.bottom() - 2));
+        p.setPen(QPen(Qt::white, 1.0));
+        p.drawLine(QPointF(hx, hr.top() + 3), QPointF(hx, hr.bottom() - 3));
+    }
+
+    void mousePressEvent(QMouseEvent *e) override
+    {
+        if (e->button() != Qt::LeftButton) return;
+        if (svRectF().contains(e->position()))        { m_zone = ZoneSV;  pickSV(e->position()); }
+        else if (hueRectF().contains(e->position()))  { m_zone = ZoneHue; pickHue(e->position()); }
+    }
+
+    void mouseMoveEvent(QMouseEvent *e) override
+    {
+        if (m_zone == ZoneSV)  pickSV(e->position());
+        if (m_zone == ZoneHue) pickHue(e->position());
+    }
+
+    void mouseReleaseEvent(QMouseEvent *) override { m_zone = ZoneNone; }
+
+private:
+    enum Zone { ZoneNone, ZoneSV, ZoneHue };
+
+    QRectF svRectF()  const { return QRectF(0, 0, width(), height() - CPW_GAP - CPW_HUE_H); }
+    QRectF hueRectF() const { return QRectF(0, height() - CPW_HUE_H, width(), CPW_HUE_H); }
+
+    void pickSV(const QPointF &pos)
+    {
+        const QRectF sv = svRectF();
+        const qreal  h  = qBound(0.0, m_color.hsvHueF(), 1.0);
+        const qreal  s  = qBound(0.0, (pos.x() - sv.left()) / sv.width(), 1.0);
+        const qreal  v  = qBound(0.0, 1.0 - (pos.y() - sv.top()) / sv.height(), 1.0);
+        m_color = QColor::fromHsvF(h, s, v);
+        update();
+        emit colorChanged(m_color);
+    }
+
+    void pickHue(const QPointF &pos)
+    {
+        const QRectF hr = hueRectF();
+        const qreal  h  = qBound(0.0, (pos.x() - hr.left()) / hr.width(), 1.0);
+        m_color = QColor::fromHsvF(h, qBound(0.0, m_color.hsvSaturationF(), 1.0),
+                                      qBound(0.0, m_color.valueF(), 1.0));
+        update();
+        emit colorChanged(m_color);
+    }
+
+    QColor m_color = Qt::red;
+    Zone   m_zone  = ZoneNone;
+};
+
+// ─── PaletteSwatch ───────────────────────────────────────────────────────────
+
+PaletteSwatch::PaletteSwatch(const PaletteInfo &info, QWidget *parent)
+    : QAbstractButton(parent), m_info(info)
+{
+    setCheckable(true);
+    setCursor(Qt::PointingHandCursor);
+    setFixedSize(SW_W, SW_H);
+    setToolTip(info.name);
+}
+
+void PaletteSwatch::mouseDoubleClickEvent(QMouseEvent *)
+{
+    emit doubleClicked();
+}
+
+void PaletteSwatch::paintEvent(QPaintEvent *)
+{
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+
+    const QRectF r = QRectF(rect()).adjusted(SW_BORDER, SW_BORDER, -SW_BORDER, -SW_BORDER);
+
+    // Background fill
+    p.setPen(Qt::NoPen);
+    p.setBrush(m_info.bg);
+    p.drawRoundedRect(r, SW_RADIUS, SW_RADIUS);
+
+    // Border: accent when selected, subtle otherwise
+    const QColor borderCol = isChecked()
+        ? palette().color(QPalette::Highlight)
+        : m_info.bg.darker(140);
+    p.setPen(QPen(borderCol, SW_BORDER));
+    p.setBrush(Qt::NoBrush);
+    p.drawRoundedRect(r.adjusted(SW_BORDER * 0.5, SW_BORDER * 0.5,
+                                 -SW_BORDER * 0.5, -SW_BORDER * 0.5),
+                      SW_RADIUS - SW_BORDER * 0.5, SW_RADIUS - SW_BORDER * 0.5);
+
+    // Centered name text
+    p.setPen(m_info.fg);
+    p.setFont(font());
+    p.drawText(rect(), Qt::AlignCenter, m_info.name);
+}
+
+// ─── PaletteEditorDialog ─────────────────────────────────────────────────────
+
+PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *parent)
+    : QDialog(parent), m_info(info)
+{
+    setWindowTitle(tr("Edit Palette"));
+    resize(460, 580);
+
+    // ── Name field ────────────────────────────────────────────────────────────
+    m_nameEdit = new QLineEdit(this);
+    m_nameEdit->setPlaceholderText(tr("Palette name…"));
+    m_nameEdit->setText(info.name);
+
+    auto *nameRow = new QWidget(this);
+    {
+        auto *lay = new QHBoxLayout(nameRow);
+        lay->setContentsMargins(0, 0, 0, 0);
+        lay->setSpacing(8);
+        lay->addWidget(new QLabel(tr("Name:"), nameRow));
+        lay->addWidget(m_nameEdit, 1);
+    }
+
+    // ── Element list ──────────────────────────────────────────────────────────
+    m_list = new QListWidget(this);
+    m_list->setUniformItemSizes(true);
+    m_list->setStyleSheet(
+        "QListWidget {"
+        "  border: 1px solid palette(mid);"
+        "  border-radius: 8px;"
+        "  padding: 4px;"
+        "}"
+    );
+    for (int i = 0; i < PE_COUNT; ++i) {
+        const auto e = PaletteElem(i);
+        auto *item = new QListWidgetItem(tr(elemName(e)));
+        item->setData(Qt::DecorationRole, makeColorSwatch(colorAt(e)));
+        m_list->addItem(item);
+    }
+    m_list->setCurrentRow(0);
+
+    // ── Color picker ──────────────────────────────────────────────────────────
+    m_picker = new ColorPickerWidget(this);
+    m_picker->setColor(colorAt(PE_BG));
+
+    // ── Hex input ─────────────────────────────────────────────────────────────
+    m_hexEdit = new QLineEdit(this);
+    m_hexEdit->setMaxLength(7);
+    m_hexEdit->setText(colorAt(PE_BG).name().toUpper());
+
+    // ── Buttons ───────────────────────────────────────────────────────────────
+    auto *buttons = new QDialogButtonBox(
+        QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
+    m_saveBtn = buttons->button(QDialogButtonBox::Save);
+    m_saveBtn->setEnabled(!m_nameEdit->text().trimmed().isEmpty());
+    for (QAbstractButton *btn : buttons->buttons())
+        btn->setIcon(QIcon());
+
+    connect(buttons, &QDialogButtonBox::accepted, this, [this]() {
+        m_info.name = m_nameEdit->text().trimmed();
+        if (QFile::exists(paletteFilePath(m_info.name))) {
+            QMessageBox msg(this);
+            msg.setWindowTitle(tr("Overwrite palette?"));
+            msg.setText(tr("A palette named \"%1\" already exists. Overwrite it?")
+                            .arg(m_info.name));
+            msg.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+            for (QAbstractButton *btn : msg.buttons())
+                btn->setIcon(QIcon());
+            if (msg.exec() != QMessageBox::Yes) return;
+        }
+        if (!savePalette(m_info)) return;  // stay open on write failure
+        emit paletteSaved(m_info);
+        accept();
+    });
+    connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+
+    // ── Layout ────────────────────────────────────────────────────────────────
+    auto *hexRow = new QWidget(this);
+    {
+        auto *lay = new QHBoxLayout(hexRow);
+        lay->setContentsMargins(0, 0, 0, 0);
+        lay->setSpacing(8);
+        lay->addWidget(new QLabel(tr("Hex:"), hexRow));
+        lay->addWidget(m_hexEdit);
+        lay->addStretch();
+    }
+
+    auto *vlay = new QVBoxLayout(this);
+    vlay->setContentsMargins(20, 20, 20, 20);
+    vlay->setSpacing(12);
+    vlay->addWidget(nameRow);
+    vlay->addWidget(m_list);
+    vlay->addWidget(m_picker, 1);
+    vlay->addWidget(hexRow);
+    vlay->addWidget(buttons);
+
+    // ── Connections ───────────────────────────────────────────────────────────
+    connect(m_nameEdit, &QLineEdit::textChanged, this, [this](const QString &t) {
+        m_saveBtn->setEnabled(!t.trimmed().isEmpty());
+    });
+
+    connect(m_list, &QListWidget::currentRowChanged, this, [this](int row) {
+        if (row < 0 || row >= PE_COUNT) return;
+        const auto e = PaletteElem(row);
+        m_picker->blockSignals(true);
+        m_picker->setColor(colorAt(e));
+        m_picker->blockSignals(false);
+        m_hexEdit->setText(colorAt(e).name().toUpper());
+    });
+
+    connect(m_picker, &ColorPickerWidget::colorChanged, this, [this](const QColor &c) {
+        const int row = m_list->currentRow();
+        if (row < 0 || row >= PE_COUNT) return;
+        setColorAt(PaletteElem(row), c);
+        m_hexEdit->setText(c.name().toUpper());
+        m_list->item(row)->setData(Qt::DecorationRole, makeColorSwatch(c));
+        emit paletteChanged(m_info);
+    });
+
+    connect(m_hexEdit, &QLineEdit::textEdited, this, [this](const QString &text) {
+        if (text.length() != 7) return;
+        const QColor c(text);
+        if (!c.isValid()) return;
+        const int row = m_list->currentRow();
+        if (row < 0 || row >= PE_COUNT) return;
+        setColorAt(PaletteElem(row), c);
+        m_picker->setColor(c);
+        m_list->item(row)->setData(Qt::DecorationRole, makeColorSwatch(c));
+        emit paletteChanged(m_info);
+    });
+}
+
+const char *PaletteEditorDialog::elemName(PaletteElem e)
+{
+    switch (e) {
+        case PE_BG:                 return "Background";
+        //case PE_FG:                 return "Foreground";
+        case PE_HEX_ODD:            return "Hex Odd";
+        case PE_HEX_EVEN:           return "Hex Even";
+        case PE_ASCII:              return "ASCII";
+        case PE_MODIFIED:           return "Modified";
+        case PE_SELECTION:          return "Selection";
+        case PE_MATCHED:            return "Search Match";
+        case PE_SELECTION_TEXT:     return "Selection Text";
+        case PE_SELECTION_INACTIVE: return "Selection (Inactive)";
+        case PE_ADDRESS:            return "Address";
+        case PE_RESIZE_BAR:         return "Resize Bar";
+        case PE_BOOKMARK_1:         return "Bookmark 1";
+        case PE_BOOKMARK_2:         return "Bookmark 2";
+        case PE_BOOKMARK_3:         return "Bookmark 3";
+        case PE_BOOKMARK_4:         return "Bookmark 4";
+        case PE_BOOKMARK_5:         return "Bookmark 5";
+        case PE_BOOKMARK_6:         return "Bookmark 6";
+        case PE_BOOKMARK_7:         return "Bookmark 7";
+
+        // main window elements
+        //case PE_WINDOW:             return "Window";
+        //case PE_WINDOWTEXT:         return "Window Text";
+        //case PE_TOOLBAR:            return "Toolbar";
+        case PE_HIGHLIGHT:          return "Window Highlight";
+        case PE_COUNT:              return "";
+    }
+    return "";
+}
+
+QColor PaletteEditorDialog::colorAt(PaletteElem e) const
+{
+    switch (e) {
+        case PE_BG:                 return m_info.bg;
+        //case PE_FG:                 return m_info.fg;
+        case PE_HEX_ODD:            return m_info.hexOdd;
+        case PE_HEX_EVEN:           return m_info.hexEven;
+        case PE_ASCII:              return m_info.ascii;
+        case PE_MODIFIED:           return m_info.modified;
+        case PE_SELECTION:          return m_info.selection;
+        case PE_MATCHED:            return m_info.matched;
+        case PE_SELECTION_TEXT:     return m_info.selectionText.isValid()     ? m_info.selectionText     : m_info.fg;
+        case PE_SELECTION_INACTIVE: return m_info.selectionInactive.isValid() ? m_info.selectionInactive : m_info.selection.darker(130);
+        case PE_ADDRESS:            return m_info.address.isValid()            ? m_info.address           : m_info.fg;
+        case PE_RESIZE_BAR:         return m_info.resizeBar.isValid()          ? m_info.resizeBar         : m_info.fg.darker(150);
+        case PE_BOOKMARK_1:         return m_info.bookmarks[0].isValid() ? m_info.bookmarks[0] : QColor(255, 255,   0);
+        case PE_BOOKMARK_2:         return m_info.bookmarks[1].isValid() ? m_info.bookmarks[1] : QColor(255, 165,   0);
+        case PE_BOOKMARK_3:         return m_info.bookmarks[2].isValid() ? m_info.bookmarks[2] : QColor(255,  80,  80);
+        case PE_BOOKMARK_4:         return m_info.bookmarks[3].isValid() ? m_info.bookmarks[3] : QColor(180, 100, 220);
+        case PE_BOOKMARK_5:         return m_info.bookmarks[4].isValid() ? m_info.bookmarks[4] : QColor( 80, 200, 120);
+        case PE_BOOKMARK_6:         return m_info.bookmarks[5].isValid() ? m_info.bookmarks[5] : QColor( 80, 160, 255);
+        case PE_BOOKMARK_7:         return m_info.bookmarks[6].isValid() ? m_info.bookmarks[6] : QColor(255, 150, 200);
+
+
+        case PE_WINDOW:             return m_info.window;
+        case PE_WINDOWTEXT:         return m_info.windowText;
+        case PE_TOOLBAR:            return m_info.toolbar;
+        case PE_HIGHLIGHT:          return m_info.highlight;
+        case PE_COUNT:              return {};
+    }
+    return {};
+}
+
+void PaletteEditorDialog::setColorAt(PaletteElem e, const QColor &c)
+{
+    switch (e) {
+        case PE_BG:                 m_info.bg                = c; break;
+        case PE_HEX_ODD:            m_info.hexOdd            = c; break;
+        case PE_HEX_EVEN:           m_info.hexEven           = c; break;
+        case PE_ASCII:              m_info.ascii             = c; break;
+        case PE_MODIFIED:           m_info.modified          = c; break;
+        case PE_SELECTION:          m_info.selection         = c; break;
+        case PE_MATCHED:            m_info.matched           = c; break;
+        case PE_SELECTION_TEXT:     m_info.selectionText     = c; break;
+        case PE_SELECTION_INACTIVE: m_info.selectionInactive = c; break;
+        case PE_ADDRESS:            m_info.address           = c; break;
+        case PE_RESIZE_BAR:         m_info.resizeBar         = c; break;
+        case PE_BOOKMARK_1:         m_info.bookmarks[0]      = c; break;
+        case PE_BOOKMARK_2:         m_info.bookmarks[1]      = c; break;
+        case PE_BOOKMARK_3:         m_info.bookmarks[2]      = c; break;
+        case PE_BOOKMARK_4:         m_info.bookmarks[3]      = c; break;
+        case PE_BOOKMARK_5:         m_info.bookmarks[4]      = c; break;
+        case PE_BOOKMARK_6:         m_info.bookmarks[5]      = c; break;
+        case PE_BOOKMARK_7:         m_info.bookmarks[6]      = c; break;
+
+        case PE_WINDOW:             m_info.window            = c; break;
+        case PE_WINDOWTEXT:         m_info.windowText        = c; break;
+        case PE_TOOLBAR:            m_info.toolbar           = c; break;
+        case PE_HIGHLIGHT:          m_info.highlight         = c; break;
+        case PE_COUNT:              break;
+    }
+}
+
+QPixmap PaletteEditorDialog::makeColorSwatch(const QColor &c)
+{
+    QPixmap px(16, 16);
+    px.fill(Qt::transparent);
+    QPainter p(&px);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setBrush(c);
+    p.setPen(Qt::NoPen);
+    p.drawRoundedRect(QRectF(1, 1, 14, 14), 3, 3);
+    return px;
+}
+
+#include "palettes.moc"

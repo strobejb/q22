@@ -24,6 +24,7 @@ public:
 protected:
     void mousePressEvent(QMouseEvent *event)       override;
     void mouseDoubleClickEvent(QMouseEvent *event) override;
+    void changeEvent(QEvent *e)                    override;
     bool event(QEvent *e)                          override;
     bool eventFilter(QObject *obj, QEvent *e)      override;
 

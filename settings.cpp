@@ -96,3 +96,15 @@ void AppSettings::setPrefColorScheme(int scheme)
     OPEN_SETTINGS;
     s.setValue("preferences/colorScheme", scheme);
 }
+
+QString AppSettings::prefPaletteName()
+{
+    OPEN_SETTINGS;
+    return s.value("preferences/paletteName", "").toString();
+}
+
+void AppSettings::setPrefPaletteName(const QString &name)
+{
+    OPEN_SETTINGS;
+    s.setValue("preferences/paletteName", name);
+}

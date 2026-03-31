@@ -5,6 +5,7 @@
 #include "bookmarkdialog.h"
 #include "finddialog.h"
 #include "gotodialog.h"
+#include "palettes.h"
 #include "preferences.h"
 #include "settings.h"
 #include "statusbar.h"
@@ -16,6 +17,7 @@
 #include <QDir>
 #include <QMimeData>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QIcon>
 #include <QMenu>
 #include <QPainter>
@@ -276,7 +278,7 @@ MainWindow::MainWindow(QWidget *parent)
     ui->actionOpen->setIcon(QIcon::fromTheme("document-open-symbolic"));
 #endif
 
-    setWindowTitle("q22");
+    setWindowTitle(QApplication::applicationName());
 
     // Custom title bar
     m_titleBar = new TitleBar(this);
@@ -347,9 +349,10 @@ MainWindow::MainWindow(QWidget *parent)
 
     m_hv = new HexView(this);
     m_hv->setObjectName("HexView");
-    m_hv->setStyle(HVS_RESIZEBAR | HVS_SHOWMODS, HVS_RESIZEBAR | HVS_SHOWMODS);
-    m_hv->setHexColour(HVC_HEXEVEN, 0x000000FF);
-    m_hv->setHexColour(HVC_HEXODD, 0x00000080);
+    m_hv->setStyle(HVS_RESIZEBAR | HVS_SHOWMODS| HVS_INVERTSELECTION,
+                   HVS_RESIZEBAR | HVS_SHOWMODS );
+    m_hv->setHexColour(HVC_HEXEVEN, QColor(0, 0, 255));
+    m_hv->setHexColour(HVC_HEXODD,  QColor(0, 0, 128));
     m_hv->setGrouping(2);
     m_hv->setPadding(3, 3);
     // Container: HexView fills available space; FindDialog sits flush above
@@ -365,6 +368,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_gotoDialog = new GotoDialog(m_hv, central);
     vlay->addWidget(m_findDialog, 0);
     vlay->addWidget(m_gotoDialog, 0);
+    vlay->addWidget(new Hairline(central));  // separator between content and status bar
     setCentralWidget(central);
 
     // Build a standalone Edit menu for the HexView context menu, sharing the
@@ -512,7 +516,7 @@ MainWindow::MainWindow(QWidget *parent)
         if (m_findDialog->isVisible() && fw && m_findDialog->isAncestorOf(fw))
             m_findDialog->hide();
         else
-            m_findDialog->activate();
+            m_findDialog->activate({}, m_hv->activePane());
     });
 
     connect(ui->action_Goto, &QAction::triggered, this, [this]() {
@@ -555,6 +559,13 @@ MainWindow::MainWindow(QWidget *parent)
     });
     connect(m_prefsDialog, &PreferencesDialog::nativeMenuChanged,
             this, &MainWindow::applyMenuMode);
+    connect(m_prefsDialog, &PreferencesDialog::paletteSelected,
+            this, [this](const PaletteInfo &info) {
+        applyPalette(m_hv, info);
+        applyUiPalette(info);
+        m_titleBar->refreshStylesheet();
+        AppSettings::setPrefPaletteName(info.name);
+    });
     connect(ui->actionPreferences, &QAction::triggered, this, [this]() {
         m_prefsDialog->show();
         m_prefsDialog->raise();
@@ -566,6 +577,21 @@ MainWindow::MainWindow(QWidget *parent)
     if (!savedFamily.isEmpty())
         m_hv->setFont(QFont(savedFamily, AppSettings::prefFontSize()),
                       AppSettings::prefHorizSpacing(), AppSettings::prefLineSpacing());
+
+    // Apply saved palette
+    const QString savedPalette = AppSettings::prefPaletteName();
+    if (!savedPalette.isEmpty()) {
+        QList<PaletteInfo> palettes = loadEmbeddedPalettes();
+        palettes += loadCustomPalettes();
+        for (const PaletteInfo &info : palettes) {
+            if (info.name == savedPalette) {
+                applyPalette(m_hv, info);
+                applyUiPalette(info);
+                m_titleBar->refreshStylesheet();
+                break;
+            }
+        }
+    }
 
     // Apply saved menu mode (may switch away from the default custom titlebar)
     applyMenuMode(AppSettings::prefNativeMenu());
@@ -607,6 +633,7 @@ void MainWindow::openFile(const QString &path) {
     m_hv->openFile(path);
     AppSettings::addRecentFile(path);
     updateRecentMenu();
+    setWindowTitle(QFileInfo(path).fileName() + " \u2013 " + QApplication::applicationName());
 }
 
 void MainWindow::updateRecentMenu() {

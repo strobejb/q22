@@ -20,34 +20,17 @@ HexView::HexView(QWidget *parent)
     m_pDataSeq = new sequence();
     m_pDataSeq->init();
 
-    // Default colours
-    m_ColourList[HVC_BACKGROUND]  = HEX_SYSCOLOR(COLOR_WINDOW);
-    m_ColourList[HVC_SELECTION]   = HEX_SYSCOLOR(COLOR_HIGHLIGHT);
-    m_ColourList[HVC_SELECTION2]  = HEX_SYSCOLOR(COLOR_HIGHLIGHT);
-    m_ColourList[HVC_ADDRESS]     = HEX_SYSCOLOR(COLOR_WINDOWTEXT);
-    m_ColourList[HVC_HEXODD]      = HEX_SYSCOLOR(COLOR_WINDOWTEXT);
-    m_ColourList[HVC_HEXODDSEL]   = HEX_SYSCOLOR(COLOR_HIGHLIGHTTEXT);
-    m_ColourList[HVC_HEXODDSEL2]  = HEX_SYSCOLOR(COLOR_HIGHLIGHTTEXT);
-    m_ColourList[HVC_HEXEVEN]     = HEX_SYSCOLOR(COLOR_GRAYTEXT);
-    m_ColourList[HVC_HEXEVENSEL]  = HEX_SYSCOLOR(COLOR_HIGHLIGHTTEXT);
-    m_ColourList[HVC_HEXEVENSEL2] = HEX_SYSCOLOR(COLOR_HIGHLIGHTTEXT);
-    m_ColourList[HVC_ASCII]       = HEX_SYSCOLOR(COLOR_WINDOWTEXT);
-    m_ColourList[HVC_ASCIISEL]    = HEX_SYSCOLOR(COLOR_HIGHLIGHTTEXT);
-    m_ColourList[HVC_ASCIISEL2]   = HEX_SYSCOLOR(COLOR_HIGHLIGHTTEXT);
-    // Direct RGB colours must be stored without the alpha byte so that bit 31
-    // (HEX_SYS_COLOR) is not falsely triggered by the 0xFF alpha from qRgb().
-    m_ColourList[HVC_MODIFY]      = qRgb(200,  50,  50) & 0x00FFFFFFu;
-    m_ColourList[HVC_MODIFYSEL]   = qRgb(255, 128, 128) & 0x00FFFFFFu;
-    m_ColourList[HVC_MODIFYSEL2]  = qRgb(255, 128, 128) & 0x00FFFFFFu;
-    m_ColourList[HVC_BOOKMARK_FG] = qRgb(  0,   0,   0) & 0x00FFFFFFu;
-    m_ColourList[HVC_BOOKMARK_BG] = qRgb(255, 255,   0) & 0x00FFFFFFu;
-    m_ColourList[HVC_BOOKSEL]     = qRgb(255, 200,   0) & 0x00FFFFFFu;
-    m_ColourList[HVC_RESIZEBAR]   = HEX_SYSCOLOR(COLOR_BTNSHADOW);
-    m_ColourList[HVC_SELECTION3]  = HEX_SYSCOLOR(COLOR_HIGHLIGHT);
-    m_ColourList[HVC_SELECTION4]  = HEX_SYSCOLOR(COLOR_HIGHLIGHT);
-    m_ColourList[HVC_MATCHED]     = qRgb(255, 165,   0) & 0x00FFFFFFu;
-    m_ColourList[HVC_MATCHEDSEL]  = qRgb(200, 130,   0) & 0x00FFFFFFu;
-    m_ColourList[HVC_MATCHEDSEL2] = qRgb(200, 130,   0) & 0x00FFFFFFu;
+    // Default colours.
+    // Palette-resolved slots are left as invalid QColor() — realiseColour maps
+    // them to QPalette roles at paint time.  Only slots with fixed RGB defaults
+    // need explicit initialisation here.
+    m_ColourList[HVC_MODIFY]      = QColor(200,  50,  50);
+    m_ColourList[HVC_MODIFYSEL]   = QColor(255, 128, 128);
+    m_ColourList[HVC_BOOKMARK_FG] = QColor(  0,   0,   0);
+    m_ColourList[HVC_BOOKMARK_BG] = QColor(255, 255,   0);
+    m_ColourList[HVC_BOOKSEL]     = QColor(255, 200,   0);
+    m_ColourList[HVC_MATCHED]     = QColor(255, 165,   0);
+    m_ColourList[HVC_MATCHEDSEL]  = QColor(200, 130,   0);
 
     // Font
     //setFont(QFont("Courier New", 12));
@@ -164,23 +147,14 @@ size_w HexView::size() const
 
 QRgb HexView::getHexColour(uint index)
 {
-    if (index >= HV_MAX_COLS) return 0;
-    return realiseColour(m_ColourList[index]);
+    if (index >= HVC_MAX_COLOURS) return 0;
+    return realiseColour(static_cast<HvColorSlot>(index)).rgb();
 }
 
-bool HexView::setHexColour(uint index, QRgb col)
+bool HexView::setHexColour(HvColorSlot slot, QColor col)
 {
-    if (index >= HV_MAX_COLS) return false;
-    // m_ColourList encodes two kinds of value:
-    //   HEX_SYSCOLOR(code) — 0x80000000 | small_code (bits 24-30 are zero)
-    //   direct RGB        — 0x00RRGGBB (upper byte zero)
-    // An opaque QRgb from qRgb() has upper byte 0xFF, which also sets bit 31,
-    // so we must strip the alpha before storing to avoid false system-colour
-    // detection in realiseColour().  A genuine HEX_SYSCOLOR() value is
-    // recognised by having ONLY bit 31 set in the upper byte (0x80), not 0xFF.
-    if ((col & 0xFF000000u) != HEX_SYS_COLOR)
-        col &= 0x00FFFFFFu;
-    m_ColourList[index] = col;
+    if (slot >= HVC_MAX_COLOURS) return false;
+    m_ColourList[slot] = col;
     return true;
 }
 
@@ -670,6 +644,7 @@ bool HexView::setCurSel(size_w selStart, size_w selEnd)
     invalidateRange(m_nSelectionStart, m_nSelectionEnd);
     m_nSelectionStart = selStart;
     m_nSelectionEnd   = selEnd;
+    m_nSubItem        = 0;
 
     if (m_nCursorOffset != selEnd) {
         m_nCursorOffset = selEnd;
@@ -684,6 +659,7 @@ bool HexView::setCurPos(size_w pos)
     if (!m_pDataSeq || pos > m_pDataSeq->size()) return false;
     if (m_nCursorOffset != pos) {
         m_nCursorOffset = pos;
+        m_nSubItem = 0;
         if (m_nSelectionEnd != m_nSelectionStart) {
             m_nSelectionEnd = m_nSelectionStart = pos;
             viewport()->update();

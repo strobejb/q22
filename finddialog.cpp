@@ -125,7 +125,6 @@ FindDialog::FindDialog(QWidget *parent)
     // border property is set via stylesheet Qt stops drawing the platform
     // default border, so we must declare it explicitly.
     QString borderCol  = QApplication::palette().mid().color().name();
-    QString accentCol  = QApplication::palette().highlight().color().name();
     setStyleSheet(QString(R"(
         QToolButton {
             border: none;
@@ -135,17 +134,17 @@ FindDialog::FindDialog(QWidget *parent)
         QToolButton:hover   { background: %1; }
         QToolButton:pressed { background: %2; }
         QToolButton::menu-indicator { image: none; width: 0; }
-        QLineEdit {
+        #editFind {
             margin: 2px 0;
             border: 1px solid %3;
             border-radius: 6px;
         }
-        QLineEdit:focus {
+        #editFind:focus {
             margin: 1px 0;
-            border: 2px solid %4;
+            border: 2px solid palette(highlight);
             border-radius: 6px;
         }
-    )").arg(hover, pressed, borderCol, accentCol));
+    )").arg(hover, pressed, borderCol));
 
     // Options menu
     auto *optMenu = new QMenu(this);
@@ -180,10 +179,6 @@ FindDialog::FindDialog(QWidget *parent)
     ui->editFind->setTextMargins(kPad + 2, kPad, kPad + 2, kPad);
     ui->editFind->setMinimumHeight(ui->editFind->minimumSizeHint().height() + 2 * kPad);
 
-    // Colour the top border line
-    ui->topBorder->setStyleSheet(
-        QString("background-color: %1;")
-        .arg(QApplication::palette().mid().color().name()));
 
     // Replace the plain QComboBox placeholder (items defined in .ui) with a
     // DataTypeComboBox, copying the item model across before swapping.
@@ -209,6 +204,10 @@ FindDialog::FindDialog(QWidget *parent)
     ui->editFind->setFont(m_comboDataType->font());
     connect(m_comboDataType, &DataTypeComboBox::selectionChanged, this, [this](int) {
         m_comboDataType->setDisplayText(m_comboDataType->selectionText());
+        // Remember the last text-encoding choice so pane-1 activations restore it.
+        const auto dt = m_comboDataType->selectionData().value<SearchDataType>();
+        if (dt == SearchUTF8 || dt == SearchUTF16 || dt == SearchUTF32)
+            m_lastTextType = dt;
         updateSearchHexPreview();
     });
     connect(ui->editFind, &QLineEdit::textChanged, this, [this] { updateSearchHexPreview(); });
@@ -266,8 +265,13 @@ FindDialog::~FindDialog()
     delete ui;
 }
 
-void FindDialog::activate(const QString &initialText)
+void FindDialog::activate(const QString &initialText, int pane)
 {
+    if (pane == 0)
+        m_comboDataType->selectByData(QVariant::fromValue(SearchHex));
+    else if (pane == 1)
+        m_comboDataType->selectByData(QVariant::fromValue(m_lastTextType));
+
     if (!initialText.isEmpty())
         ui->editFind->setText(initialText);
     show();

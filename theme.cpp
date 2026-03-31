@@ -57,6 +57,54 @@ QIcon segoeIcon(uint codePoint, const QColor &color, int logicalPx)
 }
 #endif
 
+// Shadow margin: QSS "margin: Npx" on Linux leaves an N-px transparent ring
+// around the menu window for the self-drawn shadow.  Must stay in sync with the
+// {menuMargin} substitution in buildStylesheet() and MenuShadowOverlay::S.
+static constexpr int kMenuShadowMargin = 8;
+
+// ── UI colour overrides ───────────────────────────────────────────────────────
+// Set by applyUiPalette() when an active palette defines window/toolbar colours.
+// applyAdwaitaTheme() layers these on top of the base Adwaita palette + QSS.
+static ColorScheme       s_currentScheme = ColorScheme::System;
+static UiColourOverrides s_uiOverrides;
+
+#ifdef Q_OS_WIN
+// ── DWM dark-mode title bars ──────────────────────────────────────────────────
+// Qt does not call DwmSetWindowAttribute(DWMWA_USE_IMMERSIVE_DARK_MODE) on
+// dialogs, so they always get a light title bar even in dark mode.  We fix
+// this with a global event filter that applies the attribute whenever any
+// non-frameless top-level window is shown, plus a sweep of existing windows
+// when the colour scheme changes.
+
+#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
+#  define DWMWA_USE_IMMERSIVE_DARK_MODE 20
+#endif
+
+static void applyDwmDarkMode(QWidget *w)
+{
+    if (!w->isWindow() || (w->windowFlags() & Qt::FramelessWindowHint))
+        return;
+    const bool dark = (s_currentScheme == ColorScheme::Dark) ||
+                      (s_currentScheme == ColorScheme::System &&
+                       QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark);
+    BOOL val = dark ? TRUE : FALSE;
+    DwmSetWindowAttribute(reinterpret_cast<HWND>(w->winId()),
+                          DWMWA_USE_IMMERSIVE_DARK_MODE, &val, sizeof(val));
+}
+
+namespace {
+struct DarkModeFilter : public QObject {
+    explicit DarkModeFilter(QObject *p) : QObject(p) {}
+    bool eventFilter(QObject *obj, QEvent *e) override {
+        if (e->type() == QEvent::Show)
+            if (auto *w = qobject_cast<QWidget *>(obj))
+                applyDwmDarkMode(w);
+        return false;
+    }
+};
+} // namespace
+#endif
+
 // ── DWM shadow for popup menus (Win11) ───────────────────────────────────────
 // Qt's NoDropShadowWindowHint removes CS_DROPSHADOW, which we need to keep
 // off because it paints a rectangular shadow that clips rounded corners.
@@ -89,13 +137,41 @@ struct MenuShadowFilter : public QObject
             }
         }
 #else
-        Q_UNUSED(obj);
-        Q_UNUSED(e);
+        // The QSS shadow margin shifts the visible menu content inward by
+        // kMenuShadowMargin px on every side.  Compensate so the menu appears
+        // exactly where Qt placed it rather than offset down and to the right.
+        if (e->type() == QEvent::Show) {
+            auto *w = qobject_cast<QWidget *>(obj);
+            if (w)
+                w->move(w->pos() - QPoint(kMenuShadowMargin, kMenuShadowMargin));
+        }
 #endif
         return false;
     }
 };
 } // namespace
+
+// ── Hairline separator ────────────────────────────────────────────────────────
+
+Hairline::Hairline(QWidget *parent) : QWidget(parent)
+{
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    setFixedHeight(1);
+}
+
+void Hairline::paintEvent(QPaintEvent *)
+{
+    QPainter p(this);
+    // Fill the widget background first so fractional-DPI rounding artefacts
+    // (the widget is 1 logical px but may span 1.5 physical px) show the
+    // correct parent background rather than stale content.
+    p.fillRect(rect(), palette().window());
+    // Paint exactly 1 physical pixel of separator colour.  1.0/dpr logical px
+    // maps to exactly 1 physical px through the painter's device transform,
+    // regardless of where the widget sits in sub-pixel space.
+    const qreal onePx = 1.0 / p.device()->devicePixelRatioF();
+    p.fillRect(QRectF(0, 0, width(), onePx), palette().mid());
+}
 
 // ── Smart menu positioning ────────────────────────────────────────────────────
 
@@ -134,8 +210,14 @@ void recolorToolButtons(QWidget *parent)
 {
     const QColor fg = parent->palette().buttonText().color();
     for (auto *btn : parent->findChildren<QToolButton*>()) {
-        const QString name = btn->icon().name();
-        if (name.isEmpty()) continue;
+        // On the first call the icon still has a theme name; save it for
+        // subsequent calls (after recolor the icon is a plain pixmap, name="").
+        QString name = btn->property("iconThemeName").toString();
+        if (name.isEmpty()) {
+            name = btn->icon().name();
+            if (name.isEmpty()) continue;
+            btn->setProperty("iconThemeName", name);
+        }
         const int sz = btn->iconSize().width();
         QIcon ic = recoloredIcon(name, fg, sz > 0 ? sz : 16);
         if (!ic.isNull())
@@ -175,64 +257,54 @@ QPoint smartMenuPos(const QWidget *anchor, const QMenu *menu, bool rightAlign)
 
 static void applyPalette(bool dark)
 {
-    QPalette p;
+    // Four anchor colours per mode — everything else is derived from these.
+    // We avoid setColorScheme(): on GNOME the platform plugin responds to it
+    // by re-asserting the system palette, permanently overriding light mode.
+    const QColor window    = dark ? QColor("#242424") : QColor("#f6f5f4");
+    const QColor windowText = dark ? QColor("#deddda") : QColor("#2e3436");
+    const QColor base      = dark ? window.darker(120) : Qt::white;
+    const QColor highlight = s_uiOverrides.highlight.isValid()
+                           ? s_uiOverrides.highlight : QColor("#3584e4");
 
-    if (!dark) {
-        p.setColor(QPalette::Window,          QColor("#fafafa"));
-        p.setColor(QPalette::WindowText,      QColor("#2e3436"));
-        p.setColor(QPalette::Base,            QColor("#ffffff"));
-        p.setColor(QPalette::AlternateBase,   QColor("#f6f5f4"));
-        p.setColor(QPalette::Text,            QColor("#2e3436"));
-        p.setColor(QPalette::BrightText,      QColor("#ffffff"));
-        p.setColor(QPalette::Button,          QColor("#e0dedb"));
-        p.setColor(QPalette::ButtonText,      QColor("#2e3436"));
-        p.setColor(QPalette::Highlight,       QColor("#3584e4"));
-        p.setColor(QPalette::HighlightedText, QColor("#ffffff"));
-        p.setColor(QPalette::Link,            QColor("#1a73e8"));
-        p.setColor(QPalette::LinkVisited,     QColor("#865e3c"));
-        p.setColor(QPalette::Light,           QColor("#ffffff"));
-        p.setColor(QPalette::Midlight,        QColor("#ebebeb"));
-        p.setColor(QPalette::Mid,             QColor("#cdc7c2"));
-        p.setColor(QPalette::Dark,            QColor("#bfbab5"));
-        p.setColor(QPalette::Shadow,          QColor("#9a9996"));
-        p.setColor(QPalette::ToolTipBase,     QColor("#1e1e1e"));
-        p.setColor(QPalette::ToolTipText,     QColor("#f6f5f4"));
-        p.setColor(QPalette::PlaceholderText, QColor("#9a9996"));
-        p.setColor(QPalette::Inactive, QPalette::Highlight,       QColor("#b0adb0"));
-        p.setColor(QPalette::Inactive, QPalette::HighlightedText, QColor("#2e3436"));
-        p.setColor(QPalette::Disabled, QPalette::WindowText,      QColor("#9a9996"));
-        p.setColor(QPalette::Disabled, QPalette::Text,            QColor("#9a9996"));
-        p.setColor(QPalette::Disabled, QPalette::ButtonText,      QColor("#9a9996"));
-        p.setColor(QPalette::Disabled, QPalette::Highlight,       QColor("#c0beba"));
-        p.setColor(QPalette::Disabled, QPalette::HighlightedText, QColor("#9a9996"));
-    } else {
-        p.setColor(QPalette::Window,          QColor("#242424"));
-        p.setColor(QPalette::WindowText,      QColor("#deddda"));
-        p.setColor(QPalette::Base,            QColor("#1e1e1e"));
-        p.setColor(QPalette::AlternateBase,   QColor("#2a2a2a"));
-        p.setColor(QPalette::Text,            QColor("#deddda"));
-        p.setColor(QPalette::BrightText,      QColor("#ffffff"));
-        p.setColor(QPalette::Button,          QColor("#3d3d3d"));
-        p.setColor(QPalette::ButtonText,      QColor("#deddda"));
-        p.setColor(QPalette::Highlight,       QColor("#3584e4"));
-        p.setColor(QPalette::HighlightedText, QColor("#ffffff"));
-        p.setColor(QPalette::Link,            QColor("#78aeed"));
-        p.setColor(QPalette::LinkVisited,     QColor("#c49a6c"));
-        p.setColor(QPalette::Light,           QColor("#4a4a4a"));
-        p.setColor(QPalette::Midlight,        QColor("#3a3a3a"));
-        p.setColor(QPalette::Mid,             QColor("#3d3d3d"));
-        p.setColor(QPalette::Dark,            QColor("#202020"));
-        p.setColor(QPalette::Shadow,          QColor("#141414"));
-        p.setColor(QPalette::ToolTipBase,     QColor("#f6f5f4"));
-        p.setColor(QPalette::ToolTipText,     QColor("#2e3436"));
-        p.setColor(QPalette::PlaceholderText, QColor("#6c6c6c"));
-        p.setColor(QPalette::Inactive, QPalette::Highlight,       QColor("#4a4a52"));
-        p.setColor(QPalette::Inactive, QPalette::HighlightedText, QColor("#deddda"));
-        p.setColor(QPalette::Disabled, QPalette::WindowText,      QColor("#6c6c6c"));
-        p.setColor(QPalette::Disabled, QPalette::Text,            QColor("#6c6c6c"));
-        p.setColor(QPalette::Disabled, QPalette::ButtonText,      QColor("#6c6c6c"));
-        p.setColor(QPalette::Disabled, QPalette::Highlight,       QColor("#4a4a4a"));
-        p.setColor(QPalette::Disabled, QPalette::HighlightedText, QColor("#6c6c6c"));
+    // Derived roles — no additional hard-coded values beyond the four above.
+    const QColor button    = dark ? window.lighter(155) : window.darker(105);
+    const QColor altBase   = dark ? base.lighter(112)   : base.darker(103);
+    const QColor ph        = QColor(windowText.red(), windowText.green(),
+                                    windowText.blue(), 128); // 50% opacity text
+    const QColor hlText    = highlight.lightness() < 160 ? Qt::white : windowText;
+
+    // QPalette(button, window) auto-computes Light, Midlight, Mid, Dark, Shadow.
+    // Mid (used for borders and separators) comes out near-invisible in dark mode
+    // because both button and window are dark, so override it explicitly.
+    const QColor mid = dark ? window.lighter(222) : window.darker(130);
+    QPalette p(button, window);
+    p.setColor(QPalette::Mid,             mid);
+    p.setColor(QPalette::WindowText,      windowText);
+    p.setColor(QPalette::Text,            windowText);
+    p.setColor(QPalette::ButtonText,      windowText);
+    p.setColor(QPalette::BrightText,      Qt::white);
+    p.setColor(QPalette::Base,            base);
+    p.setColor(QPalette::AlternateBase,   altBase);
+    p.setColor(QPalette::Highlight,       highlight);
+    p.setColor(QPalette::HighlightedText, hlText);
+    p.setColor(QPalette::Link,            dark ? highlight.lighter(130) : highlight);
+    p.setColor(QPalette::PlaceholderText, ph);
+    // Tooltips: inverted pair so they stand out against the window background.
+    p.setColor(QPalette::ToolTipBase,     windowText);
+    p.setColor(QPalette::ToolTipText,     window);
+
+
+    // Layer UI palette overrides on top.
+    if (s_uiOverrides.window.isValid())
+        p.setColor(QPalette::Window, s_uiOverrides.window);
+    if (s_uiOverrides.windowText.isValid()) {
+        p.setColor(QPalette::WindowText, s_uiOverrides.windowText);
+        p.setColor(QPalette::Text,       s_uiOverrides.windowText);
+        p.setColor(QPalette::ButtonText, s_uiOverrides.windowText);
+    }
+    if (s_uiOverrides.highlight.isValid()) {
+        p.setColor(QPalette::Highlight,       s_uiOverrides.highlight);
+        p.setColor(QPalette::HighlightedText, hlText);
     }
 
     QApplication::setPalette(p);
@@ -240,78 +312,56 @@ static void applyPalette(bool dark)
 
 // ── Stylesheet ────────────────────────────────────────────────────────────────
 
-static QString buildStylesheet(bool dark)
+static QString buildStylesheet(bool /*dark*/)
 {
-    // Named colour tokens
-    const QString accent      = "#3584e4";
-    const QString accentHover = "#4a91e8";
-    const QString accentFg    = "#ffffff";
-    const QString danger      = "#e01b24";
+    // Derive the handful of colours that have no direct palette() role from
+    // the current application palette (set by applyPalette moments earlier).
+    const QPalette pal = QApplication::palette();
 
-    QString fg, fgDisabled, border, btnBg, btnHover, btnActive,
-            menuBg, inputBg,
-            scrollHandle, scrollHover,
-            statusBg, statusComboHover;
+    const QColor btn  = pal.button().color();
+    const bool darkBtn = btn.lightness() < 128;
+    const QString fgDisabled      = pal.color(QPalette::Disabled, QPalette::WindowText).name();
+    const QString btnHover        = (darkBtn ? btn.lighter(118) : btn.darker(103)).name();
+    const QString btnActive       = (darkBtn ? btn.lighter(133) : btn.darker(106)).name();
 
-    if (!dark) {
-        fg              = "#2e3436";
-        fgDisabled      = "#9a9996";
-        border          = "#cdc7c2";
-        btnBg           = "#e0dedb";
-        btnHover        = "#d3d1ce";
-        btnActive       = "#c8c6c3";
-        menuBg          = "#ffffff";
-        inputBg         = "#ffffff";
-        scrollHandle    = "#cdc7c2";
-        scrollHover     = "#9a9996";
-        statusBg        = "#f6f5f4";
-        statusComboHover= "#e8e6e3";
-    } else {
-        fg              = "#deddda";
-        fgDisabled      = "#6c6c6c";
-        border          = "#4a4a4a";
-        btnBg           = "#3d3d3d";
-        btnHover        = "#484848";
-        btnActive       = "#525252";
-        menuBg          = "#2e2e2e";
-        inputBg         = "#1e1e1e";
-        scrollHandle    = "#5a5a5a";
-        scrollHover     = "#787878";
-        statusBg        = "#2a2a2a";
-        statusComboHover= "#3a3a3a";
-    }
+    const QColor toolbarColor = s_uiOverrides.toolbar.isValid()
+                               ? s_uiOverrides.toolbar
+                               : pal.alternateBase().color();
+    const QString statusBg         = toolbarColor.name();
+    const QString statusComboHover = (toolbarColor.lightness() < 128)
+                                     ? toolbarColor.lighter(130).name()
+                                     : toolbarColor.darker(107).name();
 
-    // Use a raw template with named tokens replaced below
+    // Everything else uses palette() references so the stylesheet automatically
+    // tracks palette changes without any hard-coded colours.
     static const char TMPL[] = R"(
 
 /* ── Global ──────────────────────────────────────────────────── */
-QWidget {
-    color: {fg};
-}
+QWidget { color: palette(window-text); }
 
 /* ── Push buttons ────────────────────────────────────────────── */
 QPushButton {
-    background: {btnBg};
-    border: 1px solid {border};
+    background: palette(button);
+    border: 1px solid palette(mid);
     border-radius: 6px;
     padding: 5px 16px;
     min-width: 80px;
 }
 QPushButton:hover   { background: {btnHover}; }
-QPushButton:pressed { background: {btnActive}; border-color: {accent}; }
+QPushButton:pressed { background: {btnActive}; border-color: palette(highlight); }
 QPushButton:disabled { color: {fgDisabled}; }
 QPushButton[default="true"] {
-    background: {accent};
-    color: {accentFg};
-    border-color: {accent};
+    background: palette(highlight);
+    color: palette(highlighted-text);
+    border-color: palette(highlight);
 }
-QPushButton[default="true"]:hover   { background: {accentHover}; }
-QPushButton[default="true"]:pressed { background: {accent}; }
+QPushButton[default="true"]:hover   { background: palette(highlight); }
+QPushButton[default="true"]:pressed { background: palette(highlight); }
 
 /* ── Menus ───────────────────────────────────────────────────── */
 QMenu {
-    background: {menuBg};
-    border: 1px solid {border};
+    background: palette(base);
+    border: 1px solid palette(mid);
     border-radius: 8px;
     padding: 6px 0;
     {menuMargin}
@@ -329,80 +379,51 @@ QMenu::item:selected {
 QMenu::item:disabled { color: {fgDisabled}; }
 QMenu::separator {
     height: 1px;
-    background: {border};
+    background: palette(mid);
     margin: 4px 8px;
 }
-QMenu::icon {
-    width: 14px;
-    height: 14px;
-    margin-left: 0;
-    left: 4px;
-}
-QMenu::indicator {
-    width: 14px;
-    height: 14px;
-    margin-left: 0;
-}
+QMenu::icon     { width: 14px; height: 14px; margin-left: 0; left: 4px; }
+QMenu::indicator { width: 14px; height: 14px; margin-left: 0; }
 
 /* ── ComboBox ────────────────────────────────────────────────── */
 QComboBox {
-    background: {inputBg};
-    border: 1px solid {border};
+    background: palette(base);
+    border: 1px solid palette(mid);
     border-radius: 6px;
     padding: 3px 8px;
-    selection-background-color: {accent};
-    selection-color: {accentFg};
+    selection-background-color: palette(highlight);
+    selection-color: palette(highlighted-text);
 }
-QComboBox:hover { border-color: palette(shadow); }
-QComboBox:focus { border: 2px solid {accent}; }
+QComboBox:hover { border-color: palette(mid); }
+QComboBox:focus { border: 2px solid palette(highlight); }
+QComboBox QLineEdit { border: none; background: transparent; padding: 0; }
+QComboBox QLineEdit:focus { border: none; }
 QComboBox::drop-down { border: none; width: 24px; }
 QComboBox QAbstractItemView {
-    background: {menuBg};
-    border: 1px solid {border};
+    background: palette(base);
+    border: 1px solid palette(mid);
     border-radius: 6px;
-    selection-background-color: {accent};
-    selection-color: {accentFg};
+    selection-background-color: palette(highlight);
+    selection-color: palette(highlighted-text);
     outline: none;
     padding: 4px;
 }
 
 /* ── Scroll bars ─────────────────────────────────────────────── */
-QScrollBar:vertical {
-    background: transparent;
-    width: 10px;
-    margin: 2px;
-}
-QScrollBar::handle:vertical {
-    background: {scrollHandle};
-    border-radius: 5px;
-    min-height: 24px;
-}
-QScrollBar::handle:vertical:hover  { background: {scrollHover}; }
-QScrollBar::add-line:vertical,
-QScrollBar::sub-line:vertical      { height: 0; }
-QScrollBar::add-page:vertical,
-QScrollBar::sub-page:vertical      { background: transparent; }
-
-QScrollBar:horizontal {
-    background: transparent;
-    height: 10px;
-    margin: 2px;
-}
-QScrollBar::handle:horizontal {
-    background: {scrollHandle};
-    border-radius: 5px;
-    min-width: 24px;
-}
-QScrollBar::handle:horizontal:hover  { background: {scrollHover}; }
-QScrollBar::add-line:horizontal,
-QScrollBar::sub-line:horizontal      { width: 0; }
-QScrollBar::add-page:horizontal,
-QScrollBar::sub-page:horizontal      { background: transparent; }
+QScrollBar:vertical   { background: transparent; width: 10px; margin: 2px; }
+QScrollBar:horizontal { background: transparent; height: 10px; margin: 2px; }
+QScrollBar::handle:vertical   { background: palette(mid); border-radius: 5px; min-height: 24px; }
+QScrollBar::handle:horizontal { background: palette(mid); border-radius: 5px; min-width:  24px; }
+QScrollBar::handle:vertical:hover,
+QScrollBar::handle:horizontal:hover { background: palette(shadow); }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical   { height: 0; }
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical,
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; }
 
 /* ── Status bar ──────────────────────────────────────────────── */
 QStatusBar {
     background: {statusBg};
-    border-top: 1px solid {border};
     padding: 6px 0;
 }
 QStatusBar QComboBox {
@@ -414,11 +435,11 @@ QStatusBar QComboBox:hover { background: {statusComboHover}; }
 
 /* ── Misc ────────────────────────────────────────────────────── */
 QAbstractScrollArea { border: none; }
-#HexView { border-top: 1px solid {border}; }
+#HexView { border-top: 1px solid palette(mid); }
 QToolTip {
     background: palette(tooltip-base);
     color: palette(tooltip-text);
-    border: 1px solid {border};
+    border: 1px solid palette(mid);
     border-radius: 6px;
     padding: 2px 6px;
 }
@@ -426,26 +447,15 @@ QToolTip {
 )";
 
     QString ss = QString::fromLatin1(TMPL);
-    ss.replace("{fg}",               fg);
     ss.replace("{fgDisabled}",       fgDisabled);
-    ss.replace("{border}",           border);
-    ss.replace("{btnBg}",            btnBg);
     ss.replace("{btnHover}",         btnHover);
     ss.replace("{btnActive}",        btnActive);
-    ss.replace("{menuBg}",           menuBg);
-    ss.replace("{inputBg}",          inputBg);
-    ss.replace("{scrollHandle}",     scrollHandle);
-    ss.replace("{scrollHover}",      scrollHover);
     ss.replace("{statusBg}",         statusBg);
     ss.replace("{statusComboHover}", statusComboHover);
-    ss.replace("{accent}",           accent);
-    ss.replace("{accentHover}",      accentHover);
-    ss.replace("{accentFg}",         accentFg);
-    ss.replace("{danger}",           danger);
 #ifdef Q_OS_WIN
-    ss.replace("{menuMargin}",       QString());
+    ss.replace("{menuMargin}", QString());
 #else
-    ss.replace("{menuMargin}",       "margin: 8px;");
+    ss.replace("{menuMargin}", "margin: 8px;");
 #endif
     return ss;
 }
@@ -462,7 +472,7 @@ QToolTip {
 namespace {
 struct MenuShadowOverlay : public QWidget
 {
-    static constexpr int S = 8;   // shadow width — must match QSS "margin: 8px"
+    static constexpr int S = kMenuShadowMargin;   // shadow width — must match QSS "margin: Npx"
     static constexpr int R = 8;   // corner radius — must match QSS border-radius
 
     explicit MenuShadowOverlay(QWidget *parent) : QWidget(parent)
@@ -612,8 +622,38 @@ public:
     }
 };
 
+#ifndef Q_OS_WIN
+// Applies the same transparent-background + shadow-overlay treatment as
+// themeMenu() to any QMenu that Qt creates internally (e.g. right-click
+// context menus in editable widgets) so they don't show the QSS margin: 8px
+// ring as a solid platform-background rectangle.
+class NativeMenuFilter : public QObject
+{
+public:
+    using QObject::QObject;
+    bool eventFilter(QObject *obj, QEvent *e) override
+    {
+        if (e->type() == QEvent::Polish) {
+            if (QMenu *menu = qobject_cast<QMenu *>(obj)) {
+                if (!menu->testAttribute(Qt::WA_TranslucentBackground)) {
+                    menu->setWindowFlags(menu->windowFlags() | Qt::FramelessWindowHint);
+                    menu->setAttribute(Qt::WA_TranslucentBackground);
+                    menu->setStyle(tightMenuStyle());
+                    auto *overlay = new MenuShadowOverlay(menu);
+                    overlay->show();
+                    overlay->raise();
+                }
+            }
+        }
+        return false;
+    }
+};
+#endif
+
 void applyAdwaitaTheme(ColorScheme scheme)
 {
+    s_currentScheme = scheme;
+
     // Fusion is always available — use it as the base style.
     // Safe to call multiple times; Qt is idempotent about the same style.
     QApplication::setStyle(QStyleFactory::create("Fusion"));
@@ -639,5 +679,33 @@ void applyAdwaitaTheme(ColorScheme scheme)
             QApplication::setFont(f);
         }
         qApp->installEventFilter(new TooltipFilter(qApp));
+#ifdef Q_OS_WIN
+        qApp->installEventFilter(new DarkModeFilter(qApp));
+#else
+        qApp->installEventFilter(new NativeMenuFilter(qApp));
+#endif
     }
+
+#ifdef Q_OS_WIN
+    // Re-apply dark-mode title bars to all currently visible top-levels
+    // so that already-open dialogs update immediately on a scheme change.
+    for (QWidget *w : QApplication::topLevelWidgets())
+        if (w->isVisible())
+            applyDwmDarkMode(w);
+#endif
+}
+
+void setUiColourOverrides(const UiColourOverrides &o)
+{
+    if (o.window == s_uiOverrides.window &&
+        o.windowText == s_uiOverrides.windowText &&
+        o.toolbar == s_uiOverrides.toolbar && o.highlight == s_uiOverrides.highlight)
+        return;
+    s_uiOverrides = o;
+    applyAdwaitaTheme(s_currentScheme);
+}
+
+const UiColourOverrides &uiColourOverrides()
+{
+    return s_uiOverrides;
 }

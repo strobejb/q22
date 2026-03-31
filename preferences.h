@@ -1,13 +1,18 @@
 #ifndef PREFERENCES_H
 #define PREFERENCES_H
 
+#include "palettes.h"
+
 #include <QAbstractButton>
 #include <QDialog>
 #include <QFont>
 
+class QButtonGroup;
+class QDialogButtonBox;
+class QFileSystemWatcher;
+class QGridLayout;
 class QLabel;
 class QListWidget;
-class QDialogButtonBox;
 
 // Font picker dialog: full list of monospace families/styles + live preview.
 class FontPickerDialog : public QDialog
@@ -86,12 +91,23 @@ signals:
     void fontChanged(const QFont &font);          // family or size changed
     void fontSpacingChanged(int hSpacing, int lineSpacing);
     void nativeMenuChanged(bool on);
+    void paletteSelected(const PaletteInfo &info);
 
 protected:
     void showEvent(QShowEvent *e) override;
 
 private:
+    void addCustomSwatch(const PaletteInfo &);
+    void rebuildCustomSwatches();
+
     QString         m_fontFamily;
+    PaletteInfo     m_currentPalette;
+    QWidget        *m_swatchWidget = nullptr;
+    QGridLayout    *m_swatchLayout = nullptr;
+    QButtonGroup   *m_swatchGroup  = nullptr;
+    QAbstractButton    *m_addBtn   = nullptr;
+    QFileSystemWatcher *m_watcher  = nullptr;
+    int             m_swatchCount  = 0;
     StepSpinBox    *m_fontSize     = nullptr;
     StepSpinBox    *m_horizSpacing = nullptr;
     StepSpinBox    *m_lineSpacing  = nullptr;

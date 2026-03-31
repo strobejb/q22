@@ -13,7 +13,7 @@ class DataTypeComboBox : public ValueComboBox
     Q_OBJECT
 public:
     explicit DataTypeComboBox(QWidget *parent = nullptr);
-    void     buildMenu();
+    void     buildMenu(bool checkable = true);
     int      selection()     const { return m_selection; }
     QString  selectionText() const;
 
@@ -22,6 +22,9 @@ public:
     // items in the .ui file only requires updating these call sites, not consumers.
     void     setActionData(const QString &text, const QVariant &data);
     QVariant selectionData() const;
+    // Programmatically select the action whose data matches |data|.
+    // Emits selectionChanged if the selection changes.
+    void     selectByData(const QVariant &data);
 
 signals:
     void selectionChanged(int index);

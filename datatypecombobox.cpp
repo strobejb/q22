@@ -19,13 +19,13 @@ DataTypeComboBox::DataTypeComboBox(QWidget *parent)
     m_menu->installEventFilter(this);
 }
 
-void DataTypeComboBox::buildMenu()
+void DataTypeComboBox::buildMenu(bool checkable)
 {
     m_menu->clear();
     m_actions.clear();
 
-    auto *group = new QActionGroup(m_menu);
-    group->setExclusive(true);
+    QActionGroup *group = checkable ? new QActionGroup(m_menu) : nullptr;
+    if (group) group->setExclusive(true);
 
     for (int i = 0; i < count(); ++i) {
         const QString text = itemText(i);
@@ -35,13 +35,19 @@ void DataTypeComboBox::buildMenu()
         }
         const int actionIndex = m_actions.size();
         QAction *a = m_menu->addAction(text);
-        a->setCheckable(true);
-        a->setChecked(actionIndex == m_selection);
-        group->addAction(a);
+        if (checkable) {
+            a->setCheckable(true);
+            a->setChecked(actionIndex == m_selection);
+            group->addAction(a);
+            connect(a, &QAction::toggled, this, [this, actionIndex](bool checked) {
+                if (checked) { m_selection = actionIndex; emit selectionChanged(actionIndex); }
+            });
+        } else {
+            connect(a, &QAction::triggered, this, [this, actionIndex]() {
+                m_selection = actionIndex; emit selectionChanged(actionIndex);
+            });
+        }
         m_actions.append(a);
-        connect(a, &QAction::toggled, this, [this, actionIndex](bool checked) {
-            if (checked) { m_selection = actionIndex; emit selectionChanged(actionIndex); }
-        });
     }
 }
 
@@ -63,6 +69,16 @@ QVariant DataTypeComboBox::selectionData() const
     if (m_selection >= 0 && m_selection < m_actions.size())
         return m_actions[m_selection]->data();
     return {};
+}
+
+void DataTypeComboBox::selectByData(const QVariant &data)
+{
+    for (QAction *a : m_actions) {
+        if (a->data() == data) {
+            a->setChecked(true);  // emits toggled → updates m_selection + selectionChanged
+            return;
+        }
+    }
 }
 
 // Render a menu item twice — once with text, once without — and return the x
@@ -127,10 +143,11 @@ QSize DataTypeComboBox::minimumSizeHint() const
 
 void DataTypeComboBox::paintEvent(QPaintEvent *)
 {
+    const QString text = displayText().isEmpty() ? selectionText() : displayText();
     QStylePainter painter(this);
     QStyleOptionComboBox opt;
     initStyleOption(&opt);
-    opt.currentText = selectionText();
+    opt.currentText = text;
     // Draw the frame at full widget size.
     painter.drawComplexControl(QStyle::CC_ComboBox, opt);
     // The global QComboBox::drop-down stylesheet rule suppresses the native
@@ -150,7 +167,7 @@ void DataTypeComboBox::paintEvent(QPaintEvent *)
     style()->drawItemText(&painter, textRect,
                           Qt::AlignLeft | Qt::AlignVCenter,
                           opt.palette, isEnabled(),
-                          selectionText(), QPalette::ButtonText);
+                          text, QPalette::ButtonText);
 }
 
 void DataTypeComboBox::showPopup()

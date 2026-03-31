@@ -1,19 +1,21 @@
 #include "preferences.h"
 #include "settings.h"
 
+#include <QButtonGroup>
 #include <QDialogButtonBox>
+#include <QDir>
+#include <QFileSystemWatcher>
 #include <QFont>
 #include <QFontDatabase>
 #include <QFontMetrics>
 #include <QFrame>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
-#include <QPoint>
-#include <QRect>
 #include <QScrollArea>
 #include <QShowEvent>
 #include <QVBoxLayout>
@@ -414,6 +416,88 @@ private:
     QFont m_font;
 };
 
+
+
+// ─── AddPaletteSwatch ─────────────────────────────────────────────────────────
+
+class AddPaletteSwatch : public QAbstractButton
+{
+public:
+    explicit AddPaletteSwatch(QWidget *parent = nullptr)
+        : QAbstractButton(parent)
+    {
+        setCursor(Qt::PointingHandCursor);
+        setFixedSize(SW_W, SW_H);
+        setToolTip(tr("Add palette…"));
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+
+        const QPalette &pal = palette();
+        const bool      hov = underMouse();
+        const QRectF    r   = QRectF(rect()).adjusted(SW_BORDER, SW_BORDER, -SW_BORDER, -SW_BORDER);
+
+        p.setPen(Qt::NoPen);
+        p.setBrush(hov ? pal.color(QPalette::Midlight) : pal.color(QPalette::Button));
+        p.drawRoundedRect(r, SW_RADIUS, SW_RADIUS);
+
+        p.setPen(QPen(pal.color(QPalette::Mid), SW_BORDER));
+        p.setBrush(Qt::NoBrush);
+        p.drawRoundedRect(r.adjusted(SW_BORDER * 0.5, SW_BORDER * 0.5,
+                                     -SW_BORDER * 0.5, -SW_BORDER * 0.5),
+                          SW_RADIUS - SW_BORDER * 0.5, SW_RADIUS - SW_BORDER * 0.5);
+
+        // "+" glyph
+        QFont f = font();
+        f.setPixelSize(24);
+        p.setFont(f);
+        p.setPen(pal.color(QPalette::Mid));
+        p.drawText(rect(), Qt::AlignCenter, "+");
+    }
+
+    void enterEvent(QEnterEvent *e) override { update(); QAbstractButton::enterEvent(e); }
+    void leaveEvent(QEvent       *e) override { update(); QAbstractButton::leaveEvent(e); }
+};
+
+
+
+// ─── DangerButton ────────────────────────────────────────────────────────────
+// Full-width clickable row that renders its label in the danger/red colour.
+
+class DangerButton : public QAbstractButton
+{
+public:
+    explicit DangerButton(const QString &text, QWidget *parent = nullptr)
+        : QAbstractButton(parent)
+    {
+        setText(text);
+        setCursor(Qt::PointingHandCursor);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    }
+
+    QSize sizeHint() const override
+    {
+        const QFontMetrics fm(font());
+        return QSize(fm.horizontalAdvance(text()),
+                     fm.height() + 2 * TOGGLE_VPAD);
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        static const QColor kDanger("#e01b24");
+        QPainter p(this);
+        p.setFont(font());
+        p.setPen(isEnabled() ? kDanger
+                             : palette().color(QPalette::Disabled, QPalette::WindowText));
+        p.drawText(rect(), Qt::AlignCenter, text());
+    }
+};
+
 // ─── SettingsGroup ───────────────────────────────────────────────────────────
 
 static constexpr int GRP_RADIUS   = 10;
@@ -545,11 +629,89 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     auto *fontGroup   = new SettingsGroup({fontRow, m_fontSize, m_horizSpacing, m_lineSpacing}, this);
     auto *appearGroup = new SettingsGroup({m_nativeMenu}, this);
 
+    // ── Theme swatches (no group border — swatches are their own visual units) ──
+    m_swatchWidget = new QWidget(this);
+    {
+        static constexpr int kSwatchCols = 4;
+
+        m_swatchLayout = new QGridLayout(m_swatchWidget);
+        m_swatchLayout->setContentsMargins(0, 0, 0, 0);
+        m_swatchLayout->setSpacing(10);
+        m_swatchLayout->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+
+        m_swatchGroup = new QButtonGroup(m_swatchWidget);
+        m_swatchGroup->setExclusive(true);
+
+        // Embedded palettes first, then any saved custom ones
+        QList<PaletteInfo> palettes = loadEmbeddedPalettes();
+        palettes += loadCustomPalettes();
+        if (!palettes.isEmpty())
+            m_currentPalette = palettes.first();
+
+        const QString savedName = AppSettings::prefPaletteName();
+
+        for (const PaletteInfo &info : palettes) {
+            auto *sw = new PaletteSwatch(info, m_swatchWidget);
+            if (!savedName.isEmpty() && info.name == savedName) {
+                sw->setChecked(true);
+                m_currentPalette = info;
+            }
+            m_swatchGroup->addButton(sw);
+            m_swatchLayout->addWidget(sw, m_swatchCount / kSwatchCols,
+                                          m_swatchCount % kSwatchCols);
+            ++m_swatchCount;
+            connect(sw, &QAbstractButton::clicked, this, [this, info]() {
+                m_currentPalette = info;
+                emit paletteSelected(info);
+            });
+            connect(sw, &PaletteSwatch::doubleClicked, this, [this, info]() {
+                const PaletteInfo before = m_currentPalette;
+                PaletteEditorDialog dlg(info, this);
+                connect(&dlg, &PaletteEditorDialog::paletteChanged,
+                        this, &PreferencesDialog::paletteSelected);
+                connect(&dlg, &PaletteEditorDialog::paletteSaved,
+                        this, &PreferencesDialog::addCustomSwatch);
+                if (dlg.exec() != QDialog::Accepted)
+                    emit paletteSelected(before);
+            });
+        }
+
+        m_addBtn = new AddPaletteSwatch(m_swatchWidget);
+        connect(m_addBtn, &QAbstractButton::clicked, this, [this]() {
+            const PaletteInfo before = m_currentPalette;
+            PaletteEditorDialog dlg(m_currentPalette, this);
+            connect(&dlg, &PaletteEditorDialog::paletteChanged,
+                    this, &PreferencesDialog::paletteSelected);
+            connect(&dlg, &PaletteEditorDialog::paletteSaved,
+                    this, &PreferencesDialog::addCustomSwatch);
+            if (dlg.exec() != QDialog::Accepted)
+                emit paletteSelected(before);
+        });
+        m_swatchLayout->addWidget(m_addBtn, m_swatchCount / kSwatchCols,
+                                             m_swatchCount % kSwatchCols);
+
+        // Watch for external changes to the palette directory
+        m_watcher = new QFileSystemWatcher(this);
+        const QString paletteDir = paletteStorageDir();
+        if (QDir(paletteDir).exists())
+            m_watcher->addPath(paletteDir);
+        connect(m_watcher, &QFileSystemWatcher::directoryChanged,
+                this, [this](const QString &) { rebuildCustomSwatches(); });
+    }
+
+    // ── Reset to defaults ─────────────────────────────────────────────────────
+    auto *resetBtn = new DangerButton(tr("Reset to defaults"), this);
+    auto *resetGroup = new SettingsGroup({resetBtn}, this);
+
     // ── Scrollable content widget ─────────────────────────────────────────────
     auto *content = new QWidget;
     auto *vlay = new QVBoxLayout(content);
     vlay->setContentsMargins(20, 20, 20, 20);
     vlay->setSpacing(0);
+    vlay->addWidget(makeSectionLabel(tr("Theme")));
+    vlay->addSpacing(6);
+    vlay->addWidget(m_swatchWidget);
+    vlay->addSpacing(16);
     vlay->addWidget(makeSectionLabel(tr("Font")));
     vlay->addSpacing(6);
     vlay->addWidget(fontGroup);
@@ -557,6 +719,8 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     vlay->addWidget(makeSectionLabel(tr("Appearance")));
     vlay->addSpacing(6);
     vlay->addWidget(appearGroup);
+    vlay->addSpacing(16);
+    vlay->addWidget(resetGroup);
     vlay->addStretch();
 
     auto *scroll = new QScrollArea(this);
@@ -580,3 +744,58 @@ void PreferencesDialog::showEvent(QShowEvent *e)
     const int maxH = 560;
     setFixedSize(width(), qMin(sizeHint().height(), maxH));
 }
+
+void PreferencesDialog::addCustomSwatch(const PaletteInfo &)
+{
+    rebuildCustomSwatches();
+}
+
+void PreferencesDialog::rebuildCustomSwatches()
+{
+    static constexpr int kSwatchCols = 4;
+    const QString prevName = m_currentPalette.name;
+
+    // Remove and delete all existing palette swatches
+    const auto old = m_swatchGroup->buttons();
+    for (auto *b : old) delete b;   // auto-removed from layout and group on deletion
+    m_swatchCount = 0;
+    m_swatchLayout->removeWidget(m_addBtn);
+
+    QList<PaletteInfo> palettes = loadEmbeddedPalettes();
+    palettes += loadCustomPalettes();
+
+    for (const PaletteInfo &info : palettes) {
+        auto *sw = new PaletteSwatch(info, m_swatchWidget);
+        if (info.name == prevName) {
+            sw->setChecked(true);
+            m_currentPalette = info;
+        }
+        m_swatchGroup->addButton(sw);
+        m_swatchLayout->addWidget(sw, m_swatchCount / kSwatchCols,
+                                      m_swatchCount % kSwatchCols);
+        ++m_swatchCount;
+        connect(sw, &QAbstractButton::clicked, this, [this, info]() {
+            m_currentPalette = info;
+            emit paletteSelected(info);
+        });
+        connect(sw, &PaletteSwatch::doubleClicked, this, [this, info]() {
+            const PaletteInfo before = m_currentPalette;
+            PaletteEditorDialog dlg(info, this);
+            connect(&dlg, &PaletteEditorDialog::paletteChanged,
+                    this, &PreferencesDialog::paletteSelected);
+            connect(&dlg, &PaletteEditorDialog::paletteSaved,
+                    this, &PreferencesDialog::addCustomSwatch);
+            if (dlg.exec() != QDialog::Accepted)
+                emit paletteSelected(before);
+        });
+    }
+
+    m_swatchLayout->addWidget(m_addBtn, m_swatchCount / kSwatchCols,
+                                        m_swatchCount % kSwatchCols);
+
+    // Start watching if the directory now exists (e.g. just created by a save)
+    const QString dir = paletteStorageDir();
+    if (m_watcher && QDir(dir).exists() && !m_watcher->directories().contains(dir))
+        m_watcher->addPath(dir);
+}
+
