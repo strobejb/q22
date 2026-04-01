@@ -39,6 +39,7 @@ enum HvColorSlot {
     HVC_RESIZEBAR,
     HVC_MATCHED,
     HVC_MATCHEDSEL,         // must be HVC_MATCHED + 1
+    HVC_HIGHLIGHT,          // generic highlight BG (bookmarks, search matches)
     HVC_MAX_COLOURS
 };
 
@@ -74,8 +75,9 @@ enum HvColorSlot {
 #define HVS_REPLACESEL      0x080000
 #define HVS_ENABLEDRAGDROP  0x100000
 #define HVS_HEX_INVISIBLE   0x8000
-#define HVS_RESIZEBAR       0x40000000
-#define HVS_INVERTSELECTION 0x80000000
+#define HVS_RESIZEBAR           0x40000000
+#define HVS_INVERTSELECTION     0x80000000
+#define HVS_SELECTION_OVERRIDES 0x00200000  // selection BG overrides all other highlights
 
 // Edit modes
 #define HVMODE_READONLY     0
@@ -261,21 +263,22 @@ private:
     size_t formatLine(uint8_t *data, size_t length, size_w offset, size_t dataShift,
                       char *szBuf, size_t nBufLen,
                       ATTR *attrList, seqchar_info *infobuf,
+                      const QList<Bookmark> &matchHighlights,
                       bool fIncSelection);
 
-    bool   getHighlightCol(size_w offset, int pane, int startIdx,
-                           HEXCOL *col1, HEXCOL *col2,
-                           bool fModified, bool fMatched,
-                           bool fIncSelection = true);
+    bool   getHighlightCol(size_w offset, int pane,
+                           const QList<Bookmark> &highlights,
+                           HEXCOL *col1, HEXCOL *col2);
 
-    void   identifySearchPatterns(uint8_t *data, size_t len, seqchar_info *infobuf);
+    QList<Bookmark> identifySearchPatterns(const uint8_t *data, size_t len, size_w bufBaseOffset);
 
     // Find (Boyer-Moore)
     bool   searchCompile(const uint8_t *pat, size_t length);
     int    searchBlock(const uint8_t *block, int start, int length, int *partial, bool matchCase) const;
     void   queryProgressNotify(size_w pos, size_w len, double mbPerSec);
     int    paintLine(QPainter &painter, size_w nLineNo,
-                     uint8_t *data, size_t datalen, seqchar_info *infobuf, size_t datashift);
+                     uint8_t *data, size_t datalen, seqchar_info *infobuf, size_t datashift,
+                     const QList<Bookmark> &matchHighlights);
     void   paintCaret(QPainter &painter);
     void   drawVLine(QPainter &painter, const QRect &paintRect, QRgb col, int pos);
     void   invalidateRange(size_w start, size_w finish);

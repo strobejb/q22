@@ -247,162 +247,61 @@ QColor blendColor(const QColor &i_color1, const QColor &i_color2, double i_alpha
 //  colour of the inter-byte space that follows (may differ at a group
 //  boundary or selection edge).
 
-bool HexView::getHighlightCol(size_w offset, int pane, int startIdx,
-                               HEXCOL *col1, HEXCOL *col2,
-                               bool fModified, bool fMatched, bool fIncSelection)
+bool HexView::getHighlightCol(size_w offset, int pane,
+                               const QList<Bookmark> &highlights,
+                               HEXCOL *col1, HEXCOL *col2)
 {
-    size_w selstart = std::min(m_nSelectionStart, m_nSelectionEnd);
-    size_w selend   = std::max(m_nSelectionStart, m_nSelectionEnd);
+    const QRgb selFG   = getHexColour(HVC_SELTEXT);
+    const QRgb selBG   = getHexColour(HVC_SELECTION);
+    const QRgb matchFG = getHexColour(HVC_BACKGROUND);
+    const QRgb matchBG = getHexColour(HVC_MATCHEDSEL);
+    const QRgb defFG   = getHexColour(pane == 0
+        ? ((((offset + m_nDataShift) % m_nBytesPerLine) / m_nBytesPerColumn) & 1
+           ? HVC_HEXEVEN : HVC_HEXODD)
+        : HVC_ASCII);
+    const QRgb defBG   = getHexColour(HVC_BACKGROUND);
+    const bool selWins = checkStyle(HVS_SELECTION_OVERRIDES);
 
-    // Default colour indices
-    int nSchemeIdxFG;
-    int nSchemeIdxBG;
-    if(pane == 0)
-    {
-        nSchemeIdxFG = (((offset + m_nDataShift)% m_nBytesPerLine) / m_nBytesPerColumn) & 1 ? HVC_HEXEVEN : HVC_HEXODD;
-        nSchemeIdxBG = HVC_BACKGROUND;
-    }
-    else
-    {
-        nSchemeIdxFG = HVC_ASCII;
-        nSchemeIdxBG = HVC_BACKGROUND;
-    }
-
-    // modified bytes override normal settings
-    if(fModified && checkStyle(HVS_SHOWMODS))
-        nSchemeIdxFG = HVC_MODIFY;
-
-    if(fMatched)
-    {
-        nSchemeIdxFG = HVC_BACKGROUND;
-        nSchemeIdxBG = HVC_MATCHED;
-    }
-
-    // Check if any bookmark covers this byte
-    int hiIdx = -1;
-    if (startIdx >= 0) {
-        for (int n = startIdx; n < m_bookmarks.size(); ++n) {
-            const Bookmark &bm = m_bookmarks[n];
-            if (offset >= bm.offset && offset < bm.offset + bm.length) {
-                hiIdx = n;
-                break;
-            }
-        }
-    }
-
-    if (hiIdx >= 0)
-    {
-        const Bookmark &hi = m_bookmarks[hiIdx];
-        //col1->colFG = Highlight[idx].colFG;
-        //col1->colBG = Highlight[idx].colBG;
-
-
-        col1->colFG = hi.fgColour;
-        col1->colBG = hi.bgColour;
-
-        //col1->colFG = RGB(255,255,255);
-        //col1->colBG = RGB(128,128,128);
-
-        *col2 = *col1;
-
-        if(fModified)
-        {
-            col1->colFG = getHexColour(HVC_MODIFY);
-            col2->colFG = getHexColour(HVC_MODIFY);
-        }
-    }
-    // no highlight, use the default window scheme
-    else
-    {
-        col1->colFG = getHexColour(nSchemeIdxFG);
-        col1->colBG = getHexColour(nSchemeIdxBG);
-        *col2 = *col1;
-    }
-
-
-    // Selection overrides everything
-
-    // selected data overrides everything else!
-    if(fIncSelection && offset >= selstart && offset < selend)
-    {
-        // SEL variant is always +1 (e.g. HVC_HEXODD→HVC_HEXODDSEL).
-        // realiseColour redirects to the inactive variants when unfocused.
-        //if(fGotFocus)
-            nSchemeIdxFG++;
-
-        // flip BG->FG for matched selection
-        if(nSchemeIdxBG == HVC_MATCHED) {
-            nSchemeIdxFG = HVC_MATCHEDSEL;
+    // Scan `highlights` for position `pos`.
+    //   gap==true  : only entries already active at pos-1 (prevents start-of-range bleed).
+    //   gap==false : normal per-byte scan.
+    // Returns the resolved HEXCOL:
+    //   - first non-selection entry supplies the highlight colour (stored fgColour/bgColour).
+    //     bgColour==0 means FG-only (modified): contributes fgColour but not bgColour.
+    //   - if selection also covers pos, the two-mode logic is applied.
+    auto resolve = [&](size_w pos, bool gap) -> HEXCOL {
+        const Bookmark *hl = nullptr;
+        bool inSel = false;
+        bool inMod = false;
+        for (const Bookmark &bm : highlights) {
+            if (gap ? (bm.offset >= pos) : (pos < bm.offset)) continue;
+            if (pos >= bm.offset + bm.length)                  continue;
+            if (bm.bgColour == selBG) inSel = true;
+            else if (bm.bgColour == 0) inMod = true;   // FG-only (modified)
+            else if (!hl)              hl = &bm;
         }
 
-        if(hiIdx >= 0)
-            nSchemeIdxFG = HVC_MATCHEDSEL;
-
-        nSchemeIdxBG = HVC_SELECTION;  // realiseColour redirects to SELECTION_INACTIVE when unfocused
-
-        if(nSchemeIdxFG == HVC_MATCHEDSEL) {
-            nSchemeIdxBG = HVC_MATCHED;
-            nSchemeIdxFG = HVC_SELTEXT;
-            nSchemeIdxFG = HVC_SELTEXT;
-        }
-        if(nSchemeIdxFG == HVC_MODIFY||nSchemeIdxFG==HVC_MODIFYSEL) {
-
-            nSchemeIdxFG = HVC_SELTEXT;
-            nSchemeIdxBG = HVC_MODIFY;
+        HEXCOL c;
+        if ((hl || inMod) && inSel) {
+            c = selWins ? HEXCOL{selFG, selBG} : HEXCOL{matchFG, matchBG};
+        } else if (hl) {
+            c = { hl->fgColour ? hl->fgColour : defFG,
+                  hl->bgColour };
+        } else if (inSel) {
+            c = {selFG, selBG};
+        } else {
+            c = {defFG, defBG};
         }
 
+        // Modified FG wins over any highlight FG when not selected.
+        if (inMod && !inSel)
+            c.colFG = getHexColour(HVC_MODIFY);
 
+        return c;
+    };
 
-
-
-        if(checkStyle(HVS_INVERTSELECTION))
-        {
-            col1->colBG = 0xffffff & ~col1->colBG;
-            col1->colFG = 0xffffff & ~col1->colFG;
-        }
-        else
-        {
-            //col1->colFG = MixRgb(GetHexColour(HVC_SELECTION), GetHexColour(nSchemeIdxFG));
-            //col1->colBG = MixRgb(GetHexColour(HVC_SELECTION), GetHexColour(nSchemeIdxBG));
-
-            //if(!fModified)
-            col1->colFG = hiIdx < 0 || fModified ? getHexColour(nSchemeIdxFG) : col2->colBG;
-            col1->colBG = getHexColour(nSchemeIdxBG);
-            //col1->colFG = blendColor(QColor(col1->colFG), QColor(col1->colBG), 0.2).rgb();
-
-            //col1
-            //col1->colFG = GetHexColour((idx == -1) ? nSchemeIdxFG : HVC_BOOKSEL);
-            //col1->colBG = idx == -1 ? col1->colBG : 0xffffff & ~col1->colFG;
-        }
-
-        //QRgb rgb1 = getHexColour(nSchemeIdxBG);
-        //QRgb rgb2 = getHexColour(HVC_SELECTION);
-        //col1->colBG = blendColor(QColor(rgb1), QColor(rgb2), 0.2).rgb();
-
-
-#ifdef SELECTION_USES_HIGHLIGHT
-        if(m_fHighlighting)
-        {
-            col1->colFG = 0xffffff & ~GetHexColour(HVC_BOOKMARK_FG);
-            col1->colBG = 0xffffff & ~GetHexColour(HVC_BOOKMARK_BG);
-        }
-#endif
-
-        col1->colBG  = nSchemeIdxBG != HVC_SELECTION ? getHexColour(HVC_MATCHED) : getHexColour(HVC_SELECTION);
-        col1->colFG  = nSchemeIdxBG != HVC_SELECTION ? getHexColour(HVC_BACKGROUND) : getHexColour(HVC_SELTEXT);
-
-        if(offset < selend - 1 && selend > 0)
-            *col2 = *col1;
-    }
-
-    // take into account any offset/shift in the datasource
-    offset += m_nDataShift;//Start;
-    if((offset + 1) % (m_nBytesPerLine) == 0 && offset != 0)
-    {
-        col2->colFG = col1->colFG;
-        col2->colBG = getHexColour(HVC_BACKGROUND);
-    }
-
+    *col1 = resolve(offset,     false);
+    *col2 = resolve(offset + 1, true);
     return true;
 }
 
@@ -415,6 +314,7 @@ bool HexView::getHighlightCol(size_w offset, int pane, int startIdx,
 size_t HexView::formatLine(uint8_t *data, size_t length, size_w offset, size_t dataShift,
                             char *szBuf, size_t nBufLen,
                             ATTR *attrList, seqchar_info *infobuf,
+                            const QList<Bookmark> &matchHighlights,
                             bool fIncSelection)
 {
     char  *ptr    = szBuf;
@@ -428,8 +328,48 @@ size_t HexView::formatLine(uint8_t *data, size_t length, size_w offset, size_t d
             getHexColour(HVC_BACKGROUND),
             (size_t)(ptr - szBuf));
 
-    int highlight = findBookmark(offset, offset + length);
-
+    // Build per-line highlight list in priority order:
+    //   1. matched search ranges (highest)
+    //   2. bookmarks
+    //   3. modified byte ranges
+    //   4. selection (lowest — any highlight above wins)
+    QList<Bookmark> lineHighlights;
+    const size_w lineEnd = offset + (size_w)length;
+    for (const Bookmark &bm : matchHighlights)
+        if (bm.offset + bm.length > offset && bm.offset < lineEnd)
+            lineHighlights.append(bm);
+    for (const Bookmark &bm : m_bookmarks)
+        if (bm.offset + bm.length > offset && bm.offset < lineEnd)
+            lineHighlights.append(bm);
+    if (checkStyle(HVS_SHOWMODS)) {
+        size_t rangeStart = length;  // length == no open range
+        for (size_t j = 0; j <= length; j++) {
+            bool mod = j < length && infobuf[j].buffer != m_pDataSeq->origfileid();
+            if (mod && rangeStart == length) {
+                rangeStart = j;
+            } else if (!mod && rangeStart != length) {
+                Bookmark bm;
+                bm.offset   = offset + (size_w)rangeStart;
+                bm.length   = (size_w)(j - rangeStart);
+                bm.fgColour = getHexColour(HVC_MODIFY);
+                bm.bgColour = 0;  // sentinel: FG-only, BG shows through from lower priority
+                lineHighlights.append(bm);
+                rangeStart = length;
+            }
+        }
+    }
+    if (fIncSelection) {
+        size_w selstart = std::min(m_nSelectionStart, m_nSelectionEnd);
+        size_w selend   = std::max(m_nSelectionStart, m_nSelectionEnd);
+        if (selend > selstart && selend > offset && selstart < lineEnd) {
+            Bookmark sel;
+            sel.offset   = selstart;
+            sel.length   = selend - selstart;
+            sel.fgColour = getHexColour(HVC_SELTEXT);
+            sel.bgColour = getHexColour(HVC_SELECTION);
+            lineHighlights.append(sel);
+        }
+    }
 
     // ── Hex column ────────────────────────────────────────────────────────────
     if (!checkStyle(HVS_HEX_INVISIBLE)) {
@@ -447,11 +387,7 @@ size_t HexView::formatLine(uint8_t *data, size_t length, size_w offset, size_t d
             size_t ulen = formatHexUnit(&data[i], ptr, 16);
             ptr += ulen;
 
-            bool fMod = checkStyle(HVS_SHOWMODS) && (infobuf[i].buffer != m_pDataSeq->origfileid());
-            getHighlightCol(offset + (size_w)i, 0, highlight, &col1, &col2,
-                            fMod,
-                            infobuf[i].userdata != 0,
-                            fIncSelection);
+            getHighlightCol(offset + (size_w)i, 0, lineHighlights, &col1, &col2);
 
             if (i < dataShift)
             {
@@ -463,14 +399,13 @@ size_t HexView::formatLine(uint8_t *data, size_t length, size_w offset, size_t d
             bool lastByte = (i >= length - 1);
             bool lastInLine = (i == (size_t)(m_nBytesPerLine - 1));
 
-            if (!hexcolEq(col1, col2)|| i == m_nBytesPerLine - 1 || (i+1) % (m_nBytesPerColumn) != 0){// || lastInLine || !newGroup) {
+            if (!hexcolEq(col1, col2)|| i == m_nBytesPerLine - 1 || (i+1) % (m_nBytesPerColumn) != 0){
                 addAttr(&aptr, col1.colFG, col1.colBG, ulen);
-                //if (newGroup && !lastByte) {
-                if((i+1) % (m_nBytesPerColumn) == 0 && (i < length/*m_nBytesPerLine*/ - 1)) {
+                if((i+1) % (m_nBytesPerColumn) == 0 && (i < length - 1)) {
                     *ptr++ = ' ';
                     addAttr(&aptr, col2.colFG, col2.colBG, 1);
                 }
-            } else if(i < length - 1){//else if (!lastByte) {
+            } else if(i < length - 1){
                 *ptr++ = ' ';
                 addAttr(&aptr, col1.colFG, col1.colBG, ulen + 1);
             } else {
@@ -479,13 +414,13 @@ size_t HexView::formatLine(uint8_t *data, size_t length, size_w offset, size_t d
         }
 
         // Pad dead space on partial last line.
-        // addAttr MUST be called for every character written to buf — the
+        // addAttr MUST be called for every character written to buf -- the
         // rendering loop uses the character index as the attrList index, so
         // a missing addAttr here shifts every subsequent ASCII-column entry
         // by `len` positions, causing those chars to read uninitialised attrs.
         if (i != (size_t)m_nBytesPerLine) {
             int len = m_nHexWidth - (int)(ptr - (szBuf + (m_nAddressWidth + m_nHexPaddingLeft)));
-            {//if (len > 0) {
+            {
                 for (int j = 0; j < len; j++)
                     *ptr++ = ' ';
                 addAttr(&aptr,
@@ -517,11 +452,7 @@ size_t HexView::formatLine(uint8_t *data, size_t length, size_w offset, size_t d
             else
                 *ptr++ = (char)v;
 
-            bool fMod = checkStyle(HVS_SHOWMODS) && (infobuf[i].buffer != m_pDataSeq->origfileid());
-            getHighlightCol(offset + (size_w)i, 1, highlight, &col1, &col2,
-                            fMod,
-                            infobuf[i].userdata != 0,
-                            fIncSelection);
+            getHighlightCol(offset + (size_w)i, 1, lineHighlights, &col1, &col2);
             if(i < dataShift)
             {
                 col1.colBG = col2.colBG = getHexColour(HVC_BACKGROUND);
@@ -548,25 +479,34 @@ size_t HexView::formatLine(uint8_t *data, size_t length, size_w offset, size_t d
 
 // ── identifySearchPatterns ────────────────────────────────────────────────────
 
-void HexView::identifySearchPatterns(uint8_t *data, size_t len, seqchar_info *infobuf)
+QList<Bookmark> HexView::identifySearchPatterns(const uint8_t *data, size_t len, size_w bufBaseOffset)
 {
-    if (m_nSearchLen == 0) return;
+    QList<Bookmark> results;
+    if (m_nSearchLen == 0) return results;
 
-    uint8_t *ptr = data;
-    while ((ptr = (uint8_t *)memchr(ptr, m_pSearchPat[0], len - (size_t)(ptr - data))) != nullptr) {
+    const QRgb matchFG = getHexColour(HVC_BACKGROUND);
+    const QRgb matchBG = getHexColour(HVC_MATCHED);
+
+    const uint8_t *ptr = data;
+    while ((ptr = (const uint8_t *)memchr(ptr, m_pSearchPat[0], len - (size_t)(ptr - data))) != nullptr) {
         size_t slen = std::min((size_t)m_nSearchLen, len - (size_t)(ptr - data));
         size_t i;
         for (i = 1; i < slen; i++) {
             if (ptr[i] != m_pSearchPat[i]) break;
         }
         if (i == m_nSearchLen) {
-            for (i = 0; i < m_nSearchLen; i++)
-                infobuf[i + (size_t)(ptr - data)].userdata = 1;
+            Bookmark bm;
+            bm.offset   = bufBaseOffset + (size_w)(ptr - data);
+            bm.length   = (size_w)m_nSearchLen;
+            bm.fgColour = matchFG;
+            bm.bgColour = matchBG;
+            results.append(bm);
             ptr += m_nSearchLen;
         } else {
             ptr += 1;
         }
     }
+    return results;
 }
 
 // ── drawVLine ─────────────────────────────────────────────────────────────────
@@ -606,7 +546,7 @@ void HexView::drawTextFixed(QPainter &p, QPoint origin,
 
 int HexView::paintLine(QPainter &painter, size_w nLineNo,
                         uint8_t *data, size_t datalen, seqchar_info *infobuf,
-                       size_t datashift = 0)
+                        size_t datashift, const QList<Bookmark> &matchHighlights)
 {
     const int y      = (int)(nLineNo - m_nVScrollPos) * m_nFontHeight;
     const int xStart = -m_nHScrollPos * m_nFontWidth;
@@ -620,11 +560,6 @@ int HexView::paintLine(QPainter &painter, size_w nLineNo,
 
     // File offset of the first byte on this display line
     size_w dispOffset = (size_w)(nLineNo * (size_w)m_nBytesPerLine);
-    /*if (m_nDataShift > 0) {
-        dispOffset = dispOffset >= (size_w)m_nDataShift
-                     ? dispOffset - (size_w)m_nDataShift
-                     : 0;
-    }*/
 
     // Build text + attribute buffers
     const int bufSize = m_nTotalWidth + 200;
@@ -633,7 +568,7 @@ int HexView::paintLine(QPainter &painter, size_w nLineNo,
 
     dispOffset -= m_nDataShift;
     size_t len = formatLine(data, datalen, dispOffset, datashift,
-                             buf, (size_t)bufSize, attrList, infobuf, true);
+                             buf, (size_t)bufSize, attrList, infobuf, matchHighlights, true);
 
     // Render colour spans.
     //
@@ -733,7 +668,8 @@ void HexView::paintEvent(QPaintEvent *event)
                         bufinfo + shift);
     buflen += (size_t)shift;
 
-    identifySearchPatterns(bigbuf, buflen, bufinfo);
+    size_w bufBaseOffset = startFileOff - (size_w)shift2;
+    QList<Bookmark> matchHighlights = identifySearchPatterns(bigbuf + shift, buflen - shift, bufBaseOffset);
 
     // ── Fill right margin with background ─────────────────────────────────────
     {
@@ -758,7 +694,8 @@ void HexView::paintEvent(QPaintEvent *event)
                            bigbuf  + lineDataOff,
                            len,
                            bufinfo + lineDataOff,
-                           datashift);
+                           datashift,
+                           matchHighlights);
 
         // Bookmark note strips (stub — implemented in Stage 5)
         for (const Bookmark &bm : m_bookmarks) {

@@ -50,7 +50,7 @@ void applyPalette(HexView *hv, const PaletteInfo &info)
     hv->setHexColour(HVC_SELTEXT_INACTIVE,   info.ascii);
 
     hv->setHexColour(HVC_MATCHED,            info.matched);
-    hv->setHexColour(HVC_MATCHEDSEL,         info.matched);//.darker(120));
+    hv->setHexColour(HVC_MATCHEDSEL,         info.matched.lighter(140));
 
     // Bookmark 1 sets the default bookmark background colour
     hv->setHexColour(HVC_BOOKMARK_BG, orElse(info.bookmarks[0], QColor(255, 255, 0)));

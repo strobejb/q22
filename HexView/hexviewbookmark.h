@@ -12,6 +12,9 @@ struct Bookmark {
     QString name;
     QRgb    fgColour = 0;
     QRgb    bgColour = 0;
+    // bgColour == 0 (transparent) is a sentinel meaning "FG-only" —
+    // the entry overrides the foreground but lets the BG from a lower-
+    // priority entry show through.  Used for modified-byte highlights.
 };
 
 #endif // HEXVIEWBOOKMARK_H
