@@ -3,6 +3,8 @@
 #include "HexView/hexview.h"
 #include "HexView/seqbase.h"
 #include "bookmarkdialog.h"
+#include "dlgcopyas.h"
+#include "dlgexport.h"
 #include "finddialog.h"
 #include "gotodialog.h"
 #include "palettes.h"
@@ -12,6 +14,7 @@
 #include "titlebar.h"
 #include "theme.h"
 #include <QActionGroup>
+#include <QVector>
 #include <QApplication>
 #include <QClipboard>
 #include <QDir>
@@ -471,6 +474,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->action_Paste,   &QAction::triggered, this, [this] { m_hv->paste();     });
     connect(ui->action_Delete,  &QAction::triggered, this, [this] { m_hv->clear();     });
     connect(ui->actionSelect_All, &QAction::triggered, this, [this] { m_hv->selectAll(); });
+    connect(ui->actionCopy_As,  &QAction::triggered, this, [this] { CopyAsDlg(m_hv, this); });
 
     // Keep Edit action enabled-states in sync with HexView and clipboard state.
     connect(m_hv, &HexView::selectionChanged, this, [this](size_w, size_w) { updateEditActions(); });
@@ -496,15 +500,19 @@ MainWindow::MainWindow(QWidget *parent)
         m_bookmarkDialog->setOffset(offset);
         m_bookmarkDialog->setLength(length);
         m_bookmarkDialog->setForegroundColour(m_hv->palette().text().color());
+        {
+            QVector<QColor> swatchColours;
+            for (int i = 0; i < 7; ++i)
+                swatchColours.append(QColor(m_hv->getHexColour(HvColorSlot(HVC_BOOKMARK1 + i))));
+            m_bookmarkDialog->setSwatchColours(swatchColours);
+        }
         if (m_bookmarkDialog->exec() == QDialog::Accepted) {
             Bookmark bm;
             bm.offset   = m_bookmarkDialog->offset();
             bm.length   = static_cast<size_w>(m_bookmarkDialog->length());
             bm.name     = m_bookmarkDialog->bookmarkName();
-            bm.fgColour = m_bookmarkDialog->foregroundColour().rgb();
-            bm.bgColour = m_bookmarkDialog->selectedColour().isValid()
-                              ? m_bookmarkDialog->selectedColour().rgb()
-                              : m_hv->getHexColour(HVC_BOOKMARK_BG);
+            bm.fgColour     = m_bookmarkDialog->foregroundColour().rgb();
+            bm.colourIndex  = qMax(0, m_bookmarkDialog->selectedColourIndex());
             m_hv->addBookmark(bm);
             m_gotoDialog->refreshBookmarks();
         }
@@ -548,6 +556,40 @@ MainWindow::MainWindow(QWidget *parent)
         const QString path = QFileDialog::getOpenFileName(this, tr("Open File"));
         if (!path.isEmpty())
             openFile(path);
+    });
+
+    connect(ui->actionExport, &QAction::triggered, this, [this]() {
+        // Filter order must match IMPEXP_FORMAT enum values (0–9)
+        static const QStringList kExportFilters = {
+            tr("Raw binary (*.*)"),
+            tr("Plain text (*.txt)"),
+            tr("Hex string (*.txt)"),
+            tr("HTML (*.htm *.html)"),
+            tr("C/C++ source (*.c *.cpp *.h)"),
+            tr("Assembler source (*.asm *.s)"),
+            tr("Intel Hex Records (*.hex)"),
+            tr("Motorola S-Records (*.s19 *.s28 *.s37)"),
+            tr("Base64 (*.b64 *.txt)"),
+            tr("UUEncode (*.uue *.txt)"),
+        };
+
+        QFileDialog dlg(this, tr("Export"));
+        dlg.setAcceptMode(QFileDialog::AcceptSave);
+        dlg.setNameFilters(kExportFilters);
+        dlg.selectNameFilter(kExportFilters.value((int)g_ExportOptions.format));
+
+        if (dlg.exec() != QDialog::Accepted)
+            return;
+
+        const QString path = dlg.selectedFiles().value(0);
+        if (path.isEmpty())
+            return;
+
+        const int idx = kExportFilters.indexOf(dlg.selectedNameFilter());
+        if (idx >= 0)
+            g_ExportOptions.format = (IMPEXP_FORMAT)idx;
+
+        Export(path, m_hv, &g_ExportOptions);
     });
 
     m_prefsDialog = new PreferencesDialog(this);

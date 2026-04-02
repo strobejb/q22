@@ -7,14 +7,19 @@
 #include <QString>
 
 struct Bookmark {
-    size_w  offset   = 0;
-    size_w  length   = 0;
+    size_w  offset      = 0;
+    size_w  length      = 0;
     QString name;
-    QRgb    fgColour = 0;
-    QRgb    bgColour = 0;
-    // bgColour == 0 (transparent) is a sentinel meaning "FG-only" —
-    // the entry overrides the foreground but lets the BG from a lower-
-    // priority entry show through.  Used for modified-byte highlights.
+    QRgb    fgColour    = 0;
+    QRgb    bgColour    = 0;
+    // bgColour == 0 is a sentinel meaning "FG-only" — used for modified-byte
+    // pseudo-bookmarks and selection entries (internal use only).
+    //
+    // colourIndex >= 0 means this is a palette-driven user bookmark: the
+    // background colour is looked up from HVC_BOOKMARK1+colourIndex at render
+    // time, so palette changes automatically update existing bookmarks.
+    // colourIndex == -1 (default) falls back to the raw bgColour field.
+    int     colourIndex = -1;
 };
 
 #endif // HEXVIEWBOOKMARK_H

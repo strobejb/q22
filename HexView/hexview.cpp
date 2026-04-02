@@ -26,9 +26,7 @@ HexView::HexView(QWidget *parent)
     // need explicit initialisation here.
     m_ColourList[HVC_MODIFY]      = QColor(200,  50,  50);
     m_ColourList[HVC_MODIFYSEL]   = QColor(255, 128, 128);
-    m_ColourList[HVC_BOOKMARK_FG] = QColor(  0,   0,   0);
-    m_ColourList[HVC_BOOKMARK_BG] = QColor(255, 255,   0);
-    m_ColourList[HVC_BOOKSEL]     = QColor(255, 200,   0);
+    m_ColourList[HVC_BOOKSEL]     = QColor(  0,   0,   0);
     m_ColourList[HVC_MATCHED]     = QColor(255, 165,   0);
     m_ColourList[HVC_MATCHEDSEL]  = QColor(200, 130,   0);
 

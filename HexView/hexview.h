@@ -33,13 +33,19 @@ enum HvColorSlot {
     HVC_ASCIISEL,           // must be HVC_ASCII + 1
     HVC_MODIFY,
     HVC_MODIFYSEL,          // must be HVC_MODIFY + 1
-    HVC_BOOKMARK_FG,
-    HVC_BOOKMARK_BG,
-    HVC_BOOKSEL,
     HVC_RESIZEBAR,
     HVC_MATCHED,
     HVC_MATCHEDSEL,         // must be HVC_MATCHED + 1
     HVC_HIGHLIGHT,          // generic highlight BG (bookmarks, search matches)
+    HVC_BOOKMARK1,
+    HVC_BOOKMARK2,
+    HVC_BOOKMARK3,
+    HVC_BOOKMARK4,
+    HVC_BOOKMARK5,
+    HVC_BOOKMARK6,
+    HVC_BOOKMARK7,
+    HVC_BOOKSEL,
+
     HVC_MAX_COLOURS
 };
 
@@ -199,8 +205,9 @@ public:
     void   cancelFind() { m_findCancelled = true; }
 
     // State accessors
-    size_w cursorOffset() const { return m_nCursorOffset; }
-    uint   editMode()     const { return m_nEditMode; }
+    size_w  cursorOffset() const { return m_nCursorOffset; }
+    uint    editMode()     const { return m_nEditMode; }
+    QString filePath()     const { return m_filePath; }
     void   setEditMode(uint mode) { m_nEditMode = mode; viewport()->update(); emit editModeChanged(mode); }
 
     // Clipboard
@@ -288,7 +295,7 @@ private:
 
     // ── Bookmarks ─────────────────────────────────────────────────────────────
     int   findBookmark(size_w startoff, size_w endoff) const;
-    void  drawNoteStrip(QPainter &painter, int nx, int ny, const Bookmark &bm);
+    void  drawNoteStrip(QPainter &painter, int asciiRight, int ny, const Bookmark &bm);
 
 
     // ── Coordinate / caret helpers ────────────────────────────────────────────

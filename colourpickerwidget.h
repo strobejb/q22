@@ -12,10 +12,12 @@ public:
     explicit ColourPickerWidget(QWidget *parent = nullptr);
 
     void setColumns(int cols);
+    void setColours(const QVector<QColor> &colours);
     void setForegroundColour(const QColor &fg);
     void setSelectedColour(const QColor &colour);
 
     QColor selectedColour() const;
+    int    selectedIndex()  const { return m_selectedIndex; }
 
     QSize sizeHint() const override;
 

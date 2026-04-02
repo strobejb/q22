@@ -3,6 +3,7 @@
 
 #include <QDialog>
 #include <QColor>
+#include <QVector>
 
 namespace Ui { class BookmarkDialog; }
 
@@ -16,12 +17,14 @@ public:
     void setOffset(quint64 offset);
     void setLength(quint64 length);
     void setForegroundColour(const QColor &fg);
+    void setSwatchColours(const QVector<QColor> &colours);
 
     quint64 offset() const { return m_offset; }
     quint64 length() const { return m_length; }
     QString bookmarkName() const;
-    QColor  foregroundColour() const { return m_foreground; }
-    QColor  selectedColour() const;
+    QColor  foregroundColour()    const { return m_foreground; }
+    QColor  selectedColour()      const;
+    int     selectedColourIndex() const;
 
 private:
     Ui::BookmarkDialog *ui;

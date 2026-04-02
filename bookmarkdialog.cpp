@@ -1,6 +1,7 @@
 #include "bookmarkdialog.h"
 #include "ui_bookmarks.h"
 #include "colourpickerwidget.h"
+#include <QVector>
 
 #include <QApplication>
 
@@ -10,6 +11,7 @@ BookmarkDialog::BookmarkDialog(QWidget *parent)
     , m_foreground(QApplication::palette().text().color())
 {
     ui->setupUi(this);
+    ui->colourPicker->setColumns(7);
     connect(ui->pushButton,   &QPushButton::clicked, this, &QDialog::accept);
     connect(ui->pushButton_2, &QPushButton::clicked, this, &QDialog::reject);
 }
@@ -38,6 +40,11 @@ void BookmarkDialog::setForegroundColour(const QColor &fg)
     ui->colourPicker->setForegroundColour(fg);
 }
 
+void BookmarkDialog::setSwatchColours(const QVector<QColor> &colours)
+{
+    ui->colourPicker->setColours(colours);
+}
+
 QString BookmarkDialog::bookmarkName() const
 {
     return ui->bookmarkName->text();
@@ -46,4 +53,9 @@ QString BookmarkDialog::bookmarkName() const
 QColor BookmarkDialog::selectedColour() const
 {
     return ui->colourPicker->selectedColour();
+}
+
+int BookmarkDialog::selectedColourIndex() const
+{
+    return ui->colourPicker->selectedIndex();
 }

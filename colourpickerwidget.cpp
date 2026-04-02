@@ -24,6 +24,14 @@ ColourPickerWidget::ColourPickerWidget(QWidget *parent)
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 }
 
+void ColourPickerWidget::setColours(const QVector<QColor> &colours)
+{
+    m_colours = colours;
+    m_selectedIndex = -1;
+    updateGeometry();
+    update();
+}
+
 void ColourPickerWidget::setColumns(int cols)
 {
     if (cols < 1) cols = 1;

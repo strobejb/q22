@@ -41,6 +41,10 @@ set(PROJECT_SOURCES
         titlebar.h
         theme.cpp
         theme.h
+        dlgexport.h
+        dlgexport.cpp
+        dlgcopyas.h
+        dlgcopyas.cpp
 )
 
 if(WIN32)
@@ -57,6 +61,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         gotodialog.cpp
         gotodialog.h
         bookmarks.ui
+        copyas.ui
         preferences.ui
     )
 # Define target properties for Android with Qt 6 as:

@@ -86,7 +86,7 @@
      <item>
       <widget class="QLineEdit" name="editOffset">
        <property name="sizePolicy">
-        <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+        <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
          <horstretch>0</horstretch>
          <verstretch>0</verstretch>
         </sizepolicy>
@@ -102,7 +102,7 @@
        </property>
       </widget>
      </item>
-     <item>
+     <!-- <item>
       <widget class="QToolButton" name="btnGotoAddress">
        <property name="minimumSize">
         <size>
@@ -135,7 +135,7 @@
         <bool>true</bool>
        </property>
       </widget>
-     </item>
+     </item> -->
      <item>
       <spacer name="horizontalSpacer_2">
        <property name="orientation">

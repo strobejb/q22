@@ -276,17 +276,19 @@ bool HexView::getHighlightCol(size_w offset, int pane,
         for (const Bookmark &bm : highlights) {
             if (gap ? (bm.offset >= pos) : (pos < bm.offset)) continue;
             if (pos >= bm.offset + bm.length)                  continue;
-            if (bm.bgColour == selBG) inSel = true;
-            else if (bm.bgColour == 0) inMod = true;   // FG-only (modified)
-            else if (!hl)              hl = &bm;
+            if      (bm.colourIndex < 0 && bm.bgColour == selBG) inSel = true;
+            else if (bm.colourIndex < 0 && bm.bgColour == 0)    inMod = true;   // FG-only (modified)
+            else if (!hl)                                        hl = &bm;
         }
 
         HEXCOL c;
         if ((hl || inMod) && inSel) {
             c = selWins ? HEXCOL{selFG, selBG} : HEXCOL{matchFG, matchBG};
         } else if (hl) {
-            c = { hl->fgColour ? hl->fgColour : defFG,
-                  hl->bgColour };
+            const QRgb hlBG = hl->colourIndex >= 0
+                ? getHexColour(HvColorSlot(HVC_BOOKMARK1 + hl->colourIndex))
+                : hl->bgColour;
+            c = { hl->fgColour ? hl->fgColour : defFG, hlBG };
         } else if (inSel) {
             c = {selFG, selBG};
         } else {
@@ -681,6 +683,7 @@ void HexView::paintEvent(QPaintEvent *event)
     }
 
     // ── Draw line by line ─────────────────────────────────────────────────────
+    const int asciiRight = logToPhyXCoord(m_nBytesPerLine, 1);
     for (size_w i = first; i <= last; i++) {
         size_w lineDataOff = (i - first) * (size_w)m_nBytesPerLine;
         size_t len = (lineDataOff < (size_w)buflen)
@@ -690,22 +693,22 @@ void HexView::paintEvent(QPaintEvent *event)
 
         size_t datashift = (i == 0) ? m_nDataShift : 0;
 
-        int nx = paintLine(painter, i,
-                           bigbuf  + lineDataOff,
-                           len,
-                           bufinfo + lineDataOff,
-                           datashift,
-                           matchHighlights);
+        paintLine(painter, i,
+                  bigbuf  + lineDataOff,
+                  len,
+                  bufinfo + lineDataOff,
+                  datashift,
+                  matchHighlights);
 
-        // Bookmark note strips (stub — implemented in Stage 5)
+        // Bookmark note strips — drawn to the right of the ASCII column
         for (const Bookmark &bm : m_bookmarks) {
-            if (!bm.name.isEmpty() &&
+            if (/*!bm.name.isEmpty() &&*/
                 bm.offset >= i * (size_w)m_nBytesPerLine &&
                 bm.offset <  (i + 1) * (size_w)m_nBytesPerLine &&
                 bm.offset <  m_pDataSeq->size())
             {
-                int ny = (int)(i - m_nVScrollPos) * m_nFontHeight;
-                drawNoteStrip(painter, nx + 30, ny, bm);
+                const int ny = (int)(i - m_nVScrollPos) * m_nFontHeight;
+                drawNoteStrip(painter, asciiRight, ny, bm);
             }
         }
     }

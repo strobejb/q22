@@ -112,8 +112,13 @@ GotoDialog::GotoDialog(HexView *hv, QWidget *parent)
     // Navigation popup menu (Find Previous / Find Next)
 
 
-    connect(ui->editOffset,     &QLineEdit::returnPressed, this, [this] { triggerSearch(0); });
-    connect(ui->btnGotoAddress, &QToolButton::clicked,     this, [this] { triggerSearch(0); });
+    connect(ui->editOffset, &QLineEdit::returnPressed, this, [this] { triggerSearch(0); });
+    // connect(ui->btnGotoAddress, &QToolButton::clicked, this, [this] { triggerSearch(0); });
+    auto *actGoto = ui->editOffset->addAction(
+        QIcon::fromTheme("find-location-symbolic"),
+        QLineEdit::TrailingPosition);
+    actGoto->setToolTip(tr("Goto address"));
+    connect(actGoto, &QAction::triggered, this, [this] { triggerSearch(0); });
 
 #ifdef Q_OS_WIN
     // QIcon::fromTheme() returns null on Windows; use Segoe MDL2 / QStyle fallbacks.
