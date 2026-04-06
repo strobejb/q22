@@ -11,6 +11,7 @@ BookmarkDialog::BookmarkDialog(QWidget *parent)
     , m_foreground(QApplication::palette().text().color())
 {
     ui->setupUi(this);
+    setFixedSize(size());
     ui->colourPicker->setColumns(7);
     connect(ui->pushButton,   &QPushButton::clicked, this, &QDialog::accept);
     connect(ui->pushButton_2, &QPushButton::clicked, this, &QDialog::reject);

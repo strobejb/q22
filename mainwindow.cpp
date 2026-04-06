@@ -3,8 +3,11 @@
 #include "HexView/hexview.h"
 #include "HexView/seqbase.h"
 #include "bookmarkdialog.h"
+#include "dlgabout.h"
 #include "dlgcopyas.h"
 #include "dlgexport.h"
+#include "dlgimport.h"
+#include "dlgpastespecial.h"
 #include "finddialog.h"
 #include "gotodialog.h"
 #include "palettes.h"
@@ -19,8 +22,10 @@
 #include <QClipboard>
 #include <QDir>
 #include <QMimeData>
+#include <QAbstractButton>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QMessageBox>
 #include <QIcon>
 #include <QMenu>
 #include <QPainter>
@@ -474,7 +479,8 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->action_Paste,   &QAction::triggered, this, [this] { m_hv->paste();     });
     connect(ui->action_Delete,  &QAction::triggered, this, [this] { m_hv->clear();     });
     connect(ui->actionSelect_All, &QAction::triggered, this, [this] { m_hv->selectAll(); });
-    connect(ui->actionCopy_As,  &QAction::triggered, this, [this] { CopyAsDlg(m_hv, this); });
+    connect(ui->actionCopy_As,      &QAction::triggered, this, [this] { CopyAsDlg(m_hv, this); });
+    connect(ui->actionPaste_Special,&QAction::triggered, this, [this] { HexPasteSpecialDlg(m_hv, this); });
 
     // Keep Edit action enabled-states in sync with HexView and clipboard state.
     connect(m_hv, &HexView::selectionChanged, this, [this](size_w, size_w) { updateEditActions(); });
@@ -552,10 +558,47 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_hv, &HexView::findProgress, m_statusBar, &StatusBar::onFindProgress);
     connect(m_findDialog, &FindDialog::searchHexChanged, m_statusBar, &StatusBar::showSearchHex);
 
+    connect(ui->actionNew, &QAction::triggered, this, [this]() {
+        if (!maybeSave()) return;
+        m_hv->clearFile();
+        setWindowTitle(QApplication::applicationName());
+    });
+
     connect(ui->actionOpen, &QAction::triggered, this, [this]() {
         const QString path = QFileDialog::getOpenFileName(this, tr("Open File"));
         if (!path.isEmpty())
             openFile(path);
+    });
+
+    connect(ui->actionImport, &QAction::triggered, this, [this]() {
+        static const QStringList kImportFilters = {
+            tr("Raw binary (*.*)"),
+            tr("Plain text (*.txt)"),
+            tr("Hex string (*.txt)"),
+            tr("HTML (*.htm *.html)"),
+            tr("C/C++ source (*.c *.cpp *.h)"),
+            tr("Assembler source (*.asm *.s)"),
+            tr("Intel Hex Records (*.hex)"),
+            tr("Motorola S-Records (*.s19 *.s28 *.s37)"),
+            tr("Base64 (*.b64 *.txt)"),
+            tr("UUEncode (*.uue *.txt)"),
+        };
+
+        QFileDialog dlg(this, tr("Import"));
+        dlg.setAcceptMode(QFileDialog::AcceptOpen);
+        dlg.setFileMode(QFileDialog::ExistingFile);
+        dlg.setNameFilters(kImportFilters);
+        dlg.selectNameFilter(kImportFilters.value((int)g_ImportOptions.format));
+
+        if (dlg.exec() != QDialog::Accepted) return;
+        const QString path = dlg.selectedFiles().value(0);
+        if (path.isEmpty()) return;
+
+        const int idx = kImportFilters.indexOf(dlg.selectedNameFilter());
+        if (idx >= 0)
+            g_ImportOptions.format = (IMPEXP_FORMAT)idx;
+
+        ImportFile(path, m_hv, &g_ImportOptions);
     });
 
     connect(ui->actionExport, &QAction::triggered, this, [this]() {
@@ -615,6 +658,9 @@ MainWindow::MainWindow(QWidget *parent)
         m_prefsDialog->raise();
         m_prefsDialog->activateWindow();
     });
+    connect(ui->actionAbout, &QAction::triggered, this, [this]() {
+        ShowAboutDlg(this);
+    });
 
     // Apply saved font (family + size + spacing)
     const QString savedFamily = AppSettings::prefFontFamily();
@@ -671,6 +717,52 @@ void MainWindow::updateEditActions()
                                 || mime->hasText());
     ui->action_Paste->setEnabled(canPaste);
     ui->actionPaste_Special->setEnabled(canPaste);
+}
+
+bool MainWindow::maybeSave()
+{
+    if (!m_hv->canUndo())
+        return true;
+
+    const QString name = m_hv->filePath().isEmpty()
+                         ? tr("Untitled")
+                         : QFileInfo(m_hv->filePath()).fileName();
+
+    QMessageBox mb(QMessageBox::Warning,
+                   tr("Unsaved changes"),
+                   tr("Save changes to \"%1\"?").arg(name),
+                   QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel,
+                   this);
+    mb.setDefaultButton(QMessageBox::Yes);
+    for (QAbstractButton *btn : mb.buttons())
+        btn->setIcon(QIcon());
+
+    switch (mb.exec()) {
+    case QMessageBox::Cancel:
+        return false;
+
+    case QMessageBox::Yes: {
+        const QString path = m_hv->filePath();
+        if (!path.isEmpty()) {
+            // Real file on disk — overwrite directly
+            if (!m_hv->saveFile(path))
+                return false;
+        } else {
+            // Untitled / memory-backed — ask for a filename
+            const QString dest = QFileDialog::getSaveFileName(this, tr("Save As"));
+            if (dest.isEmpty())
+                return false;
+            if (!m_hv->saveFile(dest))
+                return false;
+        }
+        break;
+    }
+
+    default: // No — discard changes
+        break;
+    }
+
+    return true;
 }
 
 void MainWindow::openFile(const QString &path) {

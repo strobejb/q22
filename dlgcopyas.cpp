@@ -96,6 +96,8 @@ CopyAsDialog::CopyAsDialog(HexView *hv, QWidget *parent)
             this, &CopyAsDialog::onFormatChanged);
     connect(ui->buttonBox, &QDialogButtonBox::accepted, this, &CopyAsDialog::onAccepted);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
+
+    setFixedSize(qMax(sizeHint().width(), 440), sizeHint().height());
 }
 
 CopyAsDialog::~CopyAsDialog()

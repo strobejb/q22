@@ -3,5 +3,14 @@
         <file>qexed.png</file>
         <file>palettes/default.palette</file>
         <file>palettes/catch22.palette</file>
+        <file>icons/hicolor/index.theme</file>
+        <file>icons/hicolor/scalable/actions/document-open-symbolic.svg</file>
+        <file>icons/hicolor/scalable/actions/edit-find-symbolic.svg</file>
+        <file>icons/hicolor/scalable/actions/find-location-symbolic.svg</file>
+        <file>icons/hicolor/scalable/actions/open-menu-symbolic.svg</file>
+        <file>icons/hicolor/scalable/actions/window-close-symbolic.svg</file>
+        <file>icons/hicolor/scalable/actions/window-maximize-symbolic.svg</file>
+        <file>icons/hicolor/scalable/actions/window-minimize-symbolic.svg</file>
+        <file>icons/hicolor/scalable/actions/window-restore-symbolic.svg</file>
     </qresource>
 </RCC>

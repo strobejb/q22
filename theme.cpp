@@ -226,6 +226,7 @@ void recolorToolButtons(QWidget *parent)
 }
 #endif
 
+
 QPoint smartMenuPos(const QWidget *anchor, const QMenu *menu, bool rightAlign)
 {
     const QSize sz    = menu->sizeHint();
@@ -293,6 +294,17 @@ static void applyPalette(bool dark)
     p.setColor(QPalette::ToolTipBase,     windowText);
     p.setColor(QPalette::ToolTipText,     window);
 
+
+    // Disabled group — Fusion auto-derives this poorly. Set it explicitly to a
+    // clearly mid-toned gray that's readable in both light and dark modes.
+    // Mix windowText toward window at 35% (text) / 65% (background).
+    const QColor disabled(
+        qRound(windowText.red()   * 0.35 + window.red()   * 0.65),
+        qRound(windowText.green() * 0.35 + window.green() * 0.65),
+        qRound(windowText.blue()  * 0.35 + window.blue()  * 0.65));
+    p.setColor(QPalette::Disabled, QPalette::WindowText, disabled);
+    p.setColor(QPalette::Disabled, QPalette::Text,       disabled);
+    p.setColor(QPalette::Disabled, QPalette::ButtonText, disabled);
 
     // Layer UI palette overrides on top.
     if (s_uiOverrides.window.isValid())
@@ -574,6 +586,42 @@ static MenuShadowFilter *menuShadowFilter()
     return s;
 }
 
+// ── Rounded popup for all QComboBox dropdowns ─────────────────────────────────
+// Intercepts QComboBoxPrivateContainer at Polish time (before the native surface
+// is created) and applies the same frameless + translucent treatment as menus,
+// giving every combo dropdown genuine rounded corners.  On Windows the DWM
+// shadow filter is installed; on Linux the compositor provides the shadow
+// automatically for popup windows (no self-drawn overlay or position adjustment
+// needed since we add no shadow margin here).
+namespace {
+struct ComboPopupFilter : public QObject
+{
+    using QObject::QObject;
+    bool eventFilter(QObject *obj, QEvent *e) override
+    {
+        if (e->type() == QEvent::Polish
+                && obj->inherits("QComboBoxPrivateContainer")) {
+            auto *container = static_cast<QWidget *>(obj);
+            if (!container->testAttribute(Qt::WA_TranslucentBackground)) {
+#ifdef Q_OS_WIN
+                container->setWindowFlags(container->windowFlags()
+                                          | Qt::FramelessWindowHint
+                                          | Qt::NoDropShadowWindowHint);
+                container->installEventFilter(menuShadowFilter());
+#else
+                container->setWindowFlags(container->windowFlags()
+                                          | Qt::FramelessWindowHint);
+#endif
+                container->setAttribute(Qt::WA_TranslucentBackground);
+                container->setStyleSheet(
+                    "QComboBoxPrivateContainer { background: transparent; border: none; }");
+            }
+        }
+        return false;
+    }
+};
+} // namespace
+
 void themeMenu(QMenu *menu)
 {
     // A frameless, transparent window lets the QSS border-radius actually clip
@@ -679,6 +727,7 @@ void applyAdwaitaTheme(ColorScheme scheme)
             QApplication::setFont(f);
         }
         qApp->installEventFilter(new TooltipFilter(qApp));
+        qApp->installEventFilter(new ComboPopupFilter(qApp));
 #ifdef Q_OS_WIN
         qApp->installEventFilter(new DarkModeFilter(qApp));
 #else

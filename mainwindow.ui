@@ -113,8 +113,9 @@
     </widget>
     <addaction name="separator"/>
     <addaction name="menuView_2"/>
-    <addaction name="separator"/>
     <addaction name="actionPreferences"/>
+    <addaction name="separator"/>
+    <addaction name="actionAbout"/>
    </widget>
    <widget class="QMenu" name="menuHelp">
     <property name="title">
@@ -239,6 +240,11 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+,</string>
+   </property>
+  </action>
+  <action name="actionAbout">
+   <property name="text">
+    <string>About...</string>
    </property>
   </action>
   <action name="actionFind">

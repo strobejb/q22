@@ -379,13 +379,16 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
     // ── Element list ──────────────────────────────────────────────────────────
     m_list = new QListWidget(this);
     m_list->setUniformItemSizes(true);
-    m_list->setStyleSheet(
-        "QListWidget {"
-        "  border: 1px solid palette(mid);"
-        "  border-radius: 8px;"
-        "  padding: 4px;"
-        "}"
-    );
+    {
+        const int vPad = qMax(4, m_list->fontMetrics().height() / 2);
+        const bool dark = qApp->palette().window().color().lightness() < 128;
+        const QString border = dark ? QLatin1String("rgba(255,255,255,0.18)")
+                                    : QLatin1String("rgba(0,0,0,0.15)");
+        m_list->setStyleSheet(QString(
+            "QListWidget { border: 1px solid %1; outline: 0; }"
+            "QListWidget::item { padding: %2px 4px; }"
+        ).arg(border).arg(vPad));
+    }
     for (int i = 0; i < PE_COUNT; ++i) {
         const auto e = PaletteElem(i);
         auto *item = new QListWidgetItem(tr(elemName(e)));
@@ -402,6 +405,25 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
     m_hexEdit = new QLineEdit(this);
     m_hexEdit->setMaxLength(7);
     m_hexEdit->setText(colorAt(PE_BG).name().toUpper());
+
+    // ── Line edit styling (rounded, padded, mode-aware border) ────────────────
+    {
+        const bool dark = qApp->palette().window().color().lightness() < 128;
+        const QString border  = dark ? QLatin1String("rgba(255,255,255,0.18)")
+                                     : QLatin1String("rgba(0,0,0,0.15)");
+        const QString focusColor = qApp->palette().highlight().color().name();
+        const QString ss = QString(
+            "QLineEdit {"
+            "  border: 1px solid %1;"
+            "  border-radius: 6px;"
+            "  padding: 5px 8px;"
+            "  background: palette(base);"
+            "}"
+            "QLineEdit:focus { border-color: %2; }"
+        ).arg(border, focusColor);
+        m_nameEdit->setStyleSheet(ss);
+        m_hexEdit->setStyleSheet(ss);
+    }
 
     // ── Buttons ───────────────────────────────────────────────────────────────
     auto *buttons = new QDialogButtonBox(

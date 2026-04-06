@@ -1,5 +1,6 @@
 #include "preferences.h"
 #include "settings.h"
+#include "theme.h"
 
 #include <QButtonGroup>
 #include <QDialogButtonBox>
@@ -258,36 +259,29 @@ FontPickerDialog::FontPickerDialog(const QFont &current, QWidget *parent)
     // ── List ─────────────────────────────────────────────────────────────────
     m_list = new QListWidget(this);
     m_list->setUniformItemSizes(true);
-    m_list->setStyleSheet(
-        "QListWidget {"
-        "  border: 1px solid palette(mid);"
-        "  border-radius: 8px;"
-        "  padding: 4px;"
-        "}"
-    );
+    {
+        const int vPad = qMax(4, m_list->fontMetrics().height() / 2);
+        const bool dark = qApp->palette().window().color().lightness() < 128;
+        const QString border = dark ? QLatin1String("rgba(255,255,255,0.18)")
+                                    : QLatin1String("rgba(0,0,0,0.15)");
+        m_list->setStyleSheet(QString(
+            "QListWidget { border: 1px solid %1; outline: 0; }"
+            "QListWidget::item { padding: %2px 4px; }"
+        ).arg(border).arg(vPad));
+    }
 
     int selectRow = -1;
     const QStringList families = QFontDatabase::families();
     for (const QString &family : families) {
         if (!QFontDatabase::isFixedPitch(family))
             continue;
-        const QStringList styles = QFontDatabase::styles(family);
-        for (const QString &style : styles) {
-            const QString sl = style.toLower();
-            const bool isNormal = (sl == "regular" || sl == "normal" || sl.isEmpty());
-            const QString label = isNormal ? family : (family + "  " + style);
 
-            auto *item = new QListWidgetItem(label);
-            item->setData(Qt::UserRole,     family);
-            item->setData(Qt::UserRole + 1, style);
-            m_list->addItem(item);
+        auto *item = new QListWidgetItem(family);
+        item->setData(Qt::UserRole, family);
+        m_list->addItem(item);
 
-            const int row = m_list->count() - 1;
-            if (family == current.family()) {
-                if (selectRow == -1 || isNormal)
-                    selectRow = row;
-            }
-        }
+        if (family == current.family())
+            selectRow = m_list->count() - 1;
     }
     if (selectRow >= 0)
         m_list->setCurrentRow(selectRow);
@@ -329,9 +323,8 @@ FontPickerDialog::FontPickerDialog(const QFont &current, QWidget *parent)
             this, [this](QListWidgetItem *item) {
         if (!item) return;
         const QString family = item->data(Qt::UserRole).toString();
-        const QString style  = item->data(Qt::UserRole + 1).toString();
-        m_font = QFontDatabase::font(family, style, m_font.pointSize() > 0
-                                                    ? m_font.pointSize() : 13);
+        m_font = QFontDatabase::font(family, "Regular", m_font.pointSize() > 0
+                                                        ? m_font.pointSize() : 13);
         updatePreview();
     });
 

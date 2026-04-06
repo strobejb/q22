@@ -120,7 +120,9 @@ bool HexView::saveFile(const QString &path, uint /*flags*/)
 
 bool HexView::clearFile()
 {
-    return m_pDataSeq->clear();
+    bool ok = m_pDataSeq->clear();
+    if (ok) m_filePath.clear();
+    return ok;
 }
 
 size_w HexView::selectionStart() const
@@ -608,6 +610,28 @@ size_t HexView::setData(size_w offset, uint8_t *buf, size_t len)
 {
     invalidateRange(offset, offset + len);
     return m_pDataSeq->replace(offset, buf, len);
+}
+
+size_w HexView::setDataAdv(const uint8_t *buf, size_t len)
+{
+    return enterData(const_cast<uint8_t *>(buf), (size_w)len,
+                     /*fAdvanceCaret=*/true,
+                     /*fReplaceSelection=*/false,
+                     /*fSelectData=*/false);
+}
+
+void HexView::padToAddress(size_w addr)
+{
+    size_w filesize = m_pDataSeq ? m_pDataSeq->size() : 0;
+    if (addr > filesize) {
+        const size_w  count = addr - filesize;
+        const uint8_t zero  = 0;
+        m_pDataSeq->group();
+        m_pDataSeq->insert(filesize, zero, count);
+        m_pDataSeq->ungroup();
+        fireChanged(filesize, count, HVMETHOD_INSERT);
+    }
+    setCurPos(addr);
 }
 
 size_t HexView::fillData(uint8_t *buf, size_t buflen, size_w len)

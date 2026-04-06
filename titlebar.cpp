@@ -562,6 +562,27 @@ bool TitleBar::event(QEvent *e)
 
 void TitleBar::mousePressEvent(QMouseEvent *event)
 {
+    if (event->button() == Qt::RightButton) {
+        QMenu menu(this);
+        themeMenu(&menu);
+        const bool maximized = window()->isMaximized();
+        QAction *actRestore  = menu.addAction(tr("Restore"));
+        QAction *actMin      = menu.addAction(tr("Minimize"));
+        QAction *actMax      = menu.addAction(tr("Maximize"));
+        menu.addSeparator();
+        QAction *actClose    = menu.addAction(tr("Close"));
+        actRestore->setEnabled(maximized);
+        actMax->setEnabled(!maximized);
+        if (m_btnMin) actMin->setEnabled(true);
+        QAction *chosen = menu.exec(event->globalPosition().toPoint());
+        if      (chosen == actClose)   window()->close();
+        else if (chosen == actMin)     window()->showMinimized();
+        else if (chosen == actMax)     window()->showMaximized();
+        else if (chosen == actRestore) window()->showNormal();
+        event->accept();
+        return;
+    }
+
     if (event->button() != Qt::LeftButton) return;
 
     // Narrow zone at the very top triggers top-edge resize

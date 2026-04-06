@@ -34,6 +34,7 @@ protected:
 
 private:
     void openFile(const QString &path);
+    bool maybeSave();       // prompt if modified; returns false if user cancelled
     void updateRecentMenu();
     void updateEditActions();
     void runFind(bool forward);
