@@ -40,18 +40,24 @@ static bool windowsIsLightMode()
 
 // Returns the native Windows 11 chrome background colour for the given activation state.
 //
-// When active and the user has "Show accent colour on title bars and window borders"
-// enabled (DWM\ColorPrevalence = 1), the DWM accent colour is returned.
-// Otherwise the Mica neutral tones (#F3F3F3 light / #202020 dark) are used —
-// these match what Windows 11 paints on its own focused title bars.
-// When inactive, a flat neutral grey matching the Windows 11 unfocused title bar
-// is returned (#EFEFEF light / #2B2B2B dark).
+// Inactive: flat neutral grey (#EBEBEB light / #2D2D2D dark) matching the
+// Windows 11 unfocused title bar.
+//
+// Active: approximates the Mica material by blending the DWM accent colour
+// at ~18 % into the neutral base, giving a subtle but clearly visible tint
+// that changes with the user's accent setting (similar to how Mica samples
+// the wallpaper).  If DWM returns no accent, the plain neutral is used.
+// When the user has "Show accent colour on title bars" enabled
+// (ColorPrevalence = 1) the full accent colour is used instead.
 QColor windowsChromeBg(bool active)
 {
     const bool light = windowsIsLightMode();
     if (!active)
-        return light ? QColor(0xEF, 0xEF, 0xEF) : QColor(0x2B, 0x2B, 0x2B);
+        return light ? QColor(0xEB, 0xEB, 0xEB) : QColor(0x2D, 0x2D, 0x2D);
 
+    const QColor neutral = light ? QColor(0xF3, 0xF3, 0xF3) : QColor(0x20, 0x20, 0x20);
+
+    // Read DWM colorization / accent colour (available regardless of ColorPrevalence).
     DWORD colorPrevalence = 0;
     {
         HKEY key;
@@ -64,17 +70,28 @@ QColor windowsChromeBg(bool active)
             RegCloseKey(key);
         }
     }
-    if (colorPrevalence) {
-        DWORD colorization = 0;
-        BOOL  opaque       = FALSE;
-        if (SUCCEEDED(DwmGetColorizationColor(&colorization, &opaque))) {
-            // DWM COLORREF-like value: 0xAARRGGBB
-            return QColor(static_cast<int>((colorization >> 16) & 0xFF),
-                          static_cast<int>((colorization >>  8) & 0xFF),
-                          static_cast<int>((colorization >>  0) & 0xFF));
-        }
-    }
-    return light ? QColor(0xF3, 0xF3, 0xF3) : QColor(0x20, 0x20, 0x20);
+
+    DWORD colorization = 0;
+    BOOL  opaque       = FALSE;
+    if (!SUCCEEDED(DwmGetColorizationColor(&colorization, &opaque)))
+        return neutral;
+
+    // DWM COLORREF-like value: 0xAARRGGBB
+    const QColor accent(static_cast<int>((colorization >> 16) & 0xFF),
+                        static_cast<int>((colorization >>  8) & 0xFF),
+                        static_cast<int>((colorization >>  0) & 0xFF));
+
+    // "Show accent on title bars" → use full accent colour.
+    if (colorPrevalence)
+        return accent;
+
+    // Otherwise blend the accent at ~18 % into the neutral base to approximate
+    // the subtle Mica tint.  This gives a clearly different look from the
+    // unfocused grey while remaining tasteful.
+    constexpr float t = 0.18f;
+    return QColor(qRound(neutral.red()   * (1.f - t) + accent.red()   * t),
+                  qRound(neutral.green() * (1.f - t) + accent.green() * t),
+                  qRound(neutral.blue()  * (1.f - t) + accent.blue()  * t));
 }
 #endif
 
@@ -129,17 +146,9 @@ TitleBar::TitleBar(QWidget *parent)
     const int iconSz    = QApplication::style()->pixelMetric(QStyle::PM_ToolBarIconSize);
     int barH            = qMax(36, iconSz + 22);   // 46 on GNOME, ≥36 everywhere
 #ifdef Q_OS_WIN
-    {
-        // Use DPI-aware system metrics to match the Windows 11 Fluent title bar height.
-        // Total NC area height = SM_CYCAPTION + SM_CYFRAME + SM_CXPADDEDBORDER.
-        // GetSystemMetricsForDpi returns physical pixels at the given DPI;
-        // MulDiv(x, 96, dpi) converts back to Qt logical pixels (96-DPI baseline).
-        UINT dpi  = GetDpiForSystem();
-        int physH = GetSystemMetricsForDpi(SM_CYCAPTION,     dpi)
-                  + GetSystemMetricsForDpi(SM_CYFRAME,        dpi)
-                  + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
-        barH = MulDiv(physH, 96, static_cast<int>(dpi));
-    }
+    // Windows Fluent apps typically use ~40 px title bars (tighter than the
+    // GNOME 46 px formula, wider than the bare system-caption minimum ~31 px).
+    barH = qMax(36, iconSz + 16);   // 24+16 = 40 px at standard DPI
 #endif
     // All buttons leave ~6 px margin top/bottom so they sit centred in the bar.
     // 16 px symbolic icons are the standard for header-bar buttons on GNOME/KDE.
