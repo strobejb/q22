@@ -28,6 +28,7 @@ public:
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
     void showEvent(QShowEvent *e) override;
+    void changeEvent(QEvent *e) override;
 #ifdef Q_OS_WIN
     bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
 #endif
@@ -40,6 +41,9 @@ private:
     void runFind(bool forward);
     void execFind(const QByteArray &pattern, uint flags);
     void applyMenuMode(bool useCustomTitleBar);
+#ifdef Q_OS_WIN
+    void updateWinChromeColors();
+#endif
 
     Ui::MainWindow *ui;
     HexView        *m_hv           = nullptr;

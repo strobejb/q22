@@ -1,8 +1,16 @@
 #ifndef TITLEBAR_H
 #define TITLEBAR_H
 
+#include <QColor>
 #include <QWidget>
 #include <QStringList>
+
+#ifdef Q_OS_WIN
+// Returns the Windows 11 chrome background colour for the given activation state.
+// active=true  → Mica neutral / DWM accent colour (focused window)
+// active=false → flat neutral grey (unfocused window)
+QColor windowsChromeBg(bool active);
+#endif
 
 class QLabel;
 class QToolButton;

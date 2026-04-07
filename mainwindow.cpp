@@ -328,6 +328,10 @@ MainWindow::MainWindow(QWidget *parent)
         AppSettings::setPrefColorScheme(static_cast<int>(s));
         applyAdwaitaTheme(s);
         m_titleBar->refreshStylesheet();
+#ifdef Q_OS_WIN
+        if (m_useCustomTitleBar)
+            updateWinChromeColors();
+#endif
     };
     auto *pickerAction = new ThemePickerAction(currentScheme, themeCb, this);
 
@@ -914,9 +918,49 @@ void MainWindow::showEvent(QShowEvent *e)
     if (m_useCustomTitleBar) {
         bool dark = palette().window().color().lightness() < 128;
         applyWindows11Styling(reinterpret_cast<HWND>(winId()), dark);
+        updateWinChromeColors();
     }
 #endif
 }
+
+void MainWindow::changeEvent(QEvent *e)
+{
+    QMainWindow::changeEvent(e);
+    if (e->type() == QEvent::ActivationChange && m_useCustomTitleBar) {
+        // Refresh title bar so it picks up the new focused/unfocused colour.
+        m_titleBar->refreshStylesheet();
+#ifdef Q_OS_WIN
+        updateWinChromeColors();
+#endif
+    }
+}
+
+#ifdef Q_OS_WIN
+// Updates the status bar and inline dialog backgrounds to match the title bar
+// chrome colour, switching between the focused (Mica/accent) and unfocused
+// (neutral grey) states to mirror Windows 11's native window behaviour.
+void MainWindow::updateWinChromeColors()
+{
+    const bool   active = isActiveWindow();
+    const QColor bg     = windowsChromeBg(active);
+    const bool   dark   = bg.lightness() < 128;
+    const QString bgName      = bg.name();
+    const QString comboHover  = (dark ? bg.lighter(130) : bg.darker(107)).name();
+
+    // Override the status bar background (normally set by the global stylesheet).
+    ui->statusbar->setStyleSheet(QString(
+        "QStatusBar { background: %1; padding: 6px 0; }"
+        "QStatusBar QComboBox:hover { background: %2; }"
+    ).arg(bgName, comboHover));
+
+    // FindDialog and GotoDialog use setAutoFillBackground(true) — updating their
+    // Window palette role is enough to repaint without touching their stylesheets.
+    QPalette p;
+    p.setColor(QPalette::Window, bg);
+    m_findDialog->setPalette(p);
+    m_gotoDialog->setPalette(p);
+}
+#endif
 
 #ifdef Q_OS_WIN
 bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr *result)

@@ -38,14 +38,20 @@ static bool windowsIsLightMode()
     return true;
 }
 
-// Returns the native Windows 11 title-bar background colour.
+// Returns the native Windows 11 chrome background colour for the given activation state.
 //
-// When the user has "Show accent colour on title bars and window borders"
-// enabled (DWM\ColorPrevalence = 1), the accent colour is returned.
+// When active and the user has "Show accent colour on title bars and window borders"
+// enabled (DWM\ColorPrevalence = 1), the DWM accent colour is returned.
 // Otherwise the Mica neutral tones (#F3F3F3 light / #202020 dark) are used —
-// these match what Windows 11 paints on its own title bars.
-static QColor windowsTitleBarBg()
+// these match what Windows 11 paints on its own focused title bars.
+// When inactive, a flat neutral grey matching the Windows 11 unfocused title bar
+// is returned (#EFEFEF light / #2B2B2B dark).
+QColor windowsChromeBg(bool active)
 {
+    const bool light = windowsIsLightMode();
+    if (!active)
+        return light ? QColor(0xEF, 0xEF, 0xEF) : QColor(0x2B, 0x2B, 0x2B);
+
     DWORD colorPrevalence = 0;
     {
         HKEY key;
@@ -68,8 +74,7 @@ static QColor windowsTitleBarBg()
                           static_cast<int>((colorization >>  0) & 0xFF));
         }
     }
-    return windowsIsLightMode() ? QColor(0xF3, 0xF3, 0xF3)
-                                : QColor(0x20, 0x20, 0x20);
+    return light ? QColor(0xF3, 0xF3, 0xF3) : QColor(0x20, 0x20, 0x20);
 }
 #endif
 
@@ -120,9 +125,22 @@ TitleBar::TitleBar(QWidget *parent)
 {
     // Match the system toolbar height rather than hardcoding.
     // PM_ToolBarIconSize is 24 px on GNOME/Adwaita, giving ~46 px total —
-    // the same as an Adwaita header bar.  On KDE/Windows it scales similarly.
+    // the same as an Adwaita header bar.  On KDE it scales similarly.
     const int iconSz    = QApplication::style()->pixelMetric(QStyle::PM_ToolBarIconSize);
-    const int barH      = qMax(36, iconSz + 22);   // 46 on GNOME, ≥36 everywhere
+    int barH            = qMax(36, iconSz + 22);   // 46 on GNOME, ≥36 everywhere
+#ifdef Q_OS_WIN
+    {
+        // Use DPI-aware system metrics to match the Windows 11 Fluent title bar height.
+        // Total NC area height = SM_CYCAPTION + SM_CYFRAME + SM_CXPADDEDBORDER.
+        // GetSystemMetricsForDpi returns physical pixels at the given DPI;
+        // MulDiv(x, 96, dpi) converts back to Qt logical pixels (96-DPI baseline).
+        UINT dpi  = GetDpiForSystem();
+        int physH = GetSystemMetricsForDpi(SM_CYCAPTION,     dpi)
+                  + GetSystemMetricsForDpi(SM_CYFRAME,        dpi)
+                  + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+        barH = MulDiv(physH, 96, static_cast<int>(dpi));
+    }
+#endif
     // All buttons leave ~6 px margin top/bottom so they sit centred in the bar.
     // 16 px symbolic icons are the standard for header-bar buttons on GNOME/KDE.
     const int btnSz     = barH - 12;               // ~34 px on GNOME
@@ -134,7 +152,7 @@ TitleBar::TitleBar(QWidget *parent)
 
 #ifdef Q_OS_WIN
     {
-        const QColor winBg = windowsTitleBarBg();
+        const QColor winBg = windowsChromeBg(true);
         QPalette pal = palette();
         pal.setColor(QPalette::Window, winBg);
         setPalette(pal);
@@ -265,7 +283,13 @@ TitleBar::TitleBar(QWidget *parent)
 
     // ── Main layout ───────────────────────────────────────────────────────
     auto *layout = new QHBoxLayout(this);
+#ifdef Q_OS_WIN
+    // Flush to the window frame edges so the leftmost and rightmost button hover
+    // backgrounds extend all the way to the frame border with no gap.
+    layout->setContentsMargins(0, 0, 0, 0);
+#else
     layout->setContentsMargins(6, 0, 6, 0);
+#endif
     layout->setSpacing(4);
     layout->addWidget(m_hamburger);
     layout->addWidget(leftGroup);
@@ -377,7 +401,8 @@ void TitleBar::refreshStylesheet()
 
 #ifdef Q_OS_WIN
     {
-        const QColor winBg = windowsTitleBarBg();
+        bool active        = window() ? window()->isActiveWindow() : true;
+        const QColor winBg = windowsChromeBg(active);
         dark   = winBg.lightness() < 128;
         bg     = winBg.name();
         fg     = dark ? "#ffffff" : "#000000";
