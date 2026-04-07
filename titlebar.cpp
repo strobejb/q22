@@ -93,23 +93,6 @@ QColor windowsChromeBg(bool active)
                   qRound(neutral.green() * (1.f - t) + accent.green() * t),
                   qRound(neutral.blue()  * (1.f - t) + accent.blue()  * t));
 }
-
-// Returns true when DWMWA_SYSTEMBACKDROP_TYPE (real Mica) is available,
-// i.e. Windows 11 22H2 (build ≥ 22621).  Cached after first call.
-bool winMicaAvailable()
-{
-    static const bool s_available = []() {
-        typedef LONG (WINAPI *RtlGetVersion_t)(OSVERSIONINFOW *);
-        auto fn = reinterpret_cast<RtlGetVersion_t>(
-            GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "RtlGetVersion"));
-        if (!fn) return false;
-        OSVERSIONINFOW v = { sizeof(v) };
-        fn(&v);
-        return v.dwMajorVersion > 10 ||
-               (v.dwMajorVersion == 10 && v.dwBuildNumber >= 22621);
-    }();
-    return s_available;
-}
 #endif
 
 // ── Platform: detect GNOME button layout ─────────────────────────────────────
@@ -177,8 +160,7 @@ TitleBar::TitleBar(QWidget *parent)
     setObjectName("TitleBar");
 
 #ifdef Q_OS_WIN
-    if (!winMicaAvailable()) {
-        // Pre-22H2: paint a solid chrome colour ourselves.
+    {
         const QColor winBg = windowsChromeBg(true);
         QPalette pal = palette();
         pal.setColor(QPalette::Window, winBg);
@@ -186,8 +168,6 @@ TitleBar::TitleBar(QWidget *parent)
         setAutoFillBackground(true);
         setAttribute(Qt::WA_StyledBackground, true);
     }
-    // 22H2+: leave autoFillBackground=false; the real Mica DWM backdrop
-    // shows through the transparent titlebar widget.
 #endif
 
     m_btnRadius = btnRadius;
@@ -429,16 +409,7 @@ void TitleBar::refreshStylesheet()
     QString border  = dark ? "#1e1e2e" : "#c4c4c4";
 
 #ifdef Q_OS_WIN
-    if (winMicaAvailable()) {
-        // Real Mica is active: the DWM backdrop provides the background.
-        // Use transparent chrome so it shows through; set only text/hover colours.
-        dark   = !windowsIsLightMode();
-        bg     = "transparent";
-        fg     = dark ? "#ffffff" : "#000000";
-        hover  = dark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.08)";
-        border = "transparent";
-    } else {
-        // Pre-22H2: paint a solid focus-aware chrome colour.
+    {
         bool active        = window() ? window()->isActiveWindow() : true;
         const QColor winBg = windowsChromeBg(active);
         dark   = winBg.lightness() < 128;
@@ -446,31 +417,27 @@ void TitleBar::refreshStylesheet()
         fg     = dark ? "#ffffff" : "#000000";
         hover  = dark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
         border = dark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.12)";
+
         QPalette pal = palette();
         pal.setColor(QPalette::Window, winBg);
         setPalette(pal);
     }
 #endif
 
-#ifndef Q_OS_WIN
     // Layer UI palette colour overrides on top of platform defaults.
-    // Skipped on Windows — Mica or DWM-managed colour takes precedence.
-    {
-        const UiColourOverrides &uiOvr = uiColourOverrides();
-        if (uiOvr.window.isValid()) {
-            dark   = uiOvr.window.lightness() < 128;
-            bg     = uiOvr.window.name();
-            hover  = dark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.10)";
-            border = dark ? "rgba(255,255,255,0.20)" : "rgba(0,0,0,0.12)";
-            QPalette pal = palette();
-            pal.setColor(QPalette::Window, uiOvr.window);
-            setPalette(pal);
-            setAutoFillBackground(true);
-        }
-        if (uiOvr.windowText.isValid())
-            fg = uiOvr.windowText.name();
+    const UiColourOverrides &uiOvr = uiColourOverrides();
+    if (uiOvr.window.isValid()) {
+        dark   = uiOvr.window.lightness() < 128;
+        bg     = uiOvr.window.name();
+        hover  = dark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.10)";
+        border = dark ? "rgba(255,255,255,0.20)" : "rgba(0,0,0,0.12)";
+        QPalette pal = palette();
+        pal.setColor(QPalette::Window, uiOvr.window);
+        setPalette(pal);
+        setAutoFillBackground(true);
     }
-#endif
+    if (uiOvr.windowText.isValid())
+        fg = uiOvr.windowText.name();
 
     setStyleSheet(QString(R"(
         #TitleBar {

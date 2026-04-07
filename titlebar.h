@@ -9,12 +9,7 @@
 // Returns the Windows 11 chrome background colour for the given activation state.
 // active=true  → Mica neutral / DWM accent colour (focused window)
 // active=false → flat neutral grey (unfocused window)
-// Only used when real Mica is unavailable (pre-22H2 systems).
 QColor windowsChromeBg(bool active);
-
-// Returns true when DWMWA_SYSTEMBACKDROP_TYPE (real Mica) is available,
-// i.e. Windows 11 22H2 (build 22621) or later.
-bool winMicaAvailable();
 #endif
 
 class QLabel;
