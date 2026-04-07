@@ -52,6 +52,10 @@
 #ifndef DWMWA_BORDER_COLOR
 #  define DWMWA_BORDER_COLOR 34
 #endif
+#ifndef DWMWA_SYSTEMBACKDROP_TYPE
+#  define DWMWA_SYSTEMBACKDROP_TYPE 38
+#  define DWMSBT_MAINWINDOW 2
+#endif
 
 // The window is created as WS_OVERLAPPEDWINDOW (no Qt::FramelessWindowHint on
 // Windows), so DWM already owns the rounded corners, accent border, and
@@ -73,6 +77,15 @@ static void applyWindows11Styling(HWND hwnd, bool dark)
     COLORREF borderColor = dark ? 0x004A4A4A : 0x00C2C7CD;
     DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR,
                           &borderColor, sizeof(borderColor));
+
+    // Windows 11 22H2+: enable real Mica backdrop.  The window needs
+    // WA_TranslucentBackground (set in applyMenuMode) so Qt's transparent
+    // pixels let the DWM-rendered Mica show through.
+    if (winMicaAvailable()) {
+        DWORD backdropType = DWMSBT_MAINWINDOW;
+        DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE,
+                              &backdropType, sizeof(backdropType));
+    }
 }
 #endif
 
@@ -821,6 +834,14 @@ void MainWindow::applyMenuMode(bool useCustomTitleBar)
 {
     m_useCustomTitleBar = useCustomTitleBar;
 
+#ifdef Q_OS_WIN
+    // Must be set before the native window is created (i.e. before first show).
+    // WA_TranslucentBackground makes Qt use a per-pixel-alpha surface so that
+    // transparent widget areas let the DWM Mica backdrop show through.
+    if (useCustomTitleBar && winMicaAvailable() && !isVisible())
+        setAttribute(Qt::WA_TranslucentBackground);
+#endif
+
     // TitleBar lives inside the central-widget layout; the standard QMenuBar
     // lives in its normal QMainWindow position.  We never swap menu widgets at
     // runtime (doing so causes Qt to reparent and orphan widgets, which crashes).
@@ -927,38 +948,56 @@ void MainWindow::changeEvent(QEvent *e)
 {
     QMainWindow::changeEvent(e);
     if (e->type() == QEvent::ActivationChange && m_useCustomTitleBar) {
-        // Refresh title bar so it picks up the new focused/unfocused colour.
-        m_titleBar->refreshStylesheet();
 #ifdef Q_OS_WIN
-        updateWinChromeColors();
+        if (winMicaAvailable()) {
+            // DWM handles the Mica active/inactive transition automatically.
+            // Only refresh the titlebar to keep text colours current.
+            m_titleBar->refreshStylesheet();
+        } else {
+            m_titleBar->refreshStylesheet();
+            updateWinChromeColors();
+        }
+#else
+        m_titleBar->refreshStylesheet();
 #endif
     }
 }
 
 #ifdef Q_OS_WIN
-// Updates the status bar and inline dialog backgrounds to match the title bar
-// chrome colour, switching between the focused (Mica/accent) and unfocused
-// (neutral grey) states to mirror Windows 11's native window behaviour.
+// Configures chrome widget backgrounds for the current Windows path:
+//   Mica (22H2+) — transparent so the DWM backdrop shows through.
+//   Pre-22H2     — solid focus-aware colour approximation.
 void MainWindow::updateWinChromeColors()
 {
-    const bool   active = isActiveWindow();
-    const QColor bg     = windowsChromeBg(active);
-    const bool   dark   = bg.lightness() < 128;
-    const QString bgName      = bg.name();
-    const QString comboHover  = (dark ? bg.lighter(130) : bg.darker(107)).name();
+    if (winMicaAvailable()) {
+        // Make every chrome surface transparent; DWM renders Mica behind them.
+        ui->statusbar->setAutoFillBackground(false);
+        ui->statusbar->setStyleSheet(
+            "QStatusBar { background: transparent; padding: 6px 0; }"
+            "QStatusBar QComboBox:hover { background: rgba(0,0,0,0.08); }"
+        );
+        m_findDialog->setAutoFillBackground(false);
+        m_gotoDialog->setAutoFillBackground(false);
+    } else {
+        // Pre-22H2: paint a solid focus-aware colour on all chrome surfaces.
+        const bool   active      = isActiveWindow();
+        const QColor bg          = windowsChromeBg(active);
+        const bool   dark        = bg.lightness() < 128;
+        const QString bgName     = bg.name();
+        const QString comboHover = (dark ? bg.lighter(130) : bg.darker(107)).name();
 
-    // Override the status bar background (normally set by the global stylesheet).
-    ui->statusbar->setStyleSheet(QString(
-        "QStatusBar { background: %1; padding: 6px 0; }"
-        "QStatusBar QComboBox:hover { background: %2; }"
-    ).arg(bgName, comboHover));
+        ui->statusbar->setStyleSheet(QString(
+            "QStatusBar { background: %1; padding: 6px 0; }"
+            "QStatusBar QComboBox:hover { background: %2; }"
+        ).arg(bgName, comboHover));
 
-    // FindDialog and GotoDialog use setAutoFillBackground(true) — updating their
-    // Window palette role is enough to repaint without touching their stylesheets.
-    QPalette p;
-    p.setColor(QPalette::Window, bg);
-    m_findDialog->setPalette(p);
-    m_gotoDialog->setPalette(p);
+        QPalette p;
+        p.setColor(QPalette::Window, bg);
+        m_findDialog->setAutoFillBackground(true);
+        m_findDialog->setPalette(p);
+        m_gotoDialog->setAutoFillBackground(true);
+        m_gotoDialog->setPalette(p);
+    }
 }
 #endif
 
