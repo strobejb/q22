@@ -343,24 +343,16 @@ static void applyPalette(bool dark)
 
 // ── Stylesheet ────────────────────────────────────────────────────────────────
 
-static QString buildStylesheet(bool /*dark*/)
+static QString buildStylesheet(bool dark)
 {
     // Derive the handful of colours that have no direct palette() role from
     // the current application palette (set by applyPalette moments earlier).
     const QPalette pal = QApplication::palette();
 
-    // Build a palette-coloured SVG chevron for QComboBox::down-arrow.
-    // Embedding it as a data: URI means the arrow automatically matches the
-    // current window-text colour in both light and dark modes, with no
-    // separate resource files needed.
-    const QString arrowStroke = pal.windowText().color().name();
-    const QByteArray arrowSvg = QStringLiteral(
-        "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 5'>"
-        "<path d='M0.5 0.5 L4 4.5 L7.5 0.5' fill='none' stroke='%1'"
-        " stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/>"
-        "</svg>").arg(arrowStroke).toUtf8();
-    const QString arrowUri = QStringLiteral("data:image/svg+xml;base64,")
-                             + QString::fromLatin1(arrowSvg.toBase64());
+    // Pick a theme-appropriate arrow SVG (dark stroke for light mode, light for dark).
+    const QString arrowUri = dark
+        ? QStringLiteral(":/icons/hicolor/scalable/actions/arrow-down-symbolic-dark.svg")
+        : QStringLiteral(":/icons/hicolor/scalable/actions/arrow-down-symbolic.svg");
 
     const QColor btn  = pal.button().color();
     const bool darkBtn = btn.lightness() < 128;
@@ -497,7 +489,7 @@ QToolTip {
     ss.replace("{btnActive}",        btnActive);
     ss.replace("{statusBg}",         statusBg);
     ss.replace("{statusComboHover}", statusComboHover);
-    ss.replace("{arrowUri}",         arrowUri);
+    ss.replace("{arrowUri}",  arrowUri);
 #ifdef Q_OS_WIN
     ss.replace("{menuMargin}", QString());
 #else
