@@ -42,6 +42,8 @@ CMakeLists.txt.user
 # IDE / editor
 .vscode/
 .idea/
+.qtcreator/
+.claude/
 *.swp
 *.swo
 *~
