@@ -349,11 +349,6 @@ static QString buildStylesheet(bool dark)
     // the current application palette (set by applyPalette moments earlier).
     const QPalette pal = QApplication::palette();
 
-    // Pick a theme-appropriate arrow SVG (dark stroke for light mode, light for dark).
-    const QString arrowUri = dark
-        ? QStringLiteral(":/icons/hicolor/scalable/actions/arrow-down-symbolic-dark.svg")
-        : QStringLiteral(":/icons/hicolor/scalable/actions/arrow-down-symbolic.svg");
-
     const QColor btn  = pal.button().color();
     const bool darkBtn = btn.lightness() < 128;
     const QString fgDisabled      = pal.color(QPalette::Disabled, QPalette::WindowText).name();
@@ -435,7 +430,7 @@ QComboBox:focus { border: 2px solid palette(highlight); }
 QComboBox QLineEdit { border: none; background: transparent; padding: 0; }
 QComboBox QLineEdit:focus { border: none; }
 QComboBox::drop-down  { border: none; width: 20px; }
-QComboBox::down-arrow { image: url("{arrowUri}"); width: 8px; height: 5px; }
+QComboBox::down-arrow { width: 8px; height: 5px; }
 QComboBox QAbstractItemView {
     background: palette(base);
     border: 1px solid palette(mid);
@@ -489,7 +484,6 @@ QToolTip {
     ss.replace("{btnActive}",        btnActive);
     ss.replace("{statusBg}",         statusBg);
     ss.replace("{statusComboHover}", statusComboHover);
-    ss.replace("{arrowUri}",  arrowUri);
 #ifdef Q_OS_WIN
     ss.replace("{menuMargin}", QString());
 #else
