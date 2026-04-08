@@ -160,6 +160,11 @@ void DataTypeComboBox::paintEvent(QPaintEvent *)
                           Qt::AlignLeft | Qt::AlignVCenter,
                           opt.palette, isEnabled(),
                           text, QPalette::ButtonText);
+    // The global stylesheet suppresses the native drop-down arrow.
+    // Draw it explicitly so it always shows, regardless of hover state.
+    QStyleOptionComboBox arrowOpt = opt;
+    arrowOpt.rect = style()->subControlRect(QStyle::CC_ComboBox, &opt, QStyle::SC_ComboBoxArrow, this);
+    painter.drawPrimitive(QStyle::PE_IndicatorArrowDown, arrowOpt);
 }
 
 void DataTypeComboBox::showPopup()

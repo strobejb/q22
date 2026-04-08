@@ -1,5 +1,6 @@
 #include "theme.h"
 #include <QApplication>
+#include <QComboBox>
 #include <QFont>
 #include <QFontDatabase>
 #include <QGuiApplication>
@@ -13,6 +14,8 @@
 #include <QStyleFactory>
 #include <QStyleHints>
 #include <QStyleOption>
+#include <QStyleOptionComboBox>
+#include <QStylePainter>
 #include <QWidget>
 
 #ifdef Q_OS_WIN
@@ -718,6 +721,42 @@ public:
 };
 #endif
 
+// ── Arrow for plain QComboBox ─────────────────────────────────────────────────
+// The global QComboBox::drop-down stylesheet rule causes QStyleSheetStyle to
+// suppress PE_IndicatorArrowDown unless an explicit ::down-arrow image is
+// provided.  ValueComboBox and its subclasses already draw the arrow themselves.
+// This filter handles every other (plain) QComboBox: it takes over the paint
+// event, replicates the normal QComboBox painting, and then explicitly draws
+// PE_IndicatorArrowDown so all non-editable dialogs get a consistent arrow.
+namespace {
+struct ComboArrowFilter : public QObject
+{
+    using QObject::QObject;
+    bool eventFilter(QObject *obj, QEvent *e) override
+    {
+        if (e->type() == QEvent::Paint) {
+            auto *cb = qobject_cast<QComboBox *>(obj);
+            if (cb && !cb->inherits("ValueComboBox") && !cb->isEditable()) {
+                QStylePainter p(cb);
+                QStyleOptionComboBox opt;
+                cb->initStyleOption(&opt);
+                // Draw frame + drop-down button (arrow suppressed by stylesheet)
+                p.drawComplexControl(QStyle::CC_ComboBox, opt);
+                // Draw current item text / icon
+                p.drawControl(QStyle::CE_ComboBoxLabel, opt);
+                // Draw the arrow explicitly
+                QStyleOptionComboBox arrowOpt = opt;
+                arrowOpt.rect = cb->style()->subControlRect(
+                    QStyle::CC_ComboBox, &opt, QStyle::SC_ComboBoxArrow, cb);
+                p.drawPrimitive(QStyle::PE_IndicatorArrowDown, arrowOpt);
+                return true;  // event handled — skip default paint
+            }
+        }
+        return false;
+    }
+};
+} // namespace
+
 void applyAdwaitaTheme(ColorScheme scheme)
 {
     s_currentScheme = scheme;
@@ -747,6 +786,7 @@ void applyAdwaitaTheme(ColorScheme scheme)
             QApplication::setFont(f);
         }
         qApp->installEventFilter(new TooltipFilter(qApp));
+        qApp->installEventFilter(new ComboArrowFilter(qApp));
         qApp->installEventFilter(new ComboPopupFilter(qApp));
 #ifdef Q_OS_WIN
         qApp->installEventFilter(new DarkModeFilter(qApp));
