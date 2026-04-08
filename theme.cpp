@@ -349,6 +349,19 @@ static QString buildStylesheet(bool /*dark*/)
     // the current application palette (set by applyPalette moments earlier).
     const QPalette pal = QApplication::palette();
 
+    // Build a palette-coloured SVG chevron for QComboBox::down-arrow.
+    // Embedding it as a data: URI means the arrow automatically matches the
+    // current window-text colour in both light and dark modes, with no
+    // separate resource files needed.
+    const QString arrowStroke = pal.windowText().color().name();
+    const QByteArray arrowSvg = QStringLiteral(
+        "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 5'>"
+        "<path d='M0.5 0.5 L4 4.5 L7.5 0.5' fill='none' stroke='%1'"
+        " stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/>"
+        "</svg>").arg(arrowStroke).toUtf8();
+    const QString arrowUri = QStringLiteral("data:image/svg+xml;base64,")
+                             + QString::fromLatin1(arrowSvg.toBase64());
+
     const QColor btn  = pal.button().color();
     const bool darkBtn = btn.lightness() < 128;
     const QString fgDisabled      = pal.color(QPalette::Disabled, QPalette::WindowText).name();
@@ -429,7 +442,8 @@ QComboBox:hover { border-color: palette(mid); }
 QComboBox:focus { border: 2px solid palette(highlight); }
 QComboBox QLineEdit { border: none; background: transparent; padding: 0; }
 QComboBox QLineEdit:focus { border: none; }
-QComboBox::drop-down { border: none; width: 24px; }
+QComboBox::drop-down  { border: none; width: 20px; }
+QComboBox::down-arrow { image: url("{arrowUri}"); width: 8px; height: 5px; }
 QComboBox QAbstractItemView {
     background: palette(base);
     border: 1px solid palette(mid);
@@ -483,6 +497,7 @@ QToolTip {
     ss.replace("{btnActive}",        btnActive);
     ss.replace("{statusBg}",         statusBg);
     ss.replace("{statusComboHover}", statusComboHover);
+    ss.replace("{arrowUri}",         arrowUri);
 #ifdef Q_OS_WIN
     ss.replace("{menuMargin}", QString());
 #else

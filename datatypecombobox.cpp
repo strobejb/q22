@@ -148,17 +148,9 @@ void DataTypeComboBox::paintEvent(QPaintEvent *)
     QStyleOptionComboBox opt;
     initStyleOption(&opt);
     opt.currentText = text;
-    // Draw the frame at full widget size.
+    // Draw the frame (including the drop-down arrow via QComboBox::down-arrow
+    // in the global stylesheet) at full widget size.
     painter.drawComplexControl(QStyle::CC_ComboBox, opt);
-    // The global QComboBox::drop-down stylesheet rule suppresses the native
-    // arrow unless ::down-arrow is also specified.  Draw it explicitly so the
-    // combo always shows a drop indicator regardless of the theme stylesheet.
-    {
-        QStyleOptionComboBox arrowOpt = opt;
-        arrowOpt.rect = style()->subControlRect(
-            QStyle::CC_ComboBox, &opt, QStyle::SC_ComboBoxArrow, this);
-        painter.drawPrimitive(QStyle::PE_IndicatorArrowDown, arrowOpt);
-    }
     // SC_ComboBoxEditField already has the stylesheet's padding: 3px 8px applied,
     // so use the rect directly — no additional inset needed.
     const QRect textRect = style()->subControlRect(
