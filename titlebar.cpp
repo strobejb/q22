@@ -87,9 +87,10 @@ TitleBar::TitleBar(QWidget *parent)
 #endif
     // All buttons leave ~6 px margin top/bottom so they sit centred in the bar.
     // 16 px symbolic icons are the standard for header-bar buttons on GNOME/KDE.
-    const int btnSz     = barH - 12;               // ~34 px on GNOME
-    const int btnIconSz = 16;
-    const int btnRadius = 6;                        // rounded-rect, not circular
+    const int btnSz        = barH - 12;    // ~34 px on GNOME
+    const int btnIconSz    = 16;           // window-control glyphs / standard icons
+    const int menuBtnIconSz = 14;          // file / search / tools — one step smaller
+    const int btnRadius    = 6;            // rounded-rect, not circular
 
     setFixedHeight(barH);
     setObjectName("TitleBar");
@@ -118,7 +119,7 @@ TitleBar::TitleBar(QWidget *parent)
 #ifdef Q_OS_WIN
     // 0xED25 = FolderOpen in Segoe MDL2 Assets / Segoe Fluent Icons —
     // same monochrome Segoe style as the search and caption buttons.
-    if (QIcon si = segoeIcon(0xED25, palette().windowText().color(), 14); !si.isNull())
+    if (QIcon si = segoeIcon(0xED25, palette().windowText().color(), menuBtnIconSz); !si.isNull())
         m_hamburger->setIcon(si);
     else
         m_hamburger->setIcon(
@@ -140,7 +141,7 @@ TitleBar::TitleBar(QWidget *parent)
 #else
     m_hamburger->setFixedSize(btnSz, btnSz);
 #endif
-    m_hamburger->setIconSize(QSize(btnIconSz, btnIconSz));
+    m_hamburger->setIconSize(QSize(menuBtnIconSz, menuBtnIconSz));
     m_hamburger->setMenu(m_menu);
     m_hamburger->setPopupMode(QToolButton::InstantPopup);
 
@@ -154,7 +155,7 @@ TitleBar::TitleBar(QWidget *parent)
     if (!searchIcon.isNull())
         m_searchBtn->setIcon(searchIcon);
 #ifdef Q_OS_WIN
-    else if (QIcon si = segoeIcon(0xE721, palette().windowText().color(), 14); !si.isNull()) // Search
+    else if (QIcon si = segoeIcon(0xE721, palette().windowText().color(), menuBtnIconSz); !si.isNull()) // Search
         m_searchBtn->setIcon(si);
 #endif
     else
@@ -166,7 +167,7 @@ TitleBar::TitleBar(QWidget *parent)
 #else
     m_searchBtn->setFixedSize(btnSz, btnSz);
 #endif
-    m_searchBtn->setIconSize(QSize(btnIconSz, btnIconSz));
+    m_searchBtn->setIconSize(QSize(menuBtnIconSz, menuBtnIconSz));
     m_searchBtn->setMenu(m_searchMenu);
     m_searchBtn->setPopupMode(QToolButton::InstantPopup);
 
@@ -219,7 +220,7 @@ TitleBar::TitleBar(QWidget *parent)
 #else
     m_viewBtn->setFixedSize(btnSz, btnSz);
 #endif
-    m_viewBtn->setIconSize(QSize(btnIconSz, btnIconSz));
+    m_viewBtn->setIconSize(QSize(menuBtnIconSz, menuBtnIconSz));
     m_viewBtn->setMenu(m_viewMenu);
     m_viewBtn->setPopupMode(QToolButton::InstantPopup);
     // Reposition to right-align when the menu is shown.
@@ -417,14 +418,14 @@ void TitleBar::refreshStylesheet()
     // Recolor symbolic icons to match the current foreground color.
     // QIcon::fromTheme() returns uncolored pixmaps on Linux; we tint via alpha compositing.
     const QColor fgColor(fg);
-    auto recolor = [&](QToolButton *btn, const QString &name) {
+    auto recolor = [&](QToolButton *btn, const QString &name, int sz = 16) {
         if (!btn) return;
-        QIcon ic = recoloredIcon(name, fgColor);
+        QIcon ic = recoloredIcon(name, fgColor, sz);
         if (!ic.isNull()) btn->setIcon(ic);
     };
-    recolor(m_hamburger, "document-open-symbolic");
-    recolor(m_searchBtn,  "edit-find-symbolic");
-    recolor(m_viewBtn,    "open-menu-symbolic");
+    recolor(m_hamburger, "document-open-symbolic",  14);
+    recolor(m_searchBtn,  "edit-find-symbolic",      14);
+    recolor(m_viewBtn,    "open-menu-symbolic",      14);
     recolor(m_btnClose,   "window-close-symbolic");
     recolor(m_btnMin,     "window-minimize-symbolic");
     if (m_btnMax) {
@@ -444,14 +445,14 @@ void TitleBar::changeEvent(QEvent *e)
         // The full stylesheet is updated via explicit refreshStylesheet() calls
         // at the mainwindow level whenever the colour scheme actually changes.
         const QColor fg = palette().windowText().color();
-        auto recolor = [&](QToolButton *btn, const QString &name) {
+        auto recolor = [&](QToolButton *btn, const QString &name, int sz = 16) {
             if (!btn) return;
-            QIcon ic = recoloredIcon(name, fg);
+            QIcon ic = recoloredIcon(name, fg, sz);
             if (!ic.isNull()) btn->setIcon(ic);
         };
-        recolor(m_hamburger, "document-open-symbolic");
-        recolor(m_searchBtn,  "edit-find-symbolic");
-        recolor(m_viewBtn,    "open-menu-symbolic");
+        recolor(m_hamburger, "document-open-symbolic",  14);
+        recolor(m_searchBtn,  "edit-find-symbolic",      14);
+        recolor(m_viewBtn,    "open-menu-symbolic",      14);
         recolor(m_btnClose,   "window-close-symbolic");
         recolor(m_btnMin,     "window-minimize-symbolic");
         if (m_btnMax) {
