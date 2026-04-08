@@ -7,9 +7,8 @@
 
 #ifdef Q_OS_WIN
 // Returns the Windows 11 chrome background colour for the given activation state.
-// Reads AccentColor / AccentColorInactive from HKCU\SOFTWARE\Microsoft\Windows\DWM.
-// active=true  → accent-tinted or accent colour (focused window)
-// active=false → neutral grey (unfocused window)
+// active=true  → #F3F3F3 / #202020  (focused, neutral white/grey)
+// active=false → #EBEBEB / #2D2D2D  (unfocused, dimmed neutral)
 QColor windowsChromeBg(bool active);
 #endif
 
