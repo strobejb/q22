@@ -84,12 +84,31 @@ static void applyDwmDarkMode(QWidget *w)
 {
     if (!w->isWindow() || (w->windowFlags() & Qt::FramelessWindowHint))
         return;
+
+    HWND hwnd = reinterpret_cast<HWND>(w->winId());
+
+    // For dialog windows, strip minimize/maximize buttons and the app icon.
+    // Qt sets Qt::Dialog but Windows still ends up with WS_MINIMIZEBOX /
+    // WS_MAXIMIZEBOX in the native style, and the app icon appears in the
+    // title bar.  Fix both here so every QDialog gets clean chrome.
+    if (w->windowFlags() & Qt::Dialog) {
+        LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE);
+        if (style & (WS_MINIMIZEBOX | WS_MAXIMIZEBOX)) {
+            SetWindowLongPtr(hwnd, GWL_STYLE,
+                             style & ~(WS_MINIMIZEBOX | WS_MAXIMIZEBOX));
+            SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+        }
+        // Remove the icon from the title bar / system menu.
+        SendMessage(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)nullptr);
+        SendMessage(hwnd, WM_SETICON, ICON_BIG,   (LPARAM)nullptr);
+    }
+
     const bool dark = (s_currentScheme == ColorScheme::Dark) ||
                       (s_currentScheme == ColorScheme::System &&
                        QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark);
     BOOL val = dark ? TRUE : FALSE;
-    DwmSetWindowAttribute(reinterpret_cast<HWND>(w->winId()),
-                          DWMWA_USE_IMMERSIVE_DARK_MODE, &val, sizeof(val));
+    DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &val, sizeof(val));
 }
 
 namespace {
