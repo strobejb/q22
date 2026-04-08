@@ -18,80 +18,53 @@
 
 #ifdef Q_OS_WIN
 #include <windows.h>
-#include <dwmapi.h>
 
 // ── Windows native colour helpers ─────────────────────────────────────────────
 
-// Returns true when Windows is configured to use a light app theme.
-static bool windowsIsLightMode()
+// Returns the native Windows 11 chrome background colour for the given activation state.
+//
+// Reads AccentColor (active) or AccentColorInactive (inactive) directly from
+// HKCU\SOFTWARE\Microsoft\Windows\DWM — the exact RGBA values Windows uses for
+// native title bars, updated automatically when the user changes their accent or
+// "Show accent colour on title bars" setting.  Falls back to the standard Win 11
+// neutral greys if the registry values are absent.
+//
+// Registry format: DWORD stored as 0xAABBGGRR (ABGR, little-endian).
+QColor windowsChromeBg(bool active)
 {
     HKEY key;
     if (RegOpenKeyExW(HKEY_CURRENT_USER,
-                      L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+                      L"SOFTWARE\\Microsoft\\Windows\\DWM",
                       0, KEY_READ, &key) == ERROR_SUCCESS) {
-        DWORD val = 1, sz = sizeof(val);
-        RegQueryValueExW(key, L"AppsUseLightTheme", nullptr, nullptr,
-                         reinterpret_cast<LPBYTE>(&val), &sz);
+        const LPCWSTR name = active ? L"AccentColor" : L"AccentColorInactive";
+        DWORD color = 0, sz = sizeof(color);
+        LSTATUS st = RegQueryValueExW(key, name, nullptr, nullptr,
+                                      reinterpret_cast<LPBYTE>(&color), &sz);
         RegCloseKey(key);
-        return val != 0;
-    }
-    return true;
-}
-
-// Returns the native Windows 11 chrome background colour for the given activation state.
-//
-// Inactive: flat neutral grey (#EBEBEB light / #2D2D2D dark) matching the
-// Windows 11 unfocused title bar.
-//
-// Active: approximates the Mica material by blending the DWM accent colour
-// at ~18 % into the neutral base, giving a subtle but clearly visible tint
-// that changes with the user's accent setting (similar to how Mica samples
-// the wallpaper).  If DWM returns no accent, the plain neutral is used.
-// When the user has "Show accent colour on title bars" enabled
-// (ColorPrevalence = 1) the full accent colour is used instead.
-QColor windowsChromeBg(bool active)
-{
-    const bool light = windowsIsLightMode();
-    if (!active)
-        return light ? QColor(0xEB, 0xEB, 0xEB) : QColor(0x2D, 0x2D, 0x2D);
-
-    const QColor neutral = light ? QColor(0xF3, 0xF3, 0xF3) : QColor(0x20, 0x20, 0x20);
-
-    // Read DWM colorization / accent colour (available regardless of ColorPrevalence).
-    DWORD colorPrevalence = 0;
-    {
-        HKEY key;
-        if (RegOpenKeyExW(HKEY_CURRENT_USER,
-                          L"SOFTWARE\\Microsoft\\Windows\\DWM",
-                          0, KEY_READ, &key) == ERROR_SUCCESS) {
-            DWORD sz = sizeof(colorPrevalence);
-            RegQueryValueExW(key, L"ColorPrevalence", nullptr, nullptr,
-                             reinterpret_cast<LPBYTE>(&colorPrevalence), &sz);
-            RegCloseKey(key);
-        }
+        if (st == ERROR_SUCCESS)
+            // Strip the alpha: we paint a solid background, not a
+            // compositor surface.  The DWM alpha byte (typically 0xFF)
+            // is irrelevant here but let's not let an unexpected value
+            // produce a semi-transparent QPalette::Window colour.
+            return QColor( color        & 0xFF,   // R
+                          (color >>  8) & 0xFF,   // G
+                          (color >> 16) & 0xFF);  // B (alpha forced to 255)
     }
 
-    DWORD colorization = 0;
-    BOOL  opaque       = FALSE;
-    if (!SUCCEEDED(DwmGetColorizationColor(&colorization, &opaque)))
-        return neutral;
-
-    // DWM COLORREF-like value: 0xAARRGGBB
-    const QColor accent(static_cast<int>((colorization >> 16) & 0xFF),
-                        static_cast<int>((colorization >>  8) & 0xFF),
-                        static_cast<int>((colorization >>  0) & 0xFF));
-
-    // "Show accent on title bars" → use full accent colour.
-    if (colorPrevalence)
-        return accent;
-
-    // Otherwise blend the accent at ~18 % into the neutral base to approximate
-    // the subtle Mica tint.  This gives a clearly different look from the
-    // unfocused grey while remaining tasteful.
-    constexpr float t = 0.18f;
-    return QColor(qRound(neutral.red()   * (1.f - t) + accent.red()   * t),
-                  qRound(neutral.green() * (1.f - t) + accent.green() * t),
-                  qRound(neutral.blue()  * (1.f - t) + accent.blue()  * t));
+    // Fallback: standard Win 11 neutral greys.
+    HKEY themeKey;
+    bool light = true;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER,
+                      L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+                      0, KEY_READ, &themeKey) == ERROR_SUCCESS) {
+        DWORD val = 1, sz = sizeof(val);
+        RegQueryValueExW(themeKey, L"AppsUseLightTheme", nullptr, nullptr,
+                         reinterpret_cast<LPBYTE>(&val), &sz);
+        RegCloseKey(themeKey);
+        light = (val != 0);
+    }
+    return active ? (light ? QColor(0xF3, 0xF3, 0xF3) : QColor(0x20, 0x20, 0x20))
+                  : (light ? QColor(0xEB, 0xEB, 0xEB) : QColor(0x2D, 0x2D, 0x2D));
 }
 #endif
 
