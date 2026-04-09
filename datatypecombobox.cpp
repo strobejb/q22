@@ -160,6 +160,10 @@ void DataTypeComboBox::paintEvent(QPaintEvent *)
                           Qt::AlignLeft | Qt::AlignVCenter,
                           opt.palette, isEnabled(),
                           text, QPalette::ButtonText);
+    // The ::drop-down stylesheet rule suppresses the native arrow; draw it explicitly.
+    QStyleOptionComboBox arrowOpt = opt;
+    arrowOpt.rect = style()->subControlRect(QStyle::CC_ComboBox, &opt, QStyle::SC_ComboBoxArrow, this);
+    painter.drawPrimitive(QStyle::PE_IndicatorArrowDown, arrowOpt);
 }
 
 void DataTypeComboBox::showPopup()
