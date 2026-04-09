@@ -113,7 +113,7 @@
       <number>20</number>
      </property>
      <item>
-      <widget class="QComboBox" name="comboFormat">
+      <widget class="MenuComboBox" name="comboFormat">
        <property name="sizePolicy">
         <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
          <horstretch>0</horstretch>
@@ -273,6 +273,13 @@
    </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>MenuComboBox</class>
+   <extends>QComboBox</extends>
+   <header>menucombobox.h</header>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections>
   <connection>

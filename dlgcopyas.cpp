@@ -67,13 +67,6 @@ CopyAsDialog::CopyAsDialog(HexView *hv, QWidget *parent)
 {
     ui->setupUi(this);
 
-    // Add vertical padding to combo boxes by bumping their minimum height.
-    // Stylesheet padding is unreliable with native platform styles (Adwaita etc.),
-    // so we use the same technique as DataTypeComboBox::minimumSizeHint().
-    const int kPad = qMax(1, qRound(qApp->devicePixelRatio() * 2.0));
-    for (QComboBox *cb : {ui->comboFormat, ui->comboDataType})
-        cb->setMinimumHeight(cb->sizeHint().height() + 2 * kPad);
-
     // Apply an opacity effect to the data-type row so the disabled state is
     // clearly visible regardless of the platform theme.
     for (QWidget *w : {(QWidget *)ui->labelDataType,

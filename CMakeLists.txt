@@ -25,6 +25,8 @@ set(PROJECT_SOURCES
         colourpickerwidget.cpp
         datatypecombobox.h
         datatypecombobox.cpp
+        menucombobox.h
+        menucombobox.cpp
         gotodialog.cpp
         gotodialog.h
         finddialog.cpp

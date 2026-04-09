@@ -1,0 +1,81 @@
+#include "menucombobox.h"
+#include "theme.h"
+#include <QApplication>
+#include <QCursor>
+#include <QStyleOptionComboBox>
+#include <QStylePainter>
+
+static int kPad() { return qMax(1, qRound(qApp->devicePixelRatio() * 2.0)); }
+
+MenuComboBox::MenuComboBox(QWidget *parent)
+    : QComboBox(parent)
+{
+    setFocusPolicy(Qt::ClickFocus);
+    m_menu = new QMenu(this);
+    themeMenu(m_menu);
+
+    connect(m_menu, &QMenu::aboutToHide, this,
+            [this]() { recordMenuClose(); });
+}
+
+QSize MenuComboBox::sizeHint() const
+{
+    QSize s = QComboBox::sizeHint();
+    return { s.width(), s.height() + 2 * kPad() };
+}
+
+QSize MenuComboBox::minimumSizeHint() const
+{
+    QSize s = QComboBox::minimumSizeHint();
+    return { s.width(), s.height() + 2 * kPad() };
+}
+
+void MenuComboBox::paintEvent(QPaintEvent *)
+{
+    QStylePainter painter(this);
+    QStyleOptionComboBox opt;
+    initStyleOption(&opt);
+    painter.drawComplexControl(QStyle::CC_ComboBox, opt);
+    painter.drawControl(QStyle::CE_ComboBoxLabel, opt);
+    // The ::drop-down stylesheet rule suppresses the native arrow; draw it explicitly.
+    QStyleOptionComboBox arrowOpt = opt;
+    arrowOpt.rect = style()->subControlRect(QStyle::CC_ComboBox, &opt, QStyle::SC_ComboBoxArrow, this);
+    painter.drawPrimitive(QStyle::PE_IndicatorArrowDown, arrowOpt);
+}
+
+void MenuComboBox::buildMenu()
+{
+    m_menu->clear();
+    const int cur = currentIndex();
+    for (int i = 0; i < count(); ++i) {
+        const QString text = itemText(i);
+        if (text.isEmpty()) {
+            m_menu->addSeparator();
+            continue;
+        }
+        QAction *a = m_menu->addAction(text);
+        a->setCheckable(true);
+        a->setChecked(i == cur);
+        connect(a, &QAction::triggered, this, [this, i]() {
+            setCurrentIndex(i);
+        });
+    }
+}
+
+bool MenuComboBox::isSameClickReopen()
+{
+    const QPoint cur = QCursor::pos();
+    const bool same = (m_closePos == cur);
+    m_closePos = { -1, -1 };
+    return same;
+}
+
+void MenuComboBox::showPopup()
+{
+    if (m_menu->isVisible()) { m_menu->hide(); return; }
+    if (isSameClickReopen()) return;
+
+    buildMenu();
+    const QPoint pos = smartMenuPos(this, m_menu, /*rightAlign=*/false);
+    m_menu->popup(pos);
+}

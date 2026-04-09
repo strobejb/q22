@@ -1,6 +1,5 @@
 #include "theme.h"
 #include <QApplication>
-#include <QComboBox>
 #include <QFont>
 #include <QFontDatabase>
 #include <QGuiApplication>
@@ -14,8 +13,6 @@
 #include <QStyleFactory>
 #include <QStyleHints>
 #include <QStyleOption>
-#include <QStyleOptionComboBox>
-#include <QStylePainter>
 #include <QWidget>
 
 #ifdef Q_OS_WIN
@@ -609,59 +606,6 @@ static MenuShadowFilter *menuShadowFilter()
     return s;
 }
 
-// ── Rounded popup for all QComboBox dropdowns ─────────────────────────────────
-// Intercepts QComboBoxPrivateContainer at Polish time (before the native surface
-// is created) and applies frameless treatment.
-//
-// On Windows: do NOT use WA_TranslucentBackground. The {-1,-1,-1,-1} DWM glow
-// bleeds through the transparent padding pixels inside QComboBoxPrivateContainer
-// causing a ghost outline artefact at the top/bottom edges of the list.
-// Instead, set DWMWCP_ROUND at surface-create time: Win11 DWM then handles
-// corner rounding AND the drop shadow natively with no artefact.
-//
-// On Linux: WA_TranslucentBackground lets the compositor provide the shadow
-// and the QSS border-radius clips the corners transparently.
-namespace {
-struct ComboPopupFilter : public QObject
-{
-    using QObject::QObject;
-    bool eventFilter(QObject *obj, QEvent *e) override
-    {
-        if (e->type() == QEvent::Polish
-                && obj->inherits("QComboBoxPrivateContainer")) {
-            auto *container = static_cast<QWidget *>(obj);
-            if (!container->testAttribute(Qt::WA_TranslucentBackground)) {
-#ifdef Q_OS_WIN
-                container->setWindowFlags(container->windowFlags()
-                                          | Qt::FramelessWindowHint);
-                // At surface-create time, ask DWM to round corners and shadow.
-                container->installEventFilter(this);
-#else
-                container->setWindowFlags(container->windowFlags()
-                                          | Qt::FramelessWindowHint);
-                container->setAttribute(Qt::WA_TranslucentBackground);
-                container->setStyleSheet(
-                    "QComboBoxPrivateContainer { background: transparent; border: none; }");
-#endif
-            }
-        }
-#ifdef Q_OS_WIN
-        if (e->type() == QEvent::PlatformSurface
-                && obj->inherits("QComboBoxPrivateContainer")) {
-            auto *pse = static_cast<QPlatformSurfaceEvent *>(e);
-            if (pse->surfaceEventType() == QPlatformSurfaceEvent::SurfaceCreated) {
-                HWND hwnd = reinterpret_cast<HWND>(static_cast<QWidget *>(obj)->winId());
-                DWORD cornerPref = DWMWCP_ROUND;
-                DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
-                                      &cornerPref, sizeof(cornerPref));
-            }
-        }
-#endif
-        return false;
-    }
-};
-} // namespace
-
 void themeMenu(QMenu *menu)
 {
     // A frameless, transparent window lets the QSS border-radius actually clip
@@ -738,51 +682,6 @@ public:
 };
 #endif
 
-// ── Arrow for non-statusbar QComboBox ─────────────────────────────────────────
-// The global QComboBox::drop-down stylesheet rule causes QStyleSheetStyle to
-// suppress PE_IndicatorArrowDown for every combo unless ::down-arrow provides
-// an image. ValueComboBox subclasses (status bar) draw the arrow themselves.
-// This filter intercepts paint for every other QComboBox and draws the arrow
-// explicitly after the normal drawComplexControl/CE_ComboBoxLabel calls.
-// initStyleOption() is protected, so we replicate it using public API only.
-namespace {
-struct ComboArrowFilter : public QObject
-{
-    using QObject::QObject;
-    bool eventFilter(QObject *obj, QEvent *e) override
-    {
-        if (e->type() != QEvent::Paint)
-            return false;
-        auto *cb = qobject_cast<QComboBox *>(obj);
-        if (!cb || cb->inherits("ValueComboBox"))
-            return false;
-
-        QStylePainter p(cb);
-        QStyleOptionComboBox opt;
-        // Replicate QComboBox::initStyleOption() using only public API.
-        opt.initFrom(cb);
-        opt.editable          = cb->isEditable();
-        opt.frame             = cb->hasFrame();
-        opt.subControls       = QStyle::SC_All;
-        opt.activeSubControls = QStyle::SC_ComboBoxArrow;
-        opt.currentText       = cb->currentText();
-        opt.currentIcon       = cb->itemIcon(cb->currentIndex());
-        opt.iconSize          = cb->iconSize();
-        if (cb->hasFocus() && !cb->isEditable())
-            opt.state |= QStyle::State_Selected;
-
-        p.drawComplexControl(QStyle::CC_ComboBox, opt);
-        p.drawControl(QStyle::CE_ComboBoxLabel, opt);
-        // ::drop-down rule suppresses the native arrow — draw it explicitly.
-        QStyleOptionComboBox arrowOpt = opt;
-        arrowOpt.rect = cb->style()->subControlRect(
-            QStyle::CC_ComboBox, &opt, QStyle::SC_ComboBoxArrow, cb);
-        p.drawPrimitive(QStyle::PE_IndicatorArrowDown, arrowOpt);
-        return true; // suppress default paint
-    }
-};
-} // namespace
-
 void applyAdwaitaTheme(ColorScheme scheme)
 {
     s_currentScheme = scheme;
@@ -812,8 +711,6 @@ void applyAdwaitaTheme(ColorScheme scheme)
             QApplication::setFont(f);
         }
         qApp->installEventFilter(new TooltipFilter(qApp));
-        qApp->installEventFilter(new ComboArrowFilter(qApp));
-        qApp->installEventFilter(new ComboPopupFilter(qApp));
 #ifdef Q_OS_WIN
         qApp->installEventFilter(new DarkModeFilter(qApp));
 #else

@@ -67,10 +67,6 @@ PasteSpecialDialog::PasteSpecialDialog(HexView *hv, QWidget *parent)
 {
     ui->setupUi(this);
 
-    // Combo padding
-    const int kPad = qMax(1, qRound(qApp->devicePixelRatio() * 2.0));
-    ui->comboFormat->setMinimumHeight(ui->comboFormat->sizeHint().height() + 2 * kPad);
-
     // List: item padding, mode-aware border, no focus rect
     {
         const int vPad = qMax(4, ui->listClipFormats->fontMetrics().height() / 2);
