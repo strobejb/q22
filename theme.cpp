@@ -611,11 +611,13 @@ static MenuShadowFilter *menuShadowFilter()
 
 // ── Rounded popup for all QComboBox dropdowns ─────────────────────────────────
 // Intercepts QComboBoxPrivateContainer at Polish time (before the native surface
-// is created) and applies the same frameless + translucent treatment as menus,
-// giving every combo dropdown genuine rounded corners.  On Windows the DWM
-// shadow filter is installed; on Linux the compositor provides the shadow
-// automatically for popup windows (no self-drawn overlay or position adjustment
-// needed since we add no shadow margin here).
+// is created) and applies frameless + translucent treatment so the QSS
+// border-radius on QAbstractItemView genuinely clips the corners.
+// On Windows we do NOT install menuShadowFilter: that filter applies
+// DwmExtendFrameIntoClientArea({-1,-1,-1,-1}) which creates a DWM glow that
+// leaks out behind the rectangular list edges as a ghost outline artefact.
+// Instead we keep the normal Windows CS_DROPSHADOW rectangular shadow by
+// NOT adding NoDropShadowWindowHint.
 namespace {
 struct ComboPopupFilter : public QObject
 {
@@ -626,15 +628,8 @@ struct ComboPopupFilter : public QObject
                 && obj->inherits("QComboBoxPrivateContainer")) {
             auto *container = static_cast<QWidget *>(obj);
             if (!container->testAttribute(Qt::WA_TranslucentBackground)) {
-#ifdef Q_OS_WIN
-                container->setWindowFlags(container->windowFlags()
-                                          | Qt::FramelessWindowHint
-                                          | Qt::NoDropShadowWindowHint);
-                container->installEventFilter(menuShadowFilter());
-#else
                 container->setWindowFlags(container->windowFlags()
                                           | Qt::FramelessWindowHint);
-#endif
                 container->setAttribute(Qt::WA_TranslucentBackground);
                 container->setStyleSheet(
                     "QComboBoxPrivateContainer { background: transparent; border: none; }");
