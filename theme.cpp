@@ -609,42 +609,18 @@ static MenuShadowFilter *menuShadowFilter()
     return s;
 }
 
-// ── DWM shadow for combo dropdowns (Win11) ───────────────────────────────────
-// Combo dropdown lists are rectangular, so we must not use {-1,-1,-1,-1}
-// (which extends the DWM frame across the entire client area and causes a
-// glow artefact behind the straight top/bottom edges). Instead, use a 1px
-// bottom-only margin — the standard technique for enabling DWM's drop shadow
-// on a frameless window without any glow: DWM renders the shadow geometry
-// from the window shape but the 1px frame itself is hidden behind the content.
-#ifdef Q_OS_WIN
-namespace {
-struct ComboShadowFilter : public QObject
-{
-    using QObject::QObject;
-    bool eventFilter(QObject *obj, QEvent *e) override
-    {
-        if (e->type() == QEvent::PlatformSurface) {
-            auto *pse = static_cast<QPlatformSurfaceEvent *>(e);
-            if (pse->surfaceEventType() == QPlatformSurfaceEvent::SurfaceCreated) {
-                if (auto *w = qobject_cast<QWidget *>(obj)) {
-                    HWND hwnd = reinterpret_cast<HWND>(w->winId());
-                    MARGINS margins = {0, 0, 0, 1};
-                    DwmExtendFrameIntoClientArea(hwnd, &margins);
-                }
-            }
-        }
-        return false;
-    }
-};
-} // namespace
-#endif
-
 // ── Rounded popup for all QComboBox dropdowns ─────────────────────────────────
 // Intercepts QComboBoxPrivateContainer at Polish time (before the native surface
-// is created) and applies frameless + translucent treatment so the QSS
-// border-radius on QAbstractItemView genuinely clips the corners.
-// NoDropShadowWindowHint suppresses the rectangular CS_DROPSHADOW; the DWM
-// shadow is added back cleanly via ComboShadowFilter with a 1px margin.
+// is created) and applies frameless treatment.
+//
+// On Windows: do NOT use WA_TranslucentBackground. The {-1,-1,-1,-1} DWM glow
+// bleeds through the transparent padding pixels inside QComboBoxPrivateContainer
+// causing a ghost outline artefact at the top/bottom edges of the list.
+// Instead, set DWMWCP_ROUND at surface-create time: Win11 DWM then handles
+// corner rounding AND the drop shadow natively with no artefact.
+//
+// On Linux: WA_TranslucentBackground lets the compositor provide the shadow
+// and the QSS border-radius clips the corners transparently.
 namespace {
 struct ComboPopupFilter : public QObject
 {
@@ -655,18 +631,32 @@ struct ComboPopupFilter : public QObject
                 && obj->inherits("QComboBoxPrivateContainer")) {
             auto *container = static_cast<QWidget *>(obj);
             if (!container->testAttribute(Qt::WA_TranslucentBackground)) {
-                container->setWindowFlags(container->windowFlags()
-                                          | Qt::FramelessWindowHint
-                                          | Qt::NoDropShadowWindowHint);
 #ifdef Q_OS_WIN
-                static ComboShadowFilter *csf = new ComboShadowFilter(qApp);
-                container->installEventFilter(csf);
-#endif
+                container->setWindowFlags(container->windowFlags()
+                                          | Qt::FramelessWindowHint);
+                // At surface-create time, ask DWM to round corners and shadow.
+                container->installEventFilter(this);
+#else
+                container->setWindowFlags(container->windowFlags()
+                                          | Qt::FramelessWindowHint);
                 container->setAttribute(Qt::WA_TranslucentBackground);
                 container->setStyleSheet(
                     "QComboBoxPrivateContainer { background: transparent; border: none; }");
+#endif
             }
         }
+#ifdef Q_OS_WIN
+        if (e->type() == QEvent::PlatformSurface
+                && obj->inherits("QComboBoxPrivateContainer")) {
+            auto *pse = static_cast<QPlatformSurfaceEvent *>(e);
+            if (pse->surfaceEventType() == QPlatformSurfaceEvent::SurfaceCreated) {
+                HWND hwnd = reinterpret_cast<HWND>(static_cast<QWidget *>(obj)->winId());
+                DWORD cornerPref = DWMWCP_ROUND;
+                DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+                                      &cornerPref, sizeof(cornerPref));
+            }
+        }
+#endif
         return false;
     }
 };
