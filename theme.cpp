@@ -427,6 +427,7 @@ QComboBox {
     padding: 3px 8px;
     selection-background-color: palette(highlight);
     selection-color: palette(highlighted-text);
+    cursor: arrow;
 }
 QComboBox:hover { border-color: palette(mid); }
 QComboBox:focus { border: 2px solid palette(highlight); }
