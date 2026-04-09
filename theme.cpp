@@ -609,15 +609,42 @@ static MenuShadowFilter *menuShadowFilter()
     return s;
 }
 
+// ── DWM shadow for combo dropdowns (Win11) ───────────────────────────────────
+// Combo dropdown lists are rectangular, so we must not use {-1,-1,-1,-1}
+// (which extends the DWM frame across the entire client area and causes a
+// glow artefact behind the straight top/bottom edges). Instead, use a 1px
+// bottom-only margin — the standard technique for enabling DWM's drop shadow
+// on a frameless window without any glow: DWM renders the shadow geometry
+// from the window shape but the 1px frame itself is hidden behind the content.
+#ifdef Q_OS_WIN
+namespace {
+struct ComboShadowFilter : public QObject
+{
+    using QObject::QObject;
+    bool eventFilter(QObject *obj, QEvent *e) override
+    {
+        if (e->type() == QEvent::PlatformSurface) {
+            auto *pse = static_cast<QPlatformSurfaceEvent *>(e);
+            if (pse->surfaceEventType() == QPlatformSurfaceEvent::SurfaceCreated) {
+                if (auto *w = qobject_cast<QWidget *>(obj)) {
+                    HWND hwnd = reinterpret_cast<HWND>(w->winId());
+                    MARGINS margins = {0, 0, 0, 1};
+                    DwmExtendFrameIntoClientArea(hwnd, &margins);
+                }
+            }
+        }
+        return false;
+    }
+};
+} // namespace
+#endif
+
 // ── Rounded popup for all QComboBox dropdowns ─────────────────────────────────
 // Intercepts QComboBoxPrivateContainer at Polish time (before the native surface
 // is created) and applies frameless + translucent treatment so the QSS
 // border-radius on QAbstractItemView genuinely clips the corners.
-// On Windows we do NOT install menuShadowFilter: that filter applies
-// DwmExtendFrameIntoClientArea({-1,-1,-1,-1}) which creates a DWM glow that
-// leaks out behind the rectangular list edges as a ghost outline artefact.
-// Instead we keep the normal Windows CS_DROPSHADOW rectangular shadow by
-// NOT adding NoDropShadowWindowHint.
+// NoDropShadowWindowHint suppresses the rectangular CS_DROPSHADOW; the DWM
+// shadow is added back cleanly via ComboShadowFilter with a 1px margin.
 namespace {
 struct ComboPopupFilter : public QObject
 {
@@ -629,7 +656,12 @@ struct ComboPopupFilter : public QObject
             auto *container = static_cast<QWidget *>(obj);
             if (!container->testAttribute(Qt::WA_TranslucentBackground)) {
                 container->setWindowFlags(container->windowFlags()
-                                          | Qt::FramelessWindowHint);
+                                          | Qt::FramelessWindowHint
+                                          | Qt::NoDropShadowWindowHint);
+#ifdef Q_OS_WIN
+                static ComboShadowFilter *csf = new ComboShadowFilter(qApp);
+                container->installEventFilter(csf);
+#endif
                 container->setAttribute(Qt::WA_TranslucentBackground);
                 container->setStyleSheet(
                     "QComboBoxPrivateContainer { background: transparent; border: none; }");
