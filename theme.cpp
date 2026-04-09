@@ -430,8 +430,6 @@ QComboBox:focus { border: 2px solid palette(highlight); }
 QComboBox QLineEdit { border: none; background: transparent; padding: 0; }
 QComboBox QLineEdit:focus { border: none; }
 QComboBox::drop-down  { border: none; width: 20px; }
-QComboBox::down-arrow { width: 8px; height: 5px; }
-QStatusBar QComboBox::down-arrow { width: 0; height: 0; }
 QComboBox QAbstractItemView {
     background: palette(base);
     border: 1px solid palette(mid);
