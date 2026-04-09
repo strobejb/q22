@@ -15,7 +15,7 @@ int main(int argc, char *argv[])
     // Prepend the bundled hicolor theme so QIcon::fromTheme() works on all
     // platforms.  On Linux the system theme is still tried first; the bundled
     // icons are only used when a name isn't found in the system theme.
-    QIcon::setThemeSearchPaths(QStringList(":/") + QIcon::themeSearchPaths());
+    QIcon::setThemeSearchPaths(QStringList(":/icons") + QIcon::themeSearchPaths());
     QIcon::setFallbackThemeName("hicolor");
 
     applyAdwaitaTheme(static_cast<ColorScheme>(AppSettings::prefColorScheme()));
