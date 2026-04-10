@@ -59,25 +59,33 @@ QColor ColourPickerWidget::selectedColour() const
     return {};
 }
 
+// Pixels between each swatch edge and its cell boundary.
+// Adjacent swatches are separated by 2*SWATCH_PAD; the selection ring (3px)
+// fits in that gap with 1px to spare on each side.
+static constexpr int SWATCH_PAD = 4;
+
 int ColourPickerWidget::cellSize() const
 {
     if (m_columns <= 0) return 1;
-    return width() / m_columns;
+    return (width() - 2 * SWATCH_PAD) / m_columns;
 }
 
 QSize ColourPickerWidget::sizeHint() const
 {
-    const int cell = (parentWidget() ? parentWidget()->width() / m_columns : 38);
+    const int w    = width() > 0 ? width() : (m_columns * 38 + 2 * SWATCH_PAD);
+    const int cell = qMax(1, (w - 2 * SWATCH_PAD) / m_columns);
     const int rows = (m_colours.size() + m_columns - 1) / m_columns;
-    return QSize(cell * m_columns, cell * rows);
+    return QSize(w, cell * rows + 2 * SWATCH_PAD);
 }
 
 int ColourPickerWidget::indexAt(const QPoint &pos) const
 {
     const int cell = cellSize();
     if (cell <= 0) return -1;
-    const int col = pos.x() / cell;
-    const int row = pos.y() / cell;
+    const QPoint p = pos - QPoint(SWATCH_PAD, SWATCH_PAD);
+    if (p.x() < 0 || p.y() < 0) return -1;
+    const int col = p.x() / cell;
+    const int row = p.y() / cell;
     if (col >= m_columns) return -1;
     const int idx = row * m_columns + col;
     return (idx < m_colours.size()) ? idx : -1;
@@ -86,41 +94,40 @@ int ColourPickerWidget::indexAt(const QPoint &pos) const
 void ColourPickerWidget::paintEvent(QPaintEvent *)
 {
     QPainter p(this);
-    p.setRenderHint(QPainter::Antialiasing, false);
+    p.setRenderHint(QPainter::Antialiasing);
 
     const int cell = cellSize();
     if (cell <= 0) return;
 
     const int rows = (m_colours.size() + m_columns - 1) / m_columns;
 
+    // Pass 1: draw all swatches as circles inset within their cells
     for (int i = 0; i < m_colours.size(); ++i) {
         const int col = i % m_columns;
         const int row = i / m_columns;
-        const QRect r(col * cell, row * cell, cell, cell);
+        const QRect cellR(SWATCH_PAD + col * cell, SWATCH_PAD + row * cell, cell, cell);
+        const QRect sw = cellR.adjusted(SWATCH_PAD, SWATCH_PAD, -SWATCH_PAD, -SWATCH_PAD);
 
-        // Fill background
-        p.fillRect(r, m_colours[i]);
+        p.setPen(Qt::NoPen);
+        p.setBrush(m_colours[i]);
+        p.drawEllipse(sw);
 
-        // Draw "Aa" text
-        p.setPen(m_foreground);
-        p.setFont(QApplication::font());
-        p.drawText(r, Qt::AlignCenter, QStringLiteral("Aa"));
-
-        // Draw selection border
-        if (i == m_selectedIndex) {
-            p.setPen(QPen(QApplication::palette().highlightedText().color(), 2));
-            p.drawRect(r.adjusted(1, 1, -2, -2));
-            p.setPen(QPen(QApplication::palette().highlight().color(), 2));
-            p.drawRect(r.adjusted(2, 2, -3, -3));
-        }
+        p.setPen(QPen(QColor(0, 0, 0, 60), 1));
+        p.setBrush(Qt::NoBrush);
+        p.drawEllipse(sw);
     }
 
-    // Draw outer grid lines
-    p.setPen(QPen(QApplication::palette().mid().color(), 1));
-    for (int c = 0; c <= m_columns && c * cell <= width(); ++c)
-        p.drawLine(c * cell, 0, c * cell, rows * cell);
-    for (int r = 0; r <= rows; ++r)
-        p.drawLine(0, r * cell, m_columns * cell, r * cell);
+    // Pass 2: 2px highlight circle around the selected swatch
+    if (m_selectedIndex >= 0 && m_selectedIndex < m_colours.size()) {
+        const int col = m_selectedIndex % m_columns;
+        const int row = m_selectedIndex / m_columns;
+        const QRect cellR(SWATCH_PAD + col * cell, SWATCH_PAD + row * cell, cell, cell);
+        const QRect sw = cellR.adjusted(SWATCH_PAD, SWATCH_PAD, -SWATCH_PAD, -SWATCH_PAD);
+
+        p.setPen(QPen(QApplication::palette().highlight().color(), 2));
+        p.setBrush(Qt::NoBrush);
+        p.drawEllipse(sw.adjusted(-2, -2, 2, 2));
+    }
 }
 
 void ColourPickerWidget::mousePressEvent(QMouseEvent *event)

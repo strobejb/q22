@@ -107,12 +107,13 @@ enum HvColorSlot {
 #define HVFF_BACKWARD           0x0004
 
 // Hit-test regions
-#define HVHT_NONE       0x00
-#define HVHT_MAIN       0x01
-#define HVHT_SELECTION  0x02
-#define HVHT_RESIZE     0x10
-#define HVHT_RESIZE0    (0x20 | HVHT_RESIZE)
-#define HVHT_BOOKMARK   0x100
+#define HVHT_NONE          0x00
+#define HVHT_MAIN          0x01
+#define HVHT_SELECTION     0x02
+#define HVHT_RESIZE        0x10
+#define HVHT_RESIZE0       (0x20 | HVHT_RESIZE)
+#define HVHT_BOOKMARK      0x100
+#define HVHT_BOOKMARK_CLOSE 0x200
 
 // ── Data structures ───────────────────────────────────────────────────────────
 struct HEXCOL {
@@ -140,6 +141,8 @@ struct HexSnapshot {
     HexSnapshot(const HexSnapshot &)            = delete;
     HexSnapshot &operator=(const HexSnapshot &) = delete;
 };
+
+class QPlainTextEdit;
 
 // ── HexView widget ────────────────────────────────────────────────────────────
 //class HexView : public QWidget
@@ -233,6 +236,14 @@ public:
     void   setContextMenu(QMenu *menu) { m_contextMenu = menu; }
 
 
+    // Geometry of a bookmark note strip.
+    struct NoteStripGeom {
+        QRect rect;      // full rounded rect (background + border area)
+        QRect textRect;  // inset text area (editor should overlay this exactly)
+        QRect closeRect; // close button hit area (top-right of rect)
+        bool  valid = false;
+    };
+
 signals:
     void cursorChanged(size_w offset);
     void selectionChanged(size_w start, size_w end);
@@ -240,6 +251,8 @@ signals:
     void contentChanged(size_w offset, size_w length, uint method);
     void lengthChanged(size_w length);
     void findProgress(size_w pos, size_w len, double mbPerSec);
+    void paneFocusRequested();   // Ctrl+Tab: caller should focus Find/Goto panel
+    void bookmarksChanged();     // bookmark added or removed
 
 protected:
     void paintEvent(QPaintEvent *event)        override;
@@ -247,6 +260,8 @@ protected:
     void focusInEvent(QFocusEvent *event)      override;
     void focusOutEvent(QFocusEvent *event)     override;
     void keyPressEvent(QKeyEvent *event)       override;
+    bool focusNextPrevChild(bool)              override { return false; }
+    bool eventFilter(QObject *obj, QEvent *ev) override;
     void mousePressEvent(QMouseEvent *event)   override;
     void mouseReleaseEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event)    override;
@@ -298,8 +313,11 @@ private:
 
 
     // ── Bookmarks ─────────────────────────────────────────────────────────────
-    int   findBookmark(size_w startoff, size_w endoff) const;
-    void  drawNoteStrip(QPainter &painter, int asciiRight, int ny, const Bookmark &bm);
+    int           findBookmark(size_w startoff, size_w endoff) const;
+    NoteStripGeom noteStripGeom(const Bookmark &bm) const;
+    void          drawNoteStrip(QPainter &painter, int asciiRight, int ny, const Bookmark &bm);
+    void          openNoteEditor(int bmIdx);
+    void          closeNoteEditor(bool save);
 
 
     // ── Coordinate / caret helpers ────────────────────────────────────────────
@@ -406,6 +424,14 @@ private:
     QList<Bookmark> m_bookmarks;
     int  m_highlightCurrentIdx  = -1;
     int  m_highlightHotIdx      = -1;
+
+    // Note strip inline editor
+    QPlainTextEdit *m_noteEditor    = nullptr;
+    int             m_noteEditorIdx = -1;
+
+    // Note strip hover state (updated in mouseMoveEvent idle path)
+    int             m_hoverBookmarkIdx = -1;
+    bool            m_hoverOnClose     = false;
 
     // Mouse / interaction
     bool    m_fResizeBar        = false;

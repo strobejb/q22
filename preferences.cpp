@@ -430,26 +430,21 @@ protected:
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing);
 
-        const QPalette &pal = palette();
-        const bool      hov = underMouse();
-        const QRectF    r   = QRectF(rect()).adjusted(SW_BORDER, SW_BORDER, -SW_BORDER, -SW_BORDER);
-
-        p.setPen(Qt::NoPen);
-        p.setBrush(hov ? pal.color(QPalette::Midlight) : pal.color(QPalette::Button));
-        p.drawRoundedRect(r, SW_RADIUS, SW_RADIUS);
+        const QPalette &pal  = palette();
+        const bool      hov  = underMouse();
+        const QRectF    card = QRectF(rect()).adjusted(SW_SHADOW, SW_SHADOW,
+                                                       -SW_SHADOW, -SW_SHADOW);
 
         p.setPen(QPen(pal.color(QPalette::Mid), SW_BORDER));
-        p.setBrush(Qt::NoBrush);
-        p.drawRoundedRect(r.adjusted(SW_BORDER * 0.5, SW_BORDER * 0.5,
-                                     -SW_BORDER * 0.5, -SW_BORDER * 0.5),
-                          SW_RADIUS - SW_BORDER * 0.5, SW_RADIUS - SW_BORDER * 0.5);
+        p.setBrush(hov ? pal.color(QPalette::Midlight) : pal.color(QPalette::Button));
+        p.drawRoundedRect(card.adjusted(0.5, 0.5, -0.5, -0.5), SW_RADIUS, SW_RADIUS);
 
         // "+" glyph
         QFont f = font();
         f.setPixelSize(24);
         p.setFont(f);
         p.setPen(pal.color(QPalette::Mid));
-        p.drawText(rect(), Qt::AlignCenter, "+");
+        p.drawText(card.toRect(), Qt::AlignCenter, "+");
     }
 
     void enterEvent(QEnterEvent *e) override { update(); QAbstractButton::enterEvent(e); }
@@ -493,6 +488,7 @@ protected:
 
 // ─── SettingsGroup ───────────────────────────────────────────────────────────
 
+static constexpr int GRP_SHADOW   =  4;   // px of transparent margin for shadow
 static constexpr int GRP_RADIUS   = 10;
 static constexpr int GRP_H_PAD    = 20;
 static constexpr int GRP_V_PAD    = 12;
@@ -505,6 +501,10 @@ public:
         : QWidget(parent)
     {
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        // WA_NoSystemBackground: Qt won't pre-fill the widget rect, so the
+        // shadow ring drawn in the margin composites over the parent background.
+        setAttribute(Qt::WA_NoSystemBackground);
+        setContentsMargins(GRP_SHADOW, GRP_SHADOW, GRP_SHADOW, GRP_SHADOW);
         auto *lay = new QVBoxLayout(this);
         lay->setContentsMargins(GRP_H_PAD, GRP_V_PAD, GRP_H_PAD, GRP_V_PAD);
         lay->setSpacing(GRP_SPACING);
@@ -518,16 +518,37 @@ protected:
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing);
 
-        const QPalette &pal      = palette();
-        const QColor   borderCol = pal.color(QPalette::Mid);
+        const QPalette &pal  = palette();
+        const bool      dark = pal.color(QPalette::Window).lightness() < 128;
 
-        // ── Rounded card background ───────────────────────────────────────────
+        // Card rect is inset from the widget rect by the shadow margin.
+        const QRectF card = QRectF(rect()).adjusted(GRP_SHADOW, GRP_SHADOW,
+                                                    -GRP_SHADOW, -GRP_SHADOW);
+
+        // ── Drop shadow ───────────────────────────────────────────────────────
+        // Concentric rounded rects outward from the card edge, with alpha that
+        // fades from ~14 at the border to 0 at GRP_SHADOW px out.  Dark mode
+        // uses half the alpha (card already has good contrast with the window).
+        p.setPen(Qt::NoPen);
+        for (int i = GRP_SHADOW; i >= 1; --i) {
+            const int alpha = qRound(7.0 * qreal(GRP_SHADOW - i + 1) / GRP_SHADOW);
+            p.setBrush(QColor(0, 0, 0, dark ? alpha / 2 : alpha));
+            const qreal r = GRP_RADIUS + i * 0.4;
+            // Slight downward bias (top adjusted by i-1 instead of i) gives a
+            // natural resting-on-surface look.
+            p.drawRoundedRect(card.adjusted(-i, -(i - 1), i, i), r, r);
+        }
+
+        // ── Card background ───────────────────────────────────────────────────
+        // Border: semi-transparent rather than palette(mid) so it's 1px and
+        // subtle — close to Adwaita's card border style.
+        const QColor borderCol = dark ? QColor(255, 255, 255, 28)
+                                      : QColor(0,   0,   0,   18);
         p.setPen(QPen(borderCol, 1));
         p.setBrush(pal.color(QPalette::Base));
-        p.drawRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5),
-                          GRP_RADIUS, GRP_RADIUS);
+        p.drawRoundedRect(card.adjusted(0.5, 0.5, -0.5, -0.5), GRP_RADIUS, GRP_RADIUS);
 
-        // ── Separators between items (full card width, inside border) ─────────
+        // ── Separators between items ──────────────────────────────────────────
         auto *lay = static_cast<QVBoxLayout *>(layout());
         const int count = lay->count();
         if (count < 2) return;
@@ -540,7 +561,7 @@ protected:
             const QWidget *cur  = lay->itemAt(i)->widget();
             if (!prev || !cur) continue;
             const int y = (prev->geometry().bottom() + cur->geometry().top()) / 2;
-            p.drawLine(1, y, width() - 2, y);
+            p.drawLine(qRound(card.left()) + 1, y, qRound(card.right()) - 1, y);
         }
     }
 };
@@ -629,7 +650,7 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
 
         m_swatchLayout = new QGridLayout(m_swatchWidget);
         m_swatchLayout->setContentsMargins(0, 0, 0, 0);
-        m_swatchLayout->setSpacing(10);
+        m_swatchLayout->setSpacing(10 + 2 * SW_SHADOW);
         m_swatchLayout->setAlignment(Qt::AlignLeft | Qt::AlignTop);
 
         m_swatchGroup = new QButtonGroup(m_swatchWidget);

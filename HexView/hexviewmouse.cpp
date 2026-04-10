@@ -9,6 +9,7 @@
 #include "hexview.h"
 
 #include <QApplication>
+#include <QPlainTextEdit>
 #include <QContextMenuEvent>
 #include <QCursor>
 #include <QMenu>
@@ -251,6 +252,20 @@ uint HexView::hitTest(int x, int y, int *bookmarkIdx)
             return HVHT_RESIZE0;
     }
 
+    // Bookmark note strips (to the right of the ASCII column)?
+    for (int i = 0; i < m_bookmarks.size(); ++i) {
+        const NoteStripGeom geom = noteStripGeom(m_bookmarks[i]);
+        if (!geom.valid) continue;
+        if (geom.closeRect.contains(x, y)) {
+            if (bookmarkIdx) *bookmarkIdx = i;
+            return HVHT_BOOKMARK_CLOSE;
+        }
+        if (geom.rect.contains(x, y)) {
+            if (bookmarkIdx) *bookmarkIdx = i;
+            return HVHT_BOOKMARK;
+        }
+    }
+
     // Main hex/ascii area?
     if (x < m_nWindowColumns * m_nFontWidth) {
         size_w curoff = offsetFromPhysCoord(x, y);
@@ -289,6 +304,22 @@ void HexView::mousePressEvent(QMouseEvent *event)
             m_fResizeBar  = true;
         else if (ht == HVHT_RESIZE0)
             m_fResizeAddr = true;
+        return;
+    }
+
+    if (ht == HVHT_BOOKMARK) {
+        openNoteEditor(m_highlightCurrentIdx);
+        return;
+    }
+
+    if (ht == HVHT_BOOKMARK_CLOSE) {
+        closeNoteEditor(false);
+        if (m_highlightCurrentIdx >= 0 && m_highlightCurrentIdx < m_bookmarks.size()) {
+            m_bookmarks.removeAt(m_highlightCurrentIdx);
+            m_highlightCurrentIdx = -1;
+            emit bookmarksChanged();
+        }
+        viewport()->update();
         return;
     }
 
@@ -439,13 +470,25 @@ void HexView::mouseMoveEvent(QMouseEvent *event)
         }
 
     } else {
-        // Idle — update cursor shape from hit-test
-        uint ht = hitTest(mx, my, nullptr);
+        // Idle — update cursor and hover state from hit-test.
+        int  bmIdx = -1;
+        uint ht    = hitTest(mx, my, &bmIdx);
+
+        const int  newHoverBm    = (ht == HVHT_BOOKMARK || ht == HVHT_BOOKMARK_CLOSE) ? bmIdx : -1;
+        const bool newHoverClose = (ht == HVHT_BOOKMARK_CLOSE);
+        if (newHoverBm != m_hoverBookmarkIdx || newHoverClose != m_hoverOnClose) {
+            m_hoverBookmarkIdx = newHoverBm;
+            m_hoverOnClose     = newHoverClose;
+            viewport()->update();
+        }
+
         switch (ht) {
         case HVHT_RESIZE:
-        case HVHT_RESIZE0: viewport()->setCursor(Qt::SizeHorCursor); break;
-        case HVHT_MAIN:    viewport()->setCursor(Qt::IBeamCursor);   break;
-        default:           viewport()->setCursor(Qt::ArrowCursor);   break;
+        case HVHT_RESIZE0:        viewport()->setCursor(Qt::SizeHorCursor); break;
+        case HVHT_MAIN:
+        case HVHT_BOOKMARK:       viewport()->setCursor(Qt::IBeamCursor);   break;
+        case HVHT_BOOKMARK_CLOSE: viewport()->setCursor(Qt::ArrowCursor);   break;
+        default:                  viewport()->setCursor(Qt::ArrowCursor);   break;
         }
     }
 }
@@ -486,6 +529,8 @@ void HexView::mouseDoubleClickEvent(QMouseEvent *event)
 
 void HexView::wheelEvent(QWheelEvent *event)
 {
+    if (m_noteEditor && m_noteEditor->hasFocus())
+        return;
     int nScrollLines  = 3;
     int nDelta        = event->angleDelta().y();
     int nScrollAmount = nDelta + m_nScrollMouseRemainder;

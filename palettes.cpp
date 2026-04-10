@@ -319,6 +319,7 @@ PaletteSwatch::PaletteSwatch(const PaletteInfo &info, QWidget *parent)
     setCursor(Qt::PointingHandCursor);
     setFixedSize(SW_W, SW_H);
     setToolTip(info.name);
+    setAttribute(Qt::WA_NoSystemBackground);
 }
 
 void PaletteSwatch::mouseDoubleClickEvent(QMouseEvent *)
@@ -331,27 +332,37 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
-    const QRectF r = QRectF(rect()).adjusted(SW_BORDER, SW_BORDER, -SW_BORDER, -SW_BORDER);
+    const bool  dark = palette().color(QPalette::Window).lightness() < 128;
+    const QRectF card = QRectF(rect()).adjusted(SW_SHADOW, SW_SHADOW,
+                                               -SW_SHADOW, -SW_SHADOW);
 
-    // Background fill
+    // ── Drop shadow ──────────────────────────────────────────────────────────
     p.setPen(Qt::NoPen);
-    p.setBrush(m_info.bg);
-    p.drawRoundedRect(r, SW_RADIUS, SW_RADIUS);
+    for (int i = SW_SHADOW; i >= 1; --i) {
+        const int alpha = qRound(7.0 * qreal(SW_SHADOW - i + 1) / SW_SHADOW);
+        p.setBrush(QColor(0, 0, 0, dark ? alpha / 2 : alpha));
+        const qreal r = SW_RADIUS + i * 0.4;
+        p.drawRoundedRect(card.adjusted(-i, -(i - 1), i, i), r, r);
+    }
 
-    // Border: accent when selected, subtle otherwise
-    const QColor borderCol = isChecked()
+    // ── Card: background + border ────────────────────────────────────────────
+    // Border adapts to the swatch colour so it reads well on any palette.
+    // When selected, swap to the app highlight colour for a clear indicator.
+    const bool  checked    = isChecked();
+    const qreal borderW    = checked ? 2.0 : SW_BORDER;
+    const QColor borderCol = checked
         ? palette().color(QPalette::Highlight)
-        : m_info.bg.darker(140);
-    p.setPen(QPen(borderCol, SW_BORDER));
-    p.setBrush(Qt::NoBrush);
-    p.drawRoundedRect(r.adjusted(SW_BORDER * 0.5, SW_BORDER * 0.5,
-                                 -SW_BORDER * 0.5, -SW_BORDER * 0.5),
-                      SW_RADIUS - SW_BORDER * 0.5, SW_RADIUS - SW_BORDER * 0.5);
+        : (m_info.bg.lightness() < 128 ? QColor(255, 255, 255, 30)
+                                       : QColor(0,   0,   0,   30));
+    const qreal h = borderW * 0.5;
+    p.setPen(QPen(borderCol, borderW));
+    p.setBrush(m_info.bg);
+    p.drawRoundedRect(card.adjusted(h, h, -h, -h), SW_RADIUS - h + 0.5, SW_RADIUS - h + 0.5);
 
-    // Centered name text
+    // ── Centered name text ───────────────────────────────────────────────────
     p.setPen(m_info.fg);
     p.setFont(font());
-    p.drawText(rect(), Qt::AlignCenter, m_info.name);
+    p.drawText(card.toRect(), Qt::AlignCenter, m_info.name);
 }
 
 // ─── PaletteEditorDialog ─────────────────────────────────────────────────────
@@ -419,7 +430,7 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
             "  padding: 5px 8px;"
             "  background: palette(base);"
             "}"
-            "QLineEdit:focus { border-color: %2; }"
+            "QLineEdit:focus { border: 2px solid %2; padding: 4px 7px; }"
         ).arg(border, focusColor);
         m_nameEdit->setStyleSheet(ss);
         m_hexEdit->setStyleSheet(ss);

@@ -4,7 +4,9 @@
 #include <QApplication>
 #include <QFontMetrics>
 #include <QFontDatabase>
+#include <QKeyEvent>
 #include <QPainter>
+#include <QPlainTextEdit>
 #include <QResizeEvent>
 #include <QScrollBar>
 #include <algorithm>
@@ -76,6 +78,40 @@ HexView::~HexView()
 {
     delete m_pDataSeq;
     delete m_lastSnapshot;
+}
+
+bool HexView::eventFilter(QObject *obj, QEvent *ev)
+{
+    if (obj == viewport() && ev->type() == QEvent::Leave) {
+        if (m_hoverBookmarkIdx != -1 || m_hoverOnClose) {
+            m_hoverBookmarkIdx = -1;
+            m_hoverOnClose     = false;
+            viewport()->update();
+        }
+    }
+
+    if (m_noteEditor && (obj == m_noteEditor || obj == m_noteEditor->viewport())) {
+        // Always consume wheel events so they never reach the hexview.
+        if (ev->type() == QEvent::Wheel)
+            return true;
+
+        if (obj == m_noteEditor) {
+            if (ev->type() == QEvent::FocusOut) {
+                closeNoteEditor(true);
+                return false;
+            }
+            if (ev->type() == QEvent::KeyPress) {
+                const auto *ke = static_cast<QKeyEvent *>(ev);
+                if (ke->key() == Qt::Key_Escape) {
+                    closeNoteEditor(false);
+                    viewport()->setFocus();
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    return QAbstractScrollArea::eventFilter(obj, ev);
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────

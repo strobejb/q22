@@ -531,6 +531,16 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_gotoDialog, &GotoDialog::bookmarkRequested,
             ui->actionBookmark_here, &QAction::trigger);
 
+    connect(m_hv, &HexView::bookmarksChanged,
+            m_gotoDialog, &GotoDialog::refreshBookmarks);
+
+    connect(m_hv, &HexView::paneFocusRequested, this, [this]() {
+        if (m_findDialog->isVisible())
+            m_findDialog->activate();
+        else if (m_gotoDialog->isVisible())
+            m_gotoDialog->activate();
+    });
+
     connect(ui->actionFind, &QAction::triggered, this, [this]() {
         QWidget *fw = QApplication::focusWidget();
         if (m_findDialog->isVisible() && fw && m_findDialog->isAncestorOf(fw))

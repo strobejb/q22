@@ -700,10 +700,9 @@ void HexView::paintEvent(QPaintEvent *event)
                   datashift,
                   matchHighlights);
 
-        // Bookmark note strips — drawn to the right of the ASCII column
+        // Bookmark note strips — drawn to the right of the ASCII column.
         for (const Bookmark &bm : m_bookmarks) {
-            if (/*!bm.name.isEmpty() &&*/
-                bm.offset >= i * (size_w)m_nBytesPerLine &&
+            if (bm.offset >= i * (size_w)m_nBytesPerLine &&
                 bm.offset <  (i + 1) * (size_w)m_nBytesPerLine &&
                 bm.offset <  m_pDataSeq->size())
             {

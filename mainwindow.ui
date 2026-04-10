@@ -413,7 +413,7 @@
   </action>
   <action name="actionBookmark_here">
    <property name="text">
-    <string>Bookmark Here</string>
+    <string>Bookmark...</string>
    </property>
    <property name="shortcut">
     <string>Ctrl+B</string>

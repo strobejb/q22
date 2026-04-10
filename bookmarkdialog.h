@@ -26,7 +26,12 @@ public:
     QColor  selectedColour()      const;
     int     selectedColourIndex() const;
 
+protected:
+    void showEvent(QShowEvent *event) override;
+
 private:
+    void updateRangeLabel();
+
     Ui::BookmarkDialog *ui;
     quint64 m_offset = 0;
     quint64 m_length = 0;

@@ -138,11 +138,13 @@ FindDialog::FindDialog(QWidget *parent)
             margin: 2px 0;
             border: 1px solid %3;
             border-radius: 6px;
+            padding: 0;
         }
         #editFind:focus {
             margin: 1px 0;
             border: 2px solid palette(highlight);
             border-radius: 6px;
+            padding: 0;
         }
     )").arg(hover, pressed, borderCol));
 

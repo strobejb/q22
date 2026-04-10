@@ -52,11 +52,13 @@ GotoDialog::GotoDialog(HexView *hv, QWidget *parent)
             margin: 2px 0;
             border: 1px solid %3;
             border-radius: 6px;
+            padding: 0;
         }
         #editOffset:focus {
             margin: 1px 0;
             border: 2px solid palette(highlight);
             border-radius: 6px;
+            padding: 0;
         }
     )").arg(hover, pressed, borderCol));
 
@@ -106,8 +108,8 @@ GotoDialog::GotoDialog(HexView *hv, QWidget *parent)
         }
     });
 
-    // connect(ui->btnNewBookmark, &QToolButton::clicked, this, &GotoDialog::bookmarkRequested);
-    connect(ui->btnClose,       &QToolButton::clicked, this, &QWidget::hide);
+    connect(ui->btnBookmark, &QToolButton::clicked, this, &GotoDialog::bookmarkRequested);
+    connect(ui->btnClose,    &QToolButton::clicked, this, &QWidget::hide);
 
     // Navigation popup menu (Find Previous / Find Next)
 

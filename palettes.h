@@ -102,10 +102,11 @@ QString paletteFilePath(const QString &name);
 bool savePalette(const PaletteInfo &info);
 
 // ── Swatch size constants (shared by PaletteSwatch and AddPaletteSwatch) ─────
-inline constexpr int SW_W      = 84;
-inline constexpr int SW_H      = 66;
+inline constexpr int SW_SHADOW =  3;   // transparent margin for drop shadow
+inline constexpr int SW_W      = 84 + 2 * SW_SHADOW;   // total widget width  (90)
+inline constexpr int SW_H      = 66 + 2 * SW_SHADOW;   // total widget height (72)
 inline constexpr int SW_RADIUS = 10;
-inline constexpr int SW_BORDER =  2;
+inline constexpr int SW_BORDER =  1;
 
 // ── PaletteSwatch ─────────────────────────────────────────────────────────────
 // Checkable button that renders a colour preview for one palette.

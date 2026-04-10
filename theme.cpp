@@ -363,6 +363,13 @@ static QString buildStylesheet(bool dark)
                                      ? toolbarColor.lighter(130).name()
                                      : toolbarColor.darker(107).name();
 
+    // min-height sets the *content area* minimum; padding (5px top+bottom) and
+    // border (1px each) are added on top, giving total = font + 12 — matching
+    // QLineEdit's sizeHint.  QAbstractSpinBox ignores QSS padding for its own
+    // height calculation so we drive it with min-height instead.
+    const QString inputMinH = QString::number(
+        QFontMetrics(QApplication::font()).height());
+
     // Everything else uses palette() references so the stylesheet automatically
     // tracks palette changes without any hard-coded colours.
     static const char TMPL[] = R"(
@@ -377,8 +384,10 @@ QPushButton {
     border-radius: 6px;
     padding: 5px 16px;
     min-width: 80px;
+    font-weight: normal;
 }
 QPushButton:hover   { background: {btnHover}; }
+QPushButton:focus   { border: 2px solid palette(highlight); padding: 4px 15px; }
 QPushButton:pressed { background: {btnActive}; border-color: palette(highlight); }
 QPushButton:disabled { color: {fgDisabled}; }
 QPushButton[default="true"] {
@@ -416,6 +425,62 @@ QMenu::separator {
 QMenu::icon     { width: 14px; height: 14px; margin-left: 0; left: 4px; }
 QMenu::indicator { width: 14px; height: 14px; margin-left: 0; }
 
+/* ── Line edits ──────────────────────────────────────────────── */
+QLineEdit {
+    border: 1px solid palette(mid);
+    border-radius: 6px;
+    padding: 5px 8px;
+    background: palette(base);
+    selection-background-color: palette(highlight);
+    selection-color: palette(highlighted-text);
+}
+QLineEdit:focus { border: 2px solid palette(highlight); padding: 4px 7px; }
+QLineEdit:disabled { color: {fgDisabled}; }
+
+/* ── Plain text edits ────────────────────────────────────────── */
+QPlainTextEdit {
+    border: 1px solid palette(mid);
+    border-radius: 6px;
+    padding: 5px 8px;
+    background: palette(base);
+    selection-background-color: palette(highlight);
+    selection-color: palette(highlighted-text);
+}
+QPlainTextEdit:focus { border: 2px solid palette(highlight); padding: 4px 7px; }
+QPlainTextEdit:disabled { color: {fgDisabled}; }
+
+/* ── Spin boxes ──────────────────────────────────────────────── */
+QAbstractSpinBox {
+    border: 1px solid palette(mid);
+    border-radius: 6px;
+    padding: 5px 8px;
+    min-height: {inputMinH}px;
+    background: palette(base);
+    selection-background-color: palette(highlight);
+    selection-color: palette(highlighted-text);
+}
+QAbstractSpinBox:focus { border: 2px solid palette(highlight); padding: 4px 7px; }
+QAbstractSpinBox:disabled { color: {fgDisabled}; }
+QAbstractSpinBox::up-button {
+    subcontrol-origin: border;
+    subcontrol-position: top right;
+    width: 18px;
+    border-left: 1px solid palette(mid);
+    border-top-right-radius: 5px;
+    background: palette(window);
+}
+QAbstractSpinBox::up-button:hover { background: palette(mid); }
+QAbstractSpinBox::down-button {
+    subcontrol-origin: border;
+    subcontrol-position: bottom right;
+    width: 18px;
+    border-left: 1px solid palette(mid);
+    border-top: 1px solid palette(mid);
+    border-bottom-right-radius: 5px;
+    background: palette(window);
+}
+QAbstractSpinBox::down-button:hover { background: palette(mid); }
+
 /* ── ComboBox ────────────────────────────────────────────────── */
 QComboBox {
     background: palette(base);
@@ -424,7 +489,6 @@ QComboBox {
     padding: 3px 8px;
     selection-background-color: palette(highlight);
     selection-color: palette(highlighted-text);
-    cursor: arrow;
 }
 QComboBox:hover { border-color: palette(mid); }
 QComboBox:focus { border: 2px solid palette(highlight); }
@@ -480,6 +544,7 @@ QToolTip {
 
     QString ss = QString::fromLatin1(TMPL);
     ss.replace("{fgDisabled}",       fgDisabled);
+    ss.replace("{inputMinH}",        inputMinH);
     ss.replace("{btnHover}",         btnHover);
     ss.replace("{btnActive}",        btnActive);
     ss.replace("{statusBg}",         statusBg);

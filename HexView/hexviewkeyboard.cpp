@@ -356,6 +356,10 @@ void HexView::keyPressEvent(QKeyEvent *event)
         break;
 
     case Qt::Key_Tab:
+        if (event->modifiers() & Qt::ControlModifier) {
+            emit paneFocusRequested();
+            return;
+        }
         m_nWhichPane ^= 1;
         fForceUpdate = true;
         break;

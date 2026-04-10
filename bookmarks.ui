@@ -13,62 +13,33 @@
   <property name="windowTitle">
    <string>Bookmark</string>
   </property>
-  <widget class="QPushButton" name="pushButton">
-   <property name="geometry">
-    <rect>
-     <x>205</x>
-     <y>228</y>
-     <width>96</width>
-     <height>27</height>
-    </rect>
-   </property>
-   <property name="text">
-    <string>OK</string>
-   </property>
-   <property name="flat">
-    <bool>false</bool>
-   </property>
-  </widget>
-  <widget class="QLineEdit" name="bookmarkName">
+  <widget class="QLabel" name="rangeLabel">
    <property name="geometry">
     <rect>
      <x>30</x>
-     <y>30</y>
+     <y>16</y>
      <width>271</width>
-     <height>27</height>
-    </rect>
-   </property>
-   <property name="placeholderText">
-    <string>Name</string>
-   </property>
-  </widget>
-  <widget class="QLineEdit" name="lineEdit">
-   <property name="geometry">
-    <rect>
-     <x>170</x>
-     <y>70</y>
-     <width>128</width>
-     <height>27</height>
+     <height>20</height>
     </rect>
    </property>
    <property name="text">
-    <string>Offset</string>
+    <string/>
    </property>
   </widget>
-  <widget class="QSpinBox" name="spinBox">
+  <widget class="QPlainTextEdit" name="bookmarkName">
    <property name="geometry">
     <rect>
-     <x>170</x>
-     <y>110</y>
-     <width>128</width>
-     <height>28</height>
+     <x>30</x>
+     <y>44</y>
+     <width>271</width>
+     <height>90</height>
     </rect>
    </property>
-   <property name="minimum">
-    <number>1</number>
+   <property name="plainText">
+    <string>Annotation (optional)</string>
    </property>
-   <property name="maximum">
-    <number>2147483647</number>
+   <property name="placeholderText">
+    <string>Name</string>
    </property>
   </widget>
   <widget class="ColourPickerWidget" name="colourPicker" native="true">
@@ -79,6 +50,22 @@
      <width>271</width>
      <height>38</height>
     </rect>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="pushButton">
+   <property name="geometry">
+    <rect>
+     <x>205</x>
+     <y>228</y>
+     <width>96</width>
+     <height>27</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>Add</string>
+   </property>
+   <property name="flat">
+    <bool>false</bool>
    </property>
   </widget>
   <widget class="QPushButton" name="pushButton_2">
@@ -95,32 +82,6 @@
    </property>
    <property name="flat">
     <bool>false</bool>
-   </property>
-  </widget>
-  <widget class="QLabel" name="label">
-   <property name="geometry">
-    <rect>
-     <x>30</x>
-     <y>74</y>
-     <width>70</width>
-     <height>19</height>
-    </rect>
-   </property>
-   <property name="text">
-    <string>Offset:</string>
-   </property>
-  </widget>
-  <widget class="QLabel" name="label_2">
-   <property name="geometry">
-    <rect>
-     <x>30</x>
-     <y>114</y>
-     <width>70</width>
-     <height>20</height>
-    </rect>
-   </property>
-   <property name="text">
-    <string>Length:</string>
    </property>
   </widget>
  </widget>

@@ -30,7 +30,7 @@
     <number>0</number>
    </property>
    <item>
-    <widget class="Hairline" name="topBorder"/>
+    <widget class="Hairline" name="topBorder" native="true"/>
    </item>
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout">
@@ -64,7 +64,7 @@
         </size>
        </property>
        <property name="focusPolicy">
-        <enum>Qt::FocusPolicy::NoFocus</enum>
+        <enum>Qt::FocusPolicy::TabFocus</enum>
        </property>
        <property name="toolTip">
         <string>Search options</string>
@@ -108,7 +108,7 @@
         </size>
        </property>
        <property name="focusPolicy">
-        <enum>Qt::FocusPolicy::NoFocus</enum>
+        <enum>Qt::FocusPolicy::TabFocus</enum>
        </property>
        <property name="toolTip">
         <string>Previous / Next</string>
@@ -159,7 +159,7 @@
         </size>
        </property>
        <property name="focusPolicy">
-        <enum>Qt::FocusPolicy::NoFocus</enum>
+        <enum>Qt::FocusPolicy::TabFocus</enum>
        </property>
        <property name="toolTip">
         <string>Search data type</string>

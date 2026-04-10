@@ -12,5 +12,6 @@
         <file>icons/hicolor/scalable/actions/window-maximize-symbolic.svg</file>
         <file>icons/hicolor/scalable/actions/window-minimize-symbolic.svg</file>
         <file>icons/hicolor/scalable/actions/window-restore-symbolic.svg</file>
+        <file>icons/hicolor/scalable/actions/user-bookmarks-symbolic.svg</file>
     </qresource>
 </RCC>
