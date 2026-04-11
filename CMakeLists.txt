@@ -110,7 +110,13 @@ find_file(ADWAITA_QT6_PLUGIN adwaita.so
 if(ADWAITA_QT6_PLUGIN)
     get_filename_component(_adwaita_styles_dir "${ADWAITA_QT6_PLUGIN}" DIRECTORY)
     get_filename_component(_adwaita_plugin_dir "${_adwaita_styles_dir}" DIRECTORY)
+    get_filename_component(_adwaita_qt6_dir "${_adwaita_plugin_dir}" DIRECTORY)
+    get_filename_component(_adwaita_lib_dir "${_adwaita_qt6_dir}" DIRECTORY)
     target_compile_definitions(qexed PRIVATE ADWAITA_QT6_PLUGIN_DIR="${_adwaita_plugin_dir}")
+    set_target_properties(qexed PROPERTIES BUILD_RPATH "${_adwaita_lib_dir}")
+    target_link_libraries(qexed PRIVATE
+        "${_adwaita_lib_dir}/libadwaitaqt6.so"
+        "${_adwaita_lib_dir}/libadwaitaqt6priv.so")
 endif()
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.

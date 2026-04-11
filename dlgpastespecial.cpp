@@ -67,15 +67,19 @@ PasteSpecialDialog::PasteSpecialDialog(HexView *hv, QWidget *parent)
 {
     ui->setupUi(this);
 
-    // List: item padding, mode-aware border, no focus rect
+    // List: item padding + lock border/outline across all states so Adwaita's
+    // PE_Frame hover-highlight colour can't bleed as a ghost pixel onto the
+    // checkbox immediately below.
     {
         const int vPad = qMax(4, ui->listClipFormats->fontMetrics().height() / 2);
         const bool dark = qApp->palette().window().color().lightness() < 128;
         const QString border = dark ? QLatin1String("rgba(255,255,255,0.18)")
                                     : QLatin1String("rgba(0,0,0,0.15)");
         ui->listClipFormats->setStyleSheet(QString(
-            "QListWidget { border: 1px solid %1; outline: 0; }"
-            "QListWidget::item { padding: %2px 4px; }"
+            "QListWidget        { border: 1px solid %1; outline: 0; }"
+            "QListWidget:hover  { border: 1px solid %1; }"
+            "QListWidget:focus  { border: 1px solid %1; }"
+            "QListWidget::item  { padding: %2px 4px; }"
         ).arg(border).arg(vPad));
     }
 

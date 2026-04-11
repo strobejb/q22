@@ -375,7 +375,9 @@ static QString buildStylesheet(bool dark)
     static const char TMPL[] = R"(
 
 /* ── Global ──────────────────────────────────────────────────── */
-QWidget { color: palette(window-text); }
+/* outline:none suppresses Qt's QSS focus-outline indicator globally;
+   PE_FrameFocusRect is suppressed separately in NoFocusRectStyle. */
+QWidget { color: palette(window-text); outline: none; }
 
 /* ── Push buttons ────────────────────────────────────────────── */
 QPushButton {
@@ -631,6 +633,21 @@ struct MenuShadowOverlay : public QWidget
 // which Fusion calls via proxy() during CE_MenuItem.  We use that single hook
 // to nudge checkmark glyphs right so they sit inside the selection box.
 namespace {
+struct NoFocusRectStyle : public QProxyStyle
+{
+    explicit NoFocusRectStyle(QStyle *base) : QProxyStyle(base) {}
+
+    void drawPrimitive(PrimitiveElement pe, const QStyleOption *opt,
+                       QPainter *p, const QWidget *w) const override
+    {
+        if (pe == PE_FrameFocusRect)
+            return;
+        QProxyStyle::drawPrimitive(pe, opt, p, w);
+    }
+
+
+};
+
 struct TightMenuStyle : public QProxyStyle
 {
     explicit TightMenuStyle(QStyle *base) : QProxyStyle(base) {}
@@ -751,16 +768,20 @@ void applyAdwaitaTheme(ColorScheme scheme)
 {
     s_currentScheme = scheme;
 
-    // Fusion is always available — use it as the base style.
-    // Safe to call multiple times; Qt is idempotent about the same style.
-    QApplication::setStyle(QStyleFactory::create("Fusion"));
-
     bool dark;
     switch (scheme) {
     case ColorScheme::Light: dark = false; break;
     case ColorScheme::Dark:  dark = true;  break;
     default:  // System: read from Qt 6.5+ colour scheme hint
         dark = QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
+    }
+
+    // Prefer the native Adwaita style plugin when available; fall back to Fusion.
+    // Wrap in NoFocusRectStyle to suppress dotted PE_FrameFocusRect indicators.
+    {
+        QStyle *base = QStyleFactory::create(dark ? "adwaita-dark" : "adwaita");
+        if (!base) base = QStyleFactory::create("Fusion");
+        QApplication::setStyle(new NoFocusRectStyle(base));
     }
 
     applyPalette(dark);
