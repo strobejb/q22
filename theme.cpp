@@ -905,8 +905,17 @@ void applyAdwaitaTheme(ColorScheme scheme)
         dark = QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
     }
 
-    // Prefer the native Adwaita style plugin when available; fall back to Fusion.
+    // On Windows use the built-in windows11 style; elsewhere prefer the native
+    // Adwaita plugin and fall back to Fusion.
     // Wrap in NoFocusRectStyle to suppress dotted PE_FrameFocusRect indicators.
+#ifdef Q_OS_WIN
+    {
+        QStyle *base = QStyleFactory::create("windows11");
+        if (!base) base = QStyleFactory::create("windowsvista");
+        if (!base) base = QStyleFactory::create("Fusion");
+        QApplication::setStyle(new NoFocusRectStyle(base));
+    }
+#else
     {
         QStyle *base = QStyleFactory::create(dark ? "adwaita-dark" : "adwaita");
         if (!base) base = QStyleFactory::create("Fusion");
@@ -915,6 +924,7 @@ void applyAdwaitaTheme(ColorScheme scheme)
 
     applyPalette(dark);
     qApp->setStyleSheet(buildStylesheet(dark));
+#endif
 
     // One-time setup: font preference and tooltip filter.
     static bool firstRun = true;
