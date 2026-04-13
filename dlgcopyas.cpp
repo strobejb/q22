@@ -11,6 +11,7 @@
 #include "ui_copyas.h"
 #include "HexView/hexview.h"
 #include <QAbstractButton>
+#include <QPushButton>
 #include <QApplication>
 #include <QComboBox>
 #include <QGraphicsOpacityEffect>
@@ -77,6 +78,10 @@ CopyAsDialog::CopyAsDialog(HexView *hv, QWidget *parent)
     // Strip any platform-supplied icons from OK / Cancel so the buttons stay clean.
     for (QAbstractButton *btn : ui->buttonBox->buttons())
         btn->setIcon(QIcon());
+
+    // Rename OK → "Copy"
+    if (QPushButton *ok = ui->buttonBox->button(QDialogButtonBox::Ok))
+        ok->setText(tr("Copy"));
 
     // Initialise controls from the persistent options
     ui->comboFormat->setCurrentIndex(formatToComboIndex(g_CopyOptions.format));

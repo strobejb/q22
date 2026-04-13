@@ -181,6 +181,18 @@ FindDialog::FindDialog(QWidget *parent)
     ui->editFind->setTextMargins(kPad + 2, kPad, kPad + 2, kPad);
     ui->editFind->setMinimumHeight(ui->editFind->minimumSizeHint().height() + 2 * kPad);
 
+    // Leading search icon inside the text field.
+    {
+        const QColor iconCol = QApplication::palette().placeholderText().color();
+#ifdef Q_OS_WIN
+        const QIcon searchIc = QIcon(":/icons/hicolor/scalable/actions/edit-find-symbolic.svg");
+#else
+        const QIcon searchIc = recoloredIcon("edit-find-symbolic", iconCol, 16);
+#endif
+        if (!searchIc.isNull())
+            ui->editFind->addAction(searchIc, QLineEdit::LeadingPosition);
+    }
+
 
     // Replace the plain QComboBox placeholder (items defined in .ui) with a
     // DataTypeComboBox, copying the item model across before swapping.
@@ -216,24 +228,27 @@ FindDialog::FindDialog(QWidget *parent)
 
     connect(ui->btnClose, &QToolButton::clicked, this, &QWidget::hide);
 
-    // Navigation popup menu (Find Previous / Find Next)
-    auto *navMenu = new QMenu(this);
-    themeMenu(navMenu);
-    auto *actPrev = navMenu->addAction(tr("Find Previous\tShift+F3"));
-    auto *actNext = navMenu->addAction(tr("Find Next\tF3"));
-    connect(ui->btnNavigate, &QToolButton::clicked, this, [this, navMenu]() {
-        if (navMenu->isVisible()) { navMenu->hide(); return; }
-        const QPoint cur = QCursor::pos();
-        const bool same  = (m_navMenuClosePos == cur);
-        m_navMenuClosePos = {-1, -1};
-        if (same) return;
-        connect(navMenu, &QMenu::aboutToHide, this,
-                [this]() { m_navMenuClosePos = QCursor::pos(); },
-                Qt::SingleShotConnection);
-        navMenu->popup(smartMenuPos(ui->btnNavigate, navMenu));
-    });
-    connect(actPrev, &QAction::triggered, this, &FindDialog::findPrevious);
-    connect(actNext, &QAction::triggered, this, &FindDialog::findNext);
+    // // Navigation popup menu (Find Previous / Find Next) — kept for reference
+    // auto *navMenu = new QMenu(this);
+    // themeMenu(navMenu);
+    // auto *actPrev = navMenu->addAction(tr("Find Previous\tShift+F3"));
+    // auto *actNext = navMenu->addAction(tr("Find Next\tF3"));
+    // connect(ui->btnNavigate, &QToolButton::clicked, this, [this, navMenu]() {
+    //     if (navMenu->isVisible()) { navMenu->hide(); return; }
+    //     const QPoint cur = QCursor::pos();
+    //     const bool same  = (m_navMenuClosePos == cur);
+    //     m_navMenuClosePos = {-1, -1};
+    //     if (same) return;
+    //     connect(navMenu, &QMenu::aboutToHide, this,
+    //             [this]() { m_navMenuClosePos = QCursor::pos(); },
+    //             Qt::SingleShotConnection);
+    //     navMenu->popup(smartMenuPos(ui->btnNavigate, navMenu));
+    // });
+    // connect(actPrev, &QAction::triggered, this, &FindDialog::findPrevious);
+    // connect(actNext, &QAction::triggered, this, &FindDialog::findNext);
+
+    connect(ui->btnFindPrev, &QToolButton::clicked, this, &FindDialog::findPrevious);
+    connect(ui->btnFindNext, &QToolButton::clicked, this, &FindDialog::findNext);
 
     connect(ui->editFind, &QLineEdit::returnPressed, this, [this] { triggerSearch(0); });
 

@@ -14,7 +14,15 @@ bool ValueComboBox::eventFilter(QObject *obj, QEvent *e)
     // On Wayland the compositor may reposition popup windows; move() here
     // overrides the compositor's placement with the position we computed.
     if (e->type() == QEvent::Show && m_pendingMenuPos.x() >= 0) {
-        static_cast<QWidget *>(obj)->move(m_pendingMenuPos);
+        // PM_MenuPanelWidth is the shadow inset on Adwaita (9px): the menu
+        // window is that much wider than the visible frame on each side.
+        // Adding it here shifts the window right so the visible right edge
+        // aligns with the combo's right edge.  Returns 0 on Windows/Fusion.
+        QWidget *w = static_cast<QWidget *>(obj);
+        const QRect ag  = QRect(mapToGlobal(QPoint(0, 0)), size());
+        const int panel = w->style()->pixelMetric(
+            QStyle::PM_MenuPanelWidth, nullptr, w);
+        w->move(ag.right() - w->width() + 1 + panel, m_pendingMenuPos.y());
         m_pendingMenuPos = {-1, -1};
     }
     return QComboBox::eventFilter(obj, e);

@@ -26,6 +26,8 @@ public:
     // Emits selectionChanged if the selection changes.
     void     selectByData(const QVariant &data);
 
+    void     setLeadingIcon(const QIcon &icon) { m_leadingIcon = icon; update(); }
+
 signals:
     void selectionChanged(int index);
 
@@ -39,6 +41,7 @@ protected:
 private:
     QMenu          *m_menu              = nullptr;
     QList<QAction*> m_actions;
+    QIcon           m_leadingIcon;
     int             m_selection         = 0;
     int             m_targetTextScreenX = 0;  // set in showPopup, used in eventFilter
     int             m_targetMenuY       = 0;  // set in showPopup, used in eventFilter

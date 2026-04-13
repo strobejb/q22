@@ -153,9 +153,17 @@ void DataTypeComboBox::paintEvent(QPaintEvent *)
     painter.drawComplexControl(QStyle::CC_ComboBox, opt);
     // SC_ComboBoxEditField already has the stylesheet's padding: 3px 8px applied,
     // so use the rect directly — no additional inset needed.
-    const QRect textRect = style()->subControlRect(
-                               QStyle::CC_ComboBox, &opt,
-                               QStyle::SC_ComboBoxEditField, this);
+    QRect textRect = style()->subControlRect(
+                         QStyle::CC_ComboBox, &opt,
+                         QStyle::SC_ComboBoxEditField, this);
+    if (!m_leadingIcon.isNull()) {
+        const int iconSz = fontMetrics().height();
+        const QRect iconRect(textRect.left(),
+                             textRect.top() + (textRect.height() - iconSz) / 2,
+                             iconSz, iconSz);
+        m_leadingIcon.paint(&painter, iconRect);
+        textRect.setLeft(iconRect.right() + 8);
+    }
     style()->drawItemText(&painter, textRect,
                           Qt::AlignLeft | Qt::AlignVCenter,
                           opt.palette, isEnabled(),

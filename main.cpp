@@ -7,7 +7,7 @@
 int main(int argc, char *argv[])
 {
 #ifdef ADWAITA_QT6_PLUGIN_DIR
-    QApplication::addLibraryPath(ADWAITA_QT6_PLUGIN_DIR);
+    //QApplication::addLibraryPath(ADWAITA_QT6_PLUGIN_DIR);
 #endif
     QApplication a(argc, argv);
     QApplication::setAttribute(Qt::AA_DontShowIconsInMenus, true);

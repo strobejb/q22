@@ -108,19 +108,30 @@ GotoDialog::GotoDialog(HexView *hv, QWidget *parent)
         }
     });
 
-    connect(ui->btnBookmark, &QToolButton::clicked, this, &GotoDialog::bookmarkRequested);
-    connect(ui->btnClose,    &QToolButton::clicked, this, &QWidget::hide);
+    ui->btnBookmark->hide();
+    connect(ui->btnClose, &QToolButton::clicked, this, &QWidget::hide);
 
     // Navigation popup menu (Find Previous / Find Next)
 
 
     connect(ui->editOffset, &QLineEdit::returnPressed, this, [this] { triggerSearch(0); });
-    // connect(ui->btnGotoAddress, &QToolButton::clicked, this, [this] { triggerSearch(0); });
-    auto *actGoto = ui->editOffset->addAction(
-        QIcon::fromTheme("find-location-symbolic"),
-        QLineEdit::TrailingPosition);
-    actGoto->setToolTip(tr("Goto address"));
-    connect(actGoto, &QAction::triggered, this, [this] { triggerSearch(0); });
+
+    // Leading icons: arrow in the address field, star in the bookmarks combo.
+    {
+        const QColor placeholderCol = QApplication::palette().placeholderText().color();
+        const QColor borderCol      = QApplication::palette().mid().color();
+#ifdef Q_OS_WIN
+        const QIcon arrowIc = QIcon(":/icons/hicolor/scalable/actions/thin-arrow-right-icon.svg");
+        const QIcon starIc  = QIcon(":/icons/hicolor/scalable/actions/starred-symbolic.svg");
+#else
+        const QIcon arrowIc = recoloredIcon("thin-arrow-right-icon", placeholderCol, 16);
+        const QIcon starIc  = recoloredIcon("starred-symbolic",       borderCol,      16);
+#endif
+        if (!arrowIc.isNull())
+            ui->editOffset->addAction(arrowIc, QLineEdit::LeadingPosition);
+        if (!starIc.isNull())
+            m_comboBookmarks->setLeadingIcon(starIc);
+    }
 
 #ifdef Q_OS_WIN
     // QIcon::fromTheme() returns null on Windows; use Segoe MDL2 / QStyle fallbacks.

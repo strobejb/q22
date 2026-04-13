@@ -48,8 +48,10 @@ protected:
     void hideEvent(QHideEvent *e)    override;
     void changeEvent(QEvent *e)      override;
 
-private:
+public:
     QByteArray buildPattern() const;
+
+private:
     void       triggerSearch(uint flags);
     void       updateSearchHexPreview();
 
@@ -59,7 +61,7 @@ private:
     QAction          *m_actWrap        = nullptr;
     DataTypeComboBox *m_comboDataType  = nullptr;
     QPoint            m_optMenuClosePos { -1, -1 };
-    QPoint            m_navMenuClosePos { -1, -1 };
+    // QPoint         m_navMenuClosePos { -1, -1 };  // used by commented-out btnNavigate
     SearchDataType    m_lastTextType   = SearchUTF8; // remembered across pane-1 activations
 };
 

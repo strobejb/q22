@@ -16,7 +16,6 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QComboBox>
-#include <QGraphicsOpacityEffect>
 #include <QListWidgetItem>
 #include <QMimeData>
 
@@ -91,11 +90,6 @@ PasteSpecialDialog::PasteSpecialDialog(HexView *hv, QWidget *parent)
     if (QPushButton *ok = ui->buttonBox->button(QDialogButtonBox::Ok))
         ok->setText(tr("Paste"));
 
-    // Opacity effects for the transform sub-section
-    for (QWidget *w : {(QWidget *)ui->comboFormat,
-                       (QWidget *)ui->checkUseAddress,
-                       (QWidget *)ui->checkBigEndian})
-        w->setGraphicsEffect(new QGraphicsOpacityEffect(w));
 
     // Populate clipboard formats
     populateClipboardFormats();
@@ -184,17 +178,9 @@ void PasteSpecialDialog::updateTransformControls()
     const bool interpret = isText && ui->checkInterpret->isChecked();
     const IMPEXP_FORMAT fmt = comboIndexToFormat(ui->comboFormat->currentIndex());
 
-    // Dim / enable the sub-controls with opacity
-    const qreal opFull = 1.0, opDim = 0.35;
-
-    auto setOpacity = [](QWidget *w, qreal op) {
-        static_cast<QGraphicsOpacityEffect *>(w->graphicsEffect())->setOpacity(op);
-        w->setEnabled(op > 0.5);
-    };
-
-    setOpacity(ui->comboFormat,      interpret ? opFull : opDim);
-    setOpacity(ui->checkUseAddress,  (interpret && formatNeedsAddress(fmt)) ? opFull : opDim);
-    setOpacity(ui->checkBigEndian,   (interpret && formatNeedsEndian(fmt))  ? opFull : opDim);
+    ui->comboFormat->setEnabled(interpret);
+    ui->checkUseAddress->setEnabled(interpret && formatNeedsAddress(fmt));
+    ui->checkBigEndian->setEnabled(interpret && formatNeedsEndian(fmt));
 
     // Force "Text (hex dump)" when interpret is off or format was just locked
     if (!interpret)

@@ -9,6 +9,7 @@
 #include <QPainterPath>
 #include <QPalette>
 #include <QProxyStyle>
+#include <QStyleOption>
 #include <QScreen>
 #include <QStyleFactory>
 #include <QStyleHints>
@@ -494,6 +495,7 @@ QComboBox {
 }
 QComboBox:hover { border-color: palette(mid); }
 QComboBox:focus { border: 2px solid palette(highlight); }
+QComboBox:disabled { background: palette(window); color: palette(mid); border-color: palette(mid); }
 QComboBox QLineEdit { border: none; background: transparent; padding: 0; }
 QComboBox QLineEdit:focus { border: none; }
 QComboBox::drop-down  { border: none; width: 20px; }
@@ -645,6 +647,117 @@ struct NoFocusRectStyle : public QProxyStyle
         QProxyStyle::drawPrimitive(pe, opt, p, w);
     }
 
+    int pixelMetric(PixelMetric metric, const QStyleOption *opt,
+                    const QWidget *widget) const override
+    {
+        if (metric == PM_IndicatorWidth || metric == PM_IndicatorHeight) {
+            const QFontMetrics fm = opt ? opt->fontMetrics
+                                        : (widget ? widget->fontMetrics()
+                                                  : QFontMetrics(QApplication::font()));
+            return fm.height();
+        }
+        return QProxyStyle::pixelMetric(metric, opt, widget);
+    }
+
+    void drawControl(ControlElement ce, const QStyleOption *opt,
+                     QPainter *p, const QWidget *w) const override
+    {
+        if (ce == CE_CheckBox) {
+            const auto *btn = qstyleoption_cast<const QStyleOptionButton *>(opt);
+            if (!btn) { QProxyStyle::drawControl(ce, opt, p, w); return; }
+
+            // Adwaita registers checkboxes with an animation subsystem that draws
+            // hover transitions at partial opacity.  Any pixel not covered by the
+            // full-opacity final frame bleeds stale backing-store content through
+            // the semi-transparent intermediate frame.  By custom-drawing we bypass
+            // the animation path entirely — all pixels written are fully opaque.
+
+            p->save();
+            p->setRenderHint(QPainter::Antialiasing);
+
+            // Fill the full widget rect so no stale pixels remain behind the label.
+            const QBrush winBg = (w && w->parentWidget())
+                                 ? w->parentWidget()->palette().window()
+                                 : opt->palette.window();
+            p->fillRect(opt->rect, winBg);
+
+            const QRect     indRect = proxy()->subElementRect(SE_CheckBoxIndicator, opt, w);
+            const bool      enabled = opt->state & State_Enabled;
+            const bool      hovered = opt->state & State_MouseOver;
+            const bool      checked = opt->state & State_On;
+            const bool      partial = opt->state & State_NoChange;
+            const QPalette &pal     = opt->palette;
+
+            const qreal  radius = 3.0;
+            const QRectF rf     = QRectF(indRect).adjusted(0.5, 0.5, -0.5, -0.5);
+
+            // Box fill and border
+            QColor fill, border;
+            if (!enabled) {
+                fill   = pal.color(QPalette::Disabled, QPalette::Button);
+                border = pal.color(QPalette::Disabled, QPalette::Mid);
+            } else if (checked || partial) {
+                fill   = pal.highlight().color();
+                border = pal.highlight().color();
+            } else {
+                fill   = hovered ? pal.button().color() : pal.base().color();
+                border = pal.mid().color();
+            }
+            // Draw fill inset by 1px so it doesn't bleed over the border stroke
+            p->setPen(Qt::NoPen);
+            p->setBrush(fill);
+            p->drawRoundedRect(QRectF(indRect).adjusted(1, 1, -1, -1),
+                               qMax(0.0, radius - 0.5), qMax(0.0, radius - 0.5));
+            // Draw border on top
+            p->setPen(QPen(border, 1));
+            p->setBrush(Qt::NoBrush);
+            p->drawRoundedRect(rf, radius, radius);
+
+            // Checkmark or dash
+            if (partial) {
+                p->setPen(QPen(pal.highlightedText().color(), 2,
+                               Qt::SolidLine, Qt::RoundCap));
+                p->drawLine(QPointF(rf.left() + 3.5, rf.center().y()),
+                            QPointF(rf.right() - 3.5, rf.center().y()));
+            } else if (checked) {
+                p->setPen(QPen(enabled ? pal.highlightedText().color()
+                                       : pal.mid().color(),
+                               1.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+                p->setBrush(Qt::NoBrush);
+                const QRectF cr = rf.adjusted(3, 3, -3, -3);
+                QPainterPath tick;
+                tick.moveTo(cr.left(),                    cr.top() + cr.height() * 0.5);
+                tick.lineTo(cr.left() + cr.width() * 0.4, cr.bottom());
+                tick.lineTo(cr.right(),                   cr.top());
+                p->drawPath(tick);
+            }
+
+            p->restore();
+
+            // Label — Adwaita handles text, shortcut underline, disabled dimming
+            QStyleOptionButton lbl = *btn;
+            lbl.rect = proxy()->subElementRect(SE_CheckBoxContents, opt, w);
+            QProxyStyle::drawControl(CE_CheckBoxLabel, &lbl, p, w);
+            return;
+        }
+        QProxyStyle::drawControl(ce, opt, p, w);
+    }
+
+    void drawComplexControl(ComplexControl cc, const QStyleOptionComplex *opt,
+                            QPainter *p, const QWidget *w) const override
+    {
+        // Adwaita calls drawPrimitive(PE_FrameFocusRect) directly (not via
+        // proxy()) for CC_ComboBox, bypassing our PE_FrameFocusRect suppression.
+        // Strip State_HasFocus so that code path is never reached; our QSS
+        // QComboBox:focus rule provides the visible focus indication instead.
+        if (cc == CC_ComboBox && opt && (opt->state & State_HasFocus)) {
+            QStyleOptionComplex copy = *opt;
+            copy.state &= ~State_HasFocus;
+            QProxyStyle::drawComplexControl(cc, &copy, p, w);
+            return;
+        }
+        QProxyStyle::drawComplexControl(cc, opt, p, w);
+    }
 
 };
 

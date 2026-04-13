@@ -13,5 +13,14 @@
         <file>icons/hicolor/scalable/actions/window-minimize-symbolic.svg</file>
         <file>icons/hicolor/scalable/actions/window-restore-symbolic.svg</file>
         <file>icons/hicolor/scalable/actions/user-bookmarks-symbolic.svg</file>
+        <file>icons/hicolor/scalable/actions/bookmark-new-symbolic.svg</file>
+        <file>icons/hicolor/scalable/actions/sliders-icon.svg</file>
+        <file>icons/hicolor/scalable/actions/starred-symbolic.svg</file>
+        <file>icons/hicolor/scalable/actions/thin-arrow-right-icon.svg</file>
+        <file>icons/hicolor/scalable/actions/applications-system-symbolic.svg</file>
+        <file>icons/hicolor/scalable/actions/utilities-terminal-symbolic.svg</file>
+        <file>icons/hicolor/scalable/actions/go-down-symbolic.svg</file>
+        <file>icons/hicolor/scalable/actions/go-up-symbolic.svg</file>
+        <file>icons/hicolor/scalable/actions/mail-send-receive-symbolic.svg</file>
     </qresource>
 </RCC>

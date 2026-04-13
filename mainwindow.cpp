@@ -17,6 +17,7 @@
 #include "titlebar.h"
 #include "theme.h"
 #include <QActionGroup>
+#include <QShortcut>
 #include <QVector>
 #include <QApplication>
 #include <QClipboard>
@@ -299,6 +300,14 @@ MainWindow::MainWindow(QWidget *parent)
     themeMenu(m_recentMenu);
     ui->actionRecent->setMenu(m_recentMenu);
     updateRecentMenu();
+
+    // Ctrl+O, R — open most recently used file
+    auto *recentShortcut = new QShortcut(QKeySequence("Ctrl+Shift+R"), this);
+    connect(recentShortcut, &QShortcut::activated, this, [this] {
+        const QStringList files = AppSettings::recentFiles();
+        if (!files.isEmpty())
+            openFile(files.first());
+    });
 
     // Build a standalone copy of the File menu that shares the same QAction
     // objects (so shortcuts and connections remain intact) but is not a child
@@ -722,15 +731,12 @@ void MainWindow::updateEditActions()
     ui->action_Copy->setEnabled(hasSel);
     ui->actionCopy_As->setEnabled(hasSel);
 
-    // Paste / Paste Special: check whether the clipboard holds anything we can use.
-    const QMimeData *mime = QApplication::clipboard()->mimeData();
-    const bool canPaste   = m_hv->editMode() != HVMODE_READONLY
-                            && mime
-                            && (mime->hasFormat("application/x-hexview-snapshot")
-                                || mime->hasFormat("application/octet-stream")
-                                || mime->hasText());
-    ui->action_Paste->setEnabled(canPaste);
-    ui->actionPaste_Special->setEnabled(canPaste);
+    // Paste / Paste Special: driven purely by clipboard content.
+    const QMimeData *mime        = QApplication::clipboard()->mimeData();
+    const bool      clipHasData = mime && !mime->formats().isEmpty();
+    const bool      writable    = m_hv->editMode() != HVMODE_READONLY;
+    ui->action_Paste->setEnabled(writable && clipHasData);
+    ui->actionPaste_Special->setEnabled(writable && clipHasData);
 }
 
 bool MainWindow::maybeSave()
@@ -821,8 +827,16 @@ void MainWindow::execFind(const QByteArray &pattern, uint flags)
 
 void MainWindow::runFind(bool forward)
 {
-    if (m_lastPattern.isEmpty())
+    if (m_lastPattern.isEmpty()) {
+        // No prior search — initialise from whatever is in the find field.
+        const QByteArray pat = m_findDialog->buildPattern();
+        if (pat.isEmpty())
+            return;
+        m_hv->findInit(reinterpret_cast<const uint8_t *>(pat.constData()),
+                       (size_t)pat.size());
+        execFind(pat, forward ? 0 : HVFF_BACKWARD);
         return;
+    }
     uint flags = m_lastFindFlags | (forward ? 0 : HVFF_BACKWARD);
     execFind(m_lastPattern, flags);
 }
