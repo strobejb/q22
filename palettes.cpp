@@ -430,7 +430,7 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
             "  padding: 5px 8px;"
             "  background: palette(base);"
             "}"
-            "QLineEdit:focus { border: 2px solid %2; padding: 4px 7px; }"
+            "QLineEdit:focus { border: 2px solid %2; }"
         ).arg(border, focusColor);
         m_nameEdit->setStyleSheet(ss);
         m_hexEdit->setStyleSheet(ss);
