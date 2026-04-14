@@ -550,7 +550,7 @@ QStatusBar QComboBox:focus { background: {statusComboHover}; border: 1px solid p
 
 /* ── Misc ────────────────────────────────────────────────────── */
 QAbstractScrollArea { border: none; }
-QPlainTextEdit { border: 1px solid palette(mid); border-radius: 6px; }
+QPlainTextEdit { border: 1px solid palette(mid); margin:1px; border-radius: 6px; }
 QPlainTextEdit:focus { border: 2px solid palette(highlight); margin: 0px; }
 #HexView { border-top: 1px solid palette(mid); }
 QToolTip {
@@ -673,6 +673,16 @@ struct NoFocusRectStyle : public QProxyStyle
                                                   : QFontMetrics(QApplication::font()));
             return fm.height();
         }
+#ifdef Q_OS_WIN
+        if (metric == PM_FocusFrameVMargin) {
+            // Target Fluent standard list item height of 32 logical px.
+            // item_height = font_height + 2 * PM_FocusFrameVMargin, so:
+            const QFontMetrics fm = opt ? opt->fontMetrics
+                                        : (widget ? widget->fontMetrics()
+                                                  : QFontMetrics(QApplication::font()));
+            return qMax(2, (32 - fm.height()) / 2);
+        }
+#endif
         return QProxyStyle::pixelMetric(metric, opt, widget);
     }
 
