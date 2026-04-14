@@ -673,18 +673,23 @@ struct NoFocusRectStyle : public QProxyStyle
                                                   : QFontMetrics(QApplication::font()));
             return fm.height();
         }
-#ifdef Q_OS_WIN
-        if (metric == PM_FocusFrameVMargin) {
-            // Target Fluent standard list item height of 32 logical px.
-            // item_height = font_height + 2 * PM_FocusFrameVMargin, so:
-            const QFontMetrics fm = opt ? opt->fontMetrics
-                                        : (widget ? widget->fontMetrics()
-                                                  : QFontMetrics(QApplication::font()));
-            return qMax(2, (32 - fm.height()) / 2);
-        }
-#endif
         return QProxyStyle::pixelMetric(metric, opt, widget);
     }
+
+#ifdef Q_OS_WIN
+    QSize sizeFromContents(ContentsType ct, const QStyleOption *opt,
+                           const QSize &sz, const QWidget *w) const override
+    {
+        QSize s = QProxyStyle::sizeFromContents(ct, opt, sz, w);
+        if (ct == CT_ItemViewItem) {
+            // windows11 style inflates item height via native UxTheme metrics.
+            // Clamp to 2× font height to match Linux/Adwaita proportions.
+            const QFontMetrics fm = opt ? opt->fontMetrics : QFontMetrics(QApplication::font());
+            s.setHeight(qMin(s.height(), fm.height() * 2));
+        }
+        return s;
+    }
+#endif
 
     void drawControl(ControlElement ce, const QStyleOption *opt,
                      QPainter *p, const QWidget *w) const override
