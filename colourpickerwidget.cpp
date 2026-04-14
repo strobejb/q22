@@ -1,6 +1,7 @@
 #include "colourpickerwidget.h"
 
 #include <QPainter>
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QApplication>
 
@@ -22,6 +23,8 @@ ColourPickerWidget::ColourPickerWidget(QWidget *parent)
     , m_foreground(QApplication::palette().text().color())
 {
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    setMouseTracking(true);
+    setFocusPolicy(Qt::StrongFocus);
 }
 
 void ColourPickerWidget::setColours(const QVector<QColor> &colours)
@@ -117,7 +120,19 @@ void ColourPickerWidget::paintEvent(QPaintEvent *)
         p.drawEllipse(sw);
     }
 
-    // Pass 2: 2px highlight circle around the selected swatch
+    // Pass 2: 2px grey hover ring (skipped if the hovered swatch is also selected)
+    if (m_hoveredIndex >= 0 && m_hoveredIndex < m_colours.size() && m_hoveredIndex != m_selectedIndex) {
+        const int col = m_hoveredIndex % m_columns;
+        const int row = m_hoveredIndex / m_columns;
+        const QRect cellR(SWATCH_PAD + col * cell, SWATCH_PAD + row * cell, cell, cell);
+        const QRect sw = cellR.adjusted(SWATCH_PAD, SWATCH_PAD, -SWATCH_PAD, -SWATCH_PAD);
+
+        p.setPen(QPen(QApplication::palette().mid().color(), 2));
+        p.setBrush(Qt::NoBrush);
+        p.drawEllipse(sw.adjusted(-2, -2, 2, 2));
+    }
+
+    // Pass 3: 2px highlight circle around the selected swatch
     if (m_selectedIndex >= 0 && m_selectedIndex < m_colours.size()) {
         const int col = m_selectedIndex % m_columns;
         const int row = m_selectedIndex / m_columns;
@@ -130,6 +145,25 @@ void ColourPickerWidget::paintEvent(QPaintEvent *)
     }
 }
 
+void ColourPickerWidget::keyPressEvent(QKeyEvent *event)
+{
+    if (m_colours.isEmpty()) { QWidget::keyPressEvent(event); return; }
+
+    int idx = m_selectedIndex;
+    if (event->key() == Qt::Key_Left) {
+        idx = (idx <= 0) ? m_colours.size() - 1 : idx - 1;
+    } else if (event->key() == Qt::Key_Right) {
+        idx = (idx < 0 || idx >= m_colours.size() - 1) ? 0 : idx + 1;
+    } else {
+        QWidget::keyPressEvent(event);
+        return;
+    }
+
+    m_selectedIndex = idx;
+    update();
+    emit colourSelected(m_colours[idx]);
+}
+
 void ColourPickerWidget::mousePressEvent(QMouseEvent *event)
 {
     if (event->button() != Qt::LeftButton) return;
@@ -138,6 +172,23 @@ void ColourPickerWidget::mousePressEvent(QMouseEvent *event)
     m_selectedIndex = idx;
     update();
     emit colourSelected(m_colours[idx]);
+}
+
+void ColourPickerWidget::mouseMoveEvent(QMouseEvent *event)
+{
+    const int idx = indexAt(event->pos());
+    if (idx == m_hoveredIndex) return;
+    m_hoveredIndex = idx;
+    setCursor(idx >= 0 ? Qt::PointingHandCursor : Qt::ArrowCursor);
+    update();
+}
+
+void ColourPickerWidget::leaveEvent(QEvent *)
+{
+    if (m_hoveredIndex == -1) return;
+    m_hoveredIndex = -1;
+    setCursor(Qt::ArrowCursor);
+    update();
 }
 
 void ColourPickerWidget::resizeEvent(QResizeEvent *)

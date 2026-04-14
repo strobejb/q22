@@ -433,12 +433,13 @@ QLineEdit {
     border: 1px solid palette(mid);
     border-radius: 6px;
     padding: 5px 8px;
+    margin: 1px;
     background: palette(base);
     selection-background-color: palette(highlight);
     selection-color: palette(highlighted-text);
 }
-QLineEdit:hover { border: 2px solid palette(mid); padding: 4px 7px; }
-QLineEdit:focus { border: 2px solid palette(highlight); padding: 4px 7px; background: palette(base); }
+QLineEdit:hover { border: 1px solid palette(mid); margin: 1px; }
+QLineEdit:focus { border: 2px solid palette(highlight); margin: 0px; background: palette(base); }
 QLineEdit:disabled { color: {fgDisabled}; }
 
 /* ── Plain text edits ────────────────────────────────────────── */
@@ -446,11 +447,12 @@ QPlainTextEdit {
     border: 1px solid palette(mid);
     border-radius: 6px;
     padding: 5px 8px;
+    margin: 1px;
     background: palette(base);
     selection-background-color: palette(highlight);
     selection-color: palette(highlighted-text);
 }
-QPlainTextEdit:focus { border: 2px solid palette(highlight); padding: 4px 7px; }
+QPlainTextEdit:focus { border: 2px solid palette(highlight); margin: 0px; }
 QPlainTextEdit:disabled { color: {fgDisabled}; }
 
 /* ── Spin boxes ──────────────────────────────────────────────── */
@@ -458,13 +460,14 @@ QAbstractSpinBox {
     border: 1px solid palette(mid);
     border-radius: 6px;
     padding: 5px 8px;
+    margin: 1px;
     min-height: {inputMinH}px;
     background: palette(base);
     selection-background-color: palette(highlight);
     selection-color: palette(highlighted-text);
 }
-QAbstractSpinBox:hover { border: 2px solid palette(mid); padding: 4px 7px; }
-QAbstractSpinBox:focus { border: 2px solid palette(highlight); padding: 4px 7px; background: palette(base); }
+QAbstractSpinBox:hover { border: 2px solid palette(mid); margin: 0px; }
+QAbstractSpinBox:focus { border: 2px solid palette(highlight); margin: 0px; background: palette(base); }
 QAbstractSpinBox:disabled { color: {fgDisabled}; }
 QAbstractSpinBox::up-button {
     subcontrol-origin: border;
@@ -492,12 +495,14 @@ QComboBox {
     border: 1px solid palette(mid);
     border-radius: 6px;
     padding: 3px 8px;
+    margin: 1px;
     selection-background-color: palette(highlight);
     selection-color: palette(highlighted-text);
 }
-QComboBox:hover { border: 2px solid palette(mid); }
-QComboBox:focus { border: 2px solid palette(highlight); background: palette(base); }
+QComboBox:hover { border: 2px solid palette(mid); margin: 0px; }
+QComboBox:focus { border: 2px solid palette(highlight); margin: 0px; background: palette(base); }
 QComboBox[popupOpen="true"] { background: palette(button); border-color: palette(mid); }
+QComboBox[popupOpen="true"]:focus { border-color: palette(highlight); }
 QComboBox:disabled { background: palette(window); color: palette(mid); border-color: palette(mid); }
 QComboBox QLineEdit { border: none; background: transparent; padding: 0; }
 QComboBox QLineEdit:focus { border: none; }
@@ -537,6 +542,7 @@ QStatusBar QComboBox {
     border: 1px solid transparent;
     background: transparent;
     border-radius: 4px;
+    margin: 0px;
 }
 QStatusBar QComboBox:hover { background: {statusComboHover}; border: 1px solid palette(mid); }
 QStatusBar QComboBox:focus { background: {statusComboHover}; border: 1px solid palette(mid); }
@@ -544,7 +550,7 @@ QStatusBar QComboBox:focus { background: {statusComboHover}; border: 1px solid p
 /* ── Misc ────────────────────────────────────────────────────── */
 QAbstractScrollArea { border: none; }
 QPlainTextEdit { border: 1px solid palette(mid); border-radius: 6px; }
-QPlainTextEdit:focus { border: 2px solid palette(highlight); }
+QPlainTextEdit:focus { border: 2px solid palette(highlight); margin: 0px; }
 #HexView { border-top: 1px solid palette(mid); }
 QToolTip {
     background: palette(tooltip-base);

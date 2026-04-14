@@ -26,7 +26,10 @@ signals:
 
 protected:
     void paintEvent(QPaintEvent *event) override;
+    void keyPressEvent(QKeyEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void leaveEvent(QEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
 
 private:
@@ -36,6 +39,7 @@ private:
     QVector<QColor> m_colours;
     int m_columns = 7;
     int m_selectedIndex = -1;
+    int m_hoveredIndex  = -1;
     QColor m_foreground;
 };
 

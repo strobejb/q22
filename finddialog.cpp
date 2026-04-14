@@ -135,13 +135,19 @@ FindDialog::FindDialog(QWidget *parent)
         QToolButton:pressed { background: %2; }
         QToolButton::menu-indicator { image: none; width: 0; }
         #editFind {
-            margin: 2px 0;
+            margin: 1px;
+            border: 1px solid %3;
+            border-radius: 6px;
+            padding: 0;
+        }
+        #editFind:hover {
+            margin: 1px;
             border: 1px solid %3;
             border-radius: 6px;
             padding: 0;
         }
         #editFind:focus {
-            margin: 1px 0;
+            margin: 0;
             border: 2px solid palette(highlight);
             border-radius: 6px;
             padding: 0;

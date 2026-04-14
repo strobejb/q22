@@ -49,13 +49,19 @@ GotoDialog::GotoDialog(HexView *hv, QWidget *parent)
         QToolButton:pressed { background: %2; }
         QToolButton::menu-indicator { image: none; width: 0; }
         #editOffset {
-            margin: 2px 0;
+            margin: 1px;
+            border: 1px solid %3;
+            border-radius: 6px;
+            padding: 0;
+        }
+        #editOffset:hover {
+            margin: 1px;
             border: 1px solid %3;
             border-radius: 6px;
             padding: 0;
         }
         #editOffset:focus {
-            margin: 1px 0;
+            margin: 0;
             border: 2px solid palette(highlight);
             border-radius: 6px;
             padding: 0;
@@ -121,10 +127,10 @@ GotoDialog::GotoDialog(HexView *hv, QWidget *parent)
         const QColor placeholderCol = QApplication::palette().placeholderText().color();
         const QColor borderCol      = QApplication::palette().mid().color();
 #ifdef Q_OS_WIN
-        const QIcon arrowIc = QIcon(":/icons/hicolor/scalable/actions/arrow-next-symbolic.svg");
+        const QIcon arrowIc = QIcon(":/icons/hicolor/scalable/actions/thin-arrow-right-icon.svg");
         const QIcon starIc  = QIcon(":/icons/hicolor/scalable/actions/starred-symbolic.svg");
 #else
-        const QIcon arrowIc = recoloredIcon("arrow-next-symbolic", placeholderCol, 16);
+        const QIcon arrowIc = recoloredIcon("thin-arrow-right-icon", placeholderCol, 16);
         const QIcon starIc  = recoloredIcon("starred-symbolic",       borderCol,      16);
 #endif
         if (!arrowIc.isNull())
