@@ -503,6 +503,7 @@ QComboBox {
 }
 QComboBox:hover { border: 1px solid palette(mid); margin: 1px; background: palette(window); }
 QComboBox:focus { border: 2px solid palette(highlight); margin: 0px; }
+QComboBox:open  { background: palette(button); }
 QComboBox:disabled { background: palette(window); color: palette(mid); border-color: palette(mid); }
 QComboBox QLineEdit { border: none; background: transparent; padding: 0; }
 QComboBox QLineEdit:focus { border: none; }
