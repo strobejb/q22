@@ -502,11 +502,7 @@ QComboBox {
     selection-color: palette(highlighted-text);
 }
 QComboBox:hover { border: 1px solid palette(mid); margin: 1px; background: palette(window); }
-QComboBox:focus { border: 2px solid palette(highlight); margin: 0px; background: palette(button); }
-QComboBox[popupOpen="false"]:focus       { background: palette(base); }
-QComboBox[popupOpen="false"]:hover:focus { background: palette(window); }
-QComboBox[popupOpen="true"] { background: palette(button); border-color: palette(mid); }
-QComboBox[popupOpen="true"]:focus { border-color: palette(highlight); }
+QComboBox:focus { border: 2px solid palette(highlight); margin: 0px; }
 QComboBox:disabled { background: palette(window); color: palette(mid); border-color: palette(mid); }
 QComboBox QLineEdit { border: none; background: transparent; padding: 0; }
 QComboBox QLineEdit:focus { border: none; }
