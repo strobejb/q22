@@ -1,5 +1,6 @@
 #include "theme.h"
 #include <QApplication>
+#include <QComboBox>
 #include <QFont>
 #include <QFontDatabase>
 #include <QGuiApplication>
@@ -300,6 +301,7 @@ static void applyPalette(bool dark)
     const QColor mid = dark ? window.lighter(222) : window.darker(130);
     QPalette p(button, window);
     p.setColor(QPalette::Mid,             mid);
+    p.setColor(QPalette::Midlight,        mid.lighter(100));
     p.setColor(QPalette::WindowText,      windowText);
     p.setColor(QPalette::Text,            windowText);
     p.setColor(QPalette::ButtonText,      windowText);
@@ -499,8 +501,10 @@ QComboBox {
     selection-background-color: palette(highlight);
     selection-color: palette(highlighted-text);
 }
-QComboBox:hover { border: 2px solid palette(mid); margin: 0px; }
-QComboBox:focus { border: 2px solid palette(highlight); margin: 0px; background: palette(base); }
+QComboBox:hover { border: 1px solid palette(mid); margin: 1px; background: palette(window); }
+QComboBox:focus { border: 2px solid palette(highlight); margin: 0px; background: palette(button); }
+QComboBox[popupOpen="false"]:focus       { background: palette(base); }
+QComboBox[popupOpen="false"]:hover:focus { background: palette(window); }
 QComboBox[popupOpen="true"] { background: palette(button); border-color: palette(mid); }
 QComboBox[popupOpen="true"]:focus { border-color: palette(highlight); }
 QComboBox:disabled { background: palette(window); color: palette(mid); border-color: palette(mid); }
@@ -542,10 +546,10 @@ QStatusBar QComboBox {
     border: 1px solid transparent;
     background: transparent;
     border-radius: 4px;
-    margin: 0px;
+    margin: 1px;
 }
-QStatusBar QComboBox:hover { background: {statusComboHover}; border: 1px solid palette(mid); }
-QStatusBar QComboBox:focus { background: {statusComboHover}; border: 1px solid palette(mid); }
+QStatusBar QComboBox:hover { background: {statusComboHover}; border: 1px solid palette(mid); margin:1px; }
+QStatusBar QComboBox:focus { background: {statusComboHover}; border: 1px solid palette(mid); margin:0;}
 
 /* ── Misc ────────────────────────────────────────────────────── */
 QAbstractScrollArea { border: none; }
@@ -762,15 +766,32 @@ struct NoFocusRectStyle : public QProxyStyle
     void drawComplexControl(ComplexControl cc, const QStyleOptionComplex *opt,
                             QPainter *p, const QWidget *w) const override
     {
-        // Adwaita calls drawPrimitive(PE_FrameFocusRect) directly (not via
-        // proxy()) for CC_ComboBox, bypassing our PE_FrameFocusRect suppression.
-        // Strip State_HasFocus so that code path is never reached; our QSS
-        // QComboBox:focus rule provides the visible focus indication instead.
-        if (cc == CC_ComboBox && opt && (opt->state & State_HasFocus)) {
-            QStyleOptionComplex copy = *opt;
-            copy.state &= ~State_HasFocus;
-            QProxyStyle::drawComplexControl(cc, &copy, p, w);
-            return;
+        if (cc == CC_ComboBox && opt) {
+            // Keep the "popupOpen" dynamic property in sync for all QComboBoxes
+            // (not just DataTypeComboBox) so QSS [popupOpen="..."] rules work
+            // universally.  State_On is Qt's standard "popup is open" flag.
+            if (auto *combo = qobject_cast<QComboBox *>(const_cast<QWidget *>(w))) {
+                const bool open = opt->state & State_On;
+                if (combo->property("popupOpen").toBool() != open) {
+                    combo->setProperty("popupOpen", open);
+                    // Defer polish so we don't trigger a style change mid-paint.
+                    QMetaObject::invokeMethod(combo, [combo]() {
+                        combo->style()->unpolish(combo);
+                        combo->style()->polish(combo);
+                        combo->update();
+                    }, Qt::QueuedConnection);
+                }
+            }
+            // Adwaita calls drawPrimitive(PE_FrameFocusRect) directly (not via
+            // proxy()) for CC_ComboBox, bypassing our PE_FrameFocusRect suppression.
+            // Strip State_HasFocus so that code path is never reached; our QSS
+            // QComboBox:focus rule provides the visible focus indication instead.
+            if (opt->state & State_HasFocus) {
+                QStyleOptionComplex copy = *opt;
+                copy.state &= ~State_HasFocus;
+                QProxyStyle::drawComplexControl(cc, &copy, p, w);
+                return;
+            }
         }
         QProxyStyle::drawComplexControl(cc, opt, p, w);
     }
