@@ -437,7 +437,8 @@ QLineEdit {
     selection-background-color: palette(highlight);
     selection-color: palette(highlighted-text);
 }
-QLineEdit:focus { border: 2px solid palette(highlight); padding: 4px 7px; }
+QLineEdit:hover { border: 2px solid palette(mid); padding: 4px 7px; }
+QLineEdit:focus { border: 2px solid palette(highlight); padding: 4px 7px; background: palette(base); }
 QLineEdit:disabled { color: {fgDisabled}; }
 
 /* ── Plain text edits ────────────────────────────────────────── */
@@ -462,7 +463,8 @@ QAbstractSpinBox {
     selection-background-color: palette(highlight);
     selection-color: palette(highlighted-text);
 }
-QAbstractSpinBox:focus { border: 2px solid palette(highlight); padding: 4px 7px; }
+QAbstractSpinBox:hover { border: 2px solid palette(mid); padding: 4px 7px; }
+QAbstractSpinBox:focus { border: 2px solid palette(highlight); padding: 4px 7px; background: palette(base); }
 QAbstractSpinBox:disabled { color: {fgDisabled}; }
 QAbstractSpinBox::up-button {
     subcontrol-origin: border;
@@ -493,8 +495,9 @@ QComboBox {
     selection-background-color: palette(highlight);
     selection-color: palette(highlighted-text);
 }
-QComboBox:hover { border-color: palette(mid); }
-QComboBox:focus { border: 2px solid palette(highlight); }
+QComboBox:hover { border: 2px solid palette(mid); }
+QComboBox:focus { border: 2px solid palette(highlight); background: palette(base); }
+QComboBox[popupOpen="true"] { background: palette(button); border-color: palette(mid); }
 QComboBox:disabled { background: palette(window); color: palette(mid); border-color: palette(mid); }
 QComboBox QLineEdit { border: none; background: transparent; padding: 0; }
 QComboBox QLineEdit:focus { border: none; }
@@ -508,6 +511,10 @@ QComboBox QAbstractItemView {
     outline: none;
     padding: 4px;
 }
+
+/* ── Item views ──────────────────────────────────────────────── */
+QAbstractItemView::item:hover    { background: palette(midlight); }
+QAbstractItemView::item:selected { background: palette(highlight); color: palette(highlighted-text); }
 
 /* ── Scroll bars ─────────────────────────────────────────────── */
 QScrollBar:vertical   { background: transparent; width: 10px; margin: 2px; }
@@ -531,10 +538,13 @@ QStatusBar QComboBox {
     background: transparent;
     border-radius: 4px;
 }
-QStatusBar QComboBox:hover { background: {statusComboHover}; }
+QStatusBar QComboBox:hover { background: {statusComboHover}; border: 1px solid palette(mid); }
+QStatusBar QComboBox:focus { background: {statusComboHover}; border: 1px solid palette(mid); }
 
 /* ── Misc ────────────────────────────────────────────────────── */
 QAbstractScrollArea { border: none; }
+QPlainTextEdit { border: 1px solid palette(mid); border-radius: 6px; }
+QPlainTextEdit:focus { border: 2px solid palette(highlight); }
 #HexView { border-top: 1px solid palette(mid); }
 QToolTip {
     background: palette(tooltip-base);

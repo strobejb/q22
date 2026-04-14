@@ -174,6 +174,14 @@ void DataTypeComboBox::paintEvent(QPaintEvent *)
     painter.drawPrimitive(QStyle::PE_IndicatorArrowDown, arrowOpt);
 }
 
+void DataTypeComboBox::setPopupOpen(bool open)
+{
+    setProperty("popupOpen", open);
+    style()->unpolish(this);
+    style()->polish(this);
+    update();
+}
+
 void DataTypeComboBox::showPopup()
 {
     if (m_menu->isVisible()) { m_menu->hide(); return; }
@@ -186,12 +194,13 @@ void DataTypeComboBox::showPopup()
     m_targetTextScreenX = mapToGlobal(QPoint(comboTextX, 0)).x();
 
     connect(m_menu, &QMenu::aboutToHide, this,
-            [this]() { recordMenuClose(); },
+            [this]() { recordMenuClose(); setPopupOpen(false); },
             Qt::SingleShotConnection);
 
     const QPoint pos = smartMenuPos(this, m_menu, /*rightAlign=*/false);
     m_targetMenuY = pos.y();
     m_menu->popup(pos);
+    setPopupOpen(true);
 }
 
 bool DataTypeComboBox::eventFilter(QObject *obj, QEvent *e)

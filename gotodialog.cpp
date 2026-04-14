@@ -121,10 +121,10 @@ GotoDialog::GotoDialog(HexView *hv, QWidget *parent)
         const QColor placeholderCol = QApplication::palette().placeholderText().color();
         const QColor borderCol      = QApplication::palette().mid().color();
 #ifdef Q_OS_WIN
-        const QIcon arrowIc = QIcon(":/icons/hicolor/scalable/actions/thin-arrow-right-icon.svg");
+        const QIcon arrowIc = QIcon(":/icons/hicolor/scalable/actions/arrow-next-symbolic.svg");
         const QIcon starIc  = QIcon(":/icons/hicolor/scalable/actions/starred-symbolic.svg");
 #else
-        const QIcon arrowIc = recoloredIcon("thin-arrow-right-icon", placeholderCol, 16);
+        const QIcon arrowIc = recoloredIcon("arrow-next-symbolic", placeholderCol, 16);
         const QIcon starIc  = recoloredIcon("starred-symbolic",       borderCol,      16);
 #endif
         if (!arrowIc.isNull())

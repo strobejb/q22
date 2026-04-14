@@ -283,6 +283,7 @@ private:
     void   recalcPositions();
     int    calcTotalWidth();
     void   emitResize();
+    void   recalcLayout();
 
     size_t formatAddress(size_w addr, char *buf, size_t buflen);
     size_t formatHexUnit(uint8_t *data, char *buf, size_t buflen);

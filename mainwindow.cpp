@@ -18,6 +18,7 @@
 #include "theme.h"
 #include <QActionGroup>
 #include <QShortcut>
+#include <QTimer>
 #include <QVector>
 #include <QApplication>
 #include <QClipboard>
@@ -502,9 +503,20 @@ MainWindow::MainWindow(QWidget *parent)
         m_statusBar->update();
         updateEditActions();
     });
-    connect(QApplication::clipboard(), &QClipboard::dataChanged, this, &MainWindow::updateEditActions);
+    auto refreshClipboardState = [this]() {
+        const QMimeData *mime = QApplication::clipboard()->mimeData();
+        m_canPaste        = mime && (mime->hasFormat("application/x-hexview-snapshot")
+                                     || mime->hasFormat("application/octet-stream")
+                                     || mime->hasText());
+        m_canPasteSpecial = mime && !mime->formats().isEmpty();
+        updateEditActions();
+    };
+    connect(QApplication::clipboard(), &QClipboard::dataChanged, this, refreshClipboardState);
     connect(ui->menuEdit, &QMenu::aboutToShow, this, &MainWindow::updateEditActions);
-    updateEditActions(); // set initial state
+    // Defer the initial clipboard check until the event loop is running so that
+    // X11/Wayland clipboard queries can complete (they need event processing).
+    QTimer::singleShot(0, this, refreshClipboardState);
+    updateEditActions(); // set initial state (flags still false, but enables other actions)
 
     connect(m_hv, &HexView::cursorChanged, m_statusBar, &StatusBar::update);
     connect(m_hv, &HexView::selectionChanged, this,
@@ -717,8 +729,9 @@ MainWindow::~MainWindow() { delete ui; }
 
 void MainWindow::updateEditActions()
 {
-    const bool hasSel      = m_hv->selectionSize() > 0;
-    const bool insertMode  = m_hv->editMode() == HVMODE_INSERT;
+    const bool hasSel     = m_hv->selectionSize() > 0;
+    const bool insertMode = m_hv->editMode() == HVMODE_INSERT;
+    const bool readOnly   = m_hv->editMode() == HVMODE_READONLY;
 
     // Undo / Redo reflect the sequence's event stack.
     ui->actionUndo->setEnabled(m_hv->canUndo());
@@ -727,16 +740,20 @@ void MainWindow::updateEditActions()
     // Cut requires a selection AND insert mode (overwrite can't remove bytes).
     ui->actionC_ut->setEnabled(hasSel && insertMode);
 
+    // Delete: insert mode — always on; overwrite — selection required; read-only — off.
+    ui->action_Delete->setEnabled(!readOnly && (insertMode || hasSel));
+
     // Copy / Copy As only need a selection.
     ui->action_Copy->setEnabled(hasSel);
     ui->actionCopy_As->setEnabled(hasSel);
 
-    // Paste / Paste Special: driven purely by clipboard content.
-    const QMimeData *mime        = QApplication::clipboard()->mimeData();
-    const bool      clipHasData = mime && !mime->formats().isEmpty();
-    const bool      writable    = m_hv->editMode() != HVMODE_READONLY;
-    ui->action_Paste->setEnabled(writable && clipHasData);
-    ui->actionPaste_Special->setEnabled(writable && clipHasData);
+    // Paste / Paste Special: use cached clipboard state (m_clipboardReady), updated
+    // from dataChanged where clipboard queries are safe.  Querying mimeData() here
+    // (from aboutToShow) can fail on X11/Wayland because the popup-window event
+    // grab blocks the clipboard round-trip.
+    const bool writable = m_hv->editMode() != HVMODE_READONLY;
+    ui->action_Paste->setEnabled(writable && m_canPaste);
+    ui->actionPaste_Special->setEnabled(writable && m_canPasteSpecial);
 }
 
 bool MainWindow::maybeSave()

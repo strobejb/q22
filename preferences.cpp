@@ -508,11 +508,32 @@ public:
         auto *lay = new QVBoxLayout(this);
         lay->setContentsMargins(GRP_H_PAD, GRP_V_PAD, GRP_H_PAD, GRP_V_PAD);
         lay->setSpacing(GRP_SPACING);
-        for (QWidget *w : items)
+        for (QWidget *w : items) {
             lay->addWidget(w);
+            w->installEventFilter(this);
+        }
     }
 
-protected:
+    bool eventFilter(QObject *obj, QEvent *e) override
+    {
+        if (e->type() == QEvent::Enter || e->type() == QEvent::Leave) {
+            auto *lay = static_cast<QVBoxLayout *>(layout());
+            int newIdx = -1;
+            if (e->type() == QEvent::Enter) {
+                for (int i = 0; i < lay->count(); ++i) {
+                    if (lay->itemAt(i)->widget() == obj) { newIdx = i; break; }
+                }
+            }
+            if (newIdx != m_hoverIdx) { m_hoverIdx = newIdx; update(); }
+        }
+        return false;
+    }
+
+    void leaveEvent(QEvent *) override
+    {
+        if (m_hoverIdx >= 0) { m_hoverIdx = -1; update(); }
+    }
+
     void paintEvent(QPaintEvent *) override
     {
         QPainter p(this);
@@ -548,13 +569,37 @@ protected:
         p.setBrush(pal.color(QPalette::Base));
         p.drawRoundedRect(card.adjusted(0.5, 0.5, -0.5, -0.5), GRP_RADIUS, GRP_RADIUS);
 
-        // ── Separators between items ──────────────────────────────────────────
+        // ── Hover highlight ───────────────────────────────────────────────────
         auto *lay = static_cast<QVBoxLayout *>(layout());
         const int count = lay->count();
+        if (m_hoverIdx >= 0 && m_hoverIdx < count) {
+            const QWidget *w = lay->itemAt(m_hoverIdx)->widget();
+            if (w) {
+                const QWidget *prev = m_hoverIdx > 0
+                                      ? lay->itemAt(m_hoverIdx - 1)->widget() : nullptr;
+                const QWidget *next = m_hoverIdx < count - 1
+                                      ? lay->itemAt(m_hoverIdx + 1)->widget() : nullptr;
+                const int top    = prev ? (prev->geometry().bottom() + w->geometry().top()) / 2
+                                        : qRound(card.top());
+                const int bottom = next ? (w->geometry().bottom() + next->geometry().top()) / 2
+                                        : qRound(card.bottom());
+                QRect row(qRound(card.left()), top,
+                          qRound(card.width()), bottom - top);
+                QPainterPath clip;
+                clip.addRoundedRect(card, GRP_RADIUS, GRP_RADIUS);
+                p.save();
+                p.setClipPath(clip);
+                p.setRenderHint(QPainter::Antialiasing, false);
+                p.fillRect(row, dark ? QColor(255, 255, 255, 15) : QColor(0, 0, 0, 8));
+                p.restore();
+            }
+        }
+
+        // ── Separators between items ──────────────────────────────────────────
         if (count < 2) return;
 
         p.setRenderHint(QPainter::Antialiasing, false);
-        p.setPen(QPen(pal.color(QPalette::Midlight), 1));
+        p.setPen(QPen(pal.color(QPalette::Mid), 1));
 
         for (int i = 1; i < count; ++i) {
             const QWidget *prev = lay->itemAt(i - 1)->widget();
@@ -564,6 +609,9 @@ protected:
             p.drawLine(qRound(card.left()) + 1, y, qRound(card.right()) - 1, y);
         }
     }
+
+private:
+    int m_hoverIdx = -1;
 };
 
 // ─── PreferencesDialog ───────────────────────────────────────────────────────

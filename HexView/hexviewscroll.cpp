@@ -8,6 +8,7 @@
 
 #include "hexview.h"
 #include <QScrollBar>
+#include <QSignalBlocker>
 #include <algorithm>
 
 // ── numFileLines ──────────────────────────────────────────────────────────────
@@ -37,26 +38,29 @@ void HexView::setupScrollbars()
     if(nMax > 0)
         nMax -= 1;
 
-    // Sync QAbstractScrollArea's scrollbars.  Block signals so the
-    // valueChanged handler doesn't fire (and trigger a repaint) for every
-    // programmatic update — only user interaction should do that.
-    verticalScrollBar()->blockSignals(true);
-    verticalScrollBar()->setRange(0, (int)nMax);//m_nVScrollMax);
+    // setRange() must fire rangeChanged so QAbstractScrollArea's internal
+    // _q_adjustScrollbars() slot runs and updates scrollbar visibility.
+    // Only setValue() needs blocking — it would otherwise trigger our
+    // valueChanged lambda and cause a redundant repaint.
+    verticalScrollBar()->setRange(0, (int)nMax);
     verticalScrollBar()->setPageStep(m_nWindowLines);
     verticalScrollBar()->setSingleStep(1);
-    verticalScrollBar()->setValue((int)m_nVScrollPos);
-    verticalScrollBar()->blockSignals(false);
+    {
+        QSignalBlocker b(verticalScrollBar());
+        verticalScrollBar()->setValue((int)m_nVScrollPos);
+    }
 
     m_nVScrollMax = numFileLines(m_pDataSeq->size()) - m_nWindowLines;
 
     m_nTotalWidth = calcTotalWidth();
 
-    horizontalScrollBar()->blockSignals(true);
     horizontalScrollBar()->setRange(0, m_nTotalWidth - m_nWindowColumns - 1);
     horizontalScrollBar()->setPageStep(m_nWindowColumns);
     horizontalScrollBar()->setSingleStep(1);
-    horizontalScrollBar()->setValue(m_nHScrollPos);
-    horizontalScrollBar()->blockSignals(false);
+    {
+        QSignalBlocker b(horizontalScrollBar());
+        horizontalScrollBar()->setValue(m_nHScrollPos);
+    }
     m_nHScrollMax = m_nTotalWidth - m_nWindowColumns;
 
     updateResizeBarPos();

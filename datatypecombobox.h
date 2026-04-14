@@ -37,6 +37,7 @@ protected:
     void  paintEvent(QPaintEvent *)                 override;
     void  showPopup()                               override;
     bool  eventFilter(QObject *obj, QEvent *e)      override;
+    void  setPopupOpen(bool open);
 
 private:
     QMenu          *m_menu              = nullptr;

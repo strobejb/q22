@@ -22,5 +22,8 @@
         <file>icons/hicolor/scalable/actions/go-down-symbolic.svg</file>
         <file>icons/hicolor/scalable/actions/go-up-symbolic.svg</file>
         <file>icons/hicolor/scalable/actions/mail-send-receive-symbolic.svg</file>
+        <file>icons/hicolor/scalable/actions/arrow-next-symbolic.svg</file>
+        <file>icons/hicolor/scalable/actions/external-link-symbolic.svg</file>
+        <file>icons/hicolor/scalable/actions/nautilus-file-chooser-options-symbolic.svg</file>
     </qresource>
 </RCC>

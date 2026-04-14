@@ -13,6 +13,7 @@ int main(int argc, char *argv[])
     QApplication::setAttribute(Qt::AA_DontShowIconsInMenus, true);
     a.setOrganizationName("qexed");
     a.setApplicationName("qexed");
+    a.setApplicationVersion("0.1");
     a.setWindowIcon(QIcon(":/qexed.png"));
 
     // Prepend the bundled hicolor theme so QIcon::fromTheme() works on all

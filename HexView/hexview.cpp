@@ -143,7 +143,8 @@ bool HexView::openFile(const QString &path, uint /*flags*/)
         m_nSelectionEnd   = 0;
         m_nVScrollPos     = 0;
         m_nHScrollPos     = 0;
-        updateMetrics();
+        recalcLayout();
+        repositionCaret();
         viewport()->update();
     }
     return ok;
@@ -157,7 +158,17 @@ bool HexView::saveFile(const QString &path, uint /*flags*/)
 bool HexView::clearFile()
 {
     bool ok = m_pDataSeq->clear();
-    if (ok) m_filePath.clear();
+    if (ok) {
+        m_filePath.clear();
+        m_nCursorOffset   = 0;
+        m_nSelectionStart = 0;
+        m_nSelectionEnd   = 0;
+        m_nVScrollPos     = 0;
+        m_nHScrollPos     = 0;
+        emit lengthChanged(0);
+        repositionCaret();
+        viewport()->update();
+    }
     return ok;
 }
 
@@ -382,6 +393,19 @@ void HexView::onLengthChanged(size_w nNewLength)
 
     // leading space
     m_nAddressWidth++;
+
+    recalcLayout();
+}
+
+void HexView::recalcLayout()
+{
+    if (m_nFontHeight > 0)
+        m_nWindowLines = (int)std::min(
+            (unsigned)(viewport()->height() / m_nFontHeight),
+            (unsigned)numFileLines(m_pDataSeq->size()));
+    if (m_nFontWidth > 0)
+        m_nWindowColumns = std::min(viewport()->width() / m_nFontWidth, m_nTotalWidth);
+    setupScrollbars();
 }
 
 //void HexView::recalcPositions()
@@ -579,6 +603,8 @@ void HexView::fireChanged(size_w offset, size_w length, uint method)
         scrollToCaret();
         viewport()->update();
     }
+    if (method == HVMETHOD_INSERT || method == HVMETHOD_DELETE)
+        emit lengthChanged(m_pDataSeq->size());
     emit contentChanged(offset, length, method);
 }
 

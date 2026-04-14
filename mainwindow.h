@@ -57,7 +57,9 @@ private:
     bool            m_useCustomTitleBar = true;
     bool            m_inResizeZone      = false;
     QByteArray      m_lastPattern;
-    uint            m_lastFindFlags = 0;
+    uint            m_lastFindFlags  = 0;
+    bool            m_canPaste        = false; // text or hexview data; updated from dataChanged
+    bool            m_canPasteSpecial = false; // any clipboard format; updated from dataChanged
 };
 
 #endif // MAINWINDOW_H
