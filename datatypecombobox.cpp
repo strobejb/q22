@@ -148,6 +148,16 @@ void DataTypeComboBox::paintEvent(QPaintEvent *)
     QStyleOptionComboBox opt;
     initStyleOption(&opt);
     opt.currentText = text;
+    // When the QMenu popup is open, set State_On so that:
+    //  1. NoFocusRectStyle's sync code sees State_On matching popupOpen=true
+    //     and does not queue a reset.
+    //  2. Fusion treats the combo as "open/pressed" and draws the darker sunken
+    //     gradient rather than the lighter hover gradient.
+    // Clear State_MouseOver so Fusion picks the sunken path, not the hover path.
+    if (property("popupOpen").toBool()) {
+        opt.state |= QStyle::State_On;
+        opt.state &= ~QStyle::State_MouseOver;
+    }
     // Draw the frame (including the drop-down arrow via QComboBox::down-arrow
     // in the global stylesheet) at full widget size.
     painter.drawComplexControl(QStyle::CC_ComboBox, opt);

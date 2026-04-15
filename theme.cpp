@@ -501,9 +501,13 @@ QComboBox {
     selection-background-color: palette(highlight);
     selection-color: palette(highlighted-text);
 }
-QComboBox:hover { border: 1px solid palette(mid); margin: 1px; background: palette(window); }
-QComboBox:focus { border: 2px solid palette(highlight); margin: 0px; }
-QComboBox:open  { background: palette(button); }
+QComboBox:hover            { border: 1px solid palette(mid); margin: 1px; background: palette(window); }
+QComboBox:focus            { border: 2px solid palette(highlight); margin: 0px; }
+QComboBox:open             { background: palette(button); }
+QComboBox[popupOpen="true"],
+QComboBox[popupOpen="true"]:hover,
+QComboBox[popupOpen="true"]:focus,
+QComboBox[popupOpen="true"]:hover:focus { background: palette(button); }
 QComboBox:disabled { background: palette(window); color: palette(mid); border-color: palette(mid); }
 QComboBox QLineEdit { border: none; background: transparent; padding: 0; }
 QComboBox QLineEdit:focus { border: none; }
@@ -794,12 +798,21 @@ struct NoFocusRectStyle : public QProxyStyle
                     }, Qt::QueuedConnection);
                 }
             }
+            // When the native popup is open (State_On) Qt issues a Leave event
+            // that clears underMouse() and drops State_MouseOver, so Fusion falls
+            // back to the default (non-hover) appearance.  Force State_MouseOver
+            // back on so the combo stays visually active while the dropdown is
+            // open — matching the behaviour of DataTypeComboBox which uses QMenu.
+            bool needCopy = (opt->state & State_On) && !(opt->state & State_MouseOver);
             // Adwaita calls drawPrimitive(PE_FrameFocusRect) directly (not via
             // proxy()) for CC_ComboBox, bypassing our PE_FrameFocusRect suppression.
             // Strip State_HasFocus so that code path is never reached; our QSS
             // QComboBox:focus rule provides the visible focus indication instead.
-            if (opt->state & State_HasFocus) {
+            needCopy = needCopy || (opt->state & State_HasFocus);
+            if (needCopy) {
                 QStyleOptionComplex copy = *opt;
+                if (opt->state & State_On)
+                    copy.state |= State_MouseOver;
                 copy.state &= ~State_HasFocus;
                 QProxyStyle::drawComplexControl(cc, &copy, p, w);
                 return;
@@ -942,7 +955,7 @@ void applyAdwaitaTheme(ColorScheme scheme)
     // Adwaita plugin and fall back to Fusion.
     // Wrap in NoFocusRectStyle to suppress dotted PE_FrameFocusRect indicators.
     {
-#ifdef Q_OS_WIN
+#if 0//def Q_OS_WIN
         QStyle *base = QStyleFactory::create("windows11");
         if (!base) base = QStyleFactory::create("windowsvista");
         if (!base) base = QStyleFactory::create("Fusion");

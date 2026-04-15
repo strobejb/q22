@@ -15,7 +15,15 @@ MenuComboBox::MenuComboBox(QWidget *parent)
     themeMenu(m_menu);
 
     connect(m_menu, &QMenu::aboutToHide, this,
-            [this]() { recordMenuClose(); });
+            [this]() { recordMenuClose(); setPopupOpen(false); });
+}
+
+void MenuComboBox::setPopupOpen(bool open)
+{
+    setProperty("popupOpen", open);
+    style()->unpolish(this);
+    style()->polish(this);
+    update();
 }
 
 QSize MenuComboBox::sizeHint() const
@@ -35,6 +43,15 @@ void MenuComboBox::paintEvent(QPaintEvent *)
     QStylePainter painter(this);
     QStyleOptionComboBox opt;
     initStyleOption(&opt);
+    // Inject State_On when the menu is open so that:
+    //  1. NoFocusRectStyle's sync code sees State_On matching popupOpen=true
+    //     and does not queue a reset.
+    //  2. Fusion treats the combo as open/pressed for the darker gradient.
+    // Clear State_MouseOver so Fusion picks the sunken path, not the hover path.
+    if (property("popupOpen").toBool()) {
+        opt.state |= QStyle::State_On;
+        opt.state &= ~QStyle::State_MouseOver;
+    }
     painter.drawComplexControl(QStyle::CC_ComboBox, opt);
     painter.drawControl(QStyle::CE_ComboBoxLabel, opt);
     // The ::drop-down stylesheet rule suppresses the native arrow; draw it explicitly.
@@ -78,4 +95,5 @@ void MenuComboBox::showPopup()
     buildMenu();
     const QPoint pos = smartMenuPos(this, m_menu, /*rightAlign=*/false);
     m_menu->popup(pos);
+    setPopupOpen(true);
 }

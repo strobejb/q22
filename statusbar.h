@@ -49,7 +49,7 @@ protected:
     {
         // Don't drop the hover highlight while the popup is open — the mouse
         // leaving the widget to reach the menu should not clear the state.
-        if (!m_popupOpen) { m_hovered = false; update(); }
+        if (!m_popupOpen && !property("popupOpen").toBool()) { m_hovered = false; update(); }
         QComboBox::leaveEvent(e);
     }
 

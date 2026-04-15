@@ -23,6 +23,7 @@ protected:
 
 private:
     void  buildMenu();
+    void  setPopupOpen(bool open);
 
     QMenu  *m_menu      = nullptr;
     QPoint  m_closePos  { -1, -1 };

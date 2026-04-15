@@ -359,7 +359,7 @@ void FindDialog::updateSearchHexPreview()
     if (pat.isEmpty()) {
         const QString border = QApplication::palette().mid().color().name();
         ui->editFind->setStyleSheet(QString(
-            "color: #c01c28; border: 1px solid %1; border-radius: 6px; margin: 1px 0;")
+            "color: #c01c28; border: 1px solid #c01c28; border-radius: 6px; margin: 1px;")
             .arg(border));
         emit searchHexChanged(tr("Invalid search pattern"));
     } else {
