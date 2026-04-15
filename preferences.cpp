@@ -704,9 +704,7 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
         m_swatchGroup = new QButtonGroup(m_swatchWidget);
         m_swatchGroup->setExclusive(true);
 
-        // Embedded palettes first, then any saved custom ones
-        QList<PaletteInfo> palettes = loadEmbeddedPalettes();
-        palettes += loadCustomPalettes();
+        QList<PaletteInfo> palettes = loadAllPalettes();
         if (!palettes.isEmpty())
             m_currentPalette = palettes.first();
 
@@ -823,8 +821,7 @@ void PreferencesDialog::rebuildCustomSwatches()
     m_swatchCount = 0;
     m_swatchLayout->removeWidget(m_addBtn);
 
-    QList<PaletteInfo> palettes = loadEmbeddedPalettes();
-    palettes += loadCustomPalettes();
+    QList<PaletteInfo> palettes = loadAllPalettes();
 
     for (const PaletteInfo &info : palettes) {
         auto *sw = new PaletteSwatch(info, m_swatchWidget);

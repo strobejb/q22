@@ -706,8 +706,7 @@ MainWindow::MainWindow(QWidget *parent)
     // Apply saved palette
     const QString savedPalette = AppSettings::prefPaletteName();
     if (!savedPalette.isEmpty()) {
-        QList<PaletteInfo> palettes = loadEmbeddedPalettes();
-        palettes += loadCustomPalettes();
+        QList<PaletteInfo> palettes = loadAllPalettes();
         for (const PaletteInfo &info : palettes) {
             if (info.name == savedPalette) {
                 applyPalette(m_hv, info);

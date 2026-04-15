@@ -116,7 +116,7 @@ TitleBar::TitleBar(QWidget *parent)
     m_hamburger->setObjectName("hamburger");
     // Both platforms use the file-open icon: the button opens the File menu
     // and should visually match the Open action inside it.
-#ifdef Q_OS_WIN
+#if 0//def Q_OS_WIN
     // 0xED25 = FolderOpen in Segoe MDL2 Assets / Segoe Fluent Icons —
     // same monochrome Segoe style as the search and caption buttons.
     if (QIcon si = segoeIcon(0xED25, palette().windowText().color(), menuBtnIconSz); !si.isNull())
@@ -201,7 +201,7 @@ TitleBar::TitleBar(QWidget *parent)
 
     m_viewBtn = new QToolButton(this);
     m_viewBtn->setObjectName("viewMenu");
-#ifdef Q_OS_WIN
+#if 0//def Q_OS_WIN
     // Same approach as m_hamburger and the Find dialog options button.
     m_viewBtn->setText("☰");
 #else

@@ -91,6 +91,9 @@ QList<PaletteInfo> loadEmbeddedPalettes();
 // Load any user-saved palettes from the QSettings storage directory.
 QList<PaletteInfo> loadCustomPalettes();
 
+// Load all palettes: disk-based first, then embedded (skipping duplicates by name).
+QList<PaletteInfo> loadAllPalettes();
+
 // Return the directory where custom palettes are stored.
 QString paletteStorageDir();
 

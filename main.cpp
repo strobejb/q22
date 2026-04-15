@@ -11,8 +11,8 @@ int main(int argc, char *argv[])
 #endif
     QApplication a(argc, argv);
     QApplication::setAttribute(Qt::AA_DontShowIconsInMenus, true);
-    a.setOrganizationName("qexed");
-    a.setApplicationName("qexed");
+    a.setOrganizationName("Catch22");
+    a.setApplicationName("q22");
     a.setApplicationVersion("0.1");
     a.setWindowIcon(QIcon(":/qexed.png"));
 

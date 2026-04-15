@@ -204,7 +204,6 @@ QColor themeBorderColor()
     //return dark ? QColor("#4a4a4a") : QColor("#cdc7c2");
 }
 
-#ifndef Q_OS_WIN
 #include <QIcon>
 #include <QPixmap>
 #include <QToolButton>
@@ -212,6 +211,8 @@ QColor themeBorderColor()
 QIcon recoloredIcon(const QString &name, const QColor &color, int sz)
 {
     QIcon icon = QIcon::fromTheme(name);
+    if (icon.isNull())
+        icon = QIcon(":/icons/hicolor/scalable/actions/" + name + ".svg");
     if (icon.isNull()) return icon;
     // Request a pixmap at the logical size; it may come back at a higher physical
     // resolution on HiDPI screens, so we copy the devicePixelRatio to dst so that
@@ -245,7 +246,6 @@ void recolorToolButtons(QWidget *parent)
             btn->setIcon(ic);
     }
 }
-#endif
 
 
 QPoint smartMenuPos(const QWidget *anchor, const QMenu *menu, bool rightAlign)
@@ -562,7 +562,7 @@ QToolTip {
     color: palette(tooltip-text);
     border: 1px solid palette(mid);
     border-radius: 6px;
-    padding: 2px 6px;
+    padding: {tooltipPad};
 }
 
 )";
@@ -575,9 +575,11 @@ QToolTip {
     ss.replace("{statusBg}",         statusBg);
     ss.replace("{statusComboHover}", statusComboHover);
 #ifdef Q_OS_WIN
-    ss.replace("{menuMargin}", QString());
+    ss.replace("{menuMargin}",  QString());
+    ss.replace("{tooltipPad}",  "1px 6px");
 #else
-    ss.replace("{menuMargin}", "margin: 8px;");
+    ss.replace("{menuMargin}",  "margin: 8px;");
+    ss.replace("{tooltipPad}",  "2px 6px");
 #endif
     return ss;
 }
@@ -893,11 +895,15 @@ void themeMenu(QMenu *menu)
 
 // ── Tooltip rounded-corner clipping ──────────────────────────────────────────
 //
-// setMask() does not work on Wayland popup surfaces.  Instead, setting
-// WA_TranslucentBackground during QEvent::Polish (before the native window is
-// created) allocates an alpha channel for the window.  Qt's QSS engine then
-// clips the background fill to the border-radius shape through that alpha
-// channel, producing genuinely rounded corners without any custom painting.
+// On Windows, WA_TranslucentBackground is not reliable for popup tooltip
+// windows — the platform plugin may not allocate per-pixel alpha for them.
+// Instead, apply a rounded window region via setMask() on Show/Resize.
+// setMask() maps to SetWindowRgn on Windows, which clips the window shape
+// at the OS level and matches the QSS border-radius exactly.
+//
+// On other platforms (X11/Wayland), setMask() does not work on Wayland
+// popup surfaces.  WA_TranslucentBackground is set at Polish time instead,
+// allocating an alpha channel so Qt's QSS engine can clip through it.
 
 class TooltipFilter : public QObject
 {
@@ -905,10 +911,32 @@ public:
     using QObject::QObject;
     bool eventFilter(QObject *obj, QEvent *e) override
     {
-        if (obj->inherits("QTipLabel") && e->type() == QEvent::Polish)
-            static_cast<QWidget *>(obj)->setAttribute(Qt::WA_TranslucentBackground);
+        if (!obj->inherits("QTipLabel"))
+            return false;
+        auto *w = static_cast<QWidget *>(obj);
+#ifdef Q_OS_WIN
+        if (e->type() == QEvent::Show || e->type() == QEvent::Resize)
+            applyRoundedMask(w);
+#else
+        if (e->type() == QEvent::Polish)
+            w->setAttribute(Qt::WA_TranslucentBackground);
+#endif
         return false;
     }
+#ifdef Q_OS_WIN
+private:
+    static void applyRoundedMask(QWidget *w)
+    {
+        constexpr int R = 6;
+        QBitmap bm(w->size());
+        bm.fill(Qt::color0);
+        QPainter p(&bm);
+        p.setBrush(Qt::color1);
+        p.setPen(Qt::NoPen);
+        p.drawRoundedRect(w->rect(), R, R);
+        w->setMask(bm);
+    }
+#endif
 };
 
 #ifndef Q_OS_WIN
@@ -955,7 +983,7 @@ void applyAdwaitaTheme(ColorScheme scheme)
     // Adwaita plugin and fall back to Fusion.
     // Wrap in NoFocusRectStyle to suppress dotted PE_FrameFocusRect indicators.
     {
-#if 0//def Q_OS_WIN
+#ifdef Q_OS_WIN
         QStyle *base = QStyleFactory::create("windows11");
         if (!base) base = QStyleFactory::create("windowsvista");
         if (!base) base = QStyleFactory::create("Fusion");

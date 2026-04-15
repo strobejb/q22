@@ -190,11 +190,7 @@ FindDialog::FindDialog(QWidget *parent)
     // Leading search icon inside the text field.
     {
         const QColor iconCol = QApplication::palette().placeholderText().color();
-#ifdef Q_OS_WIN
-        const QIcon searchIc = QIcon(":/icons/hicolor/scalable/actions/edit-find-symbolic.svg");
-#else
         const QIcon searchIc = recoloredIcon("edit-find-symbolic", iconCol, 16);
-#endif
         if (!searchIc.isNull())
             ui->editFind->addAction(searchIc, QLineEdit::LeadingPosition);
     }
@@ -258,7 +254,7 @@ FindDialog::FindDialog(QWidget *parent)
 
     connect(ui->editFind, &QLineEdit::returnPressed, this, [this] { triggerSearch(0); });
 
-#ifdef Q_OS_WIN
+#if 0//def 0//Q_OS_WIN
     // QIcon::fromTheme() returns null on Windows; use Segoe MDL2 / QStyle fallbacks.
     ui->btnNavigate->setIcon(segoeIcon(0xEBE8,
         QApplication::palette().buttonText().color(), 14));

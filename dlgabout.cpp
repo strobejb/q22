@@ -85,12 +85,8 @@ public:
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         connect(this, &QAbstractButton::clicked,
                 this, [this] { QDesktopServices::openUrl(m_url); });
-#ifdef Q_OS_WIN
-        m_icon = QIcon(QLatin1String(":/icons/hicolor/scalable/actions/external-link-symbolic.svg"));
-#else
         m_icon = recoloredIcon(QLatin1String("external-link-symbolic"),
                                QApplication::palette().color(QPalette::WindowText), 12);
-#endif
     }
 
     QSize sizeHint() const override

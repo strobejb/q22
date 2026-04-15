@@ -1,4 +1,6 @@
 #include "palettes.h"
+
+#include <algorithm>
 #include "HexView/hexview.h"
 #include "theme.h"
 
@@ -100,13 +102,23 @@ static PaletteInfo parsePaletteFile(const QString &path)
 QList<PaletteInfo> loadEmbeddedPalettes()
 {
     QList<PaletteInfo> palettes;
-    static const char *kBuiltins[] = {
-        ":/palettes/default.palette",
-        ":/palettes/catch22.palette",
-    };
-    for (const char *path : kBuiltins) {
-        const PaletteInfo p = parsePaletteFile(path);
+    for (const QString &name : QDir(":/palettes").entryList({"*.palette"}, QDir::Files)) {
+        const PaletteInfo p = parsePaletteFile(":/palettes/" + name);
         if (p.bg.isValid() && p.fg.isValid() && !p.name.isEmpty())
+            palettes.append(p);
+    }
+    return palettes;
+}
+
+QList<PaletteInfo> loadAllPalettes()
+{
+    QList<PaletteInfo> palettes = loadEmbeddedPalettes();
+    for (const PaletteInfo &p : loadCustomPalettes()) {
+        const auto it = std::find_if(palettes.begin(), palettes.end(),
+                                     [&](const PaletteInfo &e){ return e.name == p.name; });
+        if (it != palettes.end())
+            *it = p;
+        else
             palettes.append(p);
     }
     return palettes;

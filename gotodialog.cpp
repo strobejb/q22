@@ -126,20 +126,15 @@ GotoDialog::GotoDialog(HexView *hv, QWidget *parent)
     {
         const QColor placeholderCol = QApplication::palette().placeholderText().color();
         const QColor borderCol      = QApplication::palette().mid().color();
-#ifdef Q_OS_WIN
-        const QIcon arrowIc = QIcon(":/icons/hicolor/scalable/actions/thin-arrow-right-icon.svg");
-        const QIcon starIc  = QIcon(":/icons/hicolor/scalable/actions/starred-symbolic.svg");
-#else
         const QIcon arrowIc = recoloredIcon("thin-arrow-right-icon", placeholderCol, 16);
         const QIcon starIc  = recoloredIcon("starred-symbolic",       borderCol,      16);
-#endif
         if (!arrowIc.isNull())
             ui->editOffset->addAction(arrowIc, QLineEdit::LeadingPosition);
         if (!starIc.isNull())
             m_comboBookmarks->setLeadingIcon(starIc);
     }
 
-#ifdef Q_OS_WIN
+#if 0//def 0//Q_OS_WIN
     // QIcon::fromTheme() returns null on Windows; use Segoe MDL2 / QStyle fallbacks.
     /*ui->btnNavigate->setIcon(segoeIcon(0xEBE8,
         QApplication::palette().buttonText().color(), 14));
