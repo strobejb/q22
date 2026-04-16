@@ -14,12 +14,14 @@
 #include <QApplication>
 #include <QDesktopServices>
 #include <QDialog>
+#include <QFileInfo>
 #include <QFont>
 #include <QIcon>
 #include <QLabel>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPixmap>
+#include <QSettings>
 #include <QUrl>
 #include <QVBoxLayout>
 
@@ -290,6 +292,13 @@ void ShowAboutDlg(QWidget *parent)
     auto *creditsRow  = new AboutNavRow(QObject::tr("Credits"), &dlg);
     auto *websiteGroup = new AboutCard({websiteRow, creditsRow}, &dlg);
 
+    // ── Config group ──────────────────────────────────────────────────────────
+    const QString configPath = QSettings(QSettings::IniFormat, QSettings::UserScope,
+                                         QLatin1String("qexed"), QLatin1String("qexed")).fileName();
+    const QUrl configDirUrl  = QUrl::fromLocalFile(QFileInfo(configPath).absolutePath());
+    auto *configRow   = new AboutLinkRow(QObject::tr("Config"), configDirUrl, &dlg);
+    auto *configGroup = new AboutCard({configRow}, &dlg);
+
     // ── Main layout ───────────────────────────────────────────────────────────
     auto *main = new QVBoxLayout(&dlg);
     main->setContentsMargins(8, 8, 8, 8);
@@ -303,6 +312,8 @@ void ShowAboutDlg(QWidget *parent)
     main->addWidget(verLabel, 0, Qt::AlignHCenter);
     main->addSpacing(24);
     main->addWidget(websiteGroup);
+    main->addSpacing(6);
+    main->addWidget(configGroup);
     main->addSpacing(6);
 
     // Fix size: 150% of natural width so the dialog reads wider than its content.

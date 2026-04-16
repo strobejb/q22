@@ -14,7 +14,6 @@
 #include <QPushButton>
 #include <QApplication>
 #include <QComboBox>
-#include <QGraphicsOpacityEffect>
 
 // ── Globals ──────────────────────────────────────────────────────────────────
 
@@ -68,13 +67,6 @@ CopyAsDialog::CopyAsDialog(HexView *hv, QWidget *parent)
 {
     ui->setupUi(this);
 
-    // Apply an opacity effect to the data-type row so the disabled state is
-    // clearly visible regardless of the platform theme.
-    for (QWidget *w : {(QWidget *)ui->labelDataType,
-                       (QWidget *)ui->comboDataType,
-                       (QWidget *)ui->checkBigEndian})
-        w->setGraphicsEffect(new QGraphicsOpacityEffect(w));
-
     // Strip any platform-supplied icons from OK / Cancel so the buttons stay clean.
     for (QAbstractButton *btn : ui->buttonBox->buttons())
         btn->setIcon(QIcon());
@@ -116,11 +108,6 @@ void CopyAsDialog::updateDataTypeEnabled()
     ui->comboDataType->setEnabled(enable);
     ui->checkBigEndian->setEnabled(enable);
 
-    const qreal opacity = enable ? 1.0 : 0.35;
-    for (QWidget *w : {(QWidget *)ui->labelDataType,
-                       (QWidget *)ui->comboDataType,
-                       (QWidget *)ui->checkBigEndian})
-        static_cast<QGraphicsOpacityEffect *>(w->graphicsEffect())->setOpacity(opacity);
 }
 
 void CopyAsDialog::onAccepted()

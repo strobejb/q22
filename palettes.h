@@ -8,10 +8,12 @@
 #include <QString>
 
 class HexView;
+class QLabel;
 class QLineEdit;
 class QListWidget;
 class QPushButton;
 class ColorPickerWidget;
+class SettingsToggle;
 
 // ── PaletteElem ───────────────────────────────────────────────────────────────
 // Enumerates every colour slot editable in PaletteEditorDialog.
@@ -145,14 +147,18 @@ signals:
 private:
     static const char *elemName(PaletteElem e);
     QColor colorAt(PaletteElem e) const;
+    QColor rawColorAt(PaletteElem e) const;
     void   setColorAt(PaletteElem e, const QColor &c);
+    void   updateColorUI(PaletteElem e);
     static QPixmap makeColorSwatch(const QColor &c);
 
-    QLineEdit         *m_nameEdit = nullptr;
-    QListWidget       *m_list     = nullptr;
-    ColorPickerWidget *m_picker   = nullptr;
-    QLineEdit         *m_hexEdit  = nullptr;
-    QPushButton       *m_saveBtn  = nullptr;
+    QLineEdit         *m_nameEdit   = nullptr;
+    QListWidget       *m_list       = nullptr;
+    ColorPickerWidget *m_picker     = nullptr;
+    SettingsToggle    *m_autoToggle = nullptr;
+    QLabel            *m_hexLabel   = nullptr;
+    QLineEdit         *m_hexEdit    = nullptr;
+    QPushButton       *m_saveBtn    = nullptr;
     PaletteInfo        m_info;
 };
 

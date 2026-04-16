@@ -442,7 +442,9 @@ QLineEdit {
 }
 QLineEdit:hover { border: 1px solid palette(mid); margin: 1px; }
 QLineEdit:focus { border: 2px solid palette(highlight); margin: 0px; background: palette(base); }
-QLineEdit:disabled { color: {fgDisabled}; }
+QLineEdit:disabled { color: {fgDisabled}; background: palette(window); }
+QLabel:disabled { color: {fgDisabled}; }
+QCheckBox:disabled { color: {fgDisabled}; }
 
 /* ── Plain text edits ────────────────────────────────────────── */
 QPlainTextEdit {
@@ -523,7 +525,7 @@ QComboBox QAbstractItemView {
 }
 
 /* ── Item views ──────────────────────────────────────────────── */
-QAbstractItemView::item:hover    { background: palette(midlight); }
+QAbstractItemView::item:hover    { background: palette(window); }
 QAbstractItemView::item:selected { background: palette(highlight); color: palette(highlighted-text); }
 
 /* ── Scroll bars ─────────────────────────────────────────────── */
@@ -983,7 +985,7 @@ void applyAdwaitaTheme(ColorScheme scheme)
     // Adwaita plugin and fall back to Fusion.
     // Wrap in NoFocusRectStyle to suppress dotted PE_FrameFocusRect indicators.
     {
-#ifdef Q_OS_WIN
+#if 0//def Q_OS_WIN
         QStyle *base = QStyleFactory::create("windows11");
         if (!base) base = QStyleFactory::create("windowsvista");
         if (!base) base = QStyleFactory::create("Fusion");

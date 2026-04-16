@@ -1,4 +1,5 @@
 #include "palettes.h"
+#include "preferences.h"
 
 #include <algorithm>
 #include "HexView/hexview.h"
@@ -104,7 +105,7 @@ QList<PaletteInfo> loadEmbeddedPalettes()
     QList<PaletteInfo> palettes;
     for (const QString &name : QDir(":/palettes").entryList({"*.palette"}, QDir::Files)) {
         const PaletteInfo p = parsePaletteFile(":/palettes/" + name);
-        if (p.bg.isValid() && p.fg.isValid() && !p.name.isEmpty())
+        if (!p.name.isEmpty())
             palettes.append(p);
     }
     return palettes;
@@ -142,7 +143,7 @@ QList<PaletteInfo> loadCustomPalettes()
     if (!dir.exists()) return result;
     for (const QString &name : dir.entryList({"*.palette"}, QDir::Files)) {
         const PaletteInfo p = parsePaletteFile(dir.filePath(name));
-        if (p.bg.isValid() && !p.name.isEmpty())
+        if (!p.name.isEmpty())
             result.append(p);
     }
     return result;
@@ -224,56 +225,26 @@ signals:
 protected:
     void paintEvent(QPaintEvent *) override
     {
+        if (!isEnabled()) {
+            const qreal dpr = devicePixelRatioF();
+            QImage img(size() * dpr, QImage::Format_ARGB32);
+            img.setDevicePixelRatio(dpr);
+            img.fill(Qt::transparent);
+            { QPainter pp(&img); drawContent(pp); }
+            // Convert to greyscale
+            for (int y = 0; y < img.height(); ++y) {
+                QRgb *line = reinterpret_cast<QRgb *>(img.scanLine(y));
+                for (int x = 0; x < img.width(); ++x) {
+                    const int g = 128 + (qGray(line[x]) >> 1);
+                    line[x] = qRgba(g, g, g, qAlpha(line[x]));
+                }
+            }
+            QPainter p(this);
+            p.drawImage(0, 0, img);
+            return;
+        }
         QPainter p(this);
-
-        const QRectF sv  = svRectF();
-        const QRectF hr  = hueRectF();
-        const qreal hueF = qBound(0.0, m_color.hsvHueF(), 1.0);
-
-        // ── SV square: horizontal white→hue, vertical transparent→black ──────
-        QLinearGradient gS(sv.left(), 0, sv.right(), 0);
-        gS.setColorAt(0.0, Qt::white);
-        gS.setColorAt(1.0, QColor::fromHsvF(hueF, 1.0, 1.0));
-        p.fillRect(sv, gS);
-
-        QLinearGradient gV(0, sv.top(), 0, sv.bottom());
-        gV.setColorAt(0.0, Qt::transparent);
-        gV.setColorAt(1.0, Qt::black);
-        p.fillRect(sv, gV);
-
-        p.setRenderHint(QPainter::Antialiasing);
-        p.setPen(QPen(palette().color(QPalette::Mid), 1));
-        p.setBrush(Qt::NoBrush);
-        p.drawRoundedRect(sv.adjusted(0.5, 0.5, -0.5, -0.5), CPW_RAD, CPW_RAD);
-
-        // SV cursor
-        const qreal cx = sv.left() + qBound(0.0, m_color.hsvSaturationF(), 1.0) * sv.width();
-        const qreal cy = sv.top()  + (1.0 - qBound(0.0, m_color.valueF(), 1.0)) * sv.height();
-        p.setPen(QPen(Qt::black, 1.5));
-        p.setBrush(Qt::NoBrush);
-        p.drawEllipse(QPointF(cx, cy), 7.0, 7.0);
-        p.setPen(QPen(Qt::white, 1.5));
-        p.drawEllipse(QPointF(cx, cy), 5.5, 5.5);
-
-        // ── Hue strip ─────────────────────────────────────────────────────────
-        QLinearGradient gHue(hr.left(), 0, hr.right(), 0);
-        for (int i = 0; i <= 12; ++i)
-            gHue.setColorAt(i / 12.0, QColor::fromHsvF(i == 12 ? 0.9999 : i / 12.0, 1.0, 1.0));
-
-        QPainterPath huePath;
-        huePath.addRoundedRect(hr, CPW_RAD, CPW_RAD);
-        p.fillPath(huePath, gHue);
-
-        p.setPen(QPen(palette().color(QPalette::Mid), 1));
-        p.setBrush(Qt::NoBrush);
-        p.drawRoundedRect(hr.adjusted(0.5, 0.5, -0.5, -0.5), CPW_RAD, CPW_RAD);
-
-        // Hue cursor
-        const qreal hx = hr.left() + hueF * hr.width();
-        p.setPen(QPen(Qt::black, 2.0));
-        p.drawLine(QPointF(hx, hr.top() + 2), QPointF(hx, hr.bottom() - 2));
-        p.setPen(QPen(Qt::white, 1.0));
-        p.drawLine(QPointF(hx, hr.top() + 3), QPointF(hx, hr.bottom() - 3));
+        drawContent(p);
     }
 
     void mousePressEvent(QMouseEvent *e) override
@@ -292,6 +263,69 @@ protected:
     void mouseReleaseEvent(QMouseEvent *) override { m_zone = ZoneNone; }
 
 private:
+    void drawContent(QPainter &p)
+    {
+        const QRectF sv  = svRectF();
+        const QRectF hr  = hueRectF();
+        const qreal hueF = qBound(0.0, m_color.hsvHueF(), 1.0);
+
+        p.setRenderHint(QPainter::Antialiasing);
+
+        // ── SV square: horizontal white→hue, vertical transparent→black ──────
+        QPainterPath svPath;
+        svPath.addRoundedRect(sv, CPW_RAD, CPW_RAD);
+
+        QLinearGradient gS(sv.left(), 0, sv.right(), 0);
+        gS.setColorAt(0.0, Qt::white);
+        gS.setColorAt(1.0, QColor::fromHsvF(hueF, 1.0, 1.0));
+        p.save();
+        p.setClipPath(svPath);
+        p.fillRect(sv, gS);
+
+        QLinearGradient gV(0, sv.top(), 0, sv.bottom());
+        gV.setColorAt(0.0, Qt::transparent);
+        gV.setColorAt(1.0, Qt::black);
+        p.fillRect(sv, gV);
+        p.restore();
+
+        p.setPen(QPen(palette().color(QPalette::Mid), 1));
+        p.setBrush(Qt::NoBrush);
+        p.drawRoundedRect(sv.adjusted(0.5, 0.5, -0.5, -0.5), CPW_RAD, CPW_RAD);
+
+        // SV cursor
+        if (isEnabled()) {
+            const qreal cx = sv.left() + qBound(0.0, m_color.hsvSaturationF(), 1.0) * sv.width();
+            const qreal cy = sv.top()  + (1.0 - qBound(0.0, m_color.valueF(), 1.0)) * sv.height();
+            p.setPen(QPen(Qt::black, 1.5));
+            p.setBrush(Qt::NoBrush);
+            p.drawEllipse(QPointF(cx, cy), 7.0, 7.0);
+            p.setPen(QPen(Qt::white, 1.5));
+            p.drawEllipse(QPointF(cx, cy), 5.5, 5.5);
+        }
+
+        // ── Hue strip ─────────────────────────────────────────────────────────
+        QLinearGradient gHue(hr.left(), 0, hr.right(), 0);
+        for (int i = 0; i <= 12; ++i)
+            gHue.setColorAt(i / 12.0, QColor::fromHsvF(i == 12 ? 0.9999 : i / 12.0, 1.0, 1.0));
+
+        QPainterPath huePath;
+        huePath.addRoundedRect(hr, CPW_RAD, CPW_RAD);
+        p.fillPath(huePath, gHue);
+
+        p.setPen(QPen(palette().color(QPalette::Mid), 1));
+        p.setBrush(Qt::NoBrush);
+        p.drawRoundedRect(hr.adjusted(0.5, 0.5, -0.5, -0.5), CPW_RAD, CPW_RAD);
+
+        // Hue cursor
+        if (isEnabled()) {
+            const qreal hx = hr.left() + hueF * hr.width();
+            p.setPen(QPen(Qt::black, 2.0));
+            p.drawLine(QPointF(hx, hr.top() + 2), QPointF(hx, hr.bottom() - 2));
+            p.setPen(QPen(Qt::white, 1.0));
+            p.drawLine(QPointF(hx, hr.top() + 3), QPointF(hx, hr.bottom() - 3));
+        }
+    }
+
     enum Zone { ZoneNone, ZoneSV, ZoneHue };
 
     QRectF svRectF()  const { return QRectF(0, 0, width(), height() - CPW_GAP - CPW_HUE_H); }
@@ -360,19 +394,24 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
     // ── Card: background + border ────────────────────────────────────────────
     // Border adapts to the swatch colour so it reads well on any palette.
     // When selected, swap to the app highlight colour for a clear indicator.
+    // Fall back to palette roles for any automatic (invalid) colours.
+    const QColor effectiveBg = m_info.bg.isValid() ? m_info.bg
+                                                    : palette().color(QPalette::Base);
+    const QColor effectiveFg = m_info.fg.isValid() ? m_info.fg
+                                                    : palette().color(QPalette::WindowText);
     const bool  checked    = isChecked();
     const qreal borderW    = checked ? 2.0 : SW_BORDER;
     const QColor borderCol = checked
         ? palette().color(QPalette::Highlight)
-        : (m_info.bg.lightness() < 128 ? QColor(255, 255, 255, 30)
-                                       : QColor(0,   0,   0,   30));
+        : (effectiveBg.lightness() < 128 ? QColor(255, 255, 255, 30)
+                                         : QColor(0,   0,   0,   30));
     const qreal h = borderW * 0.5;
     p.setPen(QPen(borderCol, borderW));
-    p.setBrush(m_info.bg);
+    p.setBrush(effectiveBg);
     p.drawRoundedRect(card.adjusted(h, h, -h, -h), SW_RADIUS - h + 0.5, SW_RADIUS - h + 0.5);
 
     // ── Centered name text ───────────────────────────────────────────────────
-    p.setPen(m_info.fg);
+    p.setPen(effectiveFg);
     p.setFont(font());
     p.drawText(card.toRect(), Qt::AlignCenter, m_info.name);
 }
@@ -422,12 +461,14 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
 
     // ── Color picker ──────────────────────────────────────────────────────────
     m_picker = new ColorPickerWidget(this);
-    m_picker->setColor(colorAt(PE_BG));
+
+    // ── Automatic toggle ──────────────────────────────────────────────────────
+    m_autoToggle = new SettingsToggle(tr("Automatic"), this);
+    m_autoToggle->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
 
     // ── Hex input ─────────────────────────────────────────────────────────────
     m_hexEdit = new QLineEdit(this);
     m_hexEdit->setMaxLength(7);
-    m_hexEdit->setText(colorAt(PE_BG).name().toUpper());
 
     // ── Line edit styling (rounded, padded, mode-aware border) ────────────────
     {
@@ -445,7 +486,8 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
             "QLineEdit:focus { border: 2px solid %2; }"
         ).arg(border, focusColor);
         m_nameEdit->setStyleSheet(ss);
-        m_hexEdit->setStyleSheet(ss);
+        m_hexEdit->setStyleSheet(ss +
+            "QLineEdit:disabled { color: palette(window); background: palette(window); }");
     }
 
     // ── Buttons ───────────────────────────────────────────────────────────────
@@ -477,12 +519,31 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
     // ── Layout ────────────────────────────────────────────────────────────────
     auto *hexRow = new QWidget(this);
     {
+        // Left half: Automatic toggle
+        auto *leftHalf = new QWidget(hexRow);
+        {
+            auto *l = new QHBoxLayout(leftHalf);
+            l->setContentsMargins(0, 0, 0, 0);
+            l->addWidget(m_autoToggle);
+            l->addStretch();
+        }
+
+        // Right half: Hex label + stretching edit
+        auto *rightHalf = new QWidget(hexRow);
+        {
+            auto *l = new QHBoxLayout(rightHalf);
+            l->setContentsMargins(0, 0, 0, 0);
+            l->setSpacing(8);
+            m_hexLabel = new QLabel(tr("Hex:"), rightHalf);
+            l->addWidget(m_hexLabel);
+            l->addWidget(m_hexEdit, 1);
+        }
+
         auto *lay = new QHBoxLayout(hexRow);
         lay->setContentsMargins(0, 0, 0, 0);
-        lay->setSpacing(8);
-        lay->addWidget(new QLabel(tr("Hex:"), hexRow));
-        lay->addWidget(m_hexEdit);
-        lay->addStretch();
+        lay->setSpacing(0);
+        lay->addWidget(leftHalf,  1);
+        lay->addWidget(rightHalf, 1);
     }
 
     auto *vlay = new QVBoxLayout(this);
@@ -490,8 +551,8 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
     vlay->setSpacing(12);
     vlay->addWidget(nameRow);
     vlay->addWidget(m_list);
-    vlay->addWidget(m_picker, 1);
     vlay->addWidget(hexRow);
+    vlay->addWidget(m_picker, 1);
     vlay->addWidget(buttons);
 
     // ── Connections ───────────────────────────────────────────────────────────
@@ -501,11 +562,34 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
 
     connect(m_list, &QListWidget::currentRowChanged, this, [this](int row) {
         if (row < 0 || row >= PE_COUNT) return;
+        updateColorUI(PaletteElem(row));
+    });
+
+    connect(m_autoToggle, &SettingsToggle::toggled, this, [this](bool automatic) {
+        const int row = m_list->currentRow();
+        if (row < 0 || row >= PE_COUNT) return;
         const auto e = PaletteElem(row);
-        m_picker->blockSignals(true);
-        m_picker->setColor(colorAt(e));
-        m_picker->blockSignals(false);
-        m_hexEdit->setText(colorAt(e).name().toUpper());
+        if (automatic) {
+            setColorAt(e, QColor());
+            // Leave hex edit and picker as-is — they just become disabled.
+        } else {
+            // Restore from the hex edit — updateColorUI always populates it, so
+            // the previous manual colour survives while automatic is on.
+            // Fall back to the computed fallback only if the text isn't valid.
+            const QColor prev = QColor(m_hexEdit->text());
+            const QColor fallback = colorAt(e);
+            const QColor seed = prev.isValid() ? prev : (fallback.isValid() ? fallback : QColor(128, 128, 128));
+            setColorAt(e, seed);
+            m_picker->blockSignals(true);
+            m_picker->setColor(seed);
+            m_picker->blockSignals(false);
+            m_hexEdit->setText(seed.name().toUpper());
+        }
+        m_hexLabel->setEnabled(!automatic);
+        m_hexEdit->setEnabled(!automatic);
+        m_picker->setEnabled(!automatic);
+        m_list->item(row)->setData(Qt::DecorationRole, makeColorSwatch(colorAt(e)));
+        emit paletteChanged(m_info);
     });
 
     connect(m_picker, &ColorPickerWidget::colorChanged, this, [this](const QColor &c) {
@@ -528,6 +612,9 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
         m_list->item(row)->setData(Qt::DecorationRole, makeColorSwatch(c));
         emit paletteChanged(m_info);
     });
+
+    // Initialise UI state for the first list item.
+    updateColorUI(PE_BG);
 }
 
 const char *PaletteEditorDialog::elemName(PaletteElem e)
@@ -565,19 +652,20 @@ const char *PaletteEditorDialog::elemName(PaletteElem e)
 
 QColor PaletteEditorDialog::colorAt(PaletteElem e) const
 {
+    const QPalette &pal = qApp->palette();
     switch (e) {
-        case PE_BG:                 return m_info.bg;
-        //case PE_FG:                 return m_info.fg;
-        case PE_HEX_ODD:            return m_info.hexOdd;
-        case PE_HEX_EVEN:           return m_info.hexEven;
-        case PE_ASCII:              return m_info.ascii;
-        case PE_MODIFIED:           return m_info.modified;
-        case PE_SELECTION:          return m_info.selection;
-        case PE_MATCHED:            return m_info.matched;
-        case PE_SELECTION_TEXT:     return m_info.selectionText.isValid()     ? m_info.selectionText     : m_info.fg;
-        case PE_SELECTION_INACTIVE: return m_info.selectionInactive.isValid() ? m_info.selectionInactive : m_info.selection.darker(130);
-        case PE_ADDRESS:            return m_info.address.isValid()            ? m_info.address           : m_info.fg;
-        case PE_RESIZE_BAR:         return m_info.resizeBar.isValid()          ? m_info.resizeBar         : m_info.fg.darker(150);
+        case PE_BG:                 return m_info.bg.isValid()        ? m_info.bg        : pal.color(QPalette::Base);
+        //case PE_FG:
+        case PE_HEX_ODD:            return m_info.hexOdd.isValid()    ? m_info.hexOdd    : pal.color(QPalette::Text);
+        case PE_HEX_EVEN:           return m_info.hexEven.isValid()   ? m_info.hexEven   : pal.color(QPalette::Text);
+        case PE_ASCII:              return m_info.ascii.isValid()     ? m_info.ascii     : pal.color(QPalette::Text);
+        case PE_MODIFIED:           return m_info.modified.isValid()  ? m_info.modified  : QColor(200, 50, 50);
+        case PE_SELECTION:          return m_info.selection.isValid() ? m_info.selection : pal.color(QPalette::Highlight);
+        case PE_MATCHED:            return m_info.matched.isValid()   ? m_info.matched   : QColor(255, 165, 0);
+        case PE_SELECTION_TEXT:     return m_info.selectionText.isValid()     ? m_info.selectionText     : (m_info.fg.isValid() ? m_info.fg : pal.color(QPalette::HighlightedText));
+        case PE_SELECTION_INACTIVE: return m_info.selectionInactive.isValid() ? m_info.selectionInactive : (m_info.selection.isValid() ? m_info.selection.darker(130) : pal.color(QPalette::Highlight).darker(130));
+        case PE_ADDRESS:            return m_info.address.isValid()   ? m_info.address   : (m_info.fg.isValid() ? m_info.fg : pal.color(QPalette::Text));
+        case PE_RESIZE_BAR:         return m_info.resizeBar.isValid() ? m_info.resizeBar : (m_info.fg.isValid() ? m_info.fg.darker(150) : pal.color(QPalette::Mid));
         case PE_BOOKMARK_1:         return m_info.bookmarks[0].isValid() ? m_info.bookmarks[0] : QColor(255, 255,   0);
         case PE_BOOKMARK_2:         return m_info.bookmarks[1].isValid() ? m_info.bookmarks[1] : QColor(255, 165,   0);
         case PE_BOOKMARK_3:         return m_info.bookmarks[2].isValid() ? m_info.bookmarks[2] : QColor(255,  80,  80);
@@ -586,7 +674,36 @@ QColor PaletteEditorDialog::colorAt(PaletteElem e) const
         case PE_BOOKMARK_6:         return m_info.bookmarks[5].isValid() ? m_info.bookmarks[5] : QColor( 80, 160, 255);
         case PE_BOOKMARK_7:         return m_info.bookmarks[6].isValid() ? m_info.bookmarks[6] : QColor(255, 150, 200);
 
+        case PE_WINDOW:             return m_info.window.isValid()     ? m_info.window     : pal.color(QPalette::Window);
+        case PE_WINDOWTEXT:         return m_info.windowText.isValid() ? m_info.windowText : pal.color(QPalette::WindowText);
+        case PE_TOOLBAR:            return m_info.toolbar.isValid()    ? m_info.toolbar    : pal.color(QPalette::AlternateBase);
+        case PE_HIGHLIGHT:          return m_info.highlight.isValid()  ? m_info.highlight  : pal.color(QPalette::Highlight);
+        case PE_COUNT:              return {};
+    }
+    return {};
+}
 
+QColor PaletteEditorDialog::rawColorAt(PaletteElem e) const
+{
+    switch (e) {
+        case PE_BG:                 return m_info.bg;
+        case PE_HEX_ODD:            return m_info.hexOdd;
+        case PE_HEX_EVEN:           return m_info.hexEven;
+        case PE_ASCII:              return m_info.ascii;
+        case PE_MODIFIED:           return m_info.modified;
+        case PE_SELECTION:          return m_info.selection;
+        case PE_MATCHED:            return m_info.matched;
+        case PE_SELECTION_TEXT:     return m_info.selectionText;
+        case PE_SELECTION_INACTIVE: return m_info.selectionInactive;
+        case PE_ADDRESS:            return m_info.address;
+        case PE_RESIZE_BAR:         return m_info.resizeBar;
+        case PE_BOOKMARK_1:         return m_info.bookmarks[0];
+        case PE_BOOKMARK_2:         return m_info.bookmarks[1];
+        case PE_BOOKMARK_3:         return m_info.bookmarks[2];
+        case PE_BOOKMARK_4:         return m_info.bookmarks[3];
+        case PE_BOOKMARK_5:         return m_info.bookmarks[4];
+        case PE_BOOKMARK_6:         return m_info.bookmarks[5];
+        case PE_BOOKMARK_7:         return m_info.bookmarks[6];
         case PE_WINDOW:             return m_info.window;
         case PE_WINDOWTEXT:         return m_info.windowText;
         case PE_TOOLBAR:            return m_info.toolbar;
@@ -594,6 +711,28 @@ QColor PaletteEditorDialog::colorAt(PaletteElem e) const
         case PE_COUNT:              return {};
     }
     return {};
+}
+
+void PaletteEditorDialog::updateColorUI(PaletteElem e)
+{
+    const bool automatic = !rawColorAt(e).isValid();
+
+    m_autoToggle->blockSignals(true);
+    m_autoToggle->setChecked(automatic);
+    m_autoToggle->blockSignals(false);
+
+    m_hexLabel->setEnabled(!automatic);
+    m_hexEdit->setEnabled(!automatic);
+    m_picker->setEnabled(!automatic);
+
+    const QColor display    = colorAt(e);
+    const QColor pickerSeed = display.isValid() ? display : QColor(128, 128, 128);
+    m_picker->blockSignals(true);
+    m_picker->setColor(pickerSeed);
+    m_picker->blockSignals(false);
+    // Always populate the hex edit, even when disabled — the text is invisible
+    // while automatic is on, but it means toggling off always has a value to read.
+    m_hexEdit->setText(pickerSeed.name().toUpper());
 }
 
 void PaletteEditorDialog::setColorAt(PaletteElem e, const QColor &c)
@@ -632,9 +771,16 @@ QPixmap PaletteEditorDialog::makeColorSwatch(const QColor &c)
     px.fill(Qt::transparent);
     QPainter p(&px);
     p.setRenderHint(QPainter::Antialiasing);
-    p.setBrush(c);
-    p.setPen(Qt::NoPen);
-    p.drawRoundedRect(QRectF(1, 1, 14, 14), 3, 3);
+    if (c.isValid()) {
+        p.setBrush(c);
+        p.setPen(Qt::NoPen);
+        p.drawRoundedRect(QRectF(1, 1, 14, 14), 3, 3);
+    } else {
+        // Automatic — neutral placeholder
+        p.setBrush(Qt::NoBrush);
+        p.setPen(QPen(QColor(128, 128, 128, 160), 1));
+        p.drawRoundedRect(QRectF(1.5, 1.5, 13, 13), 3, 3);
+    }
     return px;
 }
 
