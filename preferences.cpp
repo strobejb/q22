@@ -253,6 +253,7 @@ void StepSpinBox::leaveEvent(QEvent *)
 FontPickerDialog::FontPickerDialog(const QFont &current, QWidget *parent)
     : QDialog(parent), m_font(current)
 {
+    removeDialogIcon(this);
     setWindowTitle(tr("Select Font"));
     resize(460, 540);
 
@@ -619,6 +620,7 @@ private:
 PreferencesDialog::PreferencesDialog(QWidget *parent)
     : QDialog(parent)
 {
+    removeDialogIcon(this);
     setWindowTitle(tr("Preferences"));
 
     // ── Font family ──────────────────────────────────────────────────────────

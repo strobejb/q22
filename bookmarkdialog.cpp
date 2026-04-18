@@ -58,6 +58,7 @@ BookmarkDialog::BookmarkDialog(QWidget *parent)
     , m_foreground(QApplication::palette().text().color())
 {
     ui->setupUi(this);
+    removeDialogIcon(this);
 
     // Set up colour picker and wrap it in a list-group card.
     ui->colourPicker->setColumns(7);

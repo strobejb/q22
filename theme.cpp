@@ -89,22 +89,6 @@ static void applyDwmDarkMode(QWidget *w)
 
     HWND hwnd = reinterpret_cast<HWND>(w->winId());
 
-    // For dialog windows, strip minimize/maximize buttons and the app icon.
-    // Qt sets Qt::Dialog but Windows still ends up with WS_MINIMIZEBOX /
-    // WS_MAXIMIZEBOX in the native style, and the app icon appears in the
-    // title bar.  Fix both here so every QDialog gets clean chrome.
-    if (w->windowFlags() & Qt::Dialog) {
-        LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE);
-        if (style & (WS_MINIMIZEBOX | WS_MAXIMIZEBOX)) {
-            SetWindowLongPtr(hwnd, GWL_STYLE,
-                             style & ~(WS_MINIMIZEBOX | WS_MAXIMIZEBOX));
-            SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
-                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
-        }
-        // Remove the icon from the title bar / system menu.
-        SendMessage(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)nullptr);
-        SendMessage(hwnd, WM_SETICON, ICON_BIG,   (LPARAM)nullptr);
-    }
 
     const bool dark = (s_currentScheme == ColorScheme::Dark) ||
                       (s_currentScheme == ColorScheme::System &&
@@ -117,9 +101,10 @@ namespace {
 struct DarkModeFilter : public QObject {
     explicit DarkModeFilter(QObject *p) : QObject(p) {}
     bool eventFilter(QObject *obj, QEvent *e) override {
+        auto *w = qobject_cast<QWidget *>(obj);
+        if (!w) return false;
         if (e->type() == QEvent::Show)
-            if (auto *w = qobject_cast<QWidget *>(obj))
-                applyDwmDarkMode(w);
+            applyDwmDarkMode(w);
         return false;
     }
 };
@@ -180,18 +165,21 @@ Hairline::Hairline(QWidget *parent) : QWidget(parent)
     setFixedHeight(1);
 }
 
+void Hairline::showEvent(QShowEvent *e)
+{
+    setFixedHeight(qCeil(devicePixelRatioF()));
+    QWidget::showEvent(e);
+}
+
 void Hairline::paintEvent(QPaintEvent *)
 {
     QPainter p(this);
-    // Fill the widget background first so fractional-DPI rounding artefacts
-    // (the widget is 1 logical px but may span 1.5 physical px) show the
-    // correct parent background rather than stale content.
-    p.fillRect(rect(), palette().window());
-    // Paint exactly 1 physical pixel of separator colour.  1.0/dpr logical px
-    // maps to exactly 1 physical px through the painter's device transform,
-    // regardless of where the widget sits in sub-pixel space.
-    const qreal onePx = 1.0 / p.device()->devicePixelRatioF();
-    p.fillRect(QRectF(0, 0, width(), onePx), palette().mid());
+    p.setRenderHint(QPainter::Antialiasing, false);
+    // Scale to physical pixel coordinates and draw exactly 1 physical pixel row.
+    // This is independent of sub-pixel widget position in the layout.
+    const qreal dpr = devicePixelRatioF();
+    p.scale(1.0 / dpr, 1.0 / dpr);
+    p.fillRect(QRectF(0, 0, width() * dpr, 1), palette().mid());
 }
 
 // ── Smart menu positioning ────────────────────────────────────────────────────
@@ -543,7 +531,8 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: t
 /* ── Status bar ──────────────────────────────────────────────── */
 QStatusBar {
     background: {statusBg};
-    padding: 6px 0;
+    padding: 4px 0;
+    /*border-top: 1px solid palette(mid);*/
 }
 QStatusBar QComboBox {
     border: 1px solid transparent;
@@ -558,7 +547,6 @@ QStatusBar QComboBox:focus { background: {statusComboHover}; border: 1px solid p
 QAbstractScrollArea { border: none; }
 QPlainTextEdit { border: 1px solid palette(mid); margin:1px; border-radius: 6px; }
 QPlainTextEdit:focus { border: 2px solid palette(highlight); margin: 0px; }
-#HexView { border-top: 1px solid palette(mid); }
 QToolTip {
     background: palette(tooltip-base);
     color: palette(tooltip-text);
@@ -1038,4 +1026,16 @@ void setUiColourOverrides(const UiColourOverrides &o)
 const UiColourOverrides &uiColourOverrides()
 {
     return s_uiOverrides;
+}
+
+
+void removeDialogIcon(QDialog *dlg)
+{
+#ifdef Q_OS_WIN
+    QPixmap px(32, 32);
+    px.fill(Qt::transparent);
+    dlg->setWindowIcon(QIcon(px));
+    // Remove WS_THICKFRAME so Windows doesn't show a resize cursor on the edges.
+    dlg->setWindowFlag(Qt::MSWindowsFixedSizeDialogHint);
+#endif
 }

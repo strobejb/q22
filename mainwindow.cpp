@@ -25,6 +25,7 @@
 #include <QDir>
 #include <QMimeData>
 #include <QAbstractButton>
+#include <QFrame>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QMessageBox>
@@ -373,6 +374,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     m_hv = new HexView(this);
     m_hv->setObjectName("HexView");
+    m_hv->setFrameShape(QFrame::NoFrame);
     m_hv->setStyle(HVS_RESIZEBAR | HVS_SHOWMODS| HVS_INVERTSELECTION,
                    HVS_RESIZEBAR | HVS_SHOWMODS );
     m_hv->setHexColour(HVC_HEXEVEN, QColor(0, 0, 255));
@@ -386,10 +388,13 @@ MainWindow::MainWindow(QWidget *parent)
     vlay->setContentsMargins(0, 0, 0, 0);
     vlay->setSpacing(0);
     vlay->addWidget(m_titleBar);   // sits at the top of the content area in custom-titlebar mode
+    vlay->addWidget(new Hairline(central));
     vlay->addWidget(m_hv, 1);
     m_bookmarkDialog = new BookmarkDialog(this);
     m_findDialog = new FindDialog(central);
+    m_findDialog->setObjectName("FindDialog");
     m_gotoDialog = new GotoDialog(m_hv, central);
+    m_gotoDialog->setObjectName("GotoDialog");
     vlay->addWidget(m_findDialog, 0);
     vlay->addWidget(m_gotoDialog, 0);
     vlay->addWidget(new Hairline(central));  // separator between content and status bar
@@ -471,6 +476,8 @@ MainWindow::MainWindow(QWidget *parent)
     });
 
     m_statusBar = new StatusBar(m_hv, ui->statusbar, this);
+    ui->statusbar->setContentsMargins(0, 0,0,2);//2, 0, 2);
+    ui->statusbar->setSizeGripEnabled(false);
 
     // ── Edit menu ─────────────────────────────────────────────────────────────
     // Shortcuts not set in the .ui file are assigned here so they are also
@@ -989,7 +996,7 @@ void MainWindow::updateWinChromeColors()
 
     // Override the status bar background (normally set by the global stylesheet).
     ui->statusbar->setStyleSheet(QString(
-        "QStatusBar { background: %1; padding: 6px 0; }"
+        "QStatusBar { background: %1; }"
         "QStatusBar QComboBox:hover { background: %2; }"
     ).arg(bgName, comboHover));
 

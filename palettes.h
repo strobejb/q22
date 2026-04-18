@@ -3,6 +3,7 @@
 
 #include <QAbstractButton>
 #include <QColor>
+#include "theme.h"
 #include <QDialog>
 #include <QList>
 #include <QString>

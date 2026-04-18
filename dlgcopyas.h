@@ -9,8 +9,9 @@
 
 #pragma once
 
-#include <QDialog>
+#include "theme.h"
 #include "dlgexport.h"
+#include <QDialog>
 
 namespace Ui { class CopyAsDialog; }
 
@@ -37,6 +38,7 @@ private:
 
     Ui::CopyAsDialog  *ui;
     HexView           *m_hv;
+
 };
 
 // Show the dialog and perform the copy if accepted.

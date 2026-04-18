@@ -27,7 +27,8 @@ GotoDialog::GotoDialog(HexView *hv, QWidget *parent)
     , m_hv(hv)
 {
     ui->setupUi(this);
-    setAutoFillBackground(true);
+    setAttribute(Qt::WA_StyledBackground, true);
+    ui->verticalLayout->insertWidget(0, new Hairline(this));
     hide();
 
     // Button style matching the titlebar aesthetic
@@ -40,6 +41,10 @@ GotoDialog::GotoDialog(HexView *hv, QWidget *parent)
     // default border, so we must declare it explicitly.
     QString borderCol  = QApplication::palette().mid().color().name();
     setStyleSheet(QString(R"(
+        /* #GotoDialog {
+            background: palette(window);
+            border-top: 1px solid palette(mid);
+        } */
         QToolButton {
             border: none;
             border-radius: 6px;
@@ -242,3 +247,4 @@ void GotoDialog::triggerSearch(uint /*flags*/)
         m_hv->setFocus();
     }
 }
+

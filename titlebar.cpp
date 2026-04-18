@@ -378,7 +378,7 @@ void TitleBar::refreshStylesheet()
     setStyleSheet(QString(R"(
         #TitleBar {
             background-color: %1;
-            border-bottom: 1px solid %5;
+            /* border-bottom: 1px solid %5; */
         }
         #TitleBar QLabel { color: %2; font-weight: 600; }
         #TitleBar QToolButton {

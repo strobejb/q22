@@ -9,8 +9,9 @@
 
 #pragma once
 
-#include <QDialog>
+#include "theme.h"
 #include "dlgimport.h"
+#include <QDialog>
 
 namespace Ui { class PasteSpecialDialog; }
 

@@ -58,6 +58,8 @@ static bool formatNeedsDataType(IMPEXP_FORMAT fmt)
     return fmt == FORMAT_CPP || fmt == FORMAT_ASM;
 }
 
+
+
 // ── CopyAsDialog ─────────────────────────────────────────────────────────────
 
 CopyAsDialog::CopyAsDialog(HexView *hv, QWidget *parent)
@@ -66,6 +68,7 @@ CopyAsDialog::CopyAsDialog(HexView *hv, QWidget *parent)
     , m_hv(hv)
 {
     ui->setupUi(this);
+    removeDialogIcon(this);
 
     // Strip any platform-supplied icons from OK / Cancel so the buttons stay clean.
     for (QAbstractButton *btn : ui->buttonBox->buttons())
@@ -88,6 +91,7 @@ CopyAsDialog::CopyAsDialog(HexView *hv, QWidget *parent)
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
     setFixedSize(qMax(sizeHint().width(), 440), sizeHint().height());
+    //fixDialogStyle(this);
 }
 
 CopyAsDialog::~CopyAsDialog()
@@ -120,11 +124,18 @@ void CopyAsDialog::onAccepted()
 
     accept();
 }
-
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 bool CopyAsDlg(HexView *hv, QWidget *parent)
 {
     CopyAsDialog dlg(hv, parent);
+    // Source - https://stackoverflow.com/a/72057839
+    // Posted by Vinci
+    // Retrieved 2026-04-18, License - CC BY-SA 4.0
+
+    //QPixmap pixmap{32, 32};
+    //pixmap.fill(Qt::transparent);
+    //dlg.setWindowIcon(QIcon{pixmap});
+
     return dlg.exec() == QDialog::Accepted;
 }

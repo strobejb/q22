@@ -421,6 +421,7 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
 PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *parent)
     : QDialog(parent), m_info(info)
 {
+    removeDialogIcon(this);
     setWindowTitle(tr("Edit Palette"));
     resize(460, 580);
 

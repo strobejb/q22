@@ -42,17 +42,13 @@ QColor themeBorderColor();
 
 
 #include <QWidget>
-// A horizontal separator that always renders as exactly 1 physical pixel,
-// regardless of DPI scale factor or sub-pixel widget position.
-// It achieves this by painting a QRectF whose height is 1.0/devicePixelRatioF()
-// logical pixels — which the painter's device transform maps to exactly 1
-// physical pixel row on the backing surface.
+// A horizontal separator sized to exactly 1 physical pixel at any DPI.
 class Hairline : public QWidget
 {
-    Q_OBJECT
 public:
     explicit Hairline(QWidget *parent = nullptr);
 protected:
+    void showEvent(QShowEvent *) override;
     void paintEvent(QPaintEvent *) override;
 };
 
@@ -81,5 +77,10 @@ class QColor;
 // logicalPx is the font/draw size in logical (device-independent) pixels.
 QIcon segoeIcon(uint codePoint, const QColor &color, int logicalPx = 14);
 #endif
+
+
+#include <QDialog>
+// Clears the window icon on a dialog so no app icon appears in the title bar.
+void removeDialogIcon(QDialog *dlg);
 
 #endif // THEME_H

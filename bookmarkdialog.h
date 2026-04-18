@@ -1,6 +1,7 @@
 #ifndef BOOKMARKDIALOG_H
 #define BOOKMARKDIALOG_H
 
+#include "theme.h"
 #include <QDialog>
 #include <QColor>
 #include <QVector>

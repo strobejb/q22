@@ -65,6 +65,7 @@ PasteSpecialDialog::PasteSpecialDialog(HexView *hv, QWidget *parent)
     , m_hv(hv)
 {
     ui->setupUi(this);
+    removeDialogIcon(this);
 
     // List: item padding + lock border/outline across all states so Adwaita's
     // PE_Frame hover-highlight colour can't bleed as a ghost pixel onto the
@@ -118,6 +119,8 @@ PasteSpecialDialog::PasteSpecialDialog(HexView *hv, QWidget *parent)
             this, &PasteSpecialDialog::onFormatChanged);
     connect(ui->buttonBox, &QDialogButtonBox::accepted,
             this, &PasteSpecialDialog::onAccepted);
+
+    setFixedSize(sizeHint());
 }
 
 PasteSpecialDialog::~PasteSpecialDialog()

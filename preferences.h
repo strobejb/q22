@@ -4,7 +4,7 @@
 #include "palettes.h"
 
 #include <QAbstractButton>
-#include <QDialog>
+#include "theme.h"
 #include <QFont>
 
 class QButtonGroup;

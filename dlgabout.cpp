@@ -252,6 +252,7 @@ static void showCreditsDlg(QWidget *parent, QSize size)
 void ShowAboutDlg(QWidget *parent)
 {
     QDialog dlg(parent);
+    removeDialogIcon(&dlg);
     dlg.setWindowTitle(QObject::tr("About"));
     dlg.setSizeGripEnabled(false);
 
