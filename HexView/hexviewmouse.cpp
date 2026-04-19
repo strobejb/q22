@@ -133,8 +133,8 @@ size_w HexView::offsetFromPhysCoord(int mx, int my, int *pane,
     int y = getLogicalY(my);
     //qDebug() << "logx" << x;
 
-    if (y >= m_nWindowLines)   m_nWindowLines - 1;
-    if (x >= m_nWindowColumns) m_nWindowColumns - 1;
+    if (y >= m_nWindowLines)   y = m_nWindowLines - 1;
+    if (x >= m_nWindowColumns) x = m_nWindowColumns - 1;
     if (x < 0) x = 0;
     if (y < 0) y = 0;
 

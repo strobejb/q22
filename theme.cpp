@@ -159,10 +159,23 @@ struct MenuShadowFilter : public QObject
 
 // ── Hairline separator ────────────────────────────────────────────────────────
 
-Hairline::Hairline(QWidget *parent) : QWidget(parent)
+Hairline::Hairline(QWidget *parent, Edge edge, QWidget *bgSource)
+    : QWidget(parent), m_edge(edge), m_bgSource(bgSource)
 {
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     setFixedHeight(1);
+    if (m_bgSource)
+        m_bgSource->installEventFilter(this);
+}
+
+void Hairline::setBgSource(QWidget *bgSource)
+{
+    if (m_bgSource)
+        m_bgSource->removeEventFilter(this);
+    m_bgSource = bgSource;
+    if (m_bgSource)
+        m_bgSource->installEventFilter(this);
+    update();
 }
 
 void Hairline::showEvent(QShowEvent *e)
@@ -171,15 +184,35 @@ void Hairline::showEvent(QShowEvent *e)
     QWidget::showEvent(e);
 }
 
+bool Hairline::eventFilter(QObject *obj, QEvent *e)
+{
+    // Repaint when the bgSource palette changes (e.g. titlebar active/inactive).
+    if (obj == m_bgSource && e->type() == QEvent::PaletteChange)
+        update();
+    return QWidget::eventFilter(obj, e);
+}
+
 void Hairline::paintEvent(QPaintEvent *)
 {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing, false);
-    // Scale to physical pixel coordinates and draw exactly 1 physical pixel row.
-    // This is independent of sub-pixel widget position in the layout.
-    const qreal dpr = devicePixelRatioF();
+    const qreal dpr      = devicePixelRatioF();
+    const qreal linePhys = qRound(dpr);
+    const qreal topPhys  = (m_edge == Edge::Bottom)
+                           ? (height() * dpr - linePhys)
+                           : 0.0;
+    const qreal gapPhys  = height() * dpr - linePhys;
+
     p.scale(1.0 / dpr, 1.0 / dpr);
-    p.fillRect(QRectF(0, 0, width() * dpr, 1), palette().mid());
+
+    // Fill the gap (non-line portion) with bgSource palette if provided.
+    if (m_bgSource && gapPhys > 0) {
+        const QColor bg = m_bgSource->palette().window().color();
+        const qreal gapTop = (m_edge == Edge::Bottom) ? 0.0 : linePhys;
+        p.fillRect(QRectF(0, gapTop, width() * dpr, gapPhys), bg);
+    }
+
+    p.fillRect(QRectF(0, topPhys, width() * dpr, linePhys), palette().mid());
 }
 
 // ── Smart menu positioning ────────────────────────────────────────────────────
@@ -370,6 +403,11 @@ static QString buildStylesheet(bool dark)
    PE_FrameFocusRect is suppressed separately in NoFocusRectStyle. */
 QWidget { color: palette(window-text); outline: none; }
 
+/* ── Menu bar ────────────────────────────────────────────────── */
+QMenuBar {
+    background: palette(window);
+}
+
 /* ── Push buttons ────────────────────────────────────────────── */
 QPushButton {
     background: palette(button);
@@ -531,7 +569,8 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: t
 /* ── Status bar ──────────────────────────────────────────────── */
 QStatusBar {
     background: {statusBg};
-    padding: 4px 0;
+
+    padding: 0;
     /*border-top: 1px solid palette(mid);*/
 }
 QStatusBar QComboBox {

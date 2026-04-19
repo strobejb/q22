@@ -388,7 +388,8 @@ MainWindow::MainWindow(QWidget *parent)
     vlay->setContentsMargins(0, 0, 0, 0);
     vlay->setSpacing(0);
     vlay->addWidget(m_titleBar);   // sits at the top of the content area in custom-titlebar mode
-    vlay->addWidget(new Hairline(central));
+    m_titleHairline = new Hairline(central, Hairline::Edge::Bottom, m_titleBar);  // bgSource swapped in applyMenuMode
+    vlay->addWidget(m_titleHairline);
     vlay->addWidget(m_hv, 1);
     m_bookmarkDialog = new BookmarkDialog(this);
     m_findDialog = new FindDialog(central);
@@ -476,7 +477,7 @@ MainWindow::MainWindow(QWidget *parent)
     });
 
     m_statusBar = new StatusBar(m_hv, ui->statusbar, this);
-    ui->statusbar->setContentsMargins(0, 0,0,2);//2, 0, 2);
+    ui->statusbar->setContentsMargins(0, 0, 0, 2);
     ui->statusbar->setSizeGripEnabled(false);
 
     // ── Edit menu ─────────────────────────────────────────────────────────────
@@ -687,7 +688,7 @@ MainWindow::MainWindow(QWidget *parent)
         m_hv->setFont(m_hv->font(), hSpacing, lineSpacing);
     });
     connect(m_prefsDialog, &PreferencesDialog::nativeMenuChanged,
-            this, &MainWindow::applyMenuMode);
+            this, [this](bool native) { applyMenuMode(!native); });
     connect(m_prefsDialog, &PreferencesDialog::paletteSelected,
             this, [this](const PaletteInfo &info) {
         applyPalette(m_hv, info);
@@ -725,7 +726,7 @@ MainWindow::MainWindow(QWidget *parent)
     }
 
     // Apply saved menu mode (may switch away from the default custom titlebar)
-    applyMenuMode(AppSettings::prefNativeMenu());
+    applyMenuMode(!AppSettings::prefNativeMenu());
 
     // Edge-resize event filter: catches mouse events on any child widget
     qApp->installEventFilter(this);
@@ -875,9 +876,17 @@ void MainWindow::applyMenuMode(bool useCustomTitleBar)
     if (useCustomTitleBar) {
         ui->menubar->hide();
         m_titleBar->show();
+        if (m_titleHairline) {
+            m_titleHairline->show();
+            m_titleHairline->setBgSource(m_titleBar);
+        }
     } else {
         m_titleBar->hide();
         ui->menubar->show();
+        if (m_titleHairline) {
+            m_titleHairline->show();
+            m_titleHairline->setBgSource(ui->menubar);
+        }
     }
 
 #ifndef Q_OS_WIN
@@ -994,7 +1003,6 @@ void MainWindow::updateWinChromeColors()
     const QString bgName      = bg.name();
     const QString comboHover  = (dark ? bg.lighter(130) : bg.darker(107)).name();
 
-    // Override the status bar background (normally set by the global stylesheet).
     ui->statusbar->setStyleSheet(QString(
         "QStatusBar { background: %1; }"
         "QStatusBar QComboBox:hover { background: %2; }"

@@ -6,6 +6,7 @@
 #include <QLabel>
 #include <QMenu>
 #include <QMouseEvent>
+#include <QShowEvent>
 #include <QPalette>
 #include <QStyle>
 #include <QToolButton>

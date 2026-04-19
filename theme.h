@@ -43,13 +43,25 @@ QColor themeBorderColor();
 
 #include <QWidget>
 // A horizontal separator sized to exactly 1 physical pixel at any DPI.
+// Edge::Top  — line at top,    remainder blends into widget below (default).
+// Edge::Bottom — line at bottom, remainder blends into widget above.
 class Hairline : public QWidget
 {
 public:
-    explicit Hairline(QWidget *parent = nullptr);
+    enum class Edge { Top, Bottom };
+    // bgSource: widget whose palette().window() fills the non-line portion.
+    // Pass e.g. the TitleBar so the gap colour tracks active/inactive changes.
+    // If null, the gap is left transparent (shows parent background).
+    explicit Hairline(QWidget *parent = nullptr, Edge edge = Edge::Top,
+                      QWidget *bgSource = nullptr);
+    void setBgSource(QWidget *bgSource);
 protected:
     void showEvent(QShowEvent *) override;
     void paintEvent(QPaintEvent *) override;
+    bool eventFilter(QObject *obj, QEvent *e) override;
+private:
+    Edge    m_edge;
+    QWidget *m_bgSource;
 };
 
 class QIcon;

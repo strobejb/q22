@@ -13,6 +13,7 @@ class FindDialog;
 class GotoDialog;
 class PreferencesDialog;
 class HexView;
+class Hairline;
 class QMenu;
 class StatusBar;
 class TitleBar;
@@ -48,7 +49,8 @@ private:
     Ui::MainWindow *ui;
     HexView        *m_hv           = nullptr;
     StatusBar      *m_statusBar    = nullptr;
-    TitleBar       *m_titleBar     = nullptr;
+    TitleBar       *m_titleBar      = nullptr;
+    Hairline       *m_titleHairline = nullptr;
     QMenu          *m_recentMenu   = nullptr;
     BookmarkDialog    *m_bookmarkDialog = nullptr;
     FindDialog        *m_findDialog     = nullptr;
