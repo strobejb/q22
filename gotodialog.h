@@ -32,12 +32,14 @@ protected:
     void changeEvent(QEvent *e)      override;
 
 private:
+    void       refreshStylesheet();
     QByteArray buildPattern() const;
     void       triggerSearch(uint flags);
     void       updateSearchHexPreview();
 
     Ui::GotoDialog   *ui;
     HexView          *m_hv;
+    bool              m_inRefresh      = false;
     DataTypeComboBox *m_comboBookmarks  = nullptr;
     QPoint            m_optMenuClosePos { -1, -1 };
     QPoint            m_navMenuClosePos { -1, -1 };

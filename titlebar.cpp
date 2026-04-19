@@ -415,30 +415,33 @@ void TitleBar::refreshStylesheet()
         #TitleBar QToolButton#close:hover   { background: #c42b1c; color: white; }
         #TitleBar QToolButton#close:pressed { background: #9a1c10; color: white; }
     )");
-#else
-    // Recolor symbolic icons to match the current foreground color.
-    // QIcon::fromTheme() returns uncolored pixmaps on Linux; we tint via alpha compositing.
-    const QColor fgColor(fg);
-    auto recolor = [&](QToolButton *btn, const QString &name, int sz = 16) {
-        if (!btn) return;
-        QIcon ic = recoloredIcon(name, fgColor, sz);
-        if (!ic.isNull()) btn->setIcon(ic);
-    };
-    recolor(m_hamburger, "document-open-symbolic",  14);
-    recolor(m_searchBtn,  "edit-find-symbolic",      14);
-    recolor(m_viewBtn,    "open-menu-symbolic",      14);
-    recolor(m_btnClose,   "window-close-symbolic");
-    recolor(m_btnMin,     "window-minimize-symbolic");
-    if (m_btnMax) {
-        bool maximized = window() && window()->isMaximized();
-        recolor(m_btnMax, maximized ? "window-restore-symbolic" : "window-maximize-symbolic");
-    }
 #endif
+    // Recolor symbolic icons to match the current foreground color.
+    // QIcon::fromTheme() returns uncolored pixmaps; we tint via alpha compositing.
+    {
+        const QColor fgColor(fg);
+        auto recolor = [&](QToolButton *btn, const QString &name, int sz = 16) {
+            if (!btn) return;
+            QIcon ic = recoloredIcon(name, fgColor, sz);
+            if (!ic.isNull()) btn->setIcon(ic);
+        };
+        recolor(m_hamburger, "document-open-symbolic",  14);
+        recolor(m_searchBtn,  "edit-find-symbolic",      14);
+        recolor(m_viewBtn,    "open-menu-symbolic",      14);
+#ifndef Q_OS_WIN
+        // Caption buttons on Windows use Segoe text glyphs, not icons.
+        recolor(m_btnClose,   "window-close-symbolic");
+        recolor(m_btnMin,     "window-minimize-symbolic");
+        if (m_btnMax) {
+            bool maximized = window() && window()->isMaximized();
+            recolor(m_btnMax, maximized ? "window-restore-symbolic" : "window-maximize-symbolic");
+        }
+#endif
+    }
 }
 
 void TitleBar::changeEvent(QEvent *e)
 {
-#ifndef Q_OS_WIN
     if (e->type() == QEvent::PaletteChange) {
         // Recolor icons only — do NOT call refreshStylesheet() here, since that
         // calls setStyleSheet() which modifies the widget palette (via the color:
@@ -454,14 +457,16 @@ void TitleBar::changeEvent(QEvent *e)
         recolor(m_hamburger, "document-open-symbolic",  14);
         recolor(m_searchBtn,  "edit-find-symbolic",      14);
         recolor(m_viewBtn,    "open-menu-symbolic",      14);
+#ifndef Q_OS_WIN
+        // Caption buttons on Windows use Segoe text glyphs, not icons.
         recolor(m_btnClose,   "window-close-symbolic");
         recolor(m_btnMin,     "window-minimize-symbolic");
         if (m_btnMax) {
             const bool maximized = window() && window()->isMaximized();
             recolor(m_btnMax, maximized ? "window-restore-symbolic" : "window-maximize-symbolic");
         }
-    }
 #endif
+    }
     QWidget::changeEvent(e);
 }
 

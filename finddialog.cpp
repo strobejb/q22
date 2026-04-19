@@ -117,47 +117,7 @@ FindDialog::FindDialog(QWidget *parent)
     ui->verticalLayout->insertWidget(0, new Hairline(this));
     hide();
 
-    // Button style matching the titlebar aesthetic
-    bool dark     = QApplication::palette().window().color().lightness() < 128;
-    QString hover   = dark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.10)";
-    QString pressed = dark ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.18)";
-    // Use the palette mid colour for the QLineEdit border so it matches the
-    // combobox border defined in theme.cpp's buildStylesheet().  Once any
-    // border property is set via stylesheet Qt stops drawing the platform
-    // default border, so we must declare it explicitly.
-    QString borderCol  = QApplication::palette().mid().color().name();
-    setStyleSheet(QString(R"(
-        /* #FindDialog {
-            background: palette(window);
-            border-top: 1px solid palette(mid);
-        } */
-        QToolButton {
-            border: none;
-            border-radius: 6px;
-            background: transparent;
-        }
-        QToolButton:hover   { background: %1; }
-        QToolButton:pressed { background: %2; }
-        QToolButton::menu-indicator { image: none; width: 0; }
-        #editFind {
-            margin: 1px;
-            border: 1px solid %3;
-            border-radius: 6px;
-            padding: 0;
-        }
-        #editFind:hover {
-            margin: 1px;
-            border: 1px solid %3;
-            border-radius: 6px;
-            padding: 0;
-        }
-        #editFind:focus {
-            margin: 0;
-            border: 2px solid palette(highlight);
-            border-radius: 6px;
-            padding: 0;
-        }
-    )").arg(hover, pressed, borderCol));
+    refreshStylesheet();
 
     // Options menu
     auto *optMenu = new QMenu(this);
@@ -273,12 +233,50 @@ FindDialog::FindDialog(QWidget *parent)
 #endif
 }
 
+void FindDialog::refreshStylesheet()
+{
+    const bool dark      = QApplication::palette().window().color().lightness() < 128;
+    const QString hover   = dark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.10)";
+    const QString pressed = dark ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.18)";
+    const QString borderCol = QApplication::palette().mid().color().name();
+    setStyleSheet(QString(R"(
+        QToolButton {
+            border: none;
+            border-radius: 6px;
+            background: transparent;
+        }
+        QToolButton:hover   { background: %1; }
+        QToolButton:pressed { background: %2; }
+        QToolButton::menu-indicator { image: none; width: 0; }
+        #editFind {
+            margin: 1px;
+            border: 1px solid %3;
+            border-radius: 6px;
+            padding: 0;
+        }
+        #editFind:hover {
+            margin: 1px;
+            border: 1px solid %3;
+            border-radius: 6px;
+            padding: 0;
+        }
+        #editFind:focus {
+            margin: 0;
+            border: 2px solid palette(highlight);
+            border-radius: 6px;
+            padding: 0;
+        }
+    )").arg(hover, pressed, borderCol));
+}
+
 void FindDialog::changeEvent(QEvent *e)
 {
-#ifndef Q_OS_WIN
-    if (e->type() == QEvent::PaletteChange)
+    if (e->type() == QEvent::PaletteChange && !m_inRefresh) {
+        m_inRefresh = true;
+        refreshStylesheet();
         recolorToolButtons(this);
-#endif
+        m_inRefresh = false;
+    }
     QWidget::changeEvent(e);
 }
 

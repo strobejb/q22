@@ -52,10 +52,12 @@ public:
     QByteArray buildPattern() const;
 
 private:
+    void       refreshStylesheet();
     void       triggerSearch(uint flags);
     void       updateSearchHexPreview();
 
     Ui::FindDialog   *ui;
+    bool              m_inRefresh      = false;
     QAction          *m_actRegex       = nullptr;
     QAction          *m_actWholeWord   = nullptr;
     QAction          *m_actWrap        = nullptr;
