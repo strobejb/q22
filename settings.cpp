@@ -85,6 +85,18 @@ void AppSettings::setPrefNativeMenu(bool on)
     s.setValue("preferences/nativeMenu", on);
 }
 
+bool AppSettings::prefMenuHighlight()
+{
+    OPEN_SETTINGS;
+    return s.value("preferences/menuHighlight", false).toBool();
+}
+
+void AppSettings::setPrefMenuHighlight(bool on)
+{
+    OPEN_SETTINGS;
+    s.setValue("preferences/menuHighlight", on);
+}
+
 int AppSettings::prefColorScheme()
 {
     OPEN_SETTINGS;

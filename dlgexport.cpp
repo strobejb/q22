@@ -27,8 +27,20 @@ IMPEXP_OPTIONS g_ExportOptions = { FORMAT_HEXDUMP, SEARCHTYPE_BYTE };
 // ── Endian helpers ───────────────────────────────────────────────────────────
 
 static inline uint16_t reverse16(uint16_t n) { return (uint16_t)((n >> 8) | (n << 8)); }
-static inline uint32_t reverse32(uint32_t n) { return __builtin_bswap32(n); }
-static inline uint64_t reverse64(uint64_t n) { return __builtin_bswap64(n); }
+static inline uint32_t reverse32(uint32_t n) {
+#if defined(_MSC_VER)
+    return _byteswap_ulong(n);
+#else
+    return __builtin_bswap32(n);
+#endif
+}
+static inline uint64_t reverse64(uint64_t n) {
+#if defined(_MSC_VER)
+    return _byteswap_uint64(n);
+#else
+    return __builtin_bswap64(n);
+#endif
+}
 
 #define ENDIAN_TO_NATIVE16(bigend, v) ((bigend) ? reverse16((uint16_t)(v)) : (uint16_t)(v))
 #define ENDIAN_TO_NATIVE32(bigend, v) ((bigend) ? reverse32((uint32_t)(v)) : (uint32_t)(v))

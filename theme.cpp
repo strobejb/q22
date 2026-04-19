@@ -1,4 +1,5 @@
 #include "theme.h"
+#include "settings.h"
 #include <QApplication>
 #include <QComboBox>
 #include <QFont>
@@ -378,6 +379,9 @@ static QString buildStylesheet(bool dark)
     const QString fgDisabled      = pal.color(QPalette::Disabled, QPalette::WindowText).name();
     const QString btnHover        = (darkBtn ? btn.lighter(118) : btn.darker(103)).name();
     const QString btnActive       = (darkBtn ? btn.lighter(133) : btn.darker(106)).name();
+    const bool    menuUseHighlight = AppSettings::prefMenuHighlight();
+    const QString menuSelBg       = menuUseHighlight ? "palette(highlight)"  : btnHover;
+    const QString menuSelFg       = menuUseHighlight ? "palette(highlighted-text)" : "palette(window-text)";
 
     const QColor toolbarColor = s_uiOverrides.toolbar.isValid()
                                ? s_uiOverrides.toolbar
@@ -406,6 +410,19 @@ QWidget { color: palette(window-text); outline: none; }
 /* ── Menu bar ────────────────────────────────────────────────── */
 QMenuBar {
     background: palette(window);
+}
+QMenuBar::item {
+    background: transparent;
+    padding: 4px 8px;
+}
+QMenuBar::item:selected {
+    background: {menuSelBg};
+    color: {menuSelFg};
+    border-radius: 4px;
+}
+QMenuBar::item:pressed {
+    background: {btnActive};
+    border-radius: 4px;
 }
 
 /* ── Push buttons ────────────────────────────────────────────── */
@@ -444,8 +461,8 @@ QMenu::item {
     margin: 1px 4px;
 }
 QMenu::item:selected {
-    background: palette(highlight);
-    color: palette(highlighted-text);
+    background: {menuSelBg};
+    color: {menuSelFg};
 }
 QMenu::item:disabled { color: {fgDisabled}; }
 QMenu::separator {
@@ -601,6 +618,8 @@ QToolTip {
     ss.replace("{inputMinH}",        inputMinH);
     ss.replace("{btnHover}",         btnHover);
     ss.replace("{btnActive}",        btnActive);
+    ss.replace("{menuSelBg}",        menuSelBg);
+    ss.replace("{menuSelFg}",        menuSelFg);
     ss.replace("{statusBg}",         statusBg);
     ss.replace("{statusComboHover}", statusComboHover);
 #ifdef Q_OS_WIN

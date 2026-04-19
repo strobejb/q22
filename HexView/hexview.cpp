@@ -88,6 +88,7 @@ bool HexView::eventFilter(QObject *obj, QEvent *ev)
             m_hoverOnClose     = false;
             viewport()->update();
         }
+        viewport()->unsetCursor();
     }
 
     if (m_noteEditor && (obj == m_noteEditor || obj == m_noteEditor->viewport())) {

@@ -644,6 +644,10 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     m_nativeMenu = new SettingsToggle(tr("Native menu bar"), this);
     m_nativeMenu->setChecked(AppSettings::prefNativeMenu());
 
+    // ── Menu highlight toggle ────────────────────────────────────────────────
+    m_menuHighlight = new SettingsToggle(tr("Menus use highlight colour"), this);
+    m_menuHighlight->setChecked(AppSettings::prefMenuHighlight());
+
     // ── Live-save and signal on every change ─────────────────────────────────
     connect(m_fontBtn, &QAbstractButton::clicked, this, [this, m_fontBtn]() {
         m_fontFamily = m_fontBtn->selectedFont().family();
@@ -670,6 +674,11 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
         AppSettings::setPrefNativeMenu(on);
         emit nativeMenuChanged(on);
     });
+    connect(m_menuHighlight, &SettingsToggle::toggled,
+            this, [this](bool on) {
+        AppSettings::setPrefMenuHighlight(on);
+        emit menuHighlightChanged(on);
+    });
 
     // ── Layout ───────────────────────────────────────────────────────────────
     auto makeSectionLabel = [this](const QString &text) {
@@ -691,7 +700,7 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     }
 
     auto *fontGroup   = new SettingsGroup({fontRow, m_fontSize, m_horizSpacing, m_lineSpacing}, this);
-    auto *appearGroup = new SettingsGroup({m_nativeMenu}, this);
+    auto *appearGroup = new SettingsGroup({m_nativeMenu, m_menuHighlight}, this);
 
     // ── Theme swatches (no group border — swatches are their own visual units) ──
     m_swatchWidget = new QWidget(this);

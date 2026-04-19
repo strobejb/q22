@@ -29,6 +29,7 @@ jobs:
 
       - name: Package (linuxdeploy)
         run: |
+          convert qexed.png -resize 512x512! qexed-512.png
           wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
           chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage
@@ -40,7 +41,7 @@ jobs:
             --plugin qt \
             --output appimage \
             --desktop-file qexed.desktop \
-            --icon-file qexed.png
+            --icon-file qexed-512.png
           mv qexed-*.AppImage qexed-linux-x86_64.AppImage
 
       - name: Upload artifact

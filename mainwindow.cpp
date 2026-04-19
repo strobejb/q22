@@ -16,6 +16,7 @@
 #include "statusbar.h"
 #include "titlebar.h"
 #include "theme.h"
+#include <functional>
 #include <QActionGroup>
 #include <QShortcut>
 #include <QTimer>
@@ -274,6 +275,7 @@ private:
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), ui(new Ui::MainWindow) {
     ui->setupUi(this);
+    ui->menuView->menuAction()->setVisible(false);
 
     // On Windows use the Segoe MDL2 FolderOpen glyph (0xED25) so the icon
     // matches the monochrome Segoe style used throughout the title bar.
@@ -689,6 +691,8 @@ MainWindow::MainWindow(QWidget *parent)
     });
     connect(m_prefsDialog, &PreferencesDialog::nativeMenuChanged,
             this, [this](bool native) { applyMenuMode(!native); });
+    connect(m_prefsDialog, &PreferencesDialog::menuHighlightChanged,
+            this, [this](bool) { applyAdwaitaTheme(static_cast<ColorScheme>(AppSettings::prefColorScheme())); });
     connect(m_prefsDialog, &PreferencesDialog::paletteSelected,
             this, [this](const PaletteInfo &info) {
         applyPalette(m_hv, info);
@@ -723,6 +727,21 @@ MainWindow::MainWindow(QWidget *parent)
                 break;
             }
         }
+    }
+
+    // Apply rounded corners / DWM shadow / compact style to the native QMenuBar
+    // drop-down menus so they match the custom-titlebar menus.  Must happen
+    // before first show so the window flags take effect.
+    {
+        std::function<void(QMenu *)> themeRecursive = [&](QMenu *m) {
+            themeMenu(m);
+            for (QAction *a : m->actions())
+                if (QMenu *sub = a->menu())
+                    themeRecursive(sub);
+        };
+        for (QAction *a : ui->menubar->actions())
+            if (QMenu *m = a->menu())
+                themeRecursive(m);
     }
 
     // Apply saved menu mode (may switch away from the default custom titlebar)
@@ -946,6 +965,16 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
     if (type == QEvent::Leave && obj == this && m_inResizeZone) {
         m_inResizeZone = false;
         QApplication::restoreOverrideCursor();
+        return false;
+    }
+
+    // Clear any stale override cursor when the main window regains focus
+    // (e.g. after a dialog closes without the mouse having left the resize zone).
+    if (type == QEvent::WindowActivate && obj == this) {
+        if (m_inResizeZone) {
+            m_inResizeZone = false;
+            QApplication::restoreOverrideCursor();
+        }
         return false;
     }
 

@@ -28,6 +28,8 @@ int     prefLineSpacing();
 void    setPrefLineSpacing(int px);
 bool    prefNativeMenu();
 void    setPrefNativeMenu(bool on);
+bool    prefMenuHighlight();        // true = use palette(highlight) for menu selection
+void    setPrefMenuHighlight(bool on);
 int     prefColorScheme();          // 0=System, 1=Light, 2=Dark
 void    setPrefColorScheme(int scheme);
 QString prefPaletteName();          // empty = no saved palette (use defaults)

@@ -91,6 +91,7 @@ signals:
     void fontChanged(const QFont &font);          // family or size changed
     void fontSpacingChanged(int hSpacing, int lineSpacing);
     void nativeMenuChanged(bool on);
+    void menuHighlightChanged(bool on);
     void paletteSelected(const PaletteInfo &info);
 
 protected:
@@ -111,7 +112,8 @@ private:
     StepSpinBox    *m_fontSize     = nullptr;
     StepSpinBox    *m_horizSpacing = nullptr;
     StepSpinBox    *m_lineSpacing  = nullptr;
-    SettingsToggle *m_nativeMenu   = nullptr;
+    SettingsToggle *m_nativeMenu        = nullptr;
+    SettingsToggle *m_menuHighlight     = nullptr;
 };
 
 #endif // PREFERENCES_H
