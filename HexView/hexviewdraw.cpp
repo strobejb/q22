@@ -247,7 +247,7 @@ QColor blendColor(const QColor &i_color1, const QColor &i_color2, double i_alpha
 
 bool HexView::hasAppFocus() const
 {
-#if 0//def Q_OS_WIN
+#ifdef Q_OS_WIN
     QWidget *topLevel = window();
     if (!topLevel)
         return false;
@@ -263,6 +263,12 @@ bool HexView::hasAppFocus() const
     return GetAncestor(foregroundWindow, GA_ROOTOWNER) ==
            GetAncestor(appWindow, GA_ROOTOWNER);
 #else
+    QWidget *topLevel = window();
+    return topLevel &&
+           topLevel->isEnabled() &&
+           QGuiApplication::applicationState() == Qt::ApplicationActive;
+#endif
+#if 0
     QWidget *topLevel = window();
     QWindow *win = topLevel ? topLevel->windowHandle() : nullptr;
 

@@ -151,7 +151,7 @@ void BookmarkDialog::updateRangeLabel()
         return QString("0x") + QString::number(v, 16).toUpper();
     };
 
-    const QColor mid = palette().color(QPalette::Shadow);
+    const QColor mid = palette().color(QPalette::Mid);
     ui->rangeLabel->setStyleSheet(QString("color: %1;").arg(mid.name()));
 
     if (m_length <= 1) {
