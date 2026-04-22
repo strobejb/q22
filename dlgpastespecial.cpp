@@ -91,6 +91,7 @@ PasteSpecialDialog::PasteSpecialDialog(HexView *hv, QWidget *parent)
     if (QPushButton *ok = ui->buttonBox->button(QDialogButtonBox::Ok))
         ok->setText(tr("Paste"));
 
+    ui->buttonBox->layout()->setSpacing(16);
 
     // Populate clipboard formats
     populateClipboardFormats();

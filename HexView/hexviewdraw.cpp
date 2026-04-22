@@ -13,9 +13,14 @@
 #include <QGlyphRun>
 #include <QPainter>
 #include <QPaintEvent>
+#include <QWindow>
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
 
 // ── HEXCOL comparison ─────────────────────────────────────────────────────────
 
@@ -69,7 +74,7 @@ static size_t intToBin(char *buf, unsigned width, unsigned num)
 QColor HexView::realiseColour(HvColorSlot slot) const
 {
     // Phase 1: redirect selection slots to inactive variants when unfocused
-    if (!hasFocus()) {
+    if (!hasAppFocus()) {//hasFocus()) {
         switch (slot) {
         case HVC_SELECTION:
             slot = HVC_SELECTION_INACTIVE; break;
@@ -238,6 +243,36 @@ QColor blendColor(const QColor &i_color1, const QColor &i_color2, double i_alpha
         qRound(qreal(i_color1.blue())*(1.0-i_alpha) + qreal(i_color2.blue())*i_alpha),
         qRound(qreal(i_color1.alpha())*(1.0-i_alpha) + qreal(i_color2.alpha())*i_alpha)
         );
+}
+
+bool HexView::hasAppFocus() const
+{
+#if 0//def Q_OS_WIN
+    QWidget *topLevel = window();
+    if (!topLevel)
+        return false;
+
+    const HWND appWindow = reinterpret_cast<HWND>(topLevel->winId());
+    if (!appWindow || !IsWindowEnabled(appWindow))
+        return false;
+
+    const HWND foregroundWindow = GetForegroundWindow();
+    if (!foregroundWindow)
+        return false;
+
+    return GetAncestor(foregroundWindow, GA_ROOTOWNER) ==
+           GetAncestor(appWindow, GA_ROOTOWNER);
+#else
+    QWidget *topLevel = window();
+    QWindow *win = topLevel ? topLevel->windowHandle() : nullptr;
+
+    return topLevel &&
+           topLevel->isEnabled() &&
+           QGuiApplication::applicationState() == Qt::ApplicationActive &&
+           QApplication::activeWindow() == topLevel &&
+           win &&
+           win->isActive();
+#endif
 }
 
 // ── getHighlightCol ───────────────────────────────────────────────────────────

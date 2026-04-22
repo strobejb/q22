@@ -499,6 +499,8 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
     for (QAbstractButton *btn : buttons->buttons())
         btn->setIcon(QIcon());
 
+    buttons->layout()->setSpacing(16);
+
     connect(buttons, &QDialogButtonBox::accepted, this, [this]() {
         m_info.name = m_nameEdit->text().trimmed();
         if (QFile::exists(paletteFilePath(m_info.name))) {

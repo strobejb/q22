@@ -74,6 +74,8 @@ CopyAsDialog::CopyAsDialog(HexView *hv, QWidget *parent)
     for (QAbstractButton *btn : ui->buttonBox->buttons())
         btn->setIcon(QIcon());
 
+    ui->buttonBox->layout()->setSpacing(16);
+
     // Rename OK → "Copy"
     if (QPushButton *ok = ui->buttonBox->button(QDialogButtonBox::Ok))
         ok->setText(tr("Copy"));

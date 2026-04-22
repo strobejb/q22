@@ -1,5 +1,7 @@
-#ifndef BOOKMARKDIALOG_H
-#define BOOKMARKDIALOG_H
+//#ifndef BOOKMARKDIALOG_H
+//#define BOOKMARKDIALOG_H
+
+#pragma once
 
 #include "theme.h"
 #include <QDialog>
@@ -27,16 +29,21 @@ public:
     QColor  selectedColour()      const;
     int     selectedColourIndex() const;
 
+private slots:
+    //void onAccepted();
+
 protected:
     void showEvent(QShowEvent *event) override;
 
 private:
+    void relayoutDynamicControls();
     void updateRangeLabel();
 
     Ui::BookmarkDialog *ui;
     quint64 m_offset = 0;
     quint64 m_length = 0;
+    int     m_buttonTopGap = 0;
     QColor  m_foreground;
 };
 
-#endif // BOOKMARKDIALOG_H
+//#endif // BOOKMARKDIALOG_H

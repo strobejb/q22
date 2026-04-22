@@ -3,9 +3,14 @@
 #include "colourpickerwidget.h"
 
 #include <QApplication>
+#include <QAbstractButton>
 #include <QPainter>
 #include <QShowEvent>
 #include <QVector>
+#include <QDialog>
+#include <QPushButton>
+#include <QIcon>
+#include <QLayout>
 
 // ── PickerCard ────────────────────────────────────────────────────────────────
 // Rounded card with drop shadow — same visual style as SettingsGroup.
@@ -15,6 +20,7 @@ namespace {
 static constexpr int PC_SHADOW = 4;
 static constexpr int PC_RADIUS = 10;
 static constexpr int PC_PAD    = 0;   // ColourPickerWidget's own SWATCH_PAD supplies the margin
+static constexpr int DIALOG_MARGIN = 20;
 
 class PickerCard : public QWidget
 {
@@ -63,36 +69,56 @@ BookmarkDialog::BookmarkDialog(QWidget *parent)
     // Set up colour picker and wrap it in a list-group card.
     ui->colourPicker->setColumns(7);
 
+    const QRect buttonRect = ui->buttonBox->geometry();
     auto *card = new PickerCard(this);
     ui->colourPicker->setParent(card);
     ui->colourPicker->setAttribute(Qt::WA_NoSystemBackground);
 
-    // Original picker geometry from .ui: x=20, y=160, width=291, height=38.
-    static constexpr int ORIG_X = 20, ORIG_Y = 160, ORIG_W = 291;
-    const int cardW   = ORIG_W + 2 * PC_SHADOW;
+    const QRect pickerRect = ui->colourPicker->geometry();
+    const int cardW = pickerRect.width() + 2 * PC_SHADOW;
+    m_buttonTopGap = qMax(0, buttonRect.y() - (pickerRect.y() + pickerRect.height()));
 
     // Give the picker its final width before querying sizeHint height.
     ui->colourPicker->move(PC_SHADOW, PC_SHADOW);
-    ui->colourPicker->resize(ORIG_W, 1);
+    ui->colourPicker->resize(pickerRect.width(), 1);
     const int pickerH = ui->colourPicker->sizeHint().height();
-    ui->colourPicker->resize(ORIG_W, pickerH);
+    ui->colourPicker->resize(pickerRect.width(), pickerH);
 
-    card->move(ORIG_X - PC_SHADOW, ORIG_Y - PC_SHADOW);
+    card->move(pickerRect.x() - PC_SHADOW, pickerRect.y() - PC_SHADOW);
     card->resize(cardW, pickerH + 2 * PC_SHADOW);
 
-    // Adjust button Y to follow the card's actual height; leave X and width as-is.
-    static constexpr int ORIG_PICKER_BOTTOM = ORIG_Y + 38;
-    static constexpr int ORIG_BTN_Y         = 228;
-    static constexpr int BTN_H              = 27;
-    const int gap     = ORIG_BTN_Y - ORIG_PICKER_BOTTOM;
-    const int newBtnY = card->geometry().bottom() + 1 + gap;
-    ui->pushButton_2->move(ui->pushButton_2->x(), newBtnY);
-    ui->pushButton->move  (ui->pushButton->x(),   newBtnY);
+    // Strip any platform-supplied icons from OK / Cancel so the buttons stay clean.
+    for (QAbstractButton *btn : ui->buttonBox->buttons())
+        btn->setIcon(QIcon());
 
-    setFixedSize(width(), newBtnY + BTN_H + ORIG_X);
+    // Rename OK → "Copy"
+    if (QPushButton *ok = ui->buttonBox->button(QDialogButtonBox::Ok))
+        ok->setText(tr("Add"));
 
-    connect(ui->pushButton,   &QPushButton::clicked, this, &QDialog::accept);
-    connect(ui->pushButton_2, &QPushButton::clicked, this, &QDialog::reject);
+    ui->buttonBox->layout()->setSpacing(16);
+    relayoutDynamicControls();
+
+    //connect(ui->buttonBox, &QDialogButtonBox::accepted, this, &BookmarkDialog::onAccepted);
+    connect(ui->buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
+    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
+
+    //connect(ui->pushButton,   &QPushButton::clicked, this, &QDialog::accept);
+    //connect(ui->pushButton_2, &QPushButton::clicked, this, &QDialog::reject);
+}
+
+void BookmarkDialog::relayoutDynamicControls()
+{
+    QWidget *card = ui->colourPicker->parentWidget();
+    if (!card)
+        return;
+
+    ui->buttonBox->adjustSize();
+    const QSize buttonSize = ui->buttonBox->sizeHint().expandedTo(ui->buttonBox->minimumSizeHint());
+    const int buttonX = width() - DIALOG_MARGIN - buttonSize.width();
+    const int buttonY = card->geometry().bottom() + 1 + m_buttonTopGap;
+
+    ui->buttonBox->setGeometry(buttonX, buttonY, buttonSize.width(), buttonSize.height());
+    setFixedSize(width(), buttonY + buttonSize.height() + DIALOG_MARGIN);
 }
 
 BookmarkDialog::~BookmarkDialog()
@@ -133,7 +159,7 @@ void BookmarkDialog::updateRangeLabel()
         return;
     }
     const quint64 end = m_offset + m_length - 1;
-    ui->rangeLabel->setText(QString("%1 %2 %3 (%4 bytes)")
+    ui->rangeLabel->setText(QString("Range: %1 %2 %3 (%4 bytes)")
         .arg(hexStr(m_offset)).arg(QChar(0x2013)).arg(hexStr(end)).arg(m_length));
 }
 
@@ -157,10 +183,7 @@ void BookmarkDialog::setSwatchColours(const QVector<QColor> &colours)
     QWidget *card = ui->colourPicker->parentWidget();
     card->resize(card->width(), card->height() + delta);
 
-    // Shift buttons and expand dialog
-    ui->pushButton->move  (ui->pushButton->x(),   ui->pushButton->y()   + delta);
-    ui->pushButton_2->move(ui->pushButton_2->x(), ui->pushButton_2->y() + delta);
-    setFixedSize(width(), height() + delta);
+    relayoutDynamicControls();
 }
 
 QString BookmarkDialog::bookmarkName() const

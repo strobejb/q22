@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>329</width>
-    <height>280</height>
+    <height>268</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -18,7 +18,7 @@
     <rect>
      <x>20</x>
      <y>120</y>
-     <width>271</width>
+     <width>291</width>
      <height>20</height>
     </rect>
    </property>
@@ -36,10 +36,10 @@
     </rect>
    </property>
    <property name="plainText">
-    <string>Annotation (optional)</string>
+    <string/>
    </property>
    <property name="placeholderText">
-    <string>Name</string>
+    <string>Annotation (optional)</string>
    </property>
   </widget>
   <widget class="ColourPickerWidget" name="colourPicker" native="true">
@@ -52,36 +52,17 @@
     </rect>
    </property>
   </widget>
-  <widget class="QPushButton" name="pushButton">
+  <widget class="QDialogButtonBox" name="buttonBox">
    <property name="geometry">
     <rect>
-     <x>205</x>
-     <y>228</y>
-     <width>96</width>
-     <height>27</height>
+     <x>170</x>
+     <y>230</y>
+     <width>135</width>
+     <height>22</height>
     </rect>
    </property>
-   <property name="text">
-    <string>Add</string>
-   </property>
-   <property name="flat">
-    <bool>false</bool>
-   </property>
-  </widget>
-  <widget class="QPushButton" name="pushButton_2">
-   <property name="geometry">
-    <rect>
-     <x>79</x>
-     <y>228</y>
-     <width>96</width>
-     <height>27</height>
-    </rect>
-   </property>
-   <property name="text">
-    <string>Cancel</string>
-   </property>
-   <property name="flat">
-    <bool>false</bool>
+   <property name="standardButtons">
+    <set>QDialogButtonBox::StandardButton::Cancel|QDialogButtonBox::StandardButton::Ok</set>
    </property>
   </widget>
  </widget>

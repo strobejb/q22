@@ -338,6 +338,7 @@ private:
     // ── Hit testing ───────────────────────────────────────────────────────────
     uint   hitTest(int x, int y, int *bookmarkIdx = nullptr);
     bool   isOverResizeBar(int x) const;
+    bool   hasAppFocus() const;
 
     // ── Scroll ────────────────────────────────────────────────────────────────
     void   scroll(int dx, int dy);
