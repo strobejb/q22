@@ -351,8 +351,18 @@ static void applyPalette(bool dark)
     p.setColor(QPalette::Disabled, QPalette::ButtonText, disabled);
 
     // Layer UI palette overrides on top.
-    if (s_uiOverrides.window.isValid())
-        p.setColor(QPalette::Window, s_uiOverrides.window);
+    if (s_uiOverrides.window.isValid()) {
+        const QColor w = s_uiOverrides.window;
+        p.setColor(QPalette::Window, w);
+        // Re-derive Button and border tones from the override window colour so
+        // that push-button hover/active shades and palette(button) references
+        // everywhere track the custom colour rather than the Adwaita default.
+        const QColor overrideBtn = dark ? w.lighter(155) : w.darker(105);
+        p.setColor(QPalette::Button, overrideBtn);
+        const QColor overrideMid = dark ? w.lighter(222) : w.darker(130);
+        p.setColor(QPalette::Mid,      overrideMid);
+        p.setColor(QPalette::Midlight, overrideMid.lighter(100));
+    }
     if (s_uiOverrides.windowText.isValid()) {
         p.setColor(QPalette::WindowText, s_uiOverrides.windowText);
         p.setColor(QPalette::Text,       s_uiOverrides.windowText);
@@ -383,13 +393,10 @@ static QString buildStylesheet(bool dark)
     const QString menuSelBg       = menuUseHighlight ? "palette(highlight)"  : btnHover;
     const QString menuSelFg       = menuUseHighlight ? "palette(highlighted-text)" : "palette(window-text)";
 
-    const QColor toolbarColor = s_uiOverrides.toolbar.isValid()
-                               ? s_uiOverrides.toolbar
-                               : pal.alternateBase().color();
-    const QString statusBg         = toolbarColor.name();
-    const QString statusComboHover = (toolbarColor.lightness() < 128)
-                                     ? toolbarColor.lighter(130).name()
-                                     : toolbarColor.darker(107).name();
+    const QColor  windowColor       = pal.window().color();
+    const QString statusComboHover = (windowColor.lightness() < 128)
+                                     ? windowColor.lighter(130).name()
+                                     : windowColor.darker(107).name();
 
     // min-height sets the *content area* minimum; padding (5px top+bottom) and
     // border (1px each) are added on top, giving total = font + 12 — matching
@@ -585,19 +592,19 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: t
 
 /* ── Status bar ──────────────────────────────────────────────── */
 QStatusBar {
-    background: {statusBg};
+    background: palette(window);
 
     padding: 0;
     /*border-top: 1px solid palette(mid);*/
 }
 QStatusBar QComboBox {
+    background: palette(window);
     border: 1px solid transparent;
-    background: transparent;
     border-radius: 4px;
     margin: 1px;
 }
-QStatusBar QComboBox:hover { background: {statusComboHover}; border: 1px solid palette(mid); margin:1px; }
-QStatusBar QComboBox:focus { background: {statusComboHover}; border: 1px solid palette(mid); margin:0;}
+QStatusBar QComboBox:hover { background: palette(button); border: 1px solid palette(mid); margin:1px; }
+QStatusBar QComboBox:focus { background: palette(button); border: 1px solid palette(mid); margin:0; }
 
 /* ── Misc ────────────────────────────────────────────────────── */
 QAbstractScrollArea { border: none; }
@@ -620,7 +627,6 @@ QToolTip {
     ss.replace("{btnActive}",        btnActive);
     ss.replace("{menuSelBg}",        menuSelBg);
     ss.replace("{menuSelFg}",        menuSelFg);
-    ss.replace("{statusBg}",         statusBg);
     ss.replace("{statusComboHover}", statusComboHover);
 #ifdef Q_OS_WIN
     ss.replace("{menuMargin}",  QString());
@@ -833,37 +839,53 @@ struct NoFocusRectStyle : public QProxyStyle
                             QPainter *p, const QWidget *w) const override
     {
         if (cc == CC_ComboBox && opt) {
-            // Keep the "popupOpen" dynamic property in sync for all QComboBoxes
-            // (not just DataTypeComboBox) so QSS [popupOpen="..."] rules work
-            // universally.  State_On is Qt's standard "popup is open" flag.
-            if (auto *combo = qobject_cast<QComboBox *>(const_cast<QWidget *>(w))) {
+            auto *combo = qobject_cast<QComboBox *>(const_cast<QWidget *>(w));
+            // Keep "popupOpen" in sync with State_On so QSS [popupOpen="true"] rules
+            // and ValueComboBox::leaveEvent work for combos using a QMenu popup.
+            // Capture wasOpen BEFORE writing the new value so we can detect the
+            // open→close transition below.
+            bool popupJustClosed = false;
+            if (combo) {
                 const bool open = opt->state & State_On;
-                if (combo->property("popupOpen").toBool() != open) {
+                const bool wasOpen = combo->property("popupOpen").toBool();
+                if (wasOpen != open) {
+                    // setProperty triggers an immediate QDynamicPropertyChangeEvent
+                    // which causes QStyleSheetStyle to synchronously repolish the
+                    // widget, updating combo->palette() before we return.
                     combo->setProperty("popupOpen", open);
-                    // Defer polish so we don't trigger a style change mid-paint.
-                    QMetaObject::invokeMethod(combo, [combo]() {
-                        combo->style()->unpolish(combo);
-                        combo->style()->polish(combo);
-                        combo->update();
-                    }, Qt::QueuedConnection);
+                    popupJustClosed = wasOpen && !open;
                 }
             }
-            // When the native popup is open (State_On) Qt issues a Leave event
-            // that clears underMouse() and drops State_MouseOver, so Fusion falls
-            // back to the default (non-hover) appearance.  Force State_MouseOver
-            // back on so the combo stays visually active while the dropdown is
-            // open — matching the behaviour of DataTypeComboBox which uses QMenu.
+            // When the popup is open (State_On), Qt fires a Leave event that drops
+            // State_MouseOver so Fusion falls back to the flat default appearance.
+            // Force State_MouseOver on so the combo looks active while the dropdown
+            // is visible — matching the behaviour of the QMenu-based custom combos.
             bool needCopy = (opt->state & State_On) && !(opt->state & State_MouseOver);
-            // Adwaita calls drawPrimitive(PE_FrameFocusRect) directly (not via
-            // proxy()) for CC_ComboBox, bypassing our PE_FrameFocusRect suppression.
-            // Strip State_HasFocus so that code path is never reached; our QSS
-            // QComboBox:focus rule provides the visible focus indication instead.
+            // Adwaita calls drawPrimitive(PE_FrameFocusRect) directly for CC_ComboBox
+            // (not via proxy), bypassing our suppression.  Strip State_HasFocus here
+            // so that path is never reached; QSS QComboBox:focus provides the border.
             needCopy = needCopy || (opt->state & State_HasFocus);
+            // Strip stale State_Sunken (arrowState) that lingers after a Qt::Popup
+            // auto-close.  When the user clicks outside, the popup window closes
+            // before mouseReleaseEvent reaches the combo, so _q_resetButton() is
+            // never called and the native style keeps drawing the pressed gradient.
+            const bool stripSunken = (opt->state & State_Sunken) && !(opt->state & State_On);
+            needCopy = needCopy || stripSunken;
+            // If the popup just closed, force a copy so we can pull in the freshly
+            // repolished palette.  QStyleSheetStyle already drew its background fill
+            // using the OLD palette (palette(button) from [popupOpen="true"]) before
+            // calling us; replacing opt->palette with the now-correct palette ensures
+            // the native style draws with the right colours on this very frame.
+            needCopy = needCopy || popupJustClosed;
             if (needCopy) {
                 QStyleOptionComplex copy = *opt;
                 if (opt->state & State_On)
                     copy.state |= State_MouseOver;
+                if (stripSunken)
+                    copy.state &= ~State_Sunken;
                 copy.state &= ~State_HasFocus;
+                if (popupJustClosed && combo)
+                    copy.palette = combo->palette();  // fresh post-repolish palette
                 QProxyStyle::drawComplexControl(cc, &copy, p, w);
                 return;
             }

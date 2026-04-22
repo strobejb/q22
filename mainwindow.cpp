@@ -1027,17 +1027,37 @@ void MainWindow::changeEvent(QEvent *e)
 void MainWindow::updateWinChromeColors()
 {
     const bool   active = isActiveWindow();
-    const QColor bg     = windowsChromeBg(active);
-    const bool   dark   = bg.lightness() < 128;
-    const QString bgName      = bg.name();
-    const QString comboHover  = (dark ? bg.lighter(130) : bg.darker(107)).name();
 
-    ui->statusbar->setStyleSheet(QString(
-        "QStatusBar { background: %1; }"
-        "QStatusBar QComboBox:hover { background: %2; }"
-    ).arg(bgName, comboHover));
+    // Prefer the toolbar colour override (status-bar / chrome-panel specific).
+    // Fall back to windowsChromeBg() which handles the window-panel override and
+    // the hardcoded Win11 neutrals.  The same active/inactive dimming ratios used
+    // in windowsChromeBg() are applied here (3 % darker for light, 41 % lighter
+    // for dark) so focus/unfocus transitions look consistent.
+    const QColor tbOver = uiColourOverrides().toolbar;
+    const QColor bg     = tbOver.isValid()
+        ? (active ? tbOver
+                  : (tbOver.lightness() >= 128 ? tbOver.darker(103)
+                                               : tbOver.lighter(141)))
+        : windowsChromeBg(active);
 
-    // FindDialog and GotoDialog use setAutoFillBackground(true) — updating their
+    const bool  dark          = bg.lightness() < 128;
+    const QColor comboHoverBg = dark ? bg.lighter(130) : bg.darker(107);
+
+    // Status bar palette drives both the bar background and the combo colours:
+    //   Window role → QStatusBar { background: palette(window); }            (normal)
+    //                  QStatusBar QComboBox { background: palette(window); }  (normal)
+    //   Button role → QStatusBar QComboBox:hover { background: palette(button); }
+    //                  QStatusBar QComboBox:focus { background: palette(button); }
+    // Both roles resolve from this palette because all QSS rules use descendant
+    // selectors ("QStatusBar QComboBox …"), so Qt looks up palette() on the
+    // ancestor (status bar), not the combo itself.
+    QPalette sbPal;
+    sbPal.setColor(QPalette::Window, bg);
+    sbPal.setColor(QPalette::Button, comboHoverBg);
+    ui->statusbar->setPalette(sbPal);
+    ui->statusbar->setStyleSheet(QString());
+
+    // FindDialog and GotoDialog use WA_StyledBackground — updating their
     // Window palette role is enough to repaint without touching their stylesheets.
     QPalette p;
     p.setColor(QPalette::Window, bg);

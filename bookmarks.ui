@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>334</width>
+    <width>329</width>
     <height>280</height>
    </rect>
   </property>
@@ -16,7 +16,7 @@
   <widget class="QLabel" name="rangeLabel">
    <property name="geometry">
     <rect>
-     <x>30</x>
+     <x>20</x>
      <y>120</y>
      <width>271</width>
      <height>20</height>
@@ -29,9 +29,9 @@
   <widget class="QPlainTextEdit" name="bookmarkName">
    <property name="geometry">
     <rect>
-     <x>30</x>
+     <x>20</x>
      <y>20</y>
-     <width>271</width>
+     <width>291</width>
      <height>90</height>
     </rect>
    </property>
@@ -45,9 +45,9 @@
   <widget class="ColourPickerWidget" name="colourPicker" native="true">
    <property name="geometry">
     <rect>
-     <x>30</x>
-     <y>160</y>
-     <width>271</width>
+     <x>20</x>
+     <y>170</y>
+     <width>291</width>
      <height>38</height>
     </rect>
    </property>

@@ -67,8 +67,8 @@ BookmarkDialog::BookmarkDialog(QWidget *parent)
     ui->colourPicker->setParent(card);
     ui->colourPicker->setAttribute(Qt::WA_NoSystemBackground);
 
-    // Original picker geometry from .ui: x=30, y=160, width=271, height=38.
-    static constexpr int ORIG_X = 30, ORIG_Y = 160, ORIG_W = 271;
+    // Original picker geometry from .ui: x=20, y=160, width=291, height=38.
+    static constexpr int ORIG_X = 20, ORIG_Y = 160, ORIG_W = 291;
     const int cardW   = ORIG_W + 2 * PC_SHADOW;
 
     // Give the picker its final width before querying sizeHint height.
@@ -80,18 +80,14 @@ BookmarkDialog::BookmarkDialog(QWidget *parent)
     card->move(ORIG_X - PC_SHADOW, ORIG_Y - PC_SHADOW);
     card->resize(cardW, pickerH + 2 * PC_SHADOW);
 
-    // Position buttons: span the full control width (same as other widgets),
-    // centred, stretching from x=ORIG_X to x=ORIG_X+ORIG_W.
+    // Adjust button Y to follow the card's actual height; leave X and width as-is.
     static constexpr int ORIG_PICKER_BOTTOM = ORIG_Y + 38;
     static constexpr int ORIG_BTN_Y         = 228;
-    static constexpr int BTN_GAP            = 8;
     static constexpr int BTN_H              = 27;
-    const int gap    = ORIG_BTN_Y - ORIG_PICKER_BOTTOM;
+    const int gap     = ORIG_BTN_Y - ORIG_PICKER_BOTTOM;
     const int newBtnY = card->geometry().bottom() + 1 + gap;
-    const int bw1    = (ORIG_W - BTN_GAP) / 2;
-    const int bw2    = ORIG_W - BTN_GAP - bw1;
-    ui->pushButton_2->setGeometry(ORIG_X,            newBtnY, bw1, BTN_H); // Cancel
-    ui->pushButton->setGeometry  (ORIG_X + bw1 + BTN_GAP, newBtnY, bw2, BTN_H); // OK
+    ui->pushButton_2->move(ui->pushButton_2->x(), newBtnY);
+    ui->pushButton->move  (ui->pushButton->x(),   newBtnY);
 
     setFixedSize(width(), newBtnY + BTN_H + ORIG_X);
 
@@ -129,7 +125,7 @@ void BookmarkDialog::updateRangeLabel()
         return QString("0x") + QString::number(v, 16).toUpper();
     };
 
-    const QColor mid = palette().color(QPalette::Mid);
+    const QColor mid = palette().color(QPalette::Shadow);
     ui->rangeLabel->setStyleSheet(QString("color: %1;").arg(mid.name()));
 
     if (m_length <= 1) {

@@ -22,8 +22,18 @@
 // Returns the Windows 11 chrome background for the given activation state.
 // Active:   #F3F3F3 (light) / #202020 (dark) — neutral white/light-grey.
 // Inactive: #EBEBEB (light) / #2D2D2D (dark) — slightly dimmed neutral.
+// When a UiColourOverride window colour is set the same active/inactive dimming
+// is applied to that colour instead, so the chrome tracks the active palette.
 QColor windowsChromeBg(bool active)
 {
+    const QColor overrideWindow = uiColourOverrides().window;
+    if (overrideWindow.isValid()) {
+        if (active) return overrideWindow;
+        // Apply the same relative dimming as the hardcoded neutrals:
+        // light inactive is ~3% darker; dark inactive is ~41% lighter (HSV value).
+        const bool light = overrideWindow.lightness() >= 128;
+        return light ? overrideWindow.darker(103) : overrideWindow.lighter(141);
+    }
     const bool light = QApplication::palette().window().color().lightness() >= 128;
     return active ? (light ? QColor(0xF3, 0xF3, 0xF3) : QColor(0x20, 0x20, 0x20))
                   : (light ? QColor(0xEB, 0xEB, 0xEB) : QColor(0x2D, 0x2D, 0x2D));

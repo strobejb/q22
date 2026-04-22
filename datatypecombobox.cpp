@@ -157,6 +157,8 @@ void DataTypeComboBox::paintEvent(QPaintEvent *)
     if (property("popupOpen").toBool()) {
         opt.state |= QStyle::State_On;
         opt.state &= ~QStyle::State_MouseOver;
+    } else {
+        opt.state &= ~(QStyle::State_On | QStyle::State_Sunken);
     }
     // Draw the frame (including the drop-down arrow via QComboBox::down-arrow
     // in the global stylesheet) at full widget size.
@@ -186,6 +188,8 @@ void DataTypeComboBox::paintEvent(QPaintEvent *)
 
 void DataTypeComboBox::setPopupOpen(bool open)
 {
+    if (!open)
+        QComboBox::hidePopup();   // clears Qt's internal State_Sunken arrow flag
     setProperty("popupOpen", open);
     style()->unpolish(this);
     style()->polish(this);

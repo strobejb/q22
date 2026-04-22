@@ -68,6 +68,10 @@ protected:
         update();
 
         connect(menu, &QMenu::aboutToHide, this, [this]() {
+            // Let QComboBox clear its internal arrow-sunken state; without this the
+            // combo stays in State_Sunken because mouseReleaseEvent is never
+            // delivered (the QMenu grabs the mouse and consumes the release).
+            QComboBox::hidePopup();
             m_popupOpen = false;
             m_closePos  = QCursor::pos();
             m_hovered   = underMouse();

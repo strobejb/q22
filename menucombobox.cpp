@@ -20,6 +20,8 @@ MenuComboBox::MenuComboBox(QWidget *parent)
 
 void MenuComboBox::setPopupOpen(bool open)
 {
+    if (!open)
+        QComboBox::hidePopup();   // clears Qt's internal State_Sunken arrow flag
     setProperty("popupOpen", open);
     style()->unpolish(this);
     style()->polish(this);
@@ -51,6 +53,8 @@ void MenuComboBox::paintEvent(QPaintEvent *)
     if (property("popupOpen").toBool()) {
         opt.state |= QStyle::State_On;
         opt.state &= ~QStyle::State_MouseOver;
+    } else {
+        opt.state &= ~(QStyle::State_On | QStyle::State_Sunken);
     }
     painter.drawComplexControl(QStyle::CC_ComboBox, opt);
     painter.drawControl(QStyle::CE_ComboBoxLabel, opt);
