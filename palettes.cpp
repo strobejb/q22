@@ -32,15 +32,14 @@ static QColor orElse(const QColor &c, const QColor &fallback)
 void applyPalette(HexView *hv, const PaletteInfo &info)
 {
     hv->setHexColour(HVC_BACKGROUND,         info.bg);
-    hv->setHexColour(HVC_ADDRESS,            orElse(info.address,  info.fg));
-    hv->setHexColour(HVC_RESIZEBAR,          orElse(info.resizeBar, info.fg.darker(150)));
+    hv->setHexColour(HVC_ADDRESS,            info.address);   // QColor() → palette(WindowText)
+    hv->setHexColour(HVC_RESIZEBAR,          info.resizeBar); // QColor() → palette(Mid)
 
     hv->setHexColour(HVC_HEXODD,             info.hexOdd);
     hv->setHexColour(HVC_HEXEVEN,            info.hexEven);
     hv->setHexColour(HVC_ASCII,              info.ascii);
 
     // Selected text — HEXODDSEL/HEXEVENSEL/ASCIISEL left invalid to chain here
-    hv->setHexColour(HVC_SELTEXT,            orElse(info.selectionText, info.fg));
     hv->setHexColour(HVC_HEXODDSEL,          QColor());
     hv->setHexColour(HVC_HEXEVENSEL,         QColor());
     hv->setHexColour(HVC_ASCIISEL,           QColor());
@@ -49,8 +48,9 @@ void applyPalette(HexView *hv, const PaletteInfo &info)
     hv->setHexColour(HVC_MODIFYSEL,          info.modified);//.lighter(130));
 
     hv->setHexColour(HVC_SELECTION,          info.selection);
+    hv->setHexColour(HVC_SELTEXT,            info.selectionText); // QColor() → palette(HighlightedText)
     hv->setHexColour(HVC_SELECTION_INACTIVE, info.selectionInactive); // QColor() → palette default
-    hv->setHexColour(HVC_SELTEXT_INACTIVE,   info.ascii);
+    hv->setHexColour(HVC_SELTEXT_INACTIVE,   info.selectionTextInactive); // QColor() → contrast derived in realiseColour
 
     hv->setHexColour(HVC_MATCHED,            info.matched);
     hv->setHexColour(HVC_MATCHEDSEL,         info.matched.lighter(140));
@@ -80,17 +80,25 @@ static PaletteInfo parsePaletteFile(const QString &path)
     s.beginGroup("Palette");
     info.name              = s.value("Name").toString();
     info.bg                = QColor(s.value("Background").toString());
-    info.fg                = QColor(s.value("Foreground").toString());
     info.address           = QColor(s.value("Address").toString());
     info.hexOdd            = QColor(s.value("HexOdd").toString());
     info.hexEven           = QColor(s.value("HexEven").toString());
     info.ascii             = QColor(s.value("Ascii").toString());
-    info.selection         = QColor(s.value("Selection", s.value("Color4")).toString());
+    info.selection         = QColor(s.value("Selection").toString());
     info.selectionText     = QColor(s.value("SelectionText").toString());
     info.selectionInactive = QColor(s.value("SelectionInactive").toString());
+    info.selectionTextInactive = QColor(s.value("SelectionTextInactive").toString());
     info.modified          = QColor(s.value("Modified").toString());
-    info.matched           = QColor(s.value("Matched", s.value("Color3")).toString());
+    info.matched           = QColor(s.value("Matched").toString());
     info.resizeBar         = QColor(s.value("ResizeBar").toString());
+    // Backward compat: 'Foreground' was a catch-all for text colours in older files.
+    // Propagate it only to the two slots that used it as an orElse fallback.
+    // hexOdd/hexEven/ascii never used it, and each now falls back to palette(WindowText).
+    const QColor fg = QColor(s.value("Foreground").toString());
+    if (fg.isValid()) {
+        if (!info.address.isValid())       info.address       = fg;
+        if (!info.selectionText.isValid()) info.selectionText = fg;
+    }
     for (int i = 0; i < 7; ++i)
         info.bookmarks[i]  = QColor(s.value(QStringLiteral("Bookmark%1").arg(i + 1)).toString());
     info.window     = QColor(s.value("Window").toString());
@@ -169,7 +177,6 @@ bool savePalette(const PaletteInfo &info)
     s.beginGroup("Palette");
     s.setValue("Name",              info.name);
     s.setValue("Background",        cs(info.bg));
-    s.setValue("Foreground",        cs(info.fg));
     s.setValue("Address",           cs(info.address));
     s.setValue("HexOdd",            cs(info.hexOdd));
     s.setValue("HexEven",           cs(info.hexEven));
@@ -179,6 +186,7 @@ bool savePalette(const PaletteInfo &info)
     s.setValue("Selection",         cs(info.selection));
     s.setValue("SelectionText",     cs(info.selectionText));
     s.setValue("SelectionInactive", cs(info.selectionInactive));
+    s.setValue("SelectionTextInactive", cs(info.selectionTextInactive));
     s.setValue("ResizeBar",         cs(info.resizeBar));
     for (int i = 0; i < 7; ++i)
         s.setValue(QStringLiteral("Bookmark%1").arg(i + 1), cs(info.bookmarks[i]));
@@ -397,8 +405,10 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
     // Fall back to palette roles for any automatic (invalid) colours.
     const QColor effectiveBg = m_info.bg.isValid() ? m_info.bg
                                                     : palette().color(QPalette::Base);
-    const QColor effectiveFg = m_info.fg.isValid() ? m_info.fg
-                                                    : palette().color(QPalette::WindowText);
+    // No single 'fg' field any more — derive a readable colour from the bg.
+    const QColor effectiveFg = effectiveBg.lightness() >= 128
+                               ? effectiveBg.darker(160)
+                               : effectiveBg.lighter(180);
     const bool  checked    = isChecked();
     const qreal borderW    = checked ? 2.0 : SW_BORDER;
     const QColor borderCol = checked
@@ -493,13 +503,16 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
 
     // ── Buttons ───────────────────────────────────────────────────────────────
     auto *buttons = new QDialogButtonBox(
-        QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
+        QDialogButtonBox::Save | QDialogButtonBox::Apply | QDialogButtonBox::Cancel, this);
     m_saveBtn = buttons->button(QDialogButtonBox::Save);
     m_saveBtn->setEnabled(!m_nameEdit->text().trimmed().isEmpty());
     for (QAbstractButton *btn : buttons->buttons())
         btn->setIcon(QIcon());
 
     buttons->layout()->setSpacing(16);
+
+    connect(buttons->button(QDialogButtonBox::Apply), &QAbstractButton::clicked,
+            this, [this]() { emit paletteChanged(m_info); accept(); });
 
     connect(buttons, &QDialogButtonBox::accepted, this, [this]() {
         m_info.name = m_nameEdit->text().trimmed();
@@ -665,10 +678,10 @@ QColor PaletteEditorDialog::colorAt(PaletteElem e) const
         case PE_MODIFIED:           return m_info.modified.isValid()  ? m_info.modified  : QColor(200, 50, 50);
         case PE_SELECTION:          return m_info.selection.isValid() ? m_info.selection : pal.color(QPalette::Highlight);
         case PE_MATCHED:            return m_info.matched.isValid()   ? m_info.matched   : QColor(255, 165, 0);
-        case PE_SELECTION_TEXT:     return m_info.selectionText.isValid()     ? m_info.selectionText     : (m_info.fg.isValid() ? m_info.fg : pal.color(QPalette::HighlightedText));
+        case PE_SELECTION_TEXT:     return m_info.selectionText.isValid()     ? m_info.selectionText     : pal.color(QPalette::HighlightedText);
         case PE_SELECTION_INACTIVE: return m_info.selectionInactive.isValid() ? m_info.selectionInactive : (m_info.selection.isValid() ? m_info.selection.darker(130) : pal.color(QPalette::Highlight).darker(130));
-        case PE_ADDRESS:            return m_info.address.isValid()   ? m_info.address   : (m_info.fg.isValid() ? m_info.fg : pal.color(QPalette::Text));
-        case PE_RESIZE_BAR:         return m_info.resizeBar.isValid() ? m_info.resizeBar : (m_info.fg.isValid() ? m_info.fg.darker(150) : pal.color(QPalette::Mid));
+        case PE_ADDRESS:            return m_info.address.isValid()   ? m_info.address   : pal.color(QPalette::Text);
+        case PE_RESIZE_BAR:         return m_info.resizeBar.isValid() ? m_info.resizeBar : pal.color(QPalette::Mid);
         case PE_BOOKMARK_1:         return m_info.bookmarks[0].isValid() ? m_info.bookmarks[0] : QColor(255, 255,   0);
         case PE_BOOKMARK_2:         return m_info.bookmarks[1].isValid() ? m_info.bookmarks[1] : QColor(255, 165,   0);
         case PE_BOOKMARK_3:         return m_info.bookmarks[2].isValid() ? m_info.bookmarks[2] : QColor(255,  80,  80);

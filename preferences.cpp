@@ -2,6 +2,8 @@
 #include "settings.h"
 #include "theme.h"
 
+#include <memory>
+
 #include <QButtonGroup>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -735,14 +737,17 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
                 m_currentPalette = info;
                 emit paletteSelected(info);
             });
-            connect(sw, &PaletteSwatch::doubleClicked, this, [this, info]() {
+            auto sharedInfo = std::make_shared<PaletteInfo>(info);
+            connect(sw, &PaletteSwatch::doubleClicked, this, [this, sharedInfo]() {
                 const PaletteInfo before = m_currentPalette;
-                PaletteEditorDialog dlg(info, this);
+                PaletteEditorDialog dlg(*sharedInfo, this);
                 connect(&dlg, &PaletteEditorDialog::paletteChanged,
                         this, &PreferencesDialog::paletteSelected);
                 connect(&dlg, &PaletteEditorDialog::paletteSaved,
                         this, &PreferencesDialog::addCustomSwatch);
-                if (dlg.exec() != QDialog::Accepted)
+                if (dlg.exec() == QDialog::Accepted)
+                    *sharedInfo = dlg.currentInfo(); // persist applied-but-unsaved state
+                else
                     emit paletteSelected(before);
             });
         }
@@ -848,14 +853,17 @@ void PreferencesDialog::rebuildCustomSwatches()
             m_currentPalette = info;
             emit paletteSelected(info);
         });
-        connect(sw, &PaletteSwatch::doubleClicked, this, [this, info]() {
+        auto sharedInfo = std::make_shared<PaletteInfo>(info);
+        connect(sw, &PaletteSwatch::doubleClicked, this, [this, sharedInfo]() {
             const PaletteInfo before = m_currentPalette;
-            PaletteEditorDialog dlg(info, this);
+            PaletteEditorDialog dlg(*sharedInfo, this);
             connect(&dlg, &PaletteEditorDialog::paletteChanged,
                     this, &PreferencesDialog::paletteSelected);
             connect(&dlg, &PaletteEditorDialog::paletteSaved,
                     this, &PreferencesDialog::addCustomSwatch);
-            if (dlg.exec() != QDialog::Accepted)
+            if (dlg.exec() == QDialog::Accepted)
+                *sharedInfo = dlg.currentInfo(); // persist applied-but-unsaved state
+            else
                 emit paletteSelected(before);
         });
     }

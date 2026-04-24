@@ -98,7 +98,12 @@ QColor HexView::realiseColour(HvColorSlot slot) const
     case HVC_SELECTION:          return pal.color(QPalette::Active,   QPalette::Highlight);
     case HVC_SELECTION_INACTIVE: return pal.color(QPalette::Inactive, QPalette::Highlight);
     case HVC_SELTEXT:            return pal.color(QPalette::Active,   QPalette::HighlightedText);
-    case HVC_SELTEXT_INACTIVE:   return pal.color(QPalette::Inactive, QPalette::HighlightedText);
+    case HVC_SELTEXT_INACTIVE: {
+        // No dedicated palette entry — derive a contrasting foreground from the
+        // inactive selection background so text is readable regardless of theme.
+        const QColor bg = realiseColour(HVC_SELECTION_INACTIVE);
+        return bg.lightness() >= 128 ? Qt::black : Qt::white;
+    }
     case HVC_HEXODDSEL:
     case HVC_HEXEVENSEL:
     case HVC_ASCIISEL:           return realiseColour(HVC_SELTEXT);  // chain; only reached when focused

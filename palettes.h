@@ -32,6 +32,7 @@ enum PaletteElem {
     PE_SELECTION,
     PE_SELECTION_TEXT,
     PE_SELECTION_INACTIVE,
+    PE_SELECTION_TEXT_INACTIVE,
     PE_MODIFIED,
     PE_MATCHED,
     PE_RESIZE_BAR,
@@ -58,7 +59,6 @@ enum PaletteElem {
 struct PaletteInfo {
     QString name;
     QColor  bg;                // Background
-    QColor  fg;                // Foreground (default text)
     QColor  address;           // Address column text
     QColor  hexOdd;            // Odd-column hex digits
     QColor  hexEven;           // Even-column hex digits
@@ -66,6 +66,7 @@ struct PaletteInfo {
     QColor  selection;         // Selection background
     QColor  selectionText;     // Selection text foreground
     QColor  selectionInactive; // Selection background when unfocused
+    QColor  selectionTextInactive; // Selection text when unfocused
     QColor  modified;          // Modified-byte indicator
     QColor  matched;           // Search-match highlight (background)
     QColor  resizeBar  ;         // Resize bar
@@ -140,6 +141,10 @@ class PaletteEditorDialog : public QDialog
     Q_OBJECT
 public:
     explicit PaletteEditorDialog(const PaletteInfo &info, QWidget *parent = nullptr);
+
+    // Returns the palette as it stands at dialog close (after any edits).
+    // Use this to persist the applied-but-unsaved state for subsequent opens.
+    PaletteInfo currentInfo() const { return m_info; }
 
 signals:
     void paletteChanged(const PaletteInfo &info);
