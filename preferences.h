@@ -2,6 +2,7 @@
 #define PREFERENCES_H
 
 #include "palettes.h"
+#include "slideoverlay.h"
 
 #include <QAbstractButton>
 #include "theme.h"
@@ -114,6 +115,7 @@ private:
     StepSpinBox    *m_lineSpacing  = nullptr;
     SettingsToggle *m_nativeMenu        = nullptr;
     SettingsToggle *m_menuHighlight     = nullptr;
+    SlideOverlay   *m_overlay      = nullptr;
 };
 
 #endif // PREFERENCES_H

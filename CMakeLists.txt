@@ -35,6 +35,8 @@ set(PROJECT_SOURCES
         palettes.h
         preferences.cpp
         preferences.h
+        slideoverlay.cpp
+        slideoverlay.h
         settings.cpp
         settings.h
         statusbar.cpp

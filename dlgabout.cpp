@@ -8,6 +8,7 @@
 //
 
 #include "dlgabout.h"
+#include "slideoverlay.h"
 #include "theme.h"
 
 #include <QAbstractButton>
@@ -23,6 +24,7 @@
 #include <QPixmap>
 #include <QSettings>
 #include <QUrl>
+#include <QHBoxLayout>
 #include <QVBoxLayout>
 
 static constexpr int CHEV_SIZE = 5;   // half-height of chevron arms
@@ -211,41 +213,6 @@ private:
     QString m_text;
 };
 
-// ── showCreditsDlg ────────────────────────────────────────────────────────────
-
-static void showCreditsDlg(QWidget *parent, QSize size)
-{
-    QDialog dlg(parent);
-    dlg.setWindowTitle(QObject::tr("Credits"));
-    dlg.setSizeGripEnabled(false);
-    dlg.setFixedSize(size);
-
-    auto *codeGroup  = new AboutCard({ new AboutTextRow(QLatin1String("James Brown"), &dlg) }, &dlg);
-    auto *iconsGroup = new AboutCard({ new AboutTextRow(QLatin1String("GNOME Project"), &dlg) }, &dlg);
-
-    auto *codeHeader  = new QLabel(QObject::tr("Code by"),  &dlg);
-    auto *iconsHeader = new QLabel(QObject::tr("Icons by"), &dlg);
-    for (auto *h : { codeHeader, iconsHeader }) {
-        QFont f = h->font();
-        f.setBold(true);
-        h->setFont(f);
-    }
-
-    auto *lay = new QVBoxLayout(&dlg);
-    lay->setContentsMargins(8, 8, 8, 8);
-    lay->setSpacing(0);
-    lay->addStretch();
-    lay->addWidget(codeHeader);
-    lay->addSpacing(4);
-    lay->addWidget(codeGroup);
-    lay->addSpacing(16);
-    lay->addWidget(iconsHeader);
-    lay->addSpacing(4);
-    lay->addWidget(iconsGroup);
-    lay->addStretch();
-
-    dlg.exec();
-}
 
 // ── ShowAboutDlg ──────────────────────────────────────────────────────────────
 
@@ -322,8 +289,60 @@ void ShowAboutDlg(QWidget *parent)
     main->activate();
     dlg.setFixedSize(qRound(dlg.sizeHint().width() * 1.5), dlg.sizeHint().height());
 
+    // Credits slides in as an overlay panel of the About dialog.
+    auto *overlay = new SlideOverlay(&dlg);
     QObject::connect(creditsRow, &QAbstractButton::clicked, &dlg,
-                     [&dlg] { showCreditsDlg(&dlg, dlg.size()); });
+                     [&dlg, overlay]() {
+        if (overlay->isActive()) return;
+
+        auto *creditsDlg = new QDialog(&dlg);
+        creditsDlg->setSizeGripEnabled(false);
+
+        // Title row — SlideOverlay will insert the back button here as the
+        // first item because this widget is named "overlayHeader".
+        auto *headerRow = new QWidget(creditsDlg);
+        headerRow->setObjectName(QStringLiteral("overlayHeader"));
+        {
+            auto *hlay = new QHBoxLayout(headerRow);
+            hlay->setContentsMargins(0, 0, 0, 0);
+            hlay->setSpacing(8);
+            auto *title = new QLabel(QObject::tr("Credits"), headerRow);
+            QFont f = title->font();
+            f.setBold(true);
+            title->setFont(f);
+            hlay->addWidget(title);
+            hlay->addStretch();
+        }
+
+        auto *codeGroup  = new AboutCard(
+            { new AboutTextRow(QLatin1String("James Brown"), creditsDlg) }, creditsDlg);
+        auto *iconsGroup = new AboutCard(
+            { new AboutTextRow(QLatin1String("GNOME Project"), creditsDlg) }, creditsDlg);
+
+        auto *codeHeader  = new QLabel(QObject::tr("Code by"),  creditsDlg);
+        auto *iconsHeader = new QLabel(QObject::tr("Icons by"), creditsDlg);
+        for (auto *h : { codeHeader, iconsHeader }) {
+            QFont f = h->font();
+            f.setBold(true);
+            h->setFont(f);
+        }
+
+        auto *lay = new QVBoxLayout(creditsDlg);
+        lay->setContentsMargins(8, 8, 8, 8);
+        lay->setSpacing(0);
+        lay->addWidget(headerRow);
+        lay->addStretch();
+        lay->addWidget(codeHeader);
+        lay->addSpacing(4);
+        lay->addWidget(codeGroup);
+        lay->addSpacing(16);
+        lay->addWidget(iconsHeader);
+        lay->addSpacing(4);
+        lay->addWidget(iconsGroup);
+        lay->addStretch();
+
+        overlay->slideIn(creditsDlg, {}, /*resizeParent=*/false);
+    });
 
     dlg.exec();
 }

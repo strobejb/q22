@@ -1,5 +1,6 @@
 #include "preferences.h"
 #include "settings.h"
+#include "slideoverlay.h"
 #include "theme.h"
 
 #include <memory>
@@ -313,10 +314,26 @@ FontPickerDialog::FontPickerDialog(const QFont &current, QWidget *parent)
     for (QAbstractButton *btn : buttons->buttons())
         btn->setIcon(QIcon());
 
+    // ── Header row (overlayHeader) — receives the back button when hosted ────
+    auto *fontHeader = new QWidget(this);
+    fontHeader->setObjectName(QStringLiteral("overlayHeader"));
+    {
+        auto *hlay = new QHBoxLayout(fontHeader);
+        hlay->setContentsMargins(0, 0, 0, 0);
+        hlay->setSpacing(8);
+        auto *title = new QLabel(tr("Font"), fontHeader);
+        QFont f = title->font();
+        f.setBold(true);
+        title->setFont(f);
+        hlay->addWidget(title);
+        hlay->addStretch();
+    }
+
     // ── Layout ────────────────────────────────────────────────────────────────
     auto *vlay = new QVBoxLayout(this);
     vlay->setContentsMargins(20, 20, 20, 20);
     vlay->setSpacing(14);
+    vlay->addWidget(fontHeader);
     vlay->addWidget(m_list, 1);
     vlay->addWidget(previewFrame);
     vlay->addWidget(buttons);
@@ -349,6 +366,12 @@ static constexpr int CHEV_GAP  = 8;   // space between text and chevron
 class FontNavButton : public QAbstractButton
 {
 public:
+    // Callback invoked when the button is clicked.
+    // Receives the current font and an "accept" function to call with the
+    // chosen font if the picker is confirmed.
+    using PickCallback = std::function<void(const QFont &current,
+                                            std::function<void(const QFont &)> accept)>;
+
     explicit FontNavButton(QWidget *parent = nullptr) : QAbstractButton(parent)
     {
         setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
@@ -357,6 +380,7 @@ public:
 
     QFont selectedFont() const { return m_font; }
     void setSelectedFont(const QFont &f) { m_font = f; updateGeometry(); update(); }
+    void setPickCallback(PickCallback cb) { m_pickCb = std::move(cb); }
 
     QSize sizeHint() const override
     {
@@ -397,19 +421,19 @@ protected:
 
     void mouseReleaseEvent(QMouseEvent *e) override
     {
-        if (e->button() == Qt::LeftButton && rect().contains(e->pos())) {
-            FontPickerDialog dlg(m_font, window());
-            if (dlg.exec() == QDialog::Accepted) {
-                m_font = dlg.selectedFont();
+        if (e->button() == Qt::LeftButton && rect().contains(e->pos()) && m_pickCb) {
+            m_pickCb(m_font, [this](const QFont &chosen) {
+                m_font = chosen;
                 updateGeometry();
                 update();
                 emit clicked();
-            }
+            });
         }
     }
 
 private:
-    QFont m_font;
+    QFont        m_font;
+    PickCallback m_pickCb;
 };
 
 
@@ -739,29 +763,35 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
             });
             auto sharedInfo = std::make_shared<PaletteInfo>(info);
             connect(sw, &PaletteSwatch::doubleClicked, this, [this, sharedInfo]() {
+                if (m_overlay->isActive()) return;
                 const PaletteInfo before = m_currentPalette;
-                PaletteEditorDialog dlg(*sharedInfo, this);
-                connect(&dlg, &PaletteEditorDialog::paletteChanged,
+                auto *dlg = new PaletteEditorDialog(*sharedInfo, this);
+                connect(dlg, &PaletteEditorDialog::paletteChanged,
                         this, &PreferencesDialog::paletteSelected);
-                connect(&dlg, &PaletteEditorDialog::paletteSaved,
+                connect(dlg, &PaletteEditorDialog::paletteSaved,
                         this, &PreferencesDialog::addCustomSwatch);
-                if (dlg.exec() == QDialog::Accepted)
-                    *sharedInfo = dlg.currentInfo(); // persist applied-but-unsaved state
-                else
-                    emit paletteSelected(before);
+                m_overlay->slideIn(dlg, [this, dlg, sharedInfo, before](int result) {
+                    if (result == QDialog::Accepted)
+                        *sharedInfo = dlg->currentInfo(); // persist applied-but-unsaved state
+                    else
+                        emit paletteSelected(before);
+                });
             });
         }
 
         m_addBtn = new AddPaletteSwatch(m_swatchWidget);
         connect(m_addBtn, &QAbstractButton::clicked, this, [this]() {
+            if (m_overlay->isActive()) return;
             const PaletteInfo before = m_currentPalette;
-            PaletteEditorDialog dlg(m_currentPalette, this);
-            connect(&dlg, &PaletteEditorDialog::paletteChanged,
+            auto *dlg = new PaletteEditorDialog(m_currentPalette, this);
+            connect(dlg, &PaletteEditorDialog::paletteChanged,
                     this, &PreferencesDialog::paletteSelected);
-            connect(&dlg, &PaletteEditorDialog::paletteSaved,
+            connect(dlg, &PaletteEditorDialog::paletteSaved,
                     this, &PreferencesDialog::addCustomSwatch);
-            if (dlg.exec() != QDialog::Accepted)
-                emit paletteSelected(before);
+            m_overlay->slideIn(dlg, [this, before](int result) {
+                if (result != QDialog::Accepted)
+                    emit paletteSelected(before);
+            });
         });
         m_swatchLayout->addWidget(m_addBtn, m_swatchCount / kSwatchCols,
                                              m_swatchCount % kSwatchCols);
@@ -810,6 +840,23 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     dialogLay->setContentsMargins(0, 0, 0, 0);
     dialogLay->addWidget(scroll);
 
+    // Slide-in overlay panel for hosting child dialogs in-place.
+    // Must be created after the dialog's own layout is set up so it stacks
+    // above the scroll area when raised.
+    m_overlay = new SlideOverlay(this);
+
+    // Route font picker through the overlay so it slides in rather than
+    // opening as a separate modal window.
+    m_fontBtn->setPickCallback([this](const QFont &current,
+                                      std::function<void(const QFont &)> accept) {
+        if (m_overlay->isActive()) return;
+        auto *dlg = new FontPickerDialog(current, this);
+        m_overlay->slideIn(dlg, [dlg, accept](int result) {
+            if (result == QDialog::Accepted)
+                accept(dlg->selectedFont());
+        });
+    });
+
     setSizeGripEnabled(false);
     setMinimumWidth(460);
 }
@@ -855,16 +902,19 @@ void PreferencesDialog::rebuildCustomSwatches()
         });
         auto sharedInfo = std::make_shared<PaletteInfo>(info);
         connect(sw, &PaletteSwatch::doubleClicked, this, [this, sharedInfo]() {
+            if (m_overlay->isActive()) return;
             const PaletteInfo before = m_currentPalette;
-            PaletteEditorDialog dlg(*sharedInfo, this);
-            connect(&dlg, &PaletteEditorDialog::paletteChanged,
+            auto *dlg = new PaletteEditorDialog(*sharedInfo, this);
+            connect(dlg, &PaletteEditorDialog::paletteChanged,
                     this, &PreferencesDialog::paletteSelected);
-            connect(&dlg, &PaletteEditorDialog::paletteSaved,
+            connect(dlg, &PaletteEditorDialog::paletteSaved,
                     this, &PreferencesDialog::addCustomSwatch);
-            if (dlg.exec() == QDialog::Accepted)
-                *sharedInfo = dlg.currentInfo(); // persist applied-but-unsaved state
-            else
-                emit paletteSelected(before);
+            m_overlay->slideIn(dlg, [this, dlg, sharedInfo, before](int result) {
+                if (result == QDialog::Accepted)
+                    *sharedInfo = dlg->currentInfo(); // persist applied-but-unsaved state
+                else
+                    emit paletteSelected(before);
+            });
         });
     }
 

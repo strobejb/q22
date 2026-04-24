@@ -405,10 +405,6 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
     // Fall back to palette roles for any automatic (invalid) colours.
     const QColor effectiveBg = m_info.bg.isValid() ? m_info.bg
                                                     : palette().color(QPalette::Base);
-    // No single 'fg' field any more — derive a readable colour from the bg.
-    const QColor effectiveFg = effectiveBg.lightness() >= 128
-                               ? effectiveBg.darker(160)
-                               : effectiveBg.lighter(180);
     const bool  checked    = isChecked();
     const qreal borderW    = checked ? 2.0 : SW_BORDER;
     const QColor borderCol = checked
@@ -420,10 +416,30 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
     p.setBrush(effectiveBg);
     p.drawRoundedRect(card.adjusted(h, h, -h, -h), SW_RADIUS - h + 0.5, SW_RADIUS - h + 0.5);
 
-    // ── Centered name text ───────────────────────────────────────────────────
-    p.setPen(effectiveFg);
+    // ── Centered name text on a selection-colour pill ────────────────────────
+    // Derive both colours from the palette's own fields only — no app palette fallback.
+    const QColor selBg   = m_info.selection.isValid()
+                           ? m_info.selection
+                           : (effectiveBg.lightness() >= 128 ? effectiveBg.darker(150)
+                                                              : effectiveBg.lighter(200));
+    const QColor selText = m_info.selectionText.isValid()
+                           ? m_info.selectionText
+                           : (selBg.lightness() >= 128 ? Qt::black : Qt::white);
     p.setFont(font());
-    p.drawText(card.toRect(), Qt::AlignCenter, m_info.name);
+    const QFontMetrics fm(font());
+    const int textW  = fm.horizontalAdvance(m_info.name);
+    const int textH  = fm.height();
+    const int padX   = 6;
+    const int padY   = 3;
+    const QRectF pill(card.center().x() - textW / 2.0 - padX,
+                      card.center().y() - textH / 2.0 - padY,
+                      textW + padX * 2,
+                      textH + padY * 2);
+    p.setPen(Qt::NoPen);
+    p.setBrush(selBg);
+    p.drawRoundedRect(pill, 4, 4);
+    p.setPen(selText);
+    p.drawText(pill.toRect(), Qt::AlignCenter, m_info.name);
 }
 
 // ─── PaletteEditorDialog ─────────────────────────────────────────────────────
@@ -441,6 +457,7 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
     m_nameEdit->setText(info.name);
 
     auto *nameRow = new QWidget(this);
+    nameRow->setObjectName(QStringLiteral("overlayHeader")); // back button inserted here by SlideOverlay
     {
         auto *lay = new QHBoxLayout(nameRow);
         lay->setContentsMargins(0, 0, 0, 0);
