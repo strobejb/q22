@@ -236,5 +236,5 @@ void PasteSpecialDialog::onAccepted()
 bool HexPasteSpecialDlg(HexView *hv, QWidget *parent)
 {
     PasteSpecialDialog dlg(hv, parent);
-    return dlg.exec() == QDialog::Accepted;
+    return execCentered(&dlg) == QDialog::Accepted;
 }

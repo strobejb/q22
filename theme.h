@@ -92,7 +92,31 @@ QIcon segoeIcon(uint codePoint, const QColor &color, int logicalPx = 14);
 
 
 #include <QDialog>
+#include <QPoint>
+#include <QSize>
 // Clears the window icon on a dialog so no app icon appears in the title bar.
 void removeDialogIcon(QDialog *dlg);
+
+// Centers dlg over its parent widget and calls exec() with no position flash.
+//
+// On Windows, Qt's normal show sequence is a two-step: CreateWindowEx places
+// the HWND at a default position, then SetWindowPos corrects it — causing a
+// visible jump.  Calling move() first sets Qt::WA_Moved so QDialog::setVisible
+// skips its own adjustPosition() pass.  Calling winId() then forces the HWND
+// to be created NOW, while the window is still hidden, so exec()'s ShowWindow
+// just flips visibility in-place with no subsequent repositioning.
+inline int execCentered(QDialog *dlg)
+{
+    if (QWidget *par = dlg->parentWidget()) {
+        dlg->adjustSize();
+        const QSize  sz = dlg->size();
+        const QPoint c  = par->frameGeometry().center();
+        dlg->move(c.x() - sz.width() / 2, c.y() - sz.height() / 2);
+    }
+#ifdef Q_OS_WIN
+    (void)dlg->winId(); // force HWND creation while still hidden
+#endif
+    return dlg->exec();
+}
 
 #endif // THEME_H

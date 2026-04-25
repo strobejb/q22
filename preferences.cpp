@@ -21,7 +21,6 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QScrollArea>
-#include <QShowEvent>
 #include <QVBoxLayout>
 
 // ─── SettingsToggle ──────────────────────────────────────────────────────────
@@ -861,11 +860,25 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     setMinimumWidth(460);
 }
 
-void PreferencesDialog::showEvent(QShowEvent *e)
+void PreferencesDialog::setVisible(bool visible)
 {
-    QDialog::showEvent(e);
-    const int maxH = 560;
-    setFixedSize(width(), qMin(sizeHint().height(), maxH));
+    if (visible && !isVisible()) {
+        layout()->activate();
+        const int maxH = 560;
+        const QSize hint = sizeHint();
+        const int w = qMax(hint.width(), minimumWidth());
+        const int h = qMin(hint.height(), maxH);
+        setFixedSize(w, h);
+        // Calling move() before the base class shows the window sets Qt::WA_Moved,
+        // which suppresses QDialog::setVisible's own adjustPosition() call.
+        // On Windows this means the HWND is created at the right position from
+        // the start rather than jumping there after ShowWindow — no flash.
+        if (parentWidget()) {
+            const QPoint c = parentWidget()->geometry().center();
+            move(c.x() - w / 2, c.y() - h / 2);
+        }
+    }
+    QDialog::setVisible(visible);
 }
 
 void PreferencesDialog::addCustomSwatch(const PaletteInfo &)

@@ -344,5 +344,5 @@ void ShowAboutDlg(QWidget *parent)
         overlay->slideIn(creditsDlg, {}, /*resizeParent=*/false);
     });
 
-    dlg.exec();
+    execCentered(&dlg);
 }

@@ -96,7 +96,7 @@ signals:
     void paletteSelected(const PaletteInfo &info);
 
 protected:
-    void showEvent(QShowEvent *e) override;
+    void setVisible(bool visible) override;
 
 private:
     void addCustomSwatch(const PaletteInfo &);

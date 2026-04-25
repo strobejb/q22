@@ -131,13 +131,5 @@ void CopyAsDialog::onAccepted()
 bool CopyAsDlg(HexView *hv, QWidget *parent)
 {
     CopyAsDialog dlg(hv, parent);
-    // Source - https://stackoverflow.com/a/72057839
-    // Posted by Vinci
-    // Retrieved 2026-04-18, License - CC BY-SA 4.0
-
-    //QPixmap pixmap{32, 32};
-    //pixmap.fill(Qt::transparent);
-    //dlg.setWindowIcon(QIcon{pixmap});
-
-    return dlg.exec() == QDialog::Accepted;
+    return execCentered(&dlg) == QDialog::Accepted;
 }

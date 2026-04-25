@@ -57,22 +57,21 @@ void SlideOverlay::slideIn(QDialog *dlg, std::function<void(int)> onFinished,
 {
     if (m_content) return;  // already hosting a dialog
 
-    // Query the natural size hint before we change window flags.
-    const QSize contentHint = dlg->sizeHint();
-
     m_content = dlg;
 
-    // ── Optionally resize the parent dialog to fit the child + header ─────────
-    if (resizeParent)
-        resizeParentToFit(contentHint);
-    else
-        m_didResizeParent = false;
-
-    // ── Embed as a plain child widget ─────────────────────────────────────────
+    // ── Embed as a plain child widget FIRST ───────────────────────────────────
+    // Do this before any resize/show operations.  The dialog is currently a
+    // hidden top-level window whose native handle (HWND on Windows) will be
+    // destroyed and recreated when flags/parent change.  Doing it now — while
+    // everything is still hidden — avoids any OS-level flash from that handle
+    // transition.
     m_content->setWindowFlags(Qt::Widget);
     m_content->setParent(this);
     m_content->setMinimumSize(0, 0);    // allow layout to be smaller than hint
     m_content->installEventFilter(this); // suppress the dialog's own hide()
+
+    // ── Query size hint after embedding (flags are now correct) ──────────────
+    const QSize contentHint = m_content->sizeHint();
 
     // ── Hide Cancel / Close buttons — back chevron takes that role ────────────
     // Use buttons() + buttonRole() so we only touch QAbstractButton (complete
@@ -117,8 +116,23 @@ void SlideOverlay::slideIn(QDialog *dlg, std::function<void(int)> onFinished,
         m_backBtn->raise();
     }
 
-    // ── Size overlay to parent and position content ───────────────────────────
+    // ── Optionally resize the parent to fit the child ─────────────────────────
+    // Suppress repaints on the parent during the resize: it will be fully
+    // covered by the overlay as soon as the animation starts, so no
+    // intermediate resize state should ever be visible.
+    if (resizeParent) {
+        parentWidget()->setUpdatesEnabled(false);
+        resizeParentToFit(contentHint);
+        parentWidget()->setUpdatesEnabled(true);
+    } else {
+        m_didResizeParent = false;
+    }
+
+    // ── Size overlay, snap off-screen, THEN show ──────────────────────────────
+    // Critically: move() is called before show() so the overlay is never
+    // rendered at its resting position (0, 0) before the animation begins.
     syncToParent();
+    move(-width(), 0);
     show();
     raise();
     m_content->show();
@@ -179,12 +193,13 @@ void SlideOverlay::syncToParent()
 
 void SlideOverlay::startSlideIn()
 {
+    // The overlay has already been move()d to (-width(), 0) by slideIn()
+    // before show() was called, so no snap is needed here.
     m_anim->stop();
     m_anim->disconnect();
     m_anim->setEasingCurve(QEasingCurve::OutCubic);
-    m_anim->setStartValue(QPoint(-width(), 0));  // enter from the left
+    m_anim->setStartValue(pos());   // animate from current (already off-screen) position
     m_anim->setEndValue(QPoint(0, 0));
-    move(-width(), 0);  // snap to off-screen start before animating
     m_anim->start();
 }
 

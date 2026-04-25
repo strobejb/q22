@@ -437,7 +437,7 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
                       textH + padY * 2);
     p.setPen(Qt::NoPen);
     p.setBrush(selBg);
-    p.drawRoundedRect(pill, 4, 4);
+    p.drawRect(pill);
     p.setPen(selText);
     p.drawText(pill.toRect(), Qt::AlignCenter, m_info.name);
 }
@@ -462,7 +462,11 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
         auto *lay = new QHBoxLayout(nameRow);
         lay->setContentsMargins(0, 0, 0, 0);
         lay->setSpacing(8);
-        lay->addWidget(new QLabel(tr("Name:"), nameRow));
+        auto *nameLabel = new QLabel(tr("Theme"), nameRow);
+        QFont lf = nameLabel->font();
+        lf.setBold(true);
+        nameLabel->setFont(lf);
+        lay->addWidget(nameLabel);
         lay->addWidget(m_nameEdit, 1);
     }
 
@@ -579,13 +583,23 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
         lay->addWidget(rightHalf, 1);
     }
 
+    // ── Constrain list and picker to the same height (~5 visible rows) ───────
+    // Item height mirrors the stylesheet padding: vPad top + text + vPad bottom.
+    {
+        const int vPad  = qMax(4, m_list->fontMetrics().height() / 2);
+        const int itemH = m_list->fontMetrics().height() + 2 * vPad;
+        const int panelH = 5 * itemH + 2 * m_list->frameWidth();
+        m_list->setFixedHeight(panelH);
+        m_picker->setFixedHeight(panelH);
+    }
+
     auto *vlay = new QVBoxLayout(this);
     vlay->setContentsMargins(20, 20, 20, 20);
     vlay->setSpacing(12);
     vlay->addWidget(nameRow);
     vlay->addWidget(m_list);
     vlay->addWidget(hexRow);
-    vlay->addWidget(m_picker, 1);
+    vlay->addWidget(m_picker);   // no stretch — height is now fixed
     vlay->addWidget(buttons);
 
     // ── Connections ───────────────────────────────────────────────────────────

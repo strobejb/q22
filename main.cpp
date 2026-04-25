@@ -4,6 +4,7 @@
 #include <QApplication>
 #include <QIcon>
 
+
 int main(int argc, char *argv[])
 {
 #ifdef ADWAITA_QT6_PLUGIN_DIR
