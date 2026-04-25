@@ -197,7 +197,7 @@ public:
 
     QSize sizeHint() const override
     {
-        return QSize(200, fontMetrics().height() + 20);
+        return QSize(200, fontMetrics().height() + 28);
     }
 
 protected:
@@ -317,10 +317,10 @@ void ShowAboutDlg(QWidget *parent)
         auto *codeGroup  = new AboutCard(
             { new AboutTextRow(QLatin1String("James Brown"), creditsDlg) }, creditsDlg);
         auto *iconsGroup = new AboutCard(
-            { new AboutTextRow(QLatin1String("GNOME Project"), creditsDlg) }, creditsDlg);
+            { new AboutTextRow(QLatin1String("Icons by GNOME Project"), creditsDlg) }, creditsDlg);
 
         auto *codeHeader  = new QLabel(QObject::tr("Code by"),  creditsDlg);
-        auto *iconsHeader = new QLabel(QObject::tr("Icons by"), creditsDlg);
+        auto *iconsHeader = new QLabel(QObject::tr("Resources"), creditsDlg);
         for (auto *h : { codeHeader, iconsHeader }) {
             QFont f = h->font();
             f.setBold(true);
@@ -331,7 +331,7 @@ void ShowAboutDlg(QWidget *parent)
         lay->setContentsMargins(8, 8, 8, 8);
         lay->setSpacing(0);
         lay->addWidget(headerRow);
-        lay->addStretch();
+        lay->addSpacing(16);
         lay->addWidget(codeHeader);
         lay->addSpacing(4);
         lay->addWidget(codeGroup);

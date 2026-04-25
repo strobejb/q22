@@ -459,15 +459,38 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
     auto *nameRow = new QWidget(this);
     nameRow->setObjectName(QStringLiteral("overlayHeader")); // back button inserted here by SlideOverlay
     {
+        // Left half: bold "Theme" title, flush left
+        auto *leftHalf = new QWidget(nameRow);
+        {
+            auto *l = new QHBoxLayout(leftHalf);
+            l->setContentsMargins(0, 0, 0, 0);
+            l->setSpacing(8);
+            auto *themeLabel = new QLabel(tr("Theme"), leftHalf);
+            QFont lf = themeLabel->font();
+            lf.setBold(true);
+            themeLabel->setFont(lf);
+            l->addWidget(themeLabel);
+            //l->addStretch();
+        }
+
+        // Right half: "Name:" label + stretching edit — mirrors the "Hex:" row layout
+        auto *rightHalf = new QWidget(nameRow);
+        {
+            auto *l = new QHBoxLayout(rightHalf);
+            l->setContentsMargins(0, 0, 0, 0);
+            //l->setSpacing(8);
+            l->addWidget(new QLabel(tr("Name:"), rightHalf));
+            l->addWidget(m_nameEdit, 1);
+        }
+
+        // Stretch 3:4 compensates for the ~36 px (button + gap) that
+        // SlideOverlay inserts at pos-0, keeping rightHalf ≈ same width
+        // as hexRow's rightHalf so the two edit fields match in width.
         auto *lay = new QHBoxLayout(nameRow);
         lay->setContentsMargins(0, 0, 0, 0);
         lay->setSpacing(8);
-        auto *nameLabel = new QLabel(tr("Theme"), nameRow);
-        QFont lf = nameLabel->font();
-        lf.setBold(true);
-        nameLabel->setFont(lf);
-        lay->addWidget(nameLabel);
-        lay->addWidget(m_nameEdit, 1);
+        lay->addWidget(leftHalf,  3);
+        lay->addWidget(rightHalf, 4);
     }
 
     // ── Element list ──────────────────────────────────────────────────────────
@@ -662,6 +685,11 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
 
     // Initialise UI state for the first list item.
     updateColorUI(PE_BG);
+
+    // Name field gets focus first and text is pre-selected for easy replacement.
+    setTabOrder(m_nameEdit, m_list);
+    m_nameEdit->selectAll();
+    m_nameEdit->setFocus();
 }
 
 const char *PaletteEditorDialog::elemName(PaletteElem e)
