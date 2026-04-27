@@ -10,7 +10,7 @@ static int kPad() { return qMax(1, qRound(qApp->devicePixelRatio() * 2.0)); }
 MenuComboBox::MenuComboBox(QWidget *parent)
     : QComboBox(parent)
 {
-    setFocusPolicy(Qt::ClickFocus);
+    setFocusPolicy(Qt::StrongFocus);
     m_menu = new QMenu(this);
     themeMenu(m_menu);
 

@@ -29,6 +29,9 @@ public:
     explicit CopyAsDialog(HexView *hv, QWidget *parent = nullptr);
     ~CopyAsDialog();
 
+protected:
+    void showEvent(QShowEvent *e) override;
+
 private slots:
     void onFormatChanged(int index);
     void onAccepted();

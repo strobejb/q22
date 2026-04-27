@@ -396,8 +396,10 @@ MainWindow::MainWindow(QWidget *parent)
     m_bookmarkDialog = new BookmarkDialog(this);
     m_findDialog = new FindDialog(central);
     m_findDialog->setObjectName("FindDialog");
+    m_findDialog->setWindowFlags(Qt::Widget); // embedded panel — no native QWidgetWindow
     m_gotoDialog = new GotoDialog(m_hv, central);
     m_gotoDialog->setObjectName("GotoDialog");
+    m_gotoDialog->setWindowFlags(Qt::Widget); // embedded panel — no native QWidgetWindow
     vlay->addWidget(m_findDialog, 0);
     vlay->addWidget(m_gotoDialog, 0);
     vlay->addWidget(new Hairline(central));  // separator between content and status bar

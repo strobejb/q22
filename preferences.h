@@ -5,6 +5,7 @@
 #include "slideoverlay.h"
 
 #include <QAbstractButton>
+#include <QKeyEvent>
 #include "theme.h"
 #include <QFont>
 
@@ -68,6 +69,7 @@ protected:
     void mouseReleaseEvent(QMouseEvent *e) override;
     void mouseMoveEvent(QMouseEvent *e) override;
     void leaveEvent(QEvent *) override;
+    void keyPressEvent(QKeyEvent *e) override;
 
 private:
     enum HitZone { None, Minus, Plus };

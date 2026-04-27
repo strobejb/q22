@@ -19,6 +19,7 @@
 #include <QPainterPath>
 #include <QPushButton>
 #include <QSettings>
+#include <QTimer>
 #include <QVBoxLayout>
 
 // ─── applyPalette ─────────────────────────────────────────────────────────────
@@ -686,10 +687,22 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
     // Initialise UI state for the first list item.
     updateColorUI(PE_BG);
 
-    // Name field gets focus first and text is pre-selected for easy replacement.
+    // Tab order: name → list → rest follows natural widget order.
     setTabOrder(m_nameEdit, m_list);
-    m_nameEdit->selectAll();
-    m_nameEdit->setFocus();
+    // Focus is set in showEvent() rather than here: calling setFocus() in the
+    // constructor has no effect because the widget is not yet visible, and
+    // SlideOverlay's slideIn() calls m_content->setFocus() after show() which
+    // would override any focus we set during the show event itself.
+}
+
+void PaletteEditorDialog::showEvent(QShowEvent *e)
+{
+    QDialog::showEvent(e);
+    // Post the focus change so it lands after SlideOverlay's setFocus() call.
+    QTimer::singleShot(0, this, [this] {
+        m_nameEdit->selectAll();
+        m_nameEdit->setFocus();
+    });
 }
 
 const char *PaletteEditorDialog::elemName(PaletteElem e)

@@ -17,10 +17,14 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
+#include <QApplication>
+#include <QFocusEvent>
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QScrollArea>
+#include <QTimer>
 #include <QVBoxLayout>
 
 // ─── SettingsToggle ──────────────────────────────────────────────────────────
@@ -83,6 +87,7 @@ void SettingsToggle::paintEvent(QPaintEvent *)
                          : pillX + THUMB_MARGIN;
     p.setBrush(Qt::white);
     p.drawEllipse(QRect(thumbX, pillY + THUMB_MARGIN, thumbD, thumbD));
+
 }
 
 // ─── StepSpinBox ─────────────────────────────────────────────────────────────
@@ -100,6 +105,7 @@ StepSpinBox::StepSpinBox(const QString &label, int min, int max, int step,
       m_step(step)
 {
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    setFocusPolicy(Qt::StrongFocus);
     setMouseTracking(true);
     setAttribute(Qt::WA_OpaquePaintEvent, false);
 }
@@ -211,6 +217,7 @@ void StepSpinBox::paintEvent(QPaintEvent *)
     p.setFont(font());
     p.drawText(minusRect(), Qt::AlignCenter, "\u2212");
     p.drawText(plusRect(),  Qt::AlignCenter, "+");
+
 }
 
 void StepSpinBox::mousePressEvent(QMouseEvent *e)
@@ -248,6 +255,15 @@ void StepSpinBox::leaveEvent(QEvent *)
     m_hover   = None;
     m_pressed = None;
     update();
+}
+
+void StepSpinBox::keyPressEvent(QKeyEvent *e)
+{
+    switch (e->key()) {
+    case Qt::Key_Up:   case Qt::Key_Right: setValue(m_value + m_step); break;
+    case Qt::Key_Down: case Qt::Key_Left:  setValue(m_value - m_step); break;
+    default: QWidget::keyPressEvent(e); break;
+    }
 }
 
 // ─── FontPickerDialog ────────────────────────────────────────────────────────
@@ -509,10 +525,30 @@ protected:
         p.setPen(isEnabled() ? kDanger
                              : palette().color(QPalette::Disabled, QPalette::WindowText));
         p.drawText(rect(), Qt::AlignCenter, text());
+
     }
 };
 
 // ─── SettingsGroup ───────────────────────────────────────────────────────────
+
+// Same per-pair corner helper as focusRingPath() in dlgabout.cpp.
+static QPainterPath rowFocusPath(const QRectF &r, bool roundTop, bool roundBot, qreal radius)
+{
+    const qreal tl = roundTop ? radius : 0, tr = roundTop ? radius : 0;
+    const qreal br = roundBot ? radius : 0, bl = roundBot ? radius : 0;
+    QPainterPath path;
+    path.moveTo(r.left() + tl, r.top());
+    path.lineTo(r.right() - tr, r.top());
+    if (tr > 0) path.arcTo(r.right()-2*tr, r.top(),           2*tr, 2*tr,  90, -90);
+    path.lineTo(r.right(), r.bottom() - br);
+    if (br > 0) path.arcTo(r.right()-2*br, r.bottom()-2*br,   2*br, 2*br,   0, -90);
+    path.lineTo(r.left() + bl, r.bottom());
+    if (bl > 0) path.arcTo(r.left(),       r.bottom()-2*bl,   2*bl, 2*bl, 270, -90);
+    path.lineTo(r.left(), r.top() + tl);
+    if (tl > 0) path.arcTo(r.left(),       r.top(),           2*tl, 2*tl, 180, -90);
+    path.closeSubpath();
+    return path;
+}
 
 static constexpr int GRP_SHADOW   =  4;   // px of transparent margin for shadow
 static constexpr int GRP_RADIUS   = 10;
@@ -527,8 +563,6 @@ public:
         : QWidget(parent)
     {
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        // WA_NoSystemBackground: Qt won't pre-fill the widget rect, so the
-        // shadow ring drawn in the margin composites over the parent background.
         setAttribute(Qt::WA_NoSystemBackground);
         setContentsMargins(GRP_SHADOW, GRP_SHADOW, GRP_SHADOW, GRP_SHADOW);
         auto *lay = new QVBoxLayout(this);
@@ -542,6 +576,7 @@ public:
 
     bool eventFilter(QObject *obj, QEvent *e) override
     {
+        // ── Hover highlight ────────────────────────────────────────────────────
         if (e->type() == QEvent::Enter || e->type() == QEvent::Leave) {
             auto *lay = static_cast<QVBoxLayout *>(layout());
             int newIdx = -1;
@@ -552,6 +587,31 @@ public:
             }
             if (newIdx != m_hoverIdx) { m_hoverIdx = newIdx; update(); }
         }
+
+        // ── Keyboard focus ring (Tab/Shift-Tab only) ───────────────────────────
+        if (e->type() == QEvent::FocusIn) {
+            const auto reason = static_cast<QFocusEvent *>(e)->reason();
+            if (reason == Qt::TabFocusReason || reason == Qt::BacktabFocusReason) {
+                auto *lay = static_cast<QVBoxLayout *>(layout());
+                for (int i = 0; i < lay->count(); ++i) {
+                    if (lay->itemAt(i)->widget() == obj) {
+                        if (m_focusIdx != i) { m_focusIdx = i; update(); }
+                        break;
+                    }
+                }
+            }
+        } else if (e->type() == QEvent::FocusOut) {
+            // Defer: if focus moves to a sibling, the FocusIn above will have
+            // already updated m_focusIdx before this deferred check runs.
+            QTimer::singleShot(0, this, [this] {
+                auto *fw  = QApplication::focusWidget();
+                auto *lay = static_cast<QVBoxLayout *>(layout());
+                for (int i = 0; i < lay->count(); ++i)
+                    if (lay->itemAt(i)->widget() == fw) return; // sibling has focus
+                if (m_focusIdx >= 0) { m_focusIdx = -1; update(); }
+            });
+        }
+
         return false;
     }
 
@@ -567,77 +627,79 @@ public:
 
         const QPalette &pal  = palette();
         const bool      dark = pal.color(QPalette::Window).lightness() < 128;
-
-        // Card rect is inset from the widget rect by the shadow margin.
-        const QRectF card = QRectF(rect()).adjusted(GRP_SHADOW, GRP_SHADOW,
-                                                    -GRP_SHADOW, -GRP_SHADOW);
+        const QRectF    card = QRectF(rect()).adjusted(GRP_SHADOW, GRP_SHADOW,
+                                                       -GRP_SHADOW, -GRP_SHADOW);
 
         // ── Drop shadow ───────────────────────────────────────────────────────
-        // Concentric rounded rects outward from the card edge, with alpha that
-        // fades from ~14 at the border to 0 at GRP_SHADOW px out.  Dark mode
-        // uses half the alpha (card already has good contrast with the window).
         p.setPen(Qt::NoPen);
         for (int i = GRP_SHADOW; i >= 1; --i) {
             const int alpha = qRound(7.0 * qreal(GRP_SHADOW - i + 1) / GRP_SHADOW);
             p.setBrush(QColor(0, 0, 0, dark ? alpha / 2 : alpha));
             const qreal r = GRP_RADIUS + i * 0.4;
-            // Slight downward bias (top adjusted by i-1 instead of i) gives a
-            // natural resting-on-surface look.
             p.drawRoundedRect(card.adjusted(-i, -(i - 1), i, i), r, r);
         }
 
         // ── Card background ───────────────────────────────────────────────────
-        // Border: semi-transparent rather than palette(mid) so it's 1px and
-        // subtle — close to Adwaita's card border style.
-        const QColor borderCol = dark ? QColor(255, 255, 255, 28)
-                                      : QColor(0,   0,   0,   18);
+        const QColor borderCol = dark ? QColor(255, 255, 255, 28) : QColor(0, 0, 0, 18);
         p.setPen(QPen(borderCol, 1));
         p.setBrush(pal.color(QPalette::Base));
         p.drawRoundedRect(card.adjusted(0.5, 0.5, -0.5, -0.5), GRP_RADIUS, GRP_RADIUS);
 
         // ── Hover highlight ───────────────────────────────────────────────────
-        auto *lay = static_cast<QVBoxLayout *>(layout());
+        auto *lay   = static_cast<QVBoxLayout *>(layout());
         const int count = lay->count();
         if (m_hoverIdx >= 0 && m_hoverIdx < count) {
-            const QWidget *w = lay->itemAt(m_hoverIdx)->widget();
+            const QWidget *w    = lay->itemAt(m_hoverIdx)->widget();
+            const QWidget *prev = m_hoverIdx > 0          ? lay->itemAt(m_hoverIdx - 1)->widget() : nullptr;
+            const QWidget *next = m_hoverIdx < count - 1  ? lay->itemAt(m_hoverIdx + 1)->widget() : nullptr;
             if (w) {
-                const QWidget *prev = m_hoverIdx > 0
-                                      ? lay->itemAt(m_hoverIdx - 1)->widget() : nullptr;
-                const QWidget *next = m_hoverIdx < count - 1
-                                      ? lay->itemAt(m_hoverIdx + 1)->widget() : nullptr;
-                const int top    = prev ? (prev->geometry().bottom() + w->geometry().top()) / 2
-                                        : qRound(card.top());
-                const int bottom = next ? (w->geometry().bottom() + next->geometry().top()) / 2
-                                        : qRound(card.bottom());
-                QRect row(qRound(card.left()), top,
-                          qRound(card.width()), bottom - top);
+                const int top    = prev ? (prev->geometry().bottom() + w->geometry().top())    / 2 : qRound(card.top());
+                const int bottom = next ? (w->geometry().bottom()    + next->geometry().top()) / 2 : qRound(card.bottom());
                 QPainterPath clip;
                 clip.addRoundedRect(card, GRP_RADIUS, GRP_RADIUS);
                 p.save();
                 p.setClipPath(clip);
                 p.setRenderHint(QPainter::Antialiasing, false);
-                p.fillRect(row, dark ? QColor(255, 255, 255, 15) : QColor(0, 0, 0, 8));
+                p.fillRect(QRect(qRound(card.left()), top, qRound(card.width()), bottom - top),
+                           dark ? QColor(255, 255, 255, 15) : QColor(0, 0, 0, 8));
                 p.restore();
             }
         }
 
         // ── Separators between items ──────────────────────────────────────────
-        if (count < 2) return;
+        if (count >= 2) {
+            p.setRenderHint(QPainter::Antialiasing, false);
+            p.setPen(QPen(pal.color(QPalette::Mid), 1));
+            for (int i = 1; i < count; ++i) {
+                const QWidget *a = lay->itemAt(i - 1)->widget();
+                const QWidget *b = lay->itemAt(i)->widget();
+                if (!a || !b) continue;
+                const int y = (a->geometry().bottom() + b->geometry().top()) / 2;
+                p.drawLine(qRound(card.left()) + 1, y, qRound(card.right()) - 1, y);
+            }
+        }
 
-        p.setRenderHint(QPainter::Antialiasing, false);
-        p.setPen(QPen(pal.color(QPalette::Mid), 1));
-
-        for (int i = 1; i < count; ++i) {
-            const QWidget *prev = lay->itemAt(i - 1)->widget();
-            const QWidget *cur  = lay->itemAt(i)->widget();
-            if (!prev || !cur) continue;
-            const int y = (prev->geometry().bottom() + cur->geometry().top()) / 2;
-            p.drawLine(qRound(card.left()) + 1, y, qRound(card.right()) - 1, y);
+        // ── Keyboard focus ring at row level ──────────────────────────────────
+        if (m_focusIdx >= 0 && m_focusIdx < count) {
+            const QWidget *fw   = lay->itemAt(m_focusIdx)->widget();
+            const QWidget *prev = m_focusIdx > 0         ? lay->itemAt(m_focusIdx - 1)->widget() : nullptr;
+            const QWidget *next = m_focusIdx < count - 1 ? lay->itemAt(m_focusIdx + 1)->widget() : nullptr;
+            if (fw) {
+                const qreal top    = prev ? qreal(prev->geometry().bottom() + fw->geometry().top()) / 2 : card.top();
+                const qreal bottom = next ? qreal(fw->geometry().bottom() + next->geometry().top()) / 2 : card.bottom();
+                const QRectF ring(card.left() + 1.5, top + 1.5,
+                                  card.width() - 3,  bottom - top - 3);
+                p.setRenderHint(QPainter::Antialiasing);
+                p.setPen(QPen(pal.color(QPalette::Highlight), 2));
+                p.setBrush(Qt::NoBrush);
+                p.drawPath(rowFocusPath(ring, !prev, !next, GRP_RADIUS - 1.5));
+            }
         }
     }
 
 private:
-    int m_hoverIdx = -1;
+    int m_hoverIdx  = -1;
+    int m_focusIdx  = -1;
 };
 
 // ─── PreferencesDialog ───────────────────────────────────────────────────────

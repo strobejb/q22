@@ -14,6 +14,7 @@
 #include <QPushButton>
 #include <QApplication>
 #include <QComboBox>
+#include <QShowEvent>
 
 // ── Globals ──────────────────────────────────────────────────────────────────
 
@@ -99,6 +100,12 @@ CopyAsDialog::CopyAsDialog(HexView *hv, QWidget *parent)
 CopyAsDialog::~CopyAsDialog()
 {
     delete ui;
+}
+
+void CopyAsDialog::showEvent(QShowEvent *e)
+{
+    QDialog::showEvent(e);
+    ui->comboFormat->setFocus();
 }
 
 void CopyAsDialog::onFormatChanged(int /*index*/)

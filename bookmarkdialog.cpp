@@ -68,6 +68,7 @@ BookmarkDialog::BookmarkDialog(QWidget *parent)
 
     // Set up colour picker and wrap it in a list-group card.
     ui->colourPicker->setColumns(7);
+    ui->bookmarkName->setTabChangesFocus(true);
 
     const QRect buttonRect = ui->buttonBox->geometry();
     auto *card = new PickerCard(this);

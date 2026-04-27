@@ -150,6 +150,9 @@ signals:
     void paletteChanged(const PaletteInfo &info);
     void paletteSaved(const PaletteInfo &info);
 
+protected:
+    void showEvent(QShowEvent *e) override;
+
 private:
     static const char *elemName(PaletteElem e);
     QColor colorAt(PaletteElem e) const;

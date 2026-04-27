@@ -12,6 +12,7 @@
 #include "theme.h"
 
 #include <QAbstractButton>
+#include <QFocusEvent>
 #include <QApplication>
 #include <QDesktopServices>
 #include <QDialog>
@@ -28,6 +29,28 @@
 #include <QVBoxLayout>
 
 static constexpr int CHEV_SIZE = 5;   // half-height of chevron arms
+
+// Builds a rounded-rect QPainterPath with independent top/bottom corner control.
+// roundTop rounds the top-left and top-right corners; roundBot the bottom pair.
+static QPainterPath focusRingPath(const QRectF &r, bool roundTop, bool roundBot, qreal radius)
+{
+    const qreal tl = roundTop ? radius : 0;
+    const qreal tr = roundTop ? radius : 0;
+    const qreal br = roundBot ? radius : 0;
+    const qreal bl = roundBot ? radius : 0;
+    QPainterPath path;
+    path.moveTo(r.left() + tl, r.top());
+    path.lineTo(r.right() - tr, r.top());
+    if (tr > 0) path.arcTo(r.right() - 2*tr, r.top(),           2*tr, 2*tr, 90, -90);
+    path.lineTo(r.right(), r.bottom() - br);
+    if (br > 0) path.arcTo(r.right() - 2*br, r.bottom() - 2*br, 2*br, 2*br,  0, -90);
+    path.lineTo(r.left() + bl, r.bottom());
+    if (bl > 0) path.arcTo(r.left(),          r.bottom() - 2*bl, 2*bl, 2*bl, 270, -90);
+    path.lineTo(r.left(), r.top() + tl);
+    if (tl > 0) path.arcTo(r.left(),          r.top(),           2*tl, 2*tl, 180, -90);
+    path.closeSubpath();
+    return path;
+}
 
 // ── AboutCard ─────────────────────────────────────────────────────────────────
 
@@ -47,6 +70,14 @@ public:
         lay->setContentsMargins(0, 0, 0, 0);
         lay->setSpacing(0);
         for (int i = 0; i < rows.size(); ++i) {
+            // cardPos: 0=only, 1=first, 2=last, 3=middle — used by focus ring.
+            int pos = 0;
+            if (rows.size() > 1) {
+                if      (i == 0)                  pos = 1;
+                else if (i == rows.size() - 1)    pos = 2;
+                else                              pos = 3;
+            }
+            rows[i]->setProperty("cardPos", pos);
             lay->addWidget(rows[i]);
             if (i < rows.size() - 1)
                 lay->addWidget(new Hairline(this));
@@ -121,14 +152,36 @@ protected:
                            sz, sz);
             m_icon.paint(&p, ir);
         }
+
+        if (m_keyboardFocus) {
+            const int  pos      = property("cardPos").toInt();
+            const bool roundTop = (pos == 0 || pos == 1);
+            const bool roundBot = (pos == 0 || pos == 2);
+            p.setPen(QPen(pal.color(QPalette::Highlight), 2));
+            p.setBrush(Qt::NoBrush);
+            p.drawPath(focusRingPath(QRectF(rect()).adjusted(1.5, 1.5, -1.5, -1.5),
+                                    roundTop, roundBot, AC_RADIUS - AC_SHADOW - 1));
+        }
     }
 
     void enterEvent(QEnterEvent *e) override { update(); QAbstractButton::enterEvent(e); }
     void leaveEvent(QEvent       *e) override { update(); QAbstractButton::leaveEvent(e); }
+    void focusInEvent(QFocusEvent *e) override
+    {
+        m_keyboardFocus = (e->reason() == Qt::TabFocusReason ||
+                           e->reason() == Qt::BacktabFocusReason);
+        update(); QAbstractButton::focusInEvent(e);
+    }
+    void focusOutEvent(QFocusEvent *e) override
+    {
+        m_keyboardFocus = false;
+        update(); QAbstractButton::focusOutEvent(e);
+    }
 
 private:
     QUrl  m_url;
     QIcon m_icon;
+    bool  m_keyboardFocus = false;
 };
 
 
@@ -177,10 +230,34 @@ protected:
         ch.lineTo(cx + CHEV_SIZE,  cy);
         ch.lineTo(cx,              cy + CHEV_SIZE);
         p.drawPath(ch);
+
+        if (m_keyboardFocus) {
+            const int  pos      = property("cardPos").toInt();
+            const bool roundTop = (pos == 0 || pos == 1);
+            const bool roundBot = (pos == 0 || pos == 2);
+            p.setPen(QPen(pal.color(QPalette::Highlight), 2));
+            p.setBrush(Qt::NoBrush);
+            p.drawPath(focusRingPath(QRectF(rect()).adjusted(1.5, 1.5, -1.5, -1.5),
+                                    roundTop, roundBot, AC_RADIUS - AC_SHADOW - 1));
+        }
     }
 
     void enterEvent(QEnterEvent *e) override { update(); QAbstractButton::enterEvent(e); }
     void leaveEvent(QEvent       *e) override { update(); QAbstractButton::leaveEvent(e); }
+    void focusInEvent(QFocusEvent *e) override
+    {
+        m_keyboardFocus = (e->reason() == Qt::TabFocusReason ||
+                           e->reason() == Qt::BacktabFocusReason);
+        update(); QAbstractButton::focusInEvent(e);
+    }
+    void focusOutEvent(QFocusEvent *e) override
+    {
+        m_keyboardFocus = false;
+        update(); QAbstractButton::focusOutEvent(e);
+    }
+
+private:
+    bool m_keyboardFocus = false;
 };
 
 // ── AboutTextRow ──────────────────────────────────────────────────────────────
