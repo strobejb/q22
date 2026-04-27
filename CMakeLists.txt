@@ -55,6 +55,8 @@ set(PROJECT_SOURCES
         dlgpastespecial.cpp
         dlgabout.h
         dlgabout.cpp
+        settingscard.h
+        settingscard.cpp
 )
 
 if(WIN32)
