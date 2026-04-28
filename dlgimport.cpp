@@ -32,7 +32,13 @@ IMPEXP_OPTIONS g_PasteOptions  = { FORMAT_RAWDATA,  SEARCHTYPE_BYTE };
 // (same as in dlgexport.cpp – local statics keep them file-scoped)
 
 static inline uint16_t imp_reverse16(uint16_t n) { return (uint16_t)((n >> 8) | (n << 8)); }
-static inline uint64_t imp_reverse64(uint64_t n) { return __builtin_bswap64(n); }
+static inline uint64_t imp_reverse64(uint64_t n) {
+#if defined(_MSC_VER)
+    return _byteswap_uint64(n);
+#else
+    return __builtin_bswap64(n);
+#endif
+}
 
 #define IMP_ENDIAN64(bigend, v) ((bigend) ? imp_reverse64((uint64_t)(v)) : (uint64_t)(v))
 
