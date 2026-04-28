@@ -162,8 +162,25 @@ bool SettingsCard::eventFilter(QObject *obj, QEvent *e)
                 } else if (!forward) {
                     // Up past the first row — exit the card like Shift-Tab
                     focusNextPrevChild(false);
+                } else {
+                    // Down past the last row: only advance if there is actually
+                    // a focusable widget below this card.  Without this guard,
+                    // focusNextPrevChild(true) wraps back to the top of the
+                    // dialog — that should only happen on Tab, not Down.
+                    auto *from = qobject_cast<QWidget *>(obj);
+                    const int cardBottom = mapToGlobal(QPoint(0, height())).y();
+                    for (QWidget *w = from ? from->nextInFocusChain() : nullptr;
+                         w && w != from; w = w->nextInFocusChain()) {
+                        if (!isAncestorOf(w)
+                                && w->focusPolicy() != Qt::NoFocus
+                                && !w->isHidden()
+                                && w->isVisibleTo(w->window())) {
+                            if (w->mapToGlobal(QPoint(0, 0)).y() >= cardBottom)
+                                focusNextPrevChild(true);
+                            break;
+                        }
+                    }
                 }
-                // Down past the last row — stay on the last item
                 return true;
             }
         }

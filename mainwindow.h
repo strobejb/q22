@@ -2,6 +2,7 @@
 #define MAINWINDOW_H
 
 #include <QByteArray>
+#include <QCloseEvent>
 #include <QMainWindow>
 
 QT_BEGIN_NAMESPACE
@@ -28,6 +29,7 @@ public:
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
+    void closeEvent(QCloseEvent *e) override;
     void showEvent(QShowEvent *e) override;
     void changeEvent(QEvent *e) override;
 #ifdef Q_OS_WIN

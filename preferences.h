@@ -34,6 +34,10 @@ class PreferencesDialog : public QDialog
 public:
     explicit PreferencesDialog(QWidget *parent = nullptr);
 
+    // Call before show() on Windows to pre-create the HWND at the correct
+    // position, preventing the 0,0 flash.  Idempotent — safe to call twice.
+    void prepareShow();
+
 signals:
     void fontChanged(const QFont &font);
     void fontSpacingChanged(int hSpacing, int lineSpacing);

@@ -347,6 +347,31 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     qApp->installEventFilter(this);
 }
 
+void PreferencesDialog::prepareShow()
+{
+    // WA_Moved is set by move() below; if it's already set this was called
+    // twice (e.g. from mainwindow and then again from setVisible) — skip.
+    if (testAttribute(Qt::WA_Moved)) return;
+
+    layout()->activate();
+    const int maxH = 560;
+    const QSize hint = sizeHint();
+    const int w = qMax(hint.width(), minimumWidth());
+    const int h = qMin(hint.height(), maxH);
+    setFixedSize(w, h);
+    if (QWidget *par = parentWidget()) {
+        const QPoint c = par->frameGeometry().center();
+        move(c.x() - w / 2, c.y() - h / 2);
+    }
+#ifdef Q_OS_WIN
+    // Force HWND creation NOW, while the window is still hidden, so the
+    // subsequent ShowWindow call just flips visibility without repositioning.
+    // This must happen BEFORE setVisible/show() is entered — the same
+    // pattern execCentered() uses for modal dialogs.
+    (void)winId();
+#endif
+}
+
 void PreferencesDialog::setVisible(bool visible)
 {
     if (!visible) {
@@ -354,17 +379,8 @@ void PreferencesDialog::setVisible(bool visible)
         if (!m_hiddenByModal && m_overlay->isActive())
             m_overlay->dismiss();
     } else if (!isVisible() && !m_hiddenByModal) {
-        // First/normal show: calculate size and centre on parent.
-        layout()->activate();
-        const int maxH = 560;
-        const QSize hint = sizeHint();
-        const int w = qMax(hint.width(), minimumWidth());
-        const int h = qMin(hint.height(), maxH);
-        setFixedSize(w, h);
-        if (parentWidget()) {
-            const QPoint c = parentWidget()->geometry().center();
-            move(c.x() - w / 2, c.y() - h / 2);
-        }
+        // Fallback: centre on parent if prepareShow() wasn't called first.
+        prepareShow();
     }
     QDialog::setVisible(visible);
     if (visible)

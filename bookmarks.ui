@@ -13,26 +13,13 @@
   <property name="windowTitle">
    <string>Bookmark</string>
   </property>
-  <widget class="QLabel" name="rangeLabel">
-   <property name="geometry">
-    <rect>
-     <x>20</x>
-     <y>120</y>
-     <width>291</width>
-     <height>20</height>
-    </rect>
-   </property>
-   <property name="text">
-    <string/>
-   </property>
-  </widget>
-  <widget class="QPlainTextEdit" name="bookmarkName">
+  <widget class="AnnotationEdit" name="bookmarkName">
    <property name="geometry">
     <rect>
      <x>20</x>
      <y>20</y>
      <width>291</width>
-     <height>90</height>
+     <height>112</height>
     </rect>
    </property>
    <property name="plainText">
@@ -67,6 +54,11 @@
   </widget>
  </widget>
  <customwidgets>
+  <customwidget>
+   <class>AnnotationEdit</class>
+   <extends>QPlainTextEdit</extends>
+   <header>bookmarkdialog.h</header>
+  </customwidget>
   <customwidget>
    <class>ColourPickerWidget</class>
    <extends>QWidget</extends>

@@ -26,6 +26,7 @@
 #include <QDir>
 #include <QMimeData>
 #include <QAbstractButton>
+#include <QPushButton>
 #include <QFrame>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -549,7 +550,7 @@ MainWindow::MainWindow(QWidget *parent)
                 swatchColours.append(QColor(m_hv->getHexColour(HvColorSlot(HVC_BOOKMARK1 + i))));
             m_bookmarkDialog->setSwatchColours(swatchColours);
         }
-        if (m_bookmarkDialog->exec() == QDialog::Accepted) {
+        if (execCentered(m_bookmarkDialog) == QDialog::Accepted) {
             Bookmark bm;
             bm.offset   = m_bookmarkDialog->offset();
             bm.length   = static_cast<size_w>(m_bookmarkDialog->length());
@@ -604,6 +605,29 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(m_hv, &HexView::findProgress, m_statusBar, &StatusBar::onFindProgress);
     connect(m_findDialog, &FindDialog::searchHexChanged, m_statusBar, &StatusBar::showSearchHex);
+
+    connect(ui->actionExit, &QAction::triggered, this, &MainWindow::close);
+
+    connect(ui->actionSave, &QAction::triggered, this, [this]() {
+        const QString path = m_hv->filePath();
+        if (path.isEmpty()) {
+            // No path yet — fall through to Save As behaviour.
+            const QString dest = QFileDialog::getSaveFileName(this, tr("Save As"));
+            if (dest.isEmpty()) return;
+            if (!m_hv->saveFile(dest)) return;
+            openFile(dest);         // reopen: clears undo, sets filePath, updates title/recent
+        } else {
+            if (!m_hv->saveFile(path)) return;
+            openFile(path);         // reopen: clears undo, resets view state
+        }
+    });
+
+    connect(ui->actionSave_As, &QAction::triggered, this, [this]() {
+        const QString dest = QFileDialog::getSaveFileName(this, tr("Save As"));
+        if (dest.isEmpty()) return;
+        if (!m_hv->saveFile(dest)) return;
+        openFile(dest);             // reopen: clears undo, sets filePath, updates title/recent
+    });
 
     connect(ui->actionNew, &QAction::triggered, this, [this]() {
         if (!maybeSave()) return;
@@ -703,6 +727,7 @@ MainWindow::MainWindow(QWidget *parent)
         AppSettings::setPrefPaletteName(info.name);
     });
     connect(ui->actionPreferences, &QAction::triggered, this, [this]() {
+        m_prefsDialog->prepareShow(); // pre-create HWND at correct pos before show()
         m_prefsDialog->show();
         m_prefsDialog->raise();
         m_prefsDialog->activateWindow();
@@ -796,17 +821,22 @@ bool MainWindow::maybeSave()
     QMessageBox mb(QMessageBox::Warning,
                    tr("Unsaved changes"),
                    tr("Save changes to \"%1\"?").arg(name),
-                   QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel,
+                   QMessageBox::NoButton,
                    this);
-    mb.setDefaultButton(QMessageBox::Yes);
-    for (QAbstractButton *btn : mb.buttons())
-        btn->setIcon(QIcon());
+    QPushButton*saveBtn    = mb.addButton(tr("Save"),    QMessageBox::AcceptRole);
+    QPushButton*discardBtn = mb.addButton(tr("Discard"), QMessageBox::DestructiveRole);
+    QPushButton*cancelBtn  = mb.addButton(tr("Cancel"),  QMessageBox::RejectRole);
+    mb.setDefaultButton(saveBtn);
+    //for (QAbstractButton *btn : mb.buttons())
+    //    btn->setIcon(QIcon());
 
-    switch (mb.exec()) {
-    case QMessageBox::Cancel:
-        return false;
+    mb.exec();
+    QPushButton *clicked = qobject_cast<QPushButton*>(mb.clickedButton());
 
-    case QMessageBox::Yes: {
+    if (!clicked || clicked == cancelBtn)
+        return false;                       // Cancel (or dialog closed via Esc)
+
+    if (clicked == saveBtn) {
         const QString path = m_hv->filePath();
         if (!path.isEmpty()) {
             // Real file on disk — overwrite directly
@@ -820,14 +850,19 @@ bool MainWindow::maybeSave()
             if (!m_hv->saveFile(dest))
                 return false;
         }
-        break;
     }
-
-    default: // No — discard changes
-        break;
-    }
+    Q_UNUSED(discardBtn); // fall-through: discard changes and continue
 
     return true;
+}
+
+void MainWindow::closeEvent(QCloseEvent *e)
+{
+    if (!maybeSave()) {
+        e->ignore();
+        return;
+    }
+    QMainWindow::closeEvent(e);
 }
 
 void MainWindow::openFile(const QString &path) {

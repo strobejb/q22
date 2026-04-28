@@ -152,16 +152,14 @@ void BookmarkDialog::updateRangeLabel()
         return QString("0x") + QString::number(v, 16).toUpper();
     };
 
-    const QColor mid = palette().color(QPalette::Mid);
-    ui->rangeLabel->setStyleSheet(QString("color: %1;").arg(mid.name()));
-
     if (m_length <= 1) {
-        ui->rangeLabel->setText(hexStr(m_offset));
+        ui->bookmarkName->setAnnotation(QString("Position: %1").arg(hexStr(m_offset)));
         return;
     }
     const quint64 end = m_offset + m_length - 1;
-    ui->rangeLabel->setText(QString("Range: %1 %2 %3 (%4 bytes)")
-        .arg(hexStr(m_offset)).arg(QChar(0x2013)).arg(hexStr(end)).arg(m_length));
+    ui->bookmarkName->setAnnotation(
+        QString("Range: %1 %2 %3 (%4 bytes)")
+            .arg(hexStr(m_offset)).arg(QChar(0x2013)).arg(hexStr(end)).arg(m_length));
 }
 
 void BookmarkDialog::setForegroundColour(const QColor &fg)
