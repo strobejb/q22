@@ -15,7 +15,7 @@ jobs:
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.7.*'
+          version: '6.10.*'
           host: linux
           target: desktop
           arch: linux_gcc_64
@@ -27,12 +27,8 @@ jobs:
       - name: Build
         run: cmake --build build --parallel
 
-      - name: Install ImageMagick
-        run: sudo apt-get install -y imagemagick
-
       - name: Package (linuxdeploy)
         run: |
-          convert qexed.png -resize 512x512! qexed-512.png
           wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
           chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage
@@ -44,7 +40,7 @@ jobs:
             --plugin qt \
             --output appimage \
             --desktop-file qexed.desktop \
-            --icon-file qexed-512.png
+            --icon-file qexed.png
           mv qexed-*.AppImage qexed-linux-x86_64.AppImage
 
       - name: Upload artifact
@@ -63,30 +59,26 @@ jobs:
         run: |
           magick qexed.png -define icon:auto-resize=256,128,64,48,32,16 qexed.ico
 
-      - name: Add MinGW to PATH
-        shell: bash
-        run: echo "C:/mingw64/bin" >> $GITHUB_PATH
-
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.7.*'
+          version: '6.10.*'
           host: windows
           target: desktop
-          arch: win64_mingw
+          arch: win64_msvc2022_64
           cache: true
 
-      - name: Configure (MinGW)
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -G "MinGW Makefiles"
+      - name: Configure (MSVC)
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        run: cmake --build build --parallel
+        run: cmake --build build --config Release --parallel
 
       - name: Deploy Qt DLLs (windeployqt)
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist
-          Copy-Item build\qexed.exe dist\
+          Copy-Item build\Release\qexed.exe dist\
           windeployqt --release --no-translations dist\qexed.exe
 
       - name: Upload artifact

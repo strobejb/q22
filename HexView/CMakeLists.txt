@@ -20,4 +20,5 @@ qt_add_library(HexView STATIC
 target_include_directories(HexView PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
                                    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
+target_compile_definitions(HexView PRIVATE NOMINMAX)
 target_link_libraries(HexView PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
