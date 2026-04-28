@@ -27,6 +27,9 @@ jobs:
       - name: Build
         run: cmake --build build --parallel
 
+      - name: Install ImageMagick
+        run: sudo apt-get install -y imagemagick
+
       - name: Package (linuxdeploy)
         run: |
           convert qexed.png -resize 512x512! qexed-512.png
@@ -66,21 +69,21 @@ jobs:
           version: '6.7.*'
           host: windows
           target: desktop
-          arch: win64_msvc2019_64
+          arch: win64_mingw
+          tools: 'tools_mingw1120'
           cache: true
 
-      - name: Configure (MSVC)
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Configure (MinGW)
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -G "MinGW Makefiles"
 
       - name: Build
-        run: cmake --build build --config Release --parallel
+        run: cmake --build build --parallel
 
       - name: Deploy Qt DLLs (windeployqt)
         shell: pwsh
         run: |
-          $exe = Get-ChildItem -Path build -Filter qexed.exe -Recurse | Select-Object -First 1
           New-Item -ItemType Directory -Force -Path dist
-          Copy-Item $exe.FullName dist\
+          Copy-Item build\qexed.exe dist\
           windeployqt --release --no-translations dist\qexed.exe
 
       - name: Upload artifact
