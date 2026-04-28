@@ -3,6 +3,7 @@
 
 #include <QAbstractButton>
 #include <QColor>
+#include <QEnterEvent>
 #include "theme.h"
 #include <QDialog>
 #include <QList>
@@ -117,11 +118,15 @@ inline constexpr int SW_BORDER =  1;
 
 // ── PaletteSwatch ─────────────────────────────────────────────────────────────
 // Checkable button that renders a colour preview for one palette.
+// Constructed without a PaletteInfo it draws as an "Add palette" button instead.
 class PaletteSwatch : public QAbstractButton
 {
     Q_OBJECT
 public:
+    // Palette variant — navigated via container, Qt::NoFocus (default).
     explicit PaletteSwatch(const PaletteInfo &info, QWidget *parent = nullptr);
+    // Add-button variant — own tab stop, Qt::StrongFocus.
+    explicit PaletteSwatch(QWidget *parent = nullptr);
 
 signals:
     void doubleClicked();
@@ -129,9 +134,14 @@ signals:
 protected:
     void mouseDoubleClickEvent(QMouseEvent *) override;
     void paintEvent(QPaintEvent *) override;
+    void enterEvent(QEnterEvent *) override;
+    void leaveEvent(QEvent *)      override;
+    void focusInEvent(QFocusEvent *)  override;
+    void focusOutEvent(QFocusEvent *) override;
 
 private:
     PaletteInfo m_info;
+    bool        m_addMode = false;
 };
 
 // ── PaletteEditorDialog ───────────────────────────────────────────────────────

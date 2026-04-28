@@ -6,8 +6,12 @@
 
 #include <memory>
 
+#include <QApplication>
+#include <QPropertyAnimation>
+#include <QTimer>
 #include <QButtonGroup>
 #include <QDialogButtonBox>
+#include <QScrollBar>
 #include <QDir>
 #include <QFileSystemWatcher>
 #include <QFont>
@@ -126,42 +130,8 @@ void FontPickerDialog::updatePreview()
 
 // ─── AddPaletteSwatch ─────────────────────────────────────────────────────────
 
-class AddPaletteSwatch : public QAbstractButton
-{
-public:
-    explicit AddPaletteSwatch(QWidget *parent = nullptr)
-        : QAbstractButton(parent)
-    {
-        setCursor(Qt::PointingHandCursor);
-        setFixedSize(SW_W, SW_H);
-        setToolTip(tr("Add palette…"));
-    }
 
-protected:
-    void paintEvent(QPaintEvent *) override
-    {
-        QPainter p(this);
-        p.setRenderHint(QPainter::Antialiasing);
-
-        const QPalette &pal  = palette();
-        const bool      hov  = underMouse();
-        const QRectF    card = QRectF(rect()).adjusted(SW_SHADOW, SW_SHADOW,
-                                                       -SW_SHADOW, -SW_SHADOW);
-
-        p.setPen(QPen(pal.color(QPalette::Mid), SW_BORDER));
-        p.setBrush(hov ? pal.color(QPalette::Midlight) : pal.color(QPalette::Button));
-        p.drawRoundedRect(card.adjusted(0.5, 0.5, -0.5, -0.5), SW_RADIUS, SW_RADIUS);
-
-        QFont f = font();
-        f.setPixelSize(24);
-        p.setFont(f);
-        p.setPen(pal.color(QPalette::Mid));
-        p.drawText(card.toRect(), Qt::AlignCenter, "+");
-    }
-
-    void enterEvent(QEnterEvent *e) override { update(); QAbstractButton::enterEvent(e); }
-    void leaveEvent(QEvent       *e) override { update(); QAbstractButton::leaveEvent(e); }
-};
+static constexpr int kSwatchCols = 4;
 
 // ─── PreferencesDialog ───────────────────────────────────────────────────────
 
@@ -237,8 +207,6 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     // ── Theme swatches ────────────────────────────────────────────────────────
     m_swatchWidget = new QWidget(this);
     {
-        static constexpr int kSwatchCols = 4;
-
         m_swatchLayout = new QGridLayout(m_swatchWidget);
         m_swatchLayout->setContentsMargins(0, 0, 0, 0);
         m_swatchLayout->setSpacing(10 + 2 * SW_SHADOW);
@@ -285,7 +253,7 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
             });
         }
 
-        m_addBtn = new AddPaletteSwatch(m_swatchWidget);
+        m_addBtn = new PaletteSwatch(m_swatchWidget);
         connect(m_addBtn, &QAbstractButton::clicked, this, [this]() {
             if (m_overlay->isActive()) return;
             const PaletteInfo before = m_currentPalette;
@@ -309,6 +277,8 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
         connect(m_watcher, &QFileSystemWatcher::directoryChanged,
                 this, [this](const QString &) { rebuildCustomSwatches(); });
     }
+    m_swatchWidget->setFocusPolicy(Qt::StrongFocus);
+    m_swatchWidget->installEventFilter(this);
 
     // ── Section label helper ──────────────────────────────────────────────────
     auto makeSectionLabel = [this](const QString &text) {
@@ -345,6 +315,7 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setFocusPolicy(Qt::NoFocus);
+    scroll->verticalScrollBar()->setFocusPolicy(Qt::NoFocus);
     scroll->setWidget(content);
 
     auto *dialogLay = new QVBoxLayout(this);
@@ -371,11 +342,19 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
 
     setSizeGripEnabled(false);
     setMinimumWidth(460);
+
+    // Hide this modeless dialog whenever any modal window opens, restore when it closes.
+    qApp->installEventFilter(this);
 }
 
 void PreferencesDialog::setVisible(bool visible)
 {
-    if (visible && !isVisible()) {
+    if (!visible) {
+        // Only dismiss overlay on an explicit close, not a temporary modal hide.
+        if (!m_hiddenByModal && m_overlay->isActive())
+            m_overlay->dismiss();
+    } else if (!isVisible() && !m_hiddenByModal) {
+        // First/normal show: calculate size and centre on parent.
         layout()->activate();
         const int maxH = 560;
         const QSize hint = sizeHint();
@@ -388,7 +367,85 @@ void PreferencesDialog::setVisible(bool visible)
         }
     }
     QDialog::setVisible(visible);
+    if (visible)
+        m_swatchWidget->setFocus();
 }
+
+bool PreferencesDialog::eventFilter(QObject *obj, QEvent *e)
+{
+    // ── Modal watch (installed on qApp — runs for all QObjects) ──────────────
+    if (e->type() == QEvent::Show) {
+        auto *w = qobject_cast<QWidget *>(obj);
+        if (w && w->isWindow() && w != this
+                && w->windowModality() != Qt::NonModal
+                && isVisible() && !m_hiddenByModal) {
+            m_hiddenByModal = true;
+            m_savedPos = pos();
+            // Defer so Qt finishes enterModal() before we hide — if we call
+            // hide() synchronously here, activeModalWidget() is still null when
+            // the resulting QEvent::Hide fires, causing an immediate restore.
+            QTimer::singleShot(0, this, &QWidget::hide);
+        }
+    } else if (e->type() == QEvent::Hide && m_hiddenByModal) {
+        // Defer so Qt finishes exitModal() before we check activeModalWidget().
+        QTimer::singleShot(0, this, [this] {
+            if (m_hiddenByModal && !QApplication::activeModalWidget()) {
+                move(m_savedPos);
+                setWindowOpacity(0.0);
+                show();             // our setVisible skips size/centre recalc while m_hiddenByModal
+                m_hiddenByModal = false;
+                auto *anim = new QPropertyAnimation(this, "windowOpacity", this);
+                anim->setDuration(200);
+                anim->setStartValue(0.0);
+                anim->setEndValue(1.0);
+                anim->start(QAbstractAnimation::DeleteWhenStopped);
+            }
+        });
+    }
+
+    // ── Swatch container ──────────────────────────────────────────────────────
+    if (obj != m_swatchWidget)
+        return false;
+
+    const auto palBtns  = m_swatchGroup->buttons();
+    const int  palCount = palBtns.size();
+
+    if (e->type() == QEvent::FocusIn) {
+        // Initialise cursor at the currently checked swatch (or 0).
+        auto *checked  = m_swatchGroup->checkedButton();
+        m_swatchCursor = checked ? palBtns.indexOf(checked) : 0;
+        if (m_swatchCursor < 0) m_swatchCursor = 0;
+        return false;
+    }
+
+    if (e->type() == QEvent::KeyPress) {
+        const int key = static_cast<QKeyEvent *>(e)->key();
+        int next = m_swatchCursor;
+
+        switch (key) {
+        case Qt::Key_Right: next = qMin(m_swatchCursor + 1,           palCount - 1); break;
+        case Qt::Key_Left:  next = qMax(m_swatchCursor - 1,           0);            break;
+        case Qt::Key_Up:    next = qMax(m_swatchCursor - kSwatchCols, 0);            break;
+        case Qt::Key_Down:
+            next = m_swatchCursor + kSwatchCols;
+            if (next >= palCount) {
+                focusNextPrevChild(true); // hand off to next Tab stop
+                return true;
+            }
+            break;
+        default: return false;
+        }
+
+        if (next != m_swatchCursor) {
+            m_swatchCursor = next;
+            palBtns[m_swatchCursor]->click();
+        }
+        return true; // consume — don't let the scroll area scroll
+    }
+
+    return false;
+}
+
 
 void PreferencesDialog::addCustomSwatch(const PaletteInfo &)
 {
@@ -413,6 +470,7 @@ void PreferencesDialog::rebuildCustomSwatches()
             sw->setChecked(true);
             m_currentPalette = info;
         }
+        sw->installEventFilter(this);
         m_swatchGroup->addButton(sw);
         m_swatchLayout->addWidget(sw, m_swatchCount / kSwatchCols,
                                       m_swatchCount % kSwatchCols);

@@ -7,6 +7,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
+#include <QScrollArea>
 #include <QTimer>
 #include <QVBoxLayout>
 
@@ -111,7 +112,7 @@ bool SettingsCard::eventFilter(QObject *obj, QEvent *e)
         if (newIdx != m_hoverIdx) { m_hoverIdx = newIdx; update(); }
     }
 
-    // ── Keyboard focus ring (Tab / Shift-Tab only) ─────────────────────────────
+    // ── Keyboard focus ring — Tab/Shift-Tab/Up/Down only ─────────────────────
     if (e->type() == QEvent::FocusIn) {
         const auto reason = static_cast<QFocusEvent *>(e)->reason();
         if (reason == Qt::TabFocusReason || reason == Qt::BacktabFocusReason) {
@@ -121,17 +122,51 @@ bool SettingsCard::eventFilter(QObject *obj, QEvent *e)
                     break;
                 }
             }
+        } else {
+            // Any other reason (mouse, window activation, etc.): no ring
+            if (m_focusIdx >= 0) { m_focusIdx = -1; update(); }
         }
     } else if (e->type() == QEvent::FocusOut) {
-        // Defer so that Tab to a sibling row updates m_focusIdx via the FocusIn
-        // above before this deferred check clears it.
+        // Defer so a sibling's FocusIn updates m_focusIdx before we clear it.
         QTimer::singleShot(0, this, [this] {
             auto *fw  = QApplication::focusWidget();
             auto *lay = static_cast<QVBoxLayout *>(layout());
             for (int i = 0; i < lay->count(); ++i)
-                if (lay->itemAt(i)->widget() == fw) return; // sibling gained focus
+                if (lay->itemAt(i)->widget() == fw) return;
             if (m_focusIdx >= 0) { m_focusIdx = -1; update(); }
         });
+    }
+
+    // ── Up/Down: navigate rows like Tab/Shift-Tab, continuing out of card at boundary
+    if (e->type() == QEvent::KeyPress) {
+        const int key = static_cast<QKeyEvent *>(e)->key();
+        if (key == Qt::Key_Up || key == Qt::Key_Down) {
+            int cur = -1;
+            for (int i = 0; i < count; ++i)
+                if (lay->itemAt(i)->widget() == obj) { cur = i; break; }
+            if (cur >= 0) {
+                const bool forward = (key == Qt::Key_Down);
+                const int  next    = forward ? cur + 1 : cur - 1;
+                if (next >= 0 && next < count) {
+                    QWidget *target = lay->itemAt(next)->widget();
+                    if (target && target->focusPolicy() != Qt::NoFocus) {
+                        target->setFocus(forward ? Qt::TabFocusReason
+                                                 : Qt::BacktabFocusReason);
+                        for (QWidget *p = parentWidget(); p; p = p->parentWidget()) {
+                            if (auto *sa = qobject_cast<QScrollArea *>(p)) {
+                                sa->ensureWidgetVisible(target);
+                                break;
+                            }
+                        }
+                    }
+                } else if (!forward) {
+                    // Up past the first row — exit the card like Shift-Tab
+                    focusNextPrevChild(false);
+                }
+                // Down past the last row — stay on the last item
+                return true;
+            }
+        }
     }
 
     return false;
@@ -513,8 +548,8 @@ void StepSpinBox::leaveEvent(QEvent *)
 void StepSpinBox::keyPressEvent(QKeyEvent *e)
 {
     switch (e->key()) {
-    case Qt::Key_Up:   case Qt::Key_Right: setValue(m_value + m_step); break;
-    case Qt::Key_Down: case Qt::Key_Left:  setValue(m_value - m_step); break;
+    case Qt::Key_Right: setValue(m_value + m_step); e->accept(); break;
+    case Qt::Key_Left:  setValue(m_value - m_step); e->accept(); break;
     default: QWidget::keyPressEvent(e); break;
     }
 }

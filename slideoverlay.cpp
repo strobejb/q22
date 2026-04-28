@@ -50,6 +50,13 @@ SlideOverlay::SlideOverlay(QWidget *parent)
     hide();
 }
 
+// True while a dialog is hosted (animating in, open, or animating out).
+bool SlideOverlay::isActive() const { return m_content != nullptr; }
+
+// Dismiss the hosted dialog immediately (equivalent to the back button).
+void SlideOverlay::dismiss() { if (m_content) m_content->reject(); }
+
+
 // ── public ────────────────────────────────────────────────────────────────────
 
 void SlideOverlay::slideIn(QDialog *dlg, std::function<void(int)> onFinished,

@@ -42,6 +42,7 @@ signals:
     void paletteSelected(const PaletteInfo &info);
 
 protected:
+    bool eventFilter(QObject *obj, QEvent *e) override;
     void setVisible(bool visible) override;
 
 private:
@@ -55,7 +56,10 @@ private:
     QButtonGroup   *m_swatchGroup  = nullptr;
     QAbstractButton    *m_addBtn   = nullptr;
     QFileSystemWatcher *m_watcher  = nullptr;
-    int             m_swatchCount  = 0;
+    int             m_swatchCount   = 0;
+    int             m_swatchCursor  = 0;
+    bool            m_hiddenByModal = false;
+    QPoint          m_savedPos;
     NavigationRow  *m_fontNav      = nullptr;
     StepSpinBox    *m_fontSize     = nullptr;
     StepSpinBox    *m_horizSpacing = nullptr;

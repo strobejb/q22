@@ -48,7 +48,10 @@ public:
                  bool resizeParent = true);
 
     // True while a dialog is hosted (animating in, open, or animating out).
-    bool isActive() const { return m_content != nullptr; }
+    bool isActive() const;
+
+    // Dismiss the hosted dialog immediately (equivalent to the back button).
+    void dismiss();
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;

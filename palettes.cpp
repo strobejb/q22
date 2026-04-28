@@ -377,19 +377,59 @@ PaletteSwatch::PaletteSwatch(const PaletteInfo &info, QWidget *parent)
     setAttribute(Qt::WA_NoSystemBackground);
 }
 
+PaletteSwatch::PaletteSwatch(QWidget *parent)
+    : QAbstractButton(parent), m_addMode(true)
+{
+    setFocusPolicy(Qt::StrongFocus);
+    setCursor(Qt::PointingHandCursor);
+    setFixedSize(SW_W, SW_H);
+    setToolTip(tr("Add palette…"));
+    setAttribute(Qt::WA_NoSystemBackground);
+}
+
 void PaletteSwatch::mouseDoubleClickEvent(QMouseEvent *)
 {
-    emit doubleClicked();
+    if (!m_addMode)
+        emit doubleClicked();
 }
+
+void PaletteSwatch::enterEvent(QEnterEvent *e)  { update(); QAbstractButton::enterEvent(e); }
+void PaletteSwatch::leaveEvent(QEvent *e)        { update(); QAbstractButton::leaveEvent(e); }
+void PaletteSwatch::focusInEvent(QFocusEvent *e) { update(); QAbstractButton::focusInEvent(e); }
+void PaletteSwatch::focusOutEvent(QFocusEvent *e){ update(); QAbstractButton::focusOutEvent(e); }
 
 void PaletteSwatch::paintEvent(QPaintEvent *)
 {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
-    const bool  dark = palette().color(QPalette::Window).lightness() < 128;
-    const QRectF card = QRectF(rect()).adjusted(SW_SHADOW, SW_SHADOW,
-                                               -SW_SHADOW, -SW_SHADOW);
+    const QPalette &pal  = palette();
+    const QRectF    card = QRectF(rect()).adjusted(SW_SHADOW, SW_SHADOW,
+                                                   -SW_SHADOW, -SW_SHADOW);
+
+    // ── Add-button variant ────────────────────────────────────────────────────
+    if (m_addMode) {
+        p.setPen(QPen(pal.color(QPalette::Mid), SW_BORDER));
+        p.setBrush(underMouse() ? pal.color(QPalette::Midlight)
+                                : pal.color(QPalette::Button));
+        p.drawRoundedRect(card.adjusted(0.5, 0.5, -0.5, -0.5), SW_RADIUS, SW_RADIUS);
+
+        QFont f = font();
+        f.setPixelSize(24);
+        p.setFont(f);
+        p.setPen(pal.color(QPalette::Mid));
+        p.drawText(card.toRect(), Qt::AlignCenter, "+");
+
+        if (hasFocus()) {
+            p.setPen(QPen(pal.color(QPalette::Highlight), 2));
+            p.setBrush(Qt::NoBrush);
+            p.drawRoundedRect(card.adjusted(1, 1, -1, -1), SW_RADIUS - 1, SW_RADIUS - 1);
+        }
+        return;
+    }
+
+    // ── Palette variant ───────────────────────────────────────────────────────
+    const bool  dark = pal.color(QPalette::Window).lightness() < 128;
 
     // ── Drop shadow ──────────────────────────────────────────────────────────
     p.setPen(Qt::NoPen);
@@ -405,11 +445,11 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
     // When selected, swap to the app highlight colour for a clear indicator.
     // Fall back to palette roles for any automatic (invalid) colours.
     const QColor effectiveBg = m_info.bg.isValid() ? m_info.bg
-                                                    : palette().color(QPalette::Base);
+                                                    : pal.color(QPalette::Base);
     const bool  checked    = isChecked();
     const qreal borderW    = checked ? 2.0 : SW_BORDER;
     const QColor borderCol = checked
-        ? palette().color(QPalette::Highlight)
+        ? pal.color(QPalette::Highlight)
         : (effectiveBg.lightness() < 128 ? QColor(255, 255, 255, 30)
                                          : QColor(0,   0,   0,   30));
     const qreal h = borderW * 0.5;
