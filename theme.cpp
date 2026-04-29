@@ -17,6 +17,11 @@
 #include <QStyleHints>
 #include <QStyleOption>
 #include <QWidget>
+#ifndef Q_OS_WIN
+#include <QProcess>
+#include <QSettings>
+#include <QStandardPaths>
+#endif
 
 #ifdef Q_OS_WIN
 #include <QColor>
@@ -1037,6 +1042,53 @@ public:
 };
 #endif
 
+#ifndef Q_OS_WIN
+// Reads the system UI font from whichever desktop environment is active.
+// On KDE, kdeglobals stores the font in QFont::toString() wire format so it
+// can be loaded directly.  On GNOME, gsettings returns "Family Size" as a
+// single-quoted string.  Falls back to Qt's current default if neither is
+// found, leaving whatever the platform plugin set (if anything) untouched.
+static QFont detectSystemFont()
+{
+    // ── KDE: ~/.config/kdeglobals ─────────────────────────────────────────
+    // General/font = "Noto Sans,10,-1,5,400,0,0,0,0,0,Regular"
+    // This is exactly the format QFont::fromString() understands.
+    {
+        const QString path = QStandardPaths::locate(
+            QStandardPaths::GenericConfigLocation, "kdeglobals");
+        if (!path.isEmpty()) {
+            QSettings s(path, QSettings::IniFormat);
+            const QString str = s.value("General/font").toString();
+            QFont f;
+            if (!str.isEmpty() && f.fromString(str))
+                return f;
+        }
+    }
+
+    // ── GNOME: gsettings ──────────────────────────────────────────────────
+    // gsettings get org.gnome.desktop.interface font-name → 'Cantarell 11'
+    {
+        QProcess p;
+        p.start("gsettings",
+                {"get", "org.gnome.desktop.interface", "font-name"});
+        if (p.waitForFinished(500)) {
+            QString out = p.readAllStandardOutput().trimmed();
+            out.remove('\'').remove('"');
+            const int sp = out.lastIndexOf(' ');
+            if (sp > 0) {
+                bool ok = false;
+                const int sz = out.mid(sp + 1).toInt(&ok);
+                if (ok && sz > 0)
+                    return QFont(out.left(sp), sz);
+            }
+        }
+    }
+
+    // ── Fallback: leave Qt's current default untouched ────────────────────
+    return QApplication::font();
+}
+#endif
+
 void applyAdwaitaTheme(ColorScheme scheme)
 {
     s_currentScheme = scheme;
@@ -1071,11 +1123,9 @@ void applyAdwaitaTheme(ColorScheme scheme)
     static bool firstRun = true;
     if (firstRun) {
         firstRun = false;
-        if (QFontDatabase::families().contains("Cantarell")) {
-            QFont f = QApplication::font();
-            f.setFamily("Cantarell");
-            QApplication::setFont(f);
-        }
+#ifndef Q_OS_WIN
+        QApplication::setFont(detectSystemFont());
+#endif
         qApp->installEventFilter(new TooltipFilter(qApp));
 #ifdef Q_OS_WIN
         qApp->installEventFilter(new DarkModeFilter(qApp));

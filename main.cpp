@@ -17,11 +17,12 @@ int main(int argc, char *argv[])
     a.setApplicationVersion("0.1");
     a.setWindowIcon(QIcon(":/qexed.png"));
 
-    // Prepend the bundled hicolor theme so QIcon::fromTheme() works on all
-    // platforms.  On Linux the system theme is still tried first; the bundled
-    // icons are only used when a name isn't found in the system theme.
-    QIcon::setThemeSearchPaths(QStringList(":/icons") + QIcon::themeSearchPaths());
-    QIcon::setFallbackThemeName("hicolor");
+    // Use only the bundled hicolor theme for icon lookups.  This ensures
+    // QIcon::fromTheme() always resolves to our embedded resources, regardless
+    // of what icon themes are installed on the host system.  Correct for a
+    // self-contained binary/AppImage on both GNOME and KDE.
+    QIcon::setThemeSearchPaths({":/icons"});
+    QIcon::setThemeName("hicolor");
 
     applyAdwaitaTheme(static_cast<ColorScheme>(AppSettings::prefColorScheme()));
 
