@@ -28,5 +28,6 @@
         <file>palettes/Matrix.palette</file>
         <file>icons/hicolor/scalable/actions/go-next-symbolic.svg</file>
         <file>icons/hicolor/scalable/actions/go-previous-symbolic.svg</file>
+        <file>icons/hicolor/scalable/actions/object-select-symbolic.svg</file>
     </qresource>
 </RCC>

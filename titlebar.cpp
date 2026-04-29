@@ -100,7 +100,14 @@ TitleBar::TitleBar(QWidget *parent)
     // 16 px symbolic icons are the standard for header-bar buttons on GNOME/KDE.
     const int btnSz        = barH - 12;    // ~34 px on GNOME
     const int btnIconSz    = 16;           // window-control glyphs / standard icons
-    const int menuBtnIconSz = 14;          // file / search / tools — one step smaller
+    // On the compact Windows bar (40 px) the menu-button icons are one step
+    // smaller than the window-control glyphs.  On Linux the bar is taller
+    // (46 px) so both sets of icons use the same size.
+#ifdef Q_OS_WIN
+    const int menuBtnIconSz = 14;
+#else
+    const int menuBtnIconSz = btnIconSz;
+#endif
     const int btnRadius    = 6;            // rounded-rect, not circular
 
     setFixedHeight(barH);

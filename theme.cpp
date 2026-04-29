@@ -910,9 +910,17 @@ struct TightMenuStyle : public QProxyStyle
                        QPainter *p, const QWidget *w) const override
     {
         if (pe == PE_IndicatorMenuCheckMark) {
-            QStyleOption shifted = *opt;
-            shifted.rect = opt->rect.translated(kGlyphInset, 0);
-            QProxyStyle::drawPrimitive(pe, &shifted, p, w);
+            // Draw object-select-symbolic from bundled resources instead of
+            // delegating to the base style, which renders a raster bitmap on
+            // GNOME/Adwaita and looks pixelated at any non-native size.
+            if (opt->state & State_On) {
+                const bool sel = opt->state & State_Selected;
+                const QColor color = opt->palette.color(
+                    sel ? QPalette::HighlightedText : QPalette::WindowText);
+                const QRect r = opt->rect.translated(kGlyphInset, 0);
+                recoloredIcon("object-select-symbolic", color, r.height()).paint(p, r);
+            }
+            // Unchecked: no-op — space is already reserved by CE_MenuItem.
             return;
         }
         QProxyStyle::drawPrimitive(pe, opt, p, w);
