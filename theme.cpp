@@ -265,22 +265,25 @@ void recolorToolButtons(QWidget *parent)
 {
     const QColor fg = parent->palette().buttonText().color();
     for (auto *btn : parent->findChildren<QToolButton*>()) {
-        if (btn->icon().isNull()) continue;
-
-        // Resolve the icon name.  On first call the icon may still carry its
-        // theme name (Qt's own QIconLoaderEngine preserves it); on subsequent
-        // calls the icon is already a plain recoloured pixmap so name() is "".
-        // An explicit "iconThemeName" property takes priority and also acts as
-        // the cache populated on the first successful name() lookup.
+        // Resolve the icon name.  An explicit "iconThemeName" property is
+        // checked first — it may have been set via .ui dynamic properties or
+        // a previous successful icon().name() lookup.
+        //
+        // IMPORTANT: the isNull() guard comes AFTER the property check.
+        // On KDE/Breeze, QIcon::fromTheme() returns a null icon for icon names
+        // that aren't present in the Breeze theme (e.g. GNOME-specific names
+        // like "nautilus-file-chooser-options-symbolic").  If we bailed out on
+        // isNull() first, we'd skip those buttons entirely even though we have
+        // a bundled SVG resource that recoloredIcon() can load instead.
         QString name = btn->property("iconThemeName").toString();
         if (name.isEmpty()) {
+            if (btn->icon().isNull()) continue;
             name = btn->icon().name();
             if (!name.isEmpty())
                 btn->setProperty("iconThemeName", name); // cache for later calls
+            if (name.isEmpty())
+                continue; // no name → can't recolour; leave the original theme icon
         }
-
-        if (name.isEmpty())
-            continue; // no name → can't recolour; leave the original theme icon
 
         const int sz = btn->iconSize().width();
         QIcon ic = recoloredIcon(name, fg, sz > 0 ? sz : 16);
