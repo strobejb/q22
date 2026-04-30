@@ -69,6 +69,9 @@
        <property name="text">
         <string/>
        </property>
+       <property name="iconThemeName" stdset="0">
+        <string>nautilus-file-chooser-options-symbolic</string>
+       </property>
        <property name="icon">
         <iconset theme="nautilus-file-chooser-options-symbolic"/>
        </property>
@@ -135,9 +138,11 @@
        <property name="text">
         <string/>
        </property>
+       <property name="iconThemeName" stdset="0">
+        <string>user-bookmarks-symbolic</string>
+       </property>
        <property name="icon">
-        <iconset resource="resources.qrc">
-         <normaloff>:/icons/hicolor/scalable/actions/user-bookmarks-symbolic.svg</normaloff>:/icons/hicolor/scalable/actions/user-bookmarks-symbolic.svg</iconset>
+        <iconset theme="user-bookmarks-symbolic"/>
        </property>
        <property name="autoRaise">
         <bool>true</bool>
@@ -209,6 +214,9 @@
        <property name="text">
         <string/>
        </property>
+       <property name="iconThemeName" stdset="0">
+        <string>window-close-symbolic</string>
+       </property>
        <property name="icon">
         <iconset theme="window-close-symbolic"/>
        </property>
@@ -228,8 +236,6 @@
    <header>theme.h</header>
   </customwidget>
  </customwidgets>
- <resources>
-  <include location="resources.qrc"/>
- </resources>
+ <resources/>
  <connections/>
 </ui>

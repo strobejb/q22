@@ -69,6 +69,9 @@
        <property name="text">
         <string/>
        </property>
+       <property name="iconThemeName" stdset="0">
+        <string>nautilus-file-chooser-options-symbolic</string>
+       </property>
        <property name="icon">
         <iconset theme="nautilus-file-chooser-options-symbolic"/>
        </property>
@@ -116,6 +119,9 @@
        <property name="text">
         <string/>
        </property>
+       <property name="iconThemeName" stdset="0">
+        <string>mail-send-receive-symbolic</string>
+       </property>
        <property name="icon">
         <iconset theme="mail-send-receive-symbolic"/>
        </property>
@@ -150,6 +156,9 @@
        <property name="text">
         <string/>
        </property>
+       <property name="iconThemeName" stdset="0">
+        <string>go-up-symbolic</string>
+       </property>
        <property name="icon">
         <iconset theme="go-up-symbolic"/>
        </property>
@@ -180,6 +189,9 @@
        </property>
        <property name="text">
         <string/>
+       </property>
+       <property name="iconThemeName" stdset="0">
+        <string>go-down-symbolic</string>
        </property>
        <property name="icon">
         <iconset theme="go-down-symbolic"/>
@@ -311,6 +323,9 @@
        </property>
        <property name="text">
         <string/>
+       </property>
+       <property name="iconThemeName" stdset="0">
+        <string>window-close-symbolic</string>
        </property>
        <property name="icon">
         <iconset theme="window-close-symbolic"/>

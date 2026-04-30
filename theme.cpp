@@ -238,9 +238,14 @@ QColor themeBorderColor()
 
 QIcon recoloredIcon(const QString &name, const QColor &color, int sz)
 {
-    QIcon icon = QIcon::fromTheme(name);
+    // Load from the embedded SVG resource first — it is guaranteed to be a
+    // pure alpha-keyed symbol, so SourceIn compositing always works correctly
+    // regardless of platform icon engine behaviour (KDE's engine can return
+    // pre-coloured pixmaps that break SourceIn).  Fall back to fromTheme() only
+    // when the resource is absent, preserving support for icons not yet bundled.
+    QIcon icon = QIcon(":/icons/hicolor/scalable/actions/" + name + ".svg");
     if (icon.isNull())
-        icon = QIcon(":/icons/hicolor/scalable/actions/" + name + ".svg");
+        icon = QIcon::fromTheme(name);
     if (icon.isNull()) return icon;
     // Request a pixmap at the logical size; it may come back at a higher physical
     // resolution on HiDPI screens, so we copy the devicePixelRatio to dst so that
@@ -274,33 +279,11 @@ void recolorToolButtons(QWidget *parent)
                 btn->setProperty("iconThemeName", name); // cache for later calls
         }
 
-        QIcon ic;
-        if (!name.isEmpty()) {
-            // Name known: re-fetch from the theme / embedded resource and recolour.
-            const int sz = btn->iconSize().width();
-            ic = recoloredIcon(name, fg, sz > 0 ? sz : 16);
-        } else {
-            // Name unavailable (e.g. KDE's plasma-integration icon engine does not
-            // expose name()).  The button already holds the rendered pixmap from the
-            // platform theme — recolour it in-place using the same SourceIn trick.
-            // Cache the original pixmap before the first recolour so that subsequent
-            // palette-change calls always work from the unmodified source.
-            const int sz = qMax(btn->iconSize().width(), 16);
-            if (!btn->property("iconPixmapCache").isValid())
-                btn->setProperty("iconPixmapCache", btn->icon().pixmap(sz, sz));
-            const QPixmap src = btn->property("iconPixmapCache").value<QPixmap>();
-            if (!src.isNull()) {
-                QPixmap dst(src.size());
-                dst.setDevicePixelRatio(src.devicePixelRatio());
-                dst.fill(Qt::transparent);
-                QPainter p(&dst);
-                p.drawPixmap(0, 0, src);
-                p.setCompositionMode(QPainter::CompositionMode_SourceIn);
-                p.fillRect(dst.rect(), fg);
-                ic = QIcon(dst);
-            }
-        }
+        if (name.isEmpty())
+            continue; // no name → can't recolour; leave the original theme icon
 
+        const int sz = btn->iconSize().width();
+        QIcon ic = recoloredIcon(name, fg, sz > 0 ? sz : 16);
         if (!ic.isNull())
             btn->setIcon(ic);
     }
