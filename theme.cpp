@@ -1231,59 +1231,59 @@ void enableKWinShadow(QWidget *w)
 {
     if (!w || !w->windowHandle()) return;
 
-    // Resolve KWindowEffects::enableShadow() on first call, cache the result.
-    // We try KF6 first, then KF5; if neither is installed (GNOME, XFCE, …) both
-    // remain null and the function is a no-op on every subsequent call.
+    // Dynamic symbol resolution: the binary is built without KDE headers (e.g.
+    // on GitHub CI) and discovers the library at runtime on the user's machine.
     //
-    // KF6: void KWindowEffects::enableShadow(QWindow *, bool)
-    //   GCC mangled → _ZN14KWindowEffects12enableShadowEP7QWindowb
-    // KF5: void KWindowEffects::enableShadow(WId, bool, const QVector<uint> *)
-    //   GCC mangled → _ZN14KWindowEffects12enableShadowEmbPK7QVectorIjE
-    using Fn6 = void (*)(QWindow *, bool);
-    using Fn5 = void (*)(unsigned long, bool, const void *);
+    // QLibrary is QObject-derived and therefore non-copyable.  Each attempt must
+    // use its own stack object; they cannot be assigned or stored in containers.
+    // We use setFileName / setFileNameAndVersion on a default-constructed object
+    // rather than the value-initialising constructors to avoid this pitfall.
+    //
+    // The GCC-mangled names are stable ABI: KDE guarantees binary compatibility
+    // within a major Frameworks version, and the symbols encode only the class
+    // name, method name, and parameter types — none of which change for this API.
+    //   KF6: KWindowEffects::enableShadow(QWindow*, bool)
+    //        _ZN14KWindowEffects12enableShadowEP7QWindowb
+    //   KF5: KWindowEffects::enableShadow(WId, bool, const QVector<uint>*)
+    //        _ZN14KWindowEffects12enableShadowEmbPK7QVectorIjE
+    //
+    // On non-KDE desktops (GNOME, XFCE, …) neither library is present and the
+    // function returns immediately on every call after the first.
+    using Fn6 = void(*)(QWindow*, bool);
+    using Fn5 = void(*)(unsigned long, bool, const void*);
 
-    static Fn6  fn6      = nullptr;
-    static Fn5  fn5      = nullptr;
-    static bool resolved = false;
+    static Fn6  s_fn6     = nullptr;
+    static Fn5  s_fn5     = nullptr;
+    static bool s_resolved = false;
 
-    if (!resolved) {
-        resolved = true;
-        // Try KF6 with soname version first (libKF6WindowSystem.so.6), then
-        // without (libKF6WindowSystem.so) for distros that only install the
-        // bare development symlink.
-        static const char kSymKF6[] = "_ZN14KWindowEffects12enableShadowEP7QWindowb";
-        for (const auto &[name, ver] :
-             std::initializer_list<std::pair<const char *, int>>{
-                 {"KF6WindowSystem", 6}, {"KF6WindowSystem", 0}})
-        {
+    if (!s_resolved) {
+        s_resolved = true;
+
+        // Helper: load a library by name+version and resolve one symbol.
+        // Returns a null QFunctionPointer on any failure.
+        // ver > 0 → look for libName.so.ver  (e.g. libKF6WindowSystem.so.6)
+        // ver = 0 → look for libName.so       (bare symlink; present on dev machines)
+        auto tryLoad = [](const QString &name, int ver, const char *sym) -> QFunctionPointer {
             QLibrary lib;
-            if (ver > 0) lib = QLibrary(QString::fromLatin1(name), ver);
-            else         lib = QLibrary(QString::fromLatin1(name));
-            if (lib.load()) {
-                fn6 = reinterpret_cast<Fn6>(lib.resolve(kSymKF6));
-                if (fn6) break;
-            }
-        }
-        if (!fn6) {
-            // KF5 fallback (Plasma 5 / older distros)
-            static const char kSymKF5[] =
-                "_ZN14KWindowEffects12enableShadowEmbPK7QVectorIjE";
-            for (const auto &[name, ver] :
-                 std::initializer_list<std::pair<const char *, int>>{
-                     {"KF5WindowSystem", 5}, {"KF5WindowSystem", 0}})
-            {
-                QLibrary lib;
-                if (ver > 0) lib = QLibrary(QString::fromLatin1(name), ver);
-                else         lib = QLibrary(QString::fromLatin1(name));
-                if (lib.load()) {
-                    fn5 = reinterpret_cast<Fn5>(lib.resolve(kSymKF5));
-                    if (fn5) break;
-                }
-            }
-        }
+            if (ver > 0) lib.setFileNameAndVersion(name, ver);
+            else         lib.setFileName(name);
+            return lib.load() ? lib.resolve(sym) : nullptr;
+        };
+
+        constexpr const char *kSym6 = "_ZN14KWindowEffects12enableShadowEP7QWindowb";
+        constexpr const char *kSym5 = "_ZN14KWindowEffects12enableShadowEmbPK7QVectorIjE";
+
+        if (auto fp = tryLoad(QStringLiteral("KF6WindowSystem"), 6, kSym6))
+            s_fn6 = reinterpret_cast<Fn6>(fp);
+        else if (auto fp = tryLoad(QStringLiteral("KF6WindowSystem"), 0, kSym6))
+            s_fn6 = reinterpret_cast<Fn6>(fp);
+        else if (auto fp = tryLoad(QStringLiteral("KF5WindowSystem"), 5, kSym5))
+            s_fn5 = reinterpret_cast<Fn5>(fp);
+        else if (auto fp = tryLoad(QStringLiteral("KF5WindowSystem"), 0, kSym5))
+            s_fn5 = reinterpret_cast<Fn5>(fp);
     }
 
-    if (fn6)      fn6(w->windowHandle(), true);
-    else if (fn5) fn5(static_cast<unsigned long>(w->winId()), true, nullptr);
+    if      (s_fn6) s_fn6(w->windowHandle(), true);
+    else if (s_fn5) s_fn5(static_cast<unsigned long>(w->winId()), true, nullptr);
 }
 #endif
