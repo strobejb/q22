@@ -10,6 +10,7 @@
 #include "dlgpastespecial.h"
 #include "ui_pastespecial.h"
 #include "HexView/hexview.h"
+#include "theme.h"
 
 #include <QAbstractButton>
 #include <QPushButton>
@@ -67,11 +68,11 @@ PasteSpecialDialog::PasteSpecialDialog(HexView *hv, QWidget *parent)
     ui->setupUi(this);
     removeDialogIcon(this);
 
-    // List: item padding + lock border/outline across all states so Adwaita's
-    // PE_Frame hover-highlight colour can't bleed as a ghost pixel onto the
-    // checkbox immediately below.
+    // List: lock border/outline across all states so Adwaita's PE_Frame
+    // hover-highlight colour can't bleed as a ghost pixel onto the checkbox
+    // immediately below.  Item padding is handled by applyListItemPadding()
+    // rather than QSS because KDE/Breeze ignores QSS padding in sizeHint().
     {
-        const int vPad = qMax(4, ui->listClipFormats->fontMetrics().height() / 2);
         const bool dark = qApp->palette().window().color().lightness() < 128;
         const QString border = dark ? QLatin1String("rgba(255,255,255,0.18)")
                                     : QLatin1String("rgba(0,0,0,0.15)");
@@ -79,9 +80,9 @@ PasteSpecialDialog::PasteSpecialDialog(HexView *hv, QWidget *parent)
             "QListWidget        { border: 1px solid %1; outline: 0; }"
             "QListWidget:hover  { border: 1px solid %1; }"
             "QListWidget:focus  { border: 1px solid %1; }"
-            "QListWidget::item  { padding: %2px 4px; }"
-        ).arg(border).arg(vPad));
+        ).arg(border));
     }
+    applyListItemPadding(ui->listClipFormats);
 
     // Strip button icons
     for (QAbstractButton *btn : ui->buttonBox->buttons())

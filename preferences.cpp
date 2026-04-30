@@ -37,17 +37,15 @@ FontPickerDialog::FontPickerDialog(const QFont &current, QWidget *parent)
 
     // ── List ─────────────────────────────────────────────────────────────────
     m_list = new QListWidget(this);
-    m_list->setUniformItemSizes(true);
     {
-        const int vPad = qMax(4, m_list->fontMetrics().height() / 2);
         const bool dark = qApp->palette().window().color().lightness() < 128;
         const QString border = dark ? QLatin1String("rgba(255,255,255,0.18)")
                                     : QLatin1String("rgba(0,0,0,0.15)");
         m_list->setStyleSheet(QString(
             "QListWidget { border: 1px solid %1; outline: 0; }"
-            "QListWidget::item { padding: %2px 4px; }"
-        ).arg(border).arg(vPad));
+        ).arg(border));
     }
+    applyListItemPadding(m_list);
 
     int selectRow = -1;
     const QStringList families = QFontDatabase::families();

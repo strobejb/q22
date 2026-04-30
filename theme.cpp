@@ -16,6 +16,7 @@
 #include <QStyleFactory>
 #include <QStyleHints>
 #include <QStyleOption>
+#include <QStyledItemDelegate>
 #include <QWidget>
 #ifndef Q_OS_WIN
 #include <QProcess>
@@ -259,21 +260,81 @@ void recolorToolButtons(QWidget *parent)
 {
     const QColor fg = parent->palette().buttonText().color();
     for (auto *btn : parent->findChildren<QToolButton*>()) {
-        // On the first call the icon still has a theme name; save it for
-        // subsequent calls (after recolor the icon is a plain pixmap, name="").
+        if (btn->icon().isNull()) continue;
+
+        // Resolve the icon name.  On first call the icon may still carry its
+        // theme name (Qt's own QIconLoaderEngine preserves it); on subsequent
+        // calls the icon is already a plain recoloured pixmap so name() is "".
+        // An explicit "iconThemeName" property takes priority and also acts as
+        // the cache populated on the first successful name() lookup.
         QString name = btn->property("iconThemeName").toString();
         if (name.isEmpty()) {
             name = btn->icon().name();
-            if (name.isEmpty()) continue;
-            btn->setProperty("iconThemeName", name);
+            if (!name.isEmpty())
+                btn->setProperty("iconThemeName", name); // cache for later calls
         }
-        const int sz = btn->iconSize().width();
-        QIcon ic = recoloredIcon(name, fg, sz > 0 ? sz : 16);
+
+        QIcon ic;
+        if (!name.isEmpty()) {
+            // Name known: re-fetch from the theme / embedded resource and recolour.
+            const int sz = btn->iconSize().width();
+            ic = recoloredIcon(name, fg, sz > 0 ? sz : 16);
+        } else {
+            // Name unavailable (e.g. KDE's plasma-integration icon engine does not
+            // expose name()).  The button already holds the rendered pixmap from the
+            // platform theme — recolour it in-place using the same SourceIn trick.
+            // Cache the original pixmap before the first recolour so that subsequent
+            // palette-change calls always work from the unmodified source.
+            const int sz = qMax(btn->iconSize().width(), 16);
+            if (!btn->property("iconPixmapCache").isValid())
+                btn->setProperty("iconPixmapCache", btn->icon().pixmap(sz, sz));
+            const QPixmap src = btn->property("iconPixmapCache").value<QPixmap>();
+            if (!src.isNull()) {
+                QPixmap dst(src.size());
+                dst.setDevicePixelRatio(src.devicePixelRatio());
+                dst.fill(Qt::transparent);
+                QPainter p(&dst);
+                p.drawPixmap(0, 0, src);
+                p.setCompositionMode(QPainter::CompositionMode_SourceIn);
+                p.fillRect(dst.rect(), fg);
+                ic = QIcon(dst);
+            }
+        }
+
         if (!ic.isNull())
             btn->setIcon(ic);
     }
 }
 
+
+#include <QListWidget>
+
+namespace {
+// Enforces a minimum item height on a QListWidget without relying on QSS
+// padding — which KDE/Breeze's style does not factor into sizeHint().
+class PaddedListDelegate : public QStyledItemDelegate {
+    int m_minH;
+public:
+    explicit PaddedListDelegate(int minH, QObject *parent)
+        : QStyledItemDelegate(parent), m_minH(minH) {}
+
+    QSize sizeHint(const QStyleOptionViewItem &opt,
+                   const QModelIndex &idx) const override
+    {
+        QSize s = QStyledItemDelegate::sizeHint(opt, idx);
+        return QSize(s.width(), qMax(s.height(), m_minH));
+    }
+};
+} // namespace
+
+void applyListItemPadding(QListWidget *list, int vPad)
+{
+    if (vPad < 0)
+        vPad = qMax(4, list->fontMetrics().height() / 2);
+    const int minH = list->fontMetrics().height() + 2 * vPad;
+    list->setUniformItemSizes(true);
+    list->setItemDelegate(new PaddedListDelegate(minH, list));
+}
 
 QPoint smartMenuPos(const QWidget *anchor, const QMenu *menu, bool rightAlign)
 {
@@ -1177,3 +1238,45 @@ void removeDialogIcon(QDialog *dlg)
     dlg->setWindowFlag(Qt::MSWindowsFixedSizeDialogHint);
 #endif
 }
+
+#ifndef Q_OS_WIN
+#include <QLibrary>
+void enableKWinShadow(QWidget *w)
+{
+    if (!w || !w->windowHandle()) return;
+
+    // Resolve KWindowEffects::enableShadow() on first call, cache the result.
+    // We try KF6 first, then KF5; if neither is installed (GNOME, XFCE, …) both
+    // remain null and the function is a no-op on every subsequent call.
+    //
+    // KF6: void KWindowEffects::enableShadow(QWindow *, bool)
+    //   GCC mangled → _ZN14KWindowEffects12enableShadowEP7QWindowb
+    // KF5: void KWindowEffects::enableShadow(WId, bool, const QVector<uint> *)
+    //   GCC mangled → _ZN14KWindowEffects12enableShadowEmbPK7QVectorIjE
+    using Fn6 = void (*)(QWindow *, bool);
+    using Fn5 = void (*)(unsigned long, bool, const void *);
+
+    static Fn6  fn6      = nullptr;
+    static Fn5  fn5      = nullptr;
+    static bool resolved = false;
+
+    if (!resolved) {
+        resolved = true;
+        {
+            QLibrary lib(QStringLiteral("KF6WindowSystem"), 6);
+            if (lib.load())
+                fn6 = reinterpret_cast<Fn6>(
+                    lib.resolve("_ZN14KWindowEffects12enableShadowEP7QWindowb"));
+        }
+        if (!fn6) {
+            QLibrary lib(QStringLiteral("KF5WindowSystem"), 5);
+            if (lib.load())
+                fn5 = reinterpret_cast<Fn5>(
+                    lib.resolve("_ZN14KWindowEffects12enableShadowEmbPK7QVectorIjE"));
+        }
+    }
+
+    if (fn6)      fn6(w->windowHandle(), true);
+    else if (fn5) fn5(static_cast<unsigned long>(w->winId()), true, nullptr);
+}
+#endif

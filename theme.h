@@ -40,6 +40,15 @@ class QWidget;
 // Returns the border/separator colour used by the current theme.
 QColor themeBorderColor();
 
+class QListWidget;
+// Installs a delegate that enforces a minimum item height of (font height +
+// 2*vPad) pixels, independent of QSS.  On KDE/Breeze, QListWidget::item
+// padding in a stylesheet is applied to text positioning but NOT to the item's
+// sizeHint(), causing items to appear cramped.  This bypasses that entirely.
+// Also enables uniformItemSizes for layout efficiency.
+// vPad defaults to half the widget's font height, clamped to at least 4px.
+void applyListItemPadding(QListWidget *list, int vPad = -1);
+
 
 #include <QWidget>
 // A horizontal separator sized to exactly 1 physical pixel at any DPI.
@@ -96,6 +105,15 @@ QIcon segoeIcon(uint codePoint, const QColor &color, int logicalPx = 14);
 #include <QSize>
 // Clears the window icon on a dialog so no app icon appears in the title bar.
 void removeDialogIcon(QDialog *dlg);
+
+#if !defined(Q_OS_WIN)
+// Requests the compositor shadow for a frameless window on KDE/KWin by
+// dynamically loading libKF6WindowSystem or libKF5WindowSystem and calling
+// KWindowEffects::enableShadow().  Silent no-op if neither library is present
+// (GNOME, other DEs) so the call is safe on any Linux/BSD desktop.
+// Must be called after the window's native handle exists (i.e. post-show).
+void enableKWinShadow(QWidget *w);
+#endif
 
 // Centers dlg over its parent widget and calls exec() with no position flash.
 //

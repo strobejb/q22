@@ -34,6 +34,8 @@ protected:
     void changeEvent(QEvent *e) override;
 #ifdef Q_OS_WIN
     bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
+#else
+    void paintEvent(QPaintEvent *e) override;
 #endif
 
 private:

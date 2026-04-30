@@ -952,8 +952,16 @@ void MainWindow::applyMenuMode(bool useCustomTitleBar)
     // the C++ debugger cannot intercept.  Apply the flag only before the window
     // is first shown; at runtime the frame stays as-is and takes full effect on
     // the next launch.
-    if (!isVisible())
+    //
+    // WA_TranslucentBackground must be set together with FramelessWindowHint:
+    // it lets transparent corner pixels show through (our paintEvent fills only
+    // a rounded rect), which gives the window rounded corners on KDE/KWin.
+    // On GNOME/Mutter the compositor already clips all windows to rounded corners
+    // independently, so WA_TranslucentBackground is harmless there too.
+    if (!isVisible()) {
         setWindowFlag(Qt::FramelessWindowHint, useCustomTitleBar);
+        setAttribute(Qt::WA_TranslucentBackground, useCustomTitleBar);
+    }
 #else
     // On Windows the window is never recreated; we just tell DWM to
     // re-evaluate the NC area so nativeEvent() starts or stops collapsing it.
@@ -1042,8 +1050,34 @@ void MainWindow::showEvent(QShowEvent *e)
         applyWindows11Styling(reinterpret_cast<HWND>(winId()), dark);
         updateWinChromeColors();
     }
+#else
+    // Ask KWin for a compositor shadow on the first show.  The native handle is
+    // guaranteed to exist at this point.  On non-KDE desktops (GNOME, …) the
+    // function resolves nothing and returns immediately.
+    if (m_useCustomTitleBar)
+        enableKWinShadow(this);
 #endif
 }
+
+#ifndef Q_OS_WIN
+void MainWindow::paintEvent(QPaintEvent *)
+{
+    if (!m_useCustomTitleBar) return;
+
+    // With WA_TranslucentBackground Qt disables the automatic window background
+    // fill, so we must paint it ourselves.  Use a rounded rect so the corners
+    // are left transparent — that is what gives the window its rounded shape.
+    // When maximised or full-screen there are no corners to round.
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setPen(Qt::NoPen);
+    p.setBrush(palette().window());
+    if (isMaximized() || isFullScreen())
+        p.drawRect(rect());
+    else
+        p.drawRoundedRect(rect(), 10.0, 10.0);
+}
+#endif
 
 void MainWindow::changeEvent(QEvent *e)
 {
