@@ -36,6 +36,7 @@ protected:
     bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
 #else
     void paintEvent(QPaintEvent *e) override;
+    void resizeEvent(QResizeEvent *e) override;
 #endif
 
 private:
@@ -48,6 +49,8 @@ private:
     void applyMenuMode(bool useCustomTitleBar);
 #ifdef Q_OS_WIN
     void updateWinChromeColors();
+#else
+    void updateWindowMask();
 #endif
 
     Ui::MainWindow *ui;

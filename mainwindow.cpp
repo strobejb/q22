@@ -1051,11 +1051,22 @@ void MainWindow::showEvent(QShowEvent *e)
         updateWinChromeColors();
     }
 #else
-    // Ask KWin for a compositor shadow on the first show.  The native handle is
-    // guaranteed to exist at this point.  On non-KDE desktops (GNOME, …) the
-    // function resolves nothing and returns immediately.
-    if (m_useCustomTitleBar)
+    if (m_useCustomTitleBar) {
+        // Apply the rounded window mask so child widgets (e.g. the status bar)
+        // cannot paint opaque pixels into the transparent corner areas of the
+        // ARGB surface.  Without this, bottom corners appear square on KDE/KWin
+        // because child widgets overdraw the transparent corner pixels that
+        // paintEvent() left clear.
+        updateWindowMask();
+
+        // Ask KWin for a compositor shadow.  The immediate call covers X11
+        // where the native handle is ready synchronously.  The deferred call
+        // (next event-loop tick) covers Wayland, where the compositor may not
+        // have processed the window yet when showEvent fires.
+        // On non-KDE desktops (GNOME, …) enableKWinShadow() is a silent no-op.
         enableKWinShadow(this);
+        QTimer::singleShot(0, this, [this] { enableKWinShadow(this); });
+    }
 #endif
 }
 
@@ -1077,6 +1088,31 @@ void MainWindow::paintEvent(QPaintEvent *)
     else
         p.drawRoundedRect(rect(), 10.0, 10.0);
 }
+
+void MainWindow::resizeEvent(QResizeEvent *e)
+{
+    QMainWindow::resizeEvent(e);
+    updateWindowMask();
+}
+
+void MainWindow::updateWindowMask()
+{
+    if (!m_useCustomTitleBar || isMaximized() || isFullScreen()) {
+        // No rounding needed: let the full rectangle through.
+        clearMask();
+        return;
+    }
+    // Build a QRegion that approximates the rounded rect used by paintEvent().
+    // setMask() clips ALL child-widget painting to this region, preventing
+    // widgets at the bottom of the window (e.g. the status bar) from painting
+    // opaque pixels into the transparent ARGB corners.  On Wayland, Qt also
+    // sets the wl_surface input region from this mask so clicks in the
+    // (visually absent) corner areas pass through to windows behind.
+    constexpr int kRadius = 10;  // must match paintEvent()'s drawRoundedRect radius
+    QPainterPath path;
+    path.addRoundedRect(rect(), kRadius, kRadius);
+    setMask(QRegion(path.toFillPolygon().toPolygon()));
+}
 #endif
 
 void MainWindow::changeEvent(QEvent *e)
@@ -1089,6 +1125,13 @@ void MainWindow::changeEvent(QEvent *e)
         updateWinChromeColors();
 #endif
     }
+#ifndef Q_OS_WIN
+    // Re-apply or clear the rounded mask when the window is maximised,
+    // restored, or goes full-screen: the mask must cover the full rect when
+    // the window has no rounded corners (maximised / full-screen).
+    if (e->type() == QEvent::WindowStateChange && m_useCustomTitleBar)
+        updateWindowMask();
+#endif
 }
 
 #ifdef Q_OS_WIN

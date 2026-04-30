@@ -1248,17 +1248,38 @@ void enableKWinShadow(QWidget *w)
 
     if (!resolved) {
         resolved = true;
+        // Try KF6 with soname version first (libKF6WindowSystem.so.6), then
+        // without (libKF6WindowSystem.so) for distros that only install the
+        // bare development symlink.
+        static const char kSymKF6[] = "_ZN14KWindowEffects12enableShadowEP7QWindowb";
+        for (const auto &[name, ver] :
+             std::initializer_list<std::pair<const char *, int>>{
+                 {"KF6WindowSystem", 6}, {"KF6WindowSystem", 0}})
         {
-            QLibrary lib(QStringLiteral("KF6WindowSystem"), 6);
-            if (lib.load())
-                fn6 = reinterpret_cast<Fn6>(
-                    lib.resolve("_ZN14KWindowEffects12enableShadowEP7QWindowb"));
+            QLibrary lib;
+            if (ver > 0) lib = QLibrary(QString::fromLatin1(name), ver);
+            else         lib = QLibrary(QString::fromLatin1(name));
+            if (lib.load()) {
+                fn6 = reinterpret_cast<Fn6>(lib.resolve(kSymKF6));
+                if (fn6) break;
+            }
         }
         if (!fn6) {
-            QLibrary lib(QStringLiteral("KF5WindowSystem"), 5);
-            if (lib.load())
-                fn5 = reinterpret_cast<Fn5>(
-                    lib.resolve("_ZN14KWindowEffects12enableShadowEmbPK7QVectorIjE"));
+            // KF5 fallback (Plasma 5 / older distros)
+            static const char kSymKF5[] =
+                "_ZN14KWindowEffects12enableShadowEmbPK7QVectorIjE";
+            for (const auto &[name, ver] :
+                 std::initializer_list<std::pair<const char *, int>>{
+                     {"KF5WindowSystem", 5}, {"KF5WindowSystem", 0}})
+            {
+                QLibrary lib;
+                if (ver > 0) lib = QLibrary(QString::fromLatin1(name), ver);
+                else         lib = QLibrary(QString::fromLatin1(name));
+                if (lib.load()) {
+                    fn5 = reinterpret_cast<Fn5>(lib.resolve(kSymKF5));
+                    if (fn5) break;
+                }
+            }
         }
     }
 
