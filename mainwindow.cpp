@@ -81,7 +81,74 @@ static void applyWindows11Styling(HWND hwnd, bool dark)
 }
 #endif
 
-static const int RESIZE_MARGIN = 5;
+// ── Shadow / resize constants ─────────────────────────────────────────────────
+// On Linux the window draws its own drop-shadow (Firefox-style: transparent
+// margin + painted gradient, no KWin API required).  The margin also acts as
+// the edge-resize hit zone so the user can grab the window from the shadow.
+// On Windows DWM provides the shadow; only a narrow resize strip is needed.
+#ifndef Q_OS_WIN
+static constexpr int kShadowSize   = 18; // margin on each side for the shadow
+static constexpr int kCornerRadius = 10; // must match paintEvent's drawRoundedRect
+static constexpr int RESIZE_MARGIN = kShadowSize; // full shadow area = resize zone
+#else
+static constexpr int RESIZE_MARGIN = 5;
+#endif
+
+// ── CornerClipper ─────────────────────────────────────────────────────────────
+// Transparent overlay that uses CompositionMode_Clear to punch the four
+// rounded corners of the content rect back to transparent after child widgets
+// have painted opaque backgrounds into those areas.  Required because Qt does
+// not automatically clip child widget rendering to the parent's rounded rect.
+#ifndef Q_OS_WIN
+namespace {
+class CornerClipper : public QWidget
+{
+public:
+    explicit CornerClipper(QWidget *parent)
+        : QWidget(parent)
+    {
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setAttribute(Qt::WA_NoSystemBackground);
+        setGeometry(parent->rect());
+        raise();
+        parent->installEventFilter(this);
+    }
+
+    bool eventFilter(QObject *obj, QEvent *e) override
+    {
+        if (obj == parentWidget() && e->type() == QEvent::Resize) {
+            setGeometry(parentWidget()->rect());
+            raise();
+        }
+        return false;
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        auto *w = parentWidget();
+        if (!w || w->isMaximized() || w->isFullScreen()) return;
+
+        // Build a clip path covering only the four corner triangles of the
+        // content rectangle (the region inside the shadow margin but outside
+        // the rounded rect).  CompositionMode_Clear writes alpha=0 there,
+        // making those pixels transparent regardless of what child widgets drew.
+        const QRectF content = QRectF(rect()).adjusted(
+            kShadowSize, kShadowSize, -kShadowSize, -kShadowSize);
+        if (content.isEmpty()) return;
+
+        QPainterPath full, rounded;
+        full.addRect(content);
+        rounded.addRoundedRect(content, kCornerRadius, kCornerRadius);
+
+        QPainter p(this);
+        p.setClipPath(full - rounded);
+        p.setCompositionMode(QPainter::CompositionMode_Clear);
+        p.fillRect(rect(), Qt::transparent);
+    }
+};
+} // namespace
+#endif // Q_OS_WIN
 
 static Qt::Edges edgesFromPos(const QPoint &pos, const QRect &rect) {
     Qt::Edges edges;
@@ -954,14 +1021,22 @@ void MainWindow::applyMenuMode(bool useCustomTitleBar)
     // the next launch.
     //
     // WA_TranslucentBackground must be set together with FramelessWindowHint:
-    // it lets transparent corner pixels show through (our paintEvent fills only
-    // a rounded rect), which gives the window rounded corners on KDE/KWin.
-    // On GNOME/Mutter the compositor already clips all windows to rounded corners
-    // independently, so WA_TranslucentBackground is harmless there too.
+    // it lets transparent corner pixels show through.  paintEvent() fills only
+    // a rounded rect within the shadow margin, so the corner pixels stay
+    // transparent — giving smooth antialiased corners on any ARGB compositor.
     if (!isVisible()) {
         setWindowFlag(Qt::FramelessWindowHint, useCustomTitleBar);
         setAttribute(Qt::WA_TranslucentBackground, useCustomTitleBar);
     }
+
+    // Expand/collapse the shadow margin and manage the corner-clipper overlay
+    // that punches the four content-rect corners back to transparent after
+    // child widgets have painted opaque backgrounds into those areas.
+    applyShadowMargin();
+    if (useCustomTitleBar && !m_cornerClipper)
+        m_cornerClipper = new CornerClipper(this);
+    if (m_cornerClipper)
+        m_cornerClipper->setVisible(useCustomTitleBar);
 #else
     // On Windows the window is never recreated; we just tell DWM to
     // re-evaluate the NC area so nativeEvent() starts or stops collapsing it.
@@ -1051,22 +1126,7 @@ void MainWindow::showEvent(QShowEvent *e)
         updateWinChromeColors();
     }
 #else
-    if (m_useCustomTitleBar) {
-        // Apply the rounded window mask so child widgets (e.g. the status bar)
-        // cannot paint opaque pixels into the transparent corner areas of the
-        // ARGB surface.  Without this, bottom corners appear square on KDE/KWin
-        // because child widgets overdraw the transparent corner pixels that
-        // paintEvent() left clear.
-        updateWindowMask();
-
-        // Ask KWin for a compositor shadow.  The immediate call covers X11
-        // where the native handle is ready synchronously.  The deferred call
-        // (next event-loop tick) covers Wayland, where the compositor may not
-        // have processed the window yet when showEvent fires.
-        // On non-KDE desktops (GNOME, …) enableKWinShadow() is a silent no-op.
-        enableKWinShadow(this);
-        QTimer::singleShot(0, this, [this] { enableKWinShadow(this); });
-    }
+    applyShadowMargin();
 #endif
 }
 
@@ -1075,43 +1135,57 @@ void MainWindow::paintEvent(QPaintEvent *)
 {
     if (!m_useCustomTitleBar) return;
 
-    // With WA_TranslucentBackground Qt disables the automatic window background
-    // fill, so we must paint it ourselves.  Use a rounded rect so the corners
-    // are left transparent — that is what gives the window its rounded shape.
-    // When maximised or full-screen there are no corners to round.
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
     p.setPen(Qt::NoPen);
-    p.setBrush(palette().window());
-    if (isMaximized() || isFullScreen())
-        p.drawRect(rect());
-    else
-        p.drawRoundedRect(rect(), 10.0, 10.0);
-}
 
-void MainWindow::resizeEvent(QResizeEvent *e)
-{
-    QMainWindow::resizeEvent(e);
-    updateWindowMask();
-}
+    const QRectF full    = QRectF(rect());
+    const QRectF content = full.adjusted(kShadowSize, kShadowSize,
+                                         -kShadowSize, -kShadowSize);
 
-void MainWindow::updateWindowMask()
-{
-    if (!m_useCustomTitleBar || isMaximized() || isFullScreen()) {
-        // No rounding needed: let the full rectangle through.
-        clearMask();
+    if (isMaximized() || isFullScreen()) {
+        // No rounded corners or shadow — fill the whole window rect.
+        p.setCompositionMode(QPainter::CompositionMode_Source);
+        p.setBrush(palette().window());
+        p.drawRect(full);
         return;
     }
-    // Build a QRegion that approximates the rounded rect used by paintEvent().
-    // setMask() clips ALL child-widget painting to this region, preventing
-    // widgets at the bottom of the window (e.g. the status bar) from painting
-    // opaque pixels into the transparent ARGB corners.  On Wayland, Qt also
-    // sets the wl_surface input region from this mask so clicks in the
-    // (visually absent) corner areas pass through to windows behind.
-    constexpr int kRadius = 10;  // must match paintEvent()'s drawRoundedRect radius
-    QPainterPath path;
-    path.addRoundedRect(rect(), kRadius, kRadius);
-    setMask(QRegion(path.toFillPolygon().toPolygon()));
+
+    // ── Self-drawn drop shadow (Firefox / GTK CSD style) ─────────────────────
+    // The window is expanded by kShadowSize on all sides (via setContentsMargins
+    // in applyShadowMargin).  We paint a gradient shadow into that transparent
+    // margin; the compositor composites it normally — no KWin API required,
+    // works on every ARGB compositor (KWin, Mutter, Xfwm4, …).
+    //
+    // Draw kShadowSize concentric rounded rects from the outer window edge
+    // inward using CompositionMode_Source (each ring overwrites the pixels
+    // inside it entirely).  Alpha follows a quadratic curve: 0 at the outer
+    // edge, ~80 just outside the content boundary, producing a soft shadow.
+    p.setCompositionMode(QPainter::CompositionMode_Source);
+    for (int dist = kShadowSize; dist >= 1; --dist) {
+        const qreal t     = qreal(kShadowSize - dist) / (kShadowSize - 1);
+        const int   alpha = int(80 * t * t);
+        const QRectF r    = content.adjusted(-dist, -dist, dist, dist);
+        const qreal  rad  = kCornerRadius + dist;
+        p.setBrush(QColor(0, 0, 0, alpha));
+        p.drawRoundedRect(r, rad, rad);
+    }
+
+    // ── Window content background ─────────────────────────────────────────────
+    p.setBrush(palette().window());
+    p.drawRoundedRect(content, kCornerRadius, kCornerRadius);
+}
+
+void MainWindow::applyShadowMargin()
+{
+    // Expand the window contents by kShadowSize on all sides when the custom
+    // title bar is active on a normal (non-maximised, non-fullscreen) window.
+    // paintEvent() fills the resulting transparent margin with a gradient shadow.
+    // Clear margins in all other states so no empty strip appears.
+    if (m_useCustomTitleBar && !isMaximized() && !isFullScreen())
+        setContentsMargins(kShadowSize, kShadowSize, kShadowSize, kShadowSize);
+    else
+        setContentsMargins(0, 0, 0, 0);
 }
 #endif
 
@@ -1126,11 +1200,11 @@ void MainWindow::changeEvent(QEvent *e)
 #endif
     }
 #ifndef Q_OS_WIN
-    // Re-apply or clear the rounded mask when the window is maximised,
-    // restored, or goes full-screen: the mask must cover the full rect when
-    // the window has no rounded corners (maximised / full-screen).
-    if (e->type() == QEvent::WindowStateChange && m_useCustomTitleBar)
-        updateWindowMask();
+    if (e->type() == QEvent::WindowStateChange && m_useCustomTitleBar) {
+        applyShadowMargin();
+        if (m_cornerClipper)
+            m_cornerClipper->update();
+    }
 #endif
 }
 

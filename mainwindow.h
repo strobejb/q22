@@ -36,7 +36,6 @@ protected:
     bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
 #else
     void paintEvent(QPaintEvent *e) override;
-    void resizeEvent(QResizeEvent *e) override;
 #endif
 
 private:
@@ -50,7 +49,7 @@ private:
 #ifdef Q_OS_WIN
     void updateWinChromeColors();
 #else
-    void updateWindowMask();
+    void applyShadowMargin();  // set / clear window content-margins for shadow area
 #endif
 
     Ui::MainWindow *ui;
@@ -65,6 +64,9 @@ private:
     PreferencesDialog *m_prefsDialog    = nullptr;
     bool            m_useCustomTitleBar = true;
     bool            m_inResizeZone      = false;
+#ifndef Q_OS_WIN
+    QWidget        *m_cornerClipper     = nullptr;
+#endif
     QByteArray      m_lastPattern;
     uint            m_lastFindFlags  = 0;
     bool            m_canPaste        = false; // text or hexview data; updated from dataChanged
