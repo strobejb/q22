@@ -95,10 +95,19 @@ static constexpr int RESIZE_MARGIN = 5;
 #endif
 
 // ── CornerClipper ─────────────────────────────────────────────────────────────
-// Transparent overlay that uses CompositionMode_Clear to punch the four
-// rounded corners of the content rect back to transparent after child widgets
-// have painted opaque backgrounds into those areas.  Required because Qt does
-// not automatically clip child widget rendering to the parent's rounded rect.
+// Transparent overlay that restores the shadow gradient in the four corner
+// triangles of the content rect after child widgets have overdrawn them with
+// opaque backgrounds.
+//
+// MainWindow::paintEvent paints the shadow rings (including the corner areas)
+// before children paint.  Child widgets subsequently paint their full rects,
+// overwriting those corners with opaque pixels.  The CornerClipper re-runs the
+// same shadow loop (clipped to the corner-triangle path) using
+// CompositionMode_Source to overwrite whatever the children painted.
+//
+// It is raised to the top of the z-order so it paints last, and installs event
+// filters on every sibling so it can re-run its paintEvent in the same
+// backing-store flush cycle whenever a sibling repaints.
 #ifndef Q_OS_WIN
 namespace {
 class CornerClipper : public QWidget
@@ -109,17 +118,41 @@ public:
     {
         setAttribute(Qt::WA_TransparentForMouseEvents);
         setAttribute(Qt::WA_NoSystemBackground);
+        setAutoFillBackground(false);
         setGeometry(parent->rect());
         raise();
         parent->installEventFilter(this);
+        // Watch all existing direct children so we re-clear after their repaints.
+        for (QObject *child : parent->children()) {
+            if (auto *w = qobject_cast<QWidget *>(child); w && w != this)
+                w->installEventFilter(this);
+        }
     }
 
     bool eventFilter(QObject *obj, QEvent *e) override
     {
-        if (obj == parentWidget() && e->type() == QEvent::Resize) {
-            setGeometry(parentWidget()->rect());
+        if (obj == parentWidget()) {
+            if (e->type() == QEvent::Resize) {
+                const auto *re = static_cast<QResizeEvent *>(e);
+                setGeometry(QRect(QPoint(0, 0), re->size()));
+                raise();
+            } else if (e->type() == QEvent::ChildAdded) {
+                // A new child was added — watch it too.
+                if (auto *w = qobject_cast<QWidget *>(
+                        static_cast<QChildEvent *>(e)->child());
+                        w && w != this)
+                    w->installEventFilter(this);
+            }
+        } else if (obj != this && e->type() == QEvent::Paint) {
+            // A sibling just painted and may have overdrawn our cleared corners.
+            // Re-raise and queue a re-clear in the same backing-store pass.
+            // update() is deferred but safe: Qt hasn't flushed the backing store
+            // yet when Paint is dispatched, so the clipper will be included in
+            // the same flush cycle (painted last due to its raised z-order).
             raise();
+            update();
         }
+
         return false;
     }
 
@@ -129,22 +162,34 @@ protected:
         auto *w = parentWidget();
         if (!w || w->isMaximized() || w->isFullScreen()) return;
 
-        // Build a clip path covering only the four corner triangles of the
-        // content rectangle (the region inside the shadow margin but outside
-        // the rounded rect).  CompositionMode_Clear writes alpha=0 there,
-        // making those pixels transparent regardless of what child widgets drew.
         const QRectF content = QRectF(rect()).adjusted(
             kShadowSize, kShadowSize, -kShadowSize, -kShadowSize);
         if (content.isEmpty()) return;
 
-        QPainterPath full, rounded;
-        full.addRect(content);
-        rounded.addRoundedRect(content, kCornerRadius, kCornerRadius);
+        // The corner triangles (inside content rect, outside rounded rect) were
+        // painted with the correct shadow gradient by MainWindow::paintEvent, but
+        // child widgets then overdrew them with opaque backgrounds.  We restore
+        // the shadow by re-running the same shadow loop, clipped to only those
+        // triangle areas.  CompositionMode_Source overwrites whatever the child
+        // widgets drew with the original shadow colour.
+        QPainterPath contentPath, roundedPath;
+        contentPath.addRect(content);
+        roundedPath.addRoundedRect(content, kCornerRadius, kCornerRadius);
+        const QPainterPath corners = contentPath - roundedPath;
 
         QPainter p(this);
-        p.setClipPath(full - rounded);
-        p.setCompositionMode(QPainter::CompositionMode_Clear);
-        p.fillRect(rect(), Qt::transparent);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.setClipPath(corners);
+        p.setCompositionMode(QPainter::CompositionMode_Source);
+        p.setPen(Qt::NoPen);
+
+        for (int dist = kShadowSize; dist >= 1; --dist) {
+            const qreal t   = qreal(kShadowSize - dist) / (kShadowSize - 1);
+            const int alpha = int(80 * t * t);
+            const QRectF r  = content.adjusted(-dist, -dist, dist, dist);
+            p.setBrush(QColor(0, 0, 0, alpha));
+            p.drawRoundedRect(r, kCornerRadius + dist, kCornerRadius + dist);
+        }
     }
 };
 } // namespace
@@ -1127,6 +1172,15 @@ void MainWindow::showEvent(QShowEvent *e)
     }
 #else
     applyShadowMargin();
+    // Force the CornerClipper to repaint after the initial layout pass so it
+    // punches the corners on first display.  The deferred timer lets all child
+    // widgets finish their first paint before we clear.
+    if (m_cornerClipper) {
+        m_cornerClipper->raise();
+        QTimer::singleShot(0, m_cornerClipper, [this] {
+            if (m_cornerClipper) { m_cornerClipper->raise(); m_cornerClipper->update(); }
+        });
+    }
 #endif
 }
 
