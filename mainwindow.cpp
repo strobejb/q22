@@ -1104,13 +1104,11 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
     const auto type = event->type();
 
     // ── Cursor feedback on hover ─────────────────────────────────────────────
-    if (type == QEvent::MouseMove) {
-        auto *me = static_cast<QMouseEvent *>(event);
+    auto syncResizeCursor = [&](QPointF globalPos) {
         Qt::Edges edges =
             isMaximized()
             ? Qt::Edges{}
-            : edgesFromPos(mapFromGlobal(me->globalPosition().toPoint()),
-                                             rect());
+            : edgesFromPos(mapFromGlobal(globalPos.toPoint()), rect());
 
         if (edges) {
             if (!m_inResizeZone) {
@@ -1123,7 +1121,22 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
             m_inResizeZone = false;
             QApplication::restoreOverrideCursor();
         }
+    };
+
+    if (type == QEvent::MouseMove) {
+        auto *me = static_cast<QMouseEvent *>(event);
+        syncResizeCursor(me->globalPosition());
         return false; // don't consume — just update cursor
+    }
+
+    // Enter events fire regardless of mouse-tracking, so they catch transitions
+    // to widgets like TitleBar buttons where MouseMove is never generated.
+    // Without this, a stale override cursor persists after the mouse leaves a
+    // resize-zone edge and enters a non-tracked widget.
+    if (type == QEvent::Enter) {
+        auto *ee = static_cast<QEnterEvent *>(event);
+        syncResizeCursor(ee->globalPosition());
+        return false;
     }
 
     // Restore cursor if mouse leaves the window entirely
