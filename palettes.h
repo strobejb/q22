@@ -111,8 +111,8 @@ bool savePalette(const PaletteInfo &info);
 
 // ── Swatch size constants (shared by PaletteSwatch and AddPaletteSwatch) ─────
 inline constexpr int SW_SHADOW =  3;   // transparent margin for drop shadow
-inline constexpr int SW_W      = 84 + 2 * SW_SHADOW;   // total widget width  (90)
-inline constexpr int SW_H      = 66 + 2 * SW_SHADOW;   // total widget height (72)
+inline constexpr int SW_W      = 84 + 2 * SW_SHADOW;   // minimum width hint (90); actual width fills column
+inline constexpr int SW_H      = 128 + 2 * SW_SHADOW;   // total widget height (92); card is 86px
 inline constexpr int SW_RADIUS = 10;
 inline constexpr int SW_BORDER =  1;
 
@@ -128,6 +128,9 @@ public:
     // Add-button variant — own tab stop, Qt::StrongFocus.
     explicit PaletteSwatch(QWidget *parent = nullptr);
 
+    // Shows/hides the keyboard-navigation cursor ring (independent of checked state).
+    void setKeyboardCursor(bool on);
+
 signals:
     void doubleClicked();
 
@@ -141,7 +144,8 @@ protected:
 
 private:
     PaletteInfo m_info;
-    bool        m_addMode = false;
+    bool        m_addMode       = false;
+    bool        m_keyboardCursor = false;
 };
 
 // ── PaletteEditorDialog ───────────────────────────────────────────────────────

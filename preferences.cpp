@@ -129,7 +129,7 @@ void FontPickerDialog::updatePreview()
 // ─── AddPaletteSwatch ─────────────────────────────────────────────────────────
 
 
-static constexpr int kSwatchCols = 4;
+static constexpr int kSwatchCols = 3;
 
 // ─── PreferencesDialog ───────────────────────────────────────────────────────
 
@@ -207,8 +207,10 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     {
         m_swatchLayout = new QGridLayout(m_swatchWidget);
         m_swatchLayout->setContentsMargins(0, 0, 0, 0);
-        m_swatchLayout->setSpacing(10 + 2 * SW_SHADOW);
-        m_swatchLayout->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+        m_swatchLayout->setSpacing(5 + 2 * SW_SHADOW);
+        m_swatchLayout->setAlignment(Qt::AlignTop);
+        for (int c = 0; c < kSwatchCols; ++c)
+            m_swatchLayout->setColumnStretch(c, 1);
 
         m_swatchGroup = new QButtonGroup(m_swatchWidget);
         m_swatchGroup->setExclusive(true);
@@ -229,7 +231,8 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
             m_swatchLayout->addWidget(sw, m_swatchCount / kSwatchCols,
                                           m_swatchCount % kSwatchCols);
             ++m_swatchCount;
-            connect(sw, &QAbstractButton::clicked, this, [this, info]() {
+            connect(sw, &QAbstractButton::clicked, this, [this, sw, info]() {
+                syncCursorToSwatch(m_swatchGroup->buttons().indexOf(sw));
                 m_currentPalette = info;
                 emit paletteSelected(info);
             });
@@ -339,7 +342,7 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     });
 
     setSizeGripEnabled(false);
-    setMinimumWidth(460);
+    setMinimumWidth(600);
 
     // Hide this modeless dialog whenever any modal window opens, restore when it closes.
     qApp->installEventFilter(this);
@@ -424,16 +427,36 @@ bool PreferencesDialog::eventFilter(QObject *obj, QEvent *e)
     const auto palBtns  = m_swatchGroup->buttons();
     const int  palCount = palBtns.size();
 
+    // Helper: set/clear the keyboard cursor ring on a swatch by index.
+    auto setCursor = [&](int idx, bool on) {
+        if (idx < 0 || idx >= palBtns.size()) return;
+        if (auto *sw = qobject_cast<PaletteSwatch *>(palBtns[idx]))
+            sw->setKeyboardCursor(on);
+    };
+
     if (e->type() == QEvent::FocusIn) {
         // Initialise cursor at the currently checked swatch (or 0).
         auto *checked  = m_swatchGroup->checkedButton();
         m_swatchCursor = checked ? palBtns.indexOf(checked) : 0;
         if (m_swatchCursor < 0) m_swatchCursor = 0;
+        setCursor(m_swatchCursor, true);
+        return false;
+    }
+
+    if (e->type() == QEvent::FocusOut) {
+        setCursor(m_swatchCursor, false);
         return false;
     }
 
     if (e->type() == QEvent::KeyPress) {
         const int key = static_cast<QKeyEvent *>(e)->key();
+
+        // Space / Return / Enter confirm the focused swatch as the selection.
+        if (key == Qt::Key_Space || key == Qt::Key_Return || key == Qt::Key_Enter) {
+            palBtns[m_swatchCursor]->click();
+            return true;
+        }
+
         int next = m_swatchCursor;
 
         switch (key) {
@@ -443,6 +466,7 @@ bool PreferencesDialog::eventFilter(QObject *obj, QEvent *e)
         case Qt::Key_Down:
             next = m_swatchCursor + kSwatchCols;
             if (next >= palCount) {
+                setCursor(m_swatchCursor, false);
                 focusNextPrevChild(true); // hand off to next Tab stop
                 return true;
             }
@@ -451,8 +475,9 @@ bool PreferencesDialog::eventFilter(QObject *obj, QEvent *e)
         }
 
         if (next != m_swatchCursor) {
+            setCursor(m_swatchCursor, false);
             m_swatchCursor = next;
-            palBtns[m_swatchCursor]->click();
+            setCursor(m_swatchCursor, true);
         }
         return true; // consume — don't let the scroll area scroll
     }
@@ -461,6 +486,16 @@ bool PreferencesDialog::eventFilter(QObject *obj, QEvent *e)
 }
 
 
+void PreferencesDialog::syncCursorToSwatch(int idx)
+{
+    const auto btns = m_swatchGroup->buttons();
+    if (auto *old = qobject_cast<PaletteSwatch *>(btns.value(m_swatchCursor)))
+        old->setKeyboardCursor(false);
+    m_swatchCursor = idx;
+    if (auto *sw = qobject_cast<PaletteSwatch *>(btns.value(m_swatchCursor)))
+        sw->setKeyboardCursor(true);
+}
+
 void PreferencesDialog::addCustomSwatch(const PaletteInfo &)
 {
     rebuildCustomSwatches();
@@ -468,7 +503,7 @@ void PreferencesDialog::addCustomSwatch(const PaletteInfo &)
 
 void PreferencesDialog::rebuildCustomSwatches()
 {
-    static constexpr int kSwatchCols = 4;
+    static constexpr int kSwatchCols = 3;
     const QString prevName = m_currentPalette.name;
 
     const auto old = m_swatchGroup->buttons();
@@ -489,7 +524,8 @@ void PreferencesDialog::rebuildCustomSwatches()
         m_swatchLayout->addWidget(sw, m_swatchCount / kSwatchCols,
                                       m_swatchCount % kSwatchCols);
         ++m_swatchCount;
-        connect(sw, &QAbstractButton::clicked, this, [this, info]() {
+        connect(sw, &QAbstractButton::clicked, this, [this, sw, info]() {
+            syncCursorToSwatch(m_swatchGroup->buttons().indexOf(sw));
             m_currentPalette = info;
             emit paletteSelected(info);
         });

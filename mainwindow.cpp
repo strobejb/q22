@@ -82,16 +82,31 @@ static void applyWindows11Styling(HWND hwnd, bool dark)
 #endif
 
 // ── Shadow / resize constants ─────────────────────────────────────────────────
-// On Linux the window draws its own drop-shadow (Firefox-style: transparent
+// On Linux/KDE the window draws its own drop-shadow (Firefox-style: transparent
 // margin + painted gradient, no KWin API required).  The margin also acts as
 // the edge-resize hit zone so the user can grab the window from the shadow.
+// On GNOME and other compositors the WM provides the shadow; only a narrow
+// resize strip is needed (same as Windows).
 // On Windows DWM provides the shadow; only a narrow resize strip is needed.
 #ifndef Q_OS_WIN
-static constexpr int kShadowSize   = 18; // margin on each side for the shadow
+static constexpr int kShadowSize   = 18; // KDE: shadow margin (also the resize zone)
 static constexpr int kCornerRadius = 10; // must match paintEvent's drawRoundedRect
-static constexpr int RESIZE_MARGIN = kShadowSize; // full shadow area = resize zone
+static constexpr int kResizeMargin =  5; // non-KDE: narrow strip at the window edge
 #else
 static constexpr int RESIZE_MARGIN = 5;
+#endif
+
+#ifndef Q_OS_WIN
+// Returns true when running inside a KDE Plasma session.  KDE draws compositor
+// shadows only via KWindowEffects, so the app must paint its own shadow (the
+// gradient-in-transparent-margin approach).  On GNOME and other compositors the
+// WM provides a shadow automatically — painting our own would double it.
+static bool isKDE()
+{
+    static const bool kde =
+        qgetenv("XDG_CURRENT_DESKTOP").toUpper().contains("KDE");
+    return kde;
+}
 #endif
 
 // ── CornerClipper ─────────────────────────────────────────────────────────────
@@ -195,16 +210,12 @@ protected:
 } // namespace
 #endif // Q_OS_WIN
 
-static Qt::Edges edgesFromPos(const QPoint &pos, const QRect &rect) {
+static Qt::Edges edgesFromPos(const QPoint &pos, const QRect &rect, int margin) {
     Qt::Edges edges;
-    if (pos.x() <= RESIZE_MARGIN)
-        edges |= Qt::LeftEdge;
-    if (pos.x() >= rect.width() - RESIZE_MARGIN)
-        edges |= Qt::RightEdge;
-    if (pos.y() <= RESIZE_MARGIN)
-        edges |= Qt::TopEdge;
-    if (pos.y() >= rect.height() - RESIZE_MARGIN)
-        edges |= Qt::BottomEdge;
+    if (pos.x() <= margin)                  edges |= Qt::LeftEdge;
+    if (pos.x() >= rect.width()  - margin)  edges |= Qt::RightEdge;
+    if (pos.y() <= margin)                  edges |= Qt::TopEdge;
+    if (pos.y() >= rect.height() - margin)  edges |= Qt::BottomEdge;
     return edges;
 }
 
@@ -1074,14 +1085,16 @@ void MainWindow::applyMenuMode(bool useCustomTitleBar)
         setAttribute(Qt::WA_TranslucentBackground, useCustomTitleBar);
     }
 
-    // Expand/collapse the shadow margin and manage the corner-clipper overlay
-    // that punches the four content-rect corners back to transparent after
-    // child widgets have painted opaque backgrounds into those areas.
+    // KDE only: expand the shadow margin and manage the CornerClipper overlay.
+    // On non-KDE (GNOME, …) the compositor provides the shadow — applyShadowMargin()
+    // is a no-op there and we skip the CornerClipper entirely.
     applyShadowMargin();
-    if (useCustomTitleBar && !m_cornerClipper)
-        m_cornerClipper = new CornerClipper(this);
-    if (m_cornerClipper)
-        m_cornerClipper->setVisible(useCustomTitleBar);
+    if (isKDE()) {
+        if (useCustomTitleBar && !m_cornerClipper)
+            m_cornerClipper = new CornerClipper(this);
+        if (m_cornerClipper)
+            m_cornerClipper->setVisible(useCustomTitleBar);
+    }
 #else
     // On Windows the window is never recreated; we just tell DWM to
     // re-evaluate the NC area so nativeEvent() starts or stops collapsing it.
@@ -1108,7 +1121,12 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
         Qt::Edges edges =
             isMaximized()
             ? Qt::Edges{}
-            : edgesFromPos(mapFromGlobal(globalPos.toPoint()), rect());
+#ifndef Q_OS_WIN
+            : edgesFromPos(mapFromGlobal(globalPos.toPoint()), rect(),
+                           isKDE() ? kShadowSize : kResizeMargin);
+#else
+            : edgesFromPos(mapFromGlobal(globalPos.toPoint()), rect(), RESIZE_MARGIN);
+#endif
 
         if (edges) {
             if (!m_inResizeZone) {
@@ -1163,7 +1181,13 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
             return false;
 
         Qt::Edges edges =
-            edgesFromPos(mapFromGlobal(me->globalPosition().toPoint()), rect());
+#ifndef Q_OS_WIN
+            edgesFromPos(mapFromGlobal(me->globalPosition().toPoint()), rect(),
+                         isKDE() ? kShadowSize : kResizeMargin);
+#else
+            edgesFromPos(mapFromGlobal(me->globalPosition().toPoint()), rect(),
+                         RESIZE_MARGIN);
+#endif
         if (!edges)
             return false;
 
@@ -1206,28 +1230,33 @@ void MainWindow::paintEvent(QPaintEvent *)
     p.setRenderHint(QPainter::Antialiasing);
     p.setPen(Qt::NoPen);
 
+    if (!isKDE()) {
+        // Non-KDE (GNOME, …): the compositor provides the shadow.  Just paint
+        // the window background as a rounded rect so the corner pixels stay
+        // transparent — that gives the window its rounded shape.
+        p.setBrush(palette().window());
+        if (isMaximized() || isFullScreen())
+            p.drawRect(rect());
+        else
+            p.drawRoundedRect(rect(), kCornerRadius, kCornerRadius);
+        return;
+    }
+
+    // KDE: self-drawn drop shadow (Firefox / GTK CSD style).
+    // The window is expanded by kShadowSize on all sides (via setContentsMargins
+    // in applyShadowMargin).  We paint a gradient shadow into that transparent
+    // margin; KWin composites it normally — no KWin API required.
     const QRectF full    = QRectF(rect());
     const QRectF content = full.adjusted(kShadowSize, kShadowSize,
                                          -kShadowSize, -kShadowSize);
 
     if (isMaximized() || isFullScreen()) {
-        // No rounded corners or shadow — fill the whole window rect.
         p.setCompositionMode(QPainter::CompositionMode_Source);
         p.setBrush(palette().window());
         p.drawRect(full);
         return;
     }
 
-    // ── Self-drawn drop shadow (Firefox / GTK CSD style) ─────────────────────
-    // The window is expanded by kShadowSize on all sides (via setContentsMargins
-    // in applyShadowMargin).  We paint a gradient shadow into that transparent
-    // margin; the compositor composites it normally — no KWin API required,
-    // works on every ARGB compositor (KWin, Mutter, Xfwm4, …).
-    //
-    // Draw kShadowSize concentric rounded rects from the outer window edge
-    // inward using CompositionMode_Source (each ring overwrites the pixels
-    // inside it entirely).  Alpha follows a quadratic curve: 0 at the outer
-    // edge, ~80 just outside the content boundary, producing a soft shadow.
     p.setCompositionMode(QPainter::CompositionMode_Source);
     for (int dist = kShadowSize; dist >= 1; --dist) {
         const qreal t     = qreal(kShadowSize - dist) / (kShadowSize - 1);
@@ -1238,17 +1267,17 @@ void MainWindow::paintEvent(QPaintEvent *)
         p.drawRoundedRect(r, rad, rad);
     }
 
-    // ── Window content background ─────────────────────────────────────────────
     p.setBrush(palette().window());
     p.drawRoundedRect(content, kCornerRadius, kCornerRadius);
 }
 
 void MainWindow::applyShadowMargin()
 {
-    // Expand the window contents by kShadowSize on all sides when the custom
-    // title bar is active on a normal (non-maximised, non-fullscreen) window.
-    // paintEvent() fills the resulting transparent margin with a gradient shadow.
-    // Clear margins in all other states so no empty strip appears.
+    // KDE only: expand the window contents by kShadowSize on all sides so
+    // paintEvent() can paint a gradient shadow in the transparent margin.
+    // On non-KDE compositors (GNOME, …) the WM provides the shadow; adding a
+    // margin would cause a double shadow, so leave margins at zero.
+    if (!isKDE()) return;
     if (m_useCustomTitleBar && !isMaximized() && !isFullScreen())
         setContentsMargins(kShadowSize, kShadowSize, kShadowSize, kShadowSize);
     else

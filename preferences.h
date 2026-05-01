@@ -52,6 +52,8 @@ protected:
 private:
     void addCustomSwatch(const PaletteInfo &);
     void rebuildCustomSwatches();
+    // Move the keyboard cursor ring to idx; clears the ring on the old swatch.
+    void syncCursorToSwatch(int idx);
 
     QString         m_fontFamily;
     PaletteInfo     m_currentPalette;

@@ -372,7 +372,14 @@ PaletteSwatch::PaletteSwatch(const PaletteInfo &info, QWidget *parent)
 {
     setCheckable(true);
     setCursor(Qt::PointingHandCursor);
-    setFixedSize(SW_W, SW_H);
+    setFixedHeight(SW_H);
+    setMinimumWidth(SW_W);
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    // No individual focus: the container widget (m_swatchWidget) owns keyboard
+    // navigation for the whole group.  This ensures all key events — including
+    // Space — route to the container's event filter rather than activating the
+    // button directly (QAbstractButton would otherwise consume Space).
+    setFocusPolicy(Qt::NoFocus);
     setToolTip(info.name);
     setAttribute(Qt::WA_NoSystemBackground);
 }
@@ -382,7 +389,9 @@ PaletteSwatch::PaletteSwatch(QWidget *parent)
 {
     setFocusPolicy(Qt::StrongFocus);
     setCursor(Qt::PointingHandCursor);
-    setFixedSize(SW_W, SW_H);
+    setFixedHeight(SW_H);
+    setMinimumWidth(SW_W);
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     setToolTip(tr("Add palette…"));
     setAttribute(Qt::WA_NoSystemBackground);
 }
@@ -391,6 +400,13 @@ void PaletteSwatch::mouseDoubleClickEvent(QMouseEvent *)
 {
     if (!m_addMode)
         emit doubleClicked();
+}
+
+void PaletteSwatch::setKeyboardCursor(bool on)
+{
+    if (m_keyboardCursor == on) return;
+    m_keyboardCursor = on;
+    update();
 }
 
 void PaletteSwatch::enterEvent(QEnterEvent *e)  { update(); QAbstractButton::enterEvent(e); }
@@ -457,30 +473,96 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
     p.setBrush(effectiveBg);
     p.drawRoundedRect(card.adjusted(h, h, -h, -h), SW_RADIUS - h + 0.5, SW_RADIUS - h + 0.5);
 
-    // ── Centered name text on a selection-colour pill ────────────────────────
-    // Derive both colours from the palette's own fields only — no app palette fallback.
-    const QColor selBg   = m_info.selection.isValid()
-                           ? m_info.selection
-                           : (effectiveBg.lightness() >= 128 ? effectiveBg.darker(150)
-                                                              : effectiveBg.lighter(200));
-    const QColor selText = m_info.selectionText.isValid()
-                           ? m_info.selectionText
-                           : (selBg.lightness() >= 128 ? Qt::black : Qt::white);
-    p.setFont(font());
-    const QFontMetrics fm(font());
-    const int textW  = fm.horizontalAdvance(m_info.name);
-    const int textH  = fm.height();
-    const int padX   = 6;
-    const int padY   = 3;
-    const QRectF pill(card.center().x() - textW / 2.0 - padX,
-                      card.center().y() - textH / 2.0 - padY,
-                      textW + padX * 2,
-                      textH + padY * 2);
+    // ── Name (top-left, contrasting against the palette's own background) ───────
+    constexpr int kPadX   = 10;
+    constexpr int kPadTop = 10;
+    // Address colour is designed to be legible on this bg; fall back to derived.
+    const QColor textCol = m_info.address.isValid()
+        ? m_info.address
+        : (effectiveBg.lightness() < 128 ? QColor(255, 255, 255, 200)
+                                         : QColor(  0,   0,   0, 180));
+    QFont qfont = font();
+    qfont.setBold(true);
+    p.setFont(qfont);
+
+    const QFontMetrics fm(qfont);
+    // Reserve top-right so name never overlaps the tick badge (badge spans ~28px)
+    const int nameMaxW = int(card.width()) - kPadX - 34;
+    const QString elidedName = fm.elidedText(m_info.name, Qt::ElideRight, nameMaxW);
+    p.setPen(textCol);
+    p.drawText(QPointF(card.left() + kPadX, card.top() + kPadTop + fm.ascent()), elidedName);
+
+    qfont = font();
+    qfont.setBold(false);
+    p.setFont(qfont);
+    const QFontMetrics fm2(qfont);
+
+    // ── Hex code sample (alternating hexOdd / hexEven colours) ───────────────
+    const QColor hexOdd  = m_info.hexOdd.isValid()  ? m_info.hexOdd  : pal.color(QPalette::Text);
+    const QColor hexEven = m_info.hexEven.isValid() ? m_info.hexEven : pal.color(QPalette::Text);
+    const qreal hexBaseY = card.top() + kPadTop + fm2.height() + 16;
+    static const quint8 kSample[] = { 0xA4, 0x3F, 0xB2, 0x91, 0xE7, 0x60, 0xC3, 0x2A };
+    qreal xPos = card.left() + kPadX;
+    for (int i = 0; i < 8 && xPos < card.right() - 10; ++i) {
+        const QString tok = QStringLiteral("%1").arg(kSample[i], 2, 16, QLatin1Char('0')).toUpper();
+        p.setPen(i % 2 == 0 ? hexOdd : hexEven);
+        p.drawText(QPointF(xPos, hexBaseY + fm2.ascent()), tok);
+        p.drawText(QPointF(xPos, hexBaseY + fm2.ascent()*2+6), tok);
+        xPos += fm2.horizontalAdvance(tok);
+        if (i < 7) xPos += fm.horizontalAdvance(QStringLiteral(" "));
+    }
+
+    // ── Colour swatch strip (bottom of card, 6 representative palette colours) ─
+    constexpr int  kSwatchH      = 12;
+    constexpr int  kSwatchRadius =  3;
+    constexpr int  kSwatchBotPad = 10;
+    constexpr qreal kSwatchGap   =  5;
+    constexpr int  kNSwatches    =  6;
+    const QColor swatchCols[kNSwatches] = {        
+        m_info.hexOdd.isValid()    ? m_info.hexOdd    : pal.color(QPalette::Text),
+        m_info.ascii.isValid()     ? m_info.ascii     : pal.color(QPalette::Text),
+        m_info.selection.isValid() ? m_info.selection : pal.color(QPalette::Highlight),
+        m_info.modified.isValid()  ? m_info.modified  : QColor(200, 50, 50),
+        m_info.matched.isValid()   ? m_info.matched   : QColor(255, 165, 0),
+        m_info.bookmarks[0].isValid() ? m_info.bookmarks[0] : pal.color(QPalette::Base),
+    };
+    const qreal swatchY    = card.bottom() - kSwatchBotPad - kSwatchH;
+    const qreal swatchAreaW = card.width() - 2 * kPadX;
+    const qreal swatchW    = (swatchAreaW - (kNSwatches - 1) * kSwatchGap) / kNSwatches;
     p.setPen(Qt::NoPen);
-    p.setBrush(selBg);
-    p.drawRect(pill);
-    p.setPen(selText);
-    p.drawText(pill.toRect(), Qt::AlignCenter, m_info.name);
+    for (int i = 0; i < kNSwatches; ++i) {
+        const qreal sx = card.left() + kPadX + i * (swatchW + kSwatchGap);
+        p.setBrush(swatchCols[i]);
+        p.drawRoundedRect(QRectF(sx, swatchY, swatchW, kSwatchH), kSwatchRadius, kSwatchRadius);
+    }
+
+    // ── Keyboard cursor ring (only when not already showing selection border) ──
+    // Drawn identically to the add-button's hasFocus() ring so it's visually
+    // consistent.  When isChecked(), the selection border already indicates
+    // focus so we skip it to avoid redundant nested rings.
+    if (m_keyboardCursor && !checked) {
+        p.setPen(QPen(pal.color(QPalette::Highlight), 2));
+        p.setBrush(Qt::NoBrush);
+        p.drawRoundedRect(card.adjusted(1, 1, -1, -1), SW_RADIUS - 1, SW_RADIUS - 1);
+    }
+
+    // ── Selected-state tick badge (top-right corner of card) ─────────────────
+    if (checked) {
+        constexpr int kBadgeD  = 20; // circle diameter
+        constexpr int kIconSz  = 16; // tick icon size
+        constexpr int kInset   =  8; // inset from card corner
+        const QPointF centre(card.right()  - kBadgeD / 2.0 - kInset,
+                             card.top()    + kBadgeD / 2.0 + kInset);
+        p.setBrush(pal.color(QPalette::Highlight));
+        p.setPen(Qt::NoPen);
+        p.drawEllipse(centre, kBadgeD / 2.0, kBadgeD / 2.0);
+
+        const QIcon tick = recoloredIcon("object-select-symbolic", Qt::white, kIconSz);
+        const QRectF iconRect(centre.x() - kIconSz / 2.0,
+                              centre.y() - kIconSz / 2.0,
+                              kIconSz, kIconSz);
+        tick.paint(&p, iconRect.toRect());
+    }
 }
 
 // ─── PaletteEditorDialog ─────────────────────────────────────────────────────
