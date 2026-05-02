@@ -802,9 +802,7 @@ protected:
         p.drawRoundedRect(QRectF(0.5, 0.5, width() - 1, height() - 1), kRadius, kRadius);
 
         // Selection indicator (position is animated).
-        // Fill is the text colour (near-black in light, near-white in dark) so it
-        // reads as an inverted chip against the button-coloured container.
-        const QColor indFill   = pal.text().color();
+        const QColor indFill   = pal.highlight().color();
         const QColor indBorder = dark ? QColor(0, 0, 0, 30) : QColor(255, 255, 255, 20);
         p.setBrush(indFill);
         p.setPen(QPen(indBorder, 1));
@@ -819,11 +817,9 @@ protected:
         }
 
         // Icons: Both / Light / Dark.
-        // The selected icon is drawn in the inverse colour (base = white/dark) so
-        // it reads against the inverted indicator chip.
         static const char *kIcons[3] = { "half-circle", "light-mode", "dark-mode" };
         const QColor normalCol   = pal.buttonText().color();
-        const QColor selectedCol = pal.base().color();
+        const QColor selectedCol = pal.highlightedText().color();
         for (int i = 0; i < 3; ++i) {
             const QColor col = (i == m_mode) ? selectedCol : normalCol;
             const QIcon icon = recoloredIcon(QLatin1String(kIcons[i]), col, kIconSz);

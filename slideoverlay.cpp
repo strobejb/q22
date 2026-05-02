@@ -100,7 +100,15 @@ void SlideOverlay::slideIn(QDialog *dlg, std::function<void(int)> onFinished,
     // and position the dialog flush to the top of the overlay (no strip).
     // Otherwise the floating m_backBtn strip is used.
     m_inlineMode = false;
-    const QColor fg = palette().windowText().color();
+    const QColor fg   = palette().windowText().color();
+    const bool   dark = palette().window().color().lightness() < 128;
+    const QString btnSS = QString(
+        "QToolButton{border:none;border-radius:6px;background:transparent;}"
+        "QToolButton:hover{background:%1;}"
+        "QToolButton:pressed{background:%2;}"
+    ).arg(dark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.10)",
+          dark ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.18)");
+
     if (auto *headerWidget = m_content->findChild<QWidget *>(QLatin1String("overlayHeader"))) {
         if (auto *hlay = qobject_cast<QHBoxLayout *>(headerWidget->layout())) {
             auto *inlineBtn = new QToolButton(headerWidget);
@@ -110,6 +118,7 @@ void SlideOverlay::slideIn(QDialog *dlg, std::function<void(int)> onFinished,
             inlineBtn->setAutoRaise(true);
             inlineBtn->setFixedSize(28, 28);
             inlineBtn->setToolTip(tr("Back"));
+            inlineBtn->setStyleSheet(btnSS);
             connect(inlineBtn, &QToolButton::clicked, this, [this]() {
                 if (m_content) m_content->reject();
             });
@@ -119,6 +128,7 @@ void SlideOverlay::slideIn(QDialog *dlg, std::function<void(int)> onFinished,
     }
     if (!m_inlineMode) {
         m_backBtn->setIcon(recoloredIcon("go-previous-symbolic", fg, 16));
+        m_backBtn->setStyleSheet(btnSS);
         m_backBtn->show();
         m_backBtn->raise();
     }
