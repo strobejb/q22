@@ -1,5 +1,6 @@
 #include "palettes.h"
 #include "preferences.h"
+#include "settings.h"
 
 #include <algorithm>
 #include "HexView/hexview.h"
@@ -367,14 +368,58 @@ private:
 
 // ─── PaletteSwatch ───────────────────────────────────────────────────────────
 
+// Computes the fixed widget width so the hex text rows sit with SW_PAD_X on
+// each side.  Mirrors the font setup in paintEvent exactly.
+static int computeSwatchWidth(const QFont &widgetFont)
+{
+    const QString hexFamily = AppSettings::prefFontFamily();
+    QFont mono = QFont(hexFamily.isEmpty() ? QStringLiteral("monospace") : hexFamily);
+    mono.setPointSize(widgetFont.pointSize());
+    mono.setBold(false);
+
+    QFont bold = widgetFont;
+    bold.setBold(true);
+
+    const QFontMetrics fmMono(mono);
+    const QFontMetrics fmBold(bold);
+
+    // 8 two-char tokens (monospace advance) + 7 inter-token spaces (bold font,
+    // matching paintEvent which uses fm — the bold title font — for spaces).
+    const int textW = 8 * fmMono.horizontalAdvance(QStringLiteral("AA"))
+                    + 7 * fmBold.horizontalAdvance(QStringLiteral(" "));
+
+    return 2 * SW_SHADOW + 2 * SW_PAD_X + textW;
+}
+
+// Computes the fixed widget height so there is exactly 16 px between the
+// bottom of the second hex row and the top of the colour swatch strip.
+// Derived from the paintEvent vertical layout:
+//   card.top() + kPadTop + (fm2.height()+16)  ← hexBaseY
+//   + fm2.height() + fm2.ascent() + 6         ← bottom of row 1
+//   + 16                                       ← desired gap
+//   + kSwatchH(12) + kSwatchBotPad(10)         ← colour strip + bottom pad
+static int computeSwatchHeight(const QFont &widgetFont)
+{
+    const QString hexFamily = AppSettings::prefFontFamily();
+    QFont mono = QFont(hexFamily.isEmpty() ? QStringLiteral("monospace") : hexFamily);
+    mono.setPointSize(widgetFont.pointSize());
+    mono.setBold(false);
+
+    const QFontMetrics fmMono(mono);
+    // kPadTop(10) + 2*fm2.height() + fm2.ascent() + 60
+    // where 60 = 16 (hexBaseY gap) + 6 (row spacing) + 16 (gap to swatches)
+    //            + 12 (kSwatchH) + 10 (kSwatchBotPad)
+    const int cardH = 10 + 2 * fmMono.height() + fmMono.ascent() + 60;
+    return 2 * SW_SHADOW + cardH;
+}
+
 PaletteSwatch::PaletteSwatch(const PaletteInfo &info, QWidget *parent)
     : QAbstractButton(parent), m_info(info)
 {
     setCheckable(true);
     setCursor(Qt::PointingHandCursor);
-    setFixedHeight(SW_H);
-    setMinimumWidth(SW_W);
-    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    setFixedHeight(computeSwatchHeight(font()));
+    setFixedWidth(computeSwatchWidth(font()));
     // No individual focus: the container widget (m_swatchWidget) owns keyboard
     // navigation for the whole group.  This ensures all key events — including
     // Space — route to the container's event filter rather than activating the
@@ -387,11 +432,10 @@ PaletteSwatch::PaletteSwatch(const PaletteInfo &info, QWidget *parent)
 PaletteSwatch::PaletteSwatch(QWidget *parent)
     : QAbstractButton(parent), m_addMode(true)
 {
-    setFocusPolicy(Qt::StrongFocus);
+    setFocusPolicy(Qt::NoFocus);
     setCursor(Qt::PointingHandCursor);
-    setFixedHeight(SW_H);
-    setMinimumWidth(SW_W);
-    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    setFixedHeight(computeSwatchHeight(font()));
+    setFixedWidth(computeSwatchWidth(font()));
     setToolTip(tr("Add palette…"));
     setAttribute(Qt::WA_NoSystemBackground);
 }
@@ -419,13 +463,30 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
-    const QPalette &pal  = palette();
+    const QPalette pal   = systemPalette();
     const QRectF    card = QRectF(rect()).adjusted(SW_SHADOW, SW_SHADOW,
                                                    -SW_SHADOW, -SW_SHADOW);
 
+    // ── Shared ring drawing — identical for both card types ───────────────────
+    // Selection ring: flush with card face (add-mode is never checked).
+    // Keyboard cursor ring: inner ring, shown only during keyboard navigation.
+    auto drawRings = [&]() {
+        if (isChecked()) {
+            p.setPen(QPen(pal.color(QPalette::Highlight), 2));
+            p.setBrush(Qt::NoBrush);
+            p.drawRoundedRect(card.adjusted(1, 1, -1, -1), SW_RADIUS - 1, SW_RADIUS - 1);
+        }
+        if (m_keyboardCursor) {
+            p.setPen(QPen(pal.color(QPalette::Highlight), 2));
+            p.setBrush(Qt::NoBrush);
+            p.drawRoundedRect(card.adjusted(4, 4, -4, -4), SW_RADIUS - 4, SW_RADIUS - 4);
+        }
+    };
+
     // ── Add-button variant ────────────────────────────────────────────────────
     if (m_addMode) {
-        p.setPen(QPen(pal.color(QPalette::Mid), SW_BORDER));
+        const QColor plusCol = underMouse() ? pal.color(QPalette::ButtonText) : pal.color(QPalette::Mid);
+        p.setPen(QPen(plusCol, SW_BORDER));
         p.setBrush(underMouse() ? pal.color(QPalette::Midlight)
                                 : pal.color(QPalette::Button));
         p.drawRoundedRect(card.adjusted(0.5, 0.5, -0.5, -0.5), SW_RADIUS, SW_RADIUS);
@@ -433,14 +494,10 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
         QFont f = font();
         f.setPixelSize(24);
         p.setFont(f);
-        p.setPen(pal.color(QPalette::Mid));
+        p.setPen(plusCol);
         p.drawText(card.toRect(), Qt::AlignCenter, "+");
 
-        if (hasFocus()) {
-            p.setPen(QPen(pal.color(QPalette::Highlight), 2));
-            p.setBrush(Qt::NoBrush);
-            p.drawRoundedRect(card.adjusted(1, 1, -1, -1), SW_RADIUS - 1, SW_RADIUS - 1);
-        }
+        drawRings();
         return;
     }
 
@@ -458,29 +515,35 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
 
     // ── Card: background + border ────────────────────────────────────────────
     // Border adapts to the swatch colour so it reads well on any palette.
-    // When selected, swap to the app highlight colour for a clear indicator.
-    // Fall back to palette roles for any automatic (invalid) colours.
+    // Selection and focus are indicated by separate inset rings (below), so
+    // the card border is always the same subtle 1 px line.
     const QColor effectiveBg = m_info.bg.isValid() ? m_info.bg
                                                     : pal.color(QPalette::Base);
     const bool  checked    = isChecked();
-    const qreal borderW    = checked ? 2.0 : SW_BORDER;
-    const QColor borderCol = checked
-        ? pal.color(QPalette::Highlight)
-        : (effectiveBg.lightness() < 128 ? QColor(255, 255, 255, 30)
-                                         : QColor(0,   0,   0,   30));
-    const qreal h = borderW * 0.5;
-    p.setPen(QPen(borderCol, borderW));
+    const QColor borderCol = effectiveBg.lightness() < 128 ? QColor(255, 255, 255, 30)
+                                                            : QColor(0,   0,   0,   30);
+    p.setPen(QPen(borderCol, SW_BORDER));
     p.setBrush(effectiveBg);
-    p.drawRoundedRect(card.adjusted(h, h, -h, -h), SW_RADIUS - h + 0.5, SW_RADIUS - h + 0.5);
+    p.drawRoundedRect(card.adjusted(0.5, 0.5, -0.5, -0.5), SW_RADIUS - 0.5, SW_RADIUS - 0.5);
 
     // ── Name (top-left, contrasting against the palette's own background) ───────
-    constexpr int kPadX   = 10;
+    constexpr int kPadX   = SW_PAD_X;
     constexpr int kPadTop = 10;
     // Address colour is designed to be legible on this bg; fall back to derived.
-    const QColor textCol = m_info.address.isValid()
+    const QColor intendedTextCol = m_info.address.isValid()
         ? m_info.address
         : (effectiveBg.lightness() < 128 ? QColor(255, 255, 255, 200)
                                          : QColor(  0,   0,   0, 180));
+    // If contrast between the intended colour and the card background is too
+    // low (e.g. automatic bg lands on a system colour the palette wasn't
+    // designed for), override with the system window-text colour instead.
+    auto lum = [](const QColor &c) -> qreal {
+        auto s = [](qreal v) { return v <= 0.04045 ? v/12.92 : std::pow((v+0.055)/1.055, 2.4); };
+        return 0.2126*s(c.redF()) + 0.7152*s(c.greenF()) + 0.0722*s(c.blueF());
+    };
+    const qreal l1 = lum(intendedTextCol), l2 = lum(effectiveBg);
+    const qreal contrast = (qMax(l1, l2) + 0.05) / (qMin(l1, l2) + 0.05);
+    const QColor textCol = contrast < 3.0 ? pal.color(QPalette::WindowText) : intendedTextCol;
     QFont qfont = font();
     qfont.setBold(true);
     p.setFont(qfont);
@@ -492,7 +555,9 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
     p.setPen(textCol);
     p.drawText(QPointF(card.left() + kPadX, card.top() + kPadTop + fm.ascent()), elidedName);
 
-    qfont = font();
+    const QString hexFamily = AppSettings::prefFontFamily();
+    qfont = QFont(hexFamily.isEmpty() ? QStringLiteral("monospace") : hexFamily);
+    qfont.setPointSize(font().pointSize());
     qfont.setBold(false);
     p.setFont(qfont);
     const QFontMetrics fm2(qfont);
@@ -501,15 +566,21 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
     const QColor hexOdd  = m_info.hexOdd.isValid()  ? m_info.hexOdd  : pal.color(QPalette::Text);
     const QColor hexEven = m_info.hexEven.isValid() ? m_info.hexEven : pal.color(QPalette::Text);
     const qreal hexBaseY = card.top() + kPadTop + fm2.height() + 16;
-    static const quint8 kSample[] = { 0xA4, 0x3F, 0xB2, 0x91, 0xE7, 0x60, 0xC3, 0x2A };
-    qreal xPos = card.left() + kPadX;
-    for (int i = 0; i < 8 && xPos < card.right() - 10; ++i) {
-        const QString tok = QStringLiteral("%1").arg(kSample[i], 2, 16, QLatin1Char('0')).toUpper();
-        p.setPen(i % 2 == 0 ? hexOdd : hexEven);
-        p.drawText(QPointF(xPos, hexBaseY + fm2.ascent()), tok);
-        p.drawText(QPointF(xPos, hexBaseY + fm2.ascent()*2+6), tok);
-        xPos += fm2.horizontalAdvance(tok);
-        if (i < 7) xPos += fm.horizontalAdvance(QStringLiteral(" "));
+    static const quint8 kSample[2][8] = {
+        { 0xA4, 0x3F, 0xB2, 0x91, 0xE7, 0x60, 0xC3, 0x2A },
+        { 0x5E, 0xC8, 0x07, 0x6D, 0x1F, 0x94, 0x38, 0xBB },
+    };
+    const qreal lineStep = fm2.ascent() + 6;
+    for (int row = 0; row < 2; ++row) {
+        const qreal rowY = hexBaseY + fm2.ascent() + row * lineStep;
+        qreal xPos = card.left() + kPadX;
+        for (int i = 0; i < 8 && xPos < card.right() - 10; ++i) {
+            const QString tok = QStringLiteral("%1").arg(kSample[row][i], 2, 16, QLatin1Char('0')).toUpper();
+            p.setPen(i % 2 == 0 ? hexOdd : hexEven);
+            p.drawText(QPointF(xPos, rowY), tok);
+            xPos += fm2.horizontalAdvance(tok);
+            if (i < 7) xPos += fm.horizontalAdvance(QStringLiteral(" "));
+        }
     }
 
     // ── Colour swatch strip (bottom of card, 6 representative palette colours) ─
@@ -536,15 +607,7 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
         p.drawRoundedRect(QRectF(sx, swatchY, swatchW, kSwatchH), kSwatchRadius, kSwatchRadius);
     }
 
-    // ── Keyboard cursor ring (only when not already showing selection border) ──
-    // Drawn identically to the add-button's hasFocus() ring so it's visually
-    // consistent.  When isChecked(), the selection border already indicates
-    // focus so we skip it to avoid redundant nested rings.
-    if (m_keyboardCursor && !checked) {
-        p.setPen(QPen(pal.color(QPalette::Highlight), 2));
-        p.setBrush(Qt::NoBrush);
-        p.drawRoundedRect(card.adjusted(1, 1, -1, -1), SW_RADIUS - 1, SW_RADIUS - 1);
-    }
+    drawRings();
 
     // ── Selected-state tick badge (top-right corner of card) ─────────────────
     if (checked) {
@@ -663,7 +726,8 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
             "}"
             "QLineEdit:focus { border: 2px solid %2; }"
         ).arg(border, focusColor);
-        m_nameEdit->setStyleSheet(ss);
+        m_nameEdit->setStyleSheet(ss +
+            "QLineEdit[builtInPalette=\"true\"] { background: palette(window); }");
         m_hexEdit->setStyleSheet(ss +
             "QLineEdit:disabled { color: palette(window); background: palette(window); }");
     }
@@ -672,7 +736,8 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
     auto *buttons = new QDialogButtonBox(
         QDialogButtonBox::Save | QDialogButtonBox::Apply | QDialogButtonBox::Cancel, this);
     m_saveBtn = buttons->button(QDialogButtonBox::Save);
-    m_saveBtn->setEnabled(!m_nameEdit->text().trimmed().isEmpty());
+    m_saveBtn->setEnabled(false); // updated by updateNameBg() below
+    buttons->button(QDialogButtonBox::Apply)->setToolTip(tr("Apply palette without saving"));
     for (QAbstractButton *btn : buttons->buttons())
         btn->setIcon(QIcon());
 
@@ -749,9 +814,29 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
     vlay->addWidget(buttons);
 
     // ── Connections ───────────────────────────────────────────────────────────
-    connect(m_nameEdit, &QLineEdit::textChanged, this, [this](const QString &t) {
-        m_saveBtn->setEnabled(!t.trimmed().isEmpty());
+    // Collect built-in palette names to drive the grey-background hint.
+    const QStringList builtInNames = []{
+        QStringList ns;
+        for (const PaletteInfo &p : loadEmbeddedPalettes()) ns << p.name;
+        return ns;
+    }();
+    auto updateNameBg = [this, builtInNames](const QString &t) {
+        const QString name = t.trimmed();
+        const bool isBuiltIn = builtInNames.contains(name);
+        if (m_nameEdit->property("builtInPalette").toBool() != isBuiltIn) {
+            m_nameEdit->setProperty("builtInPalette", isBuiltIn);
+            m_nameEdit->style()->unpolish(m_nameEdit);
+            m_nameEdit->style()->polish(m_nameEdit);
+            m_nameEdit->update();
+        }
+        const bool canSave = !name.isEmpty() && !isBuiltIn;
+        m_saveBtn->setEnabled(canSave);
+        m_saveBtn->setToolTip(canSave ? tr("Save palette to disk") : tr("Cannot overwrite bundled themes"));
+    };
+    connect(m_nameEdit, &QLineEdit::textChanged, this, [updateNameBg](const QString &t) {
+        updateNameBg(t);
     });
+    updateNameBg(m_nameEdit->text()); // set initial background and save-button state
 
     connect(m_list, &QListWidget::currentRowChanged, this, [this](int row) {
         if (row < 0 || row >= PE_COUNT) return;

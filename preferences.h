@@ -64,7 +64,8 @@ private:
     QFileSystemWatcher *m_watcher  = nullptr;
     int             m_swatchCount   = 0;
     int             m_swatchCursor  = 0;
-    bool            m_hiddenByModal = false;
+    bool            m_hiddenByModal      = false;
+    bool            m_suppressRingOnFocus = false;
     QPoint          m_savedPos;
     NavigationRow  *m_fontNav      = nullptr;
     StepSpinBox    *m_fontSize     = nullptr;

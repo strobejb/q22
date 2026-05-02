@@ -76,6 +76,7 @@ static constexpr int kMenuShadowMargin = 8;
 // applyAdwaitaTheme() layers these on top of the base Adwaita palette + QSS.
 static ColorScheme       s_currentScheme = ColorScheme::System;
 static UiColourOverrides s_uiOverrides;
+static QPalette          s_basePalette;
 
 #ifdef Q_OS_WIN
 // ── DWM dark-mode title bars ──────────────────────────────────────────────────
@@ -358,16 +359,15 @@ static void applyPalette(bool dark)
     // by re-asserting the system palette, permanently overriding light mode.
     const QColor window    = dark ? QColor("#242424") : QColor("#f6f5f4");
     const QColor windowText = dark ? QColor("#deddda") : QColor("#2e3436");
-    const QColor base      = dark ? window.darker(120) : Qt::white;
-    const QColor highlight = s_uiOverrides.highlight.isValid()
-                           ? s_uiOverrides.highlight : QColor("#3584e4");
+    const QColor base         = dark ? window.darker(120) : Qt::white;
+    const QColor baseHighlight = QColor("#3584e4");
+    const QColor baseHlText   = baseHighlight.lightness() < 160 ? Qt::white : windowText;
 
     // Derived roles — no additional hard-coded values beyond the four above.
     const QColor button    = dark ? window.lighter(155) : window.darker(105);
     const QColor altBase   = dark ? base.lighter(112)   : base.darker(103);
     const QColor ph        = QColor(windowText.red(), windowText.green(),
                                     windowText.blue(), 128); // 50% opacity text
-    const QColor hlText    = highlight.lightness() < 160 ? Qt::white : windowText;
 
     // QPalette(button, window) auto-computes Light, Midlight, Mid, Dark, Shadow.
     // Mid (used for borders and separators) comes out near-invisible in dark mode
@@ -382,14 +382,13 @@ static void applyPalette(bool dark)
     p.setColor(QPalette::BrightText,      Qt::white);
     p.setColor(QPalette::Base,            base);
     p.setColor(QPalette::AlternateBase,   altBase);
-    p.setColor(QPalette::Highlight,       highlight);
-    p.setColor(QPalette::HighlightedText, hlText);
-    p.setColor(QPalette::Link,            dark ? highlight.lighter(130) : highlight);
+    p.setColor(QPalette::Highlight,       baseHighlight);
+    p.setColor(QPalette::HighlightedText, baseHlText);
+    p.setColor(QPalette::Link,            dark ? baseHighlight.lighter(130) : baseHighlight);
     p.setColor(QPalette::PlaceholderText, ph);
     // Tooltips: inverted pair so they stand out against the window background.
     p.setColor(QPalette::ToolTipBase,     windowText);
     p.setColor(QPalette::ToolTipText,     window);
-
 
     // Disabled group — Fusion auto-derives this poorly. Set it explicitly to a
     // clearly mid-toned gray that's readable in both light and dark modes.
@@ -401,6 +400,11 @@ static void applyPalette(bool dark)
     p.setColor(QPalette::Disabled, QPalette::WindowText, disabled);
     p.setColor(QPalette::Disabled, QPalette::Text,       disabled);
     p.setColor(QPalette::Disabled, QPalette::ButtonText, disabled);
+
+    // Save the scheme palette before any per-palette overrides are applied.
+    // systemPalette() returns this so that UI that should not shift colour
+    // when a palette overrides Window/Highlight/etc. can use stable values.
+    s_basePalette = p;
 
     // Layer UI palette overrides on top.
     if (s_uiOverrides.window.isValid()) {
@@ -421,8 +425,11 @@ static void applyPalette(bool dark)
         p.setColor(QPalette::ButtonText, s_uiOverrides.windowText);
     }
     if (s_uiOverrides.highlight.isValid()) {
-        p.setColor(QPalette::Highlight,       s_uiOverrides.highlight);
-        p.setColor(QPalette::HighlightedText, hlText);
+        const QColor hlOver     = s_uiOverrides.highlight;
+        const QColor hlOverText = hlOver.lightness() < 160 ? Qt::white : windowText;
+        p.setColor(QPalette::Highlight,       hlOver);
+        p.setColor(QPalette::HighlightedText, hlOverText);
+        p.setColor(QPalette::Link,            dark ? hlOver.lighter(130) : hlOver);
     }
 
     QApplication::setPalette(p);
@@ -1211,6 +1218,11 @@ void setUiColourOverrides(const UiColourOverrides &o)
 const UiColourOverrides &uiColourOverrides()
 {
     return s_uiOverrides;
+}
+
+QPalette systemPalette()
+{
+    return s_basePalette;
 }
 
 

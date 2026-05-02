@@ -111,8 +111,7 @@ bool savePalette(const PaletteInfo &info);
 
 // ── Swatch size constants (shared by PaletteSwatch and AddPaletteSwatch) ─────
 inline constexpr int SW_SHADOW =  3;   // transparent margin for drop shadow
-inline constexpr int SW_W      = 84 + 2 * SW_SHADOW;   // minimum width hint (90); actual width fills column
-inline constexpr int SW_H      = 128 + 2 * SW_SHADOW;   // total widget height (92); card is 86px
+inline constexpr int SW_PAD_X  = 10;  // horizontal padding inside card (left = right)
 inline constexpr int SW_RADIUS = 10;
 inline constexpr int SW_BORDER =  1;
 

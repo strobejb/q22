@@ -208,9 +208,7 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
         m_swatchLayout = new QGridLayout(m_swatchWidget);
         m_swatchLayout->setContentsMargins(0, 0, 0, 0);
         m_swatchLayout->setSpacing(5 + 2 * SW_SHADOW);
-        m_swatchLayout->setAlignment(Qt::AlignTop);
-        for (int c = 0; c < kSwatchCols; ++c)
-            m_swatchLayout->setColumnStretch(c, 1);
+        m_swatchLayout->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
 
         m_swatchGroup = new QButtonGroup(m_swatchWidget);
         m_swatchGroup->setExclusive(true);
@@ -258,7 +256,9 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
         connect(m_addBtn, &QAbstractButton::clicked, this, [this]() {
             if (m_overlay->isActive()) return;
             const PaletteInfo before = m_currentPalette;
-            auto *dlg = new PaletteEditorDialog(m_currentPalette, this);
+            PaletteInfo newInfo = m_currentPalette;
+            newInfo.name.clear();
+            auto *dlg = new PaletteEditorDialog(newInfo, this);
             connect(dlg, &PaletteEditorDialog::paletteChanged,
                     this, &PreferencesDialog::paletteSelected);
             connect(dlg, &PaletteEditorDialog::paletteSaved,
@@ -342,7 +342,6 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     });
 
     setSizeGripEnabled(false);
-    setMinimumWidth(600);
 
     // Hide this modeless dialog whenever any modal window opens, restore when it closes.
     qApp->installEventFilter(this);
@@ -357,20 +356,31 @@ void PreferencesDialog::prepareShow()
     layout()->activate();
     const int maxH = 560;
     const QSize hint = sizeHint();
-    const int w = qMax(hint.width(), minimumWidth());
+
+    // Derive width so the swatch grid sits with zero padding on each side at
+    // this size.  vlay uses 20 px margins left and right; the grid is 3 columns
+    // at the swatch fixed width with (5 + 2*SW_SHADOW) px gaps between them.
+    // When content exceeds maxH a vertical scrollbar appears and steals some
+    // horizontal space from the viewport — add its extent to compensate.
+    const int swatchGap = 5 + 2 * SW_SHADOW;
+    const int gridW     = kSwatchCols * m_addBtn->width()
+                        + (kSwatchCols - 1) * swatchGap;
+    const int sbW = (hint.height() > maxH)
+                    ? style()->pixelMetric(QStyle::PM_ScrollBarExtent) : 0;
+    const int w = gridW + 2 * 20 + sbW;
     const int h = qMin(hint.height(), maxH);
-    setFixedSize(w, h);
+    // Mirror execCentered(): resize → move → winId(), then lock.
+    // setFixedSize() before move() changes size constraints that affect HWND
+    // creation geometry on Windows, producing a wrong initial position.
+    resize(w, h);
     if (QWidget *par = parentWidget()) {
         const QPoint c = par->frameGeometry().center();
         move(c.x() - w / 2, c.y() - h / 2);
     }
 #ifdef Q_OS_WIN
-    // Force HWND creation NOW, while the window is still hidden, so the
-    // subsequent ShowWindow call just flips visibility without repositioning.
-    // This must happen BEFORE setVisible/show() is entered — the same
-    // pattern execCentered() uses for modal dialogs.
-    (void)winId();
+    (void)winId(); // force HWND creation while hidden — same pattern as execCentered()
 #endif
+    setFixedSize(w, h); // lock size after HWND is in place
 }
 
 void PreferencesDialog::setVisible(bool visible)
@@ -383,6 +393,7 @@ void PreferencesDialog::setVisible(bool visible)
         // Fallback: centre on parent if prepareShow() wasn't called first.
         prepareShow();
     }
+    if (visible) m_suppressRingOnFocus = true;
     QDialog::setVisible(visible);
     if (visible)
         m_swatchWidget->setFocus();
@@ -424,22 +435,32 @@ bool PreferencesDialog::eventFilter(QObject *obj, QEvent *e)
     if (obj != m_swatchWidget)
         return false;
 
-    const auto palBtns  = m_swatchGroup->buttons();
-    const int  palCount = palBtns.size();
+    const auto palBtns = m_swatchGroup->buttons();
+    // Navigation covers all cards: palette swatches followed by the add card.
+    QList<QAbstractButton *> allBtns = palBtns;
+    allBtns.append(m_addBtn);
+    const int palCount = allBtns.size();
 
-    // Helper: set/clear the keyboard cursor ring on a swatch by index.
+    // Helper: set/clear the keyboard cursor ring on a card by index.
     auto setCursor = [&](int idx, bool on) {
-        if (idx < 0 || idx >= palBtns.size()) return;
-        if (auto *sw = qobject_cast<PaletteSwatch *>(palBtns[idx]))
+        if (idx < 0 || idx >= allBtns.size()) return;
+        if (auto *sw = qobject_cast<PaletteSwatch *>(allBtns[idx]))
             sw->setKeyboardCursor(on);
     };
 
     if (e->type() == QEvent::FocusIn) {
-        // Initialise cursor at the currently checked swatch (or 0).
+        // Consume the suppress flag first — set by setVisible() to block the
+        // spurious FocusIn(Tab) Qt fires when activating the dialog window.
+        const bool suppress = m_suppressRingOnFocus;
+        m_suppressRingOnFocus = false;
+        // Clear any stale ring at the old cursor position before moving it.
+        setCursor(m_swatchCursor, false);
         auto *checked  = m_swatchGroup->checkedButton();
         m_swatchCursor = checked ? palBtns.indexOf(checked) : 0;
         if (m_swatchCursor < 0) m_swatchCursor = 0;
-        setCursor(m_swatchCursor, true);
+        const auto reason = static_cast<QFocusEvent *>(e)->reason();
+        if (!suppress && (reason == Qt::TabFocusReason || reason == Qt::BacktabFocusReason))
+            setCursor(m_swatchCursor, true);
         return false;
     }
 
@@ -451,9 +472,9 @@ bool PreferencesDialog::eventFilter(QObject *obj, QEvent *e)
     if (e->type() == QEvent::KeyPress) {
         const int key = static_cast<QKeyEvent *>(e)->key();
 
-        // Space / Return / Enter confirm the focused swatch as the selection.
+        // Space / Return / Enter activate the focused card (select palette or open add dialog).
         if (key == Qt::Key_Space || key == Qt::Key_Return || key == Qt::Key_Enter) {
-            palBtns[m_swatchCursor]->click();
+            allBtns[m_swatchCursor]->click();
             return true;
         }
 
@@ -488,12 +509,13 @@ bool PreferencesDialog::eventFilter(QObject *obj, QEvent *e)
 
 void PreferencesDialog::syncCursorToSwatch(int idx)
 {
-    const auto btns = m_swatchGroup->buttons();
-    if (auto *old = qobject_cast<PaletteSwatch *>(btns.value(m_swatchCursor)))
+    QList<QAbstractButton *> allBtns = m_swatchGroup->buttons();
+    allBtns.append(m_addBtn);
+    if (auto *old = qobject_cast<PaletteSwatch *>(allBtns.value(m_swatchCursor)))
         old->setKeyboardCursor(false);
     m_swatchCursor = idx;
-    if (auto *sw = qobject_cast<PaletteSwatch *>(btns.value(m_swatchCursor)))
-        sw->setKeyboardCursor(true);
+    // Do not show the cursor ring here: this is called from mouse-click handlers
+    // and the ring is only activated by keyboard navigation.
 }
 
 void PreferencesDialog::addCustomSwatch(const PaletteInfo &)

@@ -2,6 +2,7 @@
 #define THEME_H
 
 #include <QColor>
+#include <QPalette>
 #include <QPoint>
 
 enum class ColorScheme { System = 0, Light = 1, Dark = 2 };
@@ -29,6 +30,11 @@ void setUiColourOverrides(const UiColourOverrides &o);
 
 // Returns the currently active UI colour overrides (all invalid = no override).
 const UiColourOverrides &uiColourOverrides();
+
+// Returns the base Adwaita palette for the current scheme, without any active
+// UI colour overrides applied. Use this for UI that should not shift colour
+// when a palette overrides Window/WindowText/Highlight.
+QPalette systemPalette();
 
 class QMenu;
 // Call on every QMenu after construction so the stylesheet (including
