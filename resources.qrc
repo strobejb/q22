@@ -29,5 +29,8 @@
         <file>icons/hicolor/scalable/actions/go-next-symbolic.svg</file>
         <file>icons/hicolor/scalable/actions/go-previous-symbolic.svg</file>
         <file>icons/hicolor/scalable/actions/object-select-symbolic.svg</file>
+        <file>icons/hicolor/scalable/actions/dark-mode.svg</file>
+        <file>icons/hicolor/scalable/actions/half-circle.svg</file>
+        <file>icons/hicolor/scalable/actions/light-mode.svg</file>
     </qresource>
 </RCC>

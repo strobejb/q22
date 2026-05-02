@@ -6,10 +6,12 @@
 #include <QEnterEvent>
 #include "theme.h"
 #include <QDialog>
+#include <QHash>
 #include <QList>
 #include <QString>
 
 class HexView;
+class ModeToggleGroup;
 class QLabel;
 class QLineEdit;
 class QListWidget;
@@ -79,6 +81,13 @@ struct PaletteInfo {
     QColor  windowText;
     QColor  toolbar;
     QColor  highlight;
+
+    // ── Per-mode overrides ────────────────────────────────────────────────
+    // Key = PaletteElem cast to int.  Only elements that differ between modes
+    // appear here.  Apply logic: use dark (or light) override when active,
+    // fall back to the named field above.
+    QHash<int, QColor> lightOverrides;
+    QHash<int, QColor> darkOverrides;
 };
 
 // Apply a PaletteInfo to a HexView by calling setHexColour for every slot.
@@ -174,10 +183,13 @@ private:
     void   updateColorUI(PaletteElem e);
     static QPixmap makeColorSwatch(const QColor &c);
 
+    void updateItemIndicator(int row);
+
     QLineEdit         *m_nameEdit   = nullptr;
     QListWidget       *m_list       = nullptr;
     ColorPickerWidget *m_picker     = nullptr;
     SettingsToggle    *m_autoToggle = nullptr;
+    ModeToggleGroup   *m_modeGroup  = nullptr;
     QLabel            *m_hexLabel   = nullptr;
     QLineEdit         *m_hexEdit    = nullptr;
     QPushButton       *m_saveBtn    = nullptr;

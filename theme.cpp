@@ -78,6 +78,13 @@ static ColorScheme       s_currentScheme = ColorScheme::System;
 static UiColourOverrides s_uiOverrides;
 static QPalette          s_basePalette;
 
+bool isDarkMode()
+{
+    if (s_currentScheme == ColorScheme::Dark)  return true;
+    if (s_currentScheme == ColorScheme::Light) return false;
+    return QApplication::palette().window().color().lightness() < 128;
+}
+
 #ifdef Q_OS_WIN
 // ── DWM dark-mode title bars ──────────────────────────────────────────────────
 // Qt does not call DwmSetWindowAttribute(DWMWA_USE_IMMERSIVE_DARK_MODE) on

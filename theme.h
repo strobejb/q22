@@ -23,6 +23,11 @@ struct UiColourOverrides {
 // Safe to call at runtime to switch themes.
 void applyAdwaitaTheme(ColorScheme scheme = ColorScheme::System);
 
+// Returns true when the app is currently displaying in dark mode.
+// Accounts for the explicit Dark/Light setting and, for System mode,
+// the current application palette lightness.
+bool isDarkMode();
+
 // Layer palette-defined UI colours on top of the current Adwaita theme.
 // Passing a default-constructed struct (all colours invalid) clears any
 // previous overrides. The current colour scheme is re-applied immediately.

@@ -20,6 +20,8 @@
 #include <QPainterPath>
 #include <QPushButton>
 #include <QSettings>
+#include <QStyledItemDelegate>
+#include <QVariantAnimation>
 #include <QTimer>
 #include <QVBoxLayout>
 
@@ -31,31 +33,105 @@ static QColor orElse(const QColor &c, const QColor &fallback)
     return c.isValid() ? c : fallback;
 }
 
+// Maps a PaletteElem to its INI key name (shared between [Palette],
+// [Palette-Light], and [Palette-Dark] sections).
+static const char *elemIniKey(PaletteElem e)
+{
+    switch (e) {
+        case PE_BG:                      return "Background";
+        case PE_HEX_ODD:                 return "HexOdd";
+        case PE_HEX_EVEN:                return "HexEven";
+        case PE_ADDRESS:                 return "Address";
+        case PE_ASCII:                   return "Ascii";
+        case PE_SELECTION:               return "Selection";
+        case PE_SELECTION_TEXT:          return "SelectionText";
+        case PE_SELECTION_INACTIVE:      return "SelectionInactive";
+        case PE_SELECTION_TEXT_INACTIVE: return "SelectionTextInactive";
+        case PE_MODIFIED:                return "Modified";
+        case PE_MATCHED:                 return "Matched";
+        case PE_RESIZE_BAR:              return "ResizeBar";
+        case PE_BOOKMARK_1:              return "Bookmark1";
+        case PE_BOOKMARK_2:              return "Bookmark2";
+        case PE_BOOKMARK_3:              return "Bookmark3";
+        case PE_BOOKMARK_4:              return "Bookmark4";
+        case PE_BOOKMARK_5:              return "Bookmark5";
+        case PE_BOOKMARK_6:              return "Bookmark6";
+        case PE_BOOKMARK_7:              return "Bookmark7";
+        case PE_WINDOW:                  return "Window";
+        case PE_WINDOWTEXT:              return "WindowText";
+        case PE_HIGHLIGHT:               return "Highlight";
+        case PE_TOOLBAR:                 return "Toolbar";
+        case PE_COUNT:                   return nullptr;
+    }
+    return nullptr;
+}
+
+// Fold mode-specific overrides into a flat PaletteInfo for the given mode.
+// The returned value is a plain PaletteInfo ready for applyPalette() — no
+// override maps, no mode awareness needed downstream.
+static PaletteInfo resolvedPalette(const PaletteInfo &base, bool dark)
+{
+    const QHash<int, QColor> &ov = dark ? base.darkOverrides : base.lightOverrides;
+    if (ov.isEmpty()) return base;
+    PaletteInfo r = base;
+    for (auto it = ov.cbegin(); it != ov.cend(); ++it) {
+        switch (PaletteElem(it.key())) {
+            case PE_BG:                      r.bg                    = it.value(); break;
+            case PE_HEX_ODD:                 r.hexOdd                = it.value(); break;
+            case PE_HEX_EVEN:                r.hexEven               = it.value(); break;
+            case PE_ADDRESS:                 r.address               = it.value(); break;
+            case PE_ASCII:                   r.ascii                 = it.value(); break;
+            case PE_SELECTION:               r.selection             = it.value(); break;
+            case PE_SELECTION_TEXT:          r.selectionText         = it.value(); break;
+            case PE_SELECTION_INACTIVE:      r.selectionInactive     = it.value(); break;
+            case PE_SELECTION_TEXT_INACTIVE: r.selectionTextInactive = it.value(); break;
+            case PE_MODIFIED:                r.modified              = it.value(); break;
+            case PE_MATCHED:                 r.matched               = it.value(); break;
+            case PE_RESIZE_BAR:              r.resizeBar             = it.value(); break;
+            case PE_BOOKMARK_1:              r.bookmarks[0]          = it.value(); break;
+            case PE_BOOKMARK_2:              r.bookmarks[1]          = it.value(); break;
+            case PE_BOOKMARK_3:              r.bookmarks[2]          = it.value(); break;
+            case PE_BOOKMARK_4:              r.bookmarks[3]          = it.value(); break;
+            case PE_BOOKMARK_5:              r.bookmarks[4]          = it.value(); break;
+            case PE_BOOKMARK_6:              r.bookmarks[5]          = it.value(); break;
+            case PE_BOOKMARK_7:              r.bookmarks[6]          = it.value(); break;
+            case PE_WINDOW:                  r.window                = it.value(); break;
+            case PE_WINDOWTEXT:              r.windowText            = it.value(); break;
+            case PE_TOOLBAR:                 r.toolbar               = it.value(); break;
+            case PE_HIGHLIGHT:               r.highlight             = it.value(); break;
+            case PE_COUNT:                   break;
+        }
+    }
+    return r;
+}
+
 void applyPalette(HexView *hv, const PaletteInfo &info)
 {
-    hv->setHexColour(HVC_BACKGROUND,         info.bg);
-    hv->setHexColour(HVC_ADDRESS,            info.address);   // QColor() → palette(WindowText)
-    hv->setHexColour(HVC_RESIZEBAR,          info.resizeBar); // QColor() → palette(Mid)
+    const PaletteInfo eff = resolvedPalette(info, isDarkMode());
 
-    hv->setHexColour(HVC_HEXODD,             info.hexOdd);
-    hv->setHexColour(HVC_HEXEVEN,            info.hexEven);
-    hv->setHexColour(HVC_ASCII,              info.ascii);
+    hv->setHexColour(HVC_BACKGROUND,         eff.bg);
+    hv->setHexColour(HVC_ADDRESS,            eff.address);
+    hv->setHexColour(HVC_RESIZEBAR,          eff.resizeBar);
+
+    hv->setHexColour(HVC_HEXODD,             eff.hexOdd);
+    hv->setHexColour(HVC_HEXEVEN,            eff.hexEven);
+    hv->setHexColour(HVC_ASCII,              eff.ascii);
 
     // Selected text — HEXODDSEL/HEXEVENSEL/ASCIISEL left invalid to chain here
     hv->setHexColour(HVC_HEXODDSEL,          QColor());
     hv->setHexColour(HVC_HEXEVENSEL,         QColor());
     hv->setHexColour(HVC_ASCIISEL,           QColor());
 
-    hv->setHexColour(HVC_MODIFY,             info.modified);
-    hv->setHexColour(HVC_MODIFYSEL,          info.modified);//.lighter(130));
+    hv->setHexColour(HVC_MODIFY,             eff.modified);
+    hv->setHexColour(HVC_MODIFYSEL,          eff.modified);
 
-    hv->setHexColour(HVC_SELECTION,          info.selection);
-    hv->setHexColour(HVC_SELTEXT,            info.selectionText); // QColor() → palette(HighlightedText)
-    hv->setHexColour(HVC_SELECTION_INACTIVE, info.selectionInactive); // QColor() → palette default
-    hv->setHexColour(HVC_SELTEXT_INACTIVE,   info.selectionTextInactive); // QColor() → contrast derived in realiseColour
+    hv->setHexColour(HVC_SELECTION,          eff.selection);
+    hv->setHexColour(HVC_SELTEXT,            eff.selectionText);
+    hv->setHexColour(HVC_SELECTION_INACTIVE, eff.selectionInactive);
+    hv->setHexColour(HVC_SELTEXT_INACTIVE,   eff.selectionTextInactive);
 
-    hv->setHexColour(HVC_MATCHED,            info.matched);
-    hv->setHexColour(HVC_MATCHEDSEL,         info.matched.lighter(140));
+    hv->setHexColour(HVC_MATCHED,            eff.matched);
+    hv->setHexColour(HVC_MATCHEDSEL,         eff.matched.lighter(140));
 
     static const QColor kBookmarkDefaults[7] = {
         QColor(255, 255,   0), QColor(255, 165,   0), QColor(255,  80,  80),
@@ -63,14 +139,16 @@ void applyPalette(HexView *hv, const PaletteInfo &info)
         QColor(255, 150, 200),
     };
     for (int i = 0; i < 7; ++i)
-        hv->setHexColour(HvColorSlot(HVC_BOOKMARK1 + i), orElse(info.bookmarks[i], kBookmarkDefaults[i]));
+        hv->setHexColour(HvColorSlot(HVC_BOOKMARK1 + i),
+                         orElse(eff.bookmarks[i], kBookmarkDefaults[i]));
 
     hv->viewport()->update();
 }
 
 void applyUiPalette(const PaletteInfo &info)
 {
-    setUiColourOverrides({ info.window, info.windowText, info.toolbar, info.highlight });
+    const PaletteInfo eff = resolvedPalette(info, isDarkMode());
+    setUiColourOverrides({ eff.window, eff.windowText, eff.toolbar, eff.highlight });
 }
 
 // ─── Palette loading ─────────────────────────────────────────────────────────
@@ -107,6 +185,22 @@ static PaletteInfo parsePaletteFile(const QString &path)
     info.windowText = QColor(s.value("WindowText").toString());
     info.toolbar    = QColor(s.value("Toolbar").toString());
     info.highlight  = QColor(s.value("Highlight").toString());
+    s.endGroup();
+
+    // Per-mode override sections [Palette-Light] and [Palette-Dark].
+    auto readOverrides = [&](const QString &group, QHash<int, QColor> &map) {
+        s.beginGroup(group);
+        for (int i = 0; i < PE_COUNT; ++i) {
+            const char *key = elemIniKey(PaletteElem(i));
+            if (!key) continue;
+            const QColor c(s.value(QLatin1String(key)).toString());
+            if (c.isValid()) map[i] = c;
+        }
+        s.endGroup();
+    };
+    readOverrides(QStringLiteral("Palette-Light"), info.lightOverrides);
+    readOverrides(QStringLiteral("Palette-Dark"),  info.darkOverrides);
+
     return info;
 }
 
@@ -195,7 +289,26 @@ bool savePalette(const PaletteInfo &info)
     s.setValue("Window",     cs(info.window));
     s.setValue("WindowText", cs(info.windowText));
     s.setValue("Toolbar",    cs(info.toolbar));
-    s.setValue("Highlight",    cs(info.highlight));
+    s.setValue("Highlight",  cs(info.highlight));
+    s.endGroup();
+
+    // Clear old override sections before rewriting (handles removed overrides).
+    s.beginGroup(QStringLiteral("Palette-Light")); s.remove(QString()); s.endGroup();
+    s.beginGroup(QStringLiteral("Palette-Dark"));  s.remove(QString()); s.endGroup();
+
+    auto writeOverrides = [&](const QString &group, const QHash<int, QColor> &map) {
+        if (map.isEmpty()) return;
+        s.beginGroup(group);
+        for (auto it = map.cbegin(); it != map.cend(); ++it) {
+            const char *key = elemIniKey(PaletteElem(it.key()));
+            if (key && it.value().isValid())
+                s.setValue(QLatin1String(key), it.value().name().toUpper());
+        }
+        s.endGroup();
+    };
+    writeOverrides(QStringLiteral("Palette-Light"), info.lightOverrides);
+    writeOverrides(QStringLiteral("Palette-Dark"),  info.darkOverrides);
+
     s.sync();
     return s.status() == QSettings::NoError;
 }
@@ -628,7 +741,167 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
     }
 }
 
+// ─── ModeToggleGroup ─────────────────────────────────────────────────────────
+// Adwaita-style inline toggle: three icon slots (Both / Light / Dark) inside a
+// single rounded-rect container.  The selected slot has a sliding indicator.
+
+class ModeToggleGroup : public QWidget
+{
+    Q_OBJECT
+public:
+    explicit ModeToggleGroup(QWidget *parent = nullptr)
+        : QWidget(parent), m_indicatorX(kPad)
+    {
+        setMouseTracking(true);
+        setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        setCursor(Qt::PointingHandCursor);
+
+        m_anim = new QVariantAnimation(this);
+        m_anim->setDuration(150);
+        m_anim->setEasingCurve(QEasingCurve::OutCubic);
+        connect(m_anim, &QVariantAnimation::valueChanged, this, [this](const QVariant &v) {
+            m_indicatorX = v.toReal();
+            update();
+        });
+    }
+
+    int  mode() const { return m_mode; }
+
+    void setMode(int mode)
+    {
+        if (mode == m_mode) return;
+        m_mode = mode;
+        m_anim->stop();
+        m_anim->setStartValue(m_indicatorX);
+        m_anim->setEndValue(qreal(kPad + mode * kSlotW));
+        m_anim->start();
+        emit modeChanged(mode);
+        update();
+    }
+
+    QSize sizeHint() const override
+    {
+        return QSize(3 * kSlotW + 2 * kPad, kSlotH + 2 * kPad);
+    }
+
+signals:
+    void modeChanged(int mode);
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+
+        const QPalette &pal = qApp->palette();
+        const bool dark = pal.window().color().lightness() < 128;
+
+        // Outer container
+        p.setBrush(pal.button().color());
+        p.setPen(QPen(pal.mid().color(), 1));
+        p.drawRoundedRect(QRectF(0.5, 0.5, width() - 1, height() - 1), kRadius, kRadius);
+
+        // Selection indicator (position is animated).
+        // Fill is the text colour (near-black in light, near-white in dark) so it
+        // reads as an inverted chip against the button-coloured container.
+        const QColor indFill   = pal.text().color();
+        const QColor indBorder = dark ? QColor(0, 0, 0, 30) : QColor(255, 255, 255, 20);
+        p.setBrush(indFill);
+        p.setPen(QPen(indBorder, 1));
+        p.drawRoundedRect(QRectF(m_indicatorX, kPad, kSlotW, kSlotH), kInnerR, kInnerR);
+
+        // Hover overlay on unselected hovered slot
+        if (m_hovered >= 0 && m_hovered != m_mode) {
+            p.setBrush(pal.mid().color());
+            p.setPen(Qt::NoPen);
+            p.drawRoundedRect(QRectF(kPad + m_hovered * kSlotW, kPad, kSlotW, kSlotH),
+                              kInnerR, kInnerR);
+        }
+
+        // Icons: Both / Light / Dark.
+        // The selected icon is drawn in the inverse colour (base = white/dark) so
+        // it reads against the inverted indicator chip.
+        static const char *kIcons[3] = { "half-circle", "light-mode", "dark-mode" };
+        const QColor normalCol   = pal.buttonText().color();
+        const QColor selectedCol = pal.base().color();
+        for (int i = 0; i < 3; ++i) {
+            const QColor col = (i == m_mode) ? selectedCol : normalCol;
+            const QIcon icon = recoloredIcon(QLatin1String(kIcons[i]), col, kIconSz);
+            const int cx = kPad + i * kSlotW + kSlotW / 2;
+            const int cy = kPad + kSlotH / 2;
+            icon.paint(&p, QRect(cx - kIconSz / 2, cy - kIconSz / 2, kIconSz, kIconSz));
+        }
+    }
+
+    void mousePressEvent(QMouseEvent *e) override
+    {
+        if (e->button() == Qt::LeftButton)
+            m_pressed = slotAt(e->pos());
+    }
+
+    void mouseReleaseEvent(QMouseEvent *e) override
+    {
+        if (e->button() == Qt::LeftButton && m_pressed >= 0) {
+            if (slotAt(e->pos()) == m_pressed)
+                setMode(m_pressed);
+            m_pressed = -1;
+        }
+    }
+
+    void mouseMoveEvent(QMouseEvent *e) override
+    {
+        const int hov = slotAt(e->pos());
+        if (hov != m_hovered) { m_hovered = hov; update(); }
+    }
+
+    void leaveEvent(QEvent *) override { m_hovered = -1; update(); }
+
+private:
+    int slotAt(const QPoint &pos) const
+    {
+        if (pos.x() < kPad || pos.x() >= width() - kPad) return -1;
+        if (pos.y() < kPad || pos.y() >= height() - kPad) return -1;
+        return qBound(0, (pos.x() - kPad) / kSlotW, 2);
+    }
+
+    static constexpr int kPad    = 3;
+    static constexpr int kSlotW  = 36;
+    static constexpr int kSlotH  = 28;
+    static constexpr int kIconSz = 16;
+    static constexpr int kRadius = 7;
+    static constexpr int kInnerR = 5;
+
+    int   m_mode      = 0;
+    int   m_hovered   = -1;
+    int   m_pressed   = -1;
+    qreal m_indicatorX;
+    QVariantAnimation *m_anim = nullptr;
+};
+
 // ─── PaletteEditorDialog ─────────────────────────────────────────────────────
+
+// Delegate that appends a right-aligned "L", "D", or "L,D" indicator in mid
+// colour for list items that have mode-specific colour overrides.
+class PaletteItemDelegate : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+    void paint(QPainter *p, const QStyleOptionViewItem &opt,
+               const QModelIndex &idx) const override
+    {
+        QStyledItemDelegate::paint(p, opt, idx);
+        const QString indicator = idx.data(Qt::UserRole).toString();
+        if (indicator.isEmpty()) return;
+        p->save();
+        QFont f = opt.font;
+        f.setPointSizeF(f.pointSizeF() * 0.8);
+        p->setFont(f);
+        p->setPen(opt.palette.mid().color());
+        p->drawText(opt.rect.adjusted(0, 0, -6, 0),
+                    Qt::AlignRight | Qt::AlignVCenter, indicator);
+        p->restore();
+    }
+};
 
 PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *parent)
     : QDialog(parent), m_info(info)
@@ -637,51 +910,37 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
     setWindowTitle(tr("Edit Palette"));
     resize(460, 580);
 
-    // ── Name field ────────────────────────────────────────────────────────────
+    // ── Name field + mode selector ────────────────────────────────────────────
     m_nameEdit = new QLineEdit(this);
     m_nameEdit->setPlaceholderText(tr("Palette name…"));
     m_nameEdit->setText(info.name);
 
+    m_modeGroup = new ModeToggleGroup(this);
+
+    // nameRow: SlideOverlay inserts a back button at pos-0 of this widget's layout.
     auto *nameRow = new QWidget(this);
-    nameRow->setObjectName(QStringLiteral("overlayHeader")); // back button inserted here by SlideOverlay
+    nameRow->setObjectName(QStringLiteral("overlayHeader"));
     {
-        // Left half: bold "Theme" title, flush left
-        auto *leftHalf = new QWidget(nameRow);
-        {
-            auto *l = new QHBoxLayout(leftHalf);
-            l->setContentsMargins(0, 0, 0, 0);
-            l->setSpacing(8);
-            auto *themeLabel = new QLabel(tr("Theme"), leftHalf);
-            QFont lf = themeLabel->font();
-            lf.setBold(true);
-            themeLabel->setFont(lf);
-            l->addWidget(themeLabel);
-            //l->addStretch();
-        }
-
-        // Right half: "Name:" label + stretching edit — mirrors the "Hex:" row layout
-        auto *rightHalf = new QWidget(nameRow);
-        {
-            auto *l = new QHBoxLayout(rightHalf);
-            l->setContentsMargins(0, 0, 0, 0);
-            //l->setSpacing(8);
-            l->addWidget(new QLabel(tr("Name:"), rightHalf));
-            l->addWidget(m_nameEdit, 1);
-        }
-
-        // Stretch 3:4 compensates for the ~36 px (button + gap) that
-        // SlideOverlay inserts at pos-0, keeping rightHalf ≈ same width
-        // as hexRow's rightHalf so the two edit fields match in width.
         auto *lay = new QHBoxLayout(nameRow);
         lay->setContentsMargins(0, 0, 0, 0);
         lay->setSpacing(8);
-        lay->addWidget(leftHalf,  3);
-        lay->addWidget(rightHalf, 4);
+        // Layout after SlideOverlay inserts back button at pos-0:
+        // [<back(28)>] [Palette:] [spacer(35)] [nameEdit──stretch] [12gap] [ModeToggleGroup(114)]
+        // The 35px spacer after the label keeps nameEdit centred on the page while leaving the
+        // label left-aligned next to the back button (same net offset as having it before).
+        auto *palLbl = new QLabel(tr("Palette:"), nameRow);
+        QFont lf = palLbl->font(); lf.setBold(true); palLbl->setFont(lf);
+        lay->addWidget(palLbl);
+        lay->addSpacing(35);
+        lay->addWidget(m_nameEdit, 1);
+        lay->addSpacing(12);
+        lay->addWidget(m_modeGroup);
     }
 
     // ── Element list ──────────────────────────────────────────────────────────
     m_list = new QListWidget(this);
     m_list->setUniformItemSizes(true);
+    m_list->setItemDelegate(new PaletteItemDelegate(m_list));
     {
         const int vPad = qMax(4, m_list->fontMetrics().height() / 2);
         const bool dark = qApp->palette().window().color().lightness() < 128;
@@ -697,6 +956,7 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
         auto *item = new QListWidgetItem(tr(elemName(e)));
         item->setData(Qt::DecorationRole, makeColorSwatch(colorAt(e)));
         m_list->addItem(item);
+        updateItemIndicator(i);
     }
     m_list->setCurrentRow(0);
 
@@ -843,6 +1103,15 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
         updateColorUI(PaletteElem(row));
     });
 
+    connect(m_modeGroup, &ModeToggleGroup::modeChanged, this, [this](int) {
+        // Refresh every list item swatch to show effective colours for the new mode.
+        for (int i = 0; i < PE_COUNT; ++i)
+            m_list->item(i)->setData(Qt::DecorationRole, makeColorSwatch(colorAt(PaletteElem(i))));
+        const int row = m_list->currentRow();
+        if (row >= 0 && row < PE_COUNT)
+            updateColorUI(PaletteElem(row));
+    });
+
     connect(m_autoToggle, &SettingsToggle::toggled, this, [this](bool automatic) {
         const int row = m_list->currentRow();
         if (row < 0 || row >= PE_COUNT) return;
@@ -947,6 +1216,13 @@ const char *PaletteEditorDialog::elemName(PaletteElem e)
 
 QColor PaletteEditorDialog::colorAt(PaletteElem e) const
 {
+    const int editMode = m_modeGroup ? m_modeGroup->mode() : 0;
+    if (editMode != 0) {
+        const auto &ov = editMode == 2 ? m_info.darkOverrides : m_info.lightOverrides;
+        auto it = ov.constFind(int(e));
+        if (it != ov.constEnd()) return *it;
+        // No mode-specific override — fall through to base with system defaults.
+    }
     const QPalette &pal = qApp->palette();
     switch (e) {
         case PE_BG:                 return m_info.bg.isValid()        ? m_info.bg        : pal.color(QPalette::Base);
@@ -980,6 +1256,13 @@ QColor PaletteEditorDialog::colorAt(PaletteElem e) const
 
 QColor PaletteEditorDialog::rawColorAt(PaletteElem e) const
 {
+    const int editMode = m_modeGroup ? m_modeGroup->mode() : 0;
+    if (editMode != 0) {
+        const auto &ov = editMode == 2 ? m_info.darkOverrides : m_info.lightOverrides;
+        auto it = ov.constFind(int(e));
+        // Return override if set; QColor() (invalid) means "no override = use base".
+        return it != ov.constEnd() ? *it : QColor();
+    }
     switch (e) {
         case PE_BG:                 return m_info.bg;
         case PE_HEX_ODD:            return m_info.hexOdd;
@@ -1008,6 +1291,18 @@ QColor PaletteEditorDialog::rawColorAt(PaletteElem e) const
     return {};
 }
 
+void PaletteEditorDialog::updateItemIndicator(int row)
+{
+    if (row < 0 || row >= PE_COUNT) return;
+    const bool hasLight = m_info.lightOverrides.contains(row);
+    const bool hasDark  = m_info.darkOverrides.contains(row);
+    QString indicator;
+    if (hasLight && hasDark) indicator = QStringLiteral("L,D");
+    else if (hasLight)       indicator = QStringLiteral("L");
+    else if (hasDark)        indicator = QStringLiteral("D");
+    m_list->item(row)->setData(Qt::UserRole, indicator);
+}
+
 void PaletteEditorDialog::updateColorUI(PaletteElem e)
 {
     const bool automatic = !rawColorAt(e).isValid();
@@ -1032,6 +1327,13 @@ void PaletteEditorDialog::updateColorUI(PaletteElem e)
 
 void PaletteEditorDialog::setColorAt(PaletteElem e, const QColor &c)
 {
+    const int editMode = m_modeGroup ? m_modeGroup->mode() : 0;
+    if (editMode != 0) {
+        auto &ov = editMode == 2 ? m_info.darkOverrides : m_info.lightOverrides;
+        if (c.isValid()) ov[int(e)] = c;
+        else             ov.remove(int(e));
+        return;
+    }
     switch (e) {
         case PE_BG:                 m_info.bg                = c; break;
         case PE_HEX_ODD:            m_info.hexOdd            = c; break;
