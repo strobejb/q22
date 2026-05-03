@@ -682,7 +682,7 @@ MainWindow::MainWindow(QWidget *parent)
             bm.offset   = m_bookmarkDialog->offset();
             bm.length   = static_cast<size_w>(m_bookmarkDialog->length());
             bm.name     = m_bookmarkDialog->bookmarkName();
-            bm.fgColour     = m_bookmarkDialog->foregroundColour().rgb();
+            bm.fgColour     = 0; // palette bookmarks auto-contrast their text
             bm.colourIndex  = qMax(0, m_bookmarkDialog->selectedColourIndex());
             m_hv->addBookmark(bm);
             m_gotoDialog->refreshBookmarks();

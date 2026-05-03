@@ -15,6 +15,7 @@
 #include <QPaintEvent>
 #include <QWindow>
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -39,6 +40,30 @@ static void addAttr(ATTR **pp, QRgb fg, QRgb bg, size_t count)
         p[i].colBG = bg;
     }
     *pp += count;
+}
+
+// WCAG relative luminance. QColor::lightness() is HSL-based, which treats
+// bright saturated colours like yellow as mid-light and can pick white text.
+static double srgbChannelToLinear(int channel)
+{
+    const double c = channel / 255.0;
+    return c <= 0.04045 ? c / 12.92 : std::pow((c + 0.055) / 1.055, 2.4);
+}
+
+static double relativeLuminance(const QColor &colour)
+{
+    return 0.2126 * srgbChannelToLinear(colour.red())
+         + 0.7152 * srgbChannelToLinear(colour.green())
+         + 0.0722 * srgbChannelToLinear(colour.blue());
+}
+
+static double contrastRatio(const QColor &a, const QColor &b)
+{
+    const double l1 = relativeLuminance(a);
+    const double l2 = relativeLuminance(b);
+    const double lighter = std::max(l1, l2);
+    const double darker  = std::min(l1, l2);
+    return (lighter + 0.05) / (darker + 0.05);
 }
 
 // ── int_to_bin (binary format) ────────────────────────────────────────────────
@@ -135,13 +160,19 @@ QColor HexView::realiseColour(HvColorSlot slot) const
         const QColor bmBG  = realiseColour(HvColorSlot(HVC_BOOKMARK1 + (slot - HVC_BOOKMARK1_FG)));
         const QColor bgCol = realiseColour(HVC_BACKGROUND);
         const QColor ascii = realiseColour(HVC_ASCII);
-        const QColor &dark  = bgCol.lightness() <= ascii.lightness() ? bgCol : ascii;
-        const QColor &light = bgCol.lightness() <= ascii.lightness() ? ascii  : bgCol;
-        const int bmL = bmBG.lightness();
-        return qAbs(bmL - dark.lightness()) >= qAbs(bmL - light.lightness()) ? dark : light;
+        return contrastColourFor(bmBG, bgCol, ascii);
     }
     default:                     return pal.color(QPalette::WindowText);
     }
+}
+
+QColor HexView::contrastColourFor(const QColor &background,
+                                  const QColor &candidateA,
+                                  const QColor &candidateB) const
+{
+    return contrastRatio(background, candidateA) >= contrastRatio(background, candidateB)
+        ? candidateA
+        : candidateB;
 }
 
 // ── formatAddress ─────────────────────────────────────────────────────────────
@@ -363,18 +394,15 @@ bool HexView::getHighlightCol(size_w offset, int pane,
                 ? getHexColour(HvColorSlot(HVC_BOOKMARK1 + hl->colourIndex))
                 : hl->bgColour;
             QRgb hlFG;
-            if (hl->fgColour) {
-                hlFG = hl->fgColour;
-            } else if (hl->colourIndex >= 0) {
+            if (hl->colourIndex >= 0) {
                 hlFG = realiseColour(HvColorSlot(HVC_BOOKMARK1_FG + hl->colourIndex)).rgb();
+            } else if (hl->fgColour) {
+                hlFG = hl->fgColour;
             } else {
                 // Custom bgColour — not palette-indexed; apply the same pole logic inline.
                 const QColor bg  = realiseColour(HVC_BACKGROUND);
                 const QColor asc = realiseColour(HVC_ASCII);
-                const QColor &dark  = bg.lightness() <= asc.lightness() ? bg  : asc;
-                const QColor &light = bg.lightness() <= asc.lightness() ? asc : bg;
-                const int bmL = QColor(hlBG).lightness();
-                hlFG = (qAbs(bmL - dark.lightness()) >= qAbs(bmL - light.lightness()) ? dark : light).rgb();
+                hlFG = contrastColourFor(QColor(hlBG), bg, asc).rgb();
             }
             c = { hlFG, hlBG };
         } else if (inSel) {

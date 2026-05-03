@@ -283,6 +283,9 @@ private slots:
 private:
     // ── Rendering ────────────────────────────────────────────────────────────
     QColor realiseColour(HvColorSlot slot) const;
+    QColor contrastColourFor(const QColor &background,
+                             const QColor &candidateA,
+                             const QColor &candidateB) const;
     int    unitWidth() const;
     int    logToPhyXCoord(int x, int pane) const;
     void   updateResizeBarPos();
