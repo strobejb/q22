@@ -616,6 +616,7 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
 
     // ── Palette variant ───────────────────────────────────────────────────────
     const bool  dark = pal.color(QPalette::Window).lightness() < 128;
+    const PaletteInfo eff = resolvedPalette(m_info, dark);
 
     // ── Drop shadow ──────────────────────────────────────────────────────────
     p.setPen(Qt::NoPen);
@@ -630,8 +631,8 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
     // Border adapts to the swatch colour so it reads well on any palette.
     // Selection and focus are indicated by separate inset rings (below), so
     // the card border is always the same subtle 1 px line.
-    const QColor effectiveBg = m_info.bg.isValid() ? m_info.bg
-                                                    : pal.color(QPalette::Base);
+    const QColor effectiveBg = eff.bg.isValid() ? eff.bg
+                                                 : pal.color(QPalette::Base);
     const bool  checked    = isChecked();
     const QColor borderCol = effectiveBg.lightness() < 128 ? QColor(255, 255, 255, 30)
                                                             : QColor(0,   0,   0,   30);
@@ -643,8 +644,8 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
     constexpr int kPadX   = SW_PAD_X;
     constexpr int kPadTop = 10;
     // Address colour is designed to be legible on this bg; fall back to derived.
-    const QColor intendedTextCol = m_info.address.isValid()
-        ? m_info.address
+    const QColor intendedTextCol = eff.address.isValid()
+        ? eff.address
         : (effectiveBg.lightness() < 128 ? QColor(255, 255, 255, 200)
                                          : QColor(  0,   0,   0, 180));
     // If contrast between the intended colour and the card background is too
@@ -676,8 +677,8 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
     const QFontMetrics fm2(qfont);
 
     // ── Hex code sample (alternating hexOdd / hexEven colours) ───────────────
-    const QColor hexOdd  = m_info.hexOdd.isValid()  ? m_info.hexOdd  : pal.color(QPalette::Text);
-    const QColor hexEven = m_info.hexEven.isValid() ? m_info.hexEven : pal.color(QPalette::Text);
+    const QColor hexOdd  = eff.hexOdd.isValid()  ? eff.hexOdd  : pal.color(QPalette::Text);
+    const QColor hexEven = eff.hexEven.isValid() ? eff.hexEven : pal.color(QPalette::Text);
     const qreal hexBaseY = card.top() + kPadTop + fm2.height() + 16;
     static const quint8 kSample[2][8] = {
         { 0xA4, 0x3F, 0xB2, 0x91, 0xE7, 0x60, 0xC3, 0x2A },
@@ -702,13 +703,13 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
     constexpr int  kSwatchBotPad = 10;
     constexpr qreal kSwatchGap   =  5;
     constexpr int  kNSwatches    =  6;
-    const QColor swatchCols[kNSwatches] = {        
-        m_info.hexOdd.isValid()    ? m_info.hexOdd    : pal.color(QPalette::Text),
-        m_info.ascii.isValid()     ? m_info.ascii     : pal.color(QPalette::Text),
-        m_info.selection.isValid() ? m_info.selection : pal.color(QPalette::Highlight),
-        m_info.modified.isValid()  ? m_info.modified  : QColor(200, 50, 50),
-        m_info.matched.isValid()   ? m_info.matched   : QColor(255, 165, 0),
-        m_info.bookmarks[0].isValid() ? m_info.bookmarks[0] : pal.color(QPalette::Base),
+    const QColor swatchCols[kNSwatches] = {
+        eff.hexOdd.isValid()       ? eff.hexOdd       : pal.color(QPalette::Text),
+        eff.ascii.isValid()        ? eff.ascii        : pal.color(QPalette::Text),
+        eff.selection.isValid()    ? eff.selection    : pal.color(QPalette::Highlight),
+        eff.modified.isValid()     ? eff.modified     : QColor(200, 50, 50),
+        eff.matched.isValid()      ? eff.matched      : QColor(255, 165, 0),
+        eff.bookmarks[0].isValid() ? eff.bookmarks[0] : pal.color(QPalette::Base),
     };
     const qreal swatchY    = card.bottom() - kSwatchBotPad - kSwatchH;
     const qreal swatchAreaW = card.width() - 2 * kPadX;
@@ -887,15 +888,35 @@ public:
     {
         QStyledItemDelegate::paint(p, opt, idx);
         const QString indicator = idx.data(Qt::UserRole).toString();
-        if (indicator.isEmpty()) return;
-        p->save();
-        QFont f = opt.font;
-        f.setPointSizeF(f.pointSizeF() * 0.8);
-        p->setFont(f);
-        p->setPen(opt.palette.mid().color());
-        p->drawText(opt.rect.adjusted(0, 0, -6, 0),
-                    Qt::AlignRight | Qt::AlignVCenter, indicator);
-        p->restore();
+
+        constexpr int kSz  = 14;   // icon render size
+        constexpr int kPad =  6;   // right margin from item edge
+
+        // Both slots are always reserved so neither icon shifts when the other
+        // appears or disappears.  Light is left, Dark is right.
+        // The gap between them is one full icon width so they read as distinct.
+        const int darkX  = opt.rect.right() - kPad - kSz;
+        const int lightX = darkX - kSz - kSz;   // one icon-width gap between slots
+        const int y      = opt.rect.top() + (opt.rect.height() - kSz) / 2;
+
+        const bool hasLight = indicator.contains(QLatin1Char('L'));
+        const bool hasDark  = indicator.contains(QLatin1Char('D'));
+        if (!hasLight && !hasDark) return;
+
+        // text() at ~65% opacity: more contrast than mid() but softer than solid black/white.
+        // Switch to full highlightedText() when the row is selected.
+        QColor base = (opt.state & QStyle::State_Selected)
+                    ? opt.palette.highlightedText().color()
+                    : opt.palette.text().color();
+        base.setAlpha(opt.state & QStyle::State_Selected ? 255 : 165);
+        const QColor col = base;
+
+        if (hasLight)
+            recoloredIcon(QLatin1String("light-mode"), col, kSz)
+                .paint(p, QRect(lightX, y, kSz, kSz));
+        if (hasDark)
+            recoloredIcon(QLatin1String("dark-mode"), col, kSz)
+                .paint(p, QRect(darkX, y, kSz, kSz));
     }
 };
 
@@ -959,8 +980,8 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
     // ── Color picker ──────────────────────────────────────────────────────────
     m_picker = new ColorPickerWidget(this);
 
-    // ── Automatic toggle ──────────────────────────────────────────────────────
-    m_autoToggle = new SettingsToggle(tr("Automatic"), this);
+    // ── Override toggle ───────────────────────────────────────────────────────
+    m_autoToggle = new SettingsToggle(tr("Override"), this);
     m_autoToggle->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
 
     // ── Hex input ─────────────────────────────────────────────────────────────
@@ -1005,14 +1026,17 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
     connect(buttons, &QDialogButtonBox::accepted, this, [this]() {
         m_info.name = m_nameEdit->text().trimmed();
         if (QFile::exists(paletteFilePath(m_info.name))) {
-            QMessageBox msg(this);
-            msg.setWindowTitle(tr("Overwrite palette?"));
-            msg.setText(tr("A palette named \"%1\" already exists. Overwrite it?")
-                            .arg(m_info.name));
-            msg.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
-            for (QAbstractButton *btn : msg.buttons())
-                btn->setIcon(QIcon());
-            if (msg.exec() != QMessageBox::Yes) return;
+            QMessageBox msg(QMessageBox::Warning,
+                            tr("Overwrite palette?"),
+                            tr("A palette named \"%1\" already exists. Overwrite it?")
+                                .arg(m_info.name),
+                            QMessageBox::NoButton,
+                            this);
+            QPushButton *overwriteBtn = msg.addButton(tr("Overwrite"), QMessageBox::AcceptRole);
+            msg.addButton(tr("Cancel"), QMessageBox::RejectRole);
+            msg.setDefaultButton(overwriteBtn);
+            msg.exec();
+            if (msg.clickedButton() != overwriteBtn) return;
         }
         if (!savePalette(m_info)) return;  // stay open on write failure
         emit paletteSaved(m_info);
@@ -1023,7 +1047,7 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
     // ── Layout ────────────────────────────────────────────────────────────────
     auto *hexRow = new QWidget(this);
     {
-        // Left half: Automatic toggle
+        // Left half: Override toggle
         auto *leftHalf = new QWidget(hexRow);
         {
             auto *l = new QHBoxLayout(leftHalf);
@@ -1099,26 +1123,27 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
         updateColorUI(PaletteElem(row));
     });
 
-    connect(m_modeGroup, &ModeToggleGroup::modeChanged, this, [this](int) {
+    connect(m_modeGroup, &ModeToggleGroup::modeChanged, this, [this](int mode) {
+        emit previewModeRequested(mode);  // host posts deferred applyAdwaitaTheme
         // Refresh every list item swatch to show effective colours for the new mode.
         for (int i = 0; i < PE_COUNT; ++i)
             m_list->item(i)->setData(Qt::DecorationRole, makeColorSwatch(colorAt(PaletteElem(i))));
         const int row = m_list->currentRow();
         if (row >= 0 && row < PE_COUNT)
             updateColorUI(PaletteElem(row));
+        // Defer paletteChanged so it fires after applyAdwaitaTheme updates isDarkMode().
+        // Both are zero-delay timers; this one is posted second so it fires second.
+        QTimer::singleShot(0, this, [this]() { emit paletteChanged(m_info); });
     });
 
-    connect(m_autoToggle, &SettingsToggle::toggled, this, [this](bool automatic) {
+    connect(m_autoToggle, &SettingsToggle::toggled, this, [this](bool hasOverride) {
         const int row = m_list->currentRow();
         if (row < 0 || row >= PE_COUNT) return;
         const auto e = PaletteElem(row);
-        if (automatic) {
-            setColorAt(e, QColor());
-            // Leave hex edit and picker as-is — they just become disabled.
-        } else {
+        if (hasOverride) {
             // Restore from the hex edit — updateColorUI always populates it, so
-            // the previous manual colour survives while automatic is on.
-            // Fall back to the computed fallback only if the text isn't valid.
+            // the previous colour survives while override is off.
+            // Fall back to the computed effective colour only if the text isn't valid.
             const QColor prev = QColor(m_hexEdit->text());
             const QColor fallback = colorAt(e);
             const QColor seed = prev.isValid() ? prev : (fallback.isValid() ? fallback : QColor(128, 128, 128));
@@ -1127,10 +1152,13 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
             m_picker->setColor(seed);
             m_picker->blockSignals(false);
             m_hexEdit->setText(seed.name().toUpper());
+        } else {
+            setColorAt(e, QColor());
+            // Leave hex edit and picker as-is — they just become disabled.
         }
-        m_hexLabel->setEnabled(!automatic);
-        m_hexEdit->setEnabled(!automatic);
-        m_picker->setEnabled(!automatic);
+        m_hexLabel->setEnabled(hasOverride);
+        m_hexEdit->setEnabled(hasOverride);
+        m_picker->setEnabled(hasOverride);
         m_list->item(row)->setData(Qt::DecorationRole, makeColorSwatch(colorAt(e)));
         emit paletteChanged(m_info);
     });
@@ -1301,23 +1329,23 @@ void PaletteEditorDialog::updateItemIndicator(int row)
 
 void PaletteEditorDialog::updateColorUI(PaletteElem e)
 {
-    const bool automatic = !rawColorAt(e).isValid();
+    const bool hasOverride = rawColorAt(e).isValid();
 
     m_autoToggle->blockSignals(true);
-    m_autoToggle->setChecked(automatic);
+    m_autoToggle->setChecked(hasOverride);
     m_autoToggle->blockSignals(false);
 
-    m_hexLabel->setEnabled(!automatic);
-    m_hexEdit->setEnabled(!automatic);
-    m_picker->setEnabled(!automatic);
+    m_hexLabel->setEnabled(hasOverride);
+    m_hexEdit->setEnabled(hasOverride);
+    m_picker->setEnabled(hasOverride);
 
     const QColor display    = colorAt(e);
     const QColor pickerSeed = display.isValid() ? display : QColor(128, 128, 128);
     m_picker->blockSignals(true);
     m_picker->setColor(pickerSeed);
     m_picker->blockSignals(false);
-    // Always populate the hex edit, even when disabled — the text is invisible
-    // while automatic is on, but it means toggling off always has a value to read.
+    // Always populate the hex edit, even when disabled — the text survives
+    // while override is off so toggling on always has a value to restore.
     m_hexEdit->setText(pickerSeed.name().toUpper());
 }
 
@@ -1328,6 +1356,7 @@ void PaletteEditorDialog::setColorAt(PaletteElem e, const QColor &c)
         auto &ov = editMode == 2 ? m_info.darkOverrides : m_info.lightOverrides;
         if (c.isValid()) ov[int(e)] = c;
         else             ov.remove(int(e));
+        updateItemIndicator(int(e));
         return;
     }
     switch (e) {
@@ -1369,7 +1398,7 @@ QPixmap PaletteEditorDialog::makeColorSwatch(const QColor &c)
         p.setPen(Qt::NoPen);
         p.drawRoundedRect(QRectF(1, 1, 14, 14), 3, 3);
     } else {
-        // Automatic — neutral placeholder
+        // No override — neutral placeholder
         p.setBrush(Qt::NoBrush);
         p.setPen(QPen(QColor(128, 128, 128, 160), 1));
         p.drawRoundedRect(QRectF(1.5, 1.5, 13, 13), 3, 3);

@@ -464,7 +464,11 @@ MainWindow::MainWindow(QWidget *parent)
     auto themeCb = [this](ColorScheme s) {
         AppSettings::setPrefColorScheme(static_cast<int>(s));
         applyAdwaitaTheme(s);
-        m_titleBar->refreshStylesheet();
+        if (!m_currentPalette.name.isEmpty()) {
+            applyPalette(m_hv, m_currentPalette);
+            applyUiPalette(m_currentPalette);  // internally re-applies theme with UI overrides
+        }
+        m_titleBar->refreshStylesheet();  // after palette so UI overrides are already active
 #ifdef Q_OS_WIN
         if (m_useCustomTitleBar)
             updateWinChromeColors();
@@ -844,6 +848,7 @@ MainWindow::MainWindow(QWidget *parent)
             this, [this](bool) { applyAdwaitaTheme(static_cast<ColorScheme>(AppSettings::prefColorScheme())); });
     connect(m_prefsDialog, &PreferencesDialog::paletteSelected,
             this, [this](const PaletteInfo &info) {
+        m_currentPalette = info;
         applyPalette(m_hv, info);
         applyUiPalette(info);
         m_titleBar->refreshStylesheet();
@@ -871,6 +876,7 @@ MainWindow::MainWindow(QWidget *parent)
         QList<PaletteInfo> palettes = loadAllPalettes();
         for (const PaletteInfo &info : palettes) {
             if (info.name == savedPalette) {
+                m_currentPalette = info;
                 applyPalette(m_hv, info);
                 applyUiPalette(info);
                 m_titleBar->refreshStylesheet();

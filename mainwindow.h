@@ -4,6 +4,7 @@
 #include <QByteArray>
 #include <QCloseEvent>
 #include <QMainWindow>
+#include "palettes.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -71,6 +72,7 @@ private:
     uint            m_lastFindFlags  = 0;
     bool            m_canPaste        = false; // text or hexview data; updated from dataChanged
     bool            m_canPasteSpecial = false; // any clipboard format; updated from dataChanged
+    PaletteInfo     m_currentPalette;           // last applied palette; re-used on scheme change
 };
 
 #endif // MAINWINDOW_H

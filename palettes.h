@@ -171,6 +171,9 @@ public:
 signals:
     void paletteChanged(const PaletteInfo &info);
     void paletteSaved(const PaletteInfo &info);
+    // Emitted when the mode toggle changes so the host can temporarily switch
+    // the app's colour scheme for a live preview (0=Both→restore, 1=Light, 2=Dark).
+    void previewModeRequested(int mode);
 
 protected:
     void showEvent(QShowEvent *e) override;

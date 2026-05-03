@@ -238,16 +238,26 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
             connect(sw, &PaletteSwatch::doubleClicked, this, [this, sharedInfo]() {
                 if (m_overlay->isActive()) return;
                 const PaletteInfo before = m_currentPalette;
+                const auto savedScheme = static_cast<ColorScheme>(AppSettings::prefColorScheme());
                 auto *dlg = new PaletteEditorDialog(*sharedInfo, this);
                 connect(dlg, &PaletteEditorDialog::paletteChanged,
                         this, &PreferencesDialog::paletteSelected);
                 connect(dlg, &PaletteEditorDialog::paletteSaved,
                         this, &PreferencesDialog::addCustomSwatch);
-                m_overlay->slideIn(dlg, [this, dlg, sharedInfo, before](int result) {
-                    if (result == QDialog::Accepted)
-                        *sharedInfo = dlg->currentInfo();
-                    else
-                        emit paletteSelected(before);
+                connect(dlg, &PaletteEditorDialog::previewModeRequested,
+                        this, [this, savedScheme](int mode) {
+                    const ColorScheme cs = mode == 1 ? ColorScheme::Light
+                                        : mode == 2 ? ColorScheme::Dark : savedScheme;
+                    QTimer::singleShot(0, this, [cs]() { applyAdwaitaTheme(cs); });
+                });
+                m_overlay->slideIn(dlg, [this, dlg, sharedInfo, before, savedScheme](int result) {
+                    const bool accepted = (result == QDialog::Accepted);
+                    if (accepted) *sharedInfo = dlg->currentInfo();
+                    const PaletteInfo toApply = accepted ? dlg->currentInfo() : before;
+                    QTimer::singleShot(0, this, [this, savedScheme, toApply]() {
+                        applyAdwaitaTheme(savedScheme);
+                        emit paletteSelected(toApply);
+                    });
                 });
             });
         }
@@ -256,6 +266,7 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
         connect(m_addBtn, &QAbstractButton::clicked, this, [this]() {
             if (m_overlay->isActive()) return;
             const PaletteInfo before = m_currentPalette;
+            const auto savedScheme = static_cast<ColorScheme>(AppSettings::prefColorScheme());
             PaletteInfo newInfo = m_currentPalette;
             newInfo.name.clear();
             auto *dlg = new PaletteEditorDialog(newInfo, this);
@@ -263,9 +274,18 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
                     this, &PreferencesDialog::paletteSelected);
             connect(dlg, &PaletteEditorDialog::paletteSaved,
                     this, &PreferencesDialog::addCustomSwatch);
-            m_overlay->slideIn(dlg, [this, before](int result) {
-                if (result != QDialog::Accepted)
-                    emit paletteSelected(before);
+            connect(dlg, &PaletteEditorDialog::previewModeRequested,
+                    this, [this, savedScheme](int mode) {
+                const ColorScheme cs = mode == 1 ? ColorScheme::Light
+                                    : mode == 2 ? ColorScheme::Dark : savedScheme;
+                QTimer::singleShot(0, this, [cs]() { applyAdwaitaTheme(cs); });
+            });
+            m_overlay->slideIn(dlg, [this, dlg, before, savedScheme](int result) {
+                const PaletteInfo toApply = (result == QDialog::Accepted) ? dlg->currentInfo() : before;
+                QTimer::singleShot(0, this, [this, savedScheme, toApply]() {
+                    applyAdwaitaTheme(savedScheme);
+                    emit paletteSelected(toApply);
+                });
             });
         });
         m_swatchLayout->addWidget(m_addBtn, m_swatchCount / kSwatchCols,
@@ -404,9 +424,16 @@ bool PreferencesDialog::eventFilter(QObject *obj, QEvent *e)
     // ── Modal watch (installed on qApp — runs for all QObjects) ──────────────
     if (e->type() == QEvent::Show) {
         auto *w = qobject_cast<QWidget *>(obj);
+        // Don't hide for modals that are transient to our own embedded content
+        // (e.g. the overwrite-confirmation QMessageBox from PaletteEditorDialog).
+        // Their native parent is PreferencesDialog (traversed up through the
+        // SlideOverlay child chain), so hiding here severs the Wayland transient
+        // relationship and makes the dialog non-interactive — causing exec() to hang.
+        auto *wpar = w ? w->parentWidget() : nullptr;
+        const bool isOwnTransient = wpar && (wpar == this || isAncestorOf(wpar));
         if (w && w->isWindow() && w != this
                 && w->windowModality() != Qt::NonModal
-                && isVisible() && !m_hiddenByModal) {
+                && isVisible() && !m_hiddenByModal && !isOwnTransient) {
             m_hiddenByModal = true;
             m_savedPos = pos();
             // Defer so Qt finishes enterModal() before we hide — if we call
@@ -555,16 +582,26 @@ void PreferencesDialog::rebuildCustomSwatches()
         connect(sw, &PaletteSwatch::doubleClicked, this, [this, sharedInfo]() {
             if (m_overlay->isActive()) return;
             const PaletteInfo before = m_currentPalette;
+            const auto savedScheme = static_cast<ColorScheme>(AppSettings::prefColorScheme());
             auto *dlg = new PaletteEditorDialog(*sharedInfo, this);
             connect(dlg, &PaletteEditorDialog::paletteChanged,
                     this, &PreferencesDialog::paletteSelected);
             connect(dlg, &PaletteEditorDialog::paletteSaved,
                     this, &PreferencesDialog::addCustomSwatch);
-            m_overlay->slideIn(dlg, [this, dlg, sharedInfo, before](int result) {
-                if (result == QDialog::Accepted)
-                    *sharedInfo = dlg->currentInfo();
-                else
-                    emit paletteSelected(before);
+            connect(dlg, &PaletteEditorDialog::previewModeRequested,
+                    this, [this, savedScheme](int mode) {
+                const ColorScheme cs = mode == 1 ? ColorScheme::Light
+                                    : mode == 2 ? ColorScheme::Dark : savedScheme;
+                QTimer::singleShot(0, this, [cs]() { applyAdwaitaTheme(cs); });
+            });
+            m_overlay->slideIn(dlg, [this, dlg, sharedInfo, before, savedScheme](int result) {
+                const bool accepted = (result == QDialog::Accepted);
+                if (accepted) *sharedInfo = dlg->currentInfo();
+                const PaletteInfo toApply = accepted ? dlg->currentInfo() : before;
+                QTimer::singleShot(0, this, [this, savedScheme, toApply]() {
+                    applyAdwaitaTheme(savedScheme);
+                    emit paletteSelected(toApply);
+                });
             });
         });
     }
