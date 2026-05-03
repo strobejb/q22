@@ -38,6 +38,7 @@ enum PaletteElem {
     PE_SELECTION_TEXT_INACTIVE,
     PE_MODIFIED,
     PE_MATCHED,
+    PE_MATCH_SELECTED,
     PE_RESIZE_BAR,
     PE_BOOKMARK_1,
     PE_BOOKMARK_2,
@@ -72,6 +73,7 @@ struct PaletteInfo {
     QColor  selectionTextInactive; // Selection text when unfocused
     QColor  modified;          // Modified-byte indicator
     QColor  matched;           // Search-match highlight (background)
+    QColor  matchSelected;     // Highlight when also selected; invalid = auto-mix selection+match
     QColor  resizeBar  ;         // Resize bar
     QColor  bookmarks[7];      // Bookmark preset colours
 

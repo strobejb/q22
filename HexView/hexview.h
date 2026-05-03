@@ -45,6 +45,13 @@ enum HvColorSlot {
     HVC_BOOKMARK6,
     HVC_BOOKMARK7,
     HVC_BOOKSEL,
+    HVC_BOOKMARK1_FG,       // bookmark FG for colour 1; invalid = auto-contrast from HVC_BOOKMARK1
+    HVC_BOOKMARK2_FG,       // must stay in the same order as HVC_BOOKMARK1..7
+    HVC_BOOKMARK3_FG,
+    HVC_BOOKMARK4_FG,
+    HVC_BOOKMARK5_FG,
+    HVC_BOOKMARK6_FG,
+    HVC_BOOKMARK7_FG,
 
     HVC_MAX_COLOURS
 };

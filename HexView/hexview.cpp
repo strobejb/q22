@@ -30,7 +30,7 @@ HexView::HexView(QWidget *parent)
     m_ColourList[HVC_MODIFYSEL]   = QColor(255, 128, 128);
     m_ColourList[HVC_BOOKSEL]     = QColor(  0,   0,   0);
     m_ColourList[HVC_MATCHED]     = QColor(255, 165,   0);
-    m_ColourList[HVC_MATCHEDSEL]  = QColor(200, 130,   0);
+    // HVC_MATCHEDSEL left invalid — realiseColour auto-mixes selection+match at paint time.
 
     // Font
     //setFont(QFont("Courier New", 12));

@@ -49,6 +49,7 @@ static const char *elemIniKey(PaletteElem e)
         case PE_SELECTION_TEXT_INACTIVE: return "SelectionTextInactive";
         case PE_MODIFIED:                return "Modified";
         case PE_MATCHED:                 return "Matched";
+        case PE_MATCH_SELECTED:          return "MatchSelected";
         case PE_RESIZE_BAR:              return "ResizeBar";
         case PE_BOOKMARK_1:              return "Bookmark1";
         case PE_BOOKMARK_2:              return "Bookmark2";
@@ -87,6 +88,7 @@ static PaletteInfo resolvedPalette(const PaletteInfo &base, bool dark)
             case PE_SELECTION_TEXT_INACTIVE: r.selectionTextInactive = it.value(); break;
             case PE_MODIFIED:                r.modified              = it.value(); break;
             case PE_MATCHED:                 r.matched               = it.value(); break;
+            case PE_MATCH_SELECTED:          r.matchSelected         = it.value(); break;
             case PE_RESIZE_BAR:              r.resizeBar             = it.value(); break;
             case PE_BOOKMARK_1:              r.bookmarks[0]          = it.value(); break;
             case PE_BOOKMARK_2:              r.bookmarks[1]          = it.value(); break;
@@ -131,7 +133,7 @@ void applyPalette(HexView *hv, const PaletteInfo &info)
     hv->setHexColour(HVC_SELTEXT_INACTIVE,   eff.selectionTextInactive);
 
     hv->setHexColour(HVC_MATCHED,            eff.matched);
-    hv->setHexColour(HVC_MATCHEDSEL,         eff.matched.lighter(140));
+    hv->setHexColour(HVC_MATCHEDSEL,         eff.matchSelected); // invalid = auto-mix in realiseColour
 
     static const QColor kBookmarkDefaults[7] = {
         QColor(255, 255,   0), QColor(255, 165,   0), QColor(255,  80,  80),
@@ -170,6 +172,7 @@ static PaletteInfo parsePaletteFile(const QString &path)
     info.selectionTextInactive = QColor(s.value("SelectionTextInactive").toString());
     info.modified          = QColor(s.value("Modified").toString());
     info.matched           = QColor(s.value("Matched").toString());
+    info.matchSelected     = QColor(s.value("MatchSelected").toString());
     info.resizeBar         = QColor(s.value("ResizeBar").toString());
     // Backward compat: 'Foreground' was a catch-all for text colours in older files.
     // Propagate it only to the two slots that used it as an orElse fallback.
@@ -279,6 +282,7 @@ bool savePalette(const PaletteInfo &info)
     s.setValue("Ascii",             cs(info.ascii));
     s.setValue("Modified",          cs(info.modified));
     s.setValue("Matched",           cs(info.matched));
+    s.setValue("MatchSelected",     cs(info.matchSelected));
     s.setValue("Selection",         cs(info.selection));
     s.setValue("SelectionText",     cs(info.selectionText));
     s.setValue("SelectionInactive", cs(info.selectionInactive));
@@ -1216,6 +1220,7 @@ const char *PaletteEditorDialog::elemName(PaletteElem e)
         case PE_MODIFIED:           return "Modified";
         case PE_SELECTION:          return "Selection";
         case PE_MATCHED:            return "Search Match";
+        case PE_MATCH_SELECTED:     return "Match (Selected)";
         case PE_SELECTION_TEXT:     return "Selection Text";
         case PE_SELECTION_INACTIVE: return "Selection (Inactive)";
         case PE_ADDRESS:            return "Address";
@@ -1257,6 +1262,14 @@ QColor PaletteEditorDialog::colorAt(PaletteElem e) const
         case PE_MODIFIED:           return m_info.modified.isValid()  ? m_info.modified  : QColor(200, 50, 50);
         case PE_SELECTION:          return m_info.selection.isValid() ? m_info.selection : pal.color(QPalette::Highlight);
         case PE_MATCHED:            return m_info.matched.isValid()   ? m_info.matched   : QColor(255, 165, 0);
+        case PE_MATCH_SELECTED: {
+            if (m_info.matchSelected.isValid()) return m_info.matchSelected;
+            const QColor sel     = colorAt(PE_SELECTION);
+            const QColor matched = colorAt(PE_MATCHED);
+            return QColor((sel.red()   + matched.red())   / 2,
+                          (sel.green() + matched.green()) / 2,
+                          (sel.blue()  + matched.blue())  / 2);
+        }
         case PE_SELECTION_TEXT:     return m_info.selectionText.isValid()     ? m_info.selectionText     : pal.color(QPalette::HighlightedText);
         case PE_SELECTION_INACTIVE: return m_info.selectionInactive.isValid() ? m_info.selectionInactive : (m_info.selection.isValid() ? m_info.selection.darker(130) : pal.color(QPalette::Highlight).darker(130));
         case PE_ADDRESS:            return m_info.address.isValid()   ? m_info.address   : pal.color(QPalette::Text);
@@ -1295,6 +1308,7 @@ QColor PaletteEditorDialog::rawColorAt(PaletteElem e) const
         case PE_MODIFIED:           return m_info.modified;
         case PE_SELECTION:          return m_info.selection;
         case PE_MATCHED:            return m_info.matched;
+        case PE_MATCH_SELECTED:     return m_info.matchSelected;
         case PE_SELECTION_TEXT:     return m_info.selectionText;
         case PE_SELECTION_INACTIVE: return m_info.selectionInactive;
         case PE_ADDRESS:            return m_info.address;
@@ -1367,6 +1381,7 @@ void PaletteEditorDialog::setColorAt(PaletteElem e, const QColor &c)
         case PE_MODIFIED:           m_info.modified          = c; break;
         case PE_SELECTION:          m_info.selection         = c; break;
         case PE_MATCHED:            m_info.matched           = c; break;
+        case PE_MATCH_SELECTED:     m_info.matchSelected     = c; break;
         case PE_SELECTION_TEXT:     m_info.selectionText     = c; break;
         case PE_SELECTION_INACTIVE: m_info.selectionInactive = c; break;
         case PE_ADDRESS:            m_info.address           = c; break;

@@ -106,8 +106,19 @@ void HexView::drawNoteStrip(QPainter &painter, int /*asciiRight*/, int /*ny*/,
     const QColor bgCol = bm.colourIndex >= 0
         ? QColor(getHexColour(HvColorSlot(HVC_BOOKMARK1 + bm.colourIndex)))
         : (bm.bgColour ? QColor(bm.bgColour) : QColor(getHexColour(HVC_BOOKMARK1)));
-    const QColor fgCol = bm.fgColour ? QColor(bm.fgColour)
-                                      : QColor(getHexColour(HVC_BOOKSEL));
+    QColor fgCol;
+    if (bm.fgColour) {
+        fgCol = QColor(bm.fgColour);
+    } else if (bm.colourIndex >= 0) {
+        fgCol = realiseColour(HvColorSlot(HVC_BOOKMARK1_FG + bm.colourIndex));
+    } else {
+        const QColor bg  = realiseColour(HVC_BACKGROUND);
+        const QColor asc = realiseColour(HVC_ASCII);
+        const QColor &dark  = bg.lightness() <= asc.lightness() ? bg  : asc;
+        const QColor &light = bg.lightness() <= asc.lightness() ? asc : bg;
+        const int bmL = bgCol.lightness();
+        fgCol = qAbs(bmL - dark.lightness()) >= qAbs(bmL - light.lightness()) ? dark : light;
+    }
 
     painter.save();
     painter.setRenderHint(QPainter::Antialiasing, true);
@@ -205,8 +216,19 @@ void HexView::openNoteEditor(int bmIdx)
     const QColor bg = bm.colourIndex >= 0
         ? QColor(getHexColour(HvColorSlot(HVC_BOOKMARK1 + bm.colourIndex)))
         : (bm.bgColour ? QColor(bm.bgColour) : QColor(getHexColour(HVC_BOOKMARK1)));
-    const QColor fg = bm.fgColour ? QColor(bm.fgColour)
-                                   : QColor(getHexColour(HVC_BOOKSEL));
+    QColor fg;
+    if (bm.fgColour) {
+        fg = QColor(bm.fgColour);
+    } else if (bm.colourIndex >= 0) {
+        fg = realiseColour(HvColorSlot(HVC_BOOKMARK1_FG + bm.colourIndex));
+    } else {
+        const QColor hvBG  = realiseColour(HVC_BACKGROUND);
+        const QColor hvAsc = realiseColour(HVC_ASCII);
+        const QColor &dark  = hvBG.lightness() <= hvAsc.lightness() ? hvBG  : hvAsc;
+        const QColor &light = hvBG.lightness() <= hvAsc.lightness() ? hvAsc : hvBG;
+        const int bmL = bg.lightness();
+        fg = qAbs(bmL - dark.lightness()) >= qAbs(bmL - light.lightness()) ? dark : light;
+    }
 
     m_noteEditor->setStyleSheet(QString(
         "QPlainTextEdit {"

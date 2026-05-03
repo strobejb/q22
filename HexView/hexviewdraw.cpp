@@ -112,6 +112,34 @@ QColor HexView::realiseColour(HvColorSlot slot) const
     case HVC_HEXEVEN:
     case HVC_ASCII:              return pal.color(QPalette::WindowText);
     case HVC_RESIZEBAR:          return pal.color(QPalette::Mid);
+    case HVC_MATCHEDSEL: {
+        // No dedicated palette entry — mix the selection background with the
+        // match colour 50/50 so the overlap is visually distinct from both.
+        const QColor sel     = realiseColour(HVC_SELECTION);
+        const QColor matched = realiseColour(HVC_MATCHED);
+        return QColor((sel.red()   + matched.red())   / 2,
+                      (sel.green() + matched.green()) / 2,
+                      (sel.blue()  + matched.blue())  / 2);
+    }
+    case HVC_BOOKMARK1_FG:
+    case HVC_BOOKMARK2_FG:
+    case HVC_BOOKMARK3_FG:
+    case HVC_BOOKMARK4_FG:
+    case HVC_BOOKMARK5_FG:
+    case HVC_BOOKMARK6_FG:
+    case HVC_BOOKMARK7_FG: {
+        // Derive a contrasting foreground from the paired bookmark background.
+        // Use HVC_BACKGROUND and HVC_ASCII as the dark/light poles so the result
+        // stays native to the current colour scheme rather than falling back to
+        // literal black/white.
+        const QColor bmBG  = realiseColour(HvColorSlot(HVC_BOOKMARK1 + (slot - HVC_BOOKMARK1_FG)));
+        const QColor bgCol = realiseColour(HVC_BACKGROUND);
+        const QColor ascii = realiseColour(HVC_ASCII);
+        const QColor &dark  = bgCol.lightness() <= ascii.lightness() ? bgCol : ascii;
+        const QColor &light = bgCol.lightness() <= ascii.lightness() ? ascii  : bgCol;
+        const int bmL = bmBG.lightness();
+        return qAbs(bmL - dark.lightness()) >= qAbs(bmL - light.lightness()) ? dark : light;
+    }
     default:                     return pal.color(QPalette::WindowText);
     }
 }
@@ -334,7 +362,21 @@ bool HexView::getHighlightCol(size_w offset, int pane,
             const QRgb hlBG = hl->colourIndex >= 0
                 ? getHexColour(HvColorSlot(HVC_BOOKMARK1 + hl->colourIndex))
                 : hl->bgColour;
-            c = { hl->fgColour ? hl->fgColour : defFG, hlBG };
+            QRgb hlFG;
+            if (hl->fgColour) {
+                hlFG = hl->fgColour;
+            } else if (hl->colourIndex >= 0) {
+                hlFG = realiseColour(HvColorSlot(HVC_BOOKMARK1_FG + hl->colourIndex)).rgb();
+            } else {
+                // Custom bgColour — not palette-indexed; apply the same pole logic inline.
+                const QColor bg  = realiseColour(HVC_BACKGROUND);
+                const QColor asc = realiseColour(HVC_ASCII);
+                const QColor &dark  = bg.lightness() <= asc.lightness() ? bg  : asc;
+                const QColor &light = bg.lightness() <= asc.lightness() ? asc : bg;
+                const int bmL = QColor(hlBG).lightness();
+                hlFG = (qAbs(bmL - dark.lightness()) >= qAbs(bmL - light.lightness()) ? dark : light).rgb();
+            }
+            c = { hlFG, hlBG };
         } else if (inSel) {
             c = {selFG, selBG};
         } else {
