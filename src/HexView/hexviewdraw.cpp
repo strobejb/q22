@@ -140,11 +140,11 @@ QColor HexView::realiseColour(HvColorSlot slot) const
     case HVC_MATCHEDSEL: {
         // No dedicated palette entry — mix the selection background with the
         // match colour 50/50 so the overlap is visually distinct from both.
-        const QColor sel     = realiseColour(HVC_SELECTION);
-        const QColor matched = realiseColour(HVC_MATCHED);
-        return QColor((sel.red()   + matched.red())   / 2,
-                      (sel.green() + matched.green()) / 2,
-                      (sel.blue()  + matched.blue())  / 2);
+        const QColor sel = realiseColour(HVC_SELECTION);
+        const QColor asc = realiseColour(HVC_ASCII);//MATCHED);
+        return QColor((sel.red()   + asc.red())   / 2,
+                      (sel.green() + asc.green()) / 2,
+                      (sel.blue()  + asc.blue())  / 2).lighter(130);
     }
     case HVC_BOOKMARK1_FG:
     case HVC_BOOKMARK2_FG:

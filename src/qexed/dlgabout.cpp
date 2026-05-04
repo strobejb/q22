@@ -136,19 +136,21 @@ void ShowAboutDlg(QWidget *parent)
             QFont f = h->font();
             f.setBold(true);
             h->setFont(f);
+            h->setContentsMargins(4, 0, 0, 0);
         }
 
         auto *lay = new QVBoxLayout(creditsDlg);
-        lay->setContentsMargins(8, 8, 8, 8);
+        lay->setContentsMargins(16, 16, 16, 16);
         lay->setSpacing(0);
+        lay->addSpacing(4);
         lay->addWidget(headerRow);
-        lay->addSpacing(16);
+        lay->addSpacing(20);
         lay->addWidget(codeHeader);
-        lay->addSpacing(4);
+        lay->addSpacing(6);
         lay->addWidget(codeCard);
-        lay->addSpacing(16);
+        lay->addSpacing(20);
         lay->addWidget(iconsHeader);
-        lay->addSpacing(4);
+        lay->addSpacing(6);
         lay->addWidget(iconsCard);
         lay->addStretch();
 

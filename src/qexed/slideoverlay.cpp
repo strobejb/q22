@@ -4,14 +4,86 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QHBoxLayout>
+#include <QLabel>
 #include <QEvent>
 #include <QKeyEvent>
 #include <QAbstractButton>
+#include <QPainter>
 #include <QPropertyAnimation>
 #include <QEasingCurve>
 #include <QResizeEvent>
 #include <QScreen>
 #include <QToolButton>
+
+class OverlayBackButton : public QAbstractButton
+{
+public:
+    explicit OverlayBackButton(const QString &label, QWidget *parent = nullptr)
+        : QAbstractButton(parent)
+    {
+        setText(label);
+        setCursor(Qt::PointingHandCursor);
+        setFocusPolicy(Qt::StrongFocus);
+        setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+
+        QFont f = font();
+        f.setBold(true);
+        setFont(f);
+
+        const QColor fg = palette().color(QPalette::WindowText);
+        m_icon = recoloredIcon("go-previous-symbolic", fg, kIconSz);
+        setToolTip(label.isEmpty() ? tr("Back") : label);
+    }
+
+    QSize sizeHint() const override
+    {
+        const QFontMetrics fm(font());
+        const int textW = text().isEmpty() ? 0 : fm.horizontalAdvance(text());
+        const int gap = textW > 0 ? kGap : 0;
+        return QSize(2 * kPadX + kIconSz + gap + textW,
+                     qMax(kMinH, qMax(kIconSz, fm.height()) + 2 * kPadY));
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+
+        const QPalette &pal = palette();
+        if (isDown() || underMouse() || hasFocus()) {
+            p.setPen(Qt::NoPen);
+            p.setBrush(isDown() ? pal.color(QPalette::Mid)
+                                 : pal.color(QPalette::Button));
+            p.drawRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5), 7, 7);
+        }
+
+        int x = kPadX;
+        m_icon.paint(&p, QRect(x, (height() - kIconSz) / 2, kIconSz, kIconSz));
+        x += kIconSz + (text().isEmpty() ? 0 : kGap);
+
+        if (!text().isEmpty()) {
+            p.setFont(font());
+            p.setPen(pal.color(QPalette::WindowText));
+            const QFontMetrics fm(font());
+            const int ty = (height() + fm.ascent() - fm.descent()) / 2;
+            p.drawText(QPoint(x, ty), text());
+        }
+    }
+
+    void enterEvent(QEnterEvent *e) override { update(); QAbstractButton::enterEvent(e); }
+    void leaveEvent(QEvent *e) override { update(); QAbstractButton::leaveEvent(e); }
+    void focusInEvent(QFocusEvent *e) override { update(); QAbstractButton::focusInEvent(e); }
+    void focusOutEvent(QFocusEvent *e) override { update(); QAbstractButton::focusOutEvent(e); }
+
+private:
+    static constexpr int kIconSz = 16;
+    static constexpr int kGap = 5;
+    static constexpr int kPadX = 6+2;
+    static constexpr int kPadY = 8;//3+4;
+    static constexpr int kMinH = 28;
+    QIcon m_icon;
+};
 
 // ── SlideOverlay ──────────────────────────────────────────────────────────────
 
@@ -96,8 +168,9 @@ void SlideOverlay::slideIn(QDialog *dlg, std::function<void(int)> onFinished,
 
     // ── Back button: inline inside dialog header row, or floating strip ──────
     // If the dialog marks a QWidget with objectName "overlayHeader" and that
-    // widget has a QHBoxLayout, we insert the back button as its first item
-    // and position the dialog flush to the top of the overlay (no strip).
+    // widget has a QHBoxLayout, we insert the back button as its first item.
+    // If the header starts with a QLabel, the button absorbs that text so the
+    // chevron and label share one hover/focus rectangle.
     // Otherwise the floating m_backBtn strip is used.
     m_inlineMode = false;
     const QColor fg   = palette().windowText().color();
@@ -111,15 +184,25 @@ void SlideOverlay::slideIn(QDialog *dlg, std::function<void(int)> onFinished,
 
     if (auto *headerWidget = m_content->findChild<QWidget *>(QLatin1String("overlayHeader"))) {
         if (auto *hlay = qobject_cast<QHBoxLayout *>(headerWidget->layout())) {
-            auto *inlineBtn = new QToolButton(headerWidget);
-            inlineBtn->setIcon(recoloredIcon("go-previous-symbolic", fg, 16));
-            inlineBtn->setProperty("iconThemeName", "go-previous-symbolic");
-            inlineBtn->setIconSize(QSize(16, 16));
-            inlineBtn->setAutoRaise(true);
-            inlineBtn->setFixedSize(28, 28);
-            inlineBtn->setToolTip(tr("Back"));
-            inlineBtn->setStyleSheet(btnSS);
-            connect(inlineBtn, &QToolButton::clicked, this, [this]() {
+            QString labelText;
+            if (hlay->count() > 0) {
+                if (auto *first = hlay->itemAt(0)->widget()) {
+                    if (auto *label = qobject_cast<QLabel *>(first)) {
+                        labelText = label->text();
+                        if (auto *item = hlay->takeAt(0))
+                            delete item;
+                        label->hide();
+                        label->deleteLater();
+                    }
+                }
+            }
+
+            auto *inlineBtn = new OverlayBackButton(labelText, headerWidget);
+            if (labelText.isEmpty()) {
+                inlineBtn->setFixedSize(28, 28);
+                inlineBtn->setStyleSheet(btnSS);
+            }
+            connect(inlineBtn, &QAbstractButton::clicked, this, [this]() {
                 if (m_content) m_content->reject();
             });
             hlay->insertWidget(0, inlineBtn);

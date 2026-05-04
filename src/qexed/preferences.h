@@ -7,10 +7,13 @@
 
 #include <QAbstractButton>
 
+#include <memory>
+
 class QButtonGroup;
 class QFileSystemWatcher;
 class QGridLayout;
 class QWidget;
+class ViewMoreButton;
 
 // Font picker dialog: full list of monospace families/styles + live preview.
 class FontPickerDialog : public QDialog
@@ -52,6 +55,11 @@ protected:
 private:
     void addCustomSwatch(const PaletteInfo &);
     void rebuildCustomSwatches();
+    void showPaletteListOverlay();
+    void openAddPaletteEditor();
+    void openEditPaletteEditor(const std::shared_ptr<PaletteInfo> &sharedInfo);
+    PaletteSwatch *createPaletteSwatch(const PaletteInfo &info, QWidget *parent);
+    void populateMainSwatches();
     // Move the keyboard cursor ring to idx; clears the ring on the old swatch.
     void syncCursorToSwatch(int idx);
 
@@ -61,7 +69,9 @@ private:
     QGridLayout    *m_swatchLayout = nullptr;
     QButtonGroup   *m_swatchGroup  = nullptr;
     QAbstractButton    *m_addBtn   = nullptr;
+    ViewMoreButton     *m_viewMore = nullptr;
     QFileSystemWatcher *m_watcher  = nullptr;
+    QList<PaletteInfo> m_palettes;
     int             m_swatchCount   = 0;
     int             m_swatchCursor  = 0;
     bool            m_hiddenByModal      = false;

@@ -229,6 +229,18 @@ QList<PaletteInfo> loadAllPalettes()
         else
             palettes.append(p);
     }
+    std::stable_sort(palettes.begin(), palettes.end(),
+                     [](const PaletteInfo &a, const PaletteInfo &b) {
+        const bool aDefault = a.name.compare(QStringLiteral("Default"), Qt::CaseInsensitive) == 0;
+        const bool bDefault = b.name.compare(QStringLiteral("Default"), Qt::CaseInsensitive) == 0;
+        if (aDefault != bDefault)
+            return aDefault;
+
+        const int ci = QString::compare(a.name, b.name, Qt::CaseInsensitive);
+        if (ci != 0)
+            return ci < 0;
+        return a.name < b.name;
+    });
     return palettes;
 }
 
@@ -647,9 +659,9 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
     // ── Name (top-left, contrasting against the palette's own background) ───────
     constexpr int kPadX   = SW_PAD_X;
     constexpr int kPadTop = 10;
-    // Address colour is designed to be legible on this bg; fall back to derived.
-    const QColor intendedTextCol = eff.address.isValid()
-        ? eff.address
+    // ASCII colour is designed to be legible on this bg; fall back to derived.
+    const QColor intendedTextCol = eff.ascii.isValid()
+        ? eff.ascii
         : (effectiveBg.lightness() < 128 ? QColor(255, 255, 255, 200)
                                          : QColor(  0,   0,   0, 180));
     // If contrast between the intended colour and the card background is too
@@ -881,6 +893,38 @@ private:
 
 // ─── PaletteEditorDialog ─────────────────────────────────────────────────────
 
+static bool isValidPaletteName(const QString &raw, QString *reason = nullptr)
+{
+    const QString name = raw.trimmed();
+    if (name.isEmpty()) {
+        if (reason) *reason = QObject::tr("Enter a palette name");
+        return false;
+    }
+    if (name.size() > 64) {
+        if (reason) *reason = QObject::tr("Palette names must be 64 characters or fewer");
+        return false;
+    }
+    if (name != raw) {
+        if (reason) *reason = QObject::tr("Remove leading or trailing spaces");
+        return false;
+    }
+
+    const QString blocked = QStringLiteral(",/\\:*?\"<>|");
+    for (const QChar c : name) {
+        if (c.unicode() < 0x20 || c.unicode() == 0x7f) {
+            if (reason) *reason = QObject::tr("Palette names cannot contain control characters");
+            return false;
+        }
+        if (blocked.contains(c)) {
+            if (reason)
+                *reason = QObject::tr("Palette names cannot contain: %1")
+                              .arg(QStringLiteral(", / \\ : * ? \" < > |"));
+            return false;
+        }
+    }
+    return true;
+}
+
 // Delegate that appends a right-aligned "L", "D", or "L,D" indicator in mid
 // colour for list items that have mode-specific colour overrides.
 class PaletteItemDelegate : public QStyledItemDelegate
@@ -896,16 +940,18 @@ public:
         constexpr int kSz  = 14;   // icon render size
         constexpr int kPad =  6;   // right margin from item edge
 
-        // Both slots are always reserved so neither icon shifts when the other
-        // appears or disappears.  Light is left, Dark is right.
+        // All slots are always reserved so icons do not shift when another
+        // appears or disappears. Base is left, Light middle, Dark right.
         // The gap between them is one full icon width so they read as distinct.
         const int darkX  = opt.rect.right() - kPad - kSz;
         const int lightX = darkX - kSz - kSz;   // one icon-width gap between slots
+        const int baseX  = lightX - kSz - kSz;
         const int y      = opt.rect.top() + (opt.rect.height() - kSz) / 2;
 
+        const bool hasBase  = indicator.contains(QLatin1Char('B'));
         const bool hasLight = indicator.contains(QLatin1Char('L'));
         const bool hasDark  = indicator.contains(QLatin1Char('D'));
-        if (!hasLight && !hasDark) return;
+        if (!hasBase && !hasLight && !hasDark) return;
 
         // text() at ~65% opacity: more contrast than mid() but softer than solid black/white.
         // Switch to full highlightedText() when the row is selected.
@@ -915,6 +961,9 @@ public:
         base.setAlpha(opt.state & QStyle::State_Selected ? 255 : 165);
         const QColor col = base;
 
+        if (hasBase)
+            recoloredIcon(QLatin1String("half-circle"), col, kSz)
+                .paint(p, QRect(baseX, y, kSz, kSz));
         if (hasLight)
             recoloredIcon(QLatin1String("light-mode"), col, kSz)
                 .paint(p, QRect(lightX, y, kSz, kSz));
@@ -1029,6 +1078,12 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
 
     connect(buttons, &QDialogButtonBox::accepted, this, [this]() {
         m_info.name = m_nameEdit->text().trimmed();
+        QString nameError;
+        if (!isValidPaletteName(m_nameEdit->text(), &nameError)) {
+            m_nameEdit->setToolTip(nameError);
+            m_nameEdit->setFocus();
+            return;
+        }
         if (QFile::exists(paletteFilePath(m_info.name))) {
             QMessageBox msg(QMessageBox::Warning,
                             tr("Overwrite palette?"),
@@ -1106,6 +1161,8 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
     }();
     auto updateNameBg = [this, builtInNames](const QString &t) {
         const QString name = t.trimmed();
+        QString nameError;
+        const bool validName = isValidPaletteName(t, &nameError);
         const bool isBuiltIn = builtInNames.contains(name);
         if (m_nameEdit->property("builtInPalette").toBool() != isBuiltIn) {
             m_nameEdit->setProperty("builtInPalette", isBuiltIn);
@@ -1113,9 +1170,15 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
             m_nameEdit->style()->polish(m_nameEdit);
             m_nameEdit->update();
         }
-        const bool canSave = !name.isEmpty() && !isBuiltIn;
+        const bool canSave = validName && !isBuiltIn;
         m_saveBtn->setEnabled(canSave);
-        m_saveBtn->setToolTip(canSave ? tr("Save palette to disk") : tr("Cannot overwrite bundled themes"));
+        if (canSave)
+            m_saveBtn->setToolTip(tr("Save palette to disk"));
+        else if (isBuiltIn)
+            m_saveBtn->setToolTip(tr("Cannot overwrite bundled themes"));
+        else
+            m_saveBtn->setToolTip(nameError);
+        m_nameEdit->setToolTip(validName ? QString() : nameError);
     };
     connect(m_nameEdit, &QLineEdit::textChanged, this, [updateNameBg](const QString &t) {
         updateNameBg(t);
@@ -1332,12 +1395,13 @@ QColor PaletteEditorDialog::rawColorAt(PaletteElem e) const
 void PaletteEditorDialog::updateItemIndicator(int row)
 {
     if (row < 0 || row >= PE_COUNT) return;
+    const bool hasBase  = rawColorAt(PaletteElem(row)).isValid();
     const bool hasLight = m_info.lightOverrides.contains(row);
     const bool hasDark  = m_info.darkOverrides.contains(row);
     QString indicator;
-    if (hasLight && hasDark) indicator = QStringLiteral("L,D");
-    else if (hasLight)       indicator = QStringLiteral("L");
-    else if (hasDark)        indicator = QStringLiteral("D");
+    if (hasBase)  indicator += QLatin1Char('B');
+    if (hasLight) indicator += QLatin1Char('L');
+    if (hasDark)  indicator += QLatin1Char('D');
     m_list->item(row)->setData(Qt::UserRole, indicator);
 }
 

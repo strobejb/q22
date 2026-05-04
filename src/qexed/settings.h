@@ -13,6 +13,7 @@
 namespace AppSettings {
 
 constexpr int MaxRecentFiles = 10;
+constexpr int MaxRecentPalettes = 5;
 
 QStringList recentFiles();
 void        addRecentFile(const QString &path);
@@ -34,6 +35,10 @@ int     prefColorScheme();          // 0=System, 1=Light, 2=Dark
 void    setPrefColorScheme(int scheme);
 QString prefPaletteName();          // empty = no saved palette (use defaults)
 void    setPrefPaletteName(const QString &name);
+QStringList prefRecentPalettes();   // CSV-backed, most recent first
+void        addRecentPalette(const QString &name);
+bool    prefRecentPaletteOrdering(); // true = compact palette picker uses recent-first order
+void    setPrefRecentPaletteOrdering(bool on);
 
 } // namespace AppSettings
 

@@ -120,3 +120,46 @@ void AppSettings::setPrefPaletteName(const QString &name)
     OPEN_SETTINGS;
     s.setValue("preferences/paletteName", name);
 }
+
+QStringList AppSettings::prefRecentPalettes()
+{
+    OPEN_SETTINGS;
+    const QString csv = s.value("preferences/recentPalettes", "").toString();
+    QStringList result;
+    for (const QString &part : csv.split(',', Qt::SkipEmptyParts)) {
+        const QString name = part.trimmed();
+        if (!name.isEmpty() && !result.contains(name))
+            result.append(name);
+        if (result.size() >= MaxRecentPalettes)
+            break;
+    }
+    return result;
+}
+
+void AppSettings::addRecentPalette(const QString &name)
+{
+    const QString trimmed = name.trimmed();
+    if (trimmed.isEmpty())
+        return;
+
+    QStringList names = prefRecentPalettes();
+    names.removeAll(trimmed);
+    names.prepend(trimmed);
+    while (names.size() > MaxRecentPalettes)
+        names.removeLast();
+
+    OPEN_SETTINGS;
+    s.setValue("preferences/recentPalettes", names.join(','));
+}
+
+bool AppSettings::prefRecentPaletteOrdering()
+{
+    OPEN_SETTINGS;
+    return s.value("preferences/recentPaletteOrdering", true).toBool();
+}
+
+void AppSettings::setPrefRecentPaletteOrdering(bool on)
+{
+    OPEN_SETTINGS;
+    s.setValue("preferences/recentPaletteOrdering", on);
+}
