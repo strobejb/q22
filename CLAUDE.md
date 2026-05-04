@@ -64,11 +64,11 @@ QIcon::setThemeName("hicolor");
 This makes `QIcon::fromTheme()` resolve against `:/icons/hicolor/` rather than
 the host system's icon theme.  **Any new icon must be:**
 
-1. Added as an SVG file under `icons/hicolor/scalable/actions/`.
-2. Registered in `resources.qrc` — without this entry the file is not embedded
+1. Added as an SVG file under `resources/icons/hicolor/scalable/actions/`.
+2. Registered in `resources/resources.qrc` — without this entry the file is not embedded
    and `QIcon(":/icons/…")` will return a null icon silently.
 
-The theme name `"hicolor"` is declared in `icons/hicolor/index.theme` (also
+The theme name `"hicolor"` is declared in `resources/icons/hicolor/index.theme` (also
 embedded).  If you rename the theme directory you must update both
 `index.theme → Name=` and the `setThemeName()` call in `main.cpp`.
 
@@ -188,6 +188,6 @@ cmake --build build/Desktop_Qt_6_10_2-Debug
 
 | File | Purpose |
 |------|---------|
-| `mainwindow.cpp` | Main window, custom titlebar, shadow painting, platform event handling |
-| `theme.cpp` | Theming, colour system, `enableKWinShadow()`, menu/tooltip styling |
-| `HexView/` | The hex editor widget |
+| `src/qexed/mainwindow.cpp` | Main window, custom titlebar, shadow painting, platform event handling |
+| `src/qexed/theme.cpp` | Theming, colour system, `enableKWinShadow()`, menu/tooltip styling |
+| `src/HexView/` | The hex editor widget |

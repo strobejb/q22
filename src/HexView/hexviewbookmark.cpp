@@ -1,5 +1,5 @@
 #include "hexview.h"
-#include "../theme.h"
+#include "theme.h"
 
 #include <QApplication>
 #include <QFontMetrics>

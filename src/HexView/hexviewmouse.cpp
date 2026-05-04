@@ -13,7 +13,7 @@
 #include <QContextMenuEvent>
 #include <QCursor>
 #include <QMenu>
-#include "../theme.h"
+#include "theme.h"
 #include <QMouseEvent>
 #include <QWheelEvent>
 #include <algorithm>
