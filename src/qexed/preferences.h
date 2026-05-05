@@ -63,6 +63,7 @@ private:
     bool            m_hiddenByModal      = false;
     QPoint          m_savedPos;
     NavigationRow  *m_fontNav      = nullptr;
+    QWidget        *m_lastFocusWidget = nullptr;
     StepSpinBox    *m_fontSize     = nullptr;
     StepSpinBox    *m_horizSpacing = nullptr;
     StepSpinBox    *m_lineSpacing  = nullptr;

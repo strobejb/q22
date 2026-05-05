@@ -105,6 +105,11 @@ protected:
     }
     void keyPressEvent(QKeyEvent *e) override
     {
+        if (e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter) {
+            click();
+            e->accept();
+            return;
+        }
         if (e->key() == Qt::Key_Left || e->key() == Qt::Key_Right) {
             e->accept();
             return;
@@ -244,6 +249,7 @@ void SlideOverlay::slideIn(QDialog *dlg, std::function<void(int)> onFinished,
             }
 
             auto *inlineBtn = new OverlayBackButton(labelText, headerWidget);
+            inlineBtn->setObjectName(QStringLiteral("overlayBackButton"));
             inlineBtn->installEventFilter(this);
             if (labelText.isEmpty()) {
                 inlineBtn->setFixedSize(28, 28);
@@ -402,6 +408,23 @@ bool SlideOverlay::eventFilter(QObject *obj, QEvent *event)
     if (event->type() == QEvent::KeyPress) {
         auto *key = static_cast<QKeyEvent *>(event);
         auto *w = qobject_cast<QWidget *>(obj);
+        if (m_content
+                && w
+                && w->objectName() == QLatin1String("overlayBackButton")
+                && (key->key() == Qt::Key_Tab || key->key() == Qt::Key_Backtab)) {
+            if (auto *grid = m_content->findChild<PaletteSwatchGrid *>()) {
+                const bool backward = key->key() == Qt::Key_Backtab
+                    || (key->key() == Qt::Key_Tab
+                        && key->modifiers().testFlag(Qt::ShiftModifier));
+                if (backward)
+                    grid->focusLast(Qt::BacktabFocusReason);
+                else
+                    grid->focusFirst(Qt::TabFocusReason);
+                key->accept();
+                return true;
+            }
+        }
+
         const bool up = key->key() == Qt::Key_Up;
         const bool down = key->key() == Qt::Key_Down;
         if ((up || down)

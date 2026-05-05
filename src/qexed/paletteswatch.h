@@ -55,7 +55,10 @@ public:
                      int maxPaletteCards = -1);
     void setCurrentPaletteName(const QString &name);
     void setAllowFocusEscape(bool on) { m_allowFocusEscape = on; }
+    void setBoundaryWidgets(QWidget *previous, QWidget *next);
     void setGridContentsMargins(int left, int top, int right, int bottom);
+    void focusFirst(Qt::FocusReason reason = Qt::TabFocusReason);
+    void focusLast(Qt::FocusReason reason = Qt::BacktabFocusReason);
     void focusCurrent(Qt::FocusReason reason = Qt::OtherFocusReason);
 
     int gridWidthForColumns(int columns) const;
@@ -75,6 +78,7 @@ protected:
 private:
     void clear();
     void clearCursorRing();
+    bool focusBoundaryWidget(bool forward);
     bool focusAdjacentControl(bool forward);
     bool handleTabKey(QKeyEvent *e);
     bool handleButtonKey(QKeyEvent *e);
@@ -91,6 +95,8 @@ private:
     int m_columns = 3;
     int m_cursor = 0;
     bool m_allowFocusEscape = false;
+    QWidget *m_previousFocusWidget = nullptr;
+    QWidget *m_nextFocusWidget = nullptr;
 };
 
 #endif // PALETTESWATCH_H

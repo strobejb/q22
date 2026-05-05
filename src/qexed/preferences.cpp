@@ -240,6 +240,11 @@ protected:
     }
     void keyPressEvent(QKeyEvent *e) override
     {
+        if (e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter) {
+            click();
+            e->accept();
+            return;
+        }
         if (e->key() == Qt::Key_Left || e->key() == Qt::Key_Right) {
             e->accept();
             return;
@@ -325,6 +330,7 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
 
     // ── Reset button ──────────────────────────────────────────────────────────
     auto *resetBtn  = new DangerButton(tr("Reset to defaults"), this);
+    m_lastFocusWidget = resetBtn;
     auto *resetCard = new SettingsCard({resetBtn}, SettingsCard::Style::Spaced, this);
 
     // ── Theme swatches ────────────────────────────────────────────────────────
@@ -390,6 +396,7 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     connect(m_viewMore, &QAbstractButton::clicked,
             this, &PreferencesDialog::showPaletteListOverlay);
     themeHeaderLay->addWidget(m_viewMore);
+    m_swatchGrid->setBoundaryWidgets(m_viewMore, m_fontNav);
     vlay->addWidget(themeHeader);
     vlay->addSpacing(kHeaderBottomGap);
     vlay->addWidget(m_swatchGrid);
@@ -509,6 +516,28 @@ bool PreferencesDialog::eventFilter(QObject *obj, QEvent *e)
     if (e->type() == QEvent::KeyPress) {
         auto *key = static_cast<QKeyEvent *>(e);
         auto *w = qobject_cast<QWidget *>(obj);
+        const bool backtab = key->key() == Qt::Key_Backtab
+                          || (key->key() == Qt::Key_Tab
+                              && key->modifiers().testFlag(Qt::ShiftModifier));
+        if (w == m_viewMore
+                && (key->key() == Qt::Key_Down || key->key() == Qt::Key_Tab
+                    || key->key() == Qt::Key_Backtab)) {
+            if (backtab) {
+                if (m_lastFocusWidget && m_lastFocusWidget->focusPolicy() != Qt::NoFocus)
+                    m_lastFocusWidget->setFocus(Qt::BacktabFocusReason);
+                key->accept();
+                return true;
+            }
+            m_swatchGrid->focusFirst(Qt::TabFocusReason);
+            key->accept();
+            return true;
+        }
+        if (w == m_fontNav && backtab) {
+            m_swatchGrid->focusLast(Qt::BacktabFocusReason);
+            key->accept();
+            return true;
+        }
+
         const bool up = key->key() == Qt::Key_Up;
         const bool down = key->key() == Qt::Key_Down;
         if ((up || down)
@@ -710,6 +739,8 @@ void PreferencesDialog::showPaletteListOverlay()
     QTimer::singleShot(0, dlg, [dlg, grid]() {
         // The overlay has just been embedded/reparented; wait until layout
         // geometry is valid, then build the visual tab chain and focus a swatch.
+        auto *backButton = dlg->findChild<QWidget *>(QStringLiteral("overlayBackButton"));
+        grid->setBoundaryWidgets(backButton, backButton);
         FocusNavigation::assignTabOrder(dlg);
         grid->focusCurrent();
     });

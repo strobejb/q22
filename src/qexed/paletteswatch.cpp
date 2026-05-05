@@ -326,6 +326,26 @@ void PaletteSwatchGrid::setCurrentPaletteName(const QString &name)
     }
 }
 
+void PaletteSwatchGrid::setBoundaryWidgets(QWidget *previous, QWidget *next)
+{
+    m_previousFocusWidget = previous;
+    m_nextFocusWidget = next;
+}
+
+void PaletteSwatchGrid::focusFirst(Qt::FocusReason reason)
+{
+    setCursorIndex(0, true);
+    if (auto *button = m_buttons.value(m_cursor))
+        button->setFocus(reason);
+}
+
+void PaletteSwatchGrid::focusLast(Qt::FocusReason reason)
+{
+    setCursorIndex(m_buttons.size() - 1, true);
+    if (auto *button = m_buttons.value(m_cursor))
+        button->setFocus(reason);
+}
+
 void PaletteSwatchGrid::focusCurrent(Qt::FocusReason reason)
 {
     if (auto *button = m_buttons.value(m_cursor))
@@ -390,8 +410,29 @@ void PaletteSwatchGrid::clearCursorRing()
         swatch->setKeyboardCursor(false);
 }
 
+bool PaletteSwatchGrid::focusBoundaryWidget(bool forward)
+{
+    QWidget *target = forward ? m_nextFocusWidget : m_previousFocusWidget;
+    if (!target || target->focusPolicy() == Qt::NoFocus
+            || target->isHidden() || !target->isVisibleTo(window()))
+        return false;
+
+    clearCursorRing();
+    target->setFocus(forward ? Qt::TabFocusReason : Qt::BacktabFocusReason);
+    for (QWidget *w = parentWidget(); w; w = w->parentWidget()) {
+        if (auto *scroll = qobject_cast<QScrollArea *>(w)) {
+            scroll->ensureWidgetVisible(target);
+            break;
+        }
+    }
+    return true;
+}
+
 bool PaletteSwatchGrid::focusAdjacentControl(bool forward)
 {
+    if (m_allowFocusEscape && focusBoundaryWidget(forward))
+        return true;
+
     QWidget *candidate = nullptr;
     const int gridTop = mapToGlobal(QPoint(0, 0)).y();
     const int gridBottom = mapToGlobal(QPoint(0, height())).y();
@@ -479,8 +520,7 @@ bool PaletteSwatchGrid::eventFilter(QObject *obj, QEvent *event)
     if (event->type() == QEvent::FocusIn) {
         const auto *focus = static_cast<QFocusEvent *>(event);
         const bool keyboard = focus->reason() == Qt::TabFocusReason
-                           || focus->reason() == Qt::BacktabFocusReason
-                           || focus->reason() == Qt::OtherFocusReason;
+                           || focus->reason() == Qt::BacktabFocusReason;
         setCursorIndex(m_buttons.indexOf(button), keyboard);
         return false;
     }
@@ -518,8 +558,13 @@ bool PaletteSwatchGrid::handleTabKey(QKeyEvent *e)
     // tab chain is rebuilt around dynamically inserted overlay content.  The
     // grid still gives Qt the boundary cases, so leaving the first/last swatch
     // follows the normal dialog tab order and wrap behavior.
-    if (next < 0 || next >= buttons.size())
+    if (next < 0 || next >= buttons.size()) {
+        if (focusBoundaryWidget(!backward)) {
+            e->accept();
+            return true;
+        }
         return false;
+    }
 
     setCursorIndex(next, true);
     if (auto *button = buttons.value(m_cursor))
@@ -575,7 +620,7 @@ bool PaletteSwatchGrid::handleButtonKey(QKeyEvent *e)
 
     setCursorIndex(next, true);
     if (auto *button = buttons.value(m_cursor))
-        button->setFocus(Qt::OtherFocusReason);
+        button->setFocus(Qt::TabFocusReason);
     e->accept();
     return true;
 }
