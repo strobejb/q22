@@ -86,6 +86,9 @@ target_include_directories(qexed PRIVATE
     ${PROJECT_SOURCE_DIR}/src
 )
 target_link_libraries(qexed PRIVATE Qt${QT_VERSION_MAJOR}::Widgets HexView)
+set_target_properties(qexed PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}"
+)
 
 if(WIN32)
     target_link_libraries(qexed PRIVATE dwmapi advapi32)
