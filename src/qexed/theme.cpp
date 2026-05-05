@@ -5,7 +5,11 @@
 #include <QFont>
 #include <QFontDatabase>
 #include <QGuiApplication>
+#include <QDialogButtonBox>
+#include <QLabel>
+#include <QLayout>
 #include <QMenu>
+#include <QMessageBox>
 #include <QPlatformSurfaceEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -17,7 +21,9 @@
 #include <QStyleHints>
 #include <QStyleOption>
 #include <QStyledItemDelegate>
+#include <QTimer>
 #include <QWidget>
+#include <QAbstractButton>
 #ifndef Q_OS_WIN
 #include <QProcess>
 #include <QSettings>
@@ -1242,6 +1248,36 @@ void removeDialogIcon(QDialog *dlg)
     // Remove WS_THICKFRAME so Windows doesn't show a resize cursor on the edges.
     dlg->setWindowFlag(Qt::MSWindowsFixedSizeDialogHint);
 #endif
+}
+
+void styleMessageBox(QMessageBox *box)
+{
+    if (!box) return;
+    removeDialogIcon(box);
+
+    QTimer::singleShot(0, box, [box]() {
+        auto *iconLabel = box->findChild<QLabel *>(QStringLiteral("qt_msgboxex_icon_label"));
+        auto *textLabel = box->findChild<QLabel *>(QStringLiteral("qt_msgbox_label"));
+        auto *infoLabel = box->findChild<QLabel *>(QStringLiteral("qt_msgbox_informativelabel"));
+        if (!iconLabel || !textLabel)
+            return;
+
+        int textH = textLabel->sizeHint().height();
+        if (infoLabel && infoLabel->isVisible())
+            textH += infoLabel->sizeHint().height();
+
+        const int iconH = iconLabel->sizeHint().height();
+        const int topInset = qMax(0, (iconH - textH) / 2);
+        textLabel->setContentsMargins(0, topInset, 0, 0);
+    });
+
+    if (auto *buttonBox = box->findChild<QDialogButtonBox *>()) {
+        buttonBox->setContentsMargins(0, 10, 0, 0);
+        if (buttonBox->layout())
+            buttonBox->layout()->setSpacing(12);
+        for (QAbstractButton *btn : buttonBox->buttons())
+            btn->setIcon(QIcon());
+    }
 }
 
 #ifndef Q_OS_WIN

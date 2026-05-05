@@ -69,11 +69,15 @@ private:
     QGridLayout    *m_swatchLayout = nullptr;
     QButtonGroup   *m_swatchGroup  = nullptr;
     QAbstractButton    *m_addBtn   = nullptr;
+    QWidget            *m_overlaySwatchWidget = nullptr;
+    QButtonGroup       *m_overlaySwatchGroup  = nullptr;
+    QAbstractButton    *m_overlayAddBtn       = nullptr;
     ViewMoreButton     *m_viewMore = nullptr;
     QFileSystemWatcher *m_watcher  = nullptr;
     QList<PaletteInfo> m_palettes;
     int             m_swatchCount   = 0;
     int             m_swatchCursor  = 0;
+    int             m_overlaySwatchCursor = 0;
     bool            m_hiddenByModal      = false;
     bool            m_suppressRingOnFocus = false;
     QPoint          m_savedPos;

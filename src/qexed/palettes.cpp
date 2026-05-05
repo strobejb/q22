@@ -1094,6 +1094,7 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
             QPushButton *overwriteBtn = msg.addButton(tr("Overwrite"), QMessageBox::AcceptRole);
             msg.addButton(tr("Cancel"), QMessageBox::RejectRole);
             msg.setDefaultButton(overwriteBtn);
+            styleMessageBox(&msg);
             msg.exec();
             if (msg.clickedButton() != overwriteBtn) return;
         }

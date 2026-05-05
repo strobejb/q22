@@ -956,8 +956,7 @@ bool MainWindow::maybeSave()
     QPushButton*discardBtn = mb.addButton(tr("Discard"), QMessageBox::DestructiveRole);
     QPushButton*cancelBtn  = mb.addButton(tr("Cancel"),  QMessageBox::RejectRole);
     mb.setDefaultButton(saveBtn);
-    //for (QAbstractButton *btn : mb.buttons())
-    //    btn->setIcon(QIcon());
+    styleMessageBox(&mb);
 
     mb.exec();
     QPushButton *clicked = qobject_cast<QPushButton*>(mb.clickedButton());

@@ -114,8 +114,10 @@ QIcon segoeIcon(uint codePoint, const QColor &color, int logicalPx = 14);
 #include <QDialog>
 #include <QPoint>
 #include <QSize>
+class QMessageBox;
 // Clears the window icon on a dialog so no app icon appears in the title bar.
 void removeDialogIcon(QDialog *dlg);
+void styleMessageBox(QMessageBox *box);
 
 #if !defined(Q_OS_WIN)
 // Requests the compositor shadow for a frameless window on KDE/KWin by
