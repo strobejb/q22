@@ -20,6 +20,8 @@ set(PROJECT_SOURCES
         finddialog.h
         palettes.cpp
         palettes.h
+        paletteswatch.cpp
+        paletteswatch.h
         preferences.cpp
         preferences.h
         slideoverlay.cpp

@@ -10,7 +10,6 @@
 #include <QApplication>
 #include <QPropertyAnimation>
 #include <QTimer>
-#include <QButtonGroup>
 #include <QDialogButtonBox>
 #include <QScrollBar>
 #include <QDir>
@@ -18,9 +17,7 @@
 #include <QFont>
 #include <QFontDatabase>
 #include <QFontMetrics>
-#include <QFocusEvent>
 #include <QFrame>
-#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
@@ -144,7 +141,7 @@ void FontPickerDialog::updatePreview()
     m_preview->setFont(m_font);
 }
 
-// ─── AddPaletteSwatch ─────────────────────────────────────────────────────────
+// ─── ViewMoreButton ───────────────────────────────────────────────────────────
 
 
 class ViewMoreButton : public QAbstractButton
@@ -293,16 +290,8 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     auto *resetCard = new SettingsCard({resetBtn}, SettingsCard::Style::Spaced, this);
 
     // ── Theme swatches ────────────────────────────────────────────────────────
-    m_swatchWidget = new QWidget(this);
+    m_swatchGrid = new PaletteSwatchGrid(this);
     {
-        m_swatchLayout = new QGridLayout(m_swatchWidget);
-        m_swatchLayout->setContentsMargins(0, 0, 0, 0);
-        m_swatchLayout->setSpacing(5 + 2 * SW_SHADOW);
-        m_swatchLayout->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
-
-        m_swatchGroup = new QButtonGroup(m_swatchWidget);
-        m_swatchGroup->setExclusive(true);
-
         m_palettes = loadAllPalettes();
         if (!m_palettes.isEmpty())
             m_currentPalette = m_palettes.first();
@@ -317,8 +306,16 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
             }
         }
 
-        m_addBtn = new PaletteSwatch(m_swatchWidget);
-        connect(m_addBtn, &QAbstractButton::clicked,
+        m_swatchGrid->setAllowFocusEscape(true);
+        connect(m_swatchGrid, &PaletteSwatchGrid::paletteSelected,
+                this, [this](const PaletteInfo &info) {
+            m_currentPalette = info;
+            recordRecentPalette(info);
+            emit paletteSelected(info);
+        });
+        connect(m_swatchGrid, &PaletteSwatchGrid::paletteEditRequested,
+                this, &PreferencesDialog::openEditPaletteEditor);
+        connect(m_swatchGrid, &PaletteSwatchGrid::addRequested,
                 this, &PreferencesDialog::openAddPaletteEditor);
         populateMainSwatches();
 
@@ -329,8 +326,6 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
         connect(m_watcher, &QFileSystemWatcher::directoryChanged,
                 this, [this](const QString &) { rebuildCustomSwatches(); });
     }
-    m_swatchWidget->setFocusPolicy(Qt::StrongFocus);
-    m_swatchWidget->installEventFilter(this);
 
     // ── Section label helper ──────────────────────────────────────────────────
     auto makeSectionLabel = [this](const QString &text) {
@@ -359,7 +354,7 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     themeHeaderLay->addWidget(m_viewMore);
     vlay->addWidget(themeHeader);
     vlay->addSpacing(kHeaderBottomGap);
-    vlay->addWidget(m_swatchWidget);
+    vlay->addWidget(m_swatchGrid);
     vlay->addSpacing(kGroupTopGap);
     vlay->addWidget(makeSectionLabel(tr("Font")));
     vlay->addSpacing(kHeaderBottomGap);
@@ -424,9 +419,7 @@ void PreferencesDialog::prepareShow()
     // at the swatch fixed width with (5 + 2*SW_SHADOW) px gaps between them.
     // When content exceeds maxH a vertical scrollbar appears and steals some
     // horizontal space from the viewport — add its extent to compensate.
-    const int swatchGap = 5 + 2 * SW_SHADOW;
-    const int gridW     = kSwatchCols * m_addBtn->width()
-                        + (kSwatchCols - 1) * swatchGap;
+    const int gridW = m_swatchGrid->gridWidthForColumns(kSwatchCols);
     const int sbW = (hint.height() > maxH)
                     ? style()->pixelMetric(QStyle::PM_ScrollBarExtent) : 0;
     const int w = gridW + 2 * 20 + sbW;
@@ -458,10 +451,9 @@ void PreferencesDialog::setVisible(bool visible)
     }
     if (opening)
         populateMainSwatches();
-    if (visible) m_suppressRingOnFocus = true;
     QDialog::setVisible(visible);
     if (visible)
-        m_swatchWidget->setFocus();
+        m_swatchGrid->setFocus();
 }
 
 bool PreferencesDialog::eventFilter(QObject *obj, QEvent *e)
@@ -503,130 +495,12 @@ bool PreferencesDialog::eventFilter(QObject *obj, QEvent *e)
         });
     }
 
-    // ── Swatch containers ─────────────────────────────────────────────────────
-    const bool mainSwatches = (obj == m_swatchWidget);
-    const bool overlaySwatches = (obj == m_overlaySwatchWidget);
-    if (!mainSwatches && !overlaySwatches)
-        return false;
-
-    QButtonGroup *group = mainSwatches ? m_swatchGroup : m_overlaySwatchGroup;
-    QAbstractButton *addBtn = mainSwatches ? m_addBtn : m_overlayAddBtn;
-    int &cursor = mainSwatches ? m_swatchCursor : m_overlaySwatchCursor;
-    if (!group || !addBtn)
-        return false;
-
-    const auto palBtns = group->buttons();
-    // Navigation covers all cards: palette swatches followed by the add card.
-    QList<QAbstractButton *> allBtns = palBtns;
-    allBtns.append(addBtn);
-    const int palCount = allBtns.size();
-
-    // Helper: set/clear the keyboard cursor ring on a card by index.
-    auto setCursor = [&](int idx, bool on) {
-        if (idx < 0 || idx >= allBtns.size()) return;
-        if (auto *sw = qobject_cast<PaletteSwatch *>(allBtns[idx]))
-            sw->setKeyboardCursor(on);
-    };
-
-    if (e->type() == QEvent::FocusIn) {
-        // Consume the suppress flag first — set by setVisible() to block the
-        // spurious FocusIn(Tab) Qt fires when activating the dialog window.
-        const bool suppress = m_suppressRingOnFocus;
-        m_suppressRingOnFocus = false;
-        // Clear any stale ring at the old cursor position before moving it.
-        setCursor(cursor, false);
-        auto *checked  = group->checkedButton();
-        cursor = checked ? palBtns.indexOf(checked) : 0;
-        if (cursor < 0) cursor = 0;
-        const auto reason = static_cast<QFocusEvent *>(e)->reason();
-        if (overlaySwatches || (!suppress && (reason == Qt::TabFocusReason || reason == Qt::BacktabFocusReason)))
-            setCursor(cursor, true);
-        return false;
-    }
-
-    if (e->type() == QEvent::FocusOut) {
-        setCursor(cursor, false);
-        return false;
-    }
-
-    if (e->type() == QEvent::KeyPress) {
-        const int key = static_cast<QKeyEvent *>(e)->key();
-
-        // Space / Return / Enter activate the focused card (select palette or open add dialog).
-        if (key == Qt::Key_Space || key == Qt::Key_Return || key == Qt::Key_Enter) {
-            allBtns[cursor]->click();
-            return true;
-        }
-
-        int next = cursor;
-
-        switch (key) {
-        case Qt::Key_Right: next = qMin(cursor + 1,           palCount - 1); break;
-        case Qt::Key_Left:  next = qMax(cursor - 1,           0);            break;
-        case Qt::Key_Up:    next = qMax(cursor - kSwatchCols, 0);            break;
-        case Qt::Key_Down:
-            next = cursor + kSwatchCols;
-            if (next >= palCount) {
-                if (mainSwatches) {
-                    setCursor(cursor, false);
-                    focusNextPrevChild(true); // hand off to next Tab stop
-                }
-                return true;
-            }
-            break;
-        default: return false;
-        }
-
-        if (next != cursor) {
-            setCursor(cursor, false);
-            cursor = next;
-            setCursor(cursor, true);
-        }
-        return true; // consume — don't let the scroll area scroll
-    }
-
     return false;
 }
 
 
-void PreferencesDialog::syncCursorToSwatch(int idx)
-{
-    QList<QAbstractButton *> allBtns = m_swatchGroup->buttons();
-    allBtns.append(m_addBtn);
-    if (auto *old = qobject_cast<PaletteSwatch *>(allBtns.value(m_swatchCursor)))
-        old->setKeyboardCursor(false);
-    m_swatchCursor = idx;
-    // Do not show the cursor ring here: this is called from mouse-click handlers
-    // and the ring is only activated by keyboard navigation.
-}
-
-PaletteSwatch *PreferencesDialog::createPaletteSwatch(const PaletteInfo &info, QWidget *parent)
-{
-    auto *sw = new PaletteSwatch(info, parent);
-    if (info.name == m_currentPalette.name)
-        sw->setChecked(true);
-    connect(sw, &QAbstractButton::clicked, this, [this, sw, info]() {
-        syncCursorToSwatch(m_swatchGroup->buttons().indexOf(sw));
-        m_currentPalette = info;
-        recordRecentPalette(info);
-        emit paletteSelected(info);
-    });
-    auto sharedInfo = std::make_shared<PaletteInfo>(info);
-    connect(sw, &PaletteSwatch::doubleClicked, this, [this, sharedInfo]() {
-        openEditPaletteEditor(sharedInfo);
-    });
-    return sw;
-}
-
 void PreferencesDialog::populateMainSwatches()
 {
-    const auto old = m_swatchGroup->buttons();
-    for (auto *b : old)
-        delete b;
-
-    while (auto *item = m_swatchLayout->takeAt(0))
-        delete item;
-
     QList<PaletteInfo> ordered;
     if (AppSettings::prefRecentPaletteOrdering()) {
         const QStringList recentNames = AppSettings::prefRecentPalettes();
@@ -646,20 +520,7 @@ void PreferencesDialog::populateMainSwatches()
         ordered = m_palettes;
     }
 
-    m_swatchCount = 0;
-    const int visiblePaletteCount = qMin(kMainPaletteLimit, ordered.size());
-    for (int i = 0; i < visiblePaletteCount; ++i) {
-        auto *sw = createPaletteSwatch(ordered.at(i), m_swatchWidget);
-        m_swatchGroup->addButton(sw);
-        m_swatchLayout->addWidget(sw, m_swatchCount / kSwatchCols,
-                                      m_swatchCount % kSwatchCols);
-        ++m_swatchCount;
-    }
-
-    m_swatchLayout->addWidget(m_addBtn, m_swatchCount / kSwatchCols,
-                                        m_swatchCount % kSwatchCols);
-    m_addBtn->show();
-    m_swatchCursor = qBound(0, m_swatchCursor, m_swatchCount);
+    m_swatchGrid->setPalettes(ordered, m_currentPalette.name, kMainPaletteLimit);
 }
 
 void PreferencesDialog::openAddPaletteEditor()
@@ -691,12 +552,12 @@ void PreferencesDialog::openAddPaletteEditor()
     });
 }
 
-void PreferencesDialog::openEditPaletteEditor(const std::shared_ptr<PaletteInfo> &sharedInfo)
+void PreferencesDialog::openEditPaletteEditor(const PaletteInfo &info)
 {
     if (m_overlay->isActive()) return;
     const PaletteInfo before = m_currentPalette;
     const auto savedScheme = static_cast<ColorScheme>(AppSettings::prefColorScheme());
-    auto *dlg = new PaletteEditorDialog(*sharedInfo, this);
+    auto *dlg = new PaletteEditorDialog(info, this);
     connect(dlg, &PaletteEditorDialog::paletteChanged,
             this, &PreferencesDialog::paletteSelected);
     connect(dlg, &PaletteEditorDialog::paletteSaved,
@@ -707,9 +568,8 @@ void PreferencesDialog::openEditPaletteEditor(const std::shared_ptr<PaletteInfo>
                             : mode == 2 ? ColorScheme::Dark : savedScheme;
         QTimer::singleShot(0, [cs]() { applyAdwaitaTheme(cs); });
     });
-    m_overlay->slideIn(dlg, [this, dlg, sharedInfo, before, savedScheme](int result) {
+    m_overlay->slideIn(dlg, [this, dlg, before, savedScheme](int result) {
         const bool accepted = (result == QDialog::Accepted);
-        if (accepted) *sharedInfo = dlg->currentInfo();
         const PaletteInfo toApply = accepted ? dlg->currentInfo() : before;
         QTimer::singleShot(0, this, [this, savedScheme, toApply, accepted]() {
             applyAdwaitaTheme(savedScheme);
@@ -730,7 +590,8 @@ void PreferencesDialog::showPaletteListOverlay()
     }
 
     enum ResultCode { AddPalette = 1001, EditPalette = 1002 };
-    auto editInfo = std::make_shared<std::shared_ptr<PaletteInfo>>();
+    auto editInfo = std::make_shared<PaletteInfo>();
+    auto hasEditInfo = std::make_shared<bool>(false);
 
     auto *dlg = new QDialog(this);
     removeDialogIcon(dlg);
@@ -748,45 +609,25 @@ void PreferencesDialog::showPaletteListOverlay()
     headerLay->addWidget(title);
     headerLay->addStretch();
 
-    auto *gridWidget = new QWidget(dlg);
-    auto *grid = new QGridLayout(gridWidget);
-    grid->setContentsMargins(20, 0, 20, 20);
-    grid->setSpacing(5 + 2 * SW_SHADOW);
-    grid->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
-
-    auto *group = new QButtonGroup(gridWidget);
-    group->setExclusive(true);
-    gridWidget->setFocusPolicy(Qt::StrongFocus);
-    gridWidget->installEventFilter(this);
-    m_overlaySwatchWidget = gridWidget;
-    m_overlaySwatchGroup = group;
-    m_overlaySwatchCursor = 0;
-
-    int count = 0;
-    for (const PaletteInfo &info : m_palettes) {
-        auto *sw = new PaletteSwatch(info, gridWidget);
-        if (info.name == m_currentPalette.name)
-            sw->setChecked(true);
-        group->addButton(sw);
-        grid->addWidget(sw, count / kSwatchCols, count % kSwatchCols);
-        ++count;
-        connect(sw, &QAbstractButton::clicked, this, [this, info]() {
-            m_currentPalette = info;
-            recordRecentPalette(info);
-            emit paletteSelected(info);
-            populateMainSwatches();
-        });
-        auto sharedInfo = std::make_shared<PaletteInfo>(info);
-        connect(sw, &PaletteSwatch::doubleClicked, dlg, [dlg, editInfo, sharedInfo]() {
-            *editInfo = sharedInfo;
-            dlg->done(EditPalette);
-        });
-    }
-
-    auto *add = new PaletteSwatch(gridWidget);
-    m_overlayAddBtn = add;
-    grid->addWidget(add, count / kSwatchCols, count % kSwatchCols);
-    connect(add, &QAbstractButton::clicked, dlg, [dlg]() { dlg->done(AddPalette); });
+    auto *grid = new PaletteSwatchGrid(dlg);
+    grid->setGridContentsMargins(20, 0, 20, 20);
+    grid->setAllowFocusEscape(false);
+    grid->setPalettes(m_palettes, m_currentPalette.name);
+    connect(grid, &PaletteSwatchGrid::paletteSelected,
+            this, [this](const PaletteInfo &info) {
+        m_currentPalette = info;
+        recordRecentPalette(info);
+        emit paletteSelected(info);
+        populateMainSwatches();
+    });
+    connect(grid, &PaletteSwatchGrid::paletteEditRequested,
+            dlg, [dlg, editInfo, hasEditInfo](const PaletteInfo &info) {
+        *editInfo = info;
+        *hasEditInfo = true;
+        dlg->done(EditPalette);
+    });
+    connect(grid, &PaletteSwatchGrid::addRequested,
+            dlg, [dlg]() { dlg->done(AddPalette); });
 
     auto *scroll = new QScrollArea(dlg);
     scroll->setWidgetResizable(true);
@@ -794,7 +635,7 @@ void PreferencesDialog::showPaletteListOverlay()
     scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setFocusPolicy(Qt::NoFocus);
-    scroll->setWidget(gridWidget);
+    scroll->setWidget(grid);
 
     auto *lay = new QVBoxLayout(dlg);
     lay->setContentsMargins(0, 0, 0, 0);
@@ -802,22 +643,19 @@ void PreferencesDialog::showPaletteListOverlay()
     lay->addWidget(header);
     lay->addWidget(scroll, 1);
 
-    QTimer::singleShot(0, gridWidget, [gridWidget]() { gridWidget->setFocus(); });
+    QTimer::singleShot(0, grid, [grid]() { grid->setFocus(); });
 
-    m_overlay->slideIn(dlg, [this, editInfo](int result) {
+    m_overlay->slideIn(dlg, [this, editInfo, hasEditInfo](int result) {
         if (m_viewMore) {
             m_viewMore->setDown(false);
             m_viewMore->clearFocus();
             m_viewMore->update();
         }
-        m_overlaySwatchWidget = nullptr;
-        m_overlaySwatchGroup = nullptr;
-        m_overlayAddBtn = nullptr;
-        QTimer::singleShot(0, this, [this]() { m_swatchWidget->setFocus(); });
+        QTimer::singleShot(0, this, [this]() { m_swatchGrid->setFocus(); });
         if (result == AddPalette) {
             QTimer::singleShot(320, this, &PreferencesDialog::openAddPaletteEditor);
-        } else if (result == EditPalette && *editInfo) {
-            const auto selected = *editInfo;
+        } else if (result == EditPalette && *hasEditInfo) {
+            const PaletteInfo selected = *editInfo;
             QTimer::singleShot(320, this, [this, selected]() {
                 openEditPaletteEditor(selected);
             });

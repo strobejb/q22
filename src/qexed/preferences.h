@@ -2,17 +2,11 @@
 #define PREFERENCES_H
 
 #include "palettes.h"
+#include "paletteswatch.h"
 #include "settingscard.h"
 #include "slideoverlay.h"
 
-#include <QAbstractButton>
-
-#include <memory>
-
-class QButtonGroup;
 class QFileSystemWatcher;
-class QGridLayout;
-class QWidget;
 class ViewMoreButton;
 
 // Font picker dialog: full list of monospace families/styles + live preview.
@@ -57,29 +51,16 @@ private:
     void rebuildCustomSwatches();
     void showPaletteListOverlay();
     void openAddPaletteEditor();
-    void openEditPaletteEditor(const std::shared_ptr<PaletteInfo> &sharedInfo);
-    PaletteSwatch *createPaletteSwatch(const PaletteInfo &info, QWidget *parent);
+    void openEditPaletteEditor(const PaletteInfo &info);
     void populateMainSwatches();
-    // Move the keyboard cursor ring to idx; clears the ring on the old swatch.
-    void syncCursorToSwatch(int idx);
 
     QString         m_fontFamily;
     PaletteInfo     m_currentPalette;
-    QWidget        *m_swatchWidget = nullptr;
-    QGridLayout    *m_swatchLayout = nullptr;
-    QButtonGroup   *m_swatchGroup  = nullptr;
-    QAbstractButton    *m_addBtn   = nullptr;
-    QWidget            *m_overlaySwatchWidget = nullptr;
-    QButtonGroup       *m_overlaySwatchGroup  = nullptr;
-    QAbstractButton    *m_overlayAddBtn       = nullptr;
+    PaletteSwatchGrid *m_swatchGrid = nullptr;
     ViewMoreButton     *m_viewMore = nullptr;
     QFileSystemWatcher *m_watcher  = nullptr;
     QList<PaletteInfo> m_palettes;
-    int             m_swatchCount   = 0;
-    int             m_swatchCursor  = 0;
-    int             m_overlaySwatchCursor = 0;
     bool            m_hiddenByModal      = false;
-    bool            m_suppressRingOnFocus = false;
     QPoint          m_savedPos;
     NavigationRow  *m_fontNav      = nullptr;
     StepSpinBox    *m_fontSize     = nullptr;

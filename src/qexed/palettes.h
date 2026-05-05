@@ -1,9 +1,7 @@
 #ifndef PALETTES_H
 #define PALETTES_H
 
-#include <QAbstractButton>
 #include <QColor>
-#include <QEnterEvent>
 #include "theme.h"
 #include <QDialog>
 #include <QHash>
@@ -95,6 +93,9 @@ struct PaletteInfo {
 // Apply a PaletteInfo to a HexView by calling setHexColour for every slot.
 void applyPalette(HexView *hv, const PaletteInfo &info);
 
+// Fold mode-specific overrides into a flat PaletteInfo for the requested mode.
+PaletteInfo resolvedPaletteForMode(const PaletteInfo &base, bool dark);
+
 // Apply the UI-level colour overrides (PE_WINDOW / PE_WINDOWTEXT / PE_TOOLBAR)
 // from a PaletteInfo to the application palette and stylesheet.
 // Invalid colours in info are treated as "use theme default" (no override).
@@ -119,44 +120,6 @@ QString paletteFilePath(const QString &name);
 // Write a palette to the user's palette storage directory.
 // The filename is derived from info.name. Returns false on I/O failure.
 bool savePalette(const PaletteInfo &info);
-
-// ── Swatch size constants (shared by PaletteSwatch and AddPaletteSwatch) ─────
-inline constexpr int SW_SHADOW =  3;   // transparent margin for drop shadow
-inline constexpr int SW_PAD_X  = 10;  // horizontal padding inside card (left = right)
-inline constexpr int SW_RADIUS = 10;
-inline constexpr int SW_BORDER =  1;
-
-// ── PaletteSwatch ─────────────────────────────────────────────────────────────
-// Checkable button that renders a colour preview for one palette.
-// Constructed without a PaletteInfo it draws as an "Add palette" button instead.
-class PaletteSwatch : public QAbstractButton
-{
-    Q_OBJECT
-public:
-    // Palette variant — navigated via container, Qt::NoFocus (default).
-    explicit PaletteSwatch(const PaletteInfo &info, QWidget *parent = nullptr);
-    // Add-button variant — own tab stop, Qt::StrongFocus.
-    explicit PaletteSwatch(QWidget *parent = nullptr);
-
-    // Shows/hides the keyboard-navigation cursor ring (independent of checked state).
-    void setKeyboardCursor(bool on);
-
-signals:
-    void doubleClicked();
-
-protected:
-    void mouseDoubleClickEvent(QMouseEvent *) override;
-    void paintEvent(QPaintEvent *) override;
-    void enterEvent(QEnterEvent *) override;
-    void leaveEvent(QEvent *)      override;
-    void focusInEvent(QFocusEvent *)  override;
-    void focusOutEvent(QFocusEvent *) override;
-
-private:
-    PaletteInfo m_info;
-    bool        m_addMode       = false;
-    bool        m_keyboardCursor = false;
-};
 
 // ── PaletteEditorDialog ───────────────────────────────────────────────────────
 // Dialog for creating or editing a custom palette.
