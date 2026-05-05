@@ -18,6 +18,8 @@ set(PROJECT_SOURCES
         gotodialog.h
         finddialog.cpp
         finddialog.h
+        focusnavigation.cpp
+        focusnavigation.h
         palettes.cpp
         palettes.h
         paletteswatch.cpp

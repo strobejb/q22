@@ -1,3 +1,5 @@
+#include "focusnavigation.h"
+#include "paletteswatch.h"
 #include "slideoverlay.h"
 #include "theme.h"
 
@@ -6,13 +8,16 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QEvent>
+#include <QFocusEvent>
 #include <QKeyEvent>
+#include <QMouseEvent>
 #include <QAbstractButton>
 #include <QPainter>
 #include <QPropertyAnimation>
 #include <QEasingCurve>
 #include <QResizeEvent>
 #include <QScreen>
+#include <QTimer>
 #include <QToolButton>
 
 class OverlayBackButton : public QAbstractButton
@@ -51,11 +56,16 @@ protected:
         p.setRenderHint(QPainter::Antialiasing);
 
         const QPalette &pal = palette();
-        if (isDown() || underMouse() || hasFocus()) {
+        if (isDown() || underMouse()) {
             p.setPen(Qt::NoPen);
             p.setBrush(isDown() ? pal.color(QPalette::Mid)
                                  : pal.color(QPalette::Button));
             p.drawRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5), 7, 7);
+        }
+        if (m_keyboardFocus) {
+            p.setPen(QPen(pal.color(QPalette::Highlight), 2));
+            p.setBrush(Qt::NoBrush);
+            p.drawRoundedRect(QRectF(rect()).adjusted(1, 1, -1, -1), 7, 7);
         }
 
         int x = kPadX;
@@ -73,8 +83,34 @@ protected:
 
     void enterEvent(QEnterEvent *e) override { update(); QAbstractButton::enterEvent(e); }
     void leaveEvent(QEvent *e) override { update(); QAbstractButton::leaveEvent(e); }
-    void focusInEvent(QFocusEvent *e) override { update(); QAbstractButton::focusInEvent(e); }
-    void focusOutEvent(QFocusEvent *e) override { update(); QAbstractButton::focusOutEvent(e); }
+    void focusInEvent(QFocusEvent *e) override
+    {
+        m_keyboardFocus = e->reason() == Qt::TabFocusReason
+                       || e->reason() == Qt::BacktabFocusReason;
+        update();
+        QAbstractButton::focusInEvent(e);
+    }
+    void focusOutEvent(QFocusEvent *e) override
+    {
+        m_keyboardFocus = false;
+        update();
+        QAbstractButton::focusOutEvent(e);
+    }
+    void mousePressEvent(QMouseEvent *e) override
+    {
+        const auto oldPolicy = focusPolicy();
+        setFocusPolicy(Qt::NoFocus);
+        QAbstractButton::mousePressEvent(e);
+        setFocusPolicy(oldPolicy);
+    }
+    void keyPressEvent(QKeyEvent *e) override
+    {
+        if (e->key() == Qt::Key_Left || e->key() == Qt::Key_Right) {
+            e->accept();
+            return;
+        }
+        QAbstractButton::keyPressEvent(e);
+    }
 
 private:
     static constexpr int kIconSz = 16;
@@ -83,7 +119,17 @@ private:
     static constexpr int kPadY = 8;//3+4;
     static constexpr int kMinH = 28;
     QIcon m_icon;
+    bool m_keyboardFocus = false;
 };
+
+static bool isInPaletteSwatchGrid(QWidget *widget)
+{
+    for (QWidget *w = widget; w; w = w->parentWidget()) {
+        if (qobject_cast<PaletteSwatchGrid *>(w))
+            return true;
+    }
+    return false;
+}
 
 // ── SlideOverlay ──────────────────────────────────────────────────────────────
 
@@ -198,6 +244,7 @@ void SlideOverlay::slideIn(QDialog *dlg, std::function<void(int)> onFinished,
             }
 
             auto *inlineBtn = new OverlayBackButton(labelText, headerWidget);
+            inlineBtn->installEventFilter(this);
             if (labelText.isEmpty()) {
                 inlineBtn->setFixedSize(28, 28);
                 inlineBtn->setStyleSheet(btnSS);
@@ -212,6 +259,7 @@ void SlideOverlay::slideIn(QDialog *dlg, std::function<void(int)> onFinished,
     if (!m_inlineMode) {
         m_backBtn->setIcon(recoloredIcon("go-previous-symbolic", fg, 16));
         m_backBtn->setStyleSheet(btnSS);
+        m_backBtn->installEventFilter(this);
         m_backBtn->show();
         m_backBtn->raise();
     }
@@ -236,7 +284,16 @@ void SlideOverlay::slideIn(QDialog *dlg, std::function<void(int)> onFinished,
     show();
     raise();
     m_content->show();
-    m_content->setFocus();
+    for (QWidget *child : m_content->findChildren<QWidget *>())
+        child->installEventFilter(this);
+    auto *tabScope = m_inlineMode ? static_cast<QWidget *>(m_content)
+                                  : static_cast<QWidget *>(this);
+    // The inline back button is inserted dynamically and overlay geometry is
+    // finalized during show().  Rebuild the tab chain on the next turn so Qt's
+    // normal traversal sees the actual visual order.
+    QTimer::singleShot(0, tabScope, [tabScope]() {
+        FocusNavigation::assignTabOrder(tabScope);
+    });
 
     // ── Wire up finish / slide-out ────────────────────────────────────────────
     connect(dlg, &QDialog::finished, this,
@@ -336,6 +393,29 @@ void SlideOverlay::startSlideOut()
 
 bool SlideOverlay::eventFilter(QObject *obj, QEvent *event)
 {
+    if (event->type() == QEvent::FocusIn) {
+        auto *w = qobject_cast<QWidget *>(obj);
+        if (m_content && w && (w == m_content || m_content->isAncestorOf(w) || w == m_backBtn))
+            FocusNavigation::ensureFocusedWidgetVisible(w);
+    }
+
+    if (event->type() == QEvent::KeyPress) {
+        auto *key = static_cast<QKeyEvent *>(event);
+        auto *w = qobject_cast<QWidget *>(obj);
+        const bool up = key->key() == Qt::Key_Up;
+        const bool down = key->key() == Qt::Key_Down;
+        if ((up || down)
+                && m_content
+                && w
+                && (w == m_content || m_content->isAncestorOf(w) || w == m_backBtn)
+                && !isInPaletteSwatchGrid(w)
+                && !FocusNavigation::hasFocusableWidget(
+                    this, w, up ? FocusNavigation::Direction::Up
+                                : FocusNavigation::Direction::Down)) {
+            return true;
+        }
+    }
+
     // Keep overlay in sync whenever the parent dialog is resized.
     if (obj == parentWidget() && event->type() == QEvent::Resize) {
         if (isVisible()) {

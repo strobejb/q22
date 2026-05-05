@@ -36,6 +36,7 @@ protected:
     void leaveEvent(QEvent *) override;
     void focusInEvent(QFocusEvent *) override;
     void focusOutEvent(QFocusEvent *) override;
+    void mousePressEvent(QMouseEvent *) override;
 
 private:
     PaletteInfo m_info;
@@ -55,8 +56,13 @@ public:
     void setCurrentPaletteName(const QString &name);
     void setAllowFocusEscape(bool on) { m_allowFocusEscape = on; }
     void setGridContentsMargins(int left, int top, int right, int bottom);
+    void focusCurrent(Qt::FocusReason reason = Qt::OtherFocusReason);
 
     int gridWidthForColumns(int columns) const;
+
+    // Swatches are real Qt tab stops.  FocusNavigation uses this ordered list
+    // to place the whole grid as one contiguous block in the dialog tab chain.
+    QList<QWidget *> tabOrderWidgets() const;
 
 signals:
     void paletteSelected(const PaletteInfo &info);
@@ -64,13 +70,16 @@ signals:
     void addRequested();
 
 protected:
-    void focusInEvent(QFocusEvent *e) override;
-    void focusOutEvent(QFocusEvent *e) override;
-    void keyPressEvent(QKeyEvent *e) override;
+    bool eventFilter(QObject *obj, QEvent *event) override;
 
 private:
     void clear();
+    void clearCursorRing();
+    bool focusAdjacentControl(bool forward);
+    bool handleTabKey(QKeyEvent *e);
+    bool handleButtonKey(QKeyEvent *e);
     void setCursorIndex(int idx, bool showRing);
+    void ensureButtonVisible(QAbstractButton *button);
     QList<QAbstractButton *> allButtons() const;
     int checkedIndex() const;
 

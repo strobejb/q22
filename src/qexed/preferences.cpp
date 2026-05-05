@@ -1,3 +1,4 @@
+#include "focusnavigation.h"
 #include "preferences.h"
 #include "settingscard.h"
 #include "settings.h"
@@ -17,10 +18,13 @@
 #include <QFont>
 #include <QFontDatabase>
 #include <QFontMetrics>
+#include <QFocusEvent>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QListWidget>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QScrollArea>
 #include <QVBoxLayout>
@@ -35,6 +39,15 @@ static constexpr int kContentGap = 14;
 static void recordRecentPalette(const PaletteInfo &info)
 {
     AppSettings::addRecentPalette(info.name);
+}
+
+static bool isInPaletteSwatchGrid(QWidget *widget)
+{
+    for (QWidget *w = widget; w; w = w->parentWidget()) {
+        if (qobject_cast<PaletteSwatchGrid *>(w))
+            return true;
+    }
+    return false;
 }
 
 // ─── FontPickerDialog ────────────────────────────────────────────────────────
@@ -175,12 +188,17 @@ protected:
         p.setRenderHint(QPainter::Antialiasing);
         const QPalette &pal = palette();
 
-        if (isDown() || underMouse() || hasFocus()) {
+        if (isDown() || underMouse()) {
             const QColor hover = isDown() ? pal.color(QPalette::Mid)
                                           : pal.color(QPalette::Button);
             p.setPen(Qt::NoPen);
             p.setBrush(hover);
             p.drawRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5), 7, 7);
+        }
+        if (m_keyboardFocus) {
+            p.setPen(QPen(pal.color(QPalette::Highlight), 2));
+            p.setBrush(Qt::NoBrush);
+            p.drawRoundedRect(QRectF(rect()).adjusted(1, 1, -1, -1), 7, 7);
         }
 
         QFont f = font();
@@ -200,14 +218,33 @@ protected:
 
     void enterEvent(QEnterEvent *e) override { update(); QAbstractButton::enterEvent(e); }
     void leaveEvent(QEvent *e) override { update(); QAbstractButton::leaveEvent(e); }
-    void focusInEvent(QFocusEvent *e) override { update(); QAbstractButton::focusInEvent(e); }
-    void focusOutEvent(QFocusEvent *e) override { update(); QAbstractButton::focusOutEvent(e); }
+    void focusInEvent(QFocusEvent *e) override
+    {
+        m_keyboardFocus = e->reason() == Qt::TabFocusReason
+                       || e->reason() == Qt::BacktabFocusReason;
+        update();
+        QAbstractButton::focusInEvent(e);
+    }
+    void focusOutEvent(QFocusEvent *e) override
+    {
+        m_keyboardFocus = false;
+        update();
+        QAbstractButton::focusOutEvent(e);
+    }
     void mousePressEvent(QMouseEvent *e) override
     {
         const auto oldPolicy = focusPolicy();
         setFocusPolicy(Qt::NoFocus);
         QAbstractButton::mousePressEvent(e);
         setFocusPolicy(oldPolicy);
+    }
+    void keyPressEvent(QKeyEvent *e) override
+    {
+        if (e->key() == Qt::Key_Left || e->key() == Qt::Key_Right) {
+            e->accept();
+            return;
+        }
+        QAbstractButton::keyPressEvent(e);
     }
 
 private:
@@ -216,6 +253,7 @@ private:
     static constexpr int kPadX = 8+2;
     static constexpr int kPadY = 8;//3+2;
     QIcon m_icon;
+    bool m_keyboardFocus = false;
 };
 
 // ─── PreferencesDialog ───────────────────────────────────────────────────────
@@ -452,12 +490,38 @@ void PreferencesDialog::setVisible(bool visible)
     if (opening)
         populateMainSwatches();
     QDialog::setVisible(visible);
-    if (visible)
-        m_swatchGrid->setFocus();
+    if (visible) {
+        // Preferences contains dynamically rebuilt palette swatches, so refresh
+        // the visual tab order each time the modeless dialog is shown.
+        FocusNavigation::assignTabOrder(this);
+        m_swatchGrid->focusCurrent();
+    }
 }
 
 bool PreferencesDialog::eventFilter(QObject *obj, QEvent *e)
 {
+    if (e->type() == QEvent::FocusIn) {
+        auto *w = qobject_cast<QWidget *>(obj);
+        if (w && (w == this || isAncestorOf(w)))
+            FocusNavigation::ensureFocusedWidgetVisible(w);
+    }
+
+    if (e->type() == QEvent::KeyPress) {
+        auto *key = static_cast<QKeyEvent *>(e);
+        auto *w = qobject_cast<QWidget *>(obj);
+        const bool up = key->key() == Qt::Key_Up;
+        const bool down = key->key() == Qt::Key_Down;
+        if ((up || down)
+                && w
+                && (w == this || isAncestorOf(w))
+                && !isInPaletteSwatchGrid(w)
+                && !FocusNavigation::hasFocusableWidget(
+                    this, w, up ? FocusNavigation::Direction::Up
+                                : FocusNavigation::Direction::Down)) {
+            return true;
+        }
+    }
+
     // ── Modal watch (installed on qApp — runs for all QObjects) ──────────────
     if (e->type() == QEvent::Show) {
         auto *w = qobject_cast<QWidget *>(obj);
@@ -643,7 +707,12 @@ void PreferencesDialog::showPaletteListOverlay()
     lay->addWidget(header);
     lay->addWidget(scroll, 1);
 
-    QTimer::singleShot(0, grid, [grid]() { grid->setFocus(); });
+    QTimer::singleShot(0, dlg, [dlg, grid]() {
+        // The overlay has just been embedded/reparented; wait until layout
+        // geometry is valid, then build the visual tab chain and focus a swatch.
+        FocusNavigation::assignTabOrder(dlg);
+        grid->focusCurrent();
+    });
 
     m_overlay->slideIn(dlg, [this, editInfo, hasEditInfo](int result) {
         if (m_viewMore) {
@@ -651,7 +720,7 @@ void PreferencesDialog::showPaletteListOverlay()
             m_viewMore->clearFocus();
             m_viewMore->update();
         }
-        QTimer::singleShot(0, this, [this]() { m_swatchGrid->setFocus(); });
+        QTimer::singleShot(0, this, [this]() { m_swatchGrid->focusCurrent(); });
         if (result == AddPalette) {
             QTimer::singleShot(320, this, &PreferencesDialog::openAddPaletteEditor);
         } else if (result == EditPalette && *hasEditInfo) {

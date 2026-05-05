@@ -160,7 +160,9 @@ bool SettingsCard::eventFilter(QObject *obj, QEvent *e)
                         }
                     }
                 } else if (!forward) {
-                    // Up past the first row — exit the card like Shift-Tab
+                    // Up past the first row — exit the card like Shift-Tab.
+                    // Dialog-level key guards prevent plain Up from wrapping at
+                    // the first focusable control.
                     focusNextPrevChild(false);
                 } else {
                     // Down past the last row: only advance if there is actually

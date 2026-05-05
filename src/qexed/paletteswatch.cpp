@@ -6,12 +6,17 @@
 #include <algorithm>
 #include <cmath>
 
+#include <QApplication>
 #include <QButtonGroup>
+#include <QDialog>
 #include <QEnterEvent>
 #include <QFocusEvent>
 #include <QGridLayout>
 #include <QKeyEvent>
+#include <QMouseEvent>
 #include <QPainter>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QTimer>
 
 static int computeSwatchWidth(const QFont &widgetFont)
@@ -51,7 +56,7 @@ PaletteSwatch::PaletteSwatch(const PaletteInfo &info, QWidget *parent)
     setCursor(Qt::PointingHandCursor);
     setFixedHeight(computeSwatchHeight(font()));
     setFixedWidth(computeSwatchWidth(font()));
-    setFocusPolicy(Qt::NoFocus);
+    setFocusPolicy(Qt::StrongFocus);
     setToolTip(info.name);
     setAttribute(Qt::WA_NoSystemBackground);
 }
@@ -59,7 +64,7 @@ PaletteSwatch::PaletteSwatch(const PaletteInfo &info, QWidget *parent)
 PaletteSwatch::PaletteSwatch(QWidget *parent)
     : QAbstractButton(parent), m_addMode(true)
 {
-    setFocusPolicy(Qt::NoFocus);
+    setFocusPolicy(Qt::StrongFocus);
     setCursor(Qt::PointingHandCursor);
     setFixedHeight(computeSwatchHeight(font()));
     setFixedWidth(computeSwatchWidth(font()));
@@ -84,6 +89,13 @@ void PaletteSwatch::enterEvent(QEnterEvent *e) { update(); QAbstractButton::ente
 void PaletteSwatch::leaveEvent(QEvent *e) { update(); QAbstractButton::leaveEvent(e); }
 void PaletteSwatch::focusInEvent(QFocusEvent *e) { update(); QAbstractButton::focusInEvent(e); }
 void PaletteSwatch::focusOutEvent(QFocusEvent *e) { update(); QAbstractButton::focusOutEvent(e); }
+void PaletteSwatch::mousePressEvent(QMouseEvent *e)
+{
+    const auto oldPolicy = focusPolicy();
+    setFocusPolicy(Qt::NoFocus);
+    QAbstractButton::mousePressEvent(e);
+    setFocusPolicy(oldPolicy);
+}
 
 void PaletteSwatch::paintEvent(QPaintEvent *)
 {
@@ -247,7 +259,10 @@ PaletteSwatchGrid::PaletteSwatchGrid(QWidget *parent)
     m_group = new QButtonGroup(this);
     m_group->setExclusive(true);
 
-    setFocusPolicy(Qt::StrongFocus);
+    // The grid owns arrow-key behavior, selection, and scrolling; the swatches
+    // themselves own Tab focus.  Keeping the wrapper out of the focus chain
+    // avoids a hidden stop between neighboring controls and the first swatch.
+    setFocusPolicy(Qt::NoFocus);
 }
 
 void PaletteSwatchGrid::clear()
@@ -278,6 +293,7 @@ void PaletteSwatchGrid::setPalettes(const QList<PaletteInfo> &palettes,
             swatch->setChecked(true);
         m_group->addButton(swatch);
         m_layout->addWidget(swatch, i / m_columns, i % m_columns);
+        swatch->installEventFilter(this);
         m_buttons.append(swatch);
         m_paletteInfos.append(info);
 
@@ -293,6 +309,7 @@ void PaletteSwatchGrid::setPalettes(const QList<PaletteInfo> &palettes,
 
     m_addBtn = new PaletteSwatch(this);
     m_layout->addWidget(m_addBtn, visibleCount / m_columns, visibleCount % m_columns);
+    m_addBtn->installEventFilter(this);
     m_buttons.append(m_addBtn);
     connect(m_addBtn, &QAbstractButton::clicked, this, &PaletteSwatchGrid::addRequested);
 
@@ -303,8 +320,16 @@ void PaletteSwatchGrid::setCurrentPaletteName(const QString &name)
 {
     for (int i = 0; i < m_buttons.size(); ++i)
         m_buttons.at(i)->setChecked(i < m_paletteInfos.size() && m_paletteInfos.at(i).name == name);
-    if (m_group->checkedButton())
+    if (m_group->checkedButton()) {
         m_cursor = checkedIndex();
+        ensureButtonVisible(m_group->checkedButton());
+    }
+}
+
+void PaletteSwatchGrid::focusCurrent(Qt::FocusReason reason)
+{
+    if (auto *button = m_buttons.value(m_cursor))
+        button->setFocus(reason);
 }
 
 void PaletteSwatchGrid::setGridContentsMargins(int left, int top, int right, int bottom)
@@ -322,6 +347,16 @@ int PaletteSwatchGrid::gridWidthForColumns(int columns) const
 QList<QAbstractButton *> PaletteSwatchGrid::allButtons() const
 {
     return m_buttons;
+}
+
+QList<QWidget *> PaletteSwatchGrid::tabOrderWidgets() const
+{
+    QList<QWidget *> widgets;
+    for (QAbstractButton *button : m_buttons) {
+        if (button && button->focusPolicy() != Qt::NoFocus && button->isVisibleTo(window()))
+            widgets.append(button);
+    }
+    return widgets;
 }
 
 int PaletteSwatchGrid::checkedIndex() const
@@ -345,58 +380,202 @@ void PaletteSwatchGrid::setCursorIndex(int idx, bool showRing)
         if (auto *swatch = qobject_cast<PaletteSwatch *>(buttons.value(m_cursor)))
             swatch->setKeyboardCursor(true);
     }
+    ensureButtonVisible(buttons.value(m_cursor));
 }
 
-void PaletteSwatchGrid::focusInEvent(QFocusEvent *e)
-{
-    QWidget::focusInEvent(e);
-    const int checked = checkedIndex();
-    setCursorIndex(checked < 0 ? 0 : checked, e->reason() == Qt::TabFocusReason
-                                      || e->reason() == Qt::BacktabFocusReason
-                                      || e->reason() == Qt::OtherFocusReason);
-}
-
-void PaletteSwatchGrid::focusOutEvent(QFocusEvent *e)
-{
-    setCursorIndex(m_cursor, false);
-    QWidget::focusOutEvent(e);
-}
-
-void PaletteSwatchGrid::keyPressEvent(QKeyEvent *e)
+void PaletteSwatchGrid::clearCursorRing()
 {
     const auto buttons = allButtons();
-    if (buttons.isEmpty()) {
-        QWidget::keyPressEvent(e);
-        return;
+    if (auto *swatch = qobject_cast<PaletteSwatch *>(buttons.value(m_cursor)))
+        swatch->setKeyboardCursor(false);
+}
+
+bool PaletteSwatchGrid::focusAdjacentControl(bool forward)
+{
+    QWidget *candidate = nullptr;
+    const int gridTop = mapToGlobal(QPoint(0, 0)).y();
+    const int gridBottom = mapToGlobal(QPoint(0, height())).y();
+
+    QWidget *scope = this;
+    for (QWidget *w = parentWidget(); w; w = w->parentWidget()) {
+        if (qobject_cast<QDialog *>(w)) {
+            scope = w;
+            break;
+        }
     }
 
-    if (e->key() == Qt::Key_Space || e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter) {
-        buttons.at(m_cursor)->click();
-        e->accept();
+    const auto widgets = scope->findChildren<QWidget *>();
+    for (QWidget *w : widgets) {
+        if (w->focusPolicy() == Qt::NoFocus
+                || w == this
+                || w->isHidden()
+                || !w->isVisibleTo(scope)
+                || isAncestorOf(w))
+            continue;
+
+        if (forward) {
+            const int top = w->mapToGlobal(QPoint(0, 0)).y();
+            if (top < gridBottom)
+                continue;
+            if (!candidate || top < candidate->mapToGlobal(QPoint(0, 0)).y())
+                candidate = w;
+        } else {
+            const int bottom = w->mapToGlobal(QPoint(0, w->height())).y();
+            if (bottom > gridTop)
+                continue;
+            if (!candidate || bottom > candidate->mapToGlobal(QPoint(0, candidate->height())).y())
+                candidate = w;
+        }
+    }
+
+    if (!candidate)
+        return false;
+
+    clearCursorRing();
+    candidate->setFocus(forward ? Qt::TabFocusReason : Qt::BacktabFocusReason);
+    for (QWidget *w = parentWidget(); w; w = w->parentWidget()) {
+        if (auto *scroll = qobject_cast<QScrollArea *>(w)) {
+            scroll->ensureWidgetVisible(candidate);
+            break;
+        }
+    }
+    return true;
+}
+
+void PaletteSwatchGrid::ensureButtonVisible(QAbstractButton *button)
+{
+    if (!button)
         return;
+
+    const int idx = m_buttons.indexOf(button);
+    const bool firstRow = idx >= 0 && idx < m_columns;
+    const bool lastRow = idx >= 0 && idx / m_columns == (m_buttons.size() - 1) / m_columns;
+
+    for (QWidget *w = parentWidget(); w; w = w->parentWidget()) {
+        if (auto *scroll = qobject_cast<QScrollArea *>(w)) {
+            const QRect visibleRect = scroll->viewport()->rect();
+            const QRect buttonRect(button->mapTo(scroll->viewport(), QPoint(0, 0)), button->size());
+            if (visibleRect.contains(buttonRect) && m_allowFocusEscape)
+                return;
+
+            scroll->ensureWidgetVisible(button, 0, 0);
+            if (auto *bar = scroll->verticalScrollBar()) {
+                if (!m_allowFocusEscape && firstRow)
+                    bar->setValue(bar->minimum());
+                else if (!m_allowFocusEscape && lastRow)
+                    bar->setValue(bar->maximum());
+            }
+            return;
+        }
+    }
+}
+
+bool PaletteSwatchGrid::eventFilter(QObject *obj, QEvent *event)
+{
+    auto *button = qobject_cast<QAbstractButton *>(obj);
+    if (!button || !m_buttons.contains(button))
+        return QWidget::eventFilter(obj, event);
+
+    if (event->type() == QEvent::FocusIn) {
+        const auto *focus = static_cast<QFocusEvent *>(event);
+        const bool keyboard = focus->reason() == Qt::TabFocusReason
+                           || focus->reason() == Qt::BacktabFocusReason
+                           || focus->reason() == Qt::OtherFocusReason;
+        setCursorIndex(m_buttons.indexOf(button), keyboard);
+        return false;
+    }
+
+    if (event->type() == QEvent::FocusOut) {
+        QTimer::singleShot(0, this, [this]() {
+            auto *focused = qobject_cast<QAbstractButton *>(QApplication::focusWidget());
+            if (!focused || !m_buttons.contains(focused))
+                clearCursorRing();
+        });
+        return false;
+    }
+
+    if (event->type() == QEvent::KeyPress) {
+        auto *key = static_cast<QKeyEvent *>(event);
+        if (key->key() == Qt::Key_Tab || key->key() == Qt::Key_Backtab)
+            return handleTabKey(key);
+        return handleButtonKey(key);
+    }
+
+    return QWidget::eventFilter(obj, event);
+}
+
+bool PaletteSwatchGrid::handleTabKey(QKeyEvent *e)
+{
+    const auto buttons = allButtons();
+    if (buttons.isEmpty())
+        return false;
+
+    const bool backward = e->key() == Qt::Key_Backtab
+                       || (e->key() == Qt::Key_Tab && e->modifiers().testFlag(Qt::ShiftModifier));
+    const int next = m_cursor + (backward ? -1 : 1);
+
+    // Interior swatch-to-swatch tabbing is handled here because Qt's global
+    // tab chain is rebuilt around dynamically inserted overlay content.  The
+    // grid still gives Qt the boundary cases, so leaving the first/last swatch
+    // follows the normal dialog tab order and wrap behavior.
+    if (next < 0 || next >= buttons.size())
+        return false;
+
+    setCursorIndex(next, true);
+    if (auto *button = buttons.value(m_cursor))
+        button->setFocus(backward ? Qt::BacktabFocusReason : Qt::TabFocusReason);
+    e->accept();
+    return true;
+}
+
+bool PaletteSwatchGrid::handleButtonKey(QKeyEvent *e)
+{
+    const auto buttons = allButtons();
+    if (buttons.isEmpty())
+        return false;
+
+    if (e->key() == Qt::Key_Space || e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter) {
+        if (m_cursor < m_paletteInfos.size() && buttons.at(m_cursor)->isChecked())
+            emit paletteEditRequested(m_paletteInfos.at(m_cursor));
+        else
+            buttons.at(m_cursor)->click();
+        e->accept();
+        return true;
     }
 
     int next = m_cursor;
     switch (e->key()) {
         case Qt::Key_Right: next = qMin(m_cursor + 1, buttons.size() - 1); break;
         case Qt::Key_Left:  next = qMax(m_cursor - 1, 0); break;
-        case Qt::Key_Up:    next = qMax(m_cursor - m_columns, 0); break;
+        case Qt::Key_Up:
+            if (m_cursor - m_columns >= 0) {
+                next = m_cursor - m_columns;
+            } else {
+                focusAdjacentControl(false);
+                e->accept();
+                return true;
+            }
+            break;
         case Qt::Key_Down:
             next = m_cursor + m_columns;
             if (next >= buttons.size()) {
-                if (m_allowFocusEscape) {
-                    setCursorIndex(m_cursor, false);
-                    focusNextPrevChild(true);
+                const bool hasRowBelow = (m_cursor / m_columns) < ((buttons.size() - 1) / m_columns);
+                if (hasRowBelow) {
+                    next = buttons.size() - 1;
+                    break;
                 }
+                focusAdjacentControl(true);
                 e->accept();
-                return;
+                return true;
             }
             break;
         default:
-            QWidget::keyPressEvent(e);
-            return;
+            return false;
     }
 
     setCursorIndex(next, true);
+    if (auto *button = buttons.value(m_cursor))
+        button->setFocus(Qt::OtherFocusReason);
     e->accept();
+    return true;
 }
