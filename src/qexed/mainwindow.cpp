@@ -519,21 +519,31 @@ MainWindow::MainWindow(QWidget *parent)
     vlay->setContentsMargins(0, 0, 0, 0);
     vlay->setSpacing(0);
     vlay->addWidget(m_titleBar);   // sits at the top of the content area in custom-titlebar mode
+    // HexView updates its viewport cursor during hit-testing.  Give surrounding
+    // chrome/panel widgets an explicit arrow cursor so stale I-beam/resize
+    // cursors do not visually leak into non-text UI regions.
+    m_titleBar->setCursor(Qt::ArrowCursor);
     m_titleHairline = new Hairline(central, Hairline::Edge::Bottom, m_titleBar);  // bgSource swapped in applyMenuMode
+    m_titleHairline->setCursor(Qt::ArrowCursor);
     vlay->addWidget(m_titleHairline);
     vlay->addWidget(m_hv, 1);
     m_bookmarkDialog = new BookmarkDialog(this);
     auto *dockPanelHost = new DockPanelHost(m_hv, central);
+    dockPanelHost->setCursor(Qt::ArrowCursor);
     m_findDialog = new FindDialog(dockPanelHost);
     m_findDialog->setObjectName("FindDialog");
+    m_findDialog->setCursor(Qt::ArrowCursor);
     m_findDialog->setWindowFlags(Qt::Widget); // embedded panel — no native QWidgetWindow
     m_gotoDialog = new GotoDialog(m_hv, dockPanelHost);
     m_gotoDialog->setObjectName("GotoDialog");
+    m_gotoDialog->setCursor(Qt::ArrowCursor);
     m_gotoDialog->setWindowFlags(Qt::Widget); // embedded panel — no native QWidgetWindow
     dockPanelHost->addPanel(m_findDialog);
     dockPanelHost->addPanel(m_gotoDialog);
     vlay->addWidget(dockPanelHost, 0);
-    vlay->addWidget(new Hairline(central));  // separator between content and status bar
+    auto *statusHairline = new Hairline(central);
+    statusHairline->setCursor(Qt::ArrowCursor);
+    vlay->addWidget(statusHairline);  // separator between content and status bar
     setCentralWidget(central);
 
     // Build a standalone Edit menu for the HexView context menu, sharing the
@@ -612,6 +622,7 @@ MainWindow::MainWindow(QWidget *parent)
     });
 
     m_statusBar = new StatusBar(m_hv, ui->statusbar, this);
+    ui->statusbar->setCursor(Qt::ArrowCursor);
     ui->statusbar->setContentsMargins(0, 0, 0, 2);
     ui->statusbar->setSizeGripEnabled(false);
 
