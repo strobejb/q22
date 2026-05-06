@@ -8,6 +8,7 @@
 #include "dlgexport.h"
 #include "dlgimport.h"
 #include "dlgpastespecial.h"
+#include "dockpanelhost.h"
 #include "finddialog.h"
 #include "gotodialog.h"
 #include "palettes.h"
@@ -522,14 +523,16 @@ MainWindow::MainWindow(QWidget *parent)
     vlay->addWidget(m_titleHairline);
     vlay->addWidget(m_hv, 1);
     m_bookmarkDialog = new BookmarkDialog(this);
-    m_findDialog = new FindDialog(central);
+    auto *dockPanelHost = new DockPanelHost(m_hv, central);
+    m_findDialog = new FindDialog(dockPanelHost);
     m_findDialog->setObjectName("FindDialog");
     m_findDialog->setWindowFlags(Qt::Widget); // embedded panel — no native QWidgetWindow
-    m_gotoDialog = new GotoDialog(m_hv, central);
+    m_gotoDialog = new GotoDialog(m_hv, dockPanelHost);
     m_gotoDialog->setObjectName("GotoDialog");
     m_gotoDialog->setWindowFlags(Qt::Widget); // embedded panel — no native QWidgetWindow
-    vlay->addWidget(m_findDialog, 0);
-    vlay->addWidget(m_gotoDialog, 0);
+    dockPanelHost->addPanel(m_findDialog);
+    dockPanelHost->addPanel(m_gotoDialog);
+    vlay->addWidget(dockPanelHost, 0);
     vlay->addWidget(new Hairline(central));  // separator between content and status bar
     setCentralWidget(central);
 

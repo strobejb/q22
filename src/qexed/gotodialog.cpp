@@ -128,6 +128,7 @@ void GotoDialog::refreshStylesheet()
             background: transparent;
         }
         QToolButton:hover   { background: %1; }
+        QToolButton:focus   { border: 2px solid palette(highlight); }
         QToolButton:pressed { background: %2; }
         QToolButton::menu-indicator { image: none; width: 0; }
         #editOffset {
