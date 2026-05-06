@@ -1,11 +1,102 @@
 #include "menucombobox.h"
 #include "theme.h"
+#include <QAction>
 #include <QApplication>
 #include <QCursor>
+#include <QFileDialog>
+#include <QKeyEvent>
+#include <QMouseEvent>
 #include <QStyleOptionComboBox>
 #include <QStylePainter>
 
 static int kPad() { return qMax(1, qRound(qApp->devicePixelRatio() * 2.0)); }
+
+namespace {
+class FileDialogComboPopupFilter : public QObject
+{
+public:
+    using QObject::QObject;
+
+    bool eventFilter(QObject *obj, QEvent *event) override
+    {
+        auto *combo = qobject_cast<QComboBox *>(obj);
+        if (!combo)
+            return false;
+
+        if (event->type() == QEvent::MouseButtonPress) {
+            auto *mouse = static_cast<QMouseEvent *>(event);
+            if (mouse->button() == Qt::LeftButton) {
+                showMenu(combo);
+                return true;
+            }
+        }
+
+        if (event->type() == QEvent::KeyPress) {
+            auto *key = static_cast<QKeyEvent *>(event);
+            const bool opensPopup = key->key() == Qt::Key_Space
+                                 || key->key() == Qt::Key_Return
+                                 || key->key() == Qt::Key_Enter
+                                 || key->key() == Qt::Key_F4
+                                 || (key->key() == Qt::Key_Down
+                                     && (key->modifiers() & Qt::AltModifier));
+            if (opensPopup) {
+                showMenu(combo);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+private:
+    static void setPopupOpen(QComboBox *combo, bool open)
+    {
+        combo->setProperty("popupOpen", open);
+        combo->style()->unpolish(combo);
+        combo->style()->polish(combo);
+        combo->update();
+    }
+
+    static void showMenu(QComboBox *combo)
+    {
+        if (!combo->isEnabled() || combo->count() <= 0)
+            return;
+
+        auto *menu = new QMenu(combo);
+        menu->setAttribute(Qt::WA_DeleteOnClose);
+        menu->setMinimumWidth(combo->width());
+        themeMenu(menu);
+
+        for (int i = 0; i < combo->count(); ++i) {
+            QAction *action = combo->itemText(i).isEmpty()
+                            ? menu->addSeparator()
+                            : menu->addAction(combo->itemIcon(i), combo->itemText(i));
+            action->setData(i);
+            action->setCheckable(!combo->itemText(i).isEmpty());
+            action->setChecked(i == combo->currentIndex());
+            action->setEnabled(combo->model()->index(i, combo->modelColumn()).flags()
+                               & Qt::ItemIsEnabled);
+        }
+
+        QObject::connect(menu, &QMenu::triggered, combo, [combo](QAction *action) {
+            const int idx = action->data().toInt();
+            if (idx < 0 || idx >= combo->count() || action->isSeparator())
+                return;
+
+            combo->setCurrentIndex(idx);
+            QMetaObject::invokeMethod(combo, "activated", Qt::DirectConnection, Q_ARG(int, idx));
+            QMetaObject::invokeMethod(combo, "textActivated", Qt::DirectConnection,
+                                      Q_ARG(QString, combo->itemText(idx)));
+        });
+        QObject::connect(menu, &QMenu::aboutToHide, combo, [combo]() {
+            setPopupOpen(combo, false);
+        });
+
+        setPopupOpen(combo, true);
+        menu->popup(smartMenuPos(combo, menu, false));
+    }
+};
+} // namespace
 
 MenuComboBox::MenuComboBox(QWidget *parent)
     : QComboBox(parent)
@@ -100,4 +191,18 @@ void MenuComboBox::showPopup()
     const QPoint pos = smartMenuPos(this, m_menu, /*rightAlign=*/false);
     m_menu->popup(pos);
     setPopupOpen(true);
+}
+
+void installThemedFileDialogComboPopups(QFileDialog *dialog)
+{
+    // Non-native QFileDialog owns ordinary, private QComboBox controls for
+    // "Look in" and the file-type filter. Their built-in QComboBox popup has
+    // the same rectangular clipping / missing-shadow artefacts that led to
+    // MenuComboBox, but the controls themselves cannot be replaced cleanly.
+    // Intercept the popup gesture and show a themed QMenu while still updating
+    // the original combo and emitting the activation signals QFileDialog uses.
+    auto *filter = new FileDialogComboPopupFilter(dialog);
+    const auto combos = dialog->findChildren<QComboBox *>();
+    for (QComboBox *combo : combos)
+        combo->installEventFilter(filter);
 }

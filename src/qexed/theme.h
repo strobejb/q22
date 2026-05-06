@@ -48,7 +48,6 @@ class QMenu;
 // border-radius) renders correctly via a transparent frameless window.
 void themeMenu(QMenu *menu);
 
-
 class QWidget;
 // Returns the border/separator colour used by the current theme.
 QColor themeBorderColor();

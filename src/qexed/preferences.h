@@ -68,6 +68,7 @@ private:
     StepSpinBox    *m_horizSpacing = nullptr;
     StepSpinBox    *m_lineSpacing  = nullptr;
     SettingsToggle *m_nativeMenu       = nullptr;
+    SettingsToggle *m_nativeFileDialogs = nullptr;
     SettingsToggle *m_menuHighlight    = nullptr;
     SlideOverlay   *m_overlay      = nullptr;
 };

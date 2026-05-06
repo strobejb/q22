@@ -85,6 +85,18 @@ void AppSettings::setPrefNativeMenu(bool on)
     s.setValue("preferences/nativeMenu", on);
 }
 
+bool AppSettings::prefNativeFileDialogs()
+{
+    OPEN_SETTINGS;
+    return s.value("preferences/nativeFileDialogs", false).toBool();
+}
+
+void AppSettings::setPrefNativeFileDialogs(bool on)
+{
+    OPEN_SETTINGS;
+    s.setValue("preferences/nativeFileDialogs", on);
+}
+
 bool AppSettings::prefMenuHighlight()
 {
     OPEN_SETTINGS;

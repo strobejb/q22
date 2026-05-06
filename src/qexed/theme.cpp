@@ -1,6 +1,7 @@
 #include "theme.h"
 #include "settings.h"
 #include <QApplication>
+#include <QBitmap>
 #include <QComboBox>
 #include <QFont>
 #include <QFontDatabase>
@@ -962,10 +963,42 @@ struct NoFocusRectStyle : public QProxyStyle
                 if (popupJustClosed && combo)
                     copy.palette = combo->palette();  // fresh post-repolish palette
                 QProxyStyle::drawComplexControl(cc, &copy, p, w);
+                drawStandardComboArrow(&copy, p, w);
                 return;
             }
         }
         QProxyStyle::drawComplexControl(cc, opt, p, w);
+        if (cc == CC_ComboBox)
+            drawStandardComboArrow(opt, p, w);
+    }
+
+    void drawStandardComboArrow(const QStyleOptionComplex *opt,
+                                QPainter *p, const QWidget *w) const
+    {
+        const auto *combo = qobject_cast<const QComboBox *>(w);
+        if (!combo || combo->metaObject()->className() == QByteArray("MenuComboBox"))
+            return;
+
+        const QRect r = proxy()->subControlRect(CC_ComboBox, opt, SC_ComboBoxArrow, w);
+        if (!r.isValid())
+            return;
+
+        const QPoint c = r.center();
+        const int h = qMax(4, qMin(r.width(), r.height()) / 4);
+        const QColor color = opt->palette.color(
+            (opt->state & State_Enabled) ? QPalette::ButtonText : QPalette::Mid);
+
+        p->save();
+        p->setRenderHint(QPainter::Antialiasing);
+        p->setPen(Qt::NoPen);
+        p->setBrush(color);
+        QPainterPath arrow;
+        arrow.moveTo(c.x() - h, c.y() - h / 2);
+        arrow.lineTo(c.x() + h, c.y() - h / 2);
+        arrow.lineTo(c.x(), c.y() + h / 2);
+        arrow.closeSubpath();
+        p->drawPath(arrow);
+        p->restore();
     }
 
 };

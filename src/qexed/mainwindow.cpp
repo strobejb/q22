@@ -11,6 +11,7 @@
 #include "dockpanelhost.h"
 #include "finddialog.h"
 #include "gotodialog.h"
+#include "menucombobox.h"
 #include "palettes.h"
 #include "preferences.h"
 #include "settings.h"
@@ -21,16 +22,22 @@
 #include <QActionGroup>
 #include <QShortcut>
 #include <QTimer>
+#include <QVariant>
 #include <QVector>
 #include <QApplication>
 #include <QClipboard>
+#include <QCheckBox>
 #include <QDir>
 #include <QMimeData>
 #include <QAbstractButton>
+#include <QComboBox>
+#include <QFormLayout>
 #include <QPushButton>
 #include <QFrame>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QGridLayout>
+#include <QLabel>
 #include <QMessageBox>
 #include <QIcon>
 #include <QMenu>
@@ -43,6 +50,17 @@
 #include <QToolTip>
 #include <QWidgetAction>
 #include <QWindow>
+
+static bool exportFormatNeedsDataType(IMPEXP_FORMAT fmt)
+{
+    return fmt == FORMAT_CPP || fmt == FORMAT_ASM;
+}
+
+static int searchTypeToExportComboIndex(const QComboBox *combo, SEARCHTYPE st)
+{
+    const int idx = combo->findData(QVariant::fromValue(int(st)));
+    return idx < 0 ? 0 : idx;
+}
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -752,8 +770,10 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->actionSave, &QAction::triggered, this, [this]() {
         const QString path = m_hv->filePath();
         if (path.isEmpty()) {
+            QFileDialog::Options options;
+            options.setFlag(QFileDialog::DontUseNativeDialog);
             // No path yet — fall through to Save As behaviour.
-            const QString dest = QFileDialog::getSaveFileName(this, tr("Save As"));
+            const QString dest = QFileDialog::getSaveFileName(this, tr("Save As"), "", "",  nullptr, options);
             if (dest.isEmpty()) return;
             if (!m_hv->saveFile(dest)) return;
             openFile(dest);         // reopen: clears undo, sets filePath, updates title/recent
@@ -829,9 +849,58 @@ MainWindow::MainWindow(QWidget *parent)
         };
 
         QFileDialog dlg(this, tr("Export"));
+        const bool useNativeFileDialogs = AppSettings::prefNativeFileDialogs();
+        dlg.setOption(QFileDialog::DontUseNativeDialog, !useNativeFileDialogs);
         dlg.setAcceptMode(QFileDialog::AcceptSave);
         dlg.setNameFilters(kExportFilters);
         dlg.selectNameFilter(kExportFilters.value((int)g_ExportOptions.format));
+        if (!useNativeFileDialogs)
+            installThemedFileDialogComboPopups(&dlg);
+
+        MenuComboBox *dataTypeCombo = nullptr;
+        QCheckBox *bigEndianCheck = nullptr;
+        QCheckBox *appendCheck = nullptr;
+
+        if (!useNativeFileDialogs) {
+            auto *optionsWidget = new QWidget(&dlg);
+            auto *optionsLayout = new QFormLayout(optionsWidget);
+            optionsLayout->setContentsMargins(0, 8, 0, 0);
+            optionsLayout->setHorizontalSpacing(14);
+            optionsLayout->setVerticalSpacing(8);
+
+            auto *dataTypeLabel = new QLabel(tr("Data type:"), optionsWidget);
+            dataTypeCombo = new MenuComboBox(optionsWidget);
+            dataTypeCombo->addItem(tr("8-bit Byte"), QVariant::fromValue(int(SEARCHTYPE_BYTE)));
+            dataTypeCombo->addItem(tr("16-bit Word"), QVariant::fromValue(int(SEARCHTYPE_WORD)));
+            dataTypeCombo->addItem(tr("32-bit Dword"), QVariant::fromValue(int(SEARCHTYPE_DWORD)));
+            dataTypeCombo->addItem(tr("64-bit Qword"), QVariant::fromValue(int(SEARCHTYPE_QWORD)));
+            dataTypeCombo->addItem(tr("Float (32-bit IEEE)"), QVariant::fromValue(int(SEARCHTYPE_FLOAT)));
+            dataTypeCombo->addItem(tr("Double (64-bit IEEE)"), QVariant::fromValue(int(SEARCHTYPE_DOUBLE)));
+            dataTypeCombo->setCurrentIndex(searchTypeToExportComboIndex(dataTypeCombo, g_ExportOptions.basetype));
+
+            bigEndianCheck = new QCheckBox(tr("Big-endian byte order"), optionsWidget);
+            bigEndianCheck->setChecked(g_ExportOptions.fBigEndian);
+            appendCheck = new QCheckBox(tr("Append to file"), optionsWidget);
+            appendCheck->setChecked(g_ExportOptions.fAppend);
+
+            optionsLayout->addRow(dataTypeLabel, dataTypeCombo);
+            optionsLayout->addRow(QString(), bigEndianCheck);
+            optionsLayout->addRow(QString(), appendCheck);
+
+            if (auto *grid = qobject_cast<QGridLayout *>(dlg.layout()))
+                grid->addWidget(optionsWidget, grid->rowCount(), 0, 1, grid->columnCount());
+
+            auto updateExportOptionsEnabled = [&, dataTypeLabel]() {
+                const int idx = kExportFilters.indexOf(dlg.selectedNameFilter());
+                const auto fmt = idx >= 0 ? IMPEXP_FORMAT(idx) : g_ExportOptions.format;
+                const bool enable = exportFormatNeedsDataType(fmt);
+                dataTypeLabel->setEnabled(enable);
+                dataTypeCombo->setEnabled(enable);
+                bigEndianCheck->setEnabled(enable);
+            };
+            connect(&dlg, &QFileDialog::filterSelected, &dlg, updateExportOptionsEnabled);
+            updateExportOptionsEnabled();
+        }
 
         if (dlg.exec() != QDialog::Accepted)
             return;
@@ -843,6 +912,11 @@ MainWindow::MainWindow(QWidget *parent)
         const int idx = kExportFilters.indexOf(dlg.selectedNameFilter());
         if (idx >= 0)
             g_ExportOptions.format = (IMPEXP_FORMAT)idx;
+        if (dataTypeCombo && bigEndianCheck && appendCheck) {
+            g_ExportOptions.basetype = SEARCHTYPE(dataTypeCombo->currentData().toInt());
+            g_ExportOptions.fBigEndian = bigEndianCheck->isChecked();
+            g_ExportOptions.fAppend = appendCheck->isChecked();
+        }
 
         Export(path, m_hv, &g_ExportOptions);
     });

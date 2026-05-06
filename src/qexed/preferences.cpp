@@ -290,6 +290,9 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     m_nativeMenu = new SettingsToggle(tr("Native menu bar"), this);
     m_nativeMenu->setChecked(AppSettings::prefNativeMenu());
 
+    m_nativeFileDialogs = new SettingsToggle(tr("Use Native File Dialogs"), this);
+    m_nativeFileDialogs->setChecked(AppSettings::prefNativeFileDialogs());
+
     m_menuHighlight = new SettingsToggle(tr("Menus use highlight colour"), this);
     m_menuHighlight->setChecked(AppSettings::prefMenuHighlight());
 
@@ -314,6 +317,10 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
         AppSettings::setPrefNativeMenu(on);
         emit nativeMenuChanged(on);
     });
+    connect(m_nativeFileDialogs, &SettingsToggle::toggled,
+            this, [](bool on) {
+        AppSettings::setPrefNativeFileDialogs(on);
+    });
     connect(m_menuHighlight, &SettingsToggle::toggled,
             this, [this](bool on) {
         AppSettings::setPrefMenuHighlight(on);
@@ -325,7 +332,7 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
         {m_fontNav, m_fontSize, m_horizSpacing, m_lineSpacing},
         SettingsCard::Style::Spaced, this);
     auto *appearGroup = new SettingsCard(
-        {m_nativeMenu, m_menuHighlight},
+        {m_nativeMenu, m_nativeFileDialogs, m_menuHighlight},
         SettingsCard::Style::Spaced, this);
 
     // ── Reset button ──────────────────────────────────────────────────────────
