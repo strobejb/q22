@@ -11,11 +11,13 @@ enum class ColorScheme { System = 0, Light = 1, Dark = 2 };
 // PE_WINDOW    → titlebar / window-panel background
 // PE_WINDOWTEXT → text on title bar, panels, and status bar
 // PE_TOOLBAR   → status-bar background
+// PE_PANELBORDERS → dock panel separators / hairlines
 struct UiColourOverrides {
     QColor window;
     QColor windowText;
     QColor toolbar;
     QColor highlight;
+    QColor panelBorders;
 };
 
 // Applies Adwaita Light or Dark using the built-in Fusion style + palette + QSS.

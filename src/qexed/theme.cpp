@@ -233,14 +233,17 @@ void Hairline::paintEvent(QPaintEvent *)
         p.fillRect(QRectF(0, gapTop, width() * dpr, gapPhys), bg);
     }
 
-    p.fillRect(QRectF(0, topPhys, width() * dpr, linePhys), palette().mid());
+    p.fillRect(QRectF(0, topPhys, width() * dpr, linePhys), themeBorderColor());
 }
 
 // ── Smart menu positioning ────────────────────────────────────────────────────
 
 QColor themeBorderColor()
 {
-    return QColor(QApplication::palette().mid().color().name());
+    const QColor override = uiColourOverrides().panelBorders;
+    return override.isValid()
+        ? override
+        : QColor(QApplication::palette().mid().color().name());
 
     //bool dark = QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
     //return dark ? QColor("#4a4a4a") : QColor("#cdc7c2");
@@ -1222,7 +1225,9 @@ void setUiColourOverrides(const UiColourOverrides &o)
 {
     if (o.window == s_uiOverrides.window &&
         o.windowText == s_uiOverrides.windowText &&
-        o.toolbar == s_uiOverrides.toolbar && o.highlight == s_uiOverrides.highlight)
+        o.toolbar == s_uiOverrides.toolbar &&
+        o.highlight == s_uiOverrides.highlight &&
+        o.panelBorders == s_uiOverrides.panelBorders)
         return;
     s_uiOverrides = o;
     applyAdwaitaTheme(s_currentScheme);

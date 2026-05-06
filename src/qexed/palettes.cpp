@@ -62,6 +62,7 @@ static const char *elemIniKey(PaletteElem e)
         case PE_WINDOWTEXT:              return "WindowText";
         case PE_HIGHLIGHT:               return "Highlight";
         case PE_TOOLBAR:                 return "Toolbar";
+        case PE_PANELBORDERS:            return "PanelBorders";
         case PE_COUNT:                   return nullptr;
     }
     return nullptr;
@@ -101,6 +102,7 @@ PaletteInfo resolvedPaletteForMode(const PaletteInfo &base, bool dark)
             case PE_WINDOWTEXT:              r.windowText            = it.value(); break;
             case PE_TOOLBAR:                 r.toolbar               = it.value(); break;
             case PE_HIGHLIGHT:               r.highlight             = it.value(); break;
+            case PE_PANELBORDERS:            r.panelBorders          = it.value(); break;
             case PE_COUNT:                   break;
         }
     }
@@ -150,7 +152,13 @@ void applyPalette(HexView *hv, const PaletteInfo &info)
 void applyUiPalette(const PaletteInfo &info)
 {
     const PaletteInfo eff = resolvedPaletteForMode(info, isDarkMode());
-    setUiColourOverrides({ eff.window, eff.windowText, eff.toolbar, eff.highlight });
+    setUiColourOverrides({
+        eff.window,
+        eff.windowText,
+        eff.toolbar,
+        eff.highlight,
+        eff.panelBorders,
+    });
 }
 
 // ─── Palette loading ─────────────────────────────────────────────────────────
@@ -188,6 +196,7 @@ static PaletteInfo parsePaletteFile(const QString &path)
     info.windowText = QColor(s.value("WindowText").toString());
     info.toolbar    = QColor(s.value("Toolbar").toString());
     info.highlight  = QColor(s.value("Highlight").toString());
+    info.panelBorders = QColor(s.value("PanelBorders").toString());
     s.endGroup();
 
     // Per-mode override sections [Palette-Light] and [Palette-Dark].
@@ -306,6 +315,7 @@ bool savePalette(const PaletteInfo &info)
     s.setValue("WindowText", cs(info.windowText));
     s.setValue("Toolbar",    cs(info.toolbar));
     s.setValue("Highlight",  cs(info.highlight));
+    s.setValue("PanelBorders", cs(info.panelBorders));
     s.endGroup();
 
     // Clear old override sections before rewriting (handles removed overrides).
@@ -1038,6 +1048,7 @@ const char *PaletteEditorDialog::elemName(PaletteElem e)
         //case PE_WINDOW:             return "Window";
         //case PE_WINDOWTEXT:         return "Window Text";
         //case PE_TOOLBAR:            return "Toolbar";
+        case PE_PANELBORDERS:       return "Panel Borders";
         case PE_HIGHLIGHT:          return "Window Highlight";
         case PE_COUNT:              return "";
     }
@@ -1087,6 +1098,7 @@ QColor PaletteEditorDialog::colorAt(PaletteElem e) const
         case PE_WINDOWTEXT:         return m_info.windowText.isValid() ? m_info.windowText : pal.color(QPalette::WindowText);
         case PE_TOOLBAR:            return m_info.toolbar.isValid()    ? m_info.toolbar    : pal.color(QPalette::AlternateBase);
         case PE_HIGHLIGHT:          return m_info.highlight.isValid()  ? m_info.highlight  : pal.color(QPalette::Highlight);
+        case PE_PANELBORDERS:       return m_info.panelBorders.isValid() ? m_info.panelBorders : themeBorderColor();
         case PE_COUNT:              return {};
     }
     return {};
@@ -1125,6 +1137,7 @@ QColor PaletteEditorDialog::rawColorAt(PaletteElem e) const
         case PE_WINDOWTEXT:         return m_info.windowText;
         case PE_TOOLBAR:            return m_info.toolbar;
         case PE_HIGHLIGHT:          return m_info.highlight;
+        case PE_PANELBORDERS:       return m_info.panelBorders;
         case PE_COUNT:              return {};
     }
     return {};
@@ -1200,6 +1213,7 @@ void PaletteEditorDialog::setColorAt(PaletteElem e, const QColor &c)
         case PE_WINDOWTEXT:         m_info.windowText        = c; break;
         case PE_TOOLBAR:            m_info.toolbar           = c; break;
         case PE_HIGHLIGHT:          m_info.highlight         = c; break;
+        case PE_PANELBORDERS:       m_info.panelBorders      = c; break;
         case PE_COUNT:              break;
     }
 }

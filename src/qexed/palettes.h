@@ -53,6 +53,7 @@ enum PaletteElem {
     PE_WINDOWTEXT,
     PE_HIGHLIGHT,
     PE_TOOLBAR,
+    PE_PANELBORDERS,
     PE_COUNT
 };
 
@@ -81,6 +82,7 @@ struct PaletteInfo {
     QColor  windowText;
     QColor  toolbar;
     QColor  highlight;
+    QColor  panelBorders;
 
     // ── Per-mode overrides ────────────────────────────────────────────────
     // Key = PaletteElem cast to int.  Only elements that differ between modes
