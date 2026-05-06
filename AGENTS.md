@@ -178,6 +178,46 @@ cursor position at close time; `showPopup()` bails if the click position matches
 border/background on hover.  This rule block is deliberately separate from the
 general `QComboBox` block — keep the two scopes distinct when editing styles.
 
+## Docked find/goto panel focus
+
+The Find and Goto panels are docked panels, not real modal dialogs.  Do not make
+each panel trap focus independently.  They are hosted together in `DockPanelHost`,
+which treats all visible hosted panels as one tab group while preserving the
+existing layout and separator hairlines.
+
+`DockPanelHost` owns the keyboard boundary behavior:
+
+- `Tab` / `Shift+Tab` move through visible controls across both panels.
+- Focus wraps within the hosted panel group instead of falling back into HexView.
+- `Ctrl+Tab` explicitly returns focus to HexView.
+- If one panel closes while another remains visible, focus should return to the
+  remaining panel's edit field, not its left-most tool button.
+
+## Preferences / palette-picker keyboard navigation
+
+The Preferences dialog and palette overlays needed careful focus handling because
+the palette swatch grid is rebuilt dynamically and does not behave like a simple
+linear form.  Keep the focus rules centralized; avoid hard-coded “nth widget”
+tab fixes.
+
+- Call `FocusNavigation::assignTabOrder()` after the Preferences dialog is shown
+  or after an overlay is embedded, once widget geometry and rebuilt swatches are
+  valid.
+- Use `PaletteSwatchGrid::setBoundaryWidgets()` to describe where focus should
+  enter/leave the grid.  In the main Preferences page the grid sits between
+  `ViewMoreButton` and the Font row; in the all-palettes overlay the back button
+  is both the previous and next boundary.
+- `PaletteSwatchGrid::setAllowFocusEscape(true)` is for the main Preferences
+  page, where focus should continue through the dialog.  The all-palettes overlay
+  uses `false` so tabbing wraps inside the overlay.
+- The Preferences event filter handles the awkward edges: `View More` Tab/Down
+  enters the first swatch, Shift+Tab from the first normal control wraps to the
+  last dialog control, and Backtab from the Font row enters the last swatch.
+- Swatch focus rings should appear for keyboard focus only (`TabFocusReason` /
+  `BacktabFocusReason`), not mouse focus.
+- When closing a slide overlay, defer refocusing the main swatch grid with
+  `QTimer::singleShot(0, ...)` so reparenting/layout has settled.
+
 ## Build
 
 ```
