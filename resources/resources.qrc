@@ -32,5 +32,6 @@
         <file>icons/hicolor/scalable/actions/dark-mode.svg</file>
         <file>icons/hicolor/scalable/actions/half-circle.svg</file>
         <file>icons/hicolor/scalable/actions/light-mode.svg</file>
+        <file>icons/hicolor/scalable/actions/color-picker.svg</file>
     </qresource>
 </RCC>

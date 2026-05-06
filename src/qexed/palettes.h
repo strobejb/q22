@@ -14,8 +14,10 @@ class QLabel;
 class QLineEdit;
 class QListWidget;
 class QPushButton;
+class QAction;
 class ColorPickerWidget;
 class SettingsToggle;
+class ScreenColorPicker;
 
 // ── PaletteElem ───────────────────────────────────────────────────────────────
 // Enumerates every colour slot editable in PaletteEditorDialog.
@@ -144,6 +146,10 @@ signals:
 
 protected:
     void showEvent(QShowEvent *e) override;
+    void hideEvent(QHideEvent *e) override;
+    void changeEvent(QEvent *e) override;
+    void keyPressEvent(QKeyEvent *e) override;
+    void mousePressEvent(QMouseEvent *e) override;
 
 private:
     static const char *elemName(PaletteElem e);
@@ -151,6 +157,8 @@ private:
     QColor rawColorAt(PaletteElem e) const;
     void   setColorAt(PaletteElem e, const QColor &c);
     void   updateColorUI(PaletteElem e);
+    void   setScreenPickerActive(bool active);
+    void   applyEditedColor(const QColor &c);
     static QPixmap makeColorSwatch(const QColor &c);
 
     void updateItemIndicator(int row);
@@ -159,11 +167,14 @@ private:
     QListWidget       *m_list       = nullptr;
     ColorPickerWidget *m_picker     = nullptr;
     SettingsToggle    *m_autoToggle = nullptr;
+    QAction           *m_screenPickerAction = nullptr;
+    ScreenColorPicker *m_screenPicker = nullptr;
     ModeToggleGroup   *m_modeGroup  = nullptr;
     QLabel            *m_hexLabel   = nullptr;
     QLineEdit         *m_hexEdit    = nullptr;
     QPushButton       *m_saveBtn    = nullptr;
     PaletteInfo        m_info;
+    bool               m_screenPickerActive = false;
 };
 
 #endif // PALETTES_H

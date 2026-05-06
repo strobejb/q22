@@ -28,6 +28,8 @@ set(PROJECT_SOURCES
         paletteswatch.h
         preferences.cpp
         preferences.h
+        screencolorpicker.cpp
+        screencolorpicker.h
         slideoverlay.cpp
         slideoverlay.h
         settings.cpp
@@ -67,6 +69,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         copyas.ui
         pastespecial.ui
         preferences.ui
+        ../../resources/icons/hicolor/scalable/actions/color-picker.svg
     )
 # Define target properties for Android with Qt 6 as:
 #    set_property(TARGET qexed APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
@@ -92,6 +95,10 @@ target_include_directories(qexed PRIVATE
     ${PROJECT_SOURCE_DIR}/src
 )
 target_link_libraries(qexed PRIVATE Qt${QT_VERSION_MAJOR}::Widgets HexView)
+if(TARGET Qt${QT_VERSION_MAJOR}::DBus)
+    target_link_libraries(qexed PRIVATE Qt${QT_VERSION_MAJOR}::DBus)
+    target_compile_definitions(qexed PRIVATE QEXED_HAVE_DBUS)
+endif()
 set_target_properties(qexed PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}"
 )

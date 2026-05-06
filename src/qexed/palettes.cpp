@@ -1,16 +1,22 @@
 #include "palettes.h"
 #include "preferences.h"
+#include "screencolorpicker.h"
 #include "settings.h"
 
 #include <algorithm>
 #include "HexView/hexview.h"
 #include "theme.h"
 
+#include <QAction>
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QHBoxLayout>
+#include <QHideEvent>
+#include <QIcon>
+#include <QImage>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -24,6 +30,7 @@
 #include <QVariantAnimation>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <QWidgetAction>
 
 // ─── applyPalette ─────────────────────────────────────────────────────────────
 
@@ -787,6 +794,19 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
     // ── Hex input ─────────────────────────────────────────────────────────────
     m_hexEdit = new QLineEdit(this);
     m_hexEdit->setMaxLength(7);
+    m_screenPickerAction = m_hexEdit->addAction(
+        recoloredIcon(QStringLiteral("color-picker"),
+                      palette().buttonText().color(), 16),
+        QLineEdit::TrailingPosition);
+    m_screenPickerAction->setCheckable(true);
+    m_screenPickerAction->setToolTip(tr("Pick colour from screen"));
+    QTimer::singleShot(0, this, [this] {
+        for (QWidgetAction *action : m_hexEdit->findChildren<QWidgetAction*>()) {
+            if (action->defaultWidget())
+                action->defaultWidget()->setCursor(Qt::ArrowCursor);
+        }
+    });
+    m_screenPicker = new ScreenColorPicker(this);
 
     // ── Line edit styling (rounded, padded, mode-aware border) ────────────────
     {
@@ -967,35 +987,42 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
             m_picker->blockSignals(false);
             m_hexEdit->setText(seed.name().toUpper());
         } else {
+            setScreenPickerActive(false);
             setColorAt(e, QColor());
             // Leave hex edit and picker as-is — they just become disabled.
         }
         m_hexLabel->setEnabled(hasOverride);
         m_hexEdit->setEnabled(hasOverride);
+        m_screenPickerAction->setEnabled(hasOverride);
         m_picker->setEnabled(hasOverride);
         m_list->item(row)->setData(Qt::DecorationRole, makeColorSwatch(colorAt(e)));
         emit paletteChanged(m_info);
     });
 
     connect(m_picker, &ColorPickerWidget::colorChanged, this, [this](const QColor &c) {
-        const int row = m_list->currentRow();
-        if (row < 0 || row >= PE_COUNT) return;
-        setColorAt(PaletteElem(row), c);
-        m_hexEdit->setText(c.name().toUpper());
-        m_list->item(row)->setData(Qt::DecorationRole, makeColorSwatch(c));
-        emit paletteChanged(m_info);
+        applyEditedColor(c);
     });
 
     connect(m_hexEdit, &QLineEdit::textEdited, this, [this](const QString &text) {
         if (text.length() != 7) return;
         const QColor c(text);
         if (!c.isValid()) return;
-        const int row = m_list->currentRow();
-        if (row < 0 || row >= PE_COUNT) return;
-        setColorAt(PaletteElem(row), c);
         m_picker->setColor(c);
-        m_list->item(row)->setData(Qt::DecorationRole, makeColorSwatch(c));
-        emit paletteChanged(m_info);
+        applyEditedColor(c);
+    });
+
+    connect(m_screenPickerAction, &QAction::toggled,
+            this, &PaletteEditorDialog::setScreenPickerActive);
+    connect(m_screenPicker, &ScreenColorPicker::colorHovered,
+            this, &PaletteEditorDialog::applyEditedColor);
+    connect(m_screenPicker, &ScreenColorPicker::colorPicked,
+            this, &PaletteEditorDialog::applyEditedColor);
+    connect(m_screenPicker, &ScreenColorPicker::activeChanged, this, [this](bool active) {
+        m_screenPickerActive = active;
+        if (m_screenPickerAction->isChecked() == active) return;
+        m_screenPickerAction->blockSignals(true);
+        m_screenPickerAction->setChecked(active);
+        m_screenPickerAction->blockSignals(false);
     });
 
     // Initialise UI state for the first list item.
@@ -1017,6 +1044,42 @@ void PaletteEditorDialog::showEvent(QShowEvent *e)
         m_nameEdit->selectAll();
         m_nameEdit->setFocus();
     });
+}
+
+void PaletteEditorDialog::hideEvent(QHideEvent *e)
+{
+    setScreenPickerActive(false);
+    QDialog::hideEvent(e);
+}
+
+void PaletteEditorDialog::changeEvent(QEvent *e)
+{
+    QDialog::changeEvent(e);
+    if (e->type() == QEvent::PaletteChange && m_screenPickerAction) {
+        m_screenPickerAction->setIcon(
+            recoloredIcon(QStringLiteral("color-picker"),
+                          palette().buttonText().color(), 16));
+    }
+}
+
+void PaletteEditorDialog::keyPressEvent(QKeyEvent *e)
+{
+    if (m_screenPickerActive && e->key() == Qt::Key_Escape) {
+        setScreenPickerActive(false);
+        e->accept();
+        return;
+    }
+    QDialog::keyPressEvent(e);
+}
+
+void PaletteEditorDialog::mousePressEvent(QMouseEvent *e)
+{
+    if (m_screenPickerActive) {
+        setScreenPickerActive(false);
+        e->accept();
+        return;
+    }
+    QDialog::mousePressEvent(e);
 }
 
 const char *PaletteEditorDialog::elemName(PaletteElem e)
@@ -1157,6 +1220,7 @@ void PaletteEditorDialog::updateItemIndicator(int row)
 
 void PaletteEditorDialog::updateColorUI(PaletteElem e)
 {
+    setScreenPickerActive(false);
     const bool hasOverride = rawColorAt(e).isValid();
 
     m_autoToggle->blockSignals(true);
@@ -1165,6 +1229,7 @@ void PaletteEditorDialog::updateColorUI(PaletteElem e)
 
     m_hexLabel->setEnabled(hasOverride);
     m_hexEdit->setEnabled(hasOverride);
+    m_screenPickerAction->setEnabled(hasOverride);
     m_picker->setEnabled(hasOverride);
 
     const QColor display    = colorAt(e);
@@ -1175,6 +1240,32 @@ void PaletteEditorDialog::updateColorUI(PaletteElem e)
     // Always populate the hex edit, even when disabled — the text survives
     // while override is off so toggling on always has a value to restore.
     m_hexEdit->setText(pickerSeed.name().toUpper());
+}
+
+void PaletteEditorDialog::setScreenPickerActive(bool active)
+{
+    active = active && m_hexEdit && m_hexEdit->isEnabled();
+    if (active == m_screenPickerActive)
+        return;
+
+    m_screenPickerActive = active;
+    if (active)
+        m_screenPicker->start(this, palette().buttonText().color());
+    else
+        m_screenPicker->cancel();
+}
+
+void PaletteEditorDialog::applyEditedColor(const QColor &c)
+{
+    const int row = m_list->currentRow();
+    if (row < 0 || row >= PE_COUNT || !c.isValid()) return;
+    setColorAt(PaletteElem(row), c);
+    m_picker->blockSignals(true);
+    m_picker->setColor(c);
+    m_picker->blockSignals(false);
+    m_hexEdit->setText(c.name().toUpper());
+    m_list->item(row)->setData(Qt::DecorationRole, makeColorSwatch(c));
+    emit paletteChanged(m_info);
 }
 
 void PaletteEditorDialog::setColorAt(PaletteElem e, const QColor &c)
