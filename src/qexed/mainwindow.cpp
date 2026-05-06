@@ -29,6 +29,9 @@
 #include <QCheckBox>
 #include <QDateTime>
 #include <QDir>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
 #include <QFile>
 #include <QFileDevice>
 #include <QMimeData>
@@ -53,6 +56,7 @@
 #include <QToolTip>
 #include <QWidgetAction>
 #include <QWindow>
+#include <QUrl>
 
 static bool formatNeedsEndian(IMPEXP_FORMAT fmt)
 {
@@ -79,6 +83,19 @@ static bool restoreLastModifiedTime(const QString &path, const QDateTime &modifi
     if (!file.open(QIODevice::ReadWrite))
         return false;
     return file.setFileTime(modified, QFileDevice::FileModificationTime);
+}
+
+static QString localFileFromMimeData(const QMimeData *mime)
+{
+    if (!mime || !mime->hasUrls())
+        return {};
+
+    for (const QUrl &url : mime->urls()) {
+        const QString path = url.toLocalFile();
+        if (!path.isEmpty())
+            return path;
+    }
+    return {};
 }
 
 static QString getThemedOpenFileName(QWidget *parent, const QString &caption)
@@ -462,6 +479,7 @@ private:
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), ui(new Ui::MainWindow) {
     ui->setupUi(this);
+    ui->menubar->setAcceptDrops(true);
     ui->menuView->menuAction()->setVisible(false);
 
     // On Windows use the Segoe MDL2 FolderOpen glyph (0xED25) so the icon
@@ -574,9 +592,11 @@ MainWindow::MainWindow(QWidget *parent)
     m_hv->setHexColour(HVC_HEXODD,  QColor(0, 0, 128));
     m_hv->setGrouping(2);
     m_hv->setPadding(3, 3);
+    setAcceptDrops(true);
     // Container: HexView fills available space; FindDialog sits flush above
     // the status bar, hidden until activated.
     auto *central = new QWidget(this);
+    central->setAcceptDrops(true);
     auto *vlay    = new QVBoxLayout(central);
     vlay->setContentsMargins(0, 0, 0, 0);
     vlay->setSpacing(0);
@@ -585,26 +605,32 @@ MainWindow::MainWindow(QWidget *parent)
     // chrome/panel widgets an explicit arrow cursor so stale I-beam/resize
     // cursors do not visually leak into non-text UI regions.
     m_titleBar->setCursor(Qt::ArrowCursor);
+    m_titleBar->setAcceptDrops(true);
     m_titleHairline = new Hairline(central, Hairline::Edge::Bottom, m_titleBar);  // bgSource swapped in applyMenuMode
     m_titleHairline->setCursor(Qt::ArrowCursor);
+    m_titleHairline->setAcceptDrops(true);
     vlay->addWidget(m_titleHairline);
     vlay->addWidget(m_hv, 1);
     m_bookmarkDialog = new BookmarkDialog(this);
     auto *dockPanelHost = new DockPanelHost(m_hv, central);
     dockPanelHost->setCursor(Qt::ArrowCursor);
+    dockPanelHost->setAcceptDrops(true);
     m_findDialog = new FindDialog(dockPanelHost);
     m_findDialog->setObjectName("FindDialog");
     m_findDialog->setCursor(Qt::ArrowCursor);
+    m_findDialog->setAcceptDrops(true);
     m_findDialog->setWindowFlags(Qt::Widget); // embedded panel — no native QWidgetWindow
     m_gotoDialog = new GotoDialog(m_hv, dockPanelHost);
     m_gotoDialog->setObjectName("GotoDialog");
     m_gotoDialog->setCursor(Qt::ArrowCursor);
+    m_gotoDialog->setAcceptDrops(true);
     m_gotoDialog->setWindowFlags(Qt::Widget); // embedded panel — no native QWidgetWindow
     dockPanelHost->addPanel(m_findDialog);
     dockPanelHost->addPanel(m_gotoDialog);
     vlay->addWidget(dockPanelHost, 0);
     auto *statusHairline = new Hairline(central);
     statusHairline->setCursor(Qt::ArrowCursor);
+    statusHairline->setAcceptDrops(true);
     vlay->addWidget(statusHairline);  // separator between content and status bar
     setCentralWidget(central);
 
@@ -685,6 +711,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     m_statusBar = new StatusBar(m_hv, ui->statusbar, this);
     ui->statusbar->setCursor(Qt::ArrowCursor);
+    ui->statusbar->setAcceptDrops(true);
     ui->statusbar->setContentsMargins(0, 0, 0, 2);
     ui->statusbar->setSizeGripEnabled(false);
 
@@ -1321,12 +1348,45 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
     if (!w || w->window() != this)
         return false;
 
+    const auto type = event->type();
+    auto isDropOnHexView = [this](const QPoint &pos) {
+        if (!m_hv)
+            return false;
+
+        QWidget *target = QApplication::widgetAt(mapToGlobal(pos));
+        return target && (target == m_hv || m_hv->isAncestorOf(target));
+    };
+
+    if (type == QEvent::DragEnter || type == QEvent::DragMove) {
+        auto *de = static_cast<QDragMoveEvent *>(event);
+        const QPoint windowPos = mapFromGlobal(w->mapToGlobal(de->position().toPoint()));
+        if (!isDropOnHexView(windowPos)
+                && !localFileFromMimeData(de->mimeData()).isEmpty()) {
+            de->acceptProposedAction();
+            return true;
+        }
+        de->ignore();
+        return true;
+    }
+
+    if (type == QEvent::Drop) {
+        auto *de = static_cast<QDropEvent *>(event);
+        const QPoint windowPos = mapFromGlobal(w->mapToGlobal(de->position().toPoint()));
+        const QString path = localFileFromMimeData(de->mimeData());
+        if (!isDropOnHexView(windowPos) && !path.isEmpty()) {
+            de->acceptProposedAction();
+            if (maybeSave())
+                openFile(path);
+            return true;
+        }
+        de->ignore();
+        return true;
+    }
+
     // Edge-resize is handled by the custom titlebar only; the native window
     // frame takes care of it in standard menu mode.
     if (!m_useCustomTitleBar)
         return false;
-
-    const auto type = event->type();
 
     // ── Cursor feedback on hover ─────────────────────────────────────────────
     auto syncResizeCursor = [&](QPointF globalPos) {
