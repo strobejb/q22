@@ -631,7 +631,7 @@ void PreferencesDialog::openAddPaletteEditor()
             this, [savedScheme](int mode) {
         const ColorScheme cs = mode == 1 ? ColorScheme::Light
                             : mode == 2 ? ColorScheme::Dark : savedScheme;
-        QTimer::singleShot(0, [cs]() { applyAdwaitaTheme(cs); });
+        applyAdwaitaTheme(cs);
     });
     m_overlay->slideIn(dlg, [this, dlg, before, savedScheme](int result) {
         const bool accepted = (result == QDialog::Accepted);
@@ -659,7 +659,7 @@ void PreferencesDialog::openEditPaletteEditor(const PaletteInfo &info)
             this, [savedScheme](int mode) {
         const ColorScheme cs = mode == 1 ? ColorScheme::Light
                             : mode == 2 ? ColorScheme::Dark : savedScheme;
-        QTimer::singleShot(0, [cs]() { applyAdwaitaTheme(cs); });
+        applyAdwaitaTheme(cs);
     });
     m_overlay->slideIn(dlg, [this, dlg, before, savedScheme](int result) {
         const bool accepted = (result == QDialog::Accepted);

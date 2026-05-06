@@ -535,11 +535,11 @@ public:
     {
         if (mode == m_mode) return;
         m_mode = mode;
+        emit modeChanged(mode);
         m_anim->stop();
         m_anim->setStartValue(m_indicatorX);
         m_anim->setEndValue(qreal(kPad + mode * kSlotW));
         m_anim->start();
-        emit modeChanged(mode);
         update();
     }
 
@@ -939,15 +939,14 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
     });
 
     connect(m_modeGroup, &ModeToggleGroup::modeChanged, this, [this](int mode) {
-        emit previewModeRequested(mode);  // host posts deferred applyAdwaitaTheme
+        emit previewModeRequested(mode);
         // Refresh every list item swatch to show effective colours for the new mode.
         for (int i = 0; i < PE_COUNT; ++i)
             m_list->item(i)->setData(Qt::DecorationRole, makeColorSwatch(colorAt(PaletteElem(i))));
         const int row = m_list->currentRow();
         if (row >= 0 && row < PE_COUNT)
             updateColorUI(PaletteElem(row));
-        // Defer paletteChanged so it fires after applyAdwaitaTheme updates isDarkMode().
-        // Both are zero-delay timers; this one is posted second so it fires second.
+        // Defer paletteChanged so it fires after previewModeRequested updates isDarkMode().
         QTimer::singleShot(0, this, [this]() { emit paletteChanged(m_info); });
     });
 
