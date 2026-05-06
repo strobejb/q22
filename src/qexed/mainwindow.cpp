@@ -27,7 +27,10 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QCheckBox>
+#include <QDateTime>
 #include <QDir>
+#include <QFile>
+#include <QFileDevice>
 #include <QMimeData>
 #include <QAbstractButton>
 #include <QComboBox>
@@ -65,6 +68,42 @@ static int searchTypeToExportComboIndex(const QComboBox *combo, SEARCHTYPE st)
 {
     const int idx = combo->findData(QVariant::fromValue(int(st)));
     return idx < 0 ? 0 : idx;
+}
+
+static bool restoreLastModifiedTime(const QString &path, const QDateTime &modified)
+{
+    if (!modified.isValid())
+        return true;
+
+    QFile file(path);
+    if (!file.open(QIODevice::ReadWrite))
+        return false;
+    return file.setFileTime(modified, QFileDevice::FileModificationTime);
+}
+
+static QString getThemedOpenFileName(QWidget *parent, const QString &caption)
+{
+    QFileDialog dlg(parent, caption);
+    const bool useNativeFileDialogs = AppSettings::prefNativeFileDialogs();
+    dlg.setOption(QFileDialog::DontUseNativeDialog, !useNativeFileDialogs);
+    dlg.setAcceptMode(QFileDialog::AcceptOpen);
+    dlg.setFileMode(QFileDialog::ExistingFile);
+    if (!useNativeFileDialogs)
+        installThemedFileDialogComboPopups(&dlg);
+
+    return dlg.exec() == QDialog::Accepted ? dlg.selectedFiles().value(0) : QString();
+}
+
+static QString getThemedSaveFileName(QWidget *parent, const QString &caption)
+{
+    QFileDialog dlg(parent, caption);
+    const bool useNativeFileDialogs = AppSettings::prefNativeFileDialogs();
+    dlg.setOption(QFileDialog::DontUseNativeDialog, !useNativeFileDialogs);
+    dlg.setAcceptMode(QFileDialog::AcceptSave);
+    if (!useNativeFileDialogs)
+        installThemedFileDialogComboPopups(&dlg);
+
+    return dlg.exec() == QDialog::Accepted ? dlg.selectedFiles().value(0) : QString();
 }
 
 #ifdef Q_OS_WIN
@@ -775,10 +814,8 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->actionSave, &QAction::triggered, this, [this]() {
         const QString path = m_hv->filePath();
         if (path.isEmpty()) {
-            QFileDialog::Options options;
-            options.setFlag(QFileDialog::DontUseNativeDialog);
             // No path yet — fall through to Save As behaviour.
-            const QString dest = QFileDialog::getSaveFileName(this, tr("Save As"), "", "",  nullptr, options);
+            const QString dest = getThemedSaveFileName(this, tr("Save As"));
             if (dest.isEmpty()) return;
             if (!m_hv->saveFile(dest)) return;
             openFile(dest);         // reopen: clears undo, sets filePath, updates title/recent
@@ -789,9 +826,47 @@ MainWindow::MainWindow(QWidget *parent)
     });
 
     connect(ui->actionSave_As, &QAction::triggered, this, [this]() {
-        const QString dest = QFileDialog::getSaveFileName(this, tr("Save As"));
-        if (dest.isEmpty()) return;
+        static bool s_preserveLastModified = false;
+
+        const QString sourcePath = m_hv->filePath();
+        const QDateTime sourceModified = QFileInfo(sourcePath).lastModified();
+        const bool canPreserveModified = !sourcePath.isEmpty() && sourceModified.isValid();
+        const bool useNativeFileDialogs = AppSettings::prefNativeFileDialogs();
+
+        QFileDialog dlg(this, tr("Save As"));
+        dlg.setOption(QFileDialog::DontUseNativeDialog, !useNativeFileDialogs);
+        dlg.setAcceptMode(QFileDialog::AcceptSave);
+        if (!useNativeFileDialogs)
+            installThemedFileDialogComboPopups(&dlg);
+
+        QCheckBox *preserveModifiedCheck = nullptr;
+        if (!useNativeFileDialogs) {
+            auto *optionsWidget = new QWidget(&dlg);
+            auto *optionsLayout = new QFormLayout(optionsWidget);
+            optionsLayout->setContentsMargins(0, 8, 0, 0);
+            optionsLayout->setHorizontalSpacing(14);
+            optionsLayout->setVerticalSpacing(8);
+
+            preserveModifiedCheck = new QCheckBox(tr("Preserve last-modify time"), optionsWidget);
+            preserveModifiedCheck->setEnabled(canPreserveModified);
+            preserveModifiedCheck->setChecked(canPreserveModified && s_preserveLastModified);
+            optionsLayout->addRow(QString(), preserveModifiedCheck);
+
+            if (auto *grid = qobject_cast<QGridLayout *>(dlg.layout()))
+                grid->addWidget(optionsWidget, grid->rowCount(), 0, 1, grid->columnCount());
+        }
+
+        if (dlg.exec() != QDialog::Accepted)
+            return;
+        const QString dest = dlg.selectedFiles().value(0);
+        if (dest.isEmpty())
+            return;
+
+        const bool preserveModified = preserveModifiedCheck && preserveModifiedCheck->isChecked();
+        s_preserveLastModified = preserveModified;
         if (!m_hv->saveFile(dest)) return;
+        if (preserveModified)
+            restoreLastModifiedTime(dest, sourceModified);
         openFile(dest);             // reopen: clears undo, sets filePath, updates title/recent
     });
 
@@ -802,7 +877,7 @@ MainWindow::MainWindow(QWidget *parent)
     });
 
     connect(ui->actionOpen, &QAction::triggered, this, [this]() {
-        const QString path = QFileDialog::getOpenFileName(this, tr("Open File"));
+        const QString path = getThemedOpenFileName(this, tr("Open File"));
         if (!path.isEmpty())
             openFile(path);
     });
@@ -1104,7 +1179,7 @@ bool MainWindow::maybeSave()
                 return false;
         } else {
             // Untitled / memory-backed — ask for a filename
-            const QString dest = QFileDialog::getSaveFileName(this, tr("Save As"));
+            const QString dest = getThemedSaveFileName(this, tr("Save As"));
             if (dest.isEmpty())
                 return false;
             if (!m_hv->saveFile(dest))
