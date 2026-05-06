@@ -51,9 +51,14 @@
 #include <QWidgetAction>
 #include <QWindow>
 
-static bool exportFormatNeedsDataType(IMPEXP_FORMAT fmt)
+static bool formatNeedsEndian(IMPEXP_FORMAT fmt)
 {
     return fmt == FORMAT_CPP || fmt == FORMAT_ASM;
+}
+
+static bool importFormatNeedsAddress(IMPEXP_FORMAT fmt)
+{
+    return fmt == FORMAT_HEXDUMP || fmt == FORMAT_INTELHEX || fmt == FORMAT_SRECORD;
 }
 
 static int searchTypeToExportComboIndex(const QComboBox *combo, SEARCHTYPE st)
@@ -817,10 +822,45 @@ MainWindow::MainWindow(QWidget *parent)
         };
 
         QFileDialog dlg(this, tr("Import"));
+        const bool useNativeFileDialogs = AppSettings::prefNativeFileDialogs();
+        dlg.setOption(QFileDialog::DontUseNativeDialog, !useNativeFileDialogs);
         dlg.setAcceptMode(QFileDialog::AcceptOpen);
         dlg.setFileMode(QFileDialog::ExistingFile);
         dlg.setNameFilters(kImportFilters);
         dlg.selectNameFilter(kImportFilters.value((int)g_ImportOptions.format));
+        if (!useNativeFileDialogs)
+            installThemedFileDialogComboPopups(&dlg);
+
+        QCheckBox *bigEndianCheck = nullptr;
+        QCheckBox *useAddressCheck = nullptr;
+
+        if (!useNativeFileDialogs) {
+            auto *optionsWidget = new QWidget(&dlg);
+            auto *optionsLayout = new QFormLayout(optionsWidget);
+            optionsLayout->setContentsMargins(0, 8, 0, 0);
+            optionsLayout->setHorizontalSpacing(14);
+            optionsLayout->setVerticalSpacing(8);
+
+            bigEndianCheck = new QCheckBox(tr("Big-endian byte order"), optionsWidget);
+            bigEndianCheck->setChecked(g_ImportOptions.fBigEndian);
+            useAddressCheck = new QCheckBox(tr("Use address information"), optionsWidget);
+            useAddressCheck->setChecked(g_ImportOptions.fUseAddress);
+
+            optionsLayout->addRow(QString(), bigEndianCheck);
+            optionsLayout->addRow(QString(), useAddressCheck);
+
+            if (auto *grid = qobject_cast<QGridLayout *>(dlg.layout()))
+                grid->addWidget(optionsWidget, grid->rowCount(), 0, 1, grid->columnCount());
+
+            auto updateImportOptionsEnabled = [&]() {
+                const int idx = kImportFilters.indexOf(dlg.selectedNameFilter());
+                const auto fmt = idx >= 0 ? IMPEXP_FORMAT(idx) : g_ImportOptions.format;
+                bigEndianCheck->setEnabled(formatNeedsEndian(fmt));
+                useAddressCheck->setEnabled(importFormatNeedsAddress(fmt));
+            };
+            connect(&dlg, &QFileDialog::filterSelected, &dlg, updateImportOptionsEnabled);
+            updateImportOptionsEnabled();
+        }
 
         if (dlg.exec() != QDialog::Accepted) return;
         const QString path = dlg.selectedFiles().value(0);
@@ -829,6 +869,10 @@ MainWindow::MainWindow(QWidget *parent)
         const int idx = kImportFilters.indexOf(dlg.selectedNameFilter());
         if (idx >= 0)
             g_ImportOptions.format = (IMPEXP_FORMAT)idx;
+        if (bigEndianCheck && useAddressCheck) {
+            g_ImportOptions.fBigEndian = bigEndianCheck->isChecked();
+            g_ImportOptions.fUseAddress = useAddressCheck->isChecked();
+        }
 
         ImportFile(path, m_hv, &g_ImportOptions);
     });
@@ -893,7 +937,7 @@ MainWindow::MainWindow(QWidget *parent)
             auto updateExportOptionsEnabled = [&, dataTypeLabel]() {
                 const int idx = kExportFilters.indexOf(dlg.selectedNameFilter());
                 const auto fmt = idx >= 0 ? IMPEXP_FORMAT(idx) : g_ExportOptions.format;
-                const bool enable = exportFormatNeedsDataType(fmt);
+                const bool enable = formatNeedsEndian(fmt);
                 dataTypeLabel->setEnabled(enable);
                 dataTypeCombo->setEnabled(enable);
                 bigEndianCheck->setEnabled(enable);
