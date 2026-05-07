@@ -22,15 +22,8 @@ HexView::HexView(QWidget *parent)
     m_pDataSeq = new sequence();
     m_pDataSeq->init();
 
-    // Default colours.
-    // Palette-resolved slots are left as invalid QColor() — realiseColour maps
-    // them to QPalette roles at paint time.  Only slots with fixed RGB defaults
-    // need explicit initialisation here.
-    m_ColourList[HVC_MODIFY]      = QColor(200,  50,  50);
-    m_ColourList[HVC_MODIFYSEL]   = QColor(255, 128, 128);
-    m_ColourList[HVC_BOOKSEL]     = QColor(  0,   0,   0);
-    m_ColourList[HVC_MATCHED]     = QColor(255, 165,   0);
-    // HVC_MATCHEDSEL left invalid — realiseColour auto-mixes selection+match at paint time.
+    // Colour slots start invalid. realiseColour() is the only source of truth
+    // for HexView defaults, so clearing a slot and never setting it are equal.
 
     // Font
     //setFont(QFont("Courier New", 12));
@@ -785,4 +778,3 @@ void HexView::selectAll()
     if (oldpos == m_nVScrollPos)
         viewport()->update();
 }
-

@@ -25,8 +25,13 @@
 #include <QTimer>
 #include <QWidget>
 #include <QAbstractButton>
+#ifdef QEXED_HAVE_DBUS
+#include <QDBusInterface>
+#include <QDBusReply>
+#endif
 #ifndef Q_OS_WIN
 #include <QProcess>
+#include <QProcessEnvironment>
 #include <QSettings>
 #include <QStandardPaths>
 #endif
@@ -84,12 +89,88 @@ static constexpr int kMenuShadowMargin = 8;
 static ColorScheme       s_currentScheme = ColorScheme::System;
 static UiColourOverrides s_uiOverrides;
 static QPalette          s_basePalette;
+static QColor            s_platformAccent;
 
 bool isDarkMode()
 {
     if (s_currentScheme == ColorScheme::Dark)  return true;
     if (s_currentScheme == ColorScheme::Light) return false;
     return QApplication::palette().window().color().lightness() < 128;
+}
+
+static QColor gnomeAccentColourFromName(QString name)
+{
+    name = name.trimmed();
+    name.remove('\'');
+    name = name.toLower();
+
+    if (name == "blue")   return QColor("#3584e4");
+    if (name == "teal")   return QColor("#2190a4");
+    if (name == "green")  return QColor("#3a944a");
+    if (name == "yellow") return QColor("#c88800");
+    if (name == "orange") return QColor("#ed5b00");
+    if (name == "red")    return QColor("#e62d42");
+    if (name == "pink")   return QColor("#d56199");
+    if (name == "purple") return QColor("#9141ac");
+    if (name == "slate")  return QColor("#6f8396");
+
+    return {};
+}
+
+static QColor gnomeAccentColour()
+{
+#ifdef Q_OS_LINUX
+    const QString desktop = QProcessEnvironment::systemEnvironment()
+                                .value("XDG_CURRENT_DESKTOP").toLower();
+    if (!desktop.contains("gnome"))
+        return {};
+
+#ifdef QEXED_HAVE_DBUS
+    QDBusInterface portal(QStringLiteral("org.freedesktop.portal.Desktop"),
+                          QStringLiteral("/org/freedesktop/portal/desktop"),
+                          QStringLiteral("org.freedesktop.portal.Settings"),
+                          QDBusConnection::sessionBus());
+    if (portal.isValid()) {
+        const QDBusReply<QVariant> reply = portal.call(QStringLiteral("Read"),
+                                                       QStringLiteral("org.gnome.desktop.interface"),
+                                                       QStringLiteral("accent-color"));
+        if (reply.isValid()) {
+            const QColor c = gnomeAccentColourFromName(reply.value().toString());
+            if (c.isValid())
+                return c;
+        }
+    }
+#endif
+
+    QProcess proc;
+    proc.start(QStringLiteral("gsettings"),
+               {QStringLiteral("get"),
+                QStringLiteral("org.gnome.desktop.interface"),
+                QStringLiteral("accent-color")});
+    if (proc.waitForFinished(500) && proc.exitCode() == 0) {
+        const QColor c = gnomeAccentColourFromName(QString::fromUtf8(proc.readAllStandardOutput()));
+        if (c.isValid())
+            return c;
+    }
+#endif
+    return {};
+}
+
+static QColor platformAccentColour()
+{
+#ifdef Q_OS_LINUX
+    if (!s_platformAccent.isValid()) {
+        // Qt exposes accent colours through QPalette::Accent rather than
+        // QStyleHints, but the GNOME platform plugin may still return Qt's
+        // generic blue. Prefer GNOME's own setting when it is available.
+        s_platformAccent = gnomeAccentColour();
+        if (!s_platformAccent.isValid())
+            s_platformAccent = qApp->palette().color(QPalette::Accent);
+    }
+    if (s_platformAccent.isValid())
+        return s_platformAccent;
+#endif
+    return QColor("red");//#3584e4");
 }
 
 #ifdef Q_OS_WIN
@@ -377,7 +458,7 @@ static void applyPalette(bool dark)
     const QColor window    = dark ? QColor("#242424") : QColor("#f6f5f4");
     const QColor windowText = dark ? QColor("#deddda") : QColor("#2e3436");
     const QColor base         = dark ? window.darker(120) : Qt::white;
-    const QColor baseHighlight = QColor("#3584e4");
+    const QColor baseHighlight = platformAccentColour();
     const QColor baseHlText   = baseHighlight.lightness() < 160 ? Qt::white : windowText;
 
     // Derived roles — no additional hard-coded values beyond the four above.
@@ -401,6 +482,7 @@ static void applyPalette(bool dark)
     p.setColor(QPalette::AlternateBase,   altBase);
     p.setColor(QPalette::Highlight,       baseHighlight);
     p.setColor(QPalette::HighlightedText, baseHlText);
+    p.setColor(QPalette::Accent,          baseHighlight);
     p.setColor(QPalette::Link,            dark ? baseHighlight.lighter(130) : baseHighlight);
     p.setColor(QPalette::PlaceholderText, ph);
     // Tooltips: inverted pair so they stand out against the window background.
@@ -446,6 +528,7 @@ static void applyPalette(bool dark)
         const QColor hlOverText = hlOver.lightness() < 160 ? Qt::white : windowText;
         p.setColor(QPalette::Highlight,       hlOver);
         p.setColor(QPalette::HighlightedText, hlOverText);
+        p.setColor(QPalette::Accent,          hlOver);
         p.setColor(QPalette::Link,            dark ? hlOver.lighter(130) : hlOver);
     }
 

@@ -66,6 +66,15 @@ static double contrastRatio(const QColor &a, const QColor &b)
     return (lighter + 0.05) / (darker + 0.05);
 }
 
+static QColor contrastColourFor(const QColor &background,
+                                const QColor &candidateA,
+                                const QColor &candidateB)
+{
+    return contrastRatio(background, candidateA) >= contrastRatio(background, candidateB)
+        ? candidateA
+        : candidateB;
+}
+
 // ── int_to_bin (binary format) ────────────────────────────────────────────────
 
 static size_t intToBin(char *buf, unsigned width, unsigned num)
@@ -92,7 +101,8 @@ static size_t intToBin(char *buf, unsigned width, unsigned num)
 //
 //  Phase 2 — custom colour: if the slot has a user-set QColor, return it.
 //
-//  Phase 3 — palette default: map the slot to the appropriate QPalette role.
+//  Phase 3 — HexView default: map the slot to the appropriate QPalette role
+//  or fixed semantic default.
 //  Chained slots (HVC_HEXODDSEL etc.) call realiseColour(HVC_SELTEXT) recursively;
 //  the redirect in phase 1 ensures this cannot loop.
 
@@ -116,63 +126,69 @@ QColor HexView::realiseColour(HvColorSlot slot) const
     const QColor &c = m_ColourList[slot];
     if (c.isValid()) return c;
 
-    // Phase 3: palette defaults
+    // Phase 3: HexView defaults
     const QPalette &pal = palette();
     switch (slot) {
-    case HVC_BACKGROUND:         return pal.color(QPalette::Base);
-    case HVC_SELECTION:          return pal.color(QPalette::Active,   QPalette::Highlight);
-    case HVC_SELECTION_INACTIVE: return pal.color(QPalette::Inactive, QPalette::Highlight);
-    case HVC_SELTEXT:            return pal.color(QPalette::Active,   QPalette::HighlightedText);
-    case HVC_SELTEXT_INACTIVE: {
-        // No dedicated palette entry — derive a contrasting foreground from the
-        // inactive selection background so text is readable regardless of theme.
-        const QColor bg = realiseColour(HVC_SELECTION_INACTIVE);
-        return bg.lightness() >= 128 ? Qt::black : Qt::white;
-    }
     case HVC_HEXODDSEL:
     case HVC_HEXEVENSEL:
     case HVC_ASCIISEL:           return realiseColour(HVC_SELTEXT);  // chain; only reached when focused
+    default:
+        return defaultColourForSlot(slot, pal);
+    }
+}
+
+QColor HexView::defaultColourForSlot(HvColorSlot slot, const QPalette &pal)
+{
+    switch (slot) {
+    case HVC_BACKGROUND:         return pal.color(QPalette::Base);
+    case HVC_SELECTION:          return pal.color(QPalette::Active,   QPalette::Highlight);
+    case HVC_SELECTION_INACTIVE: return pal.color(QPalette::Inactive,   QPalette::Highlight);/*{
+        const QColor bg = defaultColourForSlot(HVC_BACKGROUND, pal);
+        return bg.lightness() >= 128 ? bg.darker(300) : bg.lighter(300);
+    }*/
+    case HVC_SELTEXT:            return pal.color(QPalette::Active,   QPalette::HighlightedText);
+    case HVC_SELTEXT_INACTIVE:  return pal.color(QPalette::Inactive,   QPalette::HighlightedText);/*{
+        const QColor bg = defaultColourForSlot(HVC_SELECTION_INACTIVE, pal);
+        return bg.lightness() >= 128 ? Qt::black : Qt::white;
+    }*/
+    case HVC_HEXODDSEL:
+    case HVC_HEXEVENSEL:
+    case HVC_ASCIISEL:           return defaultColourForSlot(HVC_SELTEXT, pal);
     case HVC_ADDRESS:
     case HVC_HEXODD:
     case HVC_HEXEVEN:
     case HVC_ASCII:              return pal.color(QPalette::WindowText);
+    case HVC_MODIFY:             return QColor(200, 50, 50);
+    case HVC_MODIFYSEL:          return QColor(255, 128, 128);
     case HVC_RESIZEBAR:          return pal.color(QPalette::Mid);
-    case HVC_MATCHEDSEL: {
-        // No dedicated palette entry — mix the selection background with the
-        // match colour 50/50 so the overlap is visually distinct from both.
-        const QColor sel = realiseColour(HVC_SELECTION);
-        const QColor asc = realiseColour(HVC_ASCII);//MATCHED);
-        return QColor((sel.red()   + asc.red())   / 2,
-                      (sel.green() + asc.green()) / 2,
-                      (sel.blue()  + asc.blue())  / 2).lighter(130);
-    }
+    case HVC_MATCHED:            return pal.color(QPalette::Highlight);//QColor(255, 165, 0);
+    case HVC_MATCHEDSEL:         return pal.color(QPalette::Highlight);
+    case HVC_HIGHLIGHT:          return pal.color(QPalette::Highlight);
+    case HVC_BOOKMARK1:          return QColor(255, 255,   0);
+    case HVC_BOOKMARK2:          return QColor(255, 165,   0);
+    case HVC_BOOKMARK3:          return QColor(255,  80,  80);
+    case HVC_BOOKMARK4:          return QColor(180, 100, 220);
+    case HVC_BOOKMARK5:          return QColor( 80, 200, 120);
+    case HVC_BOOKMARK6:          return QColor( 80, 160, 255);
+    case HVC_BOOKMARK7:          return QColor(255, 150, 200);
+    case HVC_BOOKSEL:            return Qt::black;
     case HVC_BOOKMARK1_FG:
     case HVC_BOOKMARK2_FG:
     case HVC_BOOKMARK3_FG:
     case HVC_BOOKMARK4_FG:
     case HVC_BOOKMARK5_FG:
     case HVC_BOOKMARK6_FG:
-    case HVC_BOOKMARK7_FG: {
-        // Derive a contrasting foreground from the paired bookmark background.
-        // Use HVC_BACKGROUND and HVC_ASCII as the dark/light poles so the result
-        // stays native to the current colour scheme rather than falling back to
-        // literal black/white.
-        const QColor bmBG  = realiseColour(HvColorSlot(HVC_BOOKMARK1 + (slot - HVC_BOOKMARK1_FG)));
-        const QColor bgCol = realiseColour(HVC_BACKGROUND);
-        const QColor ascii = realiseColour(HVC_ASCII);
-        return contrastColourFor(bmBG, bgCol, ascii);
+    case HVC_BOOKMARK7_FG:       return pal.color(QPalette::Text);
+    case HVC_MAX_COLOURS:        break;
     }
-    default:                     return pal.color(QPalette::WindowText);
-    }
+    return pal.color(QPalette::WindowText);
 }
 
 QColor HexView::contrastColourFor(const QColor &background,
                                   const QColor &candidateA,
                                   const QColor &candidateB) const
 {
-    return contrastRatio(background, candidateA) >= contrastRatio(background, candidateB)
-        ? candidateA
-        : candidateB;
+    return ::contrastColourFor(background, candidateA, candidateB);
 }
 
 // ── formatAddress ─────────────────────────────────────────────────────────────
@@ -381,9 +397,9 @@ bool HexView::getHighlightCol(size_w offset, int pane,
         for (const Bookmark &bm : highlights) {
             if (gap ? (bm.offset >= pos) : (pos < bm.offset)) continue;
             if (pos >= bm.offset + bm.length)                  continue;
-            if      (bm.colourIndex < 0 && bm.bgColour == selBG) inSel = true;
-            else if (bm.colourIndex < 0 && bm.bgColour == 0)    inMod = true;   // FG-only (modified)
-            else if (!hl)                                        hl = &bm;
+            if      (bm.colourIndex == -2)                    inSel = true;
+            else if (bm.colourIndex < 0 && bm.bgColour == 0)  inMod = true;   // FG-only (modified)
+            else if (!hl)                                      hl = &bm;
         }
 
         HEXCOL c;
@@ -483,8 +499,7 @@ size_t HexView::formatLine(uint8_t *data, size_t length, size_w offset, size_t d
             Bookmark sel;
             sel.offset   = selstart;
             sel.length   = selend - selstart;
-            sel.fgColour = getHexColour(HVC_SELTEXT);
-            sel.bgColour = getHexColour(HVC_SELECTION);
+            sel.colourIndex = -2;
             lineHighlights.append(sel);
         }
     }

@@ -45,7 +45,7 @@ enum HvColorSlot {
     HVC_BOOKMARK6,
     HVC_BOOKMARK7,
     HVC_BOOKSEL,
-    HVC_BOOKMARK1_FG,       // bookmark FG for colour 1; invalid = auto-contrast from HVC_BOOKMARK1
+    HVC_BOOKMARK1_FG,       // bookmark FG for colour 1; qexed applies auto-contrast
     HVC_BOOKMARK2_FG,       // must stay in the same order as HVC_BOOKMARK1..7
     HVC_BOOKMARK3_FG,
     HVC_BOOKMARK4_FG,
@@ -150,6 +150,7 @@ struct HexSnapshot {
 };
 
 class QPlainTextEdit;
+class QPalette;
 
 // ── HexView widget ────────────────────────────────────────────────────────────
 //class HexView : public QWidget
@@ -174,6 +175,7 @@ public:
 
     QRgb   getHexColour(uint index);
     bool   setHexColour(HvColorSlot slot, QColor col);
+    static QColor defaultColourForSlot(HvColorSlot slot, const QPalette &pal);
 
     uint   setStyle(uint mask, uint styles);
     uint   getStyle(uint mask = ~0u);
