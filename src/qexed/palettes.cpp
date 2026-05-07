@@ -4,7 +4,7 @@
 #include "settings.h"
 
 #include <algorithm>
-#include "HexView/hexview.h"
+#include <cmath>
 #include "theme.h"
 
 #include <QAction>
@@ -34,10 +34,114 @@
 
 // ─── applyPalette ─────────────────────────────────────────────────────────────
 
-// Helper: return c if valid, otherwise fallback.
-static QColor orElse(const QColor &c, const QColor &fallback)
+static QColor brighten(const QColor &color, int f=130)
 {
-    return c.isValid() ? c : fallback;
+    return !isDarkMode() ? color.lighter(f) : color.darker(f);
+}
+
+static QColor darken(const QColor &color, int f=130)
+{
+    return isDarkMode() ? color.lighter(f) : color.darker(f);
+}
+
+static QColor readableTextColourFor(const QColor &background)
+{
+    return background.lightness() >= 128 ? Qt::black : Qt::white;
+}
+
+static double srgbChannelToLinear(int channel)
+{
+    const double c = channel / 255.0;
+    return c <= 0.04045 ? c / 12.92 : std::pow((c + 0.055) / 1.055, 2.4);
+}
+
+static double relativeLuminance(const QColor &colour)
+{
+    return 0.2126 * srgbChannelToLinear(colour.red())
+         + 0.7152 * srgbChannelToLinear(colour.green())
+         + 0.0722 * srgbChannelToLinear(colour.blue());
+}
+
+static double contrastRatio(const QColor &a, const QColor &b)
+{
+    const double l1 = relativeLuminance(a);
+    const double l2 = relativeLuminance(b);
+    const double lighter = std::max(l1, l2);
+    const double darker  = std::min(l1, l2);
+    return (lighter + 0.05) / (darker + 0.05);
+}
+
+static QColor contrastColourFor(const QColor &background,
+                                const QColor &candidateA,
+                                const QColor &candidateB)
+{
+    return contrastRatio(background, candidateA) >= contrastRatio(background, candidateB)
+        ? candidateA
+        : candidateB;
+}
+
+QColor effectiveHexColour(const PaletteInfo &info, HvColorSlot slot, const QPalette &pal)
+{
+    switch (slot) {
+        case HVC_BACKGROUND:         return info.bg.isValid()                ? info.bg                : HexView::defaultColourForSlot(slot, pal);
+        case HVC_SELECTION:          {
+            QColor c = HexView::defaultColourForSlot(slot, pal);
+            return info.selection.isValid()         ? info.selection         : brighten(c, 160);
+        }
+        case HVC_SELECTION_INACTIVE:
+            if (info.selectionInactive.isValid())
+                return info.selectionInactive;
+            if (info.name == QStringLiteral("Default"))
+                return QColor("#cacaca");
+            return HexView::defaultColourForSlot(slot, pal);
+        case HVC_SELTEXT:
+            return info.selectionText.isValid()
+                       ? info.selectionText
+                       : readableTextColourFor(effectiveHexColour(info, HVC_SELECTION, pal));
+        case HVC_SELTEXT_INACTIVE:
+            return info.selectionTextInactive.isValid()
+                ? info.selectionTextInactive
+                : readableTextColourFor(effectiveHexColour(info, HVC_SELECTION_INACTIVE, pal));
+        case HVC_HEXODDSEL:
+        case HVC_HEXEVENSEL:
+        case HVC_ASCIISEL:           return effectiveHexColour(info, HVC_SELTEXT, pal);
+        case HVC_ADDRESS:            return info.address.isValid()           ? info.address           : HexView::defaultColourForSlot(slot, pal);
+        case HVC_HEXODD:             return info.hexOdd.isValid()            ? info.hexOdd            : HexView::defaultColourForSlot(slot, pal);
+        case HVC_HEXEVEN:            return info.hexEven.isValid()           ? info.hexEven           : HexView::defaultColourForSlot(slot, pal);
+        case HVC_ASCII:              return info.ascii.isValid()             ? info.ascii             : HexView::defaultColourForSlot(slot, pal);
+        case HVC_MODIFY:             return info.modified.isValid()          ? info.modified          : HexView::defaultColourForSlot(slot, pal);
+        case HVC_MODIFYSEL:          return info.modified.isValid()          ? info.modified          : HexView::defaultColourForSlot(slot, pal);
+        case HVC_RESIZEBAR:          return info.resizeBar.isValid()         ? info.resizeBar         : HexView::defaultColourForSlot(slot, pal);
+        case HVC_MATCHED:            return info.matched.isValid()           ? info.matched           : HexView::defaultColourForSlot(slot, pal);
+        case HVC_MATCHEDSEL:
+            return info.matchSelected.isValid()
+                ? info.matchSelected
+                : darken(effectiveHexColour(info, HVC_SELECTION, pal), 130);
+        case HVC_BOOKMARK1:
+        case HVC_BOOKMARK2:
+        case HVC_BOOKMARK3:
+        case HVC_BOOKMARK4:
+        case HVC_BOOKMARK5:
+        case HVC_BOOKMARK6:
+        case HVC_BOOKMARK7: {
+            const int i = slot - HVC_BOOKMARK1;
+            return info.bookmarks[i].isValid() ? info.bookmarks[i] : HexView::defaultColourForSlot(slot, pal);
+        }
+        case HVC_BOOKMARK1_FG:
+        case HVC_BOOKMARK2_FG:
+        case HVC_BOOKMARK3_FG:
+        case HVC_BOOKMARK4_FG:
+        case HVC_BOOKMARK5_FG:
+        case HVC_BOOKMARK6_FG:
+        case HVC_BOOKMARK7_FG: {
+            const auto bgSlot = HvColorSlot(HVC_BOOKMARK1 + (slot - HVC_BOOKMARK1_FG));
+            return contrastColourFor(effectiveHexColour(info, bgSlot, pal),
+                                     effectiveHexColour(info, HVC_BACKGROUND, pal),
+                                     effectiveHexColour(info, HVC_ASCII, pal));
+        }
+        default:
+            return HexView::defaultColourForSlot(slot, pal);
+    }
 }
 
 // Maps a PaletteElem to its INI key name (shared between [Palette],
@@ -119,39 +223,38 @@ PaletteInfo resolvedPaletteForMode(const PaletteInfo &base, bool dark)
 void applyPalette(HexView *hv, const PaletteInfo &info)
 {
     const PaletteInfo eff = resolvedPaletteForMode(info, isDarkMode());
+    const QPalette pal = hv->palette();
 
-    hv->setHexColour(HVC_BACKGROUND,         eff.bg);
-    hv->setHexColour(HVC_ADDRESS,            eff.address);
-    hv->setHexColour(HVC_RESIZEBAR,          eff.resizeBar);
+    hv->setHexColour(HVC_BACKGROUND,         effectiveHexColour(eff, HVC_BACKGROUND, pal));
+    hv->setHexColour(HVC_ADDRESS,            effectiveHexColour(eff, HVC_ADDRESS, pal));
+    hv->setHexColour(HVC_RESIZEBAR,          effectiveHexColour(eff, HVC_RESIZEBAR, pal));
 
-    hv->setHexColour(HVC_HEXODD,             eff.hexOdd);
-    hv->setHexColour(HVC_HEXEVEN,            eff.hexEven);
-    hv->setHexColour(HVC_ASCII,              eff.ascii);
+    hv->setHexColour(HVC_HEXODD,             effectiveHexColour(eff, HVC_HEXODD, pal));
+    hv->setHexColour(HVC_HEXEVEN,            effectiveHexColour(eff, HVC_HEXEVEN, pal));
+    hv->setHexColour(HVC_ASCII,              effectiveHexColour(eff, HVC_ASCII, pal));
 
     // Selected text — HEXODDSEL/HEXEVENSEL/ASCIISEL left invalid to chain here
     hv->setHexColour(HVC_HEXODDSEL,          QColor());
     hv->setHexColour(HVC_HEXEVENSEL,         QColor());
     hv->setHexColour(HVC_ASCIISEL,           QColor());
 
-    hv->setHexColour(HVC_MODIFY,             eff.modified);
-    hv->setHexColour(HVC_MODIFYSEL,          eff.modified);
+    hv->setHexColour(HVC_MODIFY,             effectiveHexColour(eff, HVC_MODIFY, pal));
+    hv->setHexColour(HVC_MODIFYSEL,          effectiveHexColour(eff, HVC_MODIFYSEL, pal));
 
-    hv->setHexColour(HVC_SELECTION,          eff.selection);
-    hv->setHexColour(HVC_SELTEXT,            eff.selectionText);
-    hv->setHexColour(HVC_SELECTION_INACTIVE, eff.selectionInactive);
-    hv->setHexColour(HVC_SELTEXT_INACTIVE,   eff.selectionTextInactive);
+    hv->setHexColour(HVC_SELECTION,          effectiveHexColour(eff, HVC_SELECTION, pal));
+    hv->setHexColour(HVC_SELTEXT,            effectiveHexColour(eff, HVC_SELTEXT, pal));
+    hv->setHexColour(HVC_SELECTION_INACTIVE, effectiveHexColour(eff, HVC_SELECTION_INACTIVE, pal));
+    hv->setHexColour(HVC_SELTEXT_INACTIVE,   effectiveHexColour(eff, HVC_SELTEXT_INACTIVE, pal));
 
-    hv->setHexColour(HVC_MATCHED,            eff.matched);
-    hv->setHexColour(HVC_MATCHEDSEL,         eff.matchSelected); // invalid = auto-mix in realiseColour
+    hv->setHexColour(HVC_MATCHED,            effectiveHexColour(eff, HVC_MATCHED, pal));
+    hv->setHexColour(HVC_MATCHEDSEL,         effectiveHexColour(eff, HVC_MATCHEDSEL, pal));
 
-    static const QColor kBookmarkDefaults[7] = {
-        QColor(255, 255,   0), QColor(255, 165,   0), QColor(255,  80,  80),
-        QColor(180, 100, 220), QColor( 80, 200, 120), QColor( 80, 160, 255),
-        QColor(255, 150, 200),
-    };
-    for (int i = 0; i < 7; ++i)
+    for (int i = 0; i < 7; ++i) {
         hv->setHexColour(HvColorSlot(HVC_BOOKMARK1 + i),
-                         orElse(eff.bookmarks[i], kBookmarkDefaults[i]));
+                         effectiveHexColour(eff, HvColorSlot(HVC_BOOKMARK1 + i), pal));
+        hv->setHexColour(HvColorSlot(HVC_BOOKMARK1_FG + i),
+                         effectiveHexColour(eff, HvColorSlot(HVC_BOOKMARK1_FG + i), pal));
+    }
 
     hv->viewport()->update();
 }
@@ -1096,6 +1199,7 @@ const char *PaletteEditorDialog::elemName(PaletteElem e)
         case PE_MATCH_SELECTED:     return "Match (Selected)";
         case PE_SELECTION_TEXT:     return "Selection Text";
         case PE_SELECTION_INACTIVE: return "Selection (Inactive)";
+        case PE_SELECTION_TEXT_INACTIVE: return "Selection Text (Inactive)";
         case PE_ADDRESS:            return "Address";
         case PE_RESIZE_BAR:         return "Resize Bar";
         case PE_BOOKMARK_1:         return "Bookmark 1";
@@ -1128,33 +1232,27 @@ QColor PaletteEditorDialog::colorAt(PaletteElem e) const
     }
     const QPalette &pal = qApp->palette();
     switch (e) {
-        case PE_BG:                 return m_info.bg.isValid()        ? m_info.bg        : pal.color(QPalette::Base);
+        case PE_BG:                 return effectiveHexColour(m_info, HVC_BACKGROUND, pal);
         //case PE_FG:
-        case PE_HEX_ODD:            return m_info.hexOdd.isValid()    ? m_info.hexOdd    : pal.color(QPalette::Text);
-        case PE_HEX_EVEN:           return m_info.hexEven.isValid()   ? m_info.hexEven   : pal.color(QPalette::Text);
-        case PE_ASCII:              return m_info.ascii.isValid()     ? m_info.ascii     : pal.color(QPalette::Text);
-        case PE_MODIFIED:           return m_info.modified.isValid()  ? m_info.modified  : QColor(200, 50, 50);
-        case PE_SELECTION:          return m_info.selection.isValid() ? m_info.selection : pal.color(QPalette::Highlight);
-        case PE_MATCHED:            return m_info.matched.isValid()   ? m_info.matched   : QColor(255, 165, 0);
-        case PE_MATCH_SELECTED: {
-            if (m_info.matchSelected.isValid()) return m_info.matchSelected;
-            const QColor sel     = colorAt(PE_SELECTION);
-            const QColor matched = colorAt(PE_MATCHED);
-            return QColor((sel.red()   + matched.red())   / 2,
-                          (sel.green() + matched.green()) / 2,
-                          (sel.blue()  + matched.blue())  / 2);
-        }
-        case PE_SELECTION_TEXT:     return m_info.selectionText.isValid()     ? m_info.selectionText     : pal.color(QPalette::HighlightedText);
-        case PE_SELECTION_INACTIVE: return m_info.selectionInactive.isValid() ? m_info.selectionInactive : (m_info.selection.isValid() ? m_info.selection.darker(130) : pal.color(QPalette::Highlight).darker(130));
-        case PE_ADDRESS:            return m_info.address.isValid()   ? m_info.address   : pal.color(QPalette::Text);
-        case PE_RESIZE_BAR:         return m_info.resizeBar.isValid() ? m_info.resizeBar : pal.color(QPalette::Mid);
-        case PE_BOOKMARK_1:         return m_info.bookmarks[0].isValid() ? m_info.bookmarks[0] : QColor(255, 255,   0);
-        case PE_BOOKMARK_2:         return m_info.bookmarks[1].isValid() ? m_info.bookmarks[1] : QColor(255, 165,   0);
-        case PE_BOOKMARK_3:         return m_info.bookmarks[2].isValid() ? m_info.bookmarks[2] : QColor(255,  80,  80);
-        case PE_BOOKMARK_4:         return m_info.bookmarks[3].isValid() ? m_info.bookmarks[3] : QColor(180, 100, 220);
-        case PE_BOOKMARK_5:         return m_info.bookmarks[4].isValid() ? m_info.bookmarks[4] : QColor( 80, 200, 120);
-        case PE_BOOKMARK_6:         return m_info.bookmarks[5].isValid() ? m_info.bookmarks[5] : QColor( 80, 160, 255);
-        case PE_BOOKMARK_7:         return m_info.bookmarks[6].isValid() ? m_info.bookmarks[6] : QColor(255, 150, 200);
+        case PE_HEX_ODD:            return effectiveHexColour(m_info, HVC_HEXODD, pal);
+        case PE_HEX_EVEN:           return effectiveHexColour(m_info, HVC_HEXEVEN, pal);
+        case PE_ASCII:              return effectiveHexColour(m_info, HVC_ASCII, pal);
+        case PE_MODIFIED:           return effectiveHexColour(m_info, HVC_MODIFY, pal);
+        case PE_SELECTION:          return effectiveHexColour(m_info, HVC_SELECTION, pal);
+        case PE_MATCHED:            return effectiveHexColour(m_info, HVC_MATCHED, pal);
+        case PE_MATCH_SELECTED:     return effectiveHexColour(m_info, HVC_MATCHEDSEL, pal);
+        case PE_SELECTION_TEXT:     return effectiveHexColour(m_info, HVC_SELTEXT, pal);
+        case PE_SELECTION_INACTIVE: return effectiveHexColour(m_info, HVC_SELECTION_INACTIVE, pal);
+        case PE_SELECTION_TEXT_INACTIVE: return effectiveHexColour(m_info, HVC_SELTEXT_INACTIVE, pal);
+        case PE_ADDRESS:            return effectiveHexColour(m_info, HVC_ADDRESS, pal);
+        case PE_RESIZE_BAR:         return effectiveHexColour(m_info, HVC_RESIZEBAR, pal);
+        case PE_BOOKMARK_1:         return effectiveHexColour(m_info, HVC_BOOKMARK1, pal);
+        case PE_BOOKMARK_2:         return effectiveHexColour(m_info, HVC_BOOKMARK2, pal);
+        case PE_BOOKMARK_3:         return effectiveHexColour(m_info, HVC_BOOKMARK3, pal);
+        case PE_BOOKMARK_4:         return effectiveHexColour(m_info, HVC_BOOKMARK4, pal);
+        case PE_BOOKMARK_5:         return effectiveHexColour(m_info, HVC_BOOKMARK5, pal);
+        case PE_BOOKMARK_6:         return effectiveHexColour(m_info, HVC_BOOKMARK6, pal);
+        case PE_BOOKMARK_7:         return effectiveHexColour(m_info, HVC_BOOKMARK7, pal);
 
         case PE_WINDOW:             return m_info.window.isValid()     ? m_info.window     : pal.color(QPalette::Window);
         case PE_WINDOWTEXT:         return m_info.windowText.isValid() ? m_info.windowText : pal.color(QPalette::WindowText);
@@ -1186,6 +1284,7 @@ QColor PaletteEditorDialog::rawColorAt(PaletteElem e) const
         case PE_MATCH_SELECTED:     return m_info.matchSelected;
         case PE_SELECTION_TEXT:     return m_info.selectionText;
         case PE_SELECTION_INACTIVE: return m_info.selectionInactive;
+        case PE_SELECTION_TEXT_INACTIVE: return m_info.selectionTextInactive;
         case PE_ADDRESS:            return m_info.address;
         case PE_RESIZE_BAR:         return m_info.resizeBar;
         case PE_BOOKMARK_1:         return m_info.bookmarks[0];
@@ -1289,6 +1388,7 @@ void PaletteEditorDialog::setColorAt(PaletteElem e, const QColor &c)
         case PE_MATCH_SELECTED:     m_info.matchSelected     = c; break;
         case PE_SELECTION_TEXT:     m_info.selectionText     = c; break;
         case PE_SELECTION_INACTIVE: m_info.selectionInactive = c; break;
+        case PE_SELECTION_TEXT_INACTIVE: m_info.selectionTextInactive = c; break;
         case PE_ADDRESS:            m_info.address           = c; break;
         case PE_RESIZE_BAR:         m_info.resizeBar         = c; break;
         case PE_BOOKMARK_1:         m_info.bookmarks[0]      = c; break;

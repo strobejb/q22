@@ -147,8 +147,7 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
         p.drawRoundedRect(card.adjusted(-i, -(i - 1), i, i), r, r);
     }
 
-    const QColor effectiveBg = eff.bg.isValid() ? eff.bg
-                                                 : pal.color(QPalette::Base);
+    const QColor effectiveBg = effectiveHexColour(eff, HVC_BACKGROUND, pal);
     const QColor borderCol = effectiveBg.lightness() < 128 ? QColor(255, 255, 255, 30)
                                                             : QColor(0, 0, 0, 30);
     p.setPen(QPen(borderCol, SW_BORDER));
@@ -157,10 +156,7 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
 
     constexpr int kPadX = SW_PAD_X;
     constexpr int kPadTop = 10;
-    const QColor intendedTextCol = eff.ascii.isValid()
-        ? eff.ascii
-        : (effectiveBg.lightness() < 128 ? QColor(255, 255, 255, 200)
-                                         : QColor(0, 0, 0, 180));
+    const QColor intendedTextCol = effectiveHexColour(eff, HVC_ASCII, pal);
     auto lum = [](const QColor &c) -> qreal {
         auto s = [](qreal v) { return v <= 0.04045 ? v / 12.92 : std::pow((v + 0.055) / 1.055, 2.4); };
         return 0.2126 * s(c.redF()) + 0.7152 * s(c.greenF()) + 0.0722 * s(c.blueF());
@@ -185,8 +181,8 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
     p.setFont(qfont);
     const QFontMetrics fm2(qfont);
 
-    const QColor hexOdd = eff.hexOdd.isValid() ? eff.hexOdd : pal.color(QPalette::Text);
-    const QColor hexEven = eff.hexEven.isValid() ? eff.hexEven : pal.color(QPalette::Text);
+    const QColor hexOdd = effectiveHexColour(eff, HVC_HEXODD, pal);
+    const QColor hexEven = effectiveHexColour(eff, HVC_HEXEVEN, pal);
     const qreal hexBaseY = card.top() + kPadTop + fm2.height() + 16;
     static const quint8 kSample[2][8] = {
         { 0xA4, 0x3F, 0xB2, 0x91, 0xE7, 0x60, 0xC3, 0x2A },
@@ -211,12 +207,12 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
     constexpr qreal kSwatchGap = 5;
     constexpr int kNSwatches = 6;
     const QColor swatchCols[kNSwatches] = {
-        eff.hexOdd.isValid()       ? eff.hexOdd       : pal.color(QPalette::Text),
-        eff.ascii.isValid()        ? eff.ascii        : pal.color(QPalette::Text),
-        eff.selection.isValid()    ? eff.selection    : pal.color(QPalette::Highlight),
-        eff.modified.isValid()     ? eff.modified     : QColor(200, 50, 50),
-        eff.matched.isValid()      ? eff.matched      : QColor(255, 165, 0),
-        eff.bookmarks[0].isValid() ? eff.bookmarks[0] : pal.color(QPalette::Base),
+        effectiveHexColour(eff, HVC_HEXODD, pal),
+        effectiveHexColour(eff, HVC_ASCII, pal),
+        effectiveHexColour(eff, HVC_SELECTION, pal),
+        effectiveHexColour(eff, HVC_MODIFY, pal),
+        effectiveHexColour(eff, HVC_MATCHED, pal),
+        effectiveHexColour(eff, HVC_BOOKMARK1, pal),
     };
     const qreal swatchY = card.bottom() - kSwatchBotPad - kSwatchH;
     const qreal swatchAreaW = card.width() - 2 * kPadX;

@@ -7,6 +7,7 @@
 #include <QHash>
 #include <QList>
 #include <QString>
+#include "HexView/hexview.h"
 
 class HexView;
 class ModeToggleGroup;
@@ -99,6 +100,10 @@ void applyPalette(HexView *hv, const PaletteInfo &info);
 
 // Fold mode-specific overrides into a flat PaletteInfo for the requested mode.
 PaletteInfo resolvedPaletteForMode(const PaletteInfo &base, bool dark);
+
+// Resolve a HexView slot using qexed palette policy: explicit PaletteInfo entry
+// first, then qexed fallbacks, then HexView's plain QPalette defaults.
+QColor effectiveHexColour(const PaletteInfo &info, HvColorSlot slot, const QPalette &pal);
 
 // Apply the UI-level colour overrides (PE_WINDOW / PE_WINDOWTEXT / PE_TOOLBAR)
 // from a PaletteInfo to the application palette and stylesheet.

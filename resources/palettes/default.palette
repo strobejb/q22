@@ -8,9 +8,6 @@ Bookmark4=#B464DC
 Bookmark5=#50C878
 Bookmark6=#50A0FF
 Bookmark7=#FF96C8
-Matched=#91BCDD
-Modified=#C83232
-SelectionInactive=#CACACA
 
 [Palette-Dark]
 Address=#888888
@@ -25,4 +22,3 @@ Ascii=#222222
 HexEven=#0000FF
 HexOdd=#000089
 ResizeBar=#BBBBBB
-
