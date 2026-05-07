@@ -158,6 +158,27 @@ static QColor gnomeAccentColour()
 
 static QColor platformAccentColour()
 {
+#ifdef Q_OS_WIN
+    if (!s_platformAccent.isValid()) {
+        DWORD accent = 0;
+        BOOL opaque = FALSE;
+        if (SUCCEEDED(DwmGetColorizationColor(&accent, &opaque))) {
+            // DWM returns 0xAARRGGBB for the current Windows accent colour.
+            s_platformAccent = QColor((accent >> 16) & 0xff,
+                                      (accent >> 8)  & 0xff,
+                                      accent         & 0xff);
+        } else {
+            // Fallback to the classic system highlight colour. COLORREF is
+            // 0x00BBGGRR, so use the Win32 channel macros rather than shifts.
+            const COLORREF highlight = GetSysColor(COLOR_HIGHLIGHT);
+            s_platformAccent = QColor(GetRValue(highlight),
+                                      GetGValue(highlight),
+                                      GetBValue(highlight));
+        }
+    }
+    if (s_platformAccent.isValid())
+        return s_platformAccent;
+#endif
 #ifdef Q_OS_LINUX
     if (!s_platformAccent.isValid()) {
         // Qt exposes accent colours through QPalette::Accent rather than
@@ -170,7 +191,7 @@ static QColor platformAccentColour()
     if (s_platformAccent.isValid())
         return s_platformAccent;
 #endif
-    return QColor("red");//#3584e4");
+    return QColor("3584e4");
 }
 
 #ifdef Q_OS_WIN

@@ -86,7 +86,7 @@ QColor effectiveHexColour(const PaletteInfo &info, HvColorSlot slot, const QPale
         case HVC_BACKGROUND:         return info.bg.isValid()                ? info.bg                : HexView::defaultColourForSlot(slot, pal);
         case HVC_SELECTION:          {
             QColor c = HexView::defaultColourForSlot(slot, pal);
-            return info.selection.isValid()         ? info.selection         : brighten(c, 160);
+            return info.selection.isValid()         ? info.selection         : brighten(c, 200);
         }
         case HVC_SELECTION_INACTIVE:
             if (info.selectionInactive.isValid())
