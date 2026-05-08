@@ -167,7 +167,7 @@ FindDialog::FindDialog(QWidget *parent)
     for (int i = 0; i < ui->comboDataType->count(); ++i)
         m_comboDataType->addItem(ui->comboDataType->itemText(i));
     ui->horizontalLayout->replaceWidget(ui->comboDataType, m_comboDataType);
-    m_comboDataType->setFixedWidth(ui->comboDataType->minimumWidth());
+    m_comboDataType->setFixedWidth(ui->comboDataType->minimumWidth() + 20);
     ui->comboDataType->hide();
 
     m_comboDataType->buildMenu();
@@ -179,6 +179,12 @@ FindDialog::FindDialog(QWidget *parent)
     m_comboDataType->setActionData("Word",   SearchWord);
     m_comboDataType->setActionData("Dword",  SearchDword);
     m_comboDataType->setDisplayText(m_comboDataType->selectionText());
+    {
+        const QColor iconCol = QApplication::palette().placeholderText().color();
+        const QIcon typeIc = recoloredIcon("type100-001", iconCol, 16);
+        if (!typeIc.isNull())
+            m_comboDataType->setLeadingIcon(typeIc);
+    }
 
     // Keep the search field's font in sync with the Type combo so both
     // controls render text at the same size.

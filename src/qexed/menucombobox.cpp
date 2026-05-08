@@ -6,6 +6,7 @@
 #include <QFileDialog>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QPushButton>
 #include <QStyleOptionComboBox>
 #include <QStylePainter>
 
@@ -22,6 +23,28 @@ public:
         auto *combo = qobject_cast<QComboBox *>(obj);
         if (!combo)
             return false;
+
+        if (event->type() == QEvent::Paint) {
+            QStylePainter p(combo);
+            QStyleOptionComboBox opt;
+            opt.initFrom(combo);
+            opt.currentText       = combo->currentText();
+            opt.currentIcon       = combo->itemIcon(combo->currentIndex());
+            opt.iconSize          = combo->iconSize();
+            opt.editable          = combo->isEditable();
+            opt.frame             = true;
+            opt.subControls       = QStyle::SC_ComboBoxFrame | QStyle::SC_ComboBoxArrow
+                                  | QStyle::SC_ComboBoxEditField;
+            opt.activeSubControls = QStyle::SC_None;
+            p.drawComplexControl(QStyle::CC_ComboBox, opt);
+            p.drawControl(QStyle::CE_ComboBoxLabel, opt);
+            // Explicitly draw the arrow: QComboBox::drop-down { border: none } suppresses it.
+            QStyleOptionComboBox arrowOpt = opt;
+            arrowOpt.rect = combo->style()->subControlRect(
+                QStyle::CC_ComboBox, &opt, QStyle::SC_ComboBoxArrow, combo);
+            p.drawPrimitive(QStyle::PE_IndicatorArrowDown, arrowOpt);
+            return true;
+        }
 
         if (event->type() == QEvent::MouseButtonPress) {
             auto *mouse = static_cast<QMouseEvent *>(event);
@@ -205,4 +228,15 @@ void installThemedFileDialogComboPopups(QFileDialog *dialog)
     const auto combos = dialog->findChildren<QComboBox *>();
     for (QComboBox *combo : combos)
         combo->installEventFilter(filter);
+
+    // The QDialogButtonBox spans the filename-edit row and the filetype-combo
+    // row.  QSS padding arithmetic should make them equal, but Qt's internal
+    // sizeFromContents for buttons can differ from that for input controls.
+    // Measure the actual sizeHint of the filename edit (already styled by QSS)
+    // and enforce that as the minimum height on every button in the dialog.
+    if (auto *ref = dialog->findChild<QWidget *>("fileNameEdit")) {
+        const int h = ref->sizeHint().height();
+        for (auto *btn : dialog->findChildren<QPushButton *>())
+            btn->setMinimumHeight(h);
+    }
 }

@@ -37,7 +37,6 @@
 #include <QMimeData>
 #include <QAbstractButton>
 #include <QComboBox>
-#include <QFormLayout>
 #include <QPushButton>
 #include <QFrame>
 #include <QFileDialog>
@@ -868,19 +867,26 @@ MainWindow::MainWindow(QWidget *parent)
 
         QCheckBox *preserveModifiedCheck = nullptr;
         if (!useNativeFileDialogs) {
-            auto *optionsWidget = new QWidget(&dlg);
-            auto *optionsLayout = new QFormLayout(optionsWidget);
-            optionsLayout->setContentsMargins(0, 8, 0, 0);
-            optionsLayout->setHorizontalSpacing(14);
-            optionsLayout->setVerticalSpacing(8);
-
-            preserveModifiedCheck = new QCheckBox(tr("Preserve last-modify time"), optionsWidget);
+            preserveModifiedCheck = new QCheckBox(tr("Preserve last-modify time"), &dlg);
             preserveModifiedCheck->setEnabled(canPreserveModified);
             preserveModifiedCheck->setChecked(canPreserveModified && s_preserveLastModified);
-            optionsLayout->addRow(QString(), preserveModifiedCheck);
 
-            if (auto *grid = qobject_cast<QGridLayout *>(dlg.layout()))
-                grid->addWidget(optionsWidget, grid->rowCount(), 0, 1, grid->columnCount());
+            if (auto *grid = qobject_cast<QGridLayout *>(dlg.layout())) {
+                int comboCol = 1, comboColSpan = 1;
+                if (auto *ftCombo = dlg.findChild<QComboBox *>("fileTypeCombo")) {
+                    int itemIdx = grid->indexOf(ftCombo);
+                    if (itemIdx >= 0) {
+                        int row, col, rspan, cspan;
+                        grid->getItemPosition(itemIdx, &row, &col, &rspan, &cspan);
+                        comboCol     = col;
+                        comboColSpan = cspan;
+                    }
+                }
+                int baseRow = grid->rowCount();
+                grid->setRowMinimumHeight(baseRow, 8);
+                baseRow++;
+                grid->addWidget(preserveModifiedCheck, baseRow, comboCol, 1, comboColSpan);
+            }
         }
 
         if (dlg.exec() != QDialog::Accepted)
@@ -937,22 +943,28 @@ MainWindow::MainWindow(QWidget *parent)
         QCheckBox *useAddressCheck = nullptr;
 
         if (!useNativeFileDialogs) {
-            auto *optionsWidget = new QWidget(&dlg);
-            auto *optionsLayout = new QFormLayout(optionsWidget);
-            optionsLayout->setContentsMargins(0, 8, 0, 0);
-            optionsLayout->setHorizontalSpacing(14);
-            optionsLayout->setVerticalSpacing(8);
-
-            bigEndianCheck = new QCheckBox(tr("Big-endian byte order"), optionsWidget);
+            bigEndianCheck = new QCheckBox(tr("Big-endian byte order"), &dlg);
             bigEndianCheck->setChecked(g_ImportOptions.fBigEndian);
-            useAddressCheck = new QCheckBox(tr("Use address information"), optionsWidget);
+            useAddressCheck = new QCheckBox(tr("Use address information"), &dlg);
             useAddressCheck->setChecked(g_ImportOptions.fUseAddress);
 
-            optionsLayout->addRow(QString(), bigEndianCheck);
-            optionsLayout->addRow(QString(), useAddressCheck);
-
-            if (auto *grid = qobject_cast<QGridLayout *>(dlg.layout()))
-                grid->addWidget(optionsWidget, grid->rowCount(), 0, 1, grid->columnCount());
+            if (auto *grid = qobject_cast<QGridLayout *>(dlg.layout())) {
+                int comboCol = 1, comboColSpan = 1;
+                if (auto *ftCombo = dlg.findChild<QComboBox *>("fileTypeCombo")) {
+                    int itemIdx = grid->indexOf(ftCombo);
+                    if (itemIdx >= 0) {
+                        int row, col, rspan, cspan;
+                        grid->getItemPosition(itemIdx, &row, &col, &rspan, &cspan);
+                        comboCol     = col;
+                        comboColSpan = cspan;
+                    }
+                }
+                int baseRow = grid->rowCount();
+                grid->setRowMinimumHeight(baseRow, 8);
+                baseRow++;
+                grid->addWidget(bigEndianCheck,  baseRow,     comboCol, 1, comboColSpan);
+                grid->addWidget(useAddressCheck, baseRow + 1, comboCol, 1, comboColSpan);
+            }
 
             auto updateImportOptionsEnabled = [&]() {
                 const int idx = kImportFilters.indexOf(dlg.selectedNameFilter());
@@ -1008,14 +1020,9 @@ MainWindow::MainWindow(QWidget *parent)
         QCheckBox *appendCheck = nullptr;
 
         if (!useNativeFileDialogs) {
-            auto *optionsWidget = new QWidget(&dlg);
-            auto *optionsLayout = new QFormLayout(optionsWidget);
-            optionsLayout->setContentsMargins(0, 8, 0, 0);
-            optionsLayout->setHorizontalSpacing(14);
-            optionsLayout->setVerticalSpacing(8);
-
-            auto *dataTypeLabel = new QLabel(tr("Data type:"), optionsWidget);
-            dataTypeCombo = new MenuComboBox(optionsWidget);
+            auto *dataTypeLabel = new QLabel(tr("Data type:"), &dlg);
+            dataTypeLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            dataTypeCombo = new MenuComboBox(&dlg);
             dataTypeCombo->addItem(tr("8-bit Byte"), QVariant::fromValue(int(SEARCHTYPE_BYTE)));
             dataTypeCombo->addItem(tr("16-bit Word"), QVariant::fromValue(int(SEARCHTYPE_WORD)));
             dataTypeCombo->addItem(tr("32-bit Dword"), QVariant::fromValue(int(SEARCHTYPE_DWORD)));
@@ -1023,18 +1030,36 @@ MainWindow::MainWindow(QWidget *parent)
             dataTypeCombo->addItem(tr("Float (32-bit IEEE)"), QVariant::fromValue(int(SEARCHTYPE_FLOAT)));
             dataTypeCombo->addItem(tr("Double (64-bit IEEE)"), QVariant::fromValue(int(SEARCHTYPE_DOUBLE)));
             dataTypeCombo->setCurrentIndex(searchTypeToExportComboIndex(dataTypeCombo, g_ExportOptions.basetype));
+            if (auto *ref = dlg.findChild<QWidget *>("fileNameEdit"))
+                dataTypeCombo->setFixedHeight(ref->sizeHint().height());
 
-            bigEndianCheck = new QCheckBox(tr("Big-endian byte order"), optionsWidget);
+            bigEndianCheck = new QCheckBox(tr("Big-endian byte order"), &dlg);
             bigEndianCheck->setChecked(g_ExportOptions.fBigEndian);
-            appendCheck = new QCheckBox(tr("Append to file"), optionsWidget);
+            appendCheck = new QCheckBox(tr("Append to file"), &dlg);
             appendCheck->setChecked(g_ExportOptions.fAppend);
 
-            optionsLayout->addRow(dataTypeLabel, dataTypeCombo);
-            optionsLayout->addRow(QString(), bigEndianCheck);
-            optionsLayout->addRow(QString(), appendCheck);
-
-            if (auto *grid = qobject_cast<QGridLayout *>(dlg.layout()))
-                grid->addWidget(optionsWidget, grid->rowCount(), 0, 1, grid->columnCount());
+            if (auto *grid = qobject_cast<QGridLayout *>(dlg.layout())) {
+                // Determine column layout by inspecting the built-in "Files of type:" combo so
+                // our label/combo/checkboxes share the same column edges.
+                int labelCol = 0, comboCol = 1, comboColSpan = 1;
+                if (auto *ftCombo = dlg.findChild<QComboBox *>("fileTypeCombo")) {
+                    int itemIdx = grid->indexOf(ftCombo);
+                    if (itemIdx >= 0) {
+                        int row, col, rspan, cspan;
+                        grid->getItemPosition(itemIdx, &row, &col, &rspan, &cspan);
+                        labelCol     = col > 0 ? col - 1 : 0;
+                        comboCol     = col;
+                        comboColSpan = cspan;
+                    }
+                }
+                int baseRow = grid->rowCount();
+                grid->setRowMinimumHeight(baseRow, 8);
+                baseRow++;
+                grid->addWidget(dataTypeLabel,  baseRow,     labelCol);
+                grid->addWidget(dataTypeCombo,  baseRow,     comboCol, 1, comboColSpan);
+                grid->addWidget(bigEndianCheck, baseRow + 1, comboCol, 1, comboColSpan);
+                grid->addWidget(appendCheck,    baseRow + 2, comboCol, 1, comboColSpan);
+            }
 
             auto updateExportOptionsEnabled = [&, dataTypeLabel]() {
                 const int idx = kExportFilters.indexOf(dlg.selectedNameFilter());

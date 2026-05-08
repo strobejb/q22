@@ -4,6 +4,7 @@
 #include <QApplication>
 #include <QEvent>
 #include <QImage>
+#include <QKeyEvent>
 #include <QMenu>
 #include <QPainter>
 #include <QStyleOptionComboBox>
@@ -184,6 +185,30 @@ void DataTypeComboBox::paintEvent(QPaintEvent *)
     QStyleOptionComboBox arrowOpt = opt;
     arrowOpt.rect = style()->subControlRect(QStyle::CC_ComboBox, &opt, QStyle::SC_ComboBoxArrow, this);
     painter.drawPrimitive(QStyle::PE_IndicatorArrowDown, arrowOpt);
+}
+
+void DataTypeComboBox::keyPressEvent(QKeyEvent *e)
+{
+    if (m_menu->isVisible() || m_actions.isEmpty()) {
+        ValueComboBox::keyPressEvent(e);
+        return;
+    }
+    if (e->key() == Qt::Key_Up || e->key() == Qt::Key_Down) {
+        const int n = m_actions.size();
+        const int next = qBound(0, m_selection + (e->key() == Qt::Key_Down ? 1 : -1), n - 1);
+        if (next != m_selection) {
+            if (m_actions[next]->isCheckable()) {
+                m_actions[next]->setChecked(true);   // QActionGroup: unchecks old, fires toggled → m_selection + selectionChanged
+                setDisplayText(selectionText());
+            } else {
+                m_selection = next;
+                emit selectionChanged(m_selection);
+            }
+        }
+        e->accept();
+        return;
+    }
+    ValueComboBox::keyPressEvent(e);
 }
 
 void DataTypeComboBox::setPopupOpen(bool open)

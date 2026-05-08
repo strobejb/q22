@@ -91,8 +91,8 @@ GotoDialog::GotoDialog(HexView *hv, QWidget *parent)
     {
         const QColor placeholderCol = QApplication::palette().placeholderText().color();
         const QColor borderCol      = QApplication::palette().mid().color();
-        const QIcon arrowIc = recoloredIcon("thin-arrow-right-icon", placeholderCol, 16);
-        const QIcon starIc  = recoloredIcon("starred-symbolic",       borderCol,      16);
+        const QIcon arrowIc = recoloredIcon("forward",                placeholderCol, 16);
+        const QIcon starIc  = recoloredIcon("bookmark-star-on-tray", placeholderCol, 16);
         if (!arrowIc.isNull())
             ui->editOffset->addAction(arrowIc, QLineEdit::LeadingPosition);
         if (!starIc.isNull())

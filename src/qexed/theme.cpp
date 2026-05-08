@@ -798,6 +798,20 @@ QToolTip {
     padding: {tooltipPad};
 }
 
+/* ── QFileDialog ─────────────────────────────────────────────── */
+/* The QDialogButtonBox spans both the filename-edit row and the
+   filetype-combo row vertically, with Open/Save at the top and Cancel
+   at the bottom.  For each button to align with its row, all three
+   widget types must be the same height (font + 12px).
+     QLineEdit global:  padding 5px + border 1px + margin 1px  = font+14  → strip margin
+     QComboBox global:  padding 3px + border 1px + margin 1px  = font+10  → raise padding, strip margin
+     QPushButton global: padding 5px + border 1px + min-width 80px        = font+12  → override min-width */
+QFileDialog QLineEdit         { margin: 0; }
+QFileDialog QLineEdit:hover   { margin: 0; }
+QFileDialog QLineEdit:focus   { margin: 0; }
+QFileDialog QComboBox         { padding: 5px 8px; margin: 0; }
+QFileDialog QComboBox:hover   { margin: 0; }
+
 )";
 
     QString ss = QString::fromLatin1(TMPL);

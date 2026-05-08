@@ -36,6 +36,7 @@ protected:
     QSize minimumSizeHint() const                   override;
     void  paintEvent(QPaintEvent *)                 override;
     void  showPopup()                               override;
+    void  keyPressEvent(QKeyEvent *e)               override;
     bool  eventFilter(QObject *obj, QEvent *e)      override;
     void  setPopupOpen(bool open);
 

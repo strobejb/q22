@@ -70,10 +70,10 @@
         <string/>
        </property>
        <property name="iconThemeName" stdset="0">
-        <string>nautilus-file-chooser-options-symbolic</string>
+        <string>permissions</string>
        </property>
        <property name="icon">
-        <iconset theme="nautilus-file-chooser-options-symbolic"/>
+        <iconset theme="permissions"/>
        </property>
        <property name="popupMode">
         <enum>QToolButton::ToolButtonPopupMode::InstantPopup</enum>

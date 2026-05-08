@@ -34,5 +34,11 @@
         <file>icons/hicolor/scalable/actions/light-mode.svg</file>
         <file>icons/hicolor/scalable/actions/color-picker.svg</file>
         <file>palettes/tron.palette</file>
+        <file>icons/hicolor/scalable/actions/bookmark-star-on-tray.svg</file>
+        <file>icons/hicolor/scalable/actions/forward.svg</file>
+        <file>icons/hicolor/scalable/actions/permissions.svg</file>
+        <file>icons/hicolor/scalable/actions/programming-language.svg</file>
+        <file>icons/hicolor/scalable/actions/type100.svg</file>
+        <file>icons/hicolor/scalable/actions/type100-001.svg</file>
     </qresource>
 </RCC>
