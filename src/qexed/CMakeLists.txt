@@ -1,5 +1,5 @@
 set(QEXED_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
-set(QEXED_RESOURCE_DIR ${PROJECT_SOURCE_DIR}/resources)
+set(QEXED_RESOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/resources)
 
 set(PROJECT_SOURCES
         main.cpp
@@ -63,13 +63,11 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         MANUAL_FINALIZATION
         ${PROJECT_SOURCES}
         finddialog.ui
-        ${QEXED_RESOURCE_DIR}/resources.qrc
         gotodialog.ui
         bookmarks.ui
         copyas.ui
         pastespecial.ui
         preferences.ui
-        ../../resources/icons/hicolor/scalable/actions/color-picker.svg
     )
 # Define target properties for Android with Qt 6 as:
 #    set_property(TARGET qexed APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
@@ -85,10 +83,21 @@ else()
     else()
         add_executable(qexed
             ${PROJECT_SOURCES}
-            ${QEXED_RESOURCE_DIR}/resources.qrc
         )
     endif()
 endif()
+
+file(GLOB_RECURSE QEXED_RESOURCES CONFIGURE_DEPENDS
+    "${QEXED_RESOURCE_DIR}/icons/*.svg"
+    "${QEXED_RESOURCE_DIR}/icons/hicolor/index.theme"
+    "${QEXED_RESOURCE_DIR}/palettes/*.palette"
+    "${QEXED_RESOURCE_DIR}/qexed.png"
+)
+qt_add_resources(qexed "app_resources"
+    PREFIX "/"
+    BASE "${QEXED_RESOURCE_DIR}"
+    FILES ${QEXED_RESOURCES}
+)
 
 target_include_directories(qexed PRIVATE
     ${QEXED_SOURCE_DIR}
