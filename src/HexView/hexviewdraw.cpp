@@ -112,6 +112,7 @@ QColor HexView::realiseColour(HvColorSlot slot) const
     if (!hasAppFocus()) {//hasFocus()) {
         switch (slot) {
         case HVC_SELECTION:
+        case HVC_MATCHEDSEL:
             slot = HVC_SELECTION_INACTIVE; break;
         case HVC_SELTEXT:
         case HVC_HEXODDSEL:

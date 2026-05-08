@@ -156,7 +156,7 @@ static QColor gnomeAccentColour()
     return {};
 }
 
-static QColor platformAccentColour()
+QColor platformAccentColour()
 {
 #ifdef Q_OS_WIN
     if (!s_platformAccent.isValid()) {
@@ -191,7 +191,15 @@ static QColor platformAccentColour()
     if (s_platformAccent.isValid())
         return s_platformAccent;
 #endif
-    return QColor("3584e4");
+    return qApp->palette().color(QPalette::Accent);//QColor("3584e4");
+}
+
+QColor matchLuminance(const QColor &source, const QColor &luminanceRef)
+{
+    const int hue = source.hslHue();
+    if (hue < 0)
+        return luminanceRef;
+    return QColor::fromHsl(hue, luminanceRef.hslSaturation(), luminanceRef.lightness());
 }
 
 #ifdef Q_OS_WIN
@@ -479,7 +487,7 @@ static void applyPalette(bool dark)
     const QColor window    = dark ? QColor("#242424") : QColor("#f6f5f4");
     const QColor windowText = dark ? QColor("#deddda") : QColor("#2e3436");
     const QColor base         = dark ? window.darker(120) : Qt::white;
-    const QColor baseHighlight = platformAccentColour();
+    const QColor baseHighlight =  platformAccentColour();//baseHighlight;//matchLuminance(platformAccentColour());
     const QColor baseHlText   = baseHighlight.lightness() < 160 ? Qt::white : windowText;
 
     // Derived roles — no additional hard-coded values beyond the four above.

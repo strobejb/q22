@@ -43,6 +43,11 @@ const UiColourOverrides &uiColourOverrides();
 // when a palette overrides Window/WindowText/Highlight.
 QPalette systemPalette();
 
+// Takes the hue of `source` and returns a new colour with that hue but with
+// the HSL saturation and lightness of `luminanceRef` (default: #A2D7FF).
+// Achromatic inputs (grays) return `luminanceRef` unchanged.
+QColor matchLuminance(const QColor &source, const QColor &luminanceRef = QColor("#A2D7FF"));
+
 class QMenu;
 // Call on every QMenu after construction so the stylesheet (including
 // border-radius) renders correctly via a transparent frameless window.
@@ -150,5 +155,8 @@ inline int execCentered(QDialog *dlg)
 #endif
     return dlg->exec();
 }
+
+QColor platformAccentColour();
+QColor matchLuminance(const QColor &source, const QColor &luminanceRef);
 
 #endif // THEME_H

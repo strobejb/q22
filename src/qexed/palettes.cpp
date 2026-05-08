@@ -34,6 +34,16 @@
 
 // ─── applyPalette ─────────────────────────────────────────────────────────────
 
+static QColor mixColor(const QColor &a, const QColor &b, double r = 0.5)
+{
+    return QColor(
+        qRound(a.red()   + r * (b.red()   - a.red())),
+        qRound(a.green() + r * (b.green() - a.green())),
+        qRound(a.blue()  + r * (b.blue()  - a.blue())),
+        qRound(a.alpha() + r * (b.alpha() - a.alpha()))
+    );
+}
+
 static QColor brighten(const QColor &color, int f=130)
 {
     return !isDarkMode() ? color.lighter(f) : color.darker(f);
@@ -86,7 +96,8 @@ QColor effectiveHexColour(const PaletteInfo &info, HvColorSlot slot, const QPale
         case HVC_BACKGROUND:         return info.bg.isValid()                ? info.bg                : HexView::defaultColourForSlot(slot, pal);
         case HVC_SELECTION:          {
             QColor c = HexView::defaultColourForSlot(slot, pal);
-            return info.selection.isValid()         ? info.selection         : brighten(c, 200);
+            c = matchLuminance(platformAccentColour(), isDarkMode() ? QColor("#234B69") : QColor("#A2D7FF"));
+            return info.selection.isValid()         ? info.selection         : c;//QColor("red");//brighten(c, 200);
         }
         case HVC_SELECTION_INACTIVE:
             if (info.selectionInactive.isValid())
@@ -116,7 +127,8 @@ QColor effectiveHexColour(const PaletteInfo &info, HvColorSlot slot, const QPale
         case HVC_MATCHEDSEL:
             return info.matchSelected.isValid()
                 ? info.matchSelected
-                : darken(effectiveHexColour(info, HVC_SELECTION, pal), 130);
+                : //darken(effectiveHexColour(info, HVC_SELECTION, pal), 130);
+                       mixColor(effectiveHexColour(info, HVC_SELECTION, pal), effectiveHexColour(info, HVC_MATCHED, pal));
         case HVC_BOOKMARK1:
         case HVC_BOOKMARK2:
         case HVC_BOOKMARK3:
