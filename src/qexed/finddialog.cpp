@@ -224,6 +224,7 @@ FindDialog::FindDialog(QWidget *parent)
     connect(ui->btnFindNext, &QToolButton::clicked, this, &FindDialog::findNext);
 
     connect(ui->editFind, &QLineEdit::returnPressed, this, [this] { triggerSearch(0); });
+    m_comboDataType->installEventFilter(this);
 
 #if 0//def 0//Q_OS_WIN
     // QIcon::fromTheme() returns null on Windows; use Segoe MDL2 / QStyle fallbacks.
@@ -304,6 +305,19 @@ void FindDialog::activate(const QString &initialText, int pane)
     show();
     ui->editFind->setFocus();
     ui->editFind->selectAll();
+}
+
+bool FindDialog::eventFilter(QObject *o, QEvent *e)
+{
+    if (o == m_comboDataType && e->type() == QEvent::KeyPress) {
+        auto *ke = static_cast<QKeyEvent *>(e);
+        if ((ke->key() == Qt::Key_Return || ke->key() == Qt::Key_Enter)
+                && !m_comboDataType->property("popupOpen").toBool()) {
+            triggerSearch(0);
+            return true;
+        }
+    }
+    return QWidget::eventFilter(o, e);
 }
 
 void FindDialog::keyPressEvent(QKeyEvent *e)

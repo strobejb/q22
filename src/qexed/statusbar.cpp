@@ -5,6 +5,7 @@
 #include <QEvent>
 #include <QFontDatabase>
 #include <QHBoxLayout>
+#include <QLocale>
 #include <QRegularExpression>
 #include <algorithm>
 #include <cstring>
@@ -92,7 +93,7 @@ ValueOptionsComboBox::ValueOptionsComboBox(QWidget *parent)
 
     m_actHex = m_menu->addAction("Hexadecimal");
     m_actHex->setCheckable(true);
-    m_actHex->setChecked(true);
+    m_actHex->setChecked(false);
 
     m_menu->addSeparator();
 
@@ -235,6 +236,7 @@ StatusBar::StatusBar(HexView *hv, QStatusBar *bar, QObject *parent)
 
     // Panel 2: length
     m_comboLength = new RadioComboBox({"Hexadecimal", "Decimal"}, bar);
+    m_comboLength->setSelection(1);
     connect(m_comboLength, &RadioComboBox::selectionChanged, this, [this] { update(); });
 
     // Panel 3: value under cursor
@@ -419,7 +421,7 @@ void StatusBar::update()
     size_w len = hasSel ? m_hv->selectionSize() : m_hv->size();
     m_comboLength->setDisplayText(m_comboLength->selection() == 0
         ? QString("0x%1 bytes").arg(fmtHex(len, 8))
-        : QString("%1 bytes").arg(len));
+        : QString("%1 bytes").arg(QLocale(QLocale::English).toString((qulonglong)len)));
 
     // Panel 3: value under cursor
     m_comboValue->setDisplayText(computeValueText());

@@ -186,7 +186,7 @@ private:
 
     bool m_signed    = false;
     bool m_bigEndian = false;
-    bool m_hex       = true;
+    bool m_hex       = false;
     int  m_dataSize  = 0;
 };
 

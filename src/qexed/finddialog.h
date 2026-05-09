@@ -44,9 +44,10 @@ signals:
     void searchHexChanged(const QString &hex);  // live hex-tuple preview of current pattern
 
 protected:
-    void keyPressEvent(QKeyEvent *e) override;
-    void hideEvent(QHideEvent *e)    override;
-    void changeEvent(QEvent *e)      override;
+    void keyPressEvent(QKeyEvent *e)            override;
+    void hideEvent(QHideEvent *e)               override;
+    void changeEvent(QEvent *e)                 override;
+    bool eventFilter(QObject *o, QEvent *e)     override;
 
 public:
     QByteArray buildPattern() const;
