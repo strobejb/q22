@@ -57,7 +57,7 @@ set(PROJECT_SOURCES
 )
 
 if(WIN32)
-    list(APPEND PROJECT_SOURCES qexed.rc)
+    list(APPEND PROJECT_SOURCES resources/qexed.rc)
 endif()
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
