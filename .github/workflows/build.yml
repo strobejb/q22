@@ -30,7 +30,7 @@ jobs:
       - name: Package (linuxdeploy)
         run: |
           sudo apt-get install -y imagemagick
-          convert resources/qexed.png -resize 512x512! resources/qexed.png
+          convert src/qexed/resources/qexed.png -resize 512x512! src/qexed/resources/qexed.png
           wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
           chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage
@@ -41,8 +41,8 @@ jobs:
             --appdir AppDir \
             --plugin qt \
             --output appimage \
-            --desktop-file resources/qexed.desktop \
-            --icon-file resources/qexed.png
+            --desktop-file src/qexed/resources/qexed.desktop \
+            --icon-file src/qexed/resources/qexed.png
           mv qexed-*.AppImage qexed-linux-x86_64.AppImage
 
       - name: Upload artifact
@@ -59,7 +59,7 @@ jobs:
       - name: Convert PNG to ICO
         shell: pwsh
         run: |
-          magick resources/qexed.png -define icon:auto-resize=256,128,64,48,32,16 qexed.ico
+          magick src/qexed/resources/qexed.png -define icon:auto-resize=256,128,64,48,32,16 qexed.ico
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
