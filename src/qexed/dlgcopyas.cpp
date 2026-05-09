@@ -129,7 +129,7 @@ void CopyAsDialog::onAccepted()
     g_CopyOptions.basetype   = comboIndexToSearchType(ui->comboDataType->currentIndex());
     g_CopyOptions.fBigEndian = ui->checkBigEndian->isChecked();
 
-    CopyAs(m_hv, &g_CopyOptions);
+    CopyAs(m_hv, &g_CopyOptions, this);
 
     accept();
 }

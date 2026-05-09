@@ -698,9 +698,9 @@ void sequence::group()
 	{
 		if(++group_id == 0)
 			++group_id;
-
-		group_refcount++;
 	}
+
+	group_refcount++;
 }
 
 //

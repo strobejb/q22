@@ -8,6 +8,7 @@
 //
 
 #include "dlgimport.h"
+#include "dlgprogress.h"
 #include "HexView/hexview.h"
 
 #include <QBuffer>
@@ -192,20 +193,32 @@ static size_t uu_decode(const char *inbuf, size_t inlen, uint8_t *outbuf)
 
 // ── ImportReader ──────────────────────────────────────────────────────────────
 
-ImportReader::ImportReader(QIODevice *dev)
-    : m_dev(dev)
+ImportReader::ImportReader(QIODevice *dev, ProgressReporter *reporter)
+    : m_dev(dev), m_reporter(reporter)
 {
+}
+
+void ImportReader::advanceProgress(qint64 consumed)
+{
+    if (!m_reporter) return;
+    m_inputConsumed += consumed;
+    if (m_inputConsumed - m_lastReported < kReportInterval) return;
+    m_lastReported = m_inputConsumed;
+    m_reporter->reportProgress(m_inputConsumed);
 }
 
 size_t ImportReader::read(uint8_t *buf, size_t len)
 {
+    if (m_reporter && m_reporter->isCancelled()) return 0;
     qint64 n = m_dev->read(reinterpret_cast<char *>(buf), (qint64)len);
+    if (n > 0) advanceProgress(n);
     return (n < 0) ? 0 : (size_t)n;
 }
 
 bool ImportReader::gets(char *buf, size_t len)
 {
     if (len < 2 || m_dev->atEnd()) return false;
+    if (m_reporter && m_reporter->isCancelled()) return false;
 
     size_t i = 0;
     while (i < len - 1) {
@@ -222,6 +235,7 @@ bool ImportReader::gets(char *buf, size_t len)
     }
 
     buf[i] = '\0';
+    if (i > 0) advanceProgress((qint64)i);
     return i > 0;
 }
 
@@ -630,12 +644,22 @@ size_w ImportUUEncode(ImportReader &fp, HexView *hv, size_w /*offset*/,
 
 // ── Top-level dispatcher ──────────────────────────────────────────────────────
 
-size_w Import(QIODevice *dev, HexView *hv, IMPEXP_OPTIONS *ieopt)
+namespace {
+struct ImportGroup {
+    HexView *hv;
+    explicit ImportGroup(HexView *hv) : hv(hv) { hv->beginGroup(); }
+    ~ImportGroup()                              { hv->endGroup(); }
+};
+}
+
+size_w Import(QIODevice *dev, HexView *hv, IMPEXP_OPTIONS *ieopt,
+              ProgressReporter *reporter)
 {
     size_w offset = hv->selectionStart();
     ieopt->linelen = hv->getLineLen();
 
-    ImportReader reader(dev);
+    ImportReader reader(dev, reporter);
+    ImportGroup  group(hv);
 
     hv->setCurPos(offset);
     hv->setUpdatesEnabled(false);
@@ -675,7 +699,8 @@ size_w Import(QIODevice *dev, HexView *hv, IMPEXP_OPTIONS *ieopt)
     return count;
 }
 
-size_w ImportFile(const QString &path, HexView *hv, IMPEXP_OPTIONS *ieopt)
+size_w ImportFile(const QString &path, HexView *hv, IMPEXP_OPTIONS *ieopt,
+                  QWidget *parent)
 {
     QFile file(path);
     QIODevice::OpenMode mode = (ieopt->format == FORMAT_RAWDATA)
@@ -685,7 +710,20 @@ size_w ImportFile(const QString &path, HexView *hv, IMPEXP_OPTIONS *ieopt)
     if (!file.open(mode))
         return 0;
 
-    return Import(&file, hv, ieopt);
+    ProgressDialog dlg(file.size(), QObject::tr("Importing…"), parent);
+    if (parent) {
+        dlg.adjustSize();
+        const QPoint c = parent->frameGeometry().center();
+        dlg.move(c.x() - dlg.width() / 2, c.y() - dlg.height() / 2);
+    }
+    dlg.open();
+    QApplication::processEvents();
+
+    SyncProgressReporter reporter(&dlg);
+    size_w result = Import(&file, hv, ieopt, &reporter);
+
+    dlg.close();
+    return result;
 }
 
 // ── PasteSpecial ──────────────────────────────────────────────────────────────

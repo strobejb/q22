@@ -50,6 +50,8 @@ set(PROJECT_SOURCES
         dlgpastespecial.cpp
         dlgabout.h
         dlgabout.cpp
+        dlgprogress.h
+        dlgprogress.cpp
         settingscard.h
         settingscard.cpp
 )

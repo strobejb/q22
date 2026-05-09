@@ -988,7 +988,7 @@ MainWindow::MainWindow(QWidget *parent)
             g_ImportOptions.fUseAddress = useAddressCheck->isChecked();
         }
 
-        ImportFile(path, m_hv, &g_ImportOptions);
+        ImportFile(path, m_hv, &g_ImportOptions, this);
     });
 
     connect(ui->actionExport, &QAction::triggered, this, [this]() {
@@ -1089,7 +1089,7 @@ MainWindow::MainWindow(QWidget *parent)
             g_ExportOptions.fAppend = appendCheck->isChecked();
         }
 
-        Export(path, m_hv, &g_ExportOptions);
+        Export(path, m_hv, &g_ExportOptions, this);
     });
 
     m_prefsDialog = new PreferencesDialog(this);

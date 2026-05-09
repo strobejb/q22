@@ -690,6 +690,16 @@ void HexView::padToAddress(size_w addr)
     setCurPos(addr);
 }
 
+void HexView::beginGroup()
+{
+    if (m_pDataSeq) m_pDataSeq->group();
+}
+
+void HexView::endGroup()
+{
+    if (m_pDataSeq) m_pDataSeq->ungroup();
+}
+
 size_t HexView::fillData(uint8_t *buf, size_t buflen, size_w len)
 {
     m_pDataSeq->group();

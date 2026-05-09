@@ -8,6 +8,7 @@
 //
 
 #include "dlgexport.h"
+#include "dlgprogress.h"
 #include "HexView/hexview.h"
 
 #include <QBuffer>
@@ -193,19 +194,22 @@ static size_t motorola_frame(char *srec, int type, size_t count,
 
 // ── ExportWriter ─────────────────────────────────────────────────────────────
 
-ExportWriter::ExportWriter(QIODevice *dev)
-    : m_dev(dev)
+ExportWriter::ExportWriter(QIODevice *dev, ProgressReporter *reporter)
+    : m_dev(dev), m_reporter(reporter)
 {
 }
 
 void ExportWriter::write(const uint8_t *buf, size_t len)
 {
+    if (m_reporter && m_reporter->isCancelled()) { m_error = true; return; }
     if (!m_error && m_dev->write(reinterpret_cast<const char *>(buf), (qint64)len) < 0)
         m_error = true;
 }
 
 void ExportWriter::printf(const char *fmt, ...)
 {
+    if (m_reporter && m_reporter->isCancelled()) { m_error = true; return; }
+
     va_list ap;
     va_start(ap, fmt);
     int n = vsnprintf(nullptr, 0, fmt, ap);
@@ -222,18 +226,29 @@ void ExportWriter::printf(const char *fmt, ...)
         m_error = true;
 }
 
+void ExportWriter::advanceProgress(size_w inputConsumed)
+{
+    if (!m_reporter) return;
+    m_inputConsumed += (qint64)inputConsumed;
+    if (m_inputConsumed - m_lastReported >= kReportInterval) {
+        m_lastReported = m_inputConsumed;
+        m_reporter->reportProgress(m_inputConsumed);
+    }
+}
+
 // ── Format writers ────────────────────────────────────────────────────────────
 
 bool ExportRaw(ExportWriter &fp, HexView *hv, size_w offset, size_w length,
                IMPEXP_OPTIONS * /*eopt*/)
 {
-    while (length)
+    while (length && !fp.hasError())
     {
         uint8_t buf[256];
         size_t  len = (size_t)std::min((size_w)256, length);
 
         hv->getData(offset, buf, len);
         fp.write(buf, len);
+        fp.advanceProgress((size_w)len);
 
         offset += len;
         length -= len;
@@ -286,6 +301,7 @@ bool ExportText(ExportWriter &fp, HexView *hv, size_w offset, size_w length,
             fp.printf("%c", toAscii(buf[i]));
         fp.printf("|\n");
 
+        fp.advanceProgress((size_w)len);
         offset += len;
         length -= len;
     }
@@ -306,6 +322,7 @@ bool ExportRawHex(ExportWriter &fp, HexView *hv, size_w offset, size_w length,
         for (size_w i = 0; i < len; i++)
             fp.printf("%02X", buf[i]);
 
+        fp.advanceProgress(len);
         offset += len;
         length -= len;
     }
@@ -356,6 +373,7 @@ bool ExportHtml(ExportWriter &fp, HexView *hv, size_w offset, size_w length,
             fp.printf("%c", toAscii(buf[i]));
         fp.printf("|\n");
 
+        fp.advanceProgress((size_w)len);
         offset += len;
         length -= len;
     }
@@ -421,6 +439,7 @@ bool ExportASM(ExportWriter &fp, HexView *hv, size_w offset, size_w length,
         }
 
         fp.printf("\n");
+        fp.advanceProgress(len);
         length -= len;
         offset += len;
     }
@@ -506,6 +525,7 @@ bool ExportCPP(ExportWriter &fp, HexView *hv, size_w offset, size_w length,
         }
 
         fp.printf("\n");
+        fp.advanceProgress(len);
         offset += len;
         length -= len;
     }
@@ -553,6 +573,7 @@ bool ExportIntelHex(ExportWriter &fp, HexView *hv, size_w offset, size_w length,
         alen = intel_frame(ach, 0, len, (unsigned long)(offset & 0xffff), buf);
         fp.printf("%.*s\n", (int)alen, ach);
 
+        fp.advanceProgress((size_w)len);
         length -= len;
         offset += len;
         count  += len;
@@ -589,6 +610,7 @@ bool ExportMotorola(ExportWriter &fp, HexView *hv, size_w offset, size_w length,
         alen = motorola_frame(ach, 3, len, (unsigned long)offset, buf);
         fp.printf("%.*s\n", (int)alen, ach);
 
+        fp.advanceProgress((size_w)len);
         length -= len;
         offset += len;
     }
@@ -615,6 +637,7 @@ bool ExportBase64(ExportWriter &fp, HexView *hv, size_w offset, size_w length,
         alen = base64_encode(buf, len, ach);
         fp.printf("%.*s\n", (int)alen, ach);
 
+        fp.advanceProgress((size_w)len);
         length -= len;
         offset += len;
     }
@@ -642,6 +665,7 @@ bool ExportUUEncode(ExportWriter &fp, HexView *hv, size_w offset, size_w length,
         alen = uu_encode(buf, len, ach);
         fp.printf("%.*s\n", (int)alen, ach);
 
+        fp.advanceProgress((size_w)len);
         length -= len;
         offset += len;
     }
@@ -652,7 +676,7 @@ bool ExportUUEncode(ExportWriter &fp, HexView *hv, size_w offset, size_w length,
 
 // ── Top-level Export ──────────────────────────────────────────────────────────
 
-bool Export(const QString &szFileName, HexView *hv, IMPEXP_OPTIONS *eopt)
+bool Export(const QString &szFileName, HexView *hv, IMPEXP_OPTIONS *eopt, QWidget *parent)
 {
     size_w offset = hv->selectionStart();
     size_w length = hv->selectionSize();
@@ -676,10 +700,22 @@ bool Export(const QString &szFileName, HexView *hv, IMPEXP_OPTIONS *eopt)
     if (!file.open(mode))
         return false;
 
-    ExportWriter writer(&file);
-
     hv->setCurPos(offset);
     hv->setUpdatesEnabled(false);
+
+    // Show the progress dialog as window-modal so the parent is blocked but
+    // the main thread remains free to pump events via processEvents().
+    ProgressDialog dlg(static_cast<qint64>(length), QObject::tr("Exporting…"), parent);
+    if (parent) {
+        dlg.adjustSize();
+        const QPoint c = parent->frameGeometry().center();
+        dlg.move(c.x() - dlg.width() / 2, c.y() - dlg.height() / 2);
+    }
+    dlg.open();
+    QApplication::processEvents(); // paint the dialog before the loop starts
+
+    SyncProgressReporter reporter(&dlg);
+    ExportWriter writer(&file, &reporter);
 
     bool success = false;
 
@@ -697,6 +733,8 @@ bool Export(const QString &szFileName, HexView *hv, IMPEXP_OPTIONS *eopt)
     case FORMAT_UUENCODE:  success = ExportUUEncode  (writer, hv, offset, length, eopt); break;
     default: break;
     }
+
+    dlg.close();
 
     hv->setSelStart(offset);
     hv->setSelEnd(offset + length);
@@ -712,13 +750,8 @@ bool Export(const QString &szFileName, HexView *hv, IMPEXP_OPTIONS *eopt)
 // on the clipboard -- exactly the same logic as the Win32 version used a
 // named pipe + HGLOBAL, but without the inter-thread plumbing.
 
-bool CopyAs(HexView *hv, IMPEXP_OPTIONS *eopt)
+bool CopyAs(HexView *hv, IMPEXP_OPTIONS *eopt, QWidget *parent)
 {
-    QBuffer buf;
-    buf.open(QIODevice::WriteOnly);
-
-    ExportWriter writer(&buf);
-
     size_w offset = hv->selectionStart();
     size_w length = hv->selectionSize();
 
@@ -732,6 +765,21 @@ bool CopyAs(HexView *hv, IMPEXP_OPTIONS *eopt)
 
     hv->setCurPos(offset);
     hv->setUpdatesEnabled(false);
+
+    ProgressDialog dlg(static_cast<qint64>(length), QObject::tr("Copying…"), parent);
+    if (parent) {
+        dlg.adjustSize();
+        const QPoint c = parent->frameGeometry().center();
+        dlg.move(c.x() - dlg.width() / 2, c.y() - dlg.height() / 2);
+    }
+    dlg.open();
+    QApplication::processEvents();
+
+    QBuffer buf;
+    buf.open(QIODevice::WriteOnly);
+
+    SyncProgressReporter reporter(&dlg);
+    ExportWriter writer(&buf, &reporter);
 
     bool success = false;
 
@@ -749,6 +797,8 @@ bool CopyAs(HexView *hv, IMPEXP_OPTIONS *eopt)
     case FORMAT_UUENCODE:  success = ExportUUEncode  (writer, hv, offset, length, eopt); break;
     default: break;
     }
+
+    dlg.close();
 
     hv->setSelStart(offset);
     hv->setSelEnd(offset + length);

@@ -165,6 +165,7 @@ bool HexView::canRedo() const
     return m_pDataSeq && m_pDataSeq->canredo();
 }
 
+
 // ── keyPressEvent ─────────────────────────────────────────────────────────────
 
 void HexView::keyPressEvent(QKeyEvent *event)

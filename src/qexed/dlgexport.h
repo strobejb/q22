@@ -12,6 +12,7 @@
 #include <QString>
 #include <QIODevice>
 #include "HexView/seqbase.h"
+#include "dlgprogress.h"
 
 class HexView;
 
@@ -66,7 +67,7 @@ struct IMPEXP_OPTIONS
 class ExportWriter
 {
 public:
-    explicit ExportWriter(QIODevice *dev);
+    explicit ExportWriter(QIODevice *dev, ProgressReporter *reporter = nullptr);
 
     void write(const uint8_t *buf, size_t len);
     void printf(const char *fmt, ...)
@@ -75,11 +76,19 @@ public:
 #endif
     ;
 
+    // Call after consuming each input chunk so the progress bar stays accurate.
+    void advanceProgress(size_w inputConsumed);
+
     bool hasError() const { return m_error; }
 
 private:
-    QIODevice *m_dev;
-    bool       m_error = false;
+    static constexpr qint64 kReportInterval = 65536; // throttle: report every 64 KB
+
+    QIODevice        *m_dev;
+    ProgressReporter *m_reporter      = nullptr;
+    qint64            m_inputConsumed = 0;
+    qint64            m_lastReported  = -kReportInterval;
+    bool              m_error         = false;
 };
 
 // ── Individual format writers ────────────────────────────────────────────────
@@ -96,10 +105,11 @@ bool ExportUUEncode (ExportWriter &fp, HexView *hv, size_w offset, size_w length
 
 // ── Top-level entry points ───────────────────────────────────────────────────
 
-// Export data from hv to a file.
-bool Export  (const QString &szFileName, HexView *hv, IMPEXP_OPTIONS *eopt);
+// Export data from hv to a file. parent is used to center the progress dialog.
+bool Export  (const QString &szFileName, HexView *hv, IMPEXP_OPTIONS *eopt,
+              QWidget *parent = nullptr);
 
 // Export data from hv into the clipboard using eopt's format.
-bool CopyAs  (HexView *hv, IMPEXP_OPTIONS *eopt);
+bool CopyAs  (HexView *hv, IMPEXP_OPTIONS *eopt, QWidget *parent = nullptr);
 
 extern IMPEXP_OPTIONS g_ExportOptions;

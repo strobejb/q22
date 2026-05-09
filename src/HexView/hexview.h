@@ -195,6 +195,8 @@ public:
     bool   redo();
     bool   canUndo() const;
     bool   canRedo() const;
+    void   beginGroup();
+    void   endGroup();
 
     // Cursor / selection
     bool   setCurSel(size_w selStart, size_w selEnd);
