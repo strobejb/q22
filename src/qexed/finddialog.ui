@@ -217,13 +217,13 @@
        </property>
       </spacer>
      </item>
-     <item>
+     <!-- <item>
       <widget class="QLabel" name="label">
        <property name="text">
         <string>Type:</string>
        </property>
       </widget>
-     </item>
+     </item> -->
      <item>
       <widget class="QComboBox" name="comboDataType">
        <property name="minimumSize">
