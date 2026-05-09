@@ -49,6 +49,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QStyle>
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QVBoxLayout>
 #include <QHelpEvent>
@@ -833,6 +834,12 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_findDialog, &FindDialog::findPrevious, this, [this] { runFind(false); });
 
     connect(m_hv, &HexView::findProgress, m_statusBar, &StatusBar::onFindProgress);
+#ifdef Q_OS_WIN
+    connect(m_hv, &HexView::findProgress, this, [this](size_w, size_w, double) {
+        if (m_findRunning && (GetAsyncKeyState(VK_ESCAPE) & 0x8000))
+            m_hv->cancelFind();
+    });
+#endif
     connect(m_findDialog, &FindDialog::searchHexChanged, m_statusBar, &StatusBar::showSearchHex);
 
     connect(ui->actionExit, &QAction::triggered, this, &MainWindow::close);
@@ -1279,6 +1286,8 @@ void MainWindow::updateRecentMenu() {
 
 void MainWindow::execFind(const QByteArray &pattern, uint flags)
 {
+    if (m_findRunning) return;
+    m_findRunning   = true;
     m_lastPattern   = pattern;
     m_lastFindFlags = flags & ~HVFF_BACKWARD; // strip direction; stored flags are always "forward"
     size_w result   = 0;
@@ -1286,10 +1295,13 @@ void MainWindow::execFind(const QByteArray &pattern, uint flags)
         m_hv->setCurSel(result, result + (size_t)pattern.size());
         m_hv->scrollTo(result);
         m_statusBar->showMessage({});
-    } else {
+    } else if (!m_hv->isFindCancelled()) {
         m_statusBar->showMessage(tr("Could not find any more data"));
+    } else {
+        m_statusBar->showMessage({});
     }
     m_statusBar->onFindDone();
+    m_findRunning   = false;
 }
 
 void MainWindow::runFind(bool forward)
@@ -1374,6 +1386,14 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
         return false;
 
     const auto type = event->type();
+
+    if (m_findRunning && type == QEvent::KeyPress) {
+        auto *ke = static_cast<QKeyEvent *>(event);
+        if (ke->key() == Qt::Key_Escape) {
+            m_hv->cancelFind();
+            return true;
+        }
+    }
     auto isDropOnHexView = [this](const QPoint &pos) {
         if (!m_hv)
             return false;

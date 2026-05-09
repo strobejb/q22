@@ -220,7 +220,8 @@ public:
     // Find
     bool   findInit(const uint8_t *pat, size_t length);
     bool   findNext(size_w *result, uint options = 0);
-    void   cancelFind() { m_findCancelled = true; }
+    void   cancelFind()      { m_findCancelled = true; }
+    bool   isFindCancelled() const { return m_findCancelled; }
 
     // State accessors
     size_w  cursorOffset() const { return m_nCursorOffset; }

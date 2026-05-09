@@ -110,7 +110,7 @@ int HexView::searchBlock(const uint8_t *block, int start, int length, int *parti
 void HexView::queryProgressNotify(size_w pos, size_w len, double mbPerSec)
 {
     emit findProgress(pos, len, mbPerSec);
-    QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    QCoreApplication::processEvents();
 }
 
 bool HexView::findNext(size_w *result, uint options)
