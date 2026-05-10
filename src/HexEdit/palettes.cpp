@@ -378,11 +378,11 @@ QList<PaletteInfo> loadAllPalettes()
 // ─── Custom palette I/O ──────────────────────────────────────────────────────
 
 // Returns the user-writable directory where custom palettes are stored.
-// Linux:   ~/.config/qexed/palettes/
-// Windows: %APPDATA%/qexed/palettes/
+// Linux:   ~/.config/HexEdit/palettes/
+// Windows: %APPDATA%/HexEdit/palettes/
 QString paletteStorageDir()
 {
-    QSettings s(QSettings::IniFormat, QSettings::UserScope, "qexed", "qexed");
+    QSettings s(QSettings::IniFormat, QSettings::UserScope, "HexEdit", "HexEdit");
     return QFileInfo(s.fileName()).dir().filePath("palettes");
 }
 

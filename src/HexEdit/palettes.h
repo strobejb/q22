@@ -101,8 +101,8 @@ void applyPalette(HexView *hv, const PaletteInfo &info);
 // Fold mode-specific overrides into a flat PaletteInfo for the requested mode.
 PaletteInfo resolvedPaletteForMode(const PaletteInfo &base, bool dark);
 
-// Resolve a HexView slot using qexed palette policy: explicit PaletteInfo entry
-// first, then qexed fallbacks, then HexView's plain QPalette defaults.
+// Resolve a HexView slot using HexEdit palette policy: explicit PaletteInfo entry
+// first, then HexEdit fallbacks, then HexView's plain QPalette defaults.
 QColor effectiveHexColour(const PaletteInfo &info, HvColorSlot slot, const QPalette &pal);
 
 // Apply the UI-level colour overrides (PE_WINDOW / PE_WINDOWTEXT / PE_TOOLBAR)

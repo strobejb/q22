@@ -8,7 +8,7 @@ class QDBusPendingCallWatcher;
 class QTimer;
 class QWidget;
 
-#ifdef QEXED_HAVE_DBUS
+#ifdef HEXEDIT_HAVE_DBUS
 #include <QDBusObjectPath>
 #endif
 
@@ -36,7 +36,7 @@ private:
     void sampleLiveColor();
     void finish(bool picked);
 
-#ifdef QEXED_HAVE_DBUS
+#ifdef HEXEDIT_HAVE_DBUS
 private slots:
     void portalPickStarted(QDBusPendingCallWatcher *watcher);
     void portalResponse(uint response, const QVariantMap &results);
@@ -48,7 +48,7 @@ private:
     QColor   m_lastColor;
     bool     m_active = false;
     bool     m_liveActive = false;
-#ifdef QEXED_HAVE_DBUS
+#ifdef HEXEDIT_HAVE_DBUS
     QDBusObjectPath m_requestPath;
 #endif
 };

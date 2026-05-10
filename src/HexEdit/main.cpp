@@ -15,7 +15,7 @@ int main(int argc, char *argv[])
     a.setOrganizationName("Catch22");
     a.setApplicationName("hex22");
     a.setApplicationVersion("0.1");
-    a.setWindowIcon(QIcon(":/qexed.png"));
+    a.setWindowIcon(QIcon(":/HexEdit.png"));
 
     // Use only the bundled hicolor theme for icon lookups.  This ensures
     // QIcon::fromTheme() always resolves to our embedded resources, regardless

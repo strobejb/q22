@@ -14,7 +14,7 @@
 #include <QTimer>
 #include <QWidget>
 
-#ifdef QEXED_HAVE_DBUS
+#ifdef HEXEDIT_HAVE_DBUS
 #include <QDBusArgument>
 #include <QDBusConnection>
 #include <QDBusInterface>
@@ -87,7 +87,7 @@ void ScreenColorPicker::startLivePick(const QColor &cursorColor)
 
 bool ScreenColorPicker::startPortalPick()
 {
-#ifdef QEXED_HAVE_DBUS
+#ifdef HEXEDIT_HAVE_DBUS
     QDBusInterface iface(QStringLiteral("org.freedesktop.portal.Desktop"),
                          QStringLiteral("/org/freedesktop/portal/desktop"),
                          QStringLiteral("org.freedesktop.portal.Screenshot"),
@@ -96,7 +96,7 @@ bool ScreenColorPicker::startPortalPick()
         return false;
 
     static int requestCounter = 0;
-    const QString token = QStringLiteral("qexed_color_%1_%2")
+    const QString token = QStringLiteral("hexedit_color_%1_%2")
                               .arg(QCoreApplication::applicationPid())
                               .arg(++requestCounter);
     QVariantMap options;
@@ -177,7 +177,7 @@ void ScreenColorPicker::finish(bool picked)
         emit cancelled();
 }
 
-#ifdef QEXED_HAVE_DBUS
+#ifdef HEXEDIT_HAVE_DBUS
 void ScreenColorPicker::portalPickStarted(QDBusPendingCallWatcher *watcher)
 {
     QDBusPendingReply<QDBusObjectPath> reply = *watcher;

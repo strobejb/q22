@@ -5,7 +5,7 @@
 // QSettings is non-copyable so callers construct it directly via this helper
 // macro rather than a factory function.
 #define OPEN_SETTINGS \
-    QSettings s(QSettings::IniFormat, QSettings::UserScope, "qexed", "qexed")
+    QSettings s(QSettings::IniFormat, QSettings::UserScope, "HexEdit", "HexEdit")
 
 QStringList AppSettings::recentFiles()
 {

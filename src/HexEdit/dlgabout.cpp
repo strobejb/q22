@@ -32,7 +32,7 @@ void ShowAboutDlg(QWidget *parent)
 
     // ── Icon (192×192) ────────────────────────────────────────────────────────
     auto *iconLabel = new QLabel(&dlg);
-    QPixmap px(QLatin1String(":/qexed.png"));
+    QPixmap px(QLatin1String(":/HexEdit.png"));
     iconLabel->setPixmap(px.scaled(192, 192, Qt::KeepAspectRatio, Qt::SmoothTransformation));
     iconLabel->setFixedSize(192, 192);
     iconLabel->setAlignment(Qt::AlignCenter);
@@ -71,7 +71,7 @@ void ShowAboutDlg(QWidget *parent)
 
     // ── Config folder card ────────────────────────────────────────────────────
     const QString configPath = QSettings(QSettings::IniFormat, QSettings::UserScope,
-                                         QLatin1String("qexed"), QLatin1String("qexed")).fileName();
+                                         QLatin1String("HexEdit"), QLatin1String("HexEdit")).fileName();
     const QUrl configDirUrl  = QUrl::fromLocalFile(QFileInfo(configPath).absolutePath());
     auto *configRow  = new NavigationRow(QObject::tr("Config"), configDirUrl, &dlg);
     auto *configCard = new SettingsCard({configRow},

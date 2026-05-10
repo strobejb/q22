@@ -25,7 +25,7 @@
 #include <QTimer>
 #include <QWidget>
 #include <QAbstractButton>
-#ifdef QEXED_HAVE_DBUS
+#ifdef HEXEDIT_HAVE_DBUS
 #include <QDBusInterface>
 #include <QDBusReply>
 #endif
@@ -125,7 +125,7 @@ static QColor gnomeAccentColour()
     if (!desktop.contains("gnome"))
         return {};
 
-#ifdef QEXED_HAVE_DBUS
+#ifdef HEXEDIT_HAVE_DBUS
     QDBusInterface portal(QStringLiteral("org.freedesktop.portal.Desktop"),
                           QStringLiteral("/org/freedesktop/portal/desktop"),
                           QStringLiteral("org.freedesktop.portal.Settings"),

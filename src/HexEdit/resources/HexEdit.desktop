@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=qexed
-Exec=qexed
-Icon=qexed
+Name=HexEdit
+Exec=HexEdit
+Icon=HexEdit
 Categories=Utility;
