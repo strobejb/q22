@@ -13,7 +13,7 @@ int main(int argc, char *argv[])
     QApplication a(argc, argv);
     QApplication::setAttribute(Qt::AA_DontShowIconsInMenus, true);
     a.setOrganizationName("Catch22");
-    a.setApplicationName("hex22");
+    a.setApplicationName("q22");
     a.setApplicationVersion("0.1");
     a.setWindowIcon(QIcon(":/HexEdit.png"));
 
