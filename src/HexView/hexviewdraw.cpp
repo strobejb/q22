@@ -470,11 +470,16 @@ size_t HexView::formatLine(uint8_t *data, size_t length, size_w offset, size_t d
     //   4. selection (lowest — any highlight above wins)
     QList<Bookmark> lineHighlights;
     const size_w lineEnd = offset + (size_w)length;
+    // When dataShift > 0 on the first display line, 'offset' has wrapped to a
+    // large unsigned value (0 - dataShift).  offset + dataShift wraps back to
+    // the correct file address of the first real byte, so use that for overlap
+    // comparisons instead of bare 'offset' to avoid spuriously failing checks.
+    const size_w realLineStart = offset + (size_w)dataShift;
     for (const Bookmark &bm : matchHighlights)
-        if (bm.offset + bm.length > offset && bm.offset < lineEnd)
+        if (bm.offset + bm.length > realLineStart && bm.offset < lineEnd)
             lineHighlights.append(bm);
     for (const Bookmark &bm : m_bookmarks)
-        if (bm.offset + bm.length > offset && bm.offset < lineEnd)
+        if (bm.offset + bm.length > realLineStart && bm.offset < lineEnd)
             lineHighlights.append(bm);
     if (checkStyle(HVS_SHOWMODS)) {
         size_t rangeStart = length;  // length == no open range
@@ -496,7 +501,7 @@ size_t HexView::formatLine(uint8_t *data, size_t length, size_w offset, size_t d
     if (fIncSelection) {
         size_w selstart = std::min(m_nSelectionStart, m_nSelectionEnd);
         size_w selend   = std::max(m_nSelectionStart, m_nSelectionEnd);
-        if (selend > selstart && selend > offset && selstart < lineEnd) {
+        if (selend > selstart && selend > realLineStart && selstart < lineEnd) {
             Bookmark sel;
             sel.offset   = selstart;
             sel.length   = selend - selstart;

@@ -33,24 +33,21 @@ void HexView::setupScrollbars()
     ///if (m_nHScrollPos > m_nHScrollMax) m_nHScrollPos = 0;
     //u//pdatePinnedOffset();
 
-    size_w nMax = numFileLines(m_pDataSeq->size());
-
-    if(nMax > 0)
-        nMax -= 1;
+    size_w totalLines = numFileLines(m_pDataSeq->size());
+    m_nVScrollMax = totalLines > (size_w)m_nWindowLines
+                    ? totalLines - (size_w)m_nWindowLines : 0;
 
     // setRange() must fire rangeChanged so QAbstractScrollArea's internal
     // _q_adjustScrollbars() slot runs and updates scrollbar visibility.
     // Only setValue() needs blocking — it would otherwise trigger our
     // valueChanged lambda and cause a redundant repaint.
-    verticalScrollBar()->setRange(0, (int)nMax);
+    verticalScrollBar()->setRange(0, (int)m_nVScrollMax);
     verticalScrollBar()->setPageStep(m_nWindowLines);
     verticalScrollBar()->setSingleStep(1);
     {
         QSignalBlocker b(verticalScrollBar());
         verticalScrollBar()->setValue((int)m_nVScrollPos);
     }
-
-    m_nVScrollMax = numFileLines(m_pDataSeq->size()) - m_nWindowLines;
 
     m_nTotalWidth = calcTotalWidth();
 

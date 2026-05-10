@@ -354,12 +354,15 @@ void StatusBar::onFindProgress(size_w pos, size_w len, double mbPerSec)
     int pct = (len > 0) ? (int)((double)pos / (double)len * 100.0) : 0;
     m_searchBar->setValue(qBound(0, pct, 100));
     m_searchLabel->setText(QString("Searching %1 MB/s:").arg(mbPerSec, 0, 'f', 1));
+    m_searchLabel->setMinimumWidth(qMax(m_searchLabel->minimumWidth(),
+                                        m_searchLabel->sizeHint().width()));
 }
 
 void StatusBar::onFindDone()
 {
     m_searchWidget->hide();
     m_searchSep->hide();
+    m_searchLabel->setMinimumWidth(0);
 }
 
 void StatusBar::showSearchHex(const QString &hex)

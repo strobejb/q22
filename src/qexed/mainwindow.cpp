@@ -653,6 +653,7 @@ MainWindow::MainWindow(QWidget *parent)
         }
     }
     m_hv->setContextMenu(editMenu);
+    connect(editMenu, &QMenu::aboutToShow, this, &MainWindow::updateEditActions);
 
     // Actions in nested submenus of the replaced QMenuBar lose their shortcut
     // registration when the menubar is hidden. Re-register them on the window.

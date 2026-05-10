@@ -422,7 +422,7 @@ void HexView::recalcLayout()
 //}
 void HexView::updateMetrics()
 {
-    emitResize();
+    recalcLayout();
     refreshWindow();
     repositionCaret();
     return;
