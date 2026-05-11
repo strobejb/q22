@@ -1,5 +1,6 @@
 #include "theme.h"
 #include "settings.h"
+#include "dialog-chrome.h"
 #include <functional>
 #include <QAction>
 #include <QApplication>
@@ -99,6 +100,16 @@ bool isDarkMode()
     if (s_currentScheme == ColorScheme::Dark)  return true;
     if (s_currentScheme == ColorScheme::Light) return false;
     return QApplication::palette().window().color().lightness() < 128;
+}
+
+static bool darkForScheme(ColorScheme scheme)
+{
+    switch (scheme) {
+    case ColorScheme::Light: return false;
+    case ColorScheme::Dark:  return true;
+    default:
+        return QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
+    }
 }
 
 static QColor gnomeAccentColourFromName(QString name)
@@ -1321,14 +1332,7 @@ static QFont detectSystemFont()
 void applyAdwaitaTheme(ColorScheme scheme)
 {
     s_currentScheme = scheme;
-
-    bool dark;
-    switch (scheme) {
-    case ColorScheme::Light: dark = false; break;
-    case ColorScheme::Dark:  dark = true;  break;
-    default:  // System: read from Qt 6.5+ colour scheme hint
-        dark = QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
-    }
+    const bool dark = darkForScheme(scheme);
 
     // On Windows use the built-in windows11 style; elsewhere prefer the native
     // Adwaita plugin and fall back to Fusion.
@@ -1368,6 +1372,19 @@ void applyAdwaitaTheme(ColorScheme scheme)
 #endif
     applyPalette(dark);
     qApp->setStyleSheet(buildStylesheet(dark));
+
+#ifndef Q_OS_WIN
+    // GNOME/Qt can apply the platform palette after setColorScheme() returns.
+    // Re-assert the app palette/QSS on the next turn so explicit Light/Dark
+    // switches take effect on the first click.
+    QTimer::singleShot(0, qApp, [scheme]() {
+        if (s_currentScheme != scheme)
+            return;
+        const bool settledDark = darkForScheme(scheme);
+        applyPalette(settledDark);
+        qApp->setStyleSheet(buildStylesheet(settledDark));
+    });
+#endif
 
     // One-time setup: font preference and tooltip filter.
     static bool firstRun = true;
@@ -1411,6 +1428,25 @@ QPalette systemPalette()
     return s_basePalette;
 }
 
+int execCentered(QDialog *dlg)
+{
+    if (!dlg)
+        return QDialog::Rejected;
+
+    installDialogChrome(dlg);
+
+    if (QWidget *par = dlg->parentWidget()) {
+        dlg->adjustSize();
+        const QSize sz = dlg->size();
+        const QPoint c = par->frameGeometry().center();
+        dlg->move(c.x() - sz.width() / 2, c.y() - sz.height() / 2);
+    }
+#ifdef Q_OS_WIN
+    (void)dlg->winId(); // force HWND creation while hidden
+#endif
+    return dlg->exec();
+}
+
 
 void removeDialogIcon(QDialog *dlg)
 {
@@ -1451,6 +1487,7 @@ void styleMessageBox(QMessageBox *box)
         for (QAbstractButton *btn : buttonBox->buttons())
             btn->setIcon(QIcon());
     }
+    installDialogChrome(box);
 }
 
 #ifndef Q_OS_WIN

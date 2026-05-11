@@ -12,6 +12,8 @@ set(PROJECT_SOURCES
         bookmarkcolourwidget.cpp
         datatypecombobox.h
         datatypecombobox.cpp
+        dialog-chrome.h
+        dialog-chrome.cpp
         dockpanelhost.h
         dockpanelhost.cpp
         menucombobox.h

@@ -60,6 +60,7 @@ protected:
 private:
     void resizeParentToFit(const QSize &contentHint);
     void restoreParentSize();
+    int chromeTopInset() const;
     void syncToParent();
     void startSlideIn();
     void startSlideOut();

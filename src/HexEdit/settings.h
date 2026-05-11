@@ -43,6 +43,8 @@ bool    prefNativeMenu();
 void    setPrefNativeMenu(bool on);
 bool    prefNativeFileDialogs();
 void    setPrefNativeFileDialogs(bool on);
+bool    prefNativeDialogs();
+void    setPrefNativeDialogs(bool on);
 bool    prefMenuHighlight();        // true = use palette(highlight) for menu selection
 void    setPrefMenuHighlight(bool on);
 int     prefColorScheme();          // 0=System, 1=Light, 2=Dark

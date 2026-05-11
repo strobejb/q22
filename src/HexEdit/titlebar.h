@@ -17,11 +17,23 @@ class QToolButton;
 class QMenu;
 class QHBoxLayout;
 
+struct TitleBarOptions
+{
+    bool showFileMenu = true;
+    bool showSearchMenu = true;
+    bool showViewMenu = true;
+    bool showMinimize = true;
+    bool showMaximize = true;
+    bool showClose = true;
+    bool allowMaximizeOnDoubleClick = true;
+    bool compact = false;
+};
+
 class TitleBar : public QWidget
 {
     Q_OBJECT
 public:
-    explicit TitleBar(QWidget *parent = nullptr);
+    explicit TitleBar(QWidget *parent = nullptr, const TitleBarOptions &options = {});
 
     QMenu *hamburgerMenu()              const { return m_menu; }
     void   setHamburgerMenu(QMenu *menu);
@@ -53,6 +65,7 @@ private:
     QMenu       *m_menu       = nullptr;
     QMenu       *m_viewMenu   = nullptr;
     QMenu       *m_searchMenu = nullptr;
+    TitleBarOptions m_options;
 };
 
 #endif // TITLEBAR_H

@@ -1,4 +1,5 @@
 #include "focusnavigation.h"
+#include "dialog-chrome.h"
 #include "preferences.h"
 #include "settingscard.h"
 #include "settings.h"
@@ -289,6 +290,9 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     m_nativeMenu = new SettingsToggle(tr("Native menu bar"), this);
     m_nativeMenu->setChecked(AppSettings::prefNativeMenu());
 
+    m_nativeDialogs = new SettingsToggle(tr("Use Native Dialogs"), this);
+    m_nativeDialogs->setChecked(AppSettings::prefNativeDialogs());
+
     m_nativeFileDialogs = new SettingsToggle(tr("Use Native File Dialogs"), this);
     m_nativeFileDialogs->setChecked(AppSettings::prefNativeFileDialogs());
 
@@ -320,6 +324,11 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
             this, [](bool on) {
         AppSettings::setPrefNativeFileDialogs(on);
     });
+    connect(m_nativeDialogs, &SettingsToggle::toggled,
+            this, [this](bool on) {
+        AppSettings::setPrefNativeDialogs(on);
+        emit nativeDialogsChanged(on);
+    });
     connect(m_menuHighlight, &SettingsToggle::toggled,
             this, [this](bool on) {
         AppSettings::setPrefMenuHighlight(on);
@@ -331,7 +340,7 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
         {m_fontNav, m_fontSize, m_horizSpacing, m_lineSpacing},
         SettingsCard::Style::Spaced, this);
     auto *appearGroup = new SettingsCard(
-        {m_nativeMenu, m_nativeFileDialogs, m_menuHighlight},
+        {m_nativeMenu, m_nativeDialogs, m_nativeFileDialogs, m_menuHighlight},
         SettingsCard::Style::Spaced, this);
 
     // ── Reset button ──────────────────────────────────────────────────────────
@@ -451,6 +460,8 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
 
 void PreferencesDialog::prepareShow()
 {
+    installDialogChrome(this);
+
     // WA_Moved is set by move() below; if it's already set this was called
     // twice (e.g. from mainwindow and then again from setVisible) — skip.
     if (testAttribute(Qt::WA_Moved)) return;

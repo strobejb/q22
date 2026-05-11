@@ -83,14 +83,16 @@ static void parseButtonLayout(const QString &layout,
 
 // ── TitleBar ──────────────────────────────────────────────────────────────────
 
-TitleBar::TitleBar(QWidget *parent)
-    : QWidget(parent)
+TitleBar::TitleBar(QWidget *parent, const TitleBarOptions &options)
+    : QWidget(parent), m_options(options)
 {
     // Match the system toolbar height rather than hardcoding.
     // PM_ToolBarIconSize is 24 px on GNOME/Adwaita, giving ~46 px total —
     // the same as an Adwaita header bar.  On KDE it scales similarly.
     const int iconSz    = QApplication::style()->pixelMetric(QStyle::PM_ToolBarIconSize);
     int barH            = qMax(36, iconSz + 22);   // 46 on GNOME, ≥36 everywhere
+    if (m_options.compact)
+        barH = qMax(34, iconSz + 14);
 #ifdef Q_OS_WIN
     // Windows Fluent apps typically use ~40 px title bars (tighter than the
     // GNOME 46 px formula, wider than the bare system-caption minimum ~31 px).
@@ -98,7 +100,7 @@ TitleBar::TitleBar(QWidget *parent)
 #endif
     // All buttons leave ~6 px margin top/bottom so they sit centred in the bar.
     // 16 px symbolic icons are the standard for header-bar buttons on GNOME/KDE.
-    const int btnSz        = barH - 12;    // ~34 px on GNOME
+    const int btnSz        = barH - (m_options.compact ? 8 : 12);
     const int btnIconSz    = 16;           // window-control glyphs / standard icons
     // On the compact Windows bar (40 px) the menu-button icons are one step
     // smaller than the window-control glyphs.  On Linux the bar is taller
@@ -162,6 +164,7 @@ TitleBar::TitleBar(QWidget *parent)
     m_hamburger->setIconSize(QSize(menuBtnIconSz, menuBtnIconSz));
     m_hamburger->setMenu(m_menu);
     m_hamburger->setPopupMode(QToolButton::InstantPopup);
+    m_hamburger->setVisible(m_options.showFileMenu);
 
     // ── Search button (left side, next to hamburger) ──────────────────────
     m_searchMenu = new QMenu(this);
@@ -188,6 +191,7 @@ TitleBar::TitleBar(QWidget *parent)
     m_searchBtn->setIconSize(QSize(menuBtnIconSz, menuBtnIconSz));
     m_searchBtn->setMenu(m_searchMenu);
     m_searchBtn->setPopupMode(QToolButton::InstantPopup);
+    m_searchBtn->setVisible(m_options.showSearchMenu);
 
     // ── Title label ───────────────────────────────────────────────────────
     m_title = new QLabel(this);
@@ -241,6 +245,7 @@ TitleBar::TitleBar(QWidget *parent)
     m_viewBtn->setIconSize(QSize(menuBtnIconSz, menuBtnIconSz));
     m_viewBtn->setMenu(m_viewMenu);
     m_viewBtn->setPopupMode(QToolButton::InstantPopup);
+    m_viewBtn->setVisible(m_options.showViewMenu);
     // Reposition to right-align when the menu is shown.
     m_viewMenu->installEventFilter(this);
 
@@ -284,6 +289,12 @@ QToolButton *TitleBar::makeWindowButton(const QString &name)
 
     if (!specs.contains(name))
         return nullptr;
+    if (name == "close" && !m_options.showClose)
+        return nullptr;
+    if (name == "minimize" && !m_options.showMinimize)
+        return nullptr;
+    if (name == "maximize" && !m_options.showMaximize)
+        return nullptr;
 
     const Spec &s = specs[name];
     auto *btn = new QToolButton(this);
@@ -298,7 +309,9 @@ QToolButton *TitleBar::makeWindowButton(const QString &name)
 #else
     {
         const int iconSz = QApplication::style()->pixelMetric(QStyle::PM_ToolBarIconSize);
-        const int sz     = qMax(36, iconSz + 22) - 12;   // same formula as constructor
+        const int barH   = m_options.compact ? qMax(34, iconSz + 14)
+                                             : qMax(36, iconSz + 22);
+        const int sz     = barH - (m_options.compact ? 8 : 12);
         btn->setFixedSize(sz, sz);
         btn->setIconSize(QSize(16, 16));
     }
@@ -594,6 +607,6 @@ void TitleBar::mousePressEvent(QMouseEvent *event)
 
 void TitleBar::mouseDoubleClickEvent(QMouseEvent *event)
 {
-    if (event->button() == Qt::LeftButton)
+    if (m_options.allowMaximizeOnDoubleClick && event->button() == Qt::LeftButton)
         window()->isMaximized() ? window()->showNormal() : window()->showMaximized();
 }

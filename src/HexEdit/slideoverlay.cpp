@@ -286,7 +286,7 @@ void SlideOverlay::slideIn(QDialog *dlg, std::function<void(int)> onFinished,
     // Critically: move() is called before show() so the overlay is never
     // rendered at its resting position (0, 0) before the animation begins.
     syncToParent();
-    move(-width(), 0);
+    move(-width(), chromeTopInset());
     show();
     raise();
     m_content->show();
@@ -330,7 +330,7 @@ void SlideOverlay::resizeParentToFit(const QSize &contentHint)
     // resize, then re-lock at the new height so the window isn't manually
     // resizable while the overlay is open.
     par->setFixedHeight(QWIDGETSIZE_MAX);
-    par->resize(par->width(), newH);
+    par->resize(par->width(), newH + chromeTopInset());
     par->setFixedHeight(newH);
 }
 
@@ -342,15 +342,22 @@ void SlideOverlay::restoreParentSize()
     par->setFixedHeight(m_savedParentSize.height());
 }
 
+int SlideOverlay::chromeTopInset() const
+{
+    QWidget *par = parentWidget();
+    return par ? qMax(0, par->property("_qexedDialogChromeHeight").toInt()) : 0;
+}
+
 void SlideOverlay::syncToParent()
 {
     const QSize sz = parentWidget()->size();
-    resize(sz);
+    const int top = chromeTopInset();
+    setGeometry(x(), top, sz.width(), qMax(0, sz.height() - top));
     if (m_content) {
         if (m_inlineMode)
-            m_content->setGeometry(0, 0, sz.width(), sz.height());
+            m_content->setGeometry(0, 0, width(), height());
         else
-            m_content->setGeometry(0, k_headerH, sz.width(), sz.height() - k_headerH);
+            m_content->setGeometry(0, k_headerH, width(), height() - k_headerH);
     }
 }
 
@@ -362,7 +369,7 @@ void SlideOverlay::startSlideIn()
     m_anim->disconnect();
     m_anim->setEasingCurve(QEasingCurve::OutCubic);
     m_anim->setStartValue(pos());   // animate from current (already off-screen) position
-    m_anim->setEndValue(QPoint(0, 0));
+    m_anim->setEndValue(QPoint(0, chromeTopInset()));
     m_anim->start();
 }
 
@@ -372,11 +379,11 @@ void SlideOverlay::startSlideOut()
     m_anim->disconnect();
     m_anim->setEasingCurve(QEasingCurve::InCubic);
     m_anim->setStartValue(pos());
-    m_anim->setEndValue(QPoint(-parentWidget()->width(), 0));  // exit to the left
+    m_anim->setEndValue(QPoint(-parentWidget()->width(), chromeTopInset()));  // exit to the left
 
     connect(m_anim, &QPropertyAnimation::finished, this, [this]() {
         hide();
-        move(0, 0);     // reset position for the next slideIn
+        move(0, chromeTopInset());     // reset position for the next slideIn
 
         m_backBtn->hide();
         m_inlineMode = false;
@@ -442,18 +449,17 @@ bool SlideOverlay::eventFilter(QObject *obj, QEvent *event)
     // Keep overlay in sync whenever the parent dialog is resized.
     if (obj == parentWidget() && event->type() == QEvent::Resize) {
         if (isVisible()) {
-            const QSize sz = static_cast<QResizeEvent *>(event)->size();
-            resize(sz);
+            syncToParent();
             if (m_content) {
                 if (m_inlineMode)
-                    m_content->setGeometry(0, 0, sz.width(), sz.height());
+                    m_content->setGeometry(0, 0, width(), height());
                 else
                     m_content->setGeometry(0, k_headerH,
-                                           sz.width(), sz.height() - k_headerH);
+                                           width(), height() - k_headerH);
             }
             // Update the slide-out end position if currently animating.
             if (m_anim->state() == QAbstractAnimation::Running)
-                m_anim->setEndValue(QPoint(-sz.width(), 0));
+                m_anim->setEndValue(QPoint(-width(), chromeTopInset()));
         }
         return false;   // don't consume — parent still needs to process it
     }

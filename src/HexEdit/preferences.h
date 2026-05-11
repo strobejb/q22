@@ -39,6 +39,7 @@ signals:
     void fontChanged(const QFont &font);
     void fontSpacingChanged(int hSpacing, int lineSpacing);
     void nativeMenuChanged(bool on);
+    void nativeDialogsChanged(bool on);
     void menuHighlightChanged(bool on);
     void paletteSelected(const PaletteInfo &info);
 
@@ -67,6 +68,7 @@ private:
     StepSpinBox    *m_horizSpacing = nullptr;
     StepSpinBox    *m_lineSpacing  = nullptr;
     SettingsToggle *m_nativeMenu       = nullptr;
+    SettingsToggle *m_nativeDialogs    = nullptr;
     SettingsToggle *m_nativeFileDialogs = nullptr;
     SettingsToggle *m_menuHighlight    = nullptr;
     SlideOverlay   *m_overlay      = nullptr;

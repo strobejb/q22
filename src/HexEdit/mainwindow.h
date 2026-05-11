@@ -47,6 +47,7 @@ private:
     void updateRecentMenu();
     void updateEditActions();
     void setupPaletteWatcher();
+    void createPreferencesDialog();
     void schedulePaletteReload();
     void reloadWatchedPalettes();
     void runFind(bool forward);

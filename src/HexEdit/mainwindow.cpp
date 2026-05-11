@@ -5,6 +5,7 @@
 #include "bookmarkdialog.h"
 #include "dlgabout.h"
 #include "dlgcopyas.h"
+#include "dialog-chrome.h"
 #include "dlgexport.h"
 #include "dlgimport.h"
 #include "dlgpastespecial.h"
@@ -49,6 +50,7 @@
 #include <QMenu>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPointer>
 #include <QStyle>
 #include <QKeyEvent>
 #include <QMouseEvent>
@@ -106,8 +108,10 @@ static QString getThemedOpenFileName(QWidget *parent, const QString &caption)
     dlg.setOption(QFileDialog::DontUseNativeDialog, !useNativeFileDialogs);
     dlg.setAcceptMode(QFileDialog::AcceptOpen);
     dlg.setFileMode(QFileDialog::ExistingFile);
-    if (!useNativeFileDialogs)
+    if (!useNativeFileDialogs) {
         installThemedFileDialogComboPopups(&dlg);
+        installDialogChrome(&dlg);
+    }
 
     return dlg.exec() == QDialog::Accepted ? dlg.selectedFiles().value(0) : QString();
 }
@@ -118,8 +122,10 @@ static QString getThemedSaveFileName(QWidget *parent, const QString &caption)
     const bool useNativeFileDialogs = AppSettings::prefNativeFileDialogs();
     dlg.setOption(QFileDialog::DontUseNativeDialog, !useNativeFileDialogs);
     dlg.setAcceptMode(QFileDialog::AcceptSave);
-    if (!useNativeFileDialogs)
+    if (!useNativeFileDialogs) {
         installThemedFileDialogComboPopups(&dlg);
+        installDialogChrome(&dlg);
+    }
 
     return dlg.exec() == QDialog::Accepted ? dlg.selectedFiles().value(0) : QString();
 }
@@ -305,15 +311,34 @@ public:
                       QObject *parent = nullptr)
         : QWidgetAction(parent), m_current(current), m_cb(std::move(cb)) {}
 
+    void setCurrent(ColorScheme current)
+    {
+        m_current = current;
+        for (auto it = m_widgets.begin(); it != m_widgets.end();) {
+            if (*it) {
+                (*it)->setCurrent(current);
+                ++it;
+            } else {
+                it = m_widgets.erase(it);
+            }
+        }
+    }
+
 protected:
     QWidget *createWidget(QWidget *parent) override
     {
-        return new ThemePickerWidget(m_current, m_cb, parent);
+        auto *widget = new ThemePickerWidget(m_current, [this](ColorScheme s) {
+            setCurrent(s);
+            m_cb(s);
+        }, parent);
+        m_widgets.append(widget);
+        return widget;
     }
 
 private:
     ColorScheme                      m_current;
     std::function<void(ColorScheme)> m_cb;
+    QList<QPointer<ThemePickerWidget>> m_widgets;
 };
 
 void MainWindow::setupPaletteWatcher()
@@ -363,6 +388,49 @@ void MainWindow::reloadWatchedPalettes()
 
     if (m_prefsDialog)
         m_prefsDialog->refreshPalettes();
+}
+
+void MainWindow::createPreferencesDialog()
+{
+    if (m_prefsDialog)
+        return;
+
+    m_prefsDialog = new PreferencesDialog(this);
+    connect(m_prefsDialog, &PreferencesDialog::fontChanged,
+            this, [this](const QFont &font) {
+        m_hv->setFont(font, AppSettings::prefHorizSpacing(), AppSettings::prefLineSpacing());
+    });
+    connect(m_prefsDialog, &PreferencesDialog::fontSpacingChanged,
+            this, [this](int hSpacing, int lineSpacing) {
+        m_hv->setFont(m_hv->font(), hSpacing, lineSpacing);
+    });
+    connect(m_prefsDialog, &PreferencesDialog::nativeMenuChanged,
+            this, [this](bool native) { applyMenuMode(!native); });
+    connect(m_prefsDialog, &PreferencesDialog::nativeDialogsChanged,
+            this, [this](bool) {
+        QTimer::singleShot(0, this, [this] {
+            if (m_prefsDialog) {
+                m_prefsDialog->hide();
+                m_prefsDialog->deleteLater();
+                m_prefsDialog = nullptr;
+            }
+            createPreferencesDialog();
+            m_prefsDialog->prepareShow();
+            m_prefsDialog->show();
+            m_prefsDialog->raise();
+            m_prefsDialog->activateWindow();
+        });
+    });
+    connect(m_prefsDialog, &PreferencesDialog::menuHighlightChanged,
+            this, [this](bool) { applyAdwaitaTheme(static_cast<ColorScheme>(AppSettings::prefColorScheme())); });
+    connect(m_prefsDialog, &PreferencesDialog::paletteSelected,
+            this, [this](const PaletteInfo &info) {
+        m_currentPalette = info;
+        applyPalette(m_hv, info);
+        applyUiPalette(info);
+        m_titleBar->refreshStylesheet();
+        AppSettings::setPrefPaletteName(info.name);
+    });
 }
 
 MainWindow::MainWindow(QWidget *parent)
@@ -439,6 +507,10 @@ MainWindow::MainWindow(QWidget *parent)
             applyUiPalette(m_currentPalette);  // internally re-applies theme with UI overrides
         }
         m_titleBar->refreshStylesheet();  // after palette so UI overrides are already active
+        QTimer::singleShot(0, m_titleBar, [this] {
+            if (m_titleBar)
+                m_titleBar->refreshStylesheet();
+        });
 #ifdef Q_OS_WIN
         if (m_useCustomTitleBar)
             updateWinChromeColors();
@@ -786,6 +858,9 @@ MainWindow::MainWindow(QWidget *parent)
             }
         }
 
+        if (!useNativeFileDialogs)
+            installDialogChrome(&dlg);
+
         if (dlg.exec() != QDialog::Accepted)
             return;
         const QString dest = dlg.selectedFiles().value(0);
@@ -872,6 +947,9 @@ MainWindow::MainWindow(QWidget *parent)
             connect(&dlg, &QFileDialog::filterSelected, &dlg, updateImportOptionsEnabled);
             updateImportOptionsEnabled();
         }
+
+        if (!useNativeFileDialogs)
+            installDialogChrome(&dlg);
 
         if (dlg.exec() != QDialog::Accepted) return;
         const QString path = dlg.selectedFiles().value(0);
@@ -970,6 +1048,9 @@ MainWindow::MainWindow(QWidget *parent)
             updateExportOptionsEnabled();
         }
 
+        if (!useNativeFileDialogs)
+            installDialogChrome(&dlg);
+
         if (dlg.exec() != QDialog::Accepted)
             return;
 
@@ -989,28 +1070,9 @@ MainWindow::MainWindow(QWidget *parent)
         Export(path, m_hv, &g_ExportOptions, this);
     });
 
-    m_prefsDialog = new PreferencesDialog(this);
-    connect(m_prefsDialog, &PreferencesDialog::fontChanged,
-            this, [this](const QFont &font) {
-        m_hv->setFont(font, AppSettings::prefHorizSpacing(), AppSettings::prefLineSpacing());
-    });
-    connect(m_prefsDialog, &PreferencesDialog::fontSpacingChanged,
-            this, [this](int hSpacing, int lineSpacing) {
-        m_hv->setFont(m_hv->font(), hSpacing, lineSpacing);
-    });
-    connect(m_prefsDialog, &PreferencesDialog::nativeMenuChanged,
-            this, [this](bool native) { applyMenuMode(!native); });
-    connect(m_prefsDialog, &PreferencesDialog::menuHighlightChanged,
-            this, [this](bool) { applyAdwaitaTheme(static_cast<ColorScheme>(AppSettings::prefColorScheme())); });
-    connect(m_prefsDialog, &PreferencesDialog::paletteSelected,
-            this, [this](const PaletteInfo &info) {
-        m_currentPalette = info;
-        applyPalette(m_hv, info);
-        applyUiPalette(info);
-        m_titleBar->refreshStylesheet();
-        AppSettings::setPrefPaletteName(info.name);
-    });
+    createPreferencesDialog();
     connect(ui->actionPreferences, &QAction::triggered, this, [this]() {
+        createPreferencesDialog();
         m_prefsDialog->prepareShow(); // pre-create HWND at correct pos before show()
         m_prefsDialog->show();
         m_prefsDialog->raise();
