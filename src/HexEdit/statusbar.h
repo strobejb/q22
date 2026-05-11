@@ -35,10 +35,25 @@ public:
     {
         if (m_displayText == text) return;
         m_displayText = text;
+        // Grow the stored minimum to fit the new text, but never shrink it.
+        QStyleOptionComboBox opt;
+        initStyleOption(&opt);
+        opt.currentText = m_displayText;
+        const int w = style()->sizeFromContents(QStyle::CT_ComboBox, &opt,
+                          fontMetrics().size(Qt::TextSingleLine, m_displayText), this).width();
+        m_minWidth = qMax(m_minWidth, w);
         updateGeometry(); // notify PanelStrip that our preferred width changed
         update();
     }
     const QString &displayText() const { return m_displayText; }
+
+    // Reset the minimum-width floor (call when the content changes mode so the
+    // new mode can build its own independent floor from scratch).
+    void resetMinWidth()
+    {
+        m_minWidth = 0;
+        updateGeometry();
+    }
 
     QSize sizeHint() const override;
 
@@ -129,6 +144,7 @@ protected:
     }
 private:
     QString m_displayText;
+    int     m_minWidth            = 0;
     bool    m_hovered             = false;
     bool    m_popupOpen           = false;
     bool    m_menuFilterInstalled = false;
@@ -239,6 +255,7 @@ private:
     QString computeValueText() const;
 
     HexView              *m_hv;
+    bool                  m_hasSel       = false;   // tracks cursor↔selection mode switches
     RadioComboBox        *m_comboCursor  = nullptr;
     RadioComboBox        *m_comboLength  = nullptr;
     ValueOptionsComboBox *m_comboValue   = nullptr;

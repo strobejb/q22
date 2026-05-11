@@ -382,7 +382,7 @@ QList<PaletteInfo> loadAllPalettes()
 // Windows: %APPDATA%/HexEdit/palettes/
 QString paletteStorageDir()
 {
-    QSettings s(QSettings::IniFormat, QSettings::UserScope, "HexEdit", "HexEdit");
+    QSettings s(QSettings::IniFormat, QSettings::UserScope, "Catch22", "HexEdit");
     return QFileInfo(s.fileName()).dir().filePath("palettes");
 }
 

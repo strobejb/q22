@@ -1,11 +1,24 @@
 #include "settings.h"
+#include <QDir>
+#include <QFileInfo>
 #include <QSettings>
+#include <QCoreApplication>
+
+//#define ORG "Catch22"
+//#define APP "HexEdit"
 
 // Returns a ready-to-use QSettings object for the app's config file.
 // QSettings is non-copyable so callers construct it directly via this helper
 // macro rather than a factory function.
 #define OPEN_SETTINGS \
-    QSettings s(QSettings::IniFormat, QSettings::UserScope, "HexEdit", "HexEdit")
+QSettings s(QSettings::IniFormat, QSettings::UserScope, QCoreApplication::organizationName(), QCoreApplication::applicationName())
+
+void AppSettings::ensureSettingsDir()
+{
+    QSettings probe(QSettings::IniFormat, QSettings::UserScope, QCoreApplication::organizationName(), QCoreApplication::applicationName());
+                    //, ORG, APP);
+    QDir().mkpath(QFileInfo(probe.fileName()).absolutePath());
+}
 
 QStringList AppSettings::recentFiles()
 {
@@ -73,10 +86,26 @@ void AppSettings::setPrefLineSpacing(int px)
     s.setValue("preferences/lineSpacing", px);
 }
 
+// Default native-menu behaviour:
+//   Windows : false  — native menus clash with the custom title bar
+//   Linux/KDE: true  — Plasma integrates native menu bars well
+//   Linux/other: false  — GNOME and others don't render them reliably
+//   macOS   : true   — native menu bar is the platform convention
+static bool defaultNativeMenu()
+{
+#ifdef Q_OS_WIN
+    return false;
+#elif defined(Q_OS_LINUX)
+    return qEnvironmentVariable("XDG_CURRENT_DESKTOP").toLower().contains("kde");
+#else
+    return true;
+#endif
+}
+
 bool AppSettings::prefNativeMenu()
 {
     OPEN_SETTINGS;
-    return s.value("preferences/nativeMenu", true).toBool();
+    return s.value("preferences/nativeMenu", defaultNativeMenu()).toBool();
 }
 
 void AppSettings::setPrefNativeMenu(bool on)

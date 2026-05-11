@@ -3,6 +3,7 @@
 #include "theme.h"
 #include <QApplication>
 #include <QIcon>
+#include <QDir>
 
 
 int main(int argc, char *argv[])
@@ -12,10 +13,11 @@ int main(int argc, char *argv[])
 #endif
     QApplication a(argc, argv);
     QApplication::setAttribute(Qt::AA_DontShowIconsInMenus, true);
-    a.setOrganizationName("Catch22");
-    a.setApplicationName("q22");
-    a.setApplicationVersion("0.1");
+    a.setOrganizationName("catch22");
+    a.setApplicationName("HexEdit");
+    a.setApplicationVersion("3.0.1");
     a.setWindowIcon(QIcon(":/HexEdit.png"));
+    AppSettings::ensureSettingsDir(); // must be called before any AppSettings read/write
 
     // Use only the bundled hicolor theme for icon lookups.  This ensures
     // QIcon::fromTheme() always resolves to our embedded resources, regardless

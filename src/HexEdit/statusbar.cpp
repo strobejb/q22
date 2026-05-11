@@ -35,7 +35,9 @@ QSize ValueComboBox::sizeHint() const
     initStyleOption(&opt);
     opt.currentText = m_displayText;
     const QSize textSz = fontMetrics().size(Qt::TextSingleLine, m_displayText);
-    return style()->sizeFromContents(QStyle::CT_ComboBox, &opt, textSz, this);
+    QSize sz = style()->sizeFromContents(QStyle::CT_ComboBox, &opt, textSz, this);
+    sz.setWidth(qMax(sz.width(), m_minWidth));
+    return sz;
 }
 
 // ── RadioComboBox ─────────────────────────────────────────────────────────────
@@ -404,6 +406,14 @@ void StatusBar::showMessage(const QString &msg)
 void StatusBar::update()
 {
     bool hasSel = m_hv->selectionStart() != m_hv->selectionEnd();
+
+    // Reset the cursor panel's width floor when flipping between cursor and
+    // selection mode — each mode tracks its own independent minimum width.
+    if (hasSel != m_hasSel) {
+        m_hasSel = hasSel;
+        m_comboCursor->resetMinWidth();
+        m_comboLength->resetMinWidth();
+    }
 
     // Panel 1: cursor offset or selection range
     if (hasSel) {

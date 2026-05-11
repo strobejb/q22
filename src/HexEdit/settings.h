@@ -4,13 +4,18 @@
 #include <QStringList>
 
 // Typed accessors for persistent application preferences.
-// Data is stored as INI under the platform user-config location:
-//   Linux:   ~/.config/HexEdit/HexEdit.ini
-//   Windows: %APPDATA%\HexEdit\HexEdit.ini
-//   macOS:   ~/Library/Preferences/HexEdit/HexEdit.ini
-// (To use a hidden ~/.HexEdit/ directory instead, replace the QSettings
-//  constructor in settings.cpp with the path-based overload.)
+// Data is stored as INI under the platform user-config location, using the
+// org/app names set in main() via QCoreApplication::setOrganizationName /
+// setApplicationName.  With org="Catch22" and app="HexEdit":
+//   Linux:   ~/.config/Catch22/HexEdit.ini
+//   Windows: %APPDATA%\Catch22\HexEdit.ini
+//   macOS:   ~/Library/Preferences/Catch22/HexEdit.ini
 namespace AppSettings {
+
+// Call once at startup (before any other AppSettings function) to guarantee
+// the settings directory exists before any QSettings object is constructed.
+// Qt caches writability at construction time, so the directory must exist first.
+void ensureSettingsDir();
 
 constexpr int MaxRecentFiles = 10;
 constexpr int MaxRecentPalettes = 5;
