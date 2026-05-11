@@ -206,55 +206,7 @@ QColor matchLuminance(const QColor &source, const QColor &luminanceRef)
 }
 
 #ifdef Q_OS_WIN
-// ── DWM dark-mode title bars ──────────────────────────────────────────────────
-// Qt does not call DwmSetWindowAttribute(DWMWA_USE_IMMERSIVE_DARK_MODE) on
-// dialogs, so they always get a light title bar even in dark mode.  We fix
-// this with a global event filter that applies the attribute whenever any
-// non-frameless top-level window is shown, plus a sweep of existing windows
-// when the colour scheme changes.
-
-#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
-#  define DWMWA_USE_IMMERSIVE_DARK_MODE 20
-#endif
-
-static void applyDwmDarkMode(QWidget *w)
-{
-    if (!w->isWindow() || (w->windowFlags() & Qt::FramelessWindowHint))
-        return;
-
-    HWND hwnd = reinterpret_cast<HWND>(w->winId());
-
-    const bool dark = (s_currentScheme == ColorScheme::Dark) ||
-                      (s_currentScheme == ColorScheme::System &&
-                       QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark);
-    BOOL val = dark ? TRUE : FALSE;
-    DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &val, sizeof(val));
-
-    // DWM does not repaint the title bar automatically when the attribute changes
-    // on an already-visible window.  SWP_FRAMECHANGED forces a WM_NCCALCSIZE
-    // message which causes DWM to re-evaluate and redraw the non-client area
-    // immediately, so the light↔dark switch is visible without any interaction.
-    SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
-                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-}
-
-namespace {
-struct DarkModeFilter : public QObject {
-    explicit DarkModeFilter(QObject *p) : QObject(p) {}
-    bool eventFilter(QObject *obj, QEvent *e) override {
-        auto *w = qobject_cast<QWidget *>(obj);
-        if (!w) return false;
-        if (e->type() == QEvent::Show) {
-            // Defer to the next event-loop tick so we run after Qt's own
-            // ApplicationPaletteChange handling, which may reset
-            // DWMWA_USE_IMMERSIVE_DARK_MODE to the system value.
-            QPointer<QWidget> wp(w);
-            QTimer::singleShot(0, [wp]() { if (wp) applyDwmDarkMode(wp); });
-        }
-        return false;
-    }
-};
-} // namespace
+#include "windows-chrome.h"
 #endif
 
 // ── DWM shadow for popup menus (Win11) ───────────────────────────────────────
@@ -1404,25 +1356,14 @@ void applyAdwaitaTheme(ColorScheme scheme)
 #endif
         qApp->installEventFilter(new TooltipFilter(qApp));
 #ifdef Q_OS_WIN
-        qApp->installEventFilter(new DarkModeFilter(qApp));
+        installDarkModeFilter();
 #else
         qApp->installEventFilter(new NativeMenuFilter(qApp));
 #endif
     }
 
 #ifdef Q_OS_WIN
-    // Re-apply dark-mode title bars to all currently visible top-levels so that
-    // already-open dialogs update immediately on a scheme change.
-    // Deferred to the next event-loop tick: QApplication::setPalette() posts
-    // QEvent::ApplicationPaletteChange, and Qt's Windows platform plugin
-    // processes that event by resetting DWMWA_USE_IMMERSIVE_DARK_MODE to match
-    // the *system* colour scheme.  Running after that event drains ensures our
-    // forced dark/light value is the last thing written.
-    QTimer::singleShot(0, []() {
-        for (QWidget *w : QApplication::topLevelWidgets())
-            if (w->isVisible())
-                applyDwmDarkMode(w);
-    });
+    sweepDwmDarkMode();
 #endif
 }
 
