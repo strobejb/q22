@@ -97,7 +97,7 @@ class QIcon;
 // :/icons/hicolor/scalable/actions/<name>.svg when the theme lookup fails.
 QIcon recoloredIcon(const QString &name, const QColor &color, int sz = 16);
 
-// Recolors all QToolButton children of `parent` whose icon has a theme name.
+// Recolors QToolButton children and child/widget QAction icons with iconThemeName.
 // Call at construction time and from changeEvent on QEvent::PaletteChange.
 void recolorToolButtons(QWidget *parent);
 

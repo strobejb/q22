@@ -1,5 +1,6 @@
 #include "datatypecombobox.h"
 #include "theme.h"
+#include <QAction>
 #include <QActionGroup>
 #include <QApplication>
 #include <QEvent>
@@ -18,6 +19,40 @@ DataTypeComboBox::DataTypeComboBox(QWidget *parent)
     m_menu = new QMenu(this);
     themeMenu(m_menu);
     m_menu->installEventFilter(this);
+}
+
+QAction *DataTypeComboBox::addIconAction(const QIcon &icon, IconActionPosition position)
+{
+    if (position != LeadingPosition)
+        return nullptr;
+
+    if (!m_leadingAction) {
+        m_leadingAction = new QAction(this);
+        connect(m_leadingAction, &QAction::changed, this, [this]() { update(); });
+    }
+    m_leadingAction->setIcon(icon);
+    update();
+    return m_leadingAction;
+}
+
+QAction *DataTypeComboBox::addIconAction(const QString &iconName, IconActionPosition position)
+{
+    QIcon icon(QStringLiteral(":/icons/hicolor/scalable/actions/") + iconName + QStringLiteral(".svg"));
+    if (icon.isNull())
+        icon = QIcon::fromTheme(iconName);
+
+    QAction *action = addIconAction(icon, position);
+    if (action) {
+        action->setProperty("iconThemeName", iconName);
+        action->setProperty("iconColorRole", QStringLiteral("placeholderText"));
+        action->setProperty("iconSize", 16);
+    }
+    return action;
+}
+
+void DataTypeComboBox::setLeadingIcon(const QIcon &icon)
+{
+    addIconAction(icon, LeadingPosition);
 }
 
 void DataTypeComboBox::buildMenu(bool checkable)
@@ -169,12 +204,12 @@ void DataTypeComboBox::paintEvent(QPaintEvent *)
     QRect textRect = style()->subControlRect(
                          QStyle::CC_ComboBox, &opt,
                          QStyle::SC_ComboBoxEditField, this);
-    if (!m_leadingIcon.isNull()) {
+    if (m_leadingAction && !m_leadingAction->icon().isNull()) {
         const int iconSz = fontMetrics().height();
         const QRect iconRect(textRect.left(),
                              textRect.top() + (textRect.height() - iconSz) / 2,
                              iconSz, iconSz);
-        m_leadingIcon.paint(&painter, iconRect);
+        m_leadingAction->icon().paint(&painter, iconRect);
         textRect.setLeft(iconRect.right() + 8);
     }
     style()->drawItemText(&painter, textRect,

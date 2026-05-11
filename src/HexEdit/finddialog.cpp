@@ -3,6 +3,7 @@
 #include "datatypecombobox.h"
 #include "theme.h"
 #include "HexView/hexview.h"
+#include <QAction>
 #include <QApplication>
 #include <QCursor>
 #include <QEvent>
@@ -154,10 +155,16 @@ FindDialog::FindDialog(QWidget *parent)
 
     // Leading search icon inside the text field.
     {
-        const QColor iconCol = QApplication::palette().placeholderText().color();
-        const QIcon searchIc = recoloredIcon("edit-find-symbolic", iconCol, 16);
-        if (!searchIc.isNull())
-            ui->editFind->addAction(searchIc, QLineEdit::LeadingPosition);
+        const QString iconName = QStringLiteral("edit-find-symbolic");
+        QIcon searchIc(QStringLiteral(":/icons/hicolor/scalable/actions/") + iconName + QStringLiteral(".svg"));
+        if (searchIc.isNull())
+            searchIc = QIcon::fromTheme(iconName);
+        if (!searchIc.isNull()) {
+            QAction *action = ui->editFind->addAction(searchIc, QLineEdit::LeadingPosition);
+            action->setProperty("iconThemeName", iconName);
+            action->setProperty("iconColorRole", QStringLiteral("placeholderText"));
+            action->setProperty("iconSize", 16);
+        }
     }
 
 
@@ -179,12 +186,7 @@ FindDialog::FindDialog(QWidget *parent)
     m_comboDataType->setActionData("Word",   SearchWord);
     m_comboDataType->setActionData("Dword",  SearchDword);
     m_comboDataType->setDisplayText(m_comboDataType->selectionText());
-    {
-        const QColor iconCol = QApplication::palette().placeholderText().color();
-        const QIcon typeIc = recoloredIcon("type100-001", iconCol, 16);
-        if (!typeIc.isNull())
-            m_comboDataType->setLeadingIcon(typeIc);
-    }
+    m_comboDataType->addIconAction(QStringLiteral("type100-001"));
 
     // Keep the search field's font in sync with the Type combo so both
     // controls render text at the same size.

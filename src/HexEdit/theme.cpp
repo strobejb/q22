@@ -1,5 +1,7 @@
 #include "theme.h"
 #include "settings.h"
+#include <functional>
+#include <QAction>
 #include <QApplication>
 #include <QBitmap>
 #include <QComboBox>
@@ -362,6 +364,7 @@ QColor themeBorderColor()
 
 #include <QIcon>
 #include <QPixmap>
+#include <QSet>
 #include <QToolButton>
 
 QIcon recoloredIcon(const QString &name, const QColor &color, int sz)
@@ -388,38 +391,62 @@ QIcon recoloredIcon(const QString &name, const QColor &color, int sz)
     p.fillRect(dst.rect(), color);
     return QIcon(dst);
 }
+static QString iconThemeName(QObject *owner, const QIcon &icon)
+{
+    QString name = owner->property("iconThemeName").toString();
+    if (name.isEmpty()) {
+        if (icon.isNull()) return {};
+        name = icon.name();
+        if (!name.isEmpty())
+            owner->setProperty("iconThemeName", name);
+    }
+    return name;
+}
+
+static QColor iconColorFor(QObject *owner, const QPalette &pal)
+{
+    const QString role = owner->property("iconColorRole").toString();
+    if (role == QLatin1String("placeholderText"))
+        return pal.placeholderText().color();
+    return pal.buttonText().color();
+}
+
+static void recolorIconObject(QObject *owner, const QIcon &icon, int size,
+                              const QPalette &pal,
+                              const std::function<void(const QIcon &)> &setIcon)
+{
+    const QString name = iconThemeName(owner, icon);
+    if (name.isEmpty()) return;
+
+    const int propSize = owner->property("iconSize").toInt();
+    const int iconSize = propSize > 0 ? propSize : qMax(size, 16);
+    const QIcon ic = recoloredIcon(name, iconColorFor(owner, pal), iconSize);
+    if (!ic.isNull())
+        setIcon(ic);
+}
 
 void recolorToolButtons(QWidget *parent)
 {
-    const QColor fg = parent->palette().buttonText().color();
+    const QPalette pal = parent->palette();
     for (auto *btn : parent->findChildren<QToolButton*>()) {
-        // Resolve the icon name.  An explicit "iconThemeName" property is
-        // checked first — it may have been set via .ui dynamic properties or
-        // a previous successful icon().name() lookup.
-        //
-        // IMPORTANT: the isNull() guard comes AFTER the property check.
-        // On KDE/Breeze, QIcon::fromTheme() returns a null icon for icon names
-        // that aren't present in the Breeze theme (e.g. GNOME-specific names
-        // like "nautilus-file-chooser-options-symbolic").  If we bailed out on
-        // isNull() first, we'd skip tho v                       se buttons entirely even though we have
-        // a bundled SVG resource that recoloredIcon() can load instead.
-        QString name = btn->property("iconThemeName").toString();
-        if (name.isEmpty()) {
-            if (btn->icon().isNull()) continue;
-            name = btn->icon().name();
-            if (!name.isEmpty())
-                btn->setProperty("iconThemeName", name); // cache for later calls
-            if (name.isEmpty())
-                continue; // no name → can't recolour; leave the original theme icon
-        }
+        recolorIconObject(btn, btn->icon(), btn->iconSize().width(), pal,
+                          [btn](const QIcon &icon) { btn->setIcon(icon); });
+    }
 
-        const int sz = btn->iconSize().width();
-        QIcon ic = recoloredIcon(name, fg, sz > 0 ? sz : 16);
-        if (!ic.isNull())
-            btn->setIcon(ic);
+    QSet<QAction *> actions;
+    for (QAction *action : parent->findChildren<QAction*>())
+        actions.insert(action);
+    for (QWidget *widget : parent->findChildren<QWidget*>()) {
+        for (QAction *action : widget->actions())
+            actions.insert(action);
+    }
+    for (QAction *action : actions) {
+        const QWidget *ownerWidget = qobject_cast<QWidget *>(action->parent());
+        const QPalette actionPal = ownerWidget ? ownerWidget->palette() : pal;
+        recolorIconObject(action, action->icon(), 16, actionPal,
+                          [action](const QIcon &icon) { action->setIcon(icon); });
     }
 }
-
 
 #include <QListWidget>
 

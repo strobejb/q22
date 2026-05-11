@@ -4,6 +4,7 @@
 #include "theme.h"
 #include "HexView/hexview.h"
 #include "HexView/hexviewbookmark.h"
+#include <QAction>
 #include <QApplication>
 #include <QCursor>
 #include <QEvent>
@@ -89,14 +90,17 @@ GotoDialog::GotoDialog(HexView *hv, QWidget *parent)
 
     // Leading icons: arrow in the address field, star in the bookmarks combo.
     {
-        const QColor placeholderCol = QApplication::palette().placeholderText().color();
-        const QColor borderCol      = QApplication::palette().mid().color();
-        const QIcon arrowIc = recoloredIcon("forward",                placeholderCol, 16);
-        const QIcon starIc  = recoloredIcon("bookmark-star-on-tray", placeholderCol, 16);
-        if (!arrowIc.isNull())
-            ui->editOffset->addAction(arrowIc, QLineEdit::LeadingPosition);
-        if (!starIc.isNull())
-            m_comboBookmarks->setLeadingIcon(starIc);
+        const QString iconName = QStringLiteral("forward");
+        QIcon arrowIc(QStringLiteral(":/icons/hicolor/scalable/actions/") + iconName + QStringLiteral(".svg"));
+        if (arrowIc.isNull())
+            arrowIc = QIcon::fromTheme(iconName);
+        if (!arrowIc.isNull()) {
+            QAction *action = ui->editOffset->addAction(arrowIc, QLineEdit::LeadingPosition);
+            action->setProperty("iconThemeName", iconName);
+            action->setProperty("iconColorRole", QStringLiteral("placeholderText"));
+            action->setProperty("iconSize", 16);
+        }
+        m_comboBookmarks->addIconAction(QStringLiteral("bookmark-star-on-tray"));
     }
 
 #if 0//def 0//Q_OS_WIN
