@@ -15,6 +15,7 @@ int main(int argc, char *argv[])
     QApplication::setAttribute(Qt::AA_DontShowIconsInMenus, true);
     a.setOrganizationName("catch22");
     a.setApplicationName("HexEdit");
+    a.setDesktopFileName("hexedit");
     a.setApplicationVersion("3.0.1");
     a.setWindowIcon(QIcon(":/HexEdit.png"));
     AppSettings::ensureSettingsDir(); // must be called before any AppSettings read/write

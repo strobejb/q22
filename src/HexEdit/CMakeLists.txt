@@ -170,11 +170,12 @@ install(TARGETS HexEdit
 )
 
 if(UNIX AND NOT APPLE)
-    install(FILES ${HEXEDIT_RESOURCE_DIR}/HexEdit.desktop
+    install(FILES ${HEXEDIT_RESOURCE_DIR}/hexedit.desktop
         DESTINATION ${CMAKE_INSTALL_DATADIR}/applications
     )
     install(FILES ${HEXEDIT_RESOURCE_DIR}/HexEdit.png
         DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/256x256/apps
+        RENAME hexedit.png
     )
 endif()
 
