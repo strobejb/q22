@@ -473,8 +473,9 @@ QPoint smartMenuPos(const QWidget *anchor, const QMenu *menu, bool rightAlign)
 static void applyPalette(bool dark)
 {
     // Four anchor colours per mode — everything else is derived from these.
-    // We avoid setColorScheme(): on GNOME the platform plugin responds to it
-    // by re-asserting the system palette, permanently overriding light mode.
+    // setColorScheme() is called in applyAdwaitaTheme() before this function so
+    // the GNOME platform plugin may have already re-asserted the system palette;
+    // setting QApplication::setPalette() here overwrites that side effect.
     const QColor window    = dark ? QColor("#242424") : QColor("#f6f5f4");
     const QColor windowText = dark ? QColor("#deddda") : QColor("#2e3436");
     const QColor base         = dark ? window.darker(120) : Qt::white;
@@ -1344,6 +1345,27 @@ void applyAdwaitaTheme(ColorScheme scheme)
         QApplication::setStyle(new NoFocusRectStyle(base));
     }
 
+#ifndef Q_OS_WIN
+    // GNOME Wayland: server-side decorations track the system colour scheme.
+    // setColorScheme() is the only Qt API that signals the compositor to switch
+    // the title bar between dark and light — it forwards the preference to the
+    // Qt Wayland platform plugin which propagates it toward the compositor.
+    //
+    // Side effect: the GNOME platform plugin responds to colorSchemeChanged() by
+    // calling QApplication::setPalette() with the system palette, overwriting
+    // whatever the app had set.  We call applyPalette() immediately below so that
+    // our custom palette is always the last one written.
+    //
+    // For ColorScheme::System we pass Unknown so the compositor follows its own
+    // judgment, and any previous forced override is cleared.
+    {
+        const Qt::ColorScheme cs =
+            (scheme == ColorScheme::Dark)  ? Qt::ColorScheme::Dark  :
+            (scheme == ColorScheme::Light) ? Qt::ColorScheme::Light :
+                                             Qt::ColorScheme::Unknown;
+        QGuiApplication::styleHints()->setColorScheme(cs);
+    }
+#endif
     applyPalette(dark);
     qApp->setStyleSheet(buildStylesheet(dark));
 
