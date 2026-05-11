@@ -14,7 +14,6 @@
 #include <QDialogButtonBox>
 #include <QScrollBar>
 #include <QDir>
-#include <QFileSystemWatcher>
 #include <QFont>
 #include <QFontDatabase>
 #include <QFontMetrics>
@@ -343,7 +342,7 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     // ── Theme swatches ────────────────────────────────────────────────────────
     m_swatchGrid = new PaletteSwatchGrid(this);
     {
-        m_palettes = loadAllPalettes();
+        m_palettes = reloadPalettes(QDir(paletteStorageDir()));
         if (!m_palettes.isEmpty())
             m_currentPalette = m_palettes.first();
 
@@ -370,12 +369,6 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
                 this, &PreferencesDialog::openAddPaletteEditor);
         populateMainSwatches();
 
-        m_watcher = new QFileSystemWatcher(this);
-        const QString paletteDir = paletteStorageDir();
-        if (QDir(paletteDir).exists())
-            m_watcher->addPath(paletteDir);
-        connect(m_watcher, &QFileSystemWatcher::directoryChanged,
-                this, [this](const QString &) { rebuildCustomSwatches(); });
     }
 
     // ── Section label helper ──────────────────────────────────────────────────
@@ -775,10 +768,15 @@ void PreferencesDialog::addCustomSwatch(const PaletteInfo &)
     rebuildCustomSwatches();
 }
 
+void PreferencesDialog::refreshPalettes()
+{
+    rebuildCustomSwatches();
+}
+
 void PreferencesDialog::rebuildCustomSwatches()
 {
     const QString prevName = m_currentPalette.name;
-    m_palettes = loadAllPalettes();
+    m_palettes = reloadPalettes(QDir(paletteStorageDir()));
     for (const PaletteInfo &info : m_palettes) {
         if (info.name == prevName) {
             m_currentPalette = info;
@@ -787,7 +785,4 @@ void PreferencesDialog::rebuildCustomSwatches()
     }
     populateMainSwatches();
 
-    const QString dir = paletteStorageDir();
-    if (m_watcher && QDir(dir).exists() && !m_watcher->directories().contains(dir))
-        m_watcher->addPath(dir);
 }

@@ -41,6 +41,7 @@
 #include <QFrame>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFileSystemWatcher>
 #include <QGridLayout>
 #include <QLabel>
 #include <QMessageBox>
@@ -475,6 +476,55 @@ private:
     ColorScheme                      m_current;
     std::function<void(ColorScheme)> m_cb;
 };
+
+void MainWindow::setupPaletteWatcher()
+{
+    m_paletteWatcher = new QFileSystemWatcher(this);
+    m_paletteReloadTimer = new QTimer(this);
+    m_paletteReloadTimer->setSingleShot(true);
+    m_paletteReloadTimer->setInterval(250);
+
+    connect(m_paletteWatcher, &QFileSystemWatcher::directoryChanged,
+            this, [this](const QString &) { schedulePaletteReload(); });
+    connect(m_paletteReloadTimer, &QTimer::timeout,
+            this, &MainWindow::reloadWatchedPalettes);
+
+    QDir().mkpath(paletteStorageDir());
+    m_paletteWatcher->addPath(paletteStorageDir());
+}
+
+void MainWindow::schedulePaletteReload()
+{
+    if (m_paletteReloadTimer)
+        m_paletteReloadTimer->start();
+}
+
+void MainWindow::reloadWatchedPalettes()
+{
+    const QString currentName = !m_currentPalette.name.isEmpty()
+        ? m_currentPalette.name
+        : AppSettings::prefPaletteName();
+    if (currentName.isEmpty()) {
+        if (m_prefsDialog)
+            m_prefsDialog->refreshPalettes();
+        return;
+    }
+
+    PaletteInfo info;
+    if (reloadPalette(QDir(paletteStorageDir()), currentName, &info)) {
+        m_currentPalette = info;
+        applyPalette(m_hv, info);
+        applyUiPalette(info);
+        m_titleBar->refreshStylesheet();
+#ifdef Q_OS_WIN
+        if (m_useCustomTitleBar)
+            updateWinChromeColors();
+#endif
+    }
+
+    if (m_prefsDialog)
+        m_prefsDialog->refreshPalettes();
+}
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), ui(new Ui::MainWindow) {
@@ -1140,7 +1190,7 @@ MainWindow::MainWindow(QWidget *parent)
     // Apply saved palette
     const QString savedPalette = AppSettings::prefPaletteName();
     if (!savedPalette.isEmpty()) {
-        QList<PaletteInfo> palettes = loadAllPalettes();
+        QList<PaletteInfo> palettes = reloadPalettes(QDir(paletteStorageDir()));
         for (const PaletteInfo &info : palettes) {
             if (info.name == savedPalette) {
                 m_currentPalette = info;
@@ -1151,6 +1201,7 @@ MainWindow::MainWindow(QWidget *parent)
             }
         }
     }
+    setupPaletteWatcher();
 
     // Apply rounded corners / DWM shadow / compact style to the native QMenuBar
     // drop-down menus so they match the custom-titlebar menus.  Must happen

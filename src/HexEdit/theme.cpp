@@ -401,7 +401,7 @@ void recolorToolButtons(QWidget *parent)
         // On KDE/Breeze, QIcon::fromTheme() returns a null icon for icon names
         // that aren't present in the Breeze theme (e.g. GNOME-specific names
         // like "nautilus-file-chooser-options-symbolic").  If we bailed out on
-        // isNull() first, we'd skip those buttons entirely even though we have
+        // isNull() first, we'd skip tho v                       se buttons entirely even though we have
         // a bundled SVG resource that recoloredIcon() can load instead.
         QString name = btn->property("iconThemeName").toString();
         if (name.isEmpty()) {

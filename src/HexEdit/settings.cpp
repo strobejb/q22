@@ -7,11 +7,6 @@
 //#define ORG "Catch22"
 //#define APP "HexEdit"
 
-// Returns a ready-to-use QSettings object for the app's config file.
-// QSettings is non-copyable so callers construct it directly via this helper
-// macro rather than a factory function.
-#define OPEN_SETTINGS \
-QSettings s(QSettings::IniFormat, QSettings::UserScope, QCoreApplication::organizationName(), QCoreApplication::applicationName())
 
 void AppSettings::ensureSettingsDir()
 {

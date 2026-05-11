@@ -8,15 +8,16 @@
 #include <QList>
 #include <QString>
 #include "HexView/hexview.h"
+#include "palettecolourpicker.h"
+#include "togglebuttongroup.h"
 
+class QDir;
 class HexView;
-class ModeToggleGroup;
 class QLabel;
 class QLineEdit;
 class QListWidget;
 class QPushButton;
 class QAction;
-class ColorPickerWidget;
 class SettingsToggle;
 class ScreenColorPicker;
 
@@ -114,11 +115,12 @@ void applyUiPalette(const PaletteInfo &info);
 // Load the built-in embedded palettes (from Qt resources).
 QList<PaletteInfo> loadEmbeddedPalettes();
 
-// Load any user-saved palettes from the QSettings storage directory.
-QList<PaletteInfo> loadCustomPalettes();
 
-// Load all palettes: disk-based first, then embedded (skipping duplicates by name).
-QList<PaletteInfo> loadAllPalettes();
+// Reload all palettes, using custom palettes from the supplied directory.
+QList<PaletteInfo> reloadPalettes(const QDir &customDir);
+
+// Reload palettes from the supplied directory and return the named palette.
+bool reloadPalette(const QDir &customDir, const QString &name, PaletteInfo *out);
 
 // Return the directory where custom palettes are stored.
 QString paletteStorageDir();
@@ -170,11 +172,11 @@ private:
 
     QLineEdit         *m_nameEdit   = nullptr;
     QListWidget       *m_list       = nullptr;
-    ColorPickerWidget *m_picker     = nullptr;
+    PaletteColourPicker *m_picker   = nullptr;
     SettingsToggle    *m_autoToggle = nullptr;
     QAction           *m_screenPickerAction = nullptr;
     ScreenColorPicker *m_screenPicker = nullptr;
-    ModeToggleGroup   *m_modeGroup  = nullptr;
+    ToggleButtonGroup   *m_modeGroup  = nullptr;
     QLabel            *m_hexLabel   = nullptr;
     QLineEdit         *m_hexEdit    = nullptr;
     QPushButton       *m_saveBtn    = nullptr;

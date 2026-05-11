@@ -9,6 +9,10 @@
 #include <QTimer>
 #include <QVBoxLayout>
 
+//
+// Dock/Panel host for Find & Goto panels
+//
+
 DockPanelHost::DockPanelHost(QWidget *escapeFocusWidget, QWidget *parent)
     : QWidget(parent)
     , m_escapeFocusWidget(escapeFocusWidget)

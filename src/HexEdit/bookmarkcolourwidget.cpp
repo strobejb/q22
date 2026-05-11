@@ -1,4 +1,4 @@
-#include "colourpickerwidget.h"
+#include "bookmarkcolourwidget.h"
 
 #include <QPainter>
 #include <QKeyEvent>
@@ -17,7 +17,7 @@ static const QVector<QColor> kDefaultColours = {
     QColor("#208010"), QColor("#107090"), QColor("#601090"),
 };
 
-ColourPickerWidget::ColourPickerWidget(QWidget *parent)
+BookmarkColourWidget::BookmarkColourWidget(QWidget *parent)
     : QWidget(parent)
     , m_colours(kDefaultColours)
     , m_foreground(QApplication::palette().text().color())
@@ -27,7 +27,7 @@ ColourPickerWidget::ColourPickerWidget(QWidget *parent)
     setFocusPolicy(Qt::StrongFocus);
 }
 
-void ColourPickerWidget::setColours(const QVector<QColor> &colours)
+void BookmarkColourWidget::setColours(const QVector<QColor> &colours)
 {
     m_colours = colours;
     m_selectedIndex = -1;
@@ -35,7 +35,7 @@ void ColourPickerWidget::setColours(const QVector<QColor> &colours)
     update();
 }
 
-void ColourPickerWidget::setColumns(int cols)
+void BookmarkColourWidget::setColumns(int cols)
 {
     if (cols < 1) cols = 1;
     m_columns = cols;
@@ -43,19 +43,19 @@ void ColourPickerWidget::setColumns(int cols)
     update();
 }
 
-void ColourPickerWidget::setForegroundColour(const QColor &fg)
+void BookmarkColourWidget::setForegroundColour(const QColor &fg)
 {
     m_foreground = fg;
     update();
 }
 
-void ColourPickerWidget::setSelectedColour(const QColor &colour)
+void BookmarkColourWidget::setSelectedColour(const QColor &colour)
 {
     m_selectedIndex = m_colours.indexOf(colour);
     update();
 }
 
-QColor ColourPickerWidget::selectedColour() const
+QColor BookmarkColourWidget::selectedColour() const
 {
     if (m_selectedIndex >= 0 && m_selectedIndex < m_colours.size())
         return m_colours[m_selectedIndex];
@@ -67,13 +67,13 @@ QColor ColourPickerWidget::selectedColour() const
 // fits in that gap with 1px to spare on each side.
 static constexpr int SWATCH_PAD = 4;
 
-int ColourPickerWidget::cellSize() const
+int BookmarkColourWidget::cellSize() const
 {
     if (m_columns <= 0) return 1;
     return (width() - 2 * SWATCH_PAD) / m_columns;
 }
 
-QSize ColourPickerWidget::sizeHint() const
+QSize BookmarkColourWidget::sizeHint() const
 {
     const int w    = width() > 0 ? width() : (m_columns * 38 + 2 * SWATCH_PAD);
     const int cell = qMax(1, (w - 2 * SWATCH_PAD) / m_columns);
@@ -81,7 +81,7 @@ QSize ColourPickerWidget::sizeHint() const
     return QSize(w, cell * rows + 2 * SWATCH_PAD);
 }
 
-int ColourPickerWidget::indexAt(const QPoint &pos) const
+int BookmarkColourWidget::indexAt(const QPoint &pos) const
 {
     const int cell = cellSize();
     if (cell <= 0) return -1;
@@ -94,7 +94,7 @@ int ColourPickerWidget::indexAt(const QPoint &pos) const
     return (idx < m_colours.size()) ? idx : -1;
 }
 
-void ColourPickerWidget::paintEvent(QPaintEvent *)
+void BookmarkColourWidget::paintEvent(QPaintEvent *)
 {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
@@ -145,7 +145,7 @@ void ColourPickerWidget::paintEvent(QPaintEvent *)
     }
 }
 
-void ColourPickerWidget::keyPressEvent(QKeyEvent *event)
+void BookmarkColourWidget::keyPressEvent(QKeyEvent *event)
 {
     if (m_colours.isEmpty()) { QWidget::keyPressEvent(event); return; }
 
@@ -164,7 +164,7 @@ void ColourPickerWidget::keyPressEvent(QKeyEvent *event)
     emit colourSelected(m_colours[idx]);
 }
 
-void ColourPickerWidget::mousePressEvent(QMouseEvent *event)
+void BookmarkColourWidget::mousePressEvent(QMouseEvent *event)
 {
     if (event->button() != Qt::LeftButton) return;
     const int idx = indexAt(event->pos());
@@ -174,7 +174,7 @@ void ColourPickerWidget::mousePressEvent(QMouseEvent *event)
     emit colourSelected(m_colours[idx]);
 }
 
-void ColourPickerWidget::mouseMoveEvent(QMouseEvent *event)
+void BookmarkColourWidget::mouseMoveEvent(QMouseEvent *event)
 {
     const int idx = indexAt(event->pos());
     if (idx == m_hoveredIndex) return;
@@ -183,7 +183,7 @@ void ColourPickerWidget::mouseMoveEvent(QMouseEvent *event)
     update();
 }
 
-void ColourPickerWidget::leaveEvent(QEvent *)
+void BookmarkColourWidget::leaveEvent(QEvent *)
 {
     if (m_hoveredIndex == -1) return;
     m_hoveredIndex = -1;
@@ -191,7 +191,7 @@ void ColourPickerWidget::leaveEvent(QEvent *)
     update();
 }
 
-void ColourPickerWidget::resizeEvent(QResizeEvent *)
+void BookmarkColourWidget::resizeEvent(QResizeEvent *)
 {
     updateGeometry();
     update();

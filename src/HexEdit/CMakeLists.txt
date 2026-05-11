@@ -8,8 +8,8 @@ set(PROJECT_SOURCES
         mainwindow.ui
         bookmarkdialog.h
         bookmarkdialog.cpp
-        colourpickerwidget.h
-        colourpickerwidget.cpp
+        bookmarkcolourwidget.h
+        bookmarkcolourwidget.cpp
         datatypecombobox.h
         datatypecombobox.cpp
         dockpanelhost.h
@@ -24,6 +24,8 @@ set(PROJECT_SOURCES
         focusnavigation.h
         palettes.cpp
         palettes.h
+        palettecolourpicker.cpp
+        palettecolourpicker.h
         paletteswatch.cpp
         paletteswatch.h
         preferences.cpp
@@ -38,6 +40,8 @@ set(PROJECT_SOURCES
         statusbar.h
         titlebar.cpp
         titlebar.h
+        togglebuttongroup.cpp
+        togglebuttongroup.h
         theme.cpp
         theme.h
         dlgexport.h

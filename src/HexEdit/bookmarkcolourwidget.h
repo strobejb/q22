@@ -1,15 +1,15 @@
-#ifndef COLOURPICKERWIDGET_H
-#define COLOURPICKERWIDGET_H
+#ifndef BOOKMARKCOLOURWIDGET_H
+#define BOOKMARKCOLOURWIDGET_H
 
 #include <QWidget>
 #include <QColor>
 #include <QVector>
 
-class ColourPickerWidget : public QWidget
+class BookmarkColourWidget : public QWidget
 {
     Q_OBJECT
 public:
-    explicit ColourPickerWidget(QWidget *parent = nullptr);
+    explicit BookmarkColourWidget(QWidget *parent = nullptr);
 
     void setColumns(int cols);
     void setColours(const QVector<QColor> &colours);
@@ -43,4 +43,4 @@ private:
     QColor m_foreground;
 };
 
-#endif // COLOURPICKERWIDGET_H
+#endif // BOOKMARKCOLOURWIDGET_H

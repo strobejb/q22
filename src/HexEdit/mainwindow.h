@@ -16,7 +16,9 @@ class GotoDialog;
 class PreferencesDialog;
 class HexView;
 class Hairline;
+class QFileSystemWatcher;
 class QMenu;
+class QTimer;
 class StatusBar;
 class TitleBar;
 
@@ -44,6 +46,9 @@ private:
     bool maybeSave();       // prompt if modified; returns false if user cancelled
     void updateRecentMenu();
     void updateEditActions();
+    void setupPaletteWatcher();
+    void schedulePaletteReload();
+    void reloadWatchedPalettes();
     void runFind(bool forward);
     void execFind(const QByteArray &pattern, uint flags);
     void applyMenuMode(bool useCustomTitleBar);
@@ -59,6 +64,8 @@ private:
     TitleBar       *m_titleBar      = nullptr;
     Hairline       *m_titleHairline = nullptr;
     QMenu          *m_recentMenu   = nullptr;
+    QFileSystemWatcher *m_paletteWatcher = nullptr;
+    QTimer             *m_paletteReloadTimer = nullptr;
     BookmarkDialog    *m_bookmarkDialog = nullptr;
     FindDialog        *m_findDialog     = nullptr;
     GotoDialog        *m_gotoDialog     = nullptr;

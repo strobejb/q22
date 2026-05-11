@@ -1,6 +1,6 @@
 #include "bookmarkdialog.h"
 #include "ui_bookmarks.h"
-#include "colourpickerwidget.h"
+#include "bookmarkcolourwidget.h"
 
 #include <QApplication>
 #include <QAbstractButton>

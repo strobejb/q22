@@ -6,7 +6,6 @@
 #include "settingscard.h"
 #include "slideoverlay.h"
 
-class QFileSystemWatcher;
 class ViewMoreButton;
 
 // Font picker dialog: full list of monospace families/styles + live preview.
@@ -34,6 +33,7 @@ public:
     // Call before show() on Windows to pre-create the HWND at the correct
     // position, preventing the 0,0 flash.  Idempotent — safe to call twice.
     void prepareShow();
+    void refreshPalettes();
 
 signals:
     void fontChanged(const QFont &font);
@@ -58,7 +58,6 @@ private:
     PaletteInfo     m_currentPalette;
     PaletteSwatchGrid *m_swatchGrid = nullptr;
     ViewMoreButton     *m_viewMore = nullptr;
-    QFileSystemWatcher *m_watcher  = nullptr;
     QList<PaletteInfo> m_palettes;
     bool            m_hiddenByModal      = false;
     QPoint          m_savedPos;

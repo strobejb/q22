@@ -15,7 +15,6 @@
 #include <QHBoxLayout>
 #include <QHideEvent>
 #include <QIcon>
-#include <QImage>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
@@ -23,18 +22,16 @@
 #include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
-#include <QPainterPath>
 #include <QPushButton>
 #include <QSettings>
 #include <QStyledItemDelegate>
-#include <QVariantAnimation>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QWidgetAction>
 
 // ─── applyPalette ─────────────────────────────────────────────────────────────
 
-static QColor mixColor(const QColor &a, const QColor &b, double r = 0.5)
+static QColor blend(const QColor &a, const QColor &b, double r = 0.5)
 {
     return QColor(
         qRound(a.red()   + r * (b.red()   - a.red())),
@@ -128,7 +125,7 @@ QColor effectiveHexColour(const PaletteInfo &info, HvColorSlot slot, const QPale
             return info.matchSelected.isValid()
                 ? info.matchSelected
                 : //darken(effectiveHexColour(info, HVC_SELECTION, pal), 130);
-                       mixColor(effectiveHexColour(info, HVC_SELECTION, pal), effectiveHexColour(info, HVC_MATCHED, pal));
+                       blend(effectiveHexColour(info, HVC_SELECTION, pal), effectiveHexColour(info, HVC_MATCHED, pal));
         case HVC_BOOKMARK1:
         case HVC_BOOKMARK2:
         case HVC_BOOKMARK3:
@@ -349,10 +346,25 @@ QList<PaletteInfo> loadEmbeddedPalettes()
     return palettes;
 }
 
-QList<PaletteInfo> loadAllPalettes()
+static QList<PaletteInfo> loadUserPalettes(const QDir &dir)
 {
+    QList<PaletteInfo> result;
+    if (!dir.exists()) return result;
+    for (const QString &name : dir.entryList({"*.palette"}, QDir::Files)) {
+        const PaletteInfo p = parsePaletteFile(dir.filePath(name));
+        if (!p.name.isEmpty())
+            result.append(p);
+    }
+    return result;
+}
+
+QList<PaletteInfo> reloadPalettes(const QDir &customDir)
+{
+    // load built-in palettes
     QList<PaletteInfo> palettes = loadEmbeddedPalettes();
-    for (const PaletteInfo &p : loadCustomPalettes()) {
+
+    // load custom user-defined palettes
+    for (const PaletteInfo &p : loadUserPalettes(customDir)) {
         const auto it = std::find_if(palettes.begin(), palettes.end(),
                                      [&](const PaletteInfo &e){ return e.name == p.name; });
         if (it != palettes.end())
@@ -360,6 +372,7 @@ QList<PaletteInfo> loadAllPalettes()
         else
             palettes.append(p);
     }
+    // sort the palettes alphabetically, but ensure the default palette is always first
     std::stable_sort(palettes.begin(), palettes.end(),
                      [](const PaletteInfo &a, const PaletteInfo &b) {
         const bool aDefault = a.name.compare(QStringLiteral("Default"), Qt::CaseInsensitive) == 0;
@@ -377,26 +390,29 @@ QList<PaletteInfo> loadAllPalettes()
 
 // ─── Custom palette I/O ──────────────────────────────────────────────────────
 
+bool reloadPalette(const QDir &customDir, const QString &name, PaletteInfo *out)
+{
+    if (name.isEmpty() || !out)
+        return false;
+
+    const QList<PaletteInfo> palettes = reloadPalettes(customDir);
+    const auto it = std::find_if(palettes.cbegin(), palettes.cend(),
+                                 [&](const PaletteInfo &p) { return p.name == name; });
+    if (it == palettes.cend())
+        return false;
+
+    *out = *it;
+    return true;
+}
+
+
 // Returns the user-writable directory where custom palettes are stored.
 // Linux:   ~/.config/HexEdit/palettes/
 // Windows: %APPDATA%/HexEdit/palettes/
 QString paletteStorageDir()
 {
-    QSettings s(QSettings::IniFormat, QSettings::UserScope, "Catch22", "HexEdit");
+    OPEN_SETTINGS;
     return QFileInfo(s.fileName()).dir().filePath("palettes");
-}
-
-QList<PaletteInfo> loadCustomPalettes()
-{
-    QList<PaletteInfo> result;
-    const QDir dir(paletteStorageDir());
-    if (!dir.exists()) return result;
-    for (const QString &name : dir.entryList({"*.palette"}, QDir::Files)) {
-        const PaletteInfo p = parsePaletteFile(dir.filePath(name));
-        if (!p.name.isEmpty())
-            result.append(p);
-    }
-    return result;
 }
 
 QString paletteFilePath(const QString &name)
@@ -461,304 +477,7 @@ bool savePalette(const PaletteInfo &info)
     return s.status() == QSettings::NoError;
 }
 
-// ─── ColorPickerWidget ───────────────────────────────────────────────────────
 
-static constexpr int CPW_HUE_H = 20;   // hue strip height
-static constexpr int CPW_GAP   =  8;   // gap between SV rect and hue strip
-static constexpr int CPW_RAD   =  4;   // corner radius
-
-class ColorPickerWidget : public QWidget
-{
-    Q_OBJECT
-public:
-    explicit ColorPickerWidget(QWidget *parent = nullptr) : QWidget(parent)
-    {
-        setMouseTracking(true);
-        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    }
-
-    QSize sizeHint() const override
-    {
-        return QSize(360, 200 + CPW_GAP + CPW_HUE_H);
-    }
-
-    QColor color() const { return m_color; }
-
-    void setColor(const QColor &c)
-    {
-        m_color = c.isValid() ? c : Qt::black;
-        update();
-    }
-
-signals:
-    void colorChanged(const QColor &c);
-
-protected:
-    void paintEvent(QPaintEvent *) override
-    {
-        if (!isEnabled()) {
-            const qreal dpr = devicePixelRatioF();
-            QImage img(size() * dpr, QImage::Format_ARGB32);
-            img.setDevicePixelRatio(dpr);
-            img.fill(Qt::transparent);
-            { QPainter pp(&img); drawContent(pp); }
-            // Convert to greyscale
-            for (int y = 0; y < img.height(); ++y) {
-                QRgb *line = reinterpret_cast<QRgb *>(img.scanLine(y));
-                for (int x = 0; x < img.width(); ++x) {
-                    const int g = 128 + (qGray(line[x]) >> 1);
-                    line[x] = qRgba(g, g, g, qAlpha(line[x]));
-                }
-            }
-            QPainter p(this);
-            p.drawImage(0, 0, img);
-            return;
-        }
-        QPainter p(this);
-        drawContent(p);
-    }
-
-    void mousePressEvent(QMouseEvent *e) override
-    {
-        if (e->button() != Qt::LeftButton) return;
-        if (svRectF().contains(e->position()))        { m_zone = ZoneSV;  pickSV(e->position()); }
-        else if (hueRectF().contains(e->position()))  { m_zone = ZoneHue; pickHue(e->position()); }
-    }
-
-    void mouseMoveEvent(QMouseEvent *e) override
-    {
-        if (m_zone == ZoneSV)  pickSV(e->position());
-        if (m_zone == ZoneHue) pickHue(e->position());
-    }
-
-    void mouseReleaseEvent(QMouseEvent *) override { m_zone = ZoneNone; }
-
-private:
-    void drawContent(QPainter &p)
-    {
-        const QRectF sv  = svRectF();
-        const QRectF hr  = hueRectF();
-        const qreal hueF = qBound(0.0, m_color.hsvHueF(), 1.0);
-
-        p.setRenderHint(QPainter::Antialiasing);
-
-        // ── SV square: horizontal white→hue, vertical transparent→black ──────
-        QPainterPath svPath;
-        svPath.addRoundedRect(sv, CPW_RAD, CPW_RAD);
-
-        QLinearGradient gS(sv.left(), 0, sv.right(), 0);
-        gS.setColorAt(0.0, Qt::white);
-        gS.setColorAt(1.0, QColor::fromHsvF(hueF, 1.0, 1.0));
-        p.save();
-        p.setClipPath(svPath);
-        p.fillRect(sv, gS);
-
-        QLinearGradient gV(0, sv.top(), 0, sv.bottom());
-        gV.setColorAt(0.0, Qt::transparent);
-        gV.setColorAt(1.0, Qt::black);
-        p.fillRect(sv, gV);
-        p.restore();
-
-        p.setPen(QPen(palette().color(QPalette::Mid), 1));
-        p.setBrush(Qt::NoBrush);
-        p.drawRoundedRect(sv.adjusted(0.5, 0.5, -0.5, -0.5), CPW_RAD, CPW_RAD);
-
-        // SV cursor
-        if (isEnabled()) {
-            const qreal cx = sv.left() + qBound(0.0, m_color.hsvSaturationF(), 1.0) * sv.width();
-            const qreal cy = sv.top()  + (1.0 - qBound(0.0, m_color.valueF(), 1.0)) * sv.height();
-            p.setPen(QPen(Qt::black, 1.5));
-            p.setBrush(Qt::NoBrush);
-            p.drawEllipse(QPointF(cx, cy), 7.0, 7.0);
-            p.setPen(QPen(Qt::white, 1.5));
-            p.drawEllipse(QPointF(cx, cy), 5.5, 5.5);
-        }
-
-        // ── Hue strip ─────────────────────────────────────────────────────────
-        QLinearGradient gHue(hr.left(), 0, hr.right(), 0);
-        for (int i = 0; i <= 12; ++i)
-            gHue.setColorAt(i / 12.0, QColor::fromHsvF(i == 12 ? 0.9999 : i / 12.0, 1.0, 1.0));
-
-        QPainterPath huePath;
-        huePath.addRoundedRect(hr, CPW_RAD, CPW_RAD);
-        p.fillPath(huePath, gHue);
-
-        p.setPen(QPen(palette().color(QPalette::Mid), 1));
-        p.setBrush(Qt::NoBrush);
-        p.drawRoundedRect(hr.adjusted(0.5, 0.5, -0.5, -0.5), CPW_RAD, CPW_RAD);
-
-        // Hue cursor
-        if (isEnabled()) {
-            const qreal hx = hr.left() + hueF * hr.width();
-            p.setPen(QPen(Qt::black, 2.0));
-            p.drawLine(QPointF(hx, hr.top() + 2), QPointF(hx, hr.bottom() - 2));
-            p.setPen(QPen(Qt::white, 1.0));
-            p.drawLine(QPointF(hx, hr.top() + 3), QPointF(hx, hr.bottom() - 3));
-        }
-    }
-
-    enum Zone { ZoneNone, ZoneSV, ZoneHue };
-
-    QRectF svRectF()  const { return QRectF(0, 0, width(), height() - CPW_GAP - CPW_HUE_H); }
-    QRectF hueRectF() const { return QRectF(0, height() - CPW_HUE_H, width(), CPW_HUE_H); }
-
-    void pickSV(const QPointF &pos)
-    {
-        const QRectF sv = svRectF();
-        const qreal  h  = qBound(0.0, m_color.hsvHueF(), 1.0);
-        const qreal  s  = qBound(0.0, (pos.x() - sv.left()) / sv.width(), 1.0);
-        const qreal  v  = qBound(0.0, 1.0 - (pos.y() - sv.top()) / sv.height(), 1.0);
-        m_color = QColor::fromHsvF(h, s, v);
-        update();
-        emit colorChanged(m_color);
-    }
-
-    void pickHue(const QPointF &pos)
-    {
-        const QRectF hr = hueRectF();
-        const qreal  h  = qBound(0.0, (pos.x() - hr.left()) / hr.width(), 1.0);
-        m_color = QColor::fromHsvF(h, qBound(0.0, m_color.hsvSaturationF(), 1.0),
-                                      qBound(0.0, m_color.valueF(), 1.0));
-        update();
-        emit colorChanged(m_color);
-    }
-
-    QColor m_color = Qt::red;
-    Zone   m_zone  = ZoneNone;
-};
-
-// ─── ModeToggleGroup ─────────────────────────────────────────────────────────
-// Adwaita-style inline toggle: three icon slots (Both / Light / Dark) inside a
-// single rounded-rect container.  The selected slot has a sliding indicator.
-
-class ModeToggleGroup : public QWidget
-{
-    Q_OBJECT
-public:
-    explicit ModeToggleGroup(QWidget *parent = nullptr)
-        : QWidget(parent), m_indicatorX(kPad)
-    {
-        setMouseTracking(true);
-        setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-        setCursor(Qt::PointingHandCursor);
-
-        m_anim = new QVariantAnimation(this);
-        m_anim->setDuration(150);
-        m_anim->setEasingCurve(QEasingCurve::OutCubic);
-        connect(m_anim, &QVariantAnimation::valueChanged, this, [this](const QVariant &v) {
-            m_indicatorX = v.toReal();
-            update();
-        });
-    }
-
-    int  mode() const { return m_mode; }
-
-    void setMode(int mode)
-    {
-        if (mode == m_mode) return;
-        m_mode = mode;
-        emit modeChanged(mode);
-        m_anim->stop();
-        m_anim->setStartValue(m_indicatorX);
-        m_anim->setEndValue(qreal(kPad + mode * kSlotW));
-        m_anim->start();
-        update();
-    }
-
-    QSize sizeHint() const override
-    {
-        return QSize(3 * kSlotW + 2 * kPad, kSlotH + 2 * kPad);
-    }
-
-signals:
-    void modeChanged(int mode);
-
-protected:
-    void paintEvent(QPaintEvent *) override
-    {
-        QPainter p(this);
-        p.setRenderHint(QPainter::Antialiasing);
-
-        const QPalette &pal = qApp->palette();
-        const bool dark = pal.window().color().lightness() < 128;
-
-        // Outer container
-        p.setBrush(pal.button().color());
-        p.setPen(QPen(pal.mid().color(), 1));
-        p.drawRoundedRect(QRectF(0.5, 0.5, width() - 1, height() - 1), kRadius, kRadius);
-
-        // Selection indicator (position is animated).
-        const QColor indFill   = pal.highlight().color();
-        const QColor indBorder = dark ? QColor(0, 0, 0, 30) : QColor(255, 255, 255, 20);
-        p.setBrush(indFill);
-        p.setPen(QPen(indBorder, 1));
-        p.drawRoundedRect(QRectF(m_indicatorX, kPad, kSlotW, kSlotH), kInnerR, kInnerR);
-
-        // Hover overlay on unselected hovered slot
-        if (m_hovered >= 0 && m_hovered != m_mode) {
-            p.setBrush(pal.mid().color());
-            p.setPen(Qt::NoPen);
-            p.drawRoundedRect(QRectF(kPad + m_hovered * kSlotW, kPad, kSlotW, kSlotH),
-                              kInnerR, kInnerR);
-        }
-
-        // Icons: Both / Light / Dark.
-        static const char *kIcons[3] = { "half-circle", "light-mode", "dark-mode" };
-        const QColor normalCol   = pal.buttonText().color();
-        const QColor selectedCol = pal.highlightedText().color();
-        for (int i = 0; i < 3; ++i) {
-            const QColor col = (i == m_mode) ? selectedCol : normalCol;
-            const QIcon icon = recoloredIcon(QLatin1String(kIcons[i]), col, kIconSz);
-            const int cx = kPad + i * kSlotW + kSlotW / 2;
-            const int cy = kPad + kSlotH / 2;
-            icon.paint(&p, QRect(cx - kIconSz / 2, cy - kIconSz / 2, kIconSz, kIconSz));
-        }
-    }
-
-    void mousePressEvent(QMouseEvent *e) override
-    {
-        if (e->button() == Qt::LeftButton)
-            m_pressed = slotAt(e->pos());
-    }
-
-    void mouseReleaseEvent(QMouseEvent *e) override
-    {
-        if (e->button() == Qt::LeftButton && m_pressed >= 0) {
-            if (slotAt(e->pos()) == m_pressed)
-                setMode(m_pressed);
-            m_pressed = -1;
-        }
-    }
-
-    void mouseMoveEvent(QMouseEvent *e) override
-    {
-        const int hov = slotAt(e->pos());
-        if (hov != m_hovered) { m_hovered = hov; update(); }
-    }
-
-    void leaveEvent(QEvent *) override { m_hovered = -1; update(); }
-
-private:
-    int slotAt(const QPoint &pos) const
-    {
-        if (pos.x() < kPad || pos.x() >= width() - kPad) return -1;
-        if (pos.y() < kPad || pos.y() >= height() - kPad) return -1;
-        return qBound(0, (pos.x() - kPad) / kSlotW, 2);
-    }
-
-    static constexpr int kPad    = 3;
-    static constexpr int kSlotW  = 36;
-    static constexpr int kSlotH  = 28;
-    static constexpr int kIconSz = 16;
-    static constexpr int kRadius = 7;
-    static constexpr int kInnerR = 5;
-
-    int   m_mode      = 0;
-    int   m_hovered   = -1;
-    int   m_pressed   = -1;
-    qreal m_indicatorX;
-    QVariantAnimation *m_anim = nullptr;
-};
 
 // ─── PaletteEditorDialog ─────────────────────────────────────────────────────
 
@@ -854,7 +573,15 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
     m_nameEdit->setPlaceholderText(tr("Palette name…"));
     m_nameEdit->setText(info.name);
 
-    m_modeGroup = new ModeToggleGroup(this);
+    auto modeIcon = [](const QString &name) {
+        QIcon icon(QStringLiteral(":/icons/hicolor/scalable/actions/") + name + QStringLiteral(".svg"));
+        return icon.isNull() ? QIcon::fromTheme(name) : icon;
+    };
+    m_modeGroup = new ToggleButtonGroup({
+        modeIcon(QStringLiteral("half-circle")),
+        modeIcon(QStringLiteral("light-mode")),
+        modeIcon(QStringLiteral("dark-mode"))
+    }, this);
 
     // nameRow: SlideOverlay inserts a back button at pos-0 of this widget's layout.
     auto *nameRow = new QWidget(this);
@@ -864,7 +591,7 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
         lay->setContentsMargins(0, 0, 0, 0);
         lay->setSpacing(8);
         // Layout after SlideOverlay inserts back button at pos-0:
-        // [<back(28)>] [Palette:] [spacer(35)] [nameEdit──stretch] [12gap] [ModeToggleGroup(114)]
+        // [<back(28)>] [Palette:] [spacer(35)] [nameEdit──stretch] [12gap] [ToggleButtonGroup]
         // The 35px spacer after the label keeps nameEdit centred on the page while leaving the
         // label left-aligned next to the back button (same net offset as having it before).
         auto *palLbl = new QLabel(tr("Palette:"), nameRow);
@@ -900,7 +627,7 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
     m_list->setCurrentRow(0);
 
     // ── Color picker ──────────────────────────────────────────────────────────
-    m_picker = new ColorPickerWidget(this);
+    m_picker = new PaletteColourPicker(this);
 
     // ── Override toggle ───────────────────────────────────────────────────────
     m_autoToggle = new SettingsToggle(tr("Override"), this);
@@ -1073,7 +800,7 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
         updateColorUI(PaletteElem(row));
     });
 
-    connect(m_modeGroup, &ModeToggleGroup::modeChanged, this, [this](int mode) {
+    connect(m_modeGroup, &ToggleButtonGroup::modeChanged, this, [this](int mode) {
         emit previewModeRequested(mode);
         // Refresh every list item swatch to show effective colours for the new mode.
         for (int i = 0; i < PE_COUNT; ++i)
@@ -1114,7 +841,7 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
         emit paletteChanged(m_info);
     });
 
-    connect(m_picker, &ColorPickerWidget::colorChanged, this, [this](const QColor &c) {
+    connect(m_picker, &PaletteColourPicker::colourChanged, this, [this](const QColor &c) {
         applyEditedColor(c);
     });
 
@@ -1223,9 +950,9 @@ const char *PaletteEditorDialog::elemName(PaletteElem e)
         case PE_BOOKMARK_7:         return "Bookmark 7";
 
         // main window elements
-        //case PE_WINDOW:             return "Window";
-        //case PE_WINDOWTEXT:         return "Window Text";
-        //case PE_TOOLBAR:            return "Toolbar";
+        case PE_WINDOW:             return "Window";
+        case PE_WINDOWTEXT:         return "Window Text";
+        case PE_TOOLBAR:            return "Toolbar";
         case PE_PANELBORDERS:       return "Panel Borders";
         case PE_HIGHLIGHT:          return "Window Highlight";
         case PE_COUNT:              return "";
@@ -1438,5 +1165,3 @@ QPixmap PaletteEditorDialog::makeColorSwatch(const QColor &c)
     }
     return px;
 }
-
-#include "palettes.moc"

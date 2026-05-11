@@ -3,6 +3,13 @@
 
 #include <QStringList>
 
+// Returns a ready-to-use QSettings object for the app's config file.
+// QSettings is non-copyable so callers construct it directly via this helper
+// macro rather than a factory function.
+#define OPEN_SETTINGS \
+QSettings s(QSettings::IniFormat, QSettings::UserScope, QCoreApplication::organizationName(), QCoreApplication::applicationName())
+
+
 // Typed accessors for persistent application preferences.
 // Data is stored as INI under the platform user-config location, using the
 // org/app names set in main() via QCoreApplication::setOrganizationName /
