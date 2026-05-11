@@ -40,6 +40,10 @@ set(PROJECT_SOURCES
         statusbar.h
         titlebar.cpp
         titlebar.h
+        windows-chrome.cpp
+        windows-chrome.h
+        linux-chrome.cpp
+        linux-chrome.h
         togglebuttongroup.cpp
         togglebuttongroup.h
         theme.cpp
