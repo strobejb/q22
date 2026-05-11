@@ -455,7 +455,7 @@ MainWindow::MainWindow(QWidget *parent)
     ui->actionOpen->setIcon(QIcon::fromTheme("document-open-symbolic"));
 #endif
 
-    setWindowTitle(QApplication::applicationName());
+    setWindowTitle(QApplication::applicationDisplayName());
 
     // Custom title bar
     m_titleBar = new TitleBar(this);
@@ -878,7 +878,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->actionNew, &QAction::triggered, this, [this]() {
         if (!maybeSave()) return;
         m_hv->clearFile();
-        setWindowTitle(QApplication::applicationName());
+        setWindowTitle(QApplication::applicationDisplayName());
     });
 
     connect(ui->actionOpen, &QAction::triggered, this, [this]() {
@@ -1216,7 +1216,7 @@ void MainWindow::openFile(const QString &path) {
     m_hv->openFile(path);
     AppSettings::addRecentFile(path);
     updateRecentMenu();
-    setWindowTitle(QFileInfo(path).fileName() + " \u2013 " + QApplication::applicationName());
+    setWindowTitle(QFileInfo(path).fileName() + " \u2013 " + QApplication::applicationDisplayName());
 }
 
 void MainWindow::updateRecentMenu() {

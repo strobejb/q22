@@ -407,8 +407,8 @@ bool reloadPalette(const QDir &customDir, const QString &name, PaletteInfo *out)
 
 
 // Returns the user-writable directory where custom palettes are stored.
-// Linux:   ~/.config/HexEdit/palettes/
-// Windows: %APPDATA%/HexEdit/palettes/
+// Linux:   ~/.config/catch22/palettes/
+// Windows: %APPDATA%/catch22/palettes/
 QString paletteStorageDir()
 {
     OPEN_SETTINGS;

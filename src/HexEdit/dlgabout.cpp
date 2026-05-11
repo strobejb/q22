@@ -32,7 +32,7 @@ void ShowAboutDlg(QWidget *parent)
 
     // ── Icon (192×192) ────────────────────────────────────────────────────────
     auto *iconLabel = new QLabel(&dlg);
-    QPixmap px(QLatin1String(":/HexEdit.png"));
+    QPixmap px(QLatin1String(":/hexedit.png"));
     iconLabel->setPixmap(px.scaled(192, 192, Qt::KeepAspectRatio, Qt::SmoothTransformation));
     iconLabel->setFixedSize(192, 192);
     iconLabel->setAlignment(Qt::AlignCenter);

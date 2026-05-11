@@ -14,10 +14,11 @@ int main(int argc, char *argv[])
     QApplication a(argc, argv);
     QApplication::setAttribute(Qt::AA_DontShowIconsInMenus, true);
     a.setOrganizationName("catch22");
-    a.setApplicationName("HexEdit");
+    a.setApplicationName("hexedit");
+    a.setApplicationDisplayName("HexEdit");
     a.setDesktopFileName("hexedit");
     a.setApplicationVersion("3.0.1");
-    a.setWindowIcon(QIcon(":/HexEdit.png"));
+    a.setWindowIcon(QIcon(":/hexedit.png"));
     AppSettings::ensureSettingsDir(); // must be called before any AppSettings read/write
 
     // Use only the bundled hicolor theme for icon lookups.  This ensures

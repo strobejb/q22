@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=HexEdit
-Exec=HexEdit
+Exec=hexedit
 Icon=hexedit
-StartupWMClass=HexEdit
+StartupWMClass=hexedit
 Categories=Utility;
