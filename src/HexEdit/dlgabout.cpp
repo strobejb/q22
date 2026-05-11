@@ -71,7 +71,7 @@ void ShowAboutDlg(QWidget *parent)
 
     // ── Config folder card ────────────────────────────────────────────────────
     const QString configPath = QSettings(QSettings::IniFormat, QSettings::UserScope,
-                                         "Catch22", "HexEdit").fileName();
+                                         QCoreApplication::organizationName(), QCoreApplication::applicationName()).fileName();
     const QUrl configDirUrl  = QUrl::fromLocalFile(QFileInfo(configPath).absolutePath());
     auto *configRow  = new NavigationRow(QObject::tr("Config"), configDirUrl, &dlg);
     auto *configCard = new SettingsCard({configRow},
