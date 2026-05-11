@@ -30,26 +30,26 @@ jobs:
       - name: Package (linuxdeploy)
         run: |
           sudo apt-get install -y imagemagick
-          convert src/qexed/resources/qexed.png -resize 512x512! src/qexed/resources/qexed.png
+          convert src/HexEdit/resources/HexEdit.png -resize 512x512! src/HexEdit/resources/HexEdit.png
           wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
           chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage
           mkdir -p AppDir/usr/bin
-          cp build/qexed AppDir/usr/bin/
+          cp build/HexEdit AppDir/usr/bin/
           QMAKE="$QT_ROOT_DIR/bin/qmake" \
           ./linuxdeploy-x86_64.AppImage \
             --appdir AppDir \
             --plugin qt \
             --output appimage \
-            --desktop-file src/qexed/resources/qexed.desktop \
-            --icon-file src/qexed/resources/qexed.png
-          mv qexed-*.AppImage qexed-linux-x86_64.AppImage
+            --desktop-file src/HexEdit/resources/HexEdit.desktop \
+            --icon-file src/HexEdit/resources/HexEdit.png
+          mv HexEdit-*.AppImage HexEdit-linux-x86_64.AppImage
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: qexed-linux
-          path: qexed-linux-x86_64.AppImage
+          name: HexEdit-linux
+          path: HexEdit-linux-x86_64.AppImage
 
   build-windows:
     runs-on: windows-latest
@@ -59,7 +59,7 @@ jobs:
       - name: Convert PNG to ICO
         shell: pwsh
         run: |
-          magick src/qexed/resources/qexed.png -define icon:auto-resize=256,128,64,48,32,16 src/qexed/resources/qexed.ico
+          magick src/HexEdit/resources/HexEdit.png -define icon:auto-resize=256,128,64,48,32,16 src/HexEdit/resources/HexEdit.ico
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
@@ -80,11 +80,11 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist
-          Copy-Item build\Release\qexed.exe dist\
-          windeployqt --release --no-translations dist\qexed.exe
+          Copy-Item build\Release\HexEdit.exe dist\
+          windeployqt --release --no-translations dist\HexEdit.exe
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: qexed-windows
+          name: HexEdit-windows
           path: dist\
