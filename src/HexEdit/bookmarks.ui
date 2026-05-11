@@ -29,7 +29,7 @@
     <string>Annotation (optional)</string>
    </property>
   </widget>
-  <widget class="ColourPickerWidget" name="colourPicker" native="true">
+  <widget class="BookmarkColourWidget" name="colourPicker" native="true">
    <property name="geometry">
     <rect>
      <x>20</x>
@@ -60,9 +60,9 @@
    <header>bookmarkdialog.h</header>
   </customwidget>
   <customwidget>
-   <class>ColourPickerWidget</class>
+   <class>BookmarkColourWidget</class>
    <extends>QWidget</extends>
-   <header>colourpickerwidget.h</header>
+   <header>bookmarkcolourwidget.h</header>
   </customwidget>
  </customwidgets>
  <resources/>

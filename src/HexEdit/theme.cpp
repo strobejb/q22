@@ -25,6 +25,7 @@
 #include <QStyleOption>
 #include <QStyledItemDelegate>
 #include <QTimer>
+#include <QPointer>
 #include <QWidget>
 #include <QAbstractButton>
 #ifdef HEXEDIT_HAVE_DBUS
@@ -223,12 +224,18 @@ static void applyDwmDarkMode(QWidget *w)
 
     HWND hwnd = reinterpret_cast<HWND>(w->winId());
 
-
     const bool dark = (s_currentScheme == ColorScheme::Dark) ||
                       (s_currentScheme == ColorScheme::System &&
                        QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark);
     BOOL val = dark ? TRUE : FALSE;
     DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &val, sizeof(val));
+
+    // DWM does not repaint the title bar automatically when the attribute changes
+    // on an already-visible window.  SWP_FRAMECHANGED forces a WM_NCCALCSIZE
+    // message which causes DWM to re-evaluate and redraw the non-client area
+    // immediately, so the light↔dark switch is visible without any interaction.
+    SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
 }
 
 namespace {
@@ -237,8 +244,13 @@ struct DarkModeFilter : public QObject {
     bool eventFilter(QObject *obj, QEvent *e) override {
         auto *w = qobject_cast<QWidget *>(obj);
         if (!w) return false;
-        if (e->type() == QEvent::Show)
-            applyDwmDarkMode(w);
+        if (e->type() == QEvent::Show) {
+            // Defer to the next event-loop tick so we run after Qt's own
+            // ApplicationPaletteChange handling, which may reset
+            // DWMWA_USE_IMMERSIVE_DARK_MODE to the system value.
+            QPointer<QWidget> wp(w);
+            QTimer::singleShot(0, [wp]() { if (wp) applyDwmDarkMode(wp); });
+        }
         return false;
     }
 };
@@ -1399,11 +1411,18 @@ void applyAdwaitaTheme(ColorScheme scheme)
     }
 
 #ifdef Q_OS_WIN
-    // Re-apply dark-mode title bars to all currently visible top-levels
-    // so that already-open dialogs update immediately on a scheme change.
-    for (QWidget *w : QApplication::topLevelWidgets())
-        if (w->isVisible())
-            applyDwmDarkMode(w);
+    // Re-apply dark-mode title bars to all currently visible top-levels so that
+    // already-open dialogs update immediately on a scheme change.
+    // Deferred to the next event-loop tick: QApplication::setPalette() posts
+    // QEvent::ApplicationPaletteChange, and Qt's Windows platform plugin
+    // processes that event by resetting DWMWA_USE_IMMERSIVE_DARK_MODE to match
+    // the *system* colour scheme.  Running after that event drains ensures our
+    // forced dark/light value is the last thing written.
+    QTimer::singleShot(0, []() {
+        for (QWidget *w : QApplication::topLevelWidgets())
+            if (w->isVisible())
+                applyDwmDarkMode(w);
+    });
 #endif
 }
 

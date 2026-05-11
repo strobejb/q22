@@ -20,6 +20,7 @@
 #include "gotodialog.h"
 #include "titlebar.h"
 
+#include <QApplication>
 #include <QPalette>
 
 #ifdef Q_OS_WIN
@@ -79,6 +80,17 @@ void MainWindow::updateWinChromeColors()
     // must be repeated here because DWM caches the border colour independently
     // of DWMWA_USE_IMMERSIVE_DARK_MODE and only updates it when explicitly told.
     applyWindows11Styling(reinterpret_cast<HWND>(winId()), dark);
+
+    // Apply the same DWM attributes to every other visible top-level window
+    // (preferences dialog, bookmark dialog, …).  DWMWA_USE_IMMERSIVE_DARK_MODE
+    // is swept by applyAdwaitaTheme, but DWMWA_BORDER_COLOR is not — without
+    // this loop each dialog retains the 1-px hairline colour from the scheme
+    // that was active when it was first shown.
+    for (QWidget *w : QApplication::topLevelWidgets()) {
+        if (w == this || !w->isVisible()) continue;
+        if (w->windowFlags() & Qt::FramelessWindowHint) continue;
+        applyWindows11Styling(reinterpret_cast<HWND>(w->winId()), dark);
+    }
 
     const QColor comboHoverBg = dark ? bg.lighter(130) : bg.darker(107);
 
