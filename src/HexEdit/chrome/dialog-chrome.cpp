@@ -309,6 +309,37 @@ static QCursor dialogCursorForEdges(Qt::Edges edges)
     return Qt::ArrowCursor;
 }
 
+static bool dialogCanResizeHorizontally(const QDialog *dialog)
+{
+    if (!dialog)
+        return false;
+#ifdef Q_OS_WIN
+    if (dialog->windowFlags() & Qt::MSWindowsFixedSizeDialogHint)
+        return false;
+#endif
+    return dialog->minimumWidth() < dialog->maximumWidth();
+}
+
+static bool dialogCanResizeVertically(const QDialog *dialog)
+{
+    if (!dialog)
+        return false;
+#ifdef Q_OS_WIN
+    if (dialog->windowFlags() & Qt::MSWindowsFixedSizeDialogHint)
+        return false;
+#endif
+    return dialog->minimumHeight() < dialog->maximumHeight();
+}
+
+static Qt::Edges dialogResizableEdges(const QDialog *dialog, Qt::Edges edges)
+{
+    if (!dialogCanResizeHorizontally(dialog))
+        edges &= ~(Qt::LeftEdge | Qt::RightEdge);
+    if (!dialogCanResizeVertically(dialog))
+        edges &= ~(Qt::TopEdge | Qt::BottomEdge);
+    return edges;
+}
+
 class DialogChromeFilter : public QObject
 {
 public:
@@ -377,7 +408,8 @@ public:
                 break;
             const int margin = dialogEffectiveResizeMargin(m_dialog);
             const QPoint pos = m_dialog->mapFromGlobal(me->globalPosition().toPoint());
-            if (const Qt::Edges edges = dialogEdgesFromFramePos(pos, dialogResizeFrame(m_dialog), margin);
+            if (const Qt::Edges edges = dialogResizableEdges(
+                    m_dialog, dialogEdgesFromFramePos(pos, dialogResizeFrame(m_dialog), margin));
                 edges && m_dialog->windowHandle()) {
                 m_dialog->windowHandle()->startSystemResize(edges);
                 return true;
@@ -421,7 +453,8 @@ private:
         }
         const int margin = dialogEffectiveResizeMargin(m_dialog);
         const QPoint pos = m_dialog->mapFromGlobal(globalPos);
-        const Qt::Edges edges = dialogEdgesFromFramePos(pos, dialogResizeFrame(m_dialog), margin);
+        const Qt::Edges edges = dialogResizableEdges(
+            m_dialog, dialogEdgesFromFramePos(pos, dialogResizeFrame(m_dialog), margin));
         if (edges) {
             if (!m_inResizeZone) {
                 m_inResizeZone = true;

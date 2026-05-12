@@ -37,11 +37,11 @@ set(PROJECT_SOURCES
         palette/palettecolourpicker.h
         palette/paletteswatch.cpp
         palette/paletteswatch.h
+        palette/screencolorpicker.cpp
+        palette/screencolorpicker.h
         settings/preferences.cpp
         settings/preferences.h
         settings/preferences.ui
-        settings/screencolorpicker.cpp
-        settings/screencolorpicker.h
         chrome/shadow-chrome.cpp
         chrome/shadow-chrome.h
         settings/slideoverlay.cpp

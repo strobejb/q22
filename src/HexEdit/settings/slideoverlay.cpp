@@ -324,7 +324,9 @@ void SlideOverlay::slideIn(QDialog *dlg, std::function<void(int)> onFinished,
 
 void SlideOverlay::resizeParentToFit(const QSize &contentHint)
 {
-    QWidget *par = parentWidget();
+    QWidget *par = resizeHostWidget();
+    if (!par)
+        return;
     m_savedParentSize  = par->size();
     m_didResizeParent  = true;
 
@@ -346,21 +348,28 @@ void SlideOverlay::resizeParentToFit(const QSize &contentHint)
 
 void SlideOverlay::restoreParentSize()
 {
-    QWidget *par = parentWidget();
+    QWidget *par = resizeHostWidget();
+    if (!par)
+        return;
     par->setFixedHeight(QWIDGETSIZE_MAX);
     par->resize(m_savedParentSize);
     par->setFixedHeight(m_savedParentSize.height());
 }
 
+QWidget *SlideOverlay::resizeHostWidget() const
+{
+    return window();
+}
+
 int SlideOverlay::chromeTopInset() const
 {
-    QWidget *par = parentWidget();
+    QWidget *par = resizeHostWidget();
     return par ? qMax(0, par->property("_qexedDialogChromeHeight").toInt()) : 0;
 }
 
 QMargins SlideOverlay::chromeMargins() const
 {
-    QWidget *par = parentWidget();
+    QWidget *par = resizeHostWidget();
     if (!par)
         return {};
 
@@ -377,6 +386,9 @@ QRect SlideOverlay::overlayRect() const
     QWidget *par = parentWidget();
     if (!par)
         return {};
+
+    if (qobject_cast<SlideOverlay *>(par))
+        return par->rect();
 
     const QMargins chrome = chromeMargins();
     const int title = chromeTopInset();

@@ -62,6 +62,7 @@ protected:
 private:
     void resizeParentToFit(const QSize &contentHint);
     void restoreParentSize();
+    QWidget *resizeHostWidget() const;
     QMargins chromeMargins() const;
     QRect overlayRect() const;
     int chromeTopInset() const;

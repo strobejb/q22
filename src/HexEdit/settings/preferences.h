@@ -54,6 +54,9 @@ private:
     void openAddPaletteEditor();
     void openEditPaletteEditor(const PaletteInfo &info);
     void populateMainSwatches();
+    bool hasActiveOverlay() const;
+    SlideOverlay *activeOverlay() const;
+    SlideOverlay *nextOverlay();
 
     QString         m_fontFamily;
     PaletteInfo     m_currentPalette;

@@ -1,6 +1,6 @@
 #include "palettes.h"
-#include "settings/preferences.h"
-#include "settings/screencolorpicker.h"
+#include "palette/screencolorpicker.h"
+#include "settings/settingscard.h"
 #include "settings/settings.h"
 
 #include <algorithm>

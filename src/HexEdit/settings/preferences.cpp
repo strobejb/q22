@@ -7,7 +7,7 @@
 #include "theme.h"
 
 #include <algorithm>
-#include <memory>
+#include <functional>
 
 #include <QApplication>
 #include <QPropertyAnimation>
@@ -441,7 +441,7 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
 
     // Font picker opens as an overlay slide-in
     connect(m_fontNav, &QAbstractButton::clicked, this, [this]() {
-        if (m_overlay->isActive()) return;
+        if (hasActiveOverlay()) return;
         auto *dlg = new FontPickerDialog(QFont(m_fontFamily), this);
         m_overlay->slideIn(dlg, [this, dlg](int result) {
             if (result == QDialog::Accepted) {
@@ -493,8 +493,18 @@ void PreferencesDialog::setVisible(bool visible)
     const bool opening = visible && !isVisible() && !m_hiddenByModal;
     if (!visible) {
         // Only dismiss overlay on an explicit close, not a temporary modal hide.
-        if (!m_hiddenByModal && m_overlay->isActive())
-            m_overlay->dismiss();
+        if (!m_hiddenByModal) {
+            std::function<void(SlideOverlay *)> dismissStack = [&](SlideOverlay *overlay) {
+                if (!overlay || !overlay->isActive())
+                    return;
+                const auto children = overlay->findChildren<SlideOverlay *>(
+                    QString(), Qt::FindDirectChildrenOnly);
+                for (SlideOverlay *child : children)
+                    dismissStack(child);
+                overlay->dismiss();
+            };
+            dismissStack(m_overlay);
+        }
     } else if (!isVisible() && !m_hiddenByModal) {
         // Fallback: centre on parent if prepareShow() wasn't called first.
         prepareShow();
@@ -623,7 +633,8 @@ void PreferencesDialog::populateMainSwatches()
 
 void PreferencesDialog::openAddPaletteEditor()
 {
-    if (m_overlay->isActive()) return;
+    auto *overlay = nextOverlay();
+    if (!overlay || overlay->isActive()) return;
     const PaletteInfo before = m_currentPalette;
     const auto savedScheme = static_cast<ColorScheme>(AppSettings::prefColorScheme());
     PaletteInfo newInfo;
@@ -638,7 +649,7 @@ void PreferencesDialog::openAddPaletteEditor()
                             : mode == 2 ? ColorScheme::Dark : savedScheme;
         applyAdwaitaTheme(cs);
     });
-    m_overlay->slideIn(dlg, [this, dlg, before, savedScheme](int result) {
+    overlay->slideIn(dlg, [this, dlg, before, savedScheme](int result) {
         const bool accepted = (result == QDialog::Accepted);
         const PaletteInfo toApply = (result == QDialog::Accepted) ? dlg->currentInfo() : before;
         QTimer::singleShot(0, this, [this, savedScheme, toApply, accepted]() {
@@ -652,7 +663,8 @@ void PreferencesDialog::openAddPaletteEditor()
 
 void PreferencesDialog::openEditPaletteEditor(const PaletteInfo &info)
 {
-    if (m_overlay->isActive()) return;
+    auto *overlay = nextOverlay();
+    if (!overlay || overlay->isActive()) return;
     const PaletteInfo before = m_currentPalette;
     const auto savedScheme = static_cast<ColorScheme>(AppSettings::prefColorScheme());
     auto *dlg = new PaletteEditorDialog(info, this);
@@ -666,7 +678,7 @@ void PreferencesDialog::openEditPaletteEditor(const PaletteInfo &info)
                             : mode == 2 ? ColorScheme::Dark : savedScheme;
         applyAdwaitaTheme(cs);
     });
-    m_overlay->slideIn(dlg, [this, dlg, before, savedScheme](int result) {
+    overlay->slideIn(dlg, [this, dlg, before, savedScheme](int result) {
         const bool accepted = (result == QDialog::Accepted);
         const PaletteInfo toApply = accepted ? dlg->currentInfo() : before;
         QTimer::singleShot(0, this, [this, savedScheme, toApply, accepted]() {
@@ -680,16 +692,12 @@ void PreferencesDialog::openEditPaletteEditor(const PaletteInfo &info)
 
 void PreferencesDialog::showPaletteListOverlay()
 {
-    if (m_overlay->isActive()) return;
+    if (hasActiveOverlay()) return;
     if (m_viewMore) {
         m_viewMore->setDown(false);
         m_viewMore->clearFocus();
         m_viewMore->update();
     }
-
-    enum ResultCode { AddPalette = 1001, EditPalette = 1002 };
-    auto editInfo = std::make_shared<PaletteInfo>();
-    auto hasEditInfo = std::make_shared<bool>(false);
 
     auto *dlg = new QDialog(this);
     removeDialogIcon(dlg);
@@ -719,13 +727,11 @@ void PreferencesDialog::showPaletteListOverlay()
         populateMainSwatches();
     });
     connect(grid, &PaletteSwatchGrid::paletteEditRequested,
-            dlg, [dlg, editInfo, hasEditInfo](const PaletteInfo &info) {
-        *editInfo = info;
-        *hasEditInfo = true;
-        dlg->done(EditPalette);
+            this, [this](const PaletteInfo &info) {
+        openEditPaletteEditor(info);
     });
     connect(grid, &PaletteSwatchGrid::addRequested,
-            dlg, [dlg]() { dlg->done(AddPalette); });
+            this, [this]() { openAddPaletteEditor(); });
 
     auto *scroll = new QScrollArea(dlg);
     scroll->setWidgetResizable(true);
@@ -750,22 +756,58 @@ void PreferencesDialog::showPaletteListOverlay()
         grid->focusCurrent();
     });
 
-    m_overlay->slideIn(dlg, [this, editInfo, hasEditInfo](int result) {
+    m_overlay->slideIn(dlg, [this](int result) {
+        Q_UNUSED(result);
         if (m_viewMore) {
             m_viewMore->setDown(false);
             m_viewMore->clearFocus();
             m_viewMore->update();
         }
         QTimer::singleShot(0, this, [this]() { m_swatchGrid->focusCurrent(); });
-        if (result == AddPalette) {
-            QTimer::singleShot(320, this, &PreferencesDialog::openAddPaletteEditor);
-        } else if (result == EditPalette && *hasEditInfo) {
-            const PaletteInfo selected = *editInfo;
-            QTimer::singleShot(320, this, [this, selected]() {
-                openEditPaletteEditor(selected);
-            });
-        }
     }, true);
+}
+
+bool PreferencesDialog::hasActiveOverlay() const
+{
+    return activeOverlay() != nullptr;
+}
+
+SlideOverlay *PreferencesDialog::activeOverlay() const
+{
+    if (!m_overlay || !m_overlay->isActive())
+        return nullptr;
+
+    SlideOverlay *top = m_overlay;
+    while (true) {
+        SlideOverlay *activeChild = nullptr;
+        const auto children = top->findChildren<SlideOverlay *>(QString(),
+                                                                Qt::FindDirectChildrenOnly);
+        for (SlideOverlay *child : children) {
+            if (child->isActive()) {
+                activeChild = child;
+                break;
+            }
+        }
+        if (!activeChild)
+            return top;
+        top = activeChild;
+    }
+}
+
+SlideOverlay *PreferencesDialog::nextOverlay()
+{
+    SlideOverlay *parentOverlay = activeOverlay();
+    if (!parentOverlay)
+        return m_overlay;
+
+    const auto children = parentOverlay->findChildren<SlideOverlay *>(QString(),
+                                                                      Qt::FindDirectChildrenOnly);
+    for (SlideOverlay *child : children) {
+        if (!child->isActive())
+            return child;
+    }
+
+    return new SlideOverlay(parentOverlay);
 }
 
 void PreferencesDialog::addCustomSwatch(const PaletteInfo &)
