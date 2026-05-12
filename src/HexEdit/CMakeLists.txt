@@ -117,6 +117,9 @@ target_include_directories(hexedit PRIVATE
     ${HEXEDIT_SOURCE_DIR}
     ${PROJECT_SOURCE_DIR}/src
 )
+set_target_properties(hexedit PROPERTIES
+    AUTOUIC_SEARCH_PATHS "${HEXEDIT_SOURCE_DIR}"
+)
 target_link_libraries(hexedit PRIVATE Qt${QT_VERSION_MAJOR}::Widgets HexView)
 if(TARGET Qt${QT_VERSION_MAJOR}::DBus)
     target_link_libraries(hexedit PRIVATE Qt${QT_VERSION_MAJOR}::DBus)
