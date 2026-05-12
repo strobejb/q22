@@ -4,6 +4,7 @@
 #include <QApplication>
 #include <QCursor>
 #include <QFileDialog>
+#include <QLayout>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPushButton>
@@ -228,6 +229,17 @@ void installThemedFileDialogComboPopups(QFileDialog *dialog)
     const auto combos = dialog->findChildren<QComboBox *>();
     for (QComboBox *combo : combos)
         combo->installEventFilter(filter);
+
+    // Qt's non-native QFileDialog ships with tighter layout margins than the
+    // app's own dialogs.  Set an app-style outer gutter here so every themed
+    // file dialog gets the same breathing room before custom rows/title chrome
+    // are added.
+    if (QLayout *layout = dialog->layout()) {
+        const QMargins m = layout->contentsMargins();
+        layout->setContentsMargins(qMax(20, m.left()), qMax(20, m.top()),
+                                   qMax(20, m.right()), qMax(20, m.bottom()));
+        layout->setSpacing(qMax(8, layout->spacing()));
+    }
 
     // The QDialogButtonBox spans the filename-edit row and the filetype-combo
     // row.  QSS padding arithmetic should make them equal, but Qt's internal

@@ -112,13 +112,21 @@ draw their own arrow on hover, so they don't need the native one.
 
 ### Border-width change and layout shift
 Changing border width from 1 px to 2 px moves surrounding content.  The
-**margin-compensation technique** prevents this: base and hover states use
-`margin: 1px; border: 1px`, focus uses `margin: 0px; border: 2px`.  The lost
-margin pixel absorbs the extra border pixel so nothing moves.
+**padding-compensation technique** prevents this: base and hover states use
+`margin: 0px; border: 1px` with one extra pixel of padding, while focus uses
+`margin: 0px; border: 2px` and removes that extra padding pixel.  The content
+stays in the same place because the padding absorbs the thicker border.
 
-Do **not** also adjust `padding` to compensate — the margin already does it.
-Adding both shifts text by 1 px (experienced in palette dialog line edits,
-fixed in commit `7917e7e`).
+Do **not** use a transparent `margin: 1px` as the compensation band.  It can
+leave stale one-pixel focus-border artifacts along the bottom or left edge when
+focus moves away, especially on custom-painted combos and dialogs with
+translucent/complex backing stores.  Keep the whole widget rect paintable and
+compensate with padding instead.
+
+`QFileDialog QComboBox` has its own padding override to align the private file
+type combo with the filename edit and dialog buttons.  If that override changes,
+keep the matching `QFileDialog QComboBox:focus` padding exactly 1 px smaller in
+each direction; otherwise the file-picker combo text shifts when focused.
 
 ### Open/popup state — two mechanisms coexist
 Qt's built-in `:open` pseudo-state fires correctly for **standard Qt combo
