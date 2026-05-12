@@ -1482,6 +1482,24 @@ void MainWindow::showEvent(QShowEvent *e)
         applyWindows11Styling(reinterpret_cast<HWND>(winId()), dark);
         updateWinChromeColors();
     }
+    // Set icons directly from the Win32 ICON resource so DWM and the taskbar
+    // get properly-rendered glyphs at native sizes rather than Qt downscaling
+    // a single large PNG.  ICON_BIG drives the taskbar; ICON_SMALL drives the
+    // titlebar (or the system-menu corner on classic chrome).
+    /*{
+        HWND hwnd = reinterpret_cast<HWND>(winId());
+        HICON hBig = static_cast<HICON>(
+            LoadImage(GetModuleHandle(nullptr), MAKEINTRESOURCE(1),
+                      IMAGE_ICON, 0, 0, LR_DEFAULTSIZE | LR_SHARED));
+        HICON hSmall = static_cast<HICON>(
+            LoadImage(GetModuleHandle(nullptr), MAKEINTRESOURCE(1),
+                      IMAGE_ICON,
+                      GetSystemMetrics(SM_CXSMICON),
+                      GetSystemMetrics(SM_CYSMICON),
+                      LR_DEFAULTCOLOR | LR_SHARED));
+        if (hBig)   SendMessage(hwnd, WM_SETICON, ICON_BIG,   reinterpret_cast<LPARAM>(hBig));
+        if (hSmall) SendMessage(hwnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(hSmall));
+    }*/
 #else
     applyShadowMargin();
     // Force the CornerClipper to repaint after the initial layout pass so it

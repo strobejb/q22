@@ -18,7 +18,13 @@ int main(int argc, char *argv[])
     a.setApplicationDisplayName("HexEdit");
     a.setDesktopFileName("hexedit");
     a.setApplicationVersion("3.0.1");
+#ifndef Q_OS_WIN
+    // On Windows the taskbar/titlebar icon comes from the Win32 ICON resource
+    // embedded in the EXE (hexedit.rc).  Setting a QIcon here would make Qt
+    // call SetClassLongPtr(GCLP_HICON) with a downscaled PNG, overriding the
+    // properly multi-sized RC icon.  Leave it unset so Windows uses the resource.
     a.setWindowIcon(QIcon(":/hexedit.png"));
+#endif
     AppSettings::ensureSettingsDir(); // must be called before any AppSettings read/write
 
     // Use only the bundled hicolor theme for icon lookups.  This ensures
