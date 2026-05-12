@@ -672,17 +672,21 @@ QMenu::icon     { width: 14px; height: 14px; margin-left: 0; left: 4px; }
 QMenu::indicator { width: 14px; height: 14px; margin-left: 0; }
 
 /* ── Line edits ──────────────────────────────────────────────── */
+/* Focus borders are 2 px, normal borders are 1 px. Keep margin at 0 so the
+   whole widget rect is repainted on focus changes; a transparent 1 px margin
+   can leave stale focus-border pixels behind on some styles/compositors.
+   Compensate with 1 extra px of padding in the non-focused states instead. */
 QLineEdit {
     border: 1px solid palette(mid);
     border-radius: 6px;
-    padding: 5px 8px;
-    margin: 1px;
+    padding: 6px 9px;
+    margin: 0px;
     background: palette(base);
     selection-background-color: palette(highlight);
     selection-color: palette(highlighted-text);
 }
-QLineEdit:hover { border: 1px solid palette(mid); margin: 1px; }
-QLineEdit:focus { border: 2px solid palette(highlight); margin: 0px; background: palette(base); }
+QLineEdit:hover { border: 1px solid palette(mid); padding: 6px 9px; margin: 0px; }
+QLineEdit:focus { border: 2px solid palette(highlight); padding: 5px 8px; margin: 0px; background: palette(base); }
 QLineEdit:disabled { color: {fgDisabled}; background: palette(window); }
 QLabel:disabled { color: {fgDisabled}; }
 QCheckBox:disabled { color: {fgDisabled}; }
@@ -691,28 +695,28 @@ QCheckBox:disabled { color: {fgDisabled}; }
 QPlainTextEdit {
     border: 1px solid palette(mid);
     border-radius: 6px;
-    padding: 5px 8px;
-    margin: 1px;
+    padding: 6px 9px;
+    margin: 0px;
     background: palette(base);
     selection-background-color: palette(highlight);
     selection-color: palette(highlighted-text);
 }
-QPlainTextEdit:focus { border: 2px solid palette(highlight); margin: 0px; }
+QPlainTextEdit:focus { border: 2px solid palette(highlight); padding: 5px 8px; margin: 0px; }
 QPlainTextEdit:disabled { color: {fgDisabled}; }
 
 /* ── Spin boxes ──────────────────────────────────────────────── */
 QAbstractSpinBox {
     border: 1px solid palette(mid);
     border-radius: 6px;
-    padding: 5px 8px;
-    margin: 1px;
+    padding: 6px 9px;
+    margin: 0px;
     min-height: {inputMinH}px;
     background: palette(base);
     selection-background-color: palette(highlight);
     selection-color: palette(highlighted-text);
 }
-QAbstractSpinBox:hover { border: 2px solid palette(mid); margin: 0px; }
-QAbstractSpinBox:focus { border: 2px solid palette(highlight); margin: 0px; background: palette(base); }
+QAbstractSpinBox:hover { border: 2px solid palette(mid); padding: 5px 8px; margin: 0px; }
+QAbstractSpinBox:focus { border: 2px solid palette(highlight); padding: 5px 8px; margin: 0px; background: palette(base); }
 QAbstractSpinBox:disabled { color: {fgDisabled}; }
 QAbstractSpinBox::up-button {
     subcontrol-origin: border;
@@ -735,17 +739,20 @@ QAbstractSpinBox::down-button {
 QAbstractSpinBox::down-button:hover { background: palette(mid); }
 
 /* ── ComboBox ────────────────────────────────────────────────── */
+/* Same padding-compensation rule as text inputs: the 1 px padding difference
+   absorbs the thicker focus border without moving combo text or leaving an
+   unpainted outer margin. */
 QComboBox {
     background: palette(base);
     border: 1px solid palette(mid);
     border-radius: 6px;
-    padding: 3px 8px;
-    margin: 1px;
+    padding: 4px 9px;
+    margin: 0px;
     selection-background-color: palette(highlight);
     selection-color: palette(highlighted-text);
 }
-QComboBox:hover            { border: 1px solid palette(mid); margin: 1px; background: palette(window); }
-QComboBox:focus            { border: 2px solid palette(highlight); margin: 0px; }
+QComboBox:hover            { border: 1px solid palette(mid); padding: 4px 9px; margin: 0px; background: palette(window); }
+QComboBox:focus            { border: 2px solid palette(highlight); padding: 3px 8px; margin: 0px; }
 QComboBox:open             { background: palette(button); }
 QComboBox[popupOpen="true"],
 QComboBox[popupOpen="true"]:hover,
@@ -792,15 +799,13 @@ QStatusBar QComboBox {
     background: palette(window);
     border: 1px solid transparent;
     border-radius: 4px;
-    margin: 1px;
+    margin: 0px;
 }
-QStatusBar QComboBox:hover { background: palette(button); border: 1px solid palette(mid); margin:1px; }
-QStatusBar QComboBox:focus { background: palette(button); border: 1px solid palette(mid); margin:0; }
+QStatusBar QComboBox:hover { background: palette(button); border: 1px solid palette(mid); margin: 0px; }
+QStatusBar QComboBox:focus { background: palette(button); border: 1px solid palette(mid); margin: 0px; }
 
 /* ── Misc ────────────────────────────────────────────────────── */
 QAbstractScrollArea { border: none; }
-QPlainTextEdit { border: 1px solid palette(mid); margin:1px; border-radius: 6px; }
-QPlainTextEdit:focus { border: 2px solid palette(highlight); margin: 0px; }
 QToolTip {
     background: palette(tooltip-base);
     color: palette(tooltip-text);
@@ -814,14 +819,17 @@ QToolTip {
    filetype-combo row vertically, with Open/Save at the top and Cancel
    at the bottom.  For each button to align with its row, all three
    widget types must be the same height (font + 12px).
-     QLineEdit global:  padding 5px + border 1px + margin 1px  = font+14  → strip margin
-     QComboBox global:  padding 3px + border 1px + margin 1px  = font+10  → raise padding, strip margin
-     QPushButton global: padding 5px + border 1px + min-width 80px        = font+12  → override min-width */
-QFileDialog QLineEdit         { margin: 0; }
-QFileDialog QLineEdit:hover   { margin: 0; }
-QFileDialog QLineEdit:focus   { margin: 0; }
+     QLineEdit global:  padding 6px + border 1px = font+14  -> lower padding
+     QComboBox global:  padding 4px + border 1px = font+10  -> raise padding
+     QPushButton global: padding 5px + border 1px + min-width 80px = font+12  -> override min-width */
+/* QFileDialog owns ordinary private QComboBox controls. Keep their focused
+   padding 1 px smaller too; otherwise the 2 px focus border shifts the text. */
+QFileDialog QLineEdit         { padding: 5px 8px; margin: 0; }
+QFileDialog QLineEdit:hover   { padding: 5px 8px; margin: 0; }
+QFileDialog QLineEdit:focus   { padding: 4px 7px; margin: 0; }
 QFileDialog QComboBox         { padding: 5px 8px; margin: 0; }
-QFileDialog QComboBox:hover   { margin: 0; }
+QFileDialog QComboBox:hover   { padding: 5px 8px; margin: 0; }
+QFileDialog QComboBox:focus   { padding: 4px 7px; margin: 0; }
 
 )";
 
