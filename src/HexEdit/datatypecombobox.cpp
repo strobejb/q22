@@ -3,14 +3,11 @@
 #include <QAction>
 #include <QActionGroup>
 #include <QApplication>
-#include <QEvent>
-#include <QImage>
 #include <QKeyEvent>
 #include <QMenu>
 #include <QPainter>
 #include <QStyleOptionComboBox>
 #include <QStylePainter>
-#include <QStyleOptionMenuItem>
 
 DataTypeComboBox::DataTypeComboBox(QWidget *parent)
     : ValueComboBox(parent)
@@ -18,7 +15,6 @@ DataTypeComboBox::DataTypeComboBox(QWidget *parent)
     setFocusPolicy(Qt::StrongFocus);
     m_menu = new QMenu(this);
     themeMenu(m_menu);
-    m_menu->installEventFilter(this);
 }
 
 QAction *DataTypeComboBox::addIconAction(const QIcon &icon, IconActionPosition position)
@@ -115,51 +111,6 @@ void DataTypeComboBox::selectByData(const QVariant &data)
             return;
         }
     }
-}
-
-// Render a menu item twice — once with text, once without — and return the x
-// of the first pixel column where they differ. This is the exact text start
-// position regardless of style, theme, or DPI.
-static int measureMenuItemTextX(QMenu *menu, QAction *action)
-{
-    const QRect item = menu->actionGeometry(action);
-    if (!item.isValid()) return 0;
-
-    const int W = item.width(), H = item.height();
-
-    auto render = [&](const QString &text) {
-        QImage img(W, H, QImage::Format_ARGB32_Premultiplied);
-        img.fill(Qt::transparent);
-        QPainter p(&img);
-        QStyleOptionMenuItem o;
-        o.initFrom(menu);
-        o.rect               = img.rect();
-        o.text               = text;
-        o.menuItemType       = QStyleOptionMenuItem::Normal;
-        o.checkType          = QStyleOptionMenuItem::Exclusive;
-        o.menuHasCheckableItems = true;
-        o.checked            = false;
-        o.maxIconWidth       = 0;
-        o.state              = QStyle::State_Enabled;
-        menu->style()->drawControl(QStyle::CE_MenuItem, &o, &p, menu);
-        return img;
-    };
-
-    const QImage withText = render("X");
-    const QImage noText   = render("");
-
-    const int midY = H / 2;
-    for (int x = 0; x < W; ++x) {
-        const QRgb a = withText.pixel(x, midY);
-        const QRgb b = noText.pixel(x, midY);
-        if (qAbs(int(qRed(a))   - int(qRed(b)))   > 8 ||
-            qAbs(int(qGreen(a)) - int(qGreen(b))) > 8 ||
-            qAbs(int(qBlue(a))  - int(qBlue(b)))  > 8 ||
-            qAbs(int(qAlpha(a)) - int(qAlpha(b))) > 8) {
-            return item.left() + x;
-        }
-    }
-    return 0;
 }
 
 // Scale padding with screen DPI so the combo height stays visually consistent.
@@ -261,28 +212,11 @@ void DataTypeComboBox::showPopup()
     if (m_menu->isVisible()) { m_menu->hide(); return; }
     if (isSameClickReopen()) return;
 
-    QStyleOptionComboBox cbOpt;
-    initStyleOption(&cbOpt);
-    int comboTextX = style()->subControlRect(QStyle::CC_ComboBox, &cbOpt,
-                                             QStyle::SC_ComboBoxEditField, this).left();
-    m_targetTextScreenX = mapToGlobal(QPoint(comboTextX, 0)).x();
-
     connect(m_menu, &QMenu::aboutToHide, this,
             [this]() { recordMenuClose(); setPopupOpen(false); },
             Qt::SingleShotConnection);
 
     const QPoint pos = smartMenuPos(this, m_menu, /*rightAlign=*/false);
-    m_targetMenuY = pos.y();
     m_menu->popup(pos);
     setPopupOpen(true);
-}
-
-bool DataTypeComboBox::eventFilter(QObject *obj, QEvent *e)
-{
-    if (obj == m_menu && e->type() == QEvent::Show && !m_actions.isEmpty()) {
-        const int menuTextX = measureMenuItemTextX(m_menu, m_actions.first());
-        if (menuTextX > 0)
-            m_menu->move(m_targetTextScreenX - menuTextX, m_targetMenuY);
-    }
-    return ValueComboBox::eventFilter(obj, e);
 }

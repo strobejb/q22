@@ -43,7 +43,6 @@ protected:
     void  paintEvent(QPaintEvent *)                 override;
     void  showPopup()                               override;
     void  keyPressEvent(QKeyEvent *e)               override;
-    bool  eventFilter(QObject *obj, QEvent *e)      override;
     void  setPopupOpen(bool open);
 
 private:
@@ -51,8 +50,6 @@ private:
     QList<QAction*> m_actions;
     QAction        *m_leadingAction     = nullptr;
     int             m_selection         = 0;
-    int             m_targetTextScreenX = 0;  // set in showPopup, used in eventFilter
-    int             m_targetMenuY       = 0;  // set in showPopup, used in eventFilter
 };
 
 #endif // DATATYPECOMBOBOX_H

@@ -80,6 +80,7 @@ PasteSpecialDialog::PasteSpecialDialog(HexView *hv, QWidget *parent)
             "QListWidget        { border: 1px solid %1; outline: 0; }"
             "QListWidget:hover  { border: 1px solid %1; }"
             "QListWidget:focus  { border: 1px solid %1; }"
+            "QListWidget::item  { padding-left: 4px; }"
         ).arg(border));
     }
     applyListItemPadding(ui->listClipFormats);

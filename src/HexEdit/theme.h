@@ -63,7 +63,7 @@ class QListWidget;
 // padding in a stylesheet is applied to text positioning but NOT to the item's
 // sizeHint(), causing items to appear cramped.  This bypasses that entirely.
 // Also enables uniformItemSizes for layout efficiency.
-// vPad defaults to half the widget's font height, clamped to at least 4px.
+// vPad defaults to half the widget's font height minus 2px, clamped to at least 2px.
 void applyListItemPadding(QListWidget *list, int vPad = -1);
 
 
@@ -106,6 +106,7 @@ void recolorToolButtons(QWidget *parent);
 // immediately above when there is not — so it never obscures the anchor.
 // Pass rightAlign=true to pin the menu's right edge to the anchor's right edge.
 QPoint smartMenuPos(const QWidget *anchor, const QMenu *menu, bool rightAlign = false);
+int themedMenuRightAlignOffset();
 
 #ifdef Q_OS_WIN
 class QIcon;

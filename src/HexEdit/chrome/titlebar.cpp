@@ -553,14 +553,9 @@ bool TitleBar::eventFilter(QObject *obj, QEvent *e)
         if      (obj == m_viewMenu)   { btn = m_viewBtn;   menu = m_viewMenu;   }
         else if (obj == m_searchMenu) { btn = m_searchBtn; menu = m_searchMenu; }
         if (btn) {
-            // PM_MenuPanelWidth is the shadow inset on Adwaita (9px): the menu
-            // window is that much wider than the visible frame on each side.
-            // Adding it here shifts the window right so the visible right edge
-            // aligns with the button's right edge.  Returns 0 on Windows/Fusion.
-            const int panel = menu->style()->pixelMetric(
-                QStyle::PM_MenuPanelWidth, nullptr, menu);
             const QPoint pos = btn->mapToGlobal(
-                QPoint(btn->width() - menu->width() + panel, btn->height()));
+                QPoint(btn->width() - menu->width() + themedMenuRightAlignOffset(),
+                       btn->height()));
             menu->move(pos);
         }
     }

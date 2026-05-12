@@ -10,6 +10,7 @@
 #include <QFontDatabase>
 #include <QGuiApplication>
 #include <QDialogButtonBox>
+#include <QFileDialog>
 #include <QLabel>
 #include <QLayout>
 #include <QMenu>
@@ -445,8 +446,10 @@ public:
 
 void applyListItemPadding(QListWidget *list, int vPad)
 {
+    if (!list)
+        return;
     if (vPad < 0)
-        vPad = qMax(4, list->fontMetrics().height() / 2);
+        vPad = qMax(2, list->fontMetrics().height() / 2 - 2);
     const int minH = list->fontMetrics().height() + 2 * vPad;
     list->setUniformItemSizes(true);
     list->setItemDelegate(new PaddedListDelegate(minH, list));
@@ -477,6 +480,19 @@ QPoint smartMenuPos(const QWidget *anchor, const QMenu *menu, bool rightAlign)
         y = (avail.bottom() + 1 - yBelow >= ag.top() - avail.top()) ? yBelow : yAbove;
 
     return {x, y};
+}
+
+int themedMenuRightAlignOffset()
+{
+#ifdef Q_OS_WIN
+    return 0;
+#else
+    // The Linux QMenu shadow is drawn in an 8px QSS margin. menuShadowFilter()
+    // moves the popup window left by that margin on show, so right-aligned menus
+    // must be placed two margins to the right: one to cancel that move, one so
+    // the visible frame's right edge, not the transparent shadow ring, aligns.
+    return 2 * kMenuShadowMargin;
+#endif
 }
 
 // ── Palette ───────────────────────────────────────────────────────────────────
@@ -831,6 +847,16 @@ QFileDialog QLineEdit:focus   { padding: 4px 7px; margin: 0; }
 QFileDialog QComboBox         { padding: 5px 8px; margin: 0; }
 QFileDialog QComboBox:hover   { padding: 5px 8px; margin: 0; }
 QFileDialog QComboBox:focus   { padding: 4px 7px; margin: 0; }
+QFileDialog QListView,
+QFileDialog QTreeView {
+    border: 1px solid palette(mid);
+    background: palette(base);
+}
+QFileDialog QListView::item,
+QFileDialog QTreeView::item {
+    padding-top: 2px;
+    padding-bottom: 2px;
+}
 
 )";
 
@@ -1472,6 +1498,10 @@ void prepareDialogForShow(QDialog *dlg, const QSize &size)
             actual += QSize(left + right, top + bottom);
 #endif
         dlg->resize(actual);
+    } else if (qobject_cast<QFileDialog *>(dlg)) {
+        // QFileDialog's central file view is expanding. Calling adjustSize()
+        // after import/export adds extra option rows can make the dialog grow
+        // vertically on first show, so preserve Qt's chosen/default size.
     } else {
         dlg->adjustSize();
     }

@@ -67,6 +67,7 @@ FontPickerDialog::FontPickerDialog(const QFont &current, QWidget *parent)
                                     : QLatin1String("rgba(0,0,0,0.15)");
         m_list->setStyleSheet(QString(
             "QListWidget { border: 1px solid %1; outline: 0; }"
+            "QListWidget::item { padding-left: 4px; }"
         ).arg(border));
     }
     applyListItemPadding(m_list);
@@ -290,10 +291,10 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     m_nativeMenu = new SettingsToggle(tr("Native menu bar"), this);
     m_nativeMenu->setChecked(AppSettings::prefNativeMenu());
 
-    m_nativeDialogs = new SettingsToggle(tr("Use Native Dialogs"), this);
+    m_nativeDialogs = new SettingsToggle(tr("Use native dialogs"), this);
     m_nativeDialogs->setChecked(AppSettings::prefNativeDialogs());
 
-    m_nativeFileDialogs = new SettingsToggle(tr("Use Native File Dialogs"), this);
+    m_nativeFileDialogs = new SettingsToggle(tr("Use native file dialogs"), this);
     m_nativeFileDialogs->setChecked(AppSettings::prefNativeFileDialogs());
 
     m_menuHighlight = new SettingsToggle(tr("Menus use highlight colour"), this);

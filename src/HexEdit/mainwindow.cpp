@@ -504,19 +504,22 @@ MainWindow::MainWindow(QWidget *parent)
     auto themeCb = [this](ColorScheme s) {
         AppSettings::setPrefColorScheme(static_cast<int>(s));
         applyAdwaitaTheme(s);
-        if (!m_currentPalette.name.isEmpty()) {
-            applyPalette(m_hv, m_currentPalette);
-            applyUiPalette(m_currentPalette);  // internally re-applies theme with UI overrides
-        }
-        m_titleBar->refreshStylesheet();  // after palette so UI overrides are already active
-        QTimer::singleShot(0, m_titleBar, [this] {
+        QTimer::singleShot(0, this, [this, s] {
+            if (AppSettings::prefColorScheme() != static_cast<int>(s))
+                return;
+            if (!m_currentPalette.name.isEmpty()) {
+                applyPalette(m_hv, m_currentPalette);
+                applyUiPalette(m_currentPalette);
+            }
+            if (m_hv)
+                m_hv->refreshWindow();
             if (m_titleBar)
                 m_titleBar->refreshStylesheet();
-        });
 #ifdef Q_OS_WIN
-        if (m_useCustomTitleBar)
-            updateWinChromeColors();
+            if (m_useCustomTitleBar)
+                updateWinChromeColors();
 #endif
+        });
     };
     auto *pickerAction = new ThemePickerAction(currentScheme, themeCb, this);
 

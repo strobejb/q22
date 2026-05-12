@@ -91,7 +91,15 @@ SettingsCard::SettingsCard(QList<QWidget *> rows, Style style, QWidget *parent)
         lay->setSpacing(SC_S_SPACE);
     }
 
-    for (QWidget *w : rows) {
+    for (int i = 0; i < rows.size(); ++i) {
+        QWidget *w = rows[i];
+        if (style == Style::Compact && qobject_cast<NavigationRow *>(w)) {
+            const int edgeInset = ROW_VPAD / 4;
+            w->setContentsMargins(0,
+                                  i == rows.size() - 1 ? edgeInset : 0,
+                                  0,
+                                  i == 0 ? edgeInset : 0);
+        }
         lay->addWidget(w);
         w->installEventFilter(this);
     }
@@ -319,7 +327,8 @@ void NavigationRow::paintEvent(QPaintEvent *)
 {
     QPainter p(this);
     const QPalette &pal = palette();
-    const QRect     r   = rect();
+    const QMargins  m   = contentsMargins();
+    const QRect     r   = rect().adjusted(m.left(), m.top(), -m.right(), -m.bottom());
 
     // Content area — leave room for icon + right margin + small text gap
     const QRect contentR = r.adjusted(0, 0, -(ROW_ICON_RIGHT + ROW_ICON_SZ + 4), 0);
