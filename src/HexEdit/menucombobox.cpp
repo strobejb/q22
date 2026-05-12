@@ -8,6 +8,7 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPushButton>
+#include <QSizeGrip>
 #include <QStyleOptionComboBox>
 #include <QStylePainter>
 
@@ -219,6 +220,7 @@ void MenuComboBox::showPopup()
 
 void installThemedFileDialogComboPopups(QFileDialog *dialog)
 {
+    dialog->setSizeGripEnabled(false);
     // Non-native QFileDialog owns ordinary, private QComboBox controls for
     // "Look in" and the file-type filter. Their built-in QComboBox popup has
     // the same rectangular clipping / missing-shadow artefacts that led to
@@ -251,4 +253,7 @@ void installThemedFileDialogComboPopups(QFileDialog *dialog)
         for (auto *btn : dialog->findChildren<QPushButton *>())
             btn->setMinimumHeight(h);
     }
+
+    for (auto *grip : dialog->findChildren<QSizeGrip *>())
+        grip->hide();
 }

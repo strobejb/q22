@@ -1,5 +1,5 @@
 #include "focusnavigation.h"
-#include "dialog-chrome.h"
+#include "chrome/dialog-chrome.h"
 #include "preferences.h"
 #include "settingscard.h"
 #include "settings.h"
@@ -480,18 +480,11 @@ void PreferencesDialog::prepareShow()
                     ? style()->pixelMetric(QStyle::PM_ScrollBarExtent) : 0;
     const int w = gridW + 2 * 20 + sbW;
     const int h = qMin(hint.height(), maxH);
-    // Mirror execCentered(): resize → move → winId(), then lock.
+    // Mirror execCentered(): resize -> move -> hidden HWND creation, then lock.
     // setFixedSize() before move() changes size constraints that affect HWND
     // creation geometry on Windows, producing a wrong initial position.
-    resize(w, h);
-    if (QWidget *par = parentWidget()) {
-        const QPoint c = par->frameGeometry().center();
-        move(c.x() - w / 2, c.y() - h / 2);
-    }
-#ifdef Q_OS_WIN
-    (void)winId(); // force HWND creation while hidden — same pattern as execCentered()
-#endif
-    setFixedSize(w, h); // lock size after HWND is in place
+    prepareDialogForShow(this, QSize(w, h));
+    setFixedSize(size()); // lock size after HWND is in place
 }
 
 void PreferencesDialog::setVisible(bool visible)

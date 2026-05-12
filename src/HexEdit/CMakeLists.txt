@@ -12,8 +12,8 @@ set(PROJECT_SOURCES
         bookmarkcolourwidget.cpp
         datatypecombobox.h
         datatypecombobox.cpp
-        dialog-chrome.h
-        dialog-chrome.cpp
+        chrome/dialog-chrome.h
+        chrome/dialog-chrome.cpp
         dockpanelhost.h
         dockpanelhost.cpp
         menucombobox.h
@@ -34,18 +34,20 @@ set(PROJECT_SOURCES
         preferences.h
         screencolorpicker.cpp
         screencolorpicker.h
+        chrome/shadow-chrome.cpp
+        chrome/shadow-chrome.h
         slideoverlay.cpp
         slideoverlay.h
         settings.cpp
         settings.h
         statusbar.cpp
         statusbar.h
-        titlebar.cpp
-        titlebar.h
-        windows-chrome.cpp
-        windows-chrome.h
-        linux-chrome.cpp
-        linux-chrome.h
+        chrome/titlebar.cpp
+        chrome/titlebar.h
+        chrome/windows-chrome.cpp
+        chrome/windows-chrome.h
+        chrome/linux-chrome.cpp
+        chrome/linux-chrome.h
         togglebuttongroup.cpp
         togglebuttongroup.h
         theme.cpp

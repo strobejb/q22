@@ -12,6 +12,7 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QAbstractButton>
+#include <QMargins>
 #include <QPainter>
 #include <QPropertyAnimation>
 #include <QEasingCurve>
@@ -143,15 +144,20 @@ SlideOverlay::SlideOverlay(QWidget *parent)
 {
     Q_ASSERT(parent);
 
-    // Fill with the window background so the panel looks solid during animation.
-    setAutoFillBackground(true);
+    // This widget is a stationary viewport.  Only m_slidePanel moves, so Qt's
+    // normal child clipping keeps the panel inside the hosting dialog content
+    // frame while it animates.
+    setAutoFillBackground(false);
+
+    m_slidePanel = new QWidget(this);
+    m_slidePanel->setAutoFillBackground(true);
 
     // ── Animation ─────────────────────────────────────────────────────────────
-    m_anim = new QPropertyAnimation(this, "pos", this);
+    m_anim = new QPropertyAnimation(m_slidePanel, "pos", this);
     m_anim->setDuration(k_duration);
 
     // ── Back / cancel button ──────────────────────────────────────────────────
-    m_backBtn = new QToolButton(this);
+    m_backBtn = new QToolButton(m_slidePanel);
     m_backBtn->setIcon(QIcon::fromTheme(
         "go-previous-symbolic",
         QIcon(":/icons/hicolor/scalable/actions/go-previous-symbolic.svg")));
@@ -196,7 +202,7 @@ void SlideOverlay::slideIn(QDialog *dlg, std::function<void(int)> onFinished,
     // everything is still hidden — avoids any OS-level flash from that handle
     // transition.
     m_content->setWindowFlags(Qt::Widget);
-    m_content->setParent(this);
+    m_content->setParent(m_slidePanel);
     m_content->setMinimumSize(0, 0);    // allow layout to be smaller than hint
     m_content->installEventFilter(this); // suppress the dialog's own hide()
 
@@ -283,12 +289,14 @@ void SlideOverlay::slideIn(QDialog *dlg, std::function<void(int)> onFinished,
     }
 
     // ── Size overlay, snap off-screen, THEN show ──────────────────────────────
-    // Critically: move() is called before show() so the overlay is never
-    // rendered at its resting position (0, 0) before the animation begins.
+    // Critically: the panel is moved before show() so it is never rendered at
+    // its resting position (0, 0) before the animation begins.
     syncToParent();
-    move(-width(), chromeTopInset());
+    m_slidePanel->move(-width(), 0);
     show();
     raise();
+    m_slidePanel->show();
+    m_slidePanel->raise();
     m_content->show();
     for (QWidget *child : m_content->findChildren<QWidget *>())
         child->installEventFilter(this);
@@ -330,8 +338,10 @@ void SlideOverlay::resizeParentToFit(const QSize &contentHint)
     // resize, then re-lock at the new height so the window isn't manually
     // resizable while the overlay is open.
     par->setFixedHeight(QWIDGETSIZE_MAX);
-    par->resize(par->width(), newH + chromeTopInset());
-    par->setFixedHeight(newH);
+    const QMargins chrome = chromeMargins();
+    const int fullH = newH + chrome.top() + chrome.bottom() + chromeTopInset();
+    par->resize(par->width(), fullH);
+    par->setFixedHeight(fullH);
 }
 
 void SlideOverlay::restoreParentSize()
@@ -348,28 +358,60 @@ int SlideOverlay::chromeTopInset() const
     return par ? qMax(0, par->property("_qexedDialogChromeHeight").toInt()) : 0;
 }
 
+QMargins SlideOverlay::chromeMargins() const
+{
+    QWidget *par = parentWidget();
+    if (!par)
+        return {};
+
+    return {
+        qMax(0, par->property("_qexedDialogShadowLeft").toInt()),
+        qMax(0, par->property("_qexedDialogShadowTop").toInt()),
+        qMax(0, par->property("_qexedDialogShadowRight").toInt()),
+        qMax(0, par->property("_qexedDialogShadowBottom").toInt()),
+    };
+}
+
+QRect SlideOverlay::overlayRect() const
+{
+    QWidget *par = parentWidget();
+    if (!par)
+        return {};
+
+    const QMargins chrome = chromeMargins();
+    const int title = chromeTopInset();
+    return par->rect().adjusted(chrome.left(),
+                                chrome.top() + title,
+                                -chrome.right(),
+                                -chrome.bottom());
+}
+
 void SlideOverlay::syncToParent()
 {
-    const QSize sz = parentWidget()->size();
-    const int top = chromeTopInset();
-    setGeometry(x(), top, sz.width(), qMax(0, sz.height() - top));
+    const QRect target = overlayRect();
+    setGeometry(target);
+    m_slidePanel->resize(size());
     if (m_content) {
         if (m_inlineMode)
-            m_content->setGeometry(0, 0, width(), height());
+            m_content->setGeometry(0, 0,
+                                   m_slidePanel->width(),
+                                   m_slidePanel->height());
         else
-            m_content->setGeometry(0, k_headerH, width(), height() - k_headerH);
+            m_content->setGeometry(0, k_headerH,
+                                   m_slidePanel->width(),
+                                   m_slidePanel->height() - k_headerH);
     }
 }
 
 void SlideOverlay::startSlideIn()
 {
-    // The overlay has already been move()d to (-width(), 0) by slideIn()
+    // The slide panel has already been moved to (-width(), 0) by slideIn()
     // before show() was called, so no snap is needed here.
     m_anim->stop();
     m_anim->disconnect();
     m_anim->setEasingCurve(QEasingCurve::OutCubic);
-    m_anim->setStartValue(pos());   // animate from current (already off-screen) position
-    m_anim->setEndValue(QPoint(0, chromeTopInset()));
+    m_anim->setStartValue(m_slidePanel->pos());   // animate from current off-screen position
+    m_anim->setEndValue(QPoint(0, 0));
     m_anim->start();
 }
 
@@ -378,12 +420,12 @@ void SlideOverlay::startSlideOut()
     m_anim->stop();
     m_anim->disconnect();
     m_anim->setEasingCurve(QEasingCurve::InCubic);
-    m_anim->setStartValue(pos());
-    m_anim->setEndValue(QPoint(-parentWidget()->width(), chromeTopInset()));  // exit to the left
+    m_anim->setStartValue(m_slidePanel->pos());
+    m_anim->setEndValue(QPoint(-width(), 0));  // exit to the left
 
     connect(m_anim, &QPropertyAnimation::finished, this, [this]() {
         hide();
-        move(0, chromeTopInset());     // reset position for the next slideIn
+        m_slidePanel->move(0, 0);     // reset position for the next slideIn
 
         m_backBtn->hide();
         m_inlineMode = false;
@@ -452,14 +494,17 @@ bool SlideOverlay::eventFilter(QObject *obj, QEvent *event)
             syncToParent();
             if (m_content) {
                 if (m_inlineMode)
-                    m_content->setGeometry(0, 0, width(), height());
+                    m_content->setGeometry(0, 0,
+                                           m_slidePanel->width(),
+                                           m_slidePanel->height());
                 else
                     m_content->setGeometry(0, k_headerH,
-                                           width(), height() - k_headerH);
+                                           m_slidePanel->width(),
+                                           m_slidePanel->height() - k_headerH);
             }
             // Update the slide-out end position if currently animating.
             if (m_anim->state() == QAbstractAnimation::Running)
-                m_anim->setEndValue(QPoint(-width(), chromeTopInset()));
+                m_anim->setEndValue(QPoint(-width(), 0));
         }
         return false;   // don't consume — parent still needs to process it
     }

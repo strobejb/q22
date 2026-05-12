@@ -9,6 +9,7 @@
 
 #include "dlgimport.h"
 #include "dlgprogress.h"
+#include "theme.h"
 #include "HexView/hexview.h"
 
 #include <QBuffer>
@@ -711,11 +712,7 @@ size_w ImportFile(const QString &path, HexView *hv, IMPEXP_OPTIONS *ieopt,
         return 0;
 
     ProgressDialog dlg(file.size(), QObject::tr("Importing…"), parent);
-    if (parent) {
-        dlg.adjustSize();
-        const QPoint c = parent->frameGeometry().center();
-        dlg.move(c.x() - dlg.width() / 2, c.y() - dlg.height() / 2);
-    }
+    prepareDialogForShow(&dlg);
     dlg.open();
     QApplication::processEvents();
 

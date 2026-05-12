@@ -1,6 +1,6 @@
 #include "theme.h"
 #include "settings.h"
-#include "dialog-chrome.h"
+#include "chrome/dialog-chrome.h"
 #include <functional>
 #include <QAction>
 #include <QApplication>
@@ -217,7 +217,7 @@ QColor matchLuminance(const QColor &source, const QColor &luminanceRef)
 }
 
 #ifdef Q_OS_WIN
-#include "windows-chrome.h"
+#include "chrome/windows-chrome.h"
 #endif
 
 // ── DWM shadow for popup menus (Win11) ───────────────────────────────────────
@@ -604,6 +604,7 @@ static QString buildStylesheet(bool dark)
 /* outline:none suppresses Qt's QSS focus-outline indicator globally;
    PE_FrameFocusRect is suppressed separately in NoFocusRectStyle. */
 QWidget { color: palette(window-text); outline: none; }
+QDialog { background: palette(window); }
 
 /* ── Menu bar ────────────────────────────────────────────────── */
 QMenuBar {
@@ -1436,22 +1437,68 @@ QPalette systemPalette()
     return s_basePalette;
 }
 
-int execCentered(QDialog *dlg)
+void prepareDialogForShow(QDialog *dlg, const QSize &size)
 {
     if (!dlg)
-        return QDialog::Rejected;
+        return;
 
     installDialogChrome(dlg);
 
-    if (QWidget *par = dlg->parentWidget()) {
+    QPalette pal = dlg->palette();
+    pal.setColor(QPalette::Window, qApp->palette().color(QPalette::Window));
+    dlg->setPalette(pal);
+    // Avoid the Windows first-show white flash: before the hidden HWND exists,
+    // make the top-level dialog paint/erase with the app palette instead of the
+    // platform default COLOR_WINDOW brush.  Custom frameless dialogs on Windows
+    // are translucent because their DialogShadowFrame paints the rounded
+    // background and shadow margin, so do not auto-fill those top-levels.
+    if (dlg->property("_qexedDialogShadowInstalled").toBool()) {
+        dlg->setAttribute(Qt::WA_StyledBackground, false);
+        dlg->setAutoFillBackground(false);
+    } else {
+        dlg->setAttribute(Qt::WA_StyledBackground, true);
+        dlg->setAutoFillBackground(true);
+    }
+    dlg->ensurePolished();
+
+    if (size.isValid()) {
+        QSize actual = size;
+#ifdef Q_OS_WIN
+        const int left = dlg->property("_qexedDialogShadowLeft").toInt();
+        const int top = dlg->property("_qexedDialogShadowTop").toInt();
+        const int right = dlg->property("_qexedDialogShadowRight").toInt();
+        const int bottom = dlg->property("_qexedDialogShadowBottom").toInt();
+        if (left || top || right || bottom)
+            actual += QSize(left + right, top + bottom);
+#endif
+        dlg->resize(actual);
+    } else {
         dlg->adjustSize();
+    }
+
+    if (QWidget *par = dlg->parentWidget()) {
         const QSize sz = dlg->size();
         const QPoint c = par->frameGeometry().center();
         dlg->move(c.x() - sz.width() / 2, c.y() - sz.height() / 2);
     }
 #ifdef Q_OS_WIN
-    (void)dlg->winId(); // force HWND creation while hidden
+    // Force HWND creation while hidden, then explicitly pin its native
+    // geometry. Some Windows/Qt paths still create the hidden HWND at the
+    // platform default position before applying QWidget::pos(); SetWindowPos
+    // here ensures the first visible frame is already at the final geometry.
+    HWND hwnd = reinterpret_cast<HWND>(dlg->winId());
+    const QRect g = dlg->geometry();
+    SetWindowPos(hwnd, nullptr, g.x(), g.y(), g.width(), g.height(),
+                 SWP_NOZORDER | SWP_NOACTIVATE | SWP_HIDEWINDOW);
 #endif
+}
+
+int execCentered(QDialog *dlg)
+{
+    if (!dlg)
+        return QDialog::Rejected;
+
+    prepareDialogForShow(dlg);
     return dlg->exec();
 }
 
@@ -1478,6 +1525,12 @@ void styleMessageBox(QMessageBox *box)
         auto *infoLabel = box->findChild<QLabel *>(QStringLiteral("qt_msgbox_informativelabel"));
         if (!iconLabel || !textLabel)
             return;
+
+#ifdef Q_OS_WIN
+        textLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        if (infoLabel)
+            infoLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+#endif
 
         int textH = textLabel->sizeHint().height();
         if (infoLabel && infoLabel->isVisible())

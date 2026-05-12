@@ -142,6 +142,7 @@ void enableKWinShadow(QWidget *w);
 // skips its own adjustPosition() pass.  Calling winId() then forces the HWND
 // to be created NOW, while the window is still hidden, so exec()'s ShowWindow
 // just flips visibility in-place with no subsequent repositioning.
+void prepareDialogForShow(QDialog *dlg, const QSize &size = {});
 int execCentered(QDialog *dlg);
 
 QColor platformAccentColour();

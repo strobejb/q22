@@ -9,6 +9,7 @@
 
 #include "dlgexport.h"
 #include "dlgprogress.h"
+#include "theme.h"
 #include "HexView/hexview.h"
 
 #include <QBuffer>
@@ -706,11 +707,7 @@ bool Export(const QString &szFileName, HexView *hv, IMPEXP_OPTIONS *eopt, QWidge
     // Show the progress dialog as window-modal so the parent is blocked but
     // the main thread remains free to pump events via processEvents().
     ProgressDialog dlg(static_cast<qint64>(length), QObject::tr("Exporting…"), parent);
-    if (parent) {
-        dlg.adjustSize();
-        const QPoint c = parent->frameGeometry().center();
-        dlg.move(c.x() - dlg.width() / 2, c.y() - dlg.height() / 2);
-    }
+    prepareDialogForShow(&dlg);
     dlg.open();
     QApplication::processEvents(); // paint the dialog before the loop starts
 
@@ -767,11 +764,7 @@ bool CopyAs(HexView *hv, IMPEXP_OPTIONS *eopt, QWidget *parent)
     hv->setUpdatesEnabled(false);
 
     ProgressDialog dlg(static_cast<qint64>(length), QObject::tr("Copying…"), parent);
-    if (parent) {
-        dlg.adjustSize();
-        const QPoint c = parent->frameGeometry().center();
-        dlg.move(c.x() - dlg.width() / 2, c.y() - dlg.height() / 2);
-    }
+    prepareDialogForShow(&dlg);
     dlg.open();
     QApplication::processEvents();
 

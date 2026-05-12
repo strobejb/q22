@@ -5,7 +5,7 @@
 #include "bookmarkdialog.h"
 #include "dlgabout.h"
 #include "dlgcopyas.h"
-#include "dialog-chrome.h"
+#include "chrome/dialog-chrome.h"
 #include "dlgexport.h"
 #include "dlgimport.h"
 #include "dlgpastespecial.h"
@@ -17,7 +17,7 @@
 #include "preferences.h"
 #include "settings.h"
 #include "statusbar.h"
-#include "titlebar.h"
+#include "chrome/titlebar.h"
 #include "theme.h"
 #include <functional>
 #include <QActionGroup>
@@ -113,7 +113,8 @@ static QString getThemedOpenFileName(QWidget *parent, const QString &caption)
         installDialogChrome(&dlg);
     }
 
-    return dlg.exec() == QDialog::Accepted ? dlg.selectedFiles().value(0) : QString();
+    const int result = useNativeFileDialogs ? dlg.exec() : execCentered(&dlg);
+    return result == QDialog::Accepted ? dlg.selectedFiles().value(0) : QString();
 }
 
 static QString getThemedSaveFileName(QWidget *parent, const QString &caption)
@@ -127,13 +128,14 @@ static QString getThemedSaveFileName(QWidget *parent, const QString &caption)
         installDialogChrome(&dlg);
     }
 
-    return dlg.exec() == QDialog::Accepted ? dlg.selectedFiles().value(0) : QString();
+    const int result = useNativeFileDialogs ? dlg.exec() : execCentered(&dlg);
+    return result == QDialog::Accepted ? dlg.selectedFiles().value(0) : QString();
 }
 
 #ifdef Q_OS_WIN
-#include "windows-chrome.h"
+#include "chrome/windows-chrome.h"
 #else
-#include "linux-chrome.h"
+#include "chrome/linux-chrome.h"
 #endif
 
 static Qt::Edges edgesFromPos(const QPoint &pos, const QRect &rect, int margin) {
@@ -861,7 +863,7 @@ MainWindow::MainWindow(QWidget *parent)
         if (!useNativeFileDialogs)
             installDialogChrome(&dlg);
 
-        if (dlg.exec() != QDialog::Accepted)
+        if ((useNativeFileDialogs ? dlg.exec() : execCentered(&dlg)) != QDialog::Accepted)
             return;
         const QString dest = dlg.selectedFiles().value(0);
         if (dest.isEmpty())
@@ -951,7 +953,7 @@ MainWindow::MainWindow(QWidget *parent)
         if (!useNativeFileDialogs)
             installDialogChrome(&dlg);
 
-        if (dlg.exec() != QDialog::Accepted) return;
+        if ((useNativeFileDialogs ? dlg.exec() : execCentered(&dlg)) != QDialog::Accepted) return;
         const QString path = dlg.selectedFiles().value(0);
         if (path.isEmpty()) return;
 
@@ -1051,7 +1053,7 @@ MainWindow::MainWindow(QWidget *parent)
         if (!useNativeFileDialogs)
             installDialogChrome(&dlg);
 
-        if (dlg.exec() != QDialog::Accepted)
+        if ((useNativeFileDialogs ? dlg.exec() : execCentered(&dlg)) != QDialog::Accepted)
             return;
 
         const QString path = dlg.selectedFiles().value(0);
@@ -1492,7 +1494,7 @@ void MainWindow::showEvent(QShowEvent *e)
 }
 
 // MainWindow::paintEvent and MainWindow::applyShadowMargin are
-// implemented in linux-chrome.cpp (non-Windows builds only).
+// implemented in chrome/linux-chrome.cpp (non-Windows builds only).
 
 void MainWindow::changeEvent(QEvent *e)
 {
@@ -1514,4 +1516,4 @@ void MainWindow::changeEvent(QEvent *e)
 }
 
 // MainWindow::updateWinChromeColors and MainWindow::nativeEvent are
-// implemented in windows-chrome.cpp (Windows builds only).
+// implemented in chrome/windows-chrome.cpp (Windows builds only).

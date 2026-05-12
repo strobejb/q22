@@ -1,6 +1,8 @@
 #ifndef SLIDEOVERLAY_H
 #define SLIDEOVERLAY_H
 
+#include <QMargins>
+#include <QRect>
 #include <QWidget>
 #include <functional>
 
@@ -60,6 +62,8 @@ protected:
 private:
     void resizeParentToFit(const QSize &contentHint);
     void restoreParentSize();
+    QMargins chromeMargins() const;
+    QRect overlayRect() const;
     int chromeTopInset() const;
     void syncToParent();
     void startSlideIn();
@@ -69,6 +73,7 @@ private:
     static constexpr int k_duration = 220; // slide animation ms
 
     QPropertyAnimation *m_anim           = nullptr;
+    QWidget            *m_slidePanel     = nullptr;
     QDialog            *m_content        = nullptr;
     QToolButton        *m_backBtn        = nullptr;
     QSize               m_savedParentSize;
