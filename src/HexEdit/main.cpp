@@ -1,5 +1,5 @@
 #include "mainwindow.h"
-#include "settings.h"
+#include "settings/settings.h"
 #include "theme.h"
 #include <QApplication>
 #include <QIcon>

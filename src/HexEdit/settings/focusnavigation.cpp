@@ -1,5 +1,5 @@
 #include "focusnavigation.h"
-#include "paletteswatch.h"
+#include "palette/paletteswatch.h"
 
 #include <algorithm>
 

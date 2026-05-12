@@ -16,8 +16,8 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include "theme.h"
-#include "finddialog.h"
-#include "gotodialog.h"
+#include "panels/finddialog.h"
+#include "panels/gotodialog.h"
 #include "titlebar.h"
 
 #include <QApplication>

@@ -6,40 +6,48 @@ set(PROJECT_SOURCES
         mainwindow.cpp
         mainwindow.h
         mainwindow.ui
-        bookmarkdialog.h
-        bookmarkdialog.cpp
-        bookmarkcolourwidget.h
-        bookmarkcolourwidget.cpp
-        datatypecombobox.h
-        datatypecombobox.cpp
+        dialogs/dlgbookmark.h
+        dialogs/dlgbookmark.cpp
+        dialogs/bookmarkcolourwidget.h
+        dialogs/bookmarkcolourwidget.cpp
+        dialogs/bookmarks.ui
+        combos/datatypecombobox.h
+        combos/datatypecombobox.cpp
+        combos/valuecombobox.h
+        combos/valuecombobox.cpp
         chrome/dialog-chrome.h
         chrome/dialog-chrome.cpp
-        dockpanelhost.h
-        dockpanelhost.cpp
-        menucombobox.h
-        menucombobox.cpp
-        gotodialog.cpp
-        gotodialog.h
-        finddialog.cpp
-        finddialog.h
-        focusnavigation.cpp
-        focusnavigation.h
-        palettes.cpp
-        palettes.h
-        palettecolourpicker.cpp
-        palettecolourpicker.h
-        paletteswatch.cpp
-        paletteswatch.h
-        preferences.cpp
-        preferences.h
-        screencolorpicker.cpp
-        screencolorpicker.h
+        panels/dockpanelhost.h
+        panels/dockpanelhost.cpp
+        combos/menucombobox.h
+        combos/menucombobox.cpp
+        combos/statuscomboboxes.h
+        combos/statuscomboboxes.cpp
+        panels/gotodialog.cpp
+        panels/gotodialog.h
+        panels/gotodialog.ui
+        panels/finddialog.cpp
+        panels/finddialog.h
+        panels/finddialog.ui
+        settings/focusnavigation.cpp
+        settings/focusnavigation.h
+        palette/palettes.cpp
+        palette/palettes.h
+        palette/palettecolourpicker.cpp
+        palette/palettecolourpicker.h
+        palette/paletteswatch.cpp
+        palette/paletteswatch.h
+        settings/preferences.cpp
+        settings/preferences.h
+        settings/preferences.ui
+        settings/screencolorpicker.cpp
+        settings/screencolorpicker.h
         chrome/shadow-chrome.cpp
         chrome/shadow-chrome.h
-        slideoverlay.cpp
-        slideoverlay.h
-        settings.cpp
-        settings.h
+        settings/slideoverlay.cpp
+        settings/slideoverlay.h
+        settings/settings.cpp
+        settings/settings.h
         statusbar.cpp
         statusbar.h
         chrome/titlebar.cpp
@@ -48,25 +56,40 @@ set(PROJECT_SOURCES
         chrome/windows-chrome.h
         chrome/linux-chrome.cpp
         chrome/linux-chrome.h
-        togglebuttongroup.cpp
-        togglebuttongroup.h
+        settings/togglebuttongroup.cpp
+        settings/togglebuttongroup.h
         theme.cpp
         theme.h
-        dlgexport.h
-        dlgexport.cpp
-        dlgcopyas.h
-        dlgcopyas.cpp
-        dlgimport.h
-        dlgimport.cpp
-        dlgpastespecial.h
-        dlgpastespecial.cpp
-        dlgabout.h
-        dlgabout.cpp
-        dlgprogress.h
-        dlgprogress.cpp
-        settingscard.h
-        settingscard.cpp
+        dialogs/dlgexport.h
+        dialogs/dlgexport.cpp
+        dialogs/dlgcopyas.h
+        dialogs/dlgcopyas.cpp
+        dialogs/copyas.ui
+        dialogs/dlgimport.h
+        dialogs/dlgimport.cpp
+        dialogs/dlgpastespecial.h
+        dialogs/dlgpastespecial.cpp
+        dialogs/pastespecial.ui
+        dialogs/dlgabout.h
+        dialogs/dlgabout.cpp
+        dialogs/dlgprogress.h
+        dialogs/dlgprogress.cpp
+        settings/settingscard.h
+        settings/settingscard.cpp
 )
+
+set(PROJECT_FORMS
+        mainwindow.ui
+        dialogs/bookmarks.ui
+        dialogs/copyas.ui
+        dialogs/pastespecial.ui
+        panels/finddialog.ui
+        panels/gotodialog.ui
+        settings/preferences.ui
+)
+list(TRANSFORM PROJECT_FORMS PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/"
+     OUTPUT_VARIABLE PROJECT_FORMS_ABSOLUTE)
+source_group("Forms" FILES ${PROJECT_FORMS_ABSOLUTE})
 
 if(WIN32)
     list(APPEND PROJECT_SOURCES resources/hexedit.rc)
@@ -76,12 +99,6 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
     qt_add_executable(hexedit
         MANUAL_FINALIZATION
         ${PROJECT_SOURCES}
-        finddialog.ui
-        gotodialog.ui
-        bookmarks.ui
-        copyas.ui
-        pastespecial.ui
-        preferences.ui
     )
 # Define target properties for Android with Qt 6 as:
 #    set_property(TARGET hexedit APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR

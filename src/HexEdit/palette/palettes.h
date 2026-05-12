@@ -9,7 +9,7 @@
 #include <QString>
 #include "HexView/hexview.h"
 #include "palettecolourpicker.h"
-#include "togglebuttongroup.h"
+#include "settings/togglebuttongroup.h"
 
 class QDir;
 class HexView;

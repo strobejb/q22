@@ -1,8 +1,8 @@
 #ifndef PREFERENCES_H
 #define PREFERENCES_H
 
-#include "palettes.h"
-#include "paletteswatch.h"
+#include "palette/palettes.h"
+#include "palette/paletteswatch.h"
 #include "settingscard.h"
 #include "slideoverlay.h"
 

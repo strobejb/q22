@@ -1,7 +1,7 @@
 #ifndef DATATYPECOMBOBOX_H
 #define DATATYPECOMBOBOX_H
 
-#include "statusbar.h"
+#include "combos/valuecombobox.h"
 
 class QAction;
 class QActionGroup;

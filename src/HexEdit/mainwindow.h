@@ -4,7 +4,7 @@
 #include <QByteArray>
 #include <QCloseEvent>
 #include <QMainWindow>
-#include "palettes.h"
+#include "palette/palettes.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }

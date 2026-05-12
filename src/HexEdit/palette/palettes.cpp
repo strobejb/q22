@@ -1,7 +1,7 @@
 #include "palettes.h"
-#include "preferences.h"
-#include "screencolorpicker.h"
-#include "settings.h"
+#include "settings/preferences.h"
+#include "settings/screencolorpicker.h"
+#include "settings/settings.h"
 
 #include <algorithm>
 #include <cmath>

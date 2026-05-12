@@ -1,5 +1,5 @@
 #include "theme.h"
-#include "settings.h"
+#include "settings/settings.h"
 #include "chrome/dialog-chrome.h"
 #include <functional>
 #include <QAction>

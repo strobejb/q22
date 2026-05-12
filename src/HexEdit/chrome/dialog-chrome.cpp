@@ -1,6 +1,6 @@
 #include "dialog-chrome.h"
 
-#include "settings.h"
+#include "settings/settings.h"
 #include "shadow-chrome.h"
 #include "titlebar.h"
 

@@ -1,6 +1,6 @@
 #include "gotodialog.h"
 #include "ui_gotodialog.h"
-#include "datatypecombobox.h"
+#include "combos/datatypecombobox.h"
 #include "theme.h"
 #include "HexView/hexview.h"
 #include "HexView/hexviewbookmark.h"

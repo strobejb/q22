@@ -8,8 +8,8 @@
 //
 
 #include "dlgabout.h"
-#include "settingscard.h"
-#include "slideoverlay.h"
+#include "settings/settingscard.h"
+#include "settings/slideoverlay.h"
 #include "theme.h"
 
 #include <QApplication>

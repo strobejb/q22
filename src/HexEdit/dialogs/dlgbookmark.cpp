@@ -1,4 +1,4 @@
-#include "bookmarkdialog.h"
+#include "dlgbookmark.h"
 #include "ui_bookmarks.h"
 #include "bookmarkcolourwidget.h"
 

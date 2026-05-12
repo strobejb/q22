@@ -1,6 +1,6 @@
 #include "finddialog.h"
 #include "ui_finddialog.h"
-#include "datatypecombobox.h"
+#include "combos/datatypecombobox.h"
 #include "theme.h"
 #include "HexView/hexview.h"
 #include <QAction>

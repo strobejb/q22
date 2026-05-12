@@ -57,12 +57,12 @@
   <customwidget>
    <class>AnnotationEdit</class>
    <extends>QPlainTextEdit</extends>
-   <header>bookmarkdialog.h</header>
+   <header>dialogs/dlgbookmark.h</header>
   </customwidget>
   <customwidget>
    <class>BookmarkColourWidget</class>
    <extends>QWidget</extends>
-   <header>bookmarkcolourwidget.h</header>
+   <header>dialogs/bookmarkcolourwidget.h</header>
   </customwidget>
  </customwidgets>
  <resources/>

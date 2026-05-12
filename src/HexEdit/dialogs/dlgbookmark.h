@@ -1,5 +1,5 @@
-//#ifndef BOOKMARKDIALOG_H
-//#define BOOKMARKDIALOG_H
+#ifndef DLGBOOKMARK_H
+#define DLGBOOKMARK_H
 
 #pragma once
 
@@ -122,4 +122,4 @@ private:
     QColor  m_foreground;
 };
 
-//#endif // BOOKMARKDIALOG_H
+#endif // DLGBOOKMARK_H
