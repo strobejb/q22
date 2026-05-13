@@ -19,14 +19,16 @@ set(PROJECT_SOURCES
         chrome/dialog-chrome.cpp
         panels/dockpanelhost.h
         panels/dockpanelhost.cpp
+        panels/dockpanelrow.h
+        panels/dockpanelrow.cpp
         combos/menucombobox.h
         combos/menucombobox.cpp
         combos/statuscomboboxes.h
         combos/statuscomboboxes.cpp
-        panels/gotodialog.cpp
+        panels/gotopanel.cpp
         panels/gotodialog.h
         panels/gotodialog.ui
-        panels/finddialog.cpp
+        panels/findpanel.cpp
         panels/finddialog.h
         panels/finddialog.ui
         settings/focusnavigation.cpp

@@ -1,6 +1,7 @@
 #include "gotodialog.h"
 #include "ui_gotodialog.h"
 #include "combos/datatypecombobox.h"
+#include "panels/dockpanelrow.h"
 #include "theme.h"
 #include "HexView/hexview.h"
 #include "HexView/hexviewbookmark.h"
@@ -30,6 +31,11 @@ GotoDialog::GotoDialog(HexView *hv, QWidget *parent)
     ui->setupUi(this);
     setAttribute(Qt::WA_StyledBackground, true);
     ui->verticalLayout->insertWidget(0, new Hairline(this));
+    m_row = new DockPanelRow(this);
+    m_row->adoptFrom(ui->horizontalLayout);
+    ui->verticalLayout->removeItem(ui->horizontalLayout);
+    delete ui->horizontalLayout;
+    ui->verticalLayout->addWidget(m_row);
     hide();
 
     refreshStylesheet();
@@ -42,8 +48,10 @@ GotoDialog::GotoDialog(HexView *hv, QWidget *parent)
 
     // Scale inner padding with screen DPI: 2 px at 100 %, 3 px at 150 %, 4 px at 200 %.
     const int kPad = qMax(1, qRound(qApp->devicePixelRatio() * 2.0));
+    const int controlHeight = DockPanelRow::inputHeight(ui->editOffset);
     ui->editOffset->setTextMargins(kPad + 2, kPad, kPad + 2, kPad);
-    ui->editOffset->setMinimumHeight(ui->editOffset->minimumSizeHint().height() + 2 * kPad);
+    ui->editOffset->setFixedHeight(controlHeight);
+    m_row->setControlAlignment(ui->editOffset);
 
     ui->editOffset->setValidator(
         new QRegularExpressionValidator(QRegularExpression("[0-9A-Fa-f]*"), ui->editOffset));
@@ -53,8 +61,9 @@ GotoDialog::GotoDialog(HexView *hv, QWidget *parent)
     m_comboBookmarks = new DataTypeComboBox(this);
     for (int i = 0; i < ui->comboBookmarks->count(); ++i)
         m_comboBookmarks->addItem(ui->comboBookmarks->itemText(i));
-    ui->horizontalLayout->replaceWidget(ui->comboBookmarks, m_comboBookmarks);
+    m_row->replaceWidget(ui->comboBookmarks, m_comboBookmarks);
     m_comboBookmarks->setFixedWidth(ui->comboBookmarks->minimumWidth());
+    m_comboBookmarks->setFixedHeight(controlHeight);
     ui->comboBookmarks->hide();
 
     // Keep the search field's font in sync with the bookmark combo.
@@ -136,16 +145,16 @@ void GotoDialog::refreshStylesheet()
         QToolButton:pressed { background: %2; }
         QToolButton::menu-indicator { image: none; width: 0; }
         #editOffset {
-            margin: 1px;
+            margin: 0;
             border: 1px solid %3;
             border-radius: 6px;
-            padding: 0;
+            padding: 1px;
         }
         #editOffset:hover {
-            margin: 1px;
+            margin: 0;
             border: 1px solid %3;
             border-radius: 6px;
-            padding: 0;
+            padding: 1px;
         }
         #editOffset:focus {
             margin: 0;

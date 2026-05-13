@@ -201,6 +201,23 @@ existing layout and separator hairlines.
 - If one panel closes while another remains visible, focus should return to the
   remaining panel's edit field, not its left-most tool button.
 
+### Docked panel popup warnings
+Opening a `QMenu`/custom combo popup from Find/Goto can produce application-output
+warnings like `QWidgetWindow(...) must be a top level window`, naming widgets such
+as `FindDialogWindow` or `DataTypeComboBoxClassWindow`.  The popup still works;
+Qt is complaining that an embedded/native child widget is being considered as the
+popup transient parent even though popups want a top-level transient parent.
+
+Do not remove `setAcceptDrops(true)` from the docked panel subtree to silence this:
+file drops over the panel area are intentional and the warnings are not caused by
+drag/drop.  A targeted mitigation that was considered was a `popupMenu(menu,
+owner, pos)` helper in `theme.cpp` that temporarily parents the menu to
+`owner->window()` before calling `QMenu::popup()`.  That suppresses the warnings
+without changing visible popup behaviour, but it was not kept because it adds a
+helper solely to quiet harmless Qt chatter.  Prefer leaving the direct
+`menu->popup(...)` calls alone unless the warning starts corresponding to an
+actual behaviour bug.
+
 ## Preferences / palette-picker keyboard navigation
 
 The Preferences dialog and palette overlays needed careful focus handling because

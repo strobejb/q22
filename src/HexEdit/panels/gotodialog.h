@@ -5,6 +5,7 @@
 #include <QWidget>
 
 class DataTypeComboBox;
+class DockPanelRow;
 class HexView;
 class QAction;
 namespace Ui { class GotoDialog; }
@@ -40,6 +41,7 @@ private:
     Ui::GotoDialog   *ui;
     HexView          *m_hv;
     bool              m_inRefresh      = false;
+    DockPanelRow     *m_row            = nullptr;
     DataTypeComboBox *m_comboBookmarks  = nullptr;
     QPoint            m_optMenuClosePos { -1, -1 };
     QPoint            m_navMenuClosePos { -1, -1 };

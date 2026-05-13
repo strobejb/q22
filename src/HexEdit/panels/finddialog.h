@@ -6,6 +6,7 @@
 #include <QWidget>
 
 class DataTypeComboBox;
+class DockPanelRow;
 class QAction;
 namespace Ui { class FindDialog; }
 
@@ -62,6 +63,7 @@ private:
     QAction          *m_actRegex       = nullptr;
     QAction          *m_actWholeWord   = nullptr;
     QAction          *m_actWrap        = nullptr;
+    DockPanelRow     *m_row            = nullptr;
     DataTypeComboBox *m_comboDataType  = nullptr;
     QPoint            m_optMenuClosePos { -1, -1 };
     // QPoint         m_navMenuClosePos { -1, -1 };  // used by commented-out btnNavigate

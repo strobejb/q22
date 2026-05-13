@@ -1,6 +1,7 @@
 #include "finddialog.h"
 #include "ui_finddialog.h"
 #include "combos/datatypecombobox.h"
+#include "panels/dockpanelrow.h"
 #include "theme.h"
 #include "HexView/hexview.h"
 #include <QAction>
@@ -116,6 +117,11 @@ FindDialog::FindDialog(QWidget *parent)
     ui->setupUi(this);
     setAttribute(Qt::WA_StyledBackground, true);
     ui->verticalLayout->insertWidget(0, new Hairline(this));
+    m_row = new DockPanelRow(this);
+    m_row->adoptFrom(ui->horizontalLayout);
+    ui->verticalLayout->removeItem(ui->horizontalLayout);
+    delete ui->horizontalLayout;
+    ui->verticalLayout->addWidget(m_row);
     hide();
 
     refreshStylesheet();
@@ -150,8 +156,10 @@ FindDialog::FindDialog(QWidget *parent)
 
     // Scale inner padding with screen DPI: 2 px at 100 %, 3 px at 150 %, 4 px at 200 %.
     const int kPad = qMax(1, qRound(qApp->devicePixelRatio() * 2.0));
+    const int controlHeight = DockPanelRow::inputHeight(ui->editFind);
     ui->editFind->setTextMargins(kPad + 2, kPad, kPad + 2, kPad);
-    ui->editFind->setMinimumHeight(ui->editFind->minimumSizeHint().height() + 2 * kPad);
+    ui->editFind->setFixedHeight(controlHeight);
+    m_row->setControlAlignment(ui->editFind);
 
     // Leading search icon inside the text field.
     {
@@ -173,8 +181,9 @@ FindDialog::FindDialog(QWidget *parent)
     m_comboDataType = new DataTypeComboBox(this);
     for (int i = 0; i < ui->comboDataType->count(); ++i)
         m_comboDataType->addItem(ui->comboDataType->itemText(i));
-    ui->horizontalLayout->replaceWidget(ui->comboDataType, m_comboDataType);
+    m_row->replaceWidget(ui->comboDataType, m_comboDataType);
     m_comboDataType->setFixedWidth(ui->comboDataType->minimumWidth() + 20);
+    m_comboDataType->setFixedHeight(controlHeight);
     ui->comboDataType->hide();
 
     m_comboDataType->buildMenu();
@@ -259,16 +268,16 @@ void FindDialog::refreshStylesheet()
         QToolButton:pressed { background: %2; }
         QToolButton::menu-indicator { image: none; width: 0; }
         #editFind {
-            margin: 1px;
+            margin: 0;
             border: 1px solid %3;
             border-radius: 6px;
-            padding: 0;
+            padding: 1px;
         }
         #editFind:hover {
-            margin: 1px;
+            margin: 0;
             border: 1px solid %3;
             border-radius: 6px;
-            padding: 0;
+            padding: 1px;
         }
         #editFind:focus {
             margin: 0;
@@ -379,9 +388,9 @@ void FindDialog::updateSearchHexPreview()
     }
     const QByteArray pat = buildPattern();
     if (pat.isEmpty()) {
-        const QString border = QApplication::palette().mid().color().name();
+        const QString border = "#c01c28";//QApplication::palette().mid().color().name();
         ui->editFind->setStyleSheet(QString(
-            "color: #c01c28; border: 1px solid #c01c28; border-radius: 6px; margin: 1px;")
+            "color: %1; border: 1px solid %1; border-radius: 6px; margin: 0; padding: 1px;")
             .arg(border));
         emit searchHexChanged(tr("Invalid search pattern"));
     } else {

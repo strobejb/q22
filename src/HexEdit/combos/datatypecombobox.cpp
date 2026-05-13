@@ -113,19 +113,14 @@ void DataTypeComboBox::selectByData(const QVariant &data)
     }
 }
 
-// Scale padding with screen DPI so the combo height stays visually consistent.
-static int kPad() { return qMax(1, qRound(qApp->devicePixelRatio() * 2.0)); }
-
 QSize DataTypeComboBox::sizeHint() const
 {
-    QSize s = ValueComboBox::sizeHint();
-    return { s.width(), s.height() + 2 * kPad() };
+    return ValueComboBox::sizeHint();
 }
 
 QSize DataTypeComboBox::minimumSizeHint() const
 {
-    QSize s = ValueComboBox::minimumSizeHint();
-    return { s.width(), s.height() + 2 * kPad() };
+    return ValueComboBox::minimumSizeHint();
 }
 
 void DataTypeComboBox::paintEvent(QPaintEvent *)
