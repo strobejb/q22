@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>GotoDialog</class>
- <widget class="QWidget" name="GotoDialog">
+ <class>GotoPanel</class>
+ <widget class="QWidget" name="GotoPanel">
   <property name="geometry">
    <rect>
     <x>0</x>
@@ -232,3 +232,4 @@
  <resources/>
  <connections/>
 </ui>
+

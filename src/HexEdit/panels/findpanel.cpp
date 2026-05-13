@@ -1,5 +1,5 @@
-#include "finddialog.h"
-#include "ui_finddialog.h"
+#include "findpanel.h"
+#include "ui_findpanel.h"
 #include "combos/datatypecombobox.h"
 #include "panels/dockpanelrow.h"
 #include "theme.h"
@@ -110,9 +110,9 @@ static QString dumpHex(const QByteArray &ba)
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-FindDialog::FindDialog(QWidget *parent)
+FindPanel::FindPanel(QWidget *parent)
     : QWidget(parent)
-    , ui(new Ui::FindDialog)
+    , ui(new Ui::FindPanel)
 {
     ui->setupUi(this);
     setAttribute(Qt::WA_StyledBackground, true);
@@ -228,11 +228,11 @@ FindDialog::FindDialog(QWidget *parent)
     //             Qt::SingleShotConnection);
     //     navMenu->popup(smartMenuPos(ui->btnNavigate, navMenu));
     // });
-    // connect(actPrev, &QAction::triggered, this, &FindDialog::findPrevious);
-    // connect(actNext, &QAction::triggered, this, &FindDialog::findNext);
+    // connect(actPrev, &QAction::triggered, this, &FindPanel::findPrevious);
+    // connect(actNext, &QAction::triggered, this, &FindPanel::findNext);
 
-    connect(ui->btnFindPrev, &QToolButton::clicked, this, &FindDialog::findPrevious);
-    connect(ui->btnFindNext, &QToolButton::clicked, this, &FindDialog::findNext);
+    connect(ui->btnFindPrev, &QToolButton::clicked, this, &FindPanel::findPrevious);
+    connect(ui->btnFindNext, &QToolButton::clicked, this, &FindPanel::findNext);
 
     connect(ui->editFind, &QLineEdit::returnPressed, this, [this] { triggerSearch(0); });
     m_comboDataType->installEventFilter(this);
@@ -251,7 +251,7 @@ FindDialog::FindDialog(QWidget *parent)
 #endif
 }
 
-void FindDialog::refreshStylesheet()
+void FindPanel::refreshStylesheet()
 {
     const bool dark      = QApplication::palette().window().color().lightness() < 128;
     const QString hover   = dark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.10)";
@@ -288,7 +288,7 @@ void FindDialog::refreshStylesheet()
     )").arg(hover, pressed, borderCol));
 }
 
-void FindDialog::changeEvent(QEvent *e)
+void FindPanel::changeEvent(QEvent *e)
 {
     if (e->type() == QEvent::PaletteChange && !m_inRefresh) {
         m_inRefresh = true;
@@ -299,12 +299,12 @@ void FindDialog::changeEvent(QEvent *e)
     QWidget::changeEvent(e);
 }
 
-FindDialog::~FindDialog()
+FindPanel::~FindPanel()
 {
     delete ui;
 }
 
-void FindDialog::activate(const QString &initialText, int pane)
+void FindPanel::activate(const QString &initialText, int pane)
 {
     if (pane == 0)
         m_comboDataType->selectByData(QVariant::fromValue(SearchHex));
@@ -318,7 +318,7 @@ void FindDialog::activate(const QString &initialText, int pane)
     ui->editFind->selectAll();
 }
 
-bool FindDialog::eventFilter(QObject *o, QEvent *e)
+bool FindPanel::eventFilter(QObject *o, QEvent *e)
 {
     if (o == m_comboDataType && e->type() == QEvent::KeyPress) {
         auto *ke = static_cast<QKeyEvent *>(e);
@@ -331,7 +331,7 @@ bool FindDialog::eventFilter(QObject *o, QEvent *e)
     return QWidget::eventFilter(o, e);
 }
 
-void FindDialog::keyPressEvent(QKeyEvent *e)
+void FindPanel::keyPressEvent(QKeyEvent *e)
 {
     if (e->key() == Qt::Key_Escape) {
         if (ui->editFind->text().isEmpty())
@@ -343,12 +343,12 @@ void FindDialog::keyPressEvent(QKeyEvent *e)
     }
 }
 
-bool    FindDialog::isRegex()     const { return m_actRegex->isChecked(); }
-bool    FindDialog::isWholeWord() const { return m_actWholeWord->isChecked(); }
-bool    FindDialog::isWrapAround() const { return m_actWrap->isChecked(); }
-QString FindDialog::dataType()    const { return m_comboDataType->selectionText(); }
+bool    FindPanel::isRegex()     const { return m_actRegex->isChecked(); }
+bool    FindPanel::isWholeWord() const { return m_actWholeWord->isChecked(); }
+bool    FindPanel::isWrapAround() const { return m_actWrap->isChecked(); }
+QString FindPanel::dataType()    const { return m_comboDataType->selectionText(); }
 
-QByteArray FindDialog::buildPattern() const
+QByteArray FindPanel::buildPattern() const
 {
     const QString text = ui->editFind->text();
     if (text.isEmpty())
@@ -371,14 +371,14 @@ QByteArray FindDialog::buildPattern() const
     return {};
 }
 
-void FindDialog::triggerSearch(uint flags)
+void FindPanel::triggerSearch(uint flags)
 {
     QByteArray pat = buildPattern();
     if (!pat.isEmpty())
         emit searchRequested(pat, flags);
 }
 
-void FindDialog::updateSearchHexPreview()
+void FindPanel::updateSearchHexPreview()
 {
     const QString text = ui->editFind->text();
     if (text.isEmpty()) {
@@ -399,10 +399,11 @@ void FindDialog::updateSearchHexPreview()
     }
 }
 
-void FindDialog::hideEvent(QHideEvent *e)
+void FindPanel::hideEvent(QHideEvent *e)
 {
     ui->editFind->setStyleSheet({});
     emit searchHexChanged({});
     QWidget::hideEvent(e);
 }
+
 

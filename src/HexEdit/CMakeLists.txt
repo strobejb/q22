@@ -26,11 +26,11 @@ set(PROJECT_SOURCES
         combos/statuscomboboxes.h
         combos/statuscomboboxes.cpp
         panels/gotopanel.cpp
-        panels/gotodialog.h
-        panels/gotodialog.ui
+        panels/gotopanel.h
+        panels/gotopanel.ui
         panels/findpanel.cpp
-        panels/finddialog.h
-        panels/finddialog.ui
+        panels/findpanel.h
+        panels/findpanel.ui
         settings/focusnavigation.cpp
         settings/focusnavigation.h
         palette/palettes.cpp
@@ -85,8 +85,8 @@ set(PROJECT_FORMS
         dialogs/bookmarks.ui
         dialogs/copyas.ui
         dialogs/pastespecial.ui
-        panels/finddialog.ui
-        panels/gotodialog.ui
+        panels/findpanel.ui
+        panels/gotopanel.ui
         settings/preferences.ui
 )
 list(TRANSFORM PROJECT_FORMS PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/"

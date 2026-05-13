@@ -16,8 +16,8 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include "theme.h"
-#include "panels/finddialog.h"
-#include "panels/gotodialog.h"
+#include "panels/findpanel.h"
+#include "panels/gotopanel.h"
 #include "titlebar.h"
 
 #include <QApplication>
@@ -181,7 +181,7 @@ void MainWindow::updateWinChromeColors()
     ui->statusbar->setPalette(sbPal);
     ui->statusbar->setStyleSheet(QString());
 
-    // FindDialog and GotoDialog use WA_StyledBackground — updating their
+    // FindPanel and GotoPanel use WA_StyledBackground — updating their
     // Window palette role is enough to repaint without touching their stylesheets.
     QPalette p;
     p.setColor(QPalette::Window, bg);

@@ -10,8 +10,8 @@
 #include "dialogs/dlgimport.h"
 #include "dialogs/dlgpastespecial.h"
 #include "panels/dockpanelhost.h"
-#include "panels/finddialog.h"
-#include "panels/gotodialog.h"
+#include "panels/findpanel.h"
+#include "panels/gotopanel.h"
 #include "combos/menucombobox.h"
 #include "palette/palettes.h"
 #include "settings/preferences.h"
@@ -559,7 +559,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_hv->setGrouping(2);
     m_hv->setPadding(3, 3);
     setAcceptDrops(true);
-    // Container: HexView fills available space; FindDialog sits flush above
+    // Container: HexView fills available space; FindPanel sits flush above
     // the status bar, hidden until activated.
     auto *central = new QWidget(this);
     central->setAcceptDrops(true);
@@ -581,13 +581,13 @@ MainWindow::MainWindow(QWidget *parent)
     auto *dockPanelHost = new DockPanelHost(m_hv, central);
     dockPanelHost->setCursor(Qt::ArrowCursor);
     dockPanelHost->setAcceptDrops(true);
-    m_findDialog = new FindDialog(dockPanelHost);
-    m_findDialog->setObjectName("FindDialog");
+    m_findDialog = new FindPanel(dockPanelHost);
+    m_findDialog->setObjectName("FindPanel");
     m_findDialog->setCursor(Qt::ArrowCursor);
     m_findDialog->setAcceptDrops(true);
     m_findDialog->setWindowFlags(Qt::Widget); // embedded panel — no native QWidgetWindow
-    m_gotoDialog = new GotoDialog(m_hv, dockPanelHost);
-    m_gotoDialog->setObjectName("GotoDialog");
+    m_gotoDialog = new GotoPanel(m_hv, dockPanelHost);
+    m_gotoDialog->setObjectName("GotoPanel");
     m_gotoDialog->setCursor(Qt::ArrowCursor);
     m_gotoDialog->setAcceptDrops(true);
     m_gotoDialog->setWindowFlags(Qt::Widget); // embedded panel — no native QWidgetWindow
@@ -759,11 +759,11 @@ MainWindow::MainWindow(QWidget *parent)
         }
     });
 
-    connect(m_gotoDialog, &GotoDialog::bookmarkRequested,
+    connect(m_gotoDialog, &GotoPanel::bookmarkRequested,
             ui->actionBookmark_here, &QAction::trigger);
 
     connect(m_hv, &HexView::bookmarksChanged,
-            m_gotoDialog, &GotoDialog::refreshBookmarks);
+            m_gotoDialog, &GotoPanel::refreshBookmarks);
 
     connect(m_hv, &HexView::paneFocusRequested, this, [this]() {
         if (m_findDialog->isVisible())
@@ -788,7 +788,7 @@ MainWindow::MainWindow(QWidget *parent)
             m_gotoDialog->activate();
     });
 
-    connect(m_findDialog, &FindDialog::searchRequested, this,
+    connect(m_findDialog, &FindPanel::searchRequested, this,
             [this](const QByteArray &pattern, uint flags) {
                 m_hv->findInit(reinterpret_cast<const uint8_t *>(pattern.constData()),
                                (size_t)pattern.size());
@@ -797,8 +797,8 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(ui->actionFind_Next,          &QAction::triggered,  this, [this] { runFind(true);  });
     connect(ui->actionFind_Previous,      &QAction::triggered,  this, [this] { runFind(false); });
-    connect(m_findDialog, &FindDialog::findNext,     this, [this] { runFind(true);  });
-    connect(m_findDialog, &FindDialog::findPrevious, this, [this] { runFind(false); });
+    connect(m_findDialog, &FindPanel::findNext,     this, [this] { runFind(true);  });
+    connect(m_findDialog, &FindPanel::findPrevious, this, [this] { runFind(false); });
 
     connect(m_hv, &HexView::findProgress, m_statusBar, &StatusBar::onFindProgress);
 #ifdef Q_OS_WIN
@@ -807,7 +807,7 @@ MainWindow::MainWindow(QWidget *parent)
             m_hv->cancelFind();
     });
 #endif
-    connect(m_findDialog, &FindDialog::searchHexChanged, m_statusBar, &StatusBar::showSearchHex);
+    connect(m_findDialog, &FindPanel::searchHexChanged, m_statusBar, &StatusBar::showSearchHex);
 
     connect(ui->actionExit, &QAction::triggered, this, &MainWindow::close);
 

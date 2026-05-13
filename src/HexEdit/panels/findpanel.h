@@ -1,5 +1,5 @@
-#ifndef FINDDIALOG_H
-#define FINDDIALOG_H
+#ifndef FINDPANEL_H
+#define FINDPANEL_H
 
 #include <QByteArray>
 #include <QPoint>
@@ -8,7 +8,7 @@
 class DataTypeComboBox;
 class DockPanelRow;
 class QAction;
-namespace Ui { class FindDialog; }
+namespace Ui { class FindPanel; }
 
 enum SearchDataType {
     SearchHex,
@@ -20,12 +20,12 @@ enum SearchDataType {
     SearchDword,
 };
 
-class FindDialog : public QWidget
+class FindPanel : public QWidget
 {
     Q_OBJECT
 public:
-    explicit FindDialog(QWidget *parent = nullptr);
-    ~FindDialog();
+    explicit FindPanel(QWidget *parent = nullptr);
+    ~FindPanel();
 
     // Show the bar and give focus to the search field.
     // Pass initialText to pre-fill (e.g. from a selection).
@@ -58,7 +58,7 @@ private:
     void       triggerSearch(uint flags);
     void       updateSearchHexPreview();
 
-    Ui::FindDialog   *ui;
+    Ui::FindPanel   *ui;
     bool              m_inRefresh      = false;
     QAction          *m_actRegex       = nullptr;
     QAction          *m_actWholeWord   = nullptr;
@@ -70,4 +70,5 @@ private:
     SearchDataType    m_lastTextType   = SearchUTF8; // remembered across pane-1 activations
 };
 
-#endif // FINDDIALOG_H
+#endif // FINDPANEL_H
+

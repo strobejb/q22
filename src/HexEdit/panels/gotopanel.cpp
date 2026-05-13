@@ -1,5 +1,5 @@
-#include "gotodialog.h"
-#include "ui_gotodialog.h"
+#include "gotopanel.h"
+#include "ui_gotopanel.h"
 #include "combos/datatypecombobox.h"
 #include "panels/dockpanelrow.h"
 #include "theme.h"
@@ -23,9 +23,9 @@
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-GotoDialog::GotoDialog(HexView *hv, QWidget *parent)
+GotoPanel::GotoPanel(HexView *hv, QWidget *parent)
     : QWidget(parent)
-    , ui(new Ui::GotoDialog)
+    , ui(new Ui::GotoPanel)
     , m_hv(hv)
 {
     ui->setupUi(this);
@@ -128,7 +128,7 @@ GotoDialog::GotoDialog(HexView *hv, QWidget *parent)
 #endif
 }
 
-void GotoDialog::refreshStylesheet()
+void GotoPanel::refreshStylesheet()
 {
     const bool dark       = QApplication::palette().window().color().lightness() < 128;
     const QString hover   = dark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.10)";
@@ -165,7 +165,7 @@ void GotoDialog::refreshStylesheet()
     )").arg(hover, pressed, borderCol));
 }
 
-void GotoDialog::changeEvent(QEvent *e)
+void GotoPanel::changeEvent(QEvent *e)
 {
     if (e->type() == QEvent::PaletteChange && !m_inRefresh) {
         m_inRefresh = true;
@@ -176,12 +176,12 @@ void GotoDialog::changeEvent(QEvent *e)
     QWidget::changeEvent(e);
 }
 
-GotoDialog::~GotoDialog()
+GotoPanel::~GotoPanel()
 {
     delete ui;
 }
 
-void GotoDialog::activate(const QString &initialText)
+void GotoPanel::activate(const QString &initialText)
 {
     refreshBookmarks();
     if (!initialText.isEmpty())
@@ -191,7 +191,7 @@ void GotoDialog::activate(const QString &initialText)
     ui->editOffset->selectAll();
 }
 
-void GotoDialog::refreshBookmarks()
+void GotoPanel::refreshBookmarks()
 {
     const QList<Bookmark> &bms = m_hv->bookmarks();
 
@@ -220,7 +220,7 @@ void GotoDialog::refreshBookmarks()
     m_comboBookmarks->setEnabled(true);   // always enabled; "New Bookmark..." is always present
 }
 
-void GotoDialog::keyPressEvent(QKeyEvent *e)
+void GotoPanel::keyPressEvent(QKeyEvent *e)
 {
     if (e->key() == Qt::Key_Escape) {
         if (ui->editOffset->text().isEmpty())
@@ -233,17 +233,17 @@ void GotoDialog::keyPressEvent(QKeyEvent *e)
 }
 
 
-void GotoDialog::hideEvent(QHideEvent *e)
+void GotoPanel::hideEvent(QHideEvent *e)
 {
     //emit searchHexChanged({});
     QWidget::hideEvent(e);
 }
 
-void GotoDialog::updateSearchHexPreview()
+void GotoPanel::updateSearchHexPreview()
 {
 }
 
-void GotoDialog::triggerSearch(uint /*flags*/)
+void GotoPanel::triggerSearch(uint /*flags*/)
 {
     const QString text = ui->editOffset->text().trimmed();
     if (text.isEmpty())
@@ -259,4 +259,5 @@ void GotoDialog::triggerSearch(uint /*flags*/)
         m_hv->setFocus();
     }
 }
+
 

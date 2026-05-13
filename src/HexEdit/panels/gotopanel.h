@@ -1,5 +1,5 @@
-#ifndef GOTODIALOG_H
-#define GOTODIALOG_H
+#ifndef GOTOPANEL_H
+#define GOTOPANEL_H
 
 #include <QPoint>
 #include <QWidget>
@@ -8,14 +8,14 @@ class DataTypeComboBox;
 class DockPanelRow;
 class HexView;
 class QAction;
-namespace Ui { class GotoDialog; }
+namespace Ui { class GotoPanel; }
 
-class GotoDialog : public QWidget
+class GotoPanel : public QWidget
 {
     Q_OBJECT
 public:
-    explicit GotoDialog(HexView *hv, QWidget *parent = nullptr);
-    ~GotoDialog();
+    explicit GotoPanel(HexView *hv, QWidget *parent = nullptr);
+    ~GotoPanel();
 
     // Show the bar and give focus to the search field.
     // Pass initialText to pre-fill (e.g. from a selection).
@@ -38,7 +38,7 @@ private:
     void       triggerSearch(uint flags);
     void       updateSearchHexPreview();
 
-    Ui::GotoDialog   *ui;
+    Ui::GotoPanel   *ui;
     HexView          *m_hv;
     bool              m_inRefresh      = false;
     DockPanelRow     *m_row            = nullptr;
@@ -47,4 +47,5 @@ private:
     QPoint            m_navMenuClosePos { -1, -1 };
 };
 
-#endif // GOTODIALOG_H
+#endif // GOTOPANEL_H
+

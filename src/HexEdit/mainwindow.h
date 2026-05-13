@@ -11,8 +11,8 @@ namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
 
 class BookmarkDialog;
-class FindDialog;
-class GotoDialog;
+class FindPanel;
+class GotoPanel;
 class PreferencesDialog;
 class HexView;
 class Hairline;
@@ -68,8 +68,8 @@ private:
     QFileSystemWatcher *m_paletteWatcher = nullptr;
     QTimer             *m_paletteReloadTimer = nullptr;
     BookmarkDialog    *m_bookmarkDialog = nullptr;
-    FindDialog        *m_findDialog     = nullptr;
-    GotoDialog        *m_gotoDialog     = nullptr;
+    FindPanel         *m_findDialog     = nullptr;
+    GotoPanel         *m_gotoDialog     = nullptr;
     PreferencesDialog *m_prefsDialog    = nullptr;
     bool            m_useCustomTitleBar = true;
     bool            m_inResizeZone      = false;
