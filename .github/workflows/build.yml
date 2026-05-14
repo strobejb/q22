@@ -44,7 +44,7 @@ jobs:
             --output appimage \
             --desktop-file src/HexEdit/resources/hexedit.desktop \
             --icon-file src/HexEdit/resources/hexedit.png
-          mv hexedit-x86_64.AppImage hexedit-linux-x86_64.AppImage
+          mv *-x86_64.AppImage hexedit-linux-x86_64.AppImage
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
