@@ -329,7 +329,8 @@ void HexView::mousePressEvent(QMouseEvent *event)
 
     if (inrange(m_nCursorOffset, m_nSelectionStart, m_nSelectionEnd)) {
         // Click inside selection — potential drag-drop start
-        m_fStartDrag = true;
+        m_fStartDrag   = true;
+        m_dragStartPos = event->pos();
     } else {
         m_nSelectionMode = SEL_NORMAL;
 
@@ -387,9 +388,14 @@ void HexView::mouseMoveEvent(QMouseEvent *event)
 
     size_w offset = offsetFromPhysCoord(mx, my, &pane, &x, &y);
 
-    // Drag-drop start (not fully implemented — just cancel the drag)
     if (m_fStartDrag) {
+        if ((event->pos() - m_dragStartPos).manhattanLength() <
+            QApplication::startDragDistance())
+            return;
+
         m_fStartDrag = false;
+        if (checkStyle(HVS_ENABLEDRAGDROP))
+            startDrag();
         return;
     }
 

@@ -151,6 +151,11 @@ struct HexSnapshot {
 
 class QPlainTextEdit;
 class QPalette;
+class QDragEnterEvent;
+class QDragLeaveEvent;
+class QDragMoveEvent;
+class QDropEvent;
+class QMimeData;
 
 // ── HexView widget ────────────────────────────────────────────────────────────
 //class HexView : public QWidget
@@ -280,6 +285,11 @@ protected:
     void mouseDoubleClickEvent(QMouseEvent *event) override;
     void wheelEvent(QWheelEvent *event)        override;
     void contextMenuEvent(QContextMenuEvent *event) override;
+    bool viewportEvent(QEvent *event) override;
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dragMoveEvent(QDragMoveEvent *event) override;
+    void dragLeaveEvent(QDragLeaveEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
 
 private slots:
     void onScrollTimer();
@@ -379,7 +389,14 @@ private:
     bool   onCut();
     bool   onPaste();
     bool   onClear();
+    bool   startDrag();
+    bool   canDropMimeData(const QMimeData *mime) const;
+    bool   dropMimeData(const QMimeData *mime, Qt::DropAction action);
+    void   updateDropCaret(const QPoint &pos);
+    void   endDragDropMode();
+    HexSnapshot *createSnapshot(size_w start, size_w len) const;
     HexSnapshot *m_lastSnapshot = nullptr;  // kept alive while our data is on the clipboard
+    HexSnapshot *m_dragSnapshot = nullptr;  // kept alive only while QDrag::exec() is running
 
     // ── State ─────────────────────────────────────────────────────────────────
     QMenu      *m_contextMenu   = nullptr;  // nullptr → use built-in menu
@@ -454,6 +471,7 @@ private:
     bool    m_fResizeBar        = false;
     bool    m_fResizeAddr       = false;
     bool    m_fStartDrag        = false;
+    QPoint  m_dragStartPos;
     uint    m_HitTestCurrent    = 0;
     uint    m_HitTestHot        = 0;
 

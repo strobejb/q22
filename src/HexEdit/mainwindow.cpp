@@ -552,8 +552,8 @@ MainWindow::MainWindow(QWidget *parent)
     m_hv = new HexView(this);
     m_hv->setObjectName("HexView");
     m_hv->setFrameShape(QFrame::NoFrame);
-    m_hv->setStyle(HVS_RESIZEBAR | HVS_SHOWMODS| HVS_INVERTSELECTION,
-                   HVS_RESIZEBAR | HVS_SHOWMODS );
+    m_hv->setStyle(HVS_RESIZEBAR | HVS_SHOWMODS | HVS_INVERTSELECTION | HVS_ENABLEDRAGDROP,
+                   HVS_RESIZEBAR | HVS_SHOWMODS | HVS_ENABLEDRAGDROP);
     m_hv->setHexColour(HVC_HEXEVEN, QColor(0, 0, 255));
     m_hv->setHexColour(HVC_HEXODD,  QColor(0, 0, 128));
     m_hv->setGrouping(2);
@@ -1363,8 +1363,10 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
     if (type == QEvent::DragEnter || type == QEvent::DragMove) {
         auto *de = static_cast<QDragMoveEvent *>(event);
         const QPoint windowPos = mapFromGlobal(w->mapToGlobal(de->position().toPoint()));
-        if (!isDropOnHexView(windowPos)
-                && !localFileFromMimeData(de->mimeData()).isEmpty()) {
+        if (isDropOnHexView(windowPos))
+            return false;
+
+        if (!localFileFromMimeData(de->mimeData()).isEmpty()) {
             de->acceptProposedAction();
             return true;
         }
@@ -1376,7 +1378,10 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
         auto *de = static_cast<QDropEvent *>(event);
         const QPoint windowPos = mapFromGlobal(w->mapToGlobal(de->position().toPoint()));
         const QString path = localFileFromMimeData(de->mimeData());
-        if (!isDropOnHexView(windowPos) && !path.isEmpty()) {
+        if (isDropOnHexView(windowPos))
+            return false;
+
+        if (!path.isEmpty()) {
             de->acceptProposedAction();
             if (maybeSave())
                 openFile(path);

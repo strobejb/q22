@@ -31,7 +31,9 @@ HexView::HexView(QWidget *parent)
 
 
     setFocusPolicy(Qt::StrongFocus);
+    setAcceptDrops(true);
     viewport()->setAttribute(Qt::WA_OpaquePaintEvent);
+    viewport()->setAcceptDrops(true);
     viewport()->setMouseTracking(true);
 
     // Wire the QAbstractScrollArea scrollbars to the internal scroll positions.
@@ -71,6 +73,7 @@ HexView::~HexView()
 {
     delete m_pDataSeq;
     delete m_lastSnapshot;
+    delete m_dragSnapshot;
 }
 
 bool HexView::eventFilter(QObject *obj, QEvent *ev)
