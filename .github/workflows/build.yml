@@ -37,13 +37,14 @@ jobs:
           mkdir -p AppDir/usr/bin
           cp build/hexedit AppDir/usr/bin/
           QMAKE="$QT_ROOT_DIR/bin/qmake" \
+          OUTPUT=hexedit-x86_64.AppImage \
           ./linuxdeploy-x86_64.AppImage \
             --appdir AppDir \
             --plugin qt \
             --output appimage \
             --desktop-file src/HexEdit/resources/hexedit.desktop \
             --icon-file src/HexEdit/resources/hexedit.png
-          mv hexedit-*.AppImage hexedit-linux-x86_64.AppImage
+          mv hexedit-x86_64.AppImage hexedit-linux-x86_64.AppImage
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
