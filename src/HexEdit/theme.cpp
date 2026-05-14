@@ -1302,7 +1302,6 @@ private:
 #endif
 };
 
-#ifndef Q_OS_WIN
 // Applies the same transparent-background + shadow-overlay treatment as
 // themeMenu() to any QMenu that Qt creates internally (e.g. right-click
 // context menus in editable widgets) so they don't show the QSS margin: 8px
@@ -1316,19 +1315,22 @@ public:
         if (e->type() == QEvent::Polish) {
             if (QMenu *menu = qobject_cast<QMenu *>(obj)) {
                 if (!menu->testAttribute(Qt::WA_TranslucentBackground)) {
+#ifdef Q_OS_WIN
+                    themeMenu(menu);
+#else
                     menu->setWindowFlags(menu->windowFlags() | Qt::FramelessWindowHint);
                     menu->setAttribute(Qt::WA_TranslucentBackground);
                     menu->setStyle(tightMenuStyle());
                     auto *overlay = new MenuShadowOverlay(menu);
                     overlay->show();
                     overlay->raise();
+#endif
                 }
             }
         }
         return false;
     }
 };
-#endif
 
 #ifndef Q_OS_WIN
 // Reads the system UI font from whichever desktop environment is active.
@@ -1444,9 +1446,8 @@ void applyAdwaitaTheme(ColorScheme scheme)
         qApp->installEventFilter(new TooltipFilter(qApp));
 #ifdef Q_OS_WIN
         installDarkModeFilter();
-#else
-        qApp->installEventFilter(new NativeMenuFilter(qApp));
 #endif
+        qApp->installEventFilter(new NativeMenuFilter(qApp));
     }
 
 #ifdef Q_OS_WIN
