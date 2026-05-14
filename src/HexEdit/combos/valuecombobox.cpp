@@ -86,6 +86,9 @@ void ValueComboBox::popupRight(QMenu *menu)
 
     m_popupOpen = true;
     m_hovered = true;
+    setProperty("popupOpen", true);
+    style()->unpolish(this);
+    style()->polish(this);
     update();
 
     connect(menu, &QMenu::aboutToHide, this, [this]() {
@@ -95,7 +98,10 @@ void ValueComboBox::popupRight(QMenu *menu)
         QComboBox::hidePopup();
         m_popupOpen = false;
         m_closePos = QCursor::pos();
-        m_hovered = underMouse();
+        m_hovered = rect().contains(mapFromGlobal(m_closePos));
+        setProperty("popupOpen", false);
+        style()->unpolish(this);
+        style()->polish(this);
         update();
     }, Qt::SingleShotConnection);
 

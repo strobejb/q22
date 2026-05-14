@@ -55,6 +55,7 @@ public:
 
 private:
     void       refreshStylesheet();
+    void       refreshSearchIcon();
     void       triggerSearch(uint flags);
     void       updateSearchHexPreview();
 

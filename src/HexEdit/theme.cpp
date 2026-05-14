@@ -593,18 +593,15 @@ static QString buildStylesheet(bool dark)
 
     const QColor btn  = pal.button().color();
     const bool darkBtn = btn.lightness() < 128;
-    const QString fgDisabled      = pal.color(QPalette::Disabled, QPalette::WindowText).name();
-    const QString btnHover        = (darkBtn ? btn.lighter(118) : btn.darker(103)).name();
-    const QString btnActive       = (darkBtn ? btn.lighter(133) : btn.darker(106)).name();
+    const QString fgDisabled       = pal.color(QPalette::Disabled, QPalette::WindowText).name();
+    const QString btnHover         = (darkBtn ? btn.lighter(118) : btn.darker(103)).name();
+    const QString btnActive        = (darkBtn ? btn.lighter(133) : btn.darker(106)).name();
     const bool    menuUseHighlight = AppSettings::prefMenuHighlight();
-    const QString menuSelBg       = menuUseHighlight ? "palette(highlight)"  : btnHover;
-    const QString menuSelFg       = menuUseHighlight ? "palette(highlighted-text)" : "palette(window-text)";
-
-    const QColor  windowColor       = pal.window().color();
-    const QString statusComboHover = (windowColor.lightness() < 128)
-                                     ? windowColor.lighter(130).name()
-                                     : windowColor.darker(107).name();
-
+    const QString menuSelBg        = menuUseHighlight ? "palette(highlight)"  : btnHover;
+    const QString menuSelFg        = menuUseHighlight ? "palette(highlighted-text)" : "palette(window-text)";
+    const QColor  windowColor      = pal.window().color();
+    const QString statusComboHover = (darkBtn ? windowColor.lighter(130) : windowColor.darker(107)).name();
+    const QString statusComboOpen  = (darkBtn ? windowColor.lighter(155) : windowColor.darker(115)).name();
     // min-height sets the *content area* minimum; padding (5px top+bottom) and
     // border (1px each) are added on top, giving total = font + 12 — matching
     // QLineEdit's sizeHint.  QAbstractSpinBox ignores QSS padding for its own
@@ -769,12 +766,18 @@ QComboBox {
     selection-color: palette(highlighted-text);
 }
 QComboBox:hover            { border: 1px solid palette(mid); padding: 4px 9px; margin: 0px; background: palette(window); }
-QComboBox:focus            { border: 2px solid palette(highlight); padding: 3px 8px; margin: 0px; }
+QComboBox:focus            { border: 2px solid palette(highlight); padding: 3px 8px; margin: 0px; background: palette(base); }
 QComboBox:open             { background: palette(button); }
+/* QMenu-backed combos set popupOpen manually.  The explicit false state forces
+   QStyleSheetStyle to repaint the closed background after click-away close. */
+QComboBox[popupOpen="false"] { background: palette(base); }
+QComboBox[popupOpen="false"]:hover { background: palette(window); }
+QComboBox[popupOpen="false"]:focus,
+QComboBox[popupOpen="false"]:hover:focus { background: palette(window); }
 QComboBox[popupOpen="true"],
 QComboBox[popupOpen="true"]:hover,
 QComboBox[popupOpen="true"]:focus,
-QComboBox[popupOpen="true"]:hover:focus { background: palette(button); }
+QComboBox[popupOpen="true"]:hover:focus { background: {statusComboOpen};  }
 QComboBox:disabled { background: palette(window); color: palette(mid); border-color: palette(mid); }
 QComboBox QLineEdit { border: none; background: transparent; padding: 0; }
 QComboBox QLineEdit:focus { border: none; }
@@ -818,8 +821,22 @@ QStatusBar QComboBox {
     border-radius: 4px;
     margin: 0px;
 }
-QStatusBar QComboBox:hover { background: palette(button); border: 1px solid palette(mid); margin: 0px; }
-QStatusBar QComboBox:focus { background: palette(button); border: 1px solid palette(mid); margin: 0px; }
+QStatusBar QComboBox:hover { background: {statusComboHover}; border: 1px solid palette(mid); margin: 0px; }
+QStatusBar QComboBox:focus { background: palette(window); border: 1px solid palette(mid); margin: 0px; }
+QStatusBar QComboBox:open,
+QStatusBar QComboBox:open:hover,
+QStatusBar QComboBox:open:focus,
+QStatusBar QComboBox:open:hover:focus { background: {statusComboOpen}; border: 1px solid palette(mid); margin: 0px; }
+/* See the general popupOpen=false rule above.  Closed status-bar combos also
+   need the transparent border restored when the cursor has left the control. */
+QStatusBar QComboBox[popupOpen="false"] { background: palette(window); border: 1px solid transparent; margin: 0px; }
+QStatusBar QComboBox[popupOpen="false"]:hover { background: {statusComboHover}; border: 1px solid palette(mid); margin: 0px; }
+QStatusBar QComboBox[popupOpen="false"]:focus,
+QStatusBar QComboBox[popupOpen="false"]:hover:focus { background: palette(window); border: 1px solid palette(mid); margin: 0px; }
+QStatusBar QComboBox[popupOpen="true"],
+QStatusBar QComboBox[popupOpen="true"]:hover,
+QStatusBar QComboBox[popupOpen="true"]:focus,
+QStatusBar QComboBox[popupOpen="true"]:hover:focus { background: {statusComboOpen}; border: 1px solid palette(mid); margin: 0px; }
 
 /* ── Misc ────────────────────────────────────────────────────── */
 QAbstractScrollArea { border: none; }
@@ -832,21 +849,16 @@ QToolTip {
 }
 
 /* ── QFileDialog ─────────────────────────────────────────────── */
-/* The QDialogButtonBox spans both the filename-edit row and the
-   filetype-combo row vertically, with Open/Save at the top and Cancel
-   at the bottom.  For each button to align with its row, all three
-   widget types must be the same height (font + 12px).
-     QLineEdit global:  padding 6px + border 1px = font+14  -> lower padding
-     QComboBox global:  padding 4px + border 1px = font+10  -> raise padding
-     QPushButton global: padding 5px + border 1px + min-width 80px = font+12  -> override min-width */
-/* QFileDialog owns ordinary private QComboBox controls. Keep their focused
-   padding 1 px smaller too; otherwise the 2 px focus border shifts the text. */
+/* QFileDialog owns ordinary private controls. Keep the edit and combo padding
+   equal here; installThemedFileDialogComboPopups() then syncs the two-row
+   button box to the resulting styled input height. Focus padding is 1 px
+   smaller so the 2 px focus border does not shift the text. */
 QFileDialog QLineEdit         { padding: 5px 8px; margin: 0; }
 QFileDialog QLineEdit:hover   { padding: 5px 8px; margin: 0; }
 QFileDialog QLineEdit:focus   { padding: 4px 7px; margin: 0; }
 QFileDialog QComboBox         { padding: 5px 8px; margin: 0; }
 QFileDialog QComboBox:hover   { padding: 5px 8px; margin: 0; }
-QFileDialog QComboBox:focus   { padding: 4px 7px; margin: 0; }
+QFileDialog QComboBox:focus   { padding: 4px 7px; margin: 0; background: palette(base); }
 QFileDialog QListView,
 QFileDialog QTreeView {
     border: 1px solid palette(mid);
@@ -868,6 +880,7 @@ QFileDialog QTreeView::item {
     ss.replace("{menuSelBg}",        menuSelBg);
     ss.replace("{menuSelFg}",        menuSelFg);
     ss.replace("{statusComboHover}", statusComboHover);
+    ss.replace("{statusComboOpen}",  statusComboOpen);
 #ifdef Q_OS_WIN
     ss.replace("{menuMargin}",  QString());
     ss.replace("{tooltipPad}",  "1px 6px");

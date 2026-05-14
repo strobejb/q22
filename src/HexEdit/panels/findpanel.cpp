@@ -288,6 +288,11 @@ void FindPanel::refreshStylesheet()
     )").arg(hover, pressed, borderCol));
 }
 
+void FindPanel::refreshSearchIcon()
+{
+    recolorToolButtons(ui->editFind);
+}
+
 void FindPanel::changeEvent(QEvent *e)
 {
     if (e->type() == QEvent::PaletteChange && !m_inRefresh) {
@@ -383,18 +388,22 @@ void FindPanel::updateSearchHexPreview()
     const QString text = ui->editFind->text();
     if (text.isEmpty()) {
         ui->editFind->setStyleSheet({});
+        refreshSearchIcon();
         emit searchHexChanged({});
         return;
     }
     const QByteArray pat = buildPattern();
     if (pat.isEmpty()) {
-        const QString border = "#c01c28";//QApplication::palette().mid().color().name();
+        const bool dark      = QApplication::palette().window().color().lightness() < 128;
+        const QString border = dark ? "#FF3F49" : "#c01c28";//QApplication::palette().mid().color().name();
         ui->editFind->setStyleSheet(QString(
             "color: %1; border: 1px solid %1; border-radius: 6px; margin: 0; padding: 1px;")
             .arg(border));
+        refreshSearchIcon();
         emit searchHexChanged(tr("Invalid search pattern"));
     } else {
         ui->editFind->setStyleSheet({});
+        refreshSearchIcon();
         emit searchHexChanged(dumpHex(pat));
     }
 }
@@ -402,8 +411,8 @@ void FindPanel::updateSearchHexPreview()
 void FindPanel::hideEvent(QHideEvent *e)
 {
     ui->editFind->setStyleSheet({});
+    refreshSearchIcon();
     emit searchHexChanged({});
     QWidget::hideEvent(e);
 }
-
 

@@ -1,9 +1,12 @@
 #include "menucombobox.h"
 #include "theme.h"
 #include <QAction>
+#include <QAbstractButton>
 #include <QApplication>
 #include <QCursor>
+#include <QDialogButtonBox>
 #include <QFileDialog>
+#include <QGridLayout>
 #include <QLayout>
 #include <QKeyEvent>
 #include <QMouseEvent>
@@ -11,6 +14,7 @@
 #include <QSizeGrip>
 #include <QStyleOptionComboBox>
 #include <QStylePainter>
+#include <QTimer>
 
 static int kPad() { return qMax(1, qRound(qApp->devicePixelRatio() * 2.0)); }
 
@@ -121,6 +125,56 @@ private:
         menu->popup(smartMenuPos(combo, menu, false));
     }
 };
+
+static int fileDialogInputHeight(QFileDialog *dialog)
+{
+    int height = 0;
+    if (auto *edit = dialog->findChild<QWidget *>(QStringLiteral("fileNameEdit")))
+        height = qMax(height, edit->sizeHint().height());
+    if (auto *combo = dialog->findChild<QWidget *>(QStringLiteral("fileTypeCombo")))
+        height = qMax(height, combo->sizeHint().height());
+    return height;
+}
+
+static int fileDialogRowSpacing(QFileDialog *dialog)
+{
+    if (auto *grid = qobject_cast<QGridLayout *>(dialog->layout()))
+        return grid->verticalSpacing();
+    if (QLayout *layout = dialog->layout())
+        return layout->spacing();
+    return -1;
+}
+
+static void alignFileDialogButtons(QFileDialog *dialog)
+{
+    if (!dialog)
+        return;
+
+    dialog->ensurePolished();
+    if (QLayout *layout = dialog->layout())
+        layout->activate();
+
+    const int height = fileDialogInputHeight(dialog);
+    if (height <= 0)
+        return;
+
+    const int rowSpacing = fileDialogRowSpacing(dialog);
+    for (auto *box : dialog->findChildren<QDialogButtonBox *>()) {
+        box->setContentsMargins(0, 0, 0, 0);
+        if (QLayout *boxLayout = box->layout()) {
+            boxLayout->setContentsMargins(0, 0, 0, 0);
+            if (rowSpacing >= 0)
+                boxLayout->setSpacing(rowSpacing);
+        }
+
+        for (QAbstractButton *button : box->buttons()) {
+            if (auto *push = qobject_cast<QPushButton *>(button)) {
+                push->setMinimumHeight(height);
+                push->setFixedHeight(height);
+            }
+        }
+    }
+}
 } // namespace
 
 MenuComboBox::MenuComboBox(QWidget *parent)
@@ -243,16 +297,13 @@ void installThemedFileDialogComboPopups(QFileDialog *dialog)
         layout->setSpacing(qMax(8, layout->spacing()));
     }
 
-    // The QDialogButtonBox spans the filename-edit row and the filetype-combo
-    // row.  QSS padding arithmetic should make them equal, but Qt's internal
-    // sizeFromContents for buttons can differ from that for input controls.
-    // Measure the actual sizeHint of the filename edit (already styled by QSS)
-    // and enforce that as the minimum height on every button in the dialog.
-    if (auto *ref = dialog->findChild<QWidget *>("fileNameEdit")) {
-        const int h = ref->sizeHint().height();
-        for (auto *btn : dialog->findChildren<QPushButton *>())
-            btn->setMinimumHeight(h);
-    }
+    // The QDialogButtonBox spans the filename-edit and filetype-combo rows.
+    // Sync its push buttons and internal spacing to the styled grid rows so
+    // Open/Save aligns with the edit row and Cancel aligns with the combo row.
+    alignFileDialogButtons(dialog);
+    QTimer::singleShot(0, dialog, [dialog]() {
+        alignFileDialogButtons(dialog);
+    });
 
     for (auto *grip : dialog->findChildren<QSizeGrip *>())
         grip->hide();
