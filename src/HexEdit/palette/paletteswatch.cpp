@@ -102,28 +102,29 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
-    const QPalette pal = systemPalette();
+    const QPalette uiPal = qApp->palette();
+    const QPalette previewPal = systemPalette();
     const QRectF card = QRectF(rect()).adjusted(SW_SHADOW, SW_SHADOW,
                                                 -SW_SHADOW, -SW_SHADOW);
 
     auto drawRings = [&]() {
         if (isChecked()) {
-            p.setPen(QPen(pal.color(QPalette::Highlight), 2));
+            p.setPen(QPen(uiPal.color(QPalette::Highlight), 2));
             p.setBrush(Qt::NoBrush);
             p.drawRoundedRect(card.adjusted(1, 1, -1, -1), SW_RADIUS - 1, SW_RADIUS - 1);
         }
         if (m_keyboardCursor) {
-            p.setPen(QPen(pal.color(QPalette::Highlight), 2));
+            p.setPen(QPen(uiPal.color(QPalette::Highlight), 2));
             p.setBrush(Qt::NoBrush);
             p.drawRoundedRect(card.adjusted(4, 4, -4, -4), SW_RADIUS - 4, SW_RADIUS - 4);
         }
     };
 
     if (m_addMode) {
-        const QColor plusCol = underMouse() ? pal.color(QPalette::ButtonText) : pal.color(QPalette::Mid);
+        const QColor plusCol = underMouse() ? uiPal.color(QPalette::ButtonText) : uiPal.color(QPalette::Mid);
         p.setPen(QPen(plusCol, SW_BORDER));
-        p.setBrush(underMouse() ? pal.color(QPalette::Midlight)
-                                : pal.color(QPalette::Button));
+        p.setBrush(underMouse() ? uiPal.color(QPalette::Midlight)
+                                : uiPal.color(QPalette::Button));
         p.drawRoundedRect(card.adjusted(0.5, 0.5, -0.5, -0.5), SW_RADIUS, SW_RADIUS);
 
         QFont f = font();
@@ -136,7 +137,7 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
         return;
     }
 
-    const bool dark = pal.color(QPalette::Window).lightness() < 128;
+    const bool dark = isDarkMode();
     const PaletteInfo eff = resolvedPaletteForMode(m_info, dark);
 
     p.setPen(Qt::NoPen);
@@ -147,7 +148,7 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
         p.drawRoundedRect(card.adjusted(-i, -(i - 1), i, i), r, r);
     }
 
-    const QColor effectiveBg = effectiveHexColour(eff, HVC_BACKGROUND, pal);
+    const QColor effectiveBg = effectiveHexColour(eff, HVC_BACKGROUND, previewPal);
     const QColor borderCol = effectiveBg.lightness() < 128 ? QColor(255, 255, 255, 30)
                                                             : QColor(0, 0, 0, 30);
     p.setPen(QPen(borderCol, SW_BORDER));
@@ -156,14 +157,14 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
 
     constexpr int kPadX = SW_PAD_X;
     constexpr int kPadTop = 10;
-    const QColor intendedTextCol = effectiveHexColour(eff, HVC_ASCII, pal);
+    const QColor intendedTextCol = effectiveHexColour(eff, HVC_ASCII, previewPal);
     auto lum = [](const QColor &c) -> qreal {
         auto s = [](qreal v) { return v <= 0.04045 ? v / 12.92 : std::pow((v + 0.055) / 1.055, 2.4); };
         return 0.2126 * s(c.redF()) + 0.7152 * s(c.greenF()) + 0.0722 * s(c.blueF());
     };
     const qreal l1 = lum(intendedTextCol), l2 = lum(effectiveBg);
     const qreal contrast = (qMax(l1, l2) + 0.05) / (qMin(l1, l2) + 0.05);
-    const QColor textCol = contrast < 3.0 ? pal.color(QPalette::WindowText) : intendedTextCol;
+    const QColor textCol = contrast < 3.0 ? previewPal.color(QPalette::WindowText) : intendedTextCol;
     QFont qfont = font();
     qfont.setBold(true);
     p.setFont(qfont);
@@ -181,8 +182,8 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
     p.setFont(qfont);
     const QFontMetrics fm2(qfont);
 
-    const QColor hexOdd = effectiveHexColour(eff, HVC_HEXODD, pal);
-    const QColor hexEven = effectiveHexColour(eff, HVC_HEXEVEN, pal);
+    const QColor hexOdd = effectiveHexColour(eff, HVC_HEXODD, previewPal);
+    const QColor hexEven = effectiveHexColour(eff, HVC_HEXEVEN, previewPal);
     const qreal hexBaseY = card.top() + kPadTop + fm2.height() + 16;
     static const quint8 kSample[2][8] = {
         { 0xA4, 0x3F, 0xB2, 0x91, 0xE7, 0x60, 0xC3, 0x2A },
@@ -207,12 +208,12 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
     constexpr qreal kSwatchGap = 5;
     constexpr int kNSwatches = 6;
     const QColor swatchCols[kNSwatches] = {
-        effectiveHexColour(eff, HVC_HEXODD, pal),
-        effectiveHexColour(eff, HVC_ASCII, pal),
-        effectiveHexColour(eff, HVC_SELECTION, pal),
-        effectiveHexColour(eff, HVC_MODIFY, pal),
-        effectiveHexColour(eff, HVC_MATCHED, pal),
-        effectiveHexColour(eff, HVC_BOOKMARK1, pal),
+        effectiveHexColour(eff, HVC_HEXODD, previewPal),
+        effectiveHexColour(eff, HVC_ASCII, previewPal),
+        effectiveHexColour(eff, HVC_SELECTION, previewPal),
+        effectiveHexColour(eff, HVC_MODIFY, previewPal),
+        effectiveHexColour(eff, HVC_MATCHED, previewPal),
+        effectiveHexColour(eff, HVC_BOOKMARK1, previewPal),
     };
     const qreal swatchY = card.bottom() - kSwatchBotPad - kSwatchH;
     const qreal swatchAreaW = card.width() - 2 * kPadX;
@@ -232,7 +233,7 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
         constexpr int kInset = 8;
         const QPointF centre(card.right() - kBadgeD / 2.0 - kInset,
                              card.top() + kBadgeD / 2.0 + kInset);
-        p.setBrush(pal.color(QPalette::Highlight));
+        p.setBrush(uiPal.color(QPalette::Highlight));
         p.setPen(Qt::NoPen);
         p.drawEllipse(centre, kBadgeD / 2.0, kBadgeD / 2.0);
 
