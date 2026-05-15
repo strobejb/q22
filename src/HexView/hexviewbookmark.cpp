@@ -24,6 +24,14 @@ static constexpr int kNoteRangePad = 5;  // gap between note text and range labe
 
 // ── Bookmark management ───────────────────────────────────────────────────────
 
+void HexView::setBookmarks(const QList<Bookmark> &bookmarks)
+{
+    closeNoteEditor(false);
+    m_bookmarks = bookmarks;
+    viewport()->update();
+    emit bookmarksChanged();
+}
+
 void HexView::addBookmark(const Bookmark &bm)
 {
     m_bookmarks.append(bm);

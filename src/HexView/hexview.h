@@ -248,6 +248,7 @@ public:
     void   addBookmark(const Bookmark &bm);
     void   removeBookmark(int idx);
     void   replaceBookmark(int idx, const Bookmark &bm);
+    void   setBookmarks(const QList<Bookmark> &bookmarks);
     const QList<Bookmark> &bookmarks() const { return m_bookmarks; }
 
     // Provide an external menu to use instead of the built-in context menu.

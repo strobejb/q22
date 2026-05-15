@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 #include "./ui_mainwindow.h"
+#include "bookmarkstore.h"
 #include "HexView/hexview.h"
 #include "HexView/seqbase.h"
 #include "dialogs/dlgbookmark.h"
@@ -786,6 +787,10 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_hv, &HexView::bookmarksChanged,
             m_gotoDialog, &GotoPanel::refreshBookmarks);
 
+    connect(m_hv, &HexView::bookmarksChanged, this, [this]() {
+        BookmarkStore::save(m_hv->filePath(), m_hv->bookmarks());
+    });
+
     connect(m_hv, &HexView::paneFocusRequested, this, [this]() {
         if (m_findDialog->isVisible())
             m_findDialog->activate();
@@ -1240,6 +1245,7 @@ void MainWindow::closeEvent(QCloseEvent *e)
 
 void MainWindow::openFile(const QString &path) {
     m_hv->openFile(path);
+    m_hv->setBookmarks(BookmarkStore::load(path));
     AppSettings::addRecentFile(path);
     updateRecentMenu();
     setWindowTitle(QFileInfo(path).fileName() + " \u2013 " + QApplication::applicationDisplayName());

@@ -6,6 +6,8 @@ set(PROJECT_SOURCES
         mainwindow.cpp
         mainwindow.h
         mainwindow.ui
+        bookmarkstore.h
+        bookmarkstore.cpp
         dialogs/dlgbookmark.h
         dialogs/dlgbookmark.cpp
         dialogs/bookmarkcolourwidget.h
