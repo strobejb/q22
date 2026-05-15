@@ -4,14 +4,17 @@
 
 #include <QApplication>
 #include <QAbstractButton>
+#include <QEnterEvent>
 #include <QEvent>
 #include <QIcon>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPushButton>
 #include <QShowEvent>
 #include <QTextCursor>
 #include <QVector>
 #include <QLayout>
+#include <functional>
 
 // ── PickerCard ────────────────────────────────────────────────────────────────
 
@@ -53,6 +56,63 @@ protected:
     }
 };
 
+// ── ResizeHandle ──────────────────────────────────────────────────────────────
+// Thin drag-strip placed in the gap between bookmarkName and the colour picker.
+// Dragging it vertically resizes bookmarkName via a callback.
+
+class ResizeHandle : public QWidget
+{
+public:
+    static constexpr int kH = 14;   // matches the gap in the .ui layout
+
+    explicit ResizeHandle(std::function<void(int)> onDrag, QWidget *parent = nullptr)
+        : QWidget(parent), m_onDrag(std::move(onDrag))
+    {
+        setFixedHeight(kH);
+        setCursor(Qt::SizeVerCursor);
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        QColor col = palette().color(QPalette::Mid);
+        col.setAlphaF(m_hovered ? 0.9 : 0.35);
+        p.setPen(QPen(col, 2, Qt::SolidLine, Qt::RoundCap));
+        const int cy = height() / 2;
+        const int cx = width() / 2;
+        // Three short horizontal dashes centered in the strip.
+        for (int i = -1; i <= 1; ++i)
+            p.drawLine(cx + i * 12 - 5, cy, cx + i * 12 + 5, cy);
+    }
+
+    void enterEvent(QEnterEvent *) override { m_hovered = true;  update(); }
+    void leaveEvent(QEvent *)       override { m_hovered = false; update(); }
+
+    void mousePressEvent(QMouseEvent *e) override
+    {
+        if (e->button() == Qt::LeftButton)
+            m_dragY = qRound(e->globalPosition().y());
+    }
+    void mouseMoveEvent(QMouseEvent *e) override
+    {
+        if (!(e->buttons() & Qt::LeftButton)) return;
+        const int y  = qRound(e->globalPosition().y());
+        const int dy = y - m_dragY;
+        if (dy != 0) { m_dragY = y; m_onDrag(dy); }
+    }
+    void mouseReleaseEvent(QMouseEvent *e) override
+    {
+        if (e->button() == Qt::LeftButton) m_dragY = 0;
+    }
+
+private:
+    std::function<void(int)> m_onDrag;
+    bool m_hovered = false;
+    int  m_dragY   = 0;
+};
+
 } // namespace
 
 // ── BookmarkDialog ────────────────────────────────────────────────────────────
@@ -67,6 +127,17 @@ BookmarkDialog::BookmarkDialog(QWidget *parent)
 
     ui->colourPicker->setColumns(7);
     ui->bookmarkName->setTabChangesFocus(true);
+    ui->bookmarkName->setStyleSheet(
+        "QPlainTextEdit {"
+        "  border: 1px solid palette(mid);"
+        "  border-radius: 6px;"
+        "  padding: 6px 9px;"
+        "  background: palette(base);"
+        "}"
+        "QPlainTextEdit:focus {"
+        "  border: 2px solid palette(highlight);"
+        "  padding: 5px 8px;"
+        "}");
 
     const QRect buttonRect = ui->buttonBox->geometry();
     auto *card = new PickerCard(this);
@@ -84,6 +155,12 @@ BookmarkDialog::BookmarkDialog(QWidget *parent)
 
     card->move(pickerRect.x() - PC_SHADOW, pickerRect.y() - PC_SHADOW);
     card->resize(cardW, pickerH + 2 * PC_SHADOW);
+
+    // Resize handle — sits in the gap between bookmarkName and the card.
+    m_editToCardGap = card->y() - ui->bookmarkName->geometry().bottom();
+    m_resizeHandle = new ResizeHandle([this](int dy){ applyEditResize(dy); }, this);
+    m_resizeHandle->setGeometry(DIALOG_MARGIN, ui->bookmarkName->geometry().bottom(),
+                                ui->bookmarkName->width(), ResizeHandle::kH);
 
     // Strip platform-supplied icons from OK / Cancel.
     for (QAbstractButton *btn : ui->buttonBox->buttons())
@@ -107,7 +184,7 @@ BookmarkDialog::BookmarkDialog(QWidget *parent)
     ui->bookmarkDelete->setIconSize(QSize(16, 16));
     ui->bookmarkDelete->installEventFilter(this);
     updateDeleteIcon();
-    connect(ui->bookmarkDelete, &QToolButton::clicked, this, [this]() {
+    connect(ui->bookmarkDelete, &QPushButton::clicked, this, [this]() {
         emit deleteRequested(m_editIdx);
         reject();
     });
@@ -138,28 +215,49 @@ void BookmarkDialog::relayoutDynamicControls()
 
     ui->buttonBox->setGeometry(buttonX, buttonY, buttonSize.width(), buttonSize.height());
 
-    // Square button, same height as the OK/Cancel row — flat, no border.
+    // Square button, same height as the OK/Cancel row — icon only.
     const int btnSz = buttonSize.height();
     ui->bookmarkDelete->setGeometry(DIALOG_MARGIN, buttonY, btnSz, btnSz);
 
     setFixedSize(width(), buttonY + buttonSize.height() + DIALOG_MARGIN);
+
+    if (m_resizeHandle)
+        m_resizeHandle->setGeometry(DIALOG_MARGIN,
+                                    ui->bookmarkName->geometry().bottom() + 1,
+                                    ui->bookmarkName->width(), ResizeHandle::kH);
+}
+
+// ── Edit-control resize ───────────────────────────────────────────────────────
+
+void BookmarkDialog::applyEditResize(int dy)
+{
+    constexpr int kMinEditH = 56;
+    const int newH = qMax(kMinEditH, ui->bookmarkName->height() + dy);
+    const int delta = newH - ui->bookmarkName->height();
+    if (delta == 0) return;
+
+    ui->bookmarkName->resize(ui->bookmarkName->width(), newH);
+
+    // Shift every widget below the edit control by the same delta —
+    // preserves all relative gaps set by the initial relayoutDynamicControls.
+    auto shift = [delta](QWidget *w) { w->move(w->x(), w->y() + delta); };
+    shift(ui->colourPicker->parentWidget());
+    shift(ui->buttonBox);
+    shift(ui->bookmarkDelete);
+    if (m_resizeHandle) shift(m_resizeHandle);
+
+    setFixedSize(width(), height() + delta);
 }
 
 // ── Icon recolouring ──────────────────────────────────────────────────────────
 
 void BookmarkDialog::updateDeleteIcon()
 {
-    // Flat style — destructive red icon with red-tinted hover/pressed backgrounds.
+    // Inherit the global QPushButton border/background/hover — just suppress the
+    // min-width and padding so the button stays square and icon-only.
     const QColor err = errorColour();
-    const QString errName = err.name();
-    // Hover/pressed: the error colour at reduced alpha so the tint is subtle.
-    const QString hoverBg   = QString("rgba(%1,%2,%3,0.12)").arg(err.red()).arg(err.green()).arg(err.blue());
-    const QString pressedBg = QString("rgba(%1,%2,%3,0.22)").arg(err.red()).arg(err.green()).arg(err.blue());
-    ui->bookmarkDelete->setStyleSheet(QString(
-        "QToolButton { border: none; border-radius: 4px; background: transparent; }"
-        "QToolButton:hover   { background: %1; }"
-        "QToolButton:pressed { background: %2; }"
-    ).arg(hoverBg, pressedBg));
+    ui->bookmarkDelete->setStyleSheet(
+        "QPushButton { min-width: 0; padding: 2px; }");
 
     // Build normal and hover icons; swap them explicitly via eventFilter.
     QIcon baseIcon = QIcon::fromTheme(QStringLiteral("user-trash-symbolic"));

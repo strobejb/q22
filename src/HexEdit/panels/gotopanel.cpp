@@ -112,6 +112,23 @@ GotoPanel::GotoPanel(HexView *hv, QWidget *parent)
         m_comboBookmarks->addIconAction(QStringLiteral("bookmark-star-on-tray"));
     }
 
+    // Trailing clear button — visible only when the field has content.
+    {
+        const auto existingBtns = ui->editOffset->findChildren<QToolButton *>();
+        QAction *clearAct = ui->editOffset->addAction(QIcon(), QLineEdit::TrailingPosition);
+        clearAct->setProperty("iconThemeName",  QStringLiteral("edit-clear-symbolic"));
+        clearAct->setProperty("iconColorRole",  QStringLiteral("placeholderText"));
+        clearAct->setProperty("iconSize", 16);
+        clearAct->setVisible(false);
+        clearAct->setToolTip(tr("Clear"));
+        for (auto *btn : ui->editOffset->findChildren<QToolButton *>())
+            if (!existingBtns.contains(btn))
+                btn->setCursor(Qt::PointingHandCursor);
+        connect(ui->editOffset, &QLineEdit::textChanged, clearAct,
+                [clearAct](const QString &text) { clearAct->setVisible(!text.isEmpty()); });
+        connect(clearAct, &QAction::triggered, ui->editOffset, &QLineEdit::clear);
+    }
+
 #if 0//def 0//Q_OS_WIN
     // QIcon::fromTheme() returns null on Windows; use Segoe MDL2 / QStyle fallbacks.
     /*ui->btnNavigate->setIcon(segoeIcon(0xEBE8,

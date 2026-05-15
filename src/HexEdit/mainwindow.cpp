@@ -1,6 +1,6 @@
 #include "mainwindow.h"
 #include "./ui_mainwindow.h"
-#include "bookmarkstore.h"
+#include "dialogs/bookmarkstore.h"
 #include "HexView/hexview.h"
 #include "HexView/seqbase.h"
 #include "dialogs/dlgbookmark.h"
@@ -749,8 +749,8 @@ MainWindow::MainWindow(QWidget *parent)
         const size_w length  = selSize > 0 ? selSize : 1;
         m_bookmarkDialog->setOffset(offset);
         m_bookmarkDialog->setLength(length);
-        m_bookmarkDialog->setEditMode(-1, QString(), -1);
         populateBookmarkDialog();
+        m_bookmarkDialog->setEditMode(-1, QString(), -1);
         if (execCentered(m_bookmarkDialog) == QDialog::Accepted) {
             Bookmark bm;
             bm.offset      = m_bookmarkDialog->offset();
@@ -768,8 +768,8 @@ MainWindow::MainWindow(QWidget *parent)
         const Bookmark &existing = bms[idx];
         m_bookmarkDialog->setOffset(existing.offset);
         m_bookmarkDialog->setLength(existing.length);
-        m_bookmarkDialog->setEditMode(idx, existing.name, existing.colourIndex);
         populateBookmarkDialog();
+        m_bookmarkDialog->setEditMode(idx, existing.name, existing.colourIndex);
         if (execCentered(m_bookmarkDialog) == QDialog::Accepted) {
             Bookmark bm = existing;
             bm.name        = m_bookmarkDialog->bookmarkName();

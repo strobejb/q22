@@ -320,7 +320,7 @@ void HexView::mousePressEvent(QMouseEvent *event)
         // Action fires on release, only if the mouse is still over the same button.
         m_pressedOnClose = (ht == HVHT_BOOKMARK_CLOSE);
         m_pressedOnEdit  = (ht == HVHT_BOOKMARK_EDIT);
-        viewport()->grabMouse(Qt::ArrowCursor);
+        viewport()->grabMouse(Qt::PointingHandCursor);
         viewport()->update();
         return;
     }
@@ -535,7 +535,7 @@ void HexView::mouseMoveEvent(QMouseEvent *event)
         case HVHT_MAIN:
         case HVHT_BOOKMARK:       viewport()->setCursor(Qt::IBeamCursor);   break;
         case HVHT_BOOKMARK_CLOSE:
-        case HVHT_BOOKMARK_EDIT:  viewport()->setCursor(Qt::ArrowCursor);   break;
+        case HVHT_BOOKMARK_EDIT:  viewport()->setCursor(Qt::PointingHandCursor); break;
         default:                  viewport()->setCursor(Qt::ArrowCursor);   break;
         }
     }
@@ -589,6 +589,25 @@ void HexView::wheelEvent(QWheelEvent *event)
 
 void HexView::contextMenuEvent(QContextMenuEvent *event)
 {
+    // Bookmark context menu — intercepts right-clicks on any note strip.
+    {
+        const QPoint vp = viewport()->mapFromGlobal(event->globalPos());
+        int bmIdx = -1;
+        const uint ht = hitTest(vp.x(), vp.y(), &bmIdx);
+        if (ht == HVHT_BOOKMARK || ht == HVHT_BOOKMARK_CLOSE || ht == HVHT_BOOKMARK_EDIT) {
+            QMenu bmMenu(this);
+            themeMenu(&bmMenu);
+            QAction *editAct   = bmMenu.addAction(tr("&Edit"));
+            QAction *deleteAct = bmMenu.addAction(tr("&Delete"));
+            QAction *act = bmMenu.exec(event->globalPos());
+            if (act == editAct)
+                emit bookmarkEditRequested(bmIdx);
+            else if (act == deleteAct)
+                removeBookmark(bmIdx);
+            return;
+        }
+    }
+
     if (m_contextMenu) {
         m_contextMenu->exec(event->globalPos());
         return;

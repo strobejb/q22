@@ -18,7 +18,7 @@ static constexpr int kNotePadH    = 8;   // horizontal text padding (px)
 static constexpr int kNotePadV    = 4;   // vertical padding (px)
 static constexpr int kNoteRadius  = 6;   // rounded corner radius
 static constexpr int kNoteMaxW    = 220; // max strip width (px)
-static constexpr int kNoteBtnSz   = 14;  // close button icon size (px)
+static constexpr int kNoteBtnSz   = 16;  // button icon size (px)
 static constexpr int kNoteBtnGap  = 4;   // gap between text and close button (px)
 static constexpr int kNoteRangePad = 5;  // gap between note text and range label (px)
 
@@ -109,6 +109,7 @@ HexView::NoteStripGeom HexView::noteStripGeom(const Bookmark &bm) const
     const int textH = bounds.height();
 
     // Range label: "0xADDR  (N bytes)" or just "0xADDR" for single-byte bookmarks.
+    // Width matches textW so the close button (bottom-right) doesn't overlap it.
     const QString hexAddr = QStringLiteral("0x") + QString::number(bm.offset, 16).toUpper();
     QString rangeText;
     if (bm.length <= 1) {
@@ -117,8 +118,7 @@ HexView::NoteStripGeom HexView::noteStripGeom(const Bookmark &bm) const
         rangeText = hexAddr + QStringLiteral("  (") +
                     QString::number(bm.length) + QStringLiteral(" bytes)");
     }
-    const int rangeW   = rectW - 2 * kNotePadH;
-    const QRect rangeBounds = fm.boundingRect(QRect(0, 0, rangeW, 10000),
+    const QRect rangeBounds = fm.boundingRect(QRect(0, 0, textW, 10000),
                                                Qt::AlignLeft | Qt::AlignTop, rangeText);
     const int rangeH = rangeBounds.height();
 
@@ -126,21 +126,16 @@ HexView::NoteStripGeom HexView::noteStripGeom(const Bookmark &bm) const
 
     if (rectY + rectH <= 0 || rectY >= viewH) return g;
 
-    // Close button: top-right corner.  Edit button: bottom-right, aligned with range label.
-    const int closeX = rectX + rectW - kNotePadV - kNoteBtnSz;
-    const int closeY = rectY + kNotePadV;
-
+    // Edit button: top-right.  Close (delete) button: bottom-right, beside range label.
+    const int btnX   = rectX + rectW - kNotePadV - kNoteBtnSz;
     const int rangeY = rectY + kNotePadV + textH + kNoteRangePad;
-
-    const int editX = closeX;
-    const int editY = rangeY + (rangeH - kNoteBtnSz) / 2;
 
     g.rect      = QRect(rectX, rectY, rectW, rectH);
     g.textRect  = QRect(rectX + kNotePadH, rectY + kNotePadV, textW, textH);
-    g.rangeRect = QRect(rectX + kNotePadH, rangeY, rangeW, rangeH);
+    g.rangeRect = QRect(rectX + kNotePadH, rangeY, textW, rangeH);
     g.rangeText = rangeText;
-    g.closeRect = QRect(closeX, closeY, kNoteBtnSz, kNoteBtnSz);
-    g.editRect  = QRect(editX, editY, kNoteBtnSz, kNoteBtnSz);
+    g.editRect  = QRect(btnX, rectY + kNotePadV,                    kNoteBtnSz, kNoteBtnSz);
+    g.closeRect = QRect(btnX, rangeY + (rangeH - kNoteBtnSz) / 2,   kNoteBtnSz, kNoteBtnSz);
     g.valid     = true;
     return g;
 }
@@ -236,8 +231,9 @@ void HexView::drawNoteStrip(QPainter &painter, int /*asciiRight*/, int /*ny*/,
         const bool grabbed        = (QWidget::mouseGrabber() == viewport());
         const bool showHoverClose = grabbed ? m_pressedOnClose : m_hoverOnClose;
         const bool showHoverEdit  = grabbed ? m_pressedOnEdit  : m_hoverOnEdit;
-        drawBtn(geom.closeRect, showHoverClose, m_pressedOnClose, QStringLiteral("window-close-symbolic"));
-        drawBtn(geom.editRect,  showHoverEdit,  m_pressedOnEdit,  QStringLiteral("document-edit-symbolic"));
+        //drawBtn(geom.closeRect, showHoverClose, m_pressedOnClose, QStringLiteral("window-close-symbolic"));
+        //drawBtn(geom.editRect,  showHoverEdit,  m_pressedOnEdit,  QStringLiteral("document-edit-symbolic"));
+        drawBtn(geom.editRect,  showHoverEdit,  m_pressedOnEdit,  QStringLiteral("pen-to-square-solid-full"));
     }
 
     painter.restore();

@@ -121,6 +121,7 @@ protected:
 
 private:
     void relayoutDynamicControls();
+    void applyEditResize(int dy);
     void updateDeleteIcon();
     void updateRangeLabel();
 
@@ -128,10 +129,12 @@ private:
     quint64 m_offset        = 0;
     quint64 m_length        = 0;
     int     m_buttonTopGap  = 0;
+    int     m_editToCardGap = 0;
     int     m_editIdx       = -1;   // >= 0 when in edit mode
     QColor  m_foreground;
-    QIcon   m_deleteIconNormal;
-    QIcon   m_deleteIconHover;
+    QIcon    m_deleteIconNormal;
+    QIcon    m_deleteIconHover;
+    QWidget *m_resizeHandle = nullptr;
 };
 
 #endif // DLGBOOKMARK_H

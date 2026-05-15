@@ -6,8 +6,8 @@ set(PROJECT_SOURCES
         mainwindow.cpp
         mainwindow.h
         mainwindow.ui
-        bookmarkstore.h
-        bookmarkstore.cpp
+        dialogs/bookmarkstore.h
+        dialogs/bookmarkstore.cpp
         dialogs/dlgbookmark.h
         dialogs/dlgbookmark.cpp
         dialogs/bookmarkcolourwidget.h
@@ -106,6 +106,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         MANUAL_FINALIZATION
         ${PROJECT_SOURCES}
         resources/icons/hicolor/scalable/actions/document-edit-symbolic.svg resources/icons/hicolor/scalable/actions/edit-clear-symbolic.svg resources/icons/hicolor/scalable/actions/user-trash-symbolic.svg
+        resources/icons/hicolor/scalable/actions/pen-to-square-solid-full.svg
     )
 # Define target properties for Android with Qt 6 as:
 #    set_property(TARGET hexedit APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
