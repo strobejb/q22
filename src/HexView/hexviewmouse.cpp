@@ -260,6 +260,10 @@ uint HexView::hitTest(int x, int y, int *bookmarkIdx)
             if (bookmarkIdx) *bookmarkIdx = i;
             return HVHT_BOOKMARK_CLOSE;
         }
+        if (geom.editRect.contains(x, y)) {
+            if (bookmarkIdx) *bookmarkIdx = i;
+            return HVHT_BOOKMARK_EDIT;
+        }
         if (geom.rect.contains(x, y)) {
             if (bookmarkIdx) *bookmarkIdx = i;
             return HVHT_BOOKMARK;
@@ -312,13 +316,11 @@ void HexView::mousePressEvent(QMouseEvent *event)
         return;
     }
 
-    if (ht == HVHT_BOOKMARK_CLOSE) {
-        closeNoteEditor(false);
-        if (m_highlightCurrentIdx >= 0 && m_highlightCurrentIdx < m_bookmarks.size()) {
-            m_bookmarks.removeAt(m_highlightCurrentIdx);
-            m_highlightCurrentIdx = -1;
-            emit bookmarksChanged();
-        }
+    if (ht == HVHT_BOOKMARK_CLOSE || ht == HVHT_BOOKMARK_EDIT) {
+        // Action fires on release, only if the mouse is still over the same button.
+        m_pressedOnClose = (ht == HVHT_BOOKMARK_CLOSE);
+        m_pressedOnEdit  = (ht == HVHT_BOOKMARK_EDIT);
+        viewport()->grabMouse(Qt::ArrowCursor);
         viewport()->update();
         return;
     }
@@ -353,6 +355,33 @@ void HexView::mouseReleaseEvent(QMouseEvent *event)
 {
     if (event->button() != Qt::LeftButton) {
         QAbstractScrollArea::mouseReleaseEvent(event);
+        return;
+    }
+
+    // Bookmark mini-button: fire only if the mouse is released over the same button.
+    if (m_HitTestCurrent == HVHT_BOOKMARK_CLOSE || m_HitTestCurrent == HVHT_BOOKMARK_EDIT) {
+        const uint pressedHt  = m_HitTestCurrent;
+        const int  pressedIdx = m_highlightCurrentIdx;
+        m_HitTestCurrent      = HVHT_NONE;
+        m_highlightCurrentIdx = -1;
+        m_pressedOnClose      = false;
+        m_pressedOnEdit       = false;
+        viewport()->releaseMouse();
+        int  releaseIdx = -1;
+        uint releaseHt  = hitTest(event->pos().x(), event->pos().y(), &releaseIdx);
+        if (releaseHt == pressedHt && releaseIdx == pressedIdx) {
+            if (pressedHt == HVHT_BOOKMARK_CLOSE) {
+                closeNoteEditor(false);
+                if (pressedIdx >= 0 && pressedIdx < m_bookmarks.size()) {
+                    m_bookmarks.removeAt(pressedIdx);
+                    emit bookmarksChanged();
+                }
+                viewport()->update();
+            } else {
+                closeNoteEditor(false);
+                emit bookmarkEditRequested(pressedIdx);
+            }
+        }
         return;
     }
 
@@ -476,16 +505,28 @@ void HexView::mouseMoveEvent(QMouseEvent *event)
         }
 
     } else {
-        // Idle — update cursor and hover state from hit-test.
+        // Idle — update cursor and hover/press state from hit-test.
         int  bmIdx = -1;
         uint ht    = hitTest(mx, my, &bmIdx);
 
-        const int  newHoverBm    = (ht == HVHT_BOOKMARK || ht == HVHT_BOOKMARK_CLOSE) ? bmIdx : -1;
-        const bool newHoverClose = (ht == HVHT_BOOKMARK_CLOSE);
-        if (newHoverBm != m_hoverBookmarkIdx || newHoverClose != m_hoverOnClose) {
-            m_hoverBookmarkIdx = newHoverBm;
-            m_hoverOnClose     = newHoverClose;
-            viewport()->update();
+        if (m_HitTestCurrent == HVHT_BOOKMARK_CLOSE || m_HitTestCurrent == HVHT_BOOKMARK_EDIT) {
+            // Only track position for the originally-pressed button — never activate any other.
+            const bool stillOver = (ht == m_HitTestCurrent && bmIdx == m_highlightCurrentIdx);
+            bool &pressedFlag = (m_HitTestCurrent == HVHT_BOOKMARK_CLOSE) ? m_pressedOnClose : m_pressedOnEdit;
+            if (stillOver != pressedFlag) {
+                pressedFlag = stillOver;
+                viewport()->update();
+            }
+        } else {
+            const int  newHoverBm    = (ht == HVHT_BOOKMARK || ht == HVHT_BOOKMARK_CLOSE || ht == HVHT_BOOKMARK_EDIT) ? bmIdx : -1;
+            const bool newHoverClose = (ht == HVHT_BOOKMARK_CLOSE);
+            const bool newHoverEdit  = (ht == HVHT_BOOKMARK_EDIT);
+            if (newHoverBm != m_hoverBookmarkIdx || newHoverClose != m_hoverOnClose || newHoverEdit != m_hoverOnEdit) {
+                m_hoverBookmarkIdx = newHoverBm;
+                m_hoverOnClose     = newHoverClose;
+                m_hoverOnEdit      = newHoverEdit;
+                viewport()->update();
+            }
         }
 
         switch (ht) {
@@ -493,7 +534,8 @@ void HexView::mouseMoveEvent(QMouseEvent *event)
         case HVHT_RESIZE0:        viewport()->setCursor(Qt::SizeHorCursor); break;
         case HVHT_MAIN:
         case HVHT_BOOKMARK:       viewport()->setCursor(Qt::IBeamCursor);   break;
-        case HVHT_BOOKMARK_CLOSE: viewport()->setCursor(Qt::ArrowCursor);   break;
+        case HVHT_BOOKMARK_CLOSE:
+        case HVHT_BOOKMARK_EDIT:  viewport()->setCursor(Qt::ArrowCursor);   break;
         default:                  viewport()->setCursor(Qt::ArrowCursor);   break;
         }
     }

@@ -13,13 +13,14 @@
 #include <QTextOption>
 
 // Geometry constants — shared by noteStripGeom, drawNoteStrip, and the editor.
-static constexpr int kNoteTriW   = 12;   // triangle depth (px)
-static constexpr int kNotePadH   = 8;    // horizontal text padding (px)
-static constexpr int kNotePadV   = 4;    // vertical padding (px)
-static constexpr int kNoteRadius = 6;    // rounded corner radius
-static constexpr int kNoteMaxW   = 220;  // max strip width (px)
-static constexpr int kNoteBtnSz  = 14;   // close button icon size (px)
-static constexpr int kNoteBtnGap = 4;    // gap between text and close button (px)
+static constexpr int kNoteTriW    = 12;  // triangle depth (px)
+static constexpr int kNotePadH    = 8;   // horizontal text padding (px)
+static constexpr int kNotePadV    = 4;   // vertical padding (px)
+static constexpr int kNoteRadius  = 6;   // rounded corner radius
+static constexpr int kNoteMaxW    = 220; // max strip width (px)
+static constexpr int kNoteBtnSz   = 14;  // close button icon size (px)
+static constexpr int kNoteBtnGap  = 4;   // gap between text and close button (px)
+static constexpr int kNoteRangePad = 5;  // gap between note text and range label (px)
 
 // ── Bookmark management ───────────────────────────────────────────────────────
 
@@ -27,6 +28,25 @@ void HexView::addBookmark(const Bookmark &bm)
 {
     m_bookmarks.append(bm);
     viewport()->update();
+    emit bookmarksChanged();
+}
+
+void HexView::removeBookmark(int idx)
+{
+    if (idx < 0 || idx >= m_bookmarks.size()) return;
+    closeNoteEditor(false);
+    m_bookmarks.removeAt(idx);
+    viewport()->update();
+    emit bookmarksChanged();
+}
+
+void HexView::replaceBookmark(int idx, const Bookmark &bm)
+{
+    if (idx < 0 || idx >= m_bookmarks.size()) return;
+    closeNoteEditor(false);
+    m_bookmarks[idx] = bm;
+    viewport()->update();
+    emit bookmarksChanged();
 }
 
 int HexView::findBookmark(size_w startoff, size_w endoff) const
@@ -63,7 +83,7 @@ HexView::NoteStripGeom HexView::noteStripGeom(const Bookmark &bm) const
     const int rectY = ny + kNotePadV;
 
     const int rectW = std::min(kNoteMaxW, viewW - rectX);
-    // Text width leaves room for the close button on the right.
+    // Text width leaves room for the two stacked buttons (close + edit) on the right.
     const int textW = rectW - 2 * kNotePadH - kNoteBtnSz - kNoteBtnGap;
     if (textW <= 0) return g;
 
@@ -78,17 +98,41 @@ HexView::NoteStripGeom HexView::noteStripGeom(const Bookmark &bm) const
     const QRect bounds = fm.boundingRect(QRect(0, 0, textW, 10000),
                                           Qt::TextWordWrap | Qt::AlignLeft | Qt::AlignTop,
                                           text);
-    const int rectH = bounds.height() + 2 * kNotePadV;
+    const int textH = bounds.height();
+
+    // Range label: "0xADDR  (N bytes)" or just "0xADDR" for single-byte bookmarks.
+    const QString hexAddr = QStringLiteral("0x") + QString::number(bm.offset, 16).toUpper();
+    QString rangeText;
+    if (bm.length <= 1) {
+        rangeText = hexAddr;
+    } else {
+        rangeText = hexAddr + QStringLiteral("  (") +
+                    QString::number(bm.length) + QStringLiteral(" bytes)");
+    }
+    const int rangeW   = rectW - 2 * kNotePadH;
+    const QRect rangeBounds = fm.boundingRect(QRect(0, 0, rangeW, 10000),
+                                               Qt::AlignLeft | Qt::AlignTop, rangeText);
+    const int rangeH = rangeBounds.height();
+
+    const int rectH = kNotePadV + textH + kNoteRangePad + rangeH + kNotePadV;
 
     if (rectY + rectH <= 0 || rectY >= viewH) return g;
 
-    // Close button: top-right corner with uniform padding.
+    // Close button: top-right corner.  Edit button: bottom-right, aligned with range label.
     const int closeX = rectX + rectW - kNotePadV - kNoteBtnSz;
     const int closeY = rectY + kNotePadV;
 
+    const int rangeY = rectY + kNotePadV + textH + kNoteRangePad;
+
+    const int editX = closeX;
+    const int editY = rangeY + (rangeH - kNoteBtnSz) / 2;
+
     g.rect      = QRect(rectX, rectY, rectW, rectH);
-    g.textRect  = QRect(rectX + kNotePadH, rectY + kNotePadV, textW, rectH - 2 * kNotePadV);
+    g.textRect  = QRect(rectX + kNotePadH, rectY + kNotePadV, textW, textH);
+    g.rangeRect = QRect(rectX + kNotePadH, rangeY, rangeW, rangeH);
+    g.rangeText = rangeText;
     g.closeRect = QRect(closeX, closeY, kNoteBtnSz, kNoteBtnSz);
+    g.editRect  = QRect(editX, editY, kNoteBtnSz, kNoteBtnSz);
     g.valid     = true;
     return g;
 }
@@ -141,34 +185,51 @@ void HexView::drawNoteStrip(QPainter &painter, int /*asciiRight*/, int /*ny*/,
     painter.drawText(geom.textRect, Qt::TextWordWrap | Qt::AlignLeft | Qt::AlignTop,
                      bm.name);
 
-    // Close button — only shown while this strip is hovered.
+    // Range label: dimmed foreground, single line, below the note text.
     painter.setClipping(false);
+    QColor rangeFg = fgCol;
+    rangeFg.setAlphaF(0.55);
+    painter.setPen(rangeFg);
+    painter.drawText(geom.rangeRect, Qt::AlignLeft | Qt::AlignTop, geom.rangeText);
+
+    // Overlay buttons — only shown while this strip is hovered.
     const int bmIdx = (int)(&bm - m_bookmarks.constData());
     if (bmIdx == m_hoverBookmarkIdx) {
-        // Hover background behind the button icon.
-        if (m_hoverOnClose) {
-            const bool darkBg = bgCol.lightness() < 128;
-            const QColor hoverFill(darkBg ? QColor(255, 255, 255, 50) : QColor(0, 0, 0, 35));
-            painter.setRenderHint(QPainter::Antialiasing, true);
-            painter.setPen(Qt::NoPen);
-            painter.setBrush(hoverFill);
-            painter.drawRoundedRect(QRectF(geom.closeRect).adjusted(-2, -2, 2, 2), 4, 4);
-        }
+        const bool darkBg = bgCol.lightness() < 128;
+        const QColor hoverFill  (darkBg ? QColor(255, 255, 255,  50) : QColor(0, 0, 0,  35));
+        const QColor pressedFill(darkBg ? QColor(255, 255, 255,  90) : QColor(0, 0, 0,  65));
 
-        QIcon icon = QIcon::fromTheme("window-close-symbolic");
-        if (icon.isNull())
-            icon = QIcon(":/icons/hicolor/scalable/actions/window-close-symbolic.svg");
-        if (!icon.isNull()) {
-            QPixmap src = icon.pixmap(kNoteBtnSz, kNoteBtnSz);
-            QPixmap dst(src.size());
-            dst.setDevicePixelRatio(src.devicePixelRatio());
-            dst.fill(Qt::transparent);
-            QPainter p2(&dst);
-            p2.drawPixmap(0, 0, src);
-            p2.setCompositionMode(QPainter::CompositionMode_SourceIn);
-            p2.fillRect(dst.rect(), fgCol);
-            painter.drawPixmap(geom.closeRect.topLeft(), dst);
-        }
+        auto drawBtn = [&](const QRect &btnRect, bool hovered, bool pressed, const QString &iconName) {
+            if (hovered || pressed) {
+                painter.setRenderHint(QPainter::Antialiasing, true);
+                painter.setPen(Qt::NoPen);
+                painter.setBrush(pressed ? pressedFill : hoverFill);
+                painter.drawRoundedRect(QRectF(btnRect).adjusted(-2, -2, 2, 2), 4, 4);
+            }
+            QIcon icon = QIcon::fromTheme(iconName);
+            if (icon.isNull())
+                icon = QIcon(QStringLiteral(":/icons/hicolor/scalable/actions/") + iconName + QStringLiteral(".svg"));
+            if (!icon.isNull()) {
+                QPixmap src = icon.pixmap(kNoteBtnSz, kNoteBtnSz);
+                QPixmap dst(src.size());
+                dst.setDevicePixelRatio(src.devicePixelRatio());
+                dst.fill(Qt::transparent);
+                QPainter p2(&dst);
+                p2.drawPixmap(0, 0, src);
+                p2.setCompositionMode(QPainter::CompositionMode_SourceIn);
+                p2.fillRect(dst.rect(), fgCol);
+                painter.drawPixmap(btnRect.topLeft(), dst);
+            }
+        };
+
+        // With grabMouse active during a press, m_pressedOn* tracks the mouse reliably
+        // even outside the viewport, so it can double as the hover source.
+        // When no grab is active the normal m_hoverOn* state is used.
+        const bool grabbed        = (QWidget::mouseGrabber() == viewport());
+        const bool showHoverClose = grabbed ? m_pressedOnClose : m_hoverOnClose;
+        const bool showHoverEdit  = grabbed ? m_pressedOnEdit  : m_hoverOnEdit;
+        drawBtn(geom.closeRect, showHoverClose, m_pressedOnClose, QStringLiteral("window-close-symbolic"));
+        drawBtn(geom.editRect,  showHoverEdit,  m_pressedOnEdit,  QStringLiteral("document-edit-symbolic"));
     }
 
     painter.restore();

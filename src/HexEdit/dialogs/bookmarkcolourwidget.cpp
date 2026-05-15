@@ -55,6 +55,13 @@ void BookmarkColourWidget::setSelectedColour(const QColor &colour)
     update();
 }
 
+void BookmarkColourWidget::selectFirst()
+{
+    if (m_colours.isEmpty()) return;
+    m_selectedIndex = 0;
+    update();
+}
+
 QColor BookmarkColourWidget::selectedColour() const
 {
     if (m_selectedIndex >= 0 && m_selectedIndex < m_colours.size())

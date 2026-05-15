@@ -15,9 +15,11 @@ public:
     void setColours(const QVector<QColor> &colours);
     void setForegroundColour(const QColor &fg);
     void setSelectedColour(const QColor &colour);
+    void selectFirst();
 
-    QColor selectedColour() const;
-    int    selectedIndex()  const { return m_selectedIndex; }
+    QColor                selectedColour() const;
+    int                   selectedIndex()  const { return m_selectedIndex; }
+    const QVector<QColor> &colours()       const { return m_colours; }
 
     QSize sizeHint() const override;
 

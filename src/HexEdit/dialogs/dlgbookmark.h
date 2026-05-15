@@ -6,6 +6,7 @@
 #include "theme.h"
 #include <QDialog>
 #include <QColor>
+#include <QEvent>
 #include <QLabel>
 #include <QPlainTextEdit>
 #include <QVector>
@@ -93,6 +94,10 @@ public:
     explicit BookmarkDialog(QWidget *parent = nullptr);
     ~BookmarkDialog();
 
+    // Populate from an existing bookmark for edit mode.
+    // Call before exec()/show(). Pass idx == -1 to reset to add mode.
+    void setEditMode(int bookmarkIdx, const QString &name, int colourIndex);
+
     void setOffset(quint64 offset);
     void setLength(quint64 length);
     void setForegroundColour(const QColor &fg);
@@ -104,21 +109,25 @@ public:
     QColor  foregroundColour()    const { return m_foreground; }
     QColor  selectedColour()      const;
     int     selectedColourIndex() const;
+    int     editBookmarkIdx()     const { return m_editIdx; }
 
-private slots:
-    //void onAccepted();
+signals:
+    void deleteRequested(int bookmarkIdx);
 
 protected:
     void showEvent(QShowEvent *event) override;
+    void changeEvent(QEvent *event) override;
 
 private:
     void relayoutDynamicControls();
+    void updateDeleteIcon();
     void updateRangeLabel();
 
     Ui::BookmarkDialog *ui;
-    quint64 m_offset = 0;
-    quint64 m_length = 0;
+    quint64 m_offset      = 0;
+    quint64 m_length      = 0;
     int     m_buttonTopGap = 0;
+    int     m_editIdx      = -1;   // >= 0 when in edit mode
     QColor  m_foreground;
 };
 

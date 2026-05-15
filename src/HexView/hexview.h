@@ -119,8 +119,9 @@ enum HvColorSlot {
 #define HVHT_SELECTION     0x02
 #define HVHT_RESIZE        0x10
 #define HVHT_RESIZE0       (0x20 | HVHT_RESIZE)
-#define HVHT_BOOKMARK      0x100
+#define HVHT_BOOKMARK       0x100
 #define HVHT_BOOKMARK_CLOSE 0x200
+#define HVHT_BOOKMARK_EDIT  0x400
 
 // ── Data structures ───────────────────────────────────────────────────────────
 struct HEXCOL {
@@ -245,6 +246,8 @@ public:
 
     // Bookmarks
     void   addBookmark(const Bookmark &bm);
+    void   removeBookmark(int idx);
+    void   replaceBookmark(int idx, const Bookmark &bm);
     const QList<Bookmark> &bookmarks() const { return m_bookmarks; }
 
     // Provide an external menu to use instead of the built-in context menu.
@@ -255,10 +258,13 @@ public:
 
     // Geometry of a bookmark note strip.
     struct NoteStripGeom {
-        QRect rect;      // full rounded rect (background + border area)
-        QRect textRect;  // inset text area (editor should overlay this exactly)
-        QRect closeRect; // close button hit area (top-right of rect)
-        bool  valid = false;
+        QRect   rect;       // full rounded rect (background + border area)
+        QRect   textRect;   // inset text area (editor should overlay this exactly)
+        QRect   rangeRect;  // range label area below text (address + byte count)
+        QRect   closeRect;  // close button hit area (top-right of rect)
+        QRect   editRect;   // edit button hit area (below close)
+        QString rangeText;  // e.g. "0x1A3F  (16 bytes)"
+        bool    valid = false;
     };
 
 signals:
@@ -269,7 +275,8 @@ signals:
     void lengthChanged(size_w length);
     void findProgress(size_w pos, size_w len, double mbPerSec);
     void paneFocusRequested();   // Ctrl+Tab: caller should focus Find/Goto panel
-    void bookmarksChanged();     // bookmark added or removed
+    void bookmarksChanged();          // bookmark added, removed, or replaced
+    void bookmarkEditRequested(int idx); // user clicked the edit button on a note strip
 
 protected:
     void paintEvent(QPaintEvent *event)        override;
@@ -463,9 +470,12 @@ private:
     QPlainTextEdit *m_noteEditor    = nullptr;
     int             m_noteEditorIdx = -1;
 
-    // Note strip hover state (updated in mouseMoveEvent idle path)
+    // Note strip hover/press state (updated in mouseMoveEvent idle path and press/release)
     int             m_hoverBookmarkIdx = -1;
     bool            m_hoverOnClose     = false;
+    bool            m_hoverOnEdit      = false;
+    bool            m_pressedOnClose   = false;
+    bool            m_pressedOnEdit    = false;
 
     // Mouse / interaction
     bool    m_fResizeBar        = false;

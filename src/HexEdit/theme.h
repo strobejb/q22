@@ -57,6 +57,10 @@ class QWidget;
 // Returns the border/separator colour used by the current theme.
 QColor themeBorderColor();
 
+// Returns the destructive-action / error red for the current scheme.
+// Matches Adwaita's @error_color: brighter in dark mode for contrast.
+QColor errorColour();
+
 class QListWidget;
 // Installs a delegate that enforces a minimum item height of (font height +
 // 2*vPad) pixels, independent of QSS.  On KDE/Breeze, QListWidget::item

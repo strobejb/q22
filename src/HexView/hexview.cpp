@@ -61,6 +61,9 @@ HexView::HexView(QWidget *parent)
 
     connect(this, &HexView::lengthChanged, this, &HexView::onLengthChanged);
 
+    // Clear hover state when a modal dialog blocks our window.
+    qApp->installEventFilter(this);
+
 
 
     updateMetrics();
@@ -78,10 +81,26 @@ HexView::~HexView()
 
 bool HexView::eventFilter(QObject *obj, QEvent *ev)
 {
+    if (obj == window() && ev->type() == QEvent::WindowBlocked) {
+        m_hoverBookmarkIdx = -1;
+        m_hoverOnClose     = false;
+        m_hoverOnEdit      = false;
+        m_pressedOnClose   = false;
+        m_pressedOnEdit    = false;
+        viewport()->update();
+        return false;
+    }
+
     if (obj == viewport() && ev->type() == QEvent::Leave) {
-        if (m_hoverBookmarkIdx != -1 || m_hoverOnClose) {
+        // Ignore Leave while a bookmark button grab is active — mouse events keep
+        // arriving via the grab so hover/press state updates continue normally.
+        if (QWidget::mouseGrabber() == viewport()) return false;
+        if (m_hoverBookmarkIdx != -1 || m_hoverOnClose || m_hoverOnEdit || m_pressedOnClose || m_pressedOnEdit) {
             m_hoverBookmarkIdx = -1;
             m_hoverOnClose     = false;
+            m_hoverOnEdit      = false;
+            m_pressedOnClose   = false;
+            m_pressedOnEdit    = false;
             viewport()->update();
         }
         viewport()->unsetCursor();

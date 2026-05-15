@@ -394,8 +394,7 @@ void FindPanel::updateSearchHexPreview()
     }
     const QByteArray pat = buildPattern();
     if (pat.isEmpty()) {
-        const bool dark      = QApplication::palette().window().color().lightness() < 128;
-        const QString border = dark ? "#FF3F49" : "#c01c28";//QApplication::palette().mid().color().name();
+        const QString border = errorColour().name();
         ui->editFind->setStyleSheet(QString(
             "color: %1; border: 1px solid %1; border-radius: 6px; margin: 0; padding: 1px;")
             .arg(border));

@@ -734,30 +734,51 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_hv, &HexView::lengthChanged, this,
             [this](size_w) { m_statusBar->update(); });
 
-    connect(ui->actionBookmark_here, &QAction::triggered, this, [this]() {
+    auto populateBookmarkDialog = [this]() {
+        QVector<QColor> swatchColours;
+        for (int i = 0; i < 7; ++i)
+            swatchColours.append(QColor(m_hv->getHexColour(HvColorSlot(HVC_BOOKMARK1 + i))));
+        m_bookmarkDialog->setSwatchColours(swatchColours);
+        m_bookmarkDialog->setForegroundColour(m_hv->palette().text().color());
+    };
+
+    connect(ui->actionBookmark_here, &QAction::triggered, this, [this, populateBookmarkDialog]() {
         const size_w selSize = m_hv->selectionSize();
         const size_w offset  = selSize > 0 ? m_hv->selectionStart() : m_hv->cursorOffset();
         const size_w length  = selSize > 0 ? selSize : 1;
         m_bookmarkDialog->setOffset(offset);
         m_bookmarkDialog->setLength(length);
-        m_bookmarkDialog->setForegroundColour(m_hv->palette().text().color());
-        {
-            QVector<QColor> swatchColours;
-            for (int i = 0; i < 7; ++i)
-                swatchColours.append(QColor(m_hv->getHexColour(HvColorSlot(HVC_BOOKMARK1 + i))));
-            m_bookmarkDialog->setSwatchColours(swatchColours);
-        }
+        m_bookmarkDialog->setEditMode(-1, QString(), -1);
+        populateBookmarkDialog();
         if (execCentered(m_bookmarkDialog) == QDialog::Accepted) {
             Bookmark bm;
-            bm.offset   = m_bookmarkDialog->offset();
-            bm.length   = static_cast<size_w>(m_bookmarkDialog->length());
-            bm.name     = m_bookmarkDialog->bookmarkName();
-            bm.fgColour     = 0; // palette bookmarks auto-contrast their text
-            bm.colourIndex  = qMax(0, m_bookmarkDialog->selectedColourIndex());
+            bm.offset      = m_bookmarkDialog->offset();
+            bm.length      = static_cast<size_w>(m_bookmarkDialog->length());
+            bm.name        = m_bookmarkDialog->bookmarkName();
+            bm.fgColour    = 0;
+            bm.colourIndex = qMax(0, m_bookmarkDialog->selectedColourIndex());
             m_hv->addBookmark(bm);
-            m_gotoDialog->refreshBookmarks();
         }
     });
+
+    connect(m_hv, &HexView::bookmarkEditRequested, this, [this, populateBookmarkDialog](int idx) {
+        const QList<Bookmark> &bms = m_hv->bookmarks();
+        if (idx < 0 || idx >= bms.size()) return;
+        const Bookmark &existing = bms[idx];
+        m_bookmarkDialog->setOffset(existing.offset);
+        m_bookmarkDialog->setLength(existing.length);
+        m_bookmarkDialog->setEditMode(idx, existing.name, existing.colourIndex);
+        populateBookmarkDialog();
+        if (execCentered(m_bookmarkDialog) == QDialog::Accepted) {
+            Bookmark bm = existing;
+            bm.name        = m_bookmarkDialog->bookmarkName();
+            bm.colourIndex = qMax(0, m_bookmarkDialog->selectedColourIndex());
+            m_hv->replaceBookmark(idx, bm);
+        }
+    });
+
+    connect(m_bookmarkDialog, &BookmarkDialog::deleteRequested,
+            this, [this](int idx) { m_hv->removeBookmark(idx); });
 
     connect(m_gotoDialog, &GotoPanel::bookmarkRequested,
             ui->actionBookmark_here, &QAction::trigger);

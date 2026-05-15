@@ -52,6 +52,19 @@
     <set>QDialogButtonBox::StandardButton::Cancel|QDialogButtonBox::StandardButton::Ok</set>
    </property>
   </widget>
+  <widget class="QToolButton" name="bookmarkDelete">
+   <property name="geometry">
+    <rect>
+     <x>20</x>
+     <y>230</y>
+     <width>22</width>
+     <height>22</height>
+    </rect>
+   </property>
+   <property name="toolTip">
+    <string>Delete bookmark</string>
+   </property>
+  </widget>
  </widget>
  <customwidgets>
   <customwidget>

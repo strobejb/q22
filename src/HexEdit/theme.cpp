@@ -338,6 +338,12 @@ QColor themeBorderColor()
     //return dark ? QColor("#4a4a4a") : QColor("#cdc7c2");
 }
 
+// Adwaita destructive / error red — tuned for legibility on both schemes.
+QColor errorColour()
+{
+    return isDarkMode() ? QColor("#FF3F49") : QColor("#c01c28");
+}
+
 #include <QIcon>
 #include <QPixmap>
 #include <QSet>

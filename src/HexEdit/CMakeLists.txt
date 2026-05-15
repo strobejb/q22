@@ -78,6 +78,8 @@ set(PROJECT_SOURCES
         dialogs/dlgprogress.cpp
         settings/settingscard.h
         settings/settingscard.cpp
+        settings/scrollhintoverlay.h
+        settings/scrollhintoverlay.cpp
 )
 
 set(PROJECT_FORMS
@@ -101,6 +103,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
     qt_add_executable(hexedit
         MANUAL_FINALIZATION
         ${PROJECT_SOURCES}
+        resources/icons/hicolor/scalable/actions/document-edit-symbolic.svg resources/icons/hicolor/scalable/actions/edit-clear-symbolic.svg resources/icons/hicolor/scalable/actions/user-trash-symbolic.svg
     )
 # Define target properties for Android with Qt 6 as:
 #    set_property(TARGET hexedit APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
