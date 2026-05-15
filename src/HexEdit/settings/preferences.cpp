@@ -1,4 +1,5 @@
 #include "focusnavigation.h"
+#include "scrollhintoverlay.h"
 #include "chrome/dialog-chrome.h"
 #include "preferences.h"
 #include "settingscard.h"
@@ -430,6 +431,7 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     scroll->setFocusPolicy(Qt::NoFocus);
     scroll->verticalScrollBar()->setFocusPolicy(Qt::NoFocus);
     scroll->setWidget(content);
+    ScrollHintOverlay::install(scroll);
 
     auto *dialogLay = new QVBoxLayout(this);
     dialogLay->setContentsMargins(0, 0, 0, 0);
@@ -740,6 +742,7 @@ void PreferencesDialog::showPaletteListOverlay()
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setFocusPolicy(Qt::NoFocus);
     scroll->setWidget(grid);
+    ScrollHintOverlay::install(scroll);
 
     auto *lay = new QVBoxLayout(dlg);
     lay->setContentsMargins(0, 0, 0, 0);
