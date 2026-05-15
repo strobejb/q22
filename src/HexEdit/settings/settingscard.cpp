@@ -564,12 +564,17 @@ void StepSpinBox::mouseReleaseEvent(QMouseEvent *e)
 void StepSpinBox::mouseMoveEvent(QMouseEvent *e)
 {
     const HitZone h = hitZone(e->pos());
-    if (h != m_hover) { m_hover = h; update(); }
+    if (h != m_hover) {
+        m_hover = h;
+        setCursor(h != None ? Qt::PointingHandCursor : Qt::ArrowCursor);
+        update();
+    }
 }
 
 void StepSpinBox::leaveEvent(QEvent *)
 {
     m_hover = m_pressed = None;
+    unsetCursor();
     update();
 }
 
