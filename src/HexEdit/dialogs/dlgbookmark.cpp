@@ -105,6 +105,7 @@ BookmarkDialog::BookmarkDialog(QWidget *parent)
     // Delete button lives in the .ui file — just wire it up.
     ui->bookmarkDelete->setVisible(false);
     ui->bookmarkDelete->setIconSize(QSize(16, 16));
+    ui->bookmarkDelete->installEventFilter(this);
     updateDeleteIcon();
     connect(ui->bookmarkDelete, &QToolButton::clicked, this, [this]() {
         emit deleteRequested(m_editIdx);
@@ -160,14 +161,13 @@ void BookmarkDialog::updateDeleteIcon()
         "QToolButton:pressed { background: %2; }"
     ).arg(hoverBg, pressedBg));
 
-    // Build a two-mode icon: Normal = muted ButtonText, Active = error red.
-    // Qt's Fusion style selects Active mode on hover, so the colour shift is free.
+    // Build normal and hover icons; swap them explicitly via eventFilter.
     QIcon baseIcon = QIcon::fromTheme(QStringLiteral("user-trash-symbolic"));
     if (baseIcon.isNull())
         baseIcon = QIcon(QStringLiteral(":/icons/hicolor/scalable/actions/user-trash-symbolic.svg"));
     if (baseIcon.isNull()) return;
 
-    const int sz  = ui->bookmarkDelete->iconSize().width();
+    const int sz = ui->bookmarkDelete->iconSize().width();
     const auto tinted = [&](const QColor &col) {
         QPixmap src = baseIcon.pixmap(sz, sz);
         QPixmap dst(src.size());
@@ -177,13 +177,12 @@ void BookmarkDialog::updateDeleteIcon()
         p.drawPixmap(0, 0, src);
         p.setCompositionMode(QPainter::CompositionMode_SourceIn);
         p.fillRect(dst.rect(), col);
-        return dst;
+        return QIcon(dst);
     };
 
-    QIcon icon;
-    icon.addPixmap(tinted(palette().color(QPalette::ButtonText)), QIcon::Normal);
-    icon.addPixmap(tinted(err),                                   QIcon::Active);
-    ui->bookmarkDelete->setIcon(icon);
+    m_deleteIconNormal = tinted(palette().color(QPalette::ButtonText));
+    m_deleteIconHover  = tinted(err);
+    ui->bookmarkDelete->setIcon(m_deleteIconNormal);
 }
 
 void BookmarkDialog::changeEvent(QEvent *event)
@@ -191,6 +190,17 @@ void BookmarkDialog::changeEvent(QEvent *event)
     QDialog::changeEvent(event);
     if (event->type() == QEvent::PaletteChange)
         updateDeleteIcon();
+}
+
+bool BookmarkDialog::eventFilter(QObject *obj, QEvent *ev)
+{
+    if (obj == ui->bookmarkDelete) {
+        if (ev->type() == QEvent::Enter)
+            ui->bookmarkDelete->setIcon(m_deleteIconHover);
+        else if (ev->type() == QEvent::Leave)
+            ui->bookmarkDelete->setIcon(m_deleteIconNormal);
+    }
+    return QDialog::eventFilter(obj, ev);
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────

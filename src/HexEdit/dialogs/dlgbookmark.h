@@ -117,6 +117,7 @@ signals:
 protected:
     void showEvent(QShowEvent *event) override;
     void changeEvent(QEvent *event) override;
+    bool eventFilter(QObject *obj, QEvent *ev) override;
 
 private:
     void relayoutDynamicControls();
@@ -124,11 +125,13 @@ private:
     void updateRangeLabel();
 
     Ui::BookmarkDialog *ui;
-    quint64 m_offset      = 0;
-    quint64 m_length      = 0;
-    int     m_buttonTopGap = 0;
-    int     m_editIdx      = -1;   // >= 0 when in edit mode
+    quint64 m_offset        = 0;
+    quint64 m_length        = 0;
+    int     m_buttonTopGap  = 0;
+    int     m_editIdx       = -1;   // >= 0 when in edit mode
     QColor  m_foreground;
+    QIcon   m_deleteIconNormal;
+    QIcon   m_deleteIconHover;
 };
 
 #endif // DLGBOOKMARK_H
