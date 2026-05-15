@@ -182,6 +182,7 @@ private:
     QPushButton       *m_saveBtn    = nullptr;
     PaletteInfo        m_info;
     bool               m_screenPickerActive = false;
+    bool               m_hiddenForPicker    = false;
 };
 
 #endif // PALETTES_H

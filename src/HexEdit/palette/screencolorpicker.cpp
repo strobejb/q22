@@ -6,13 +6,90 @@
 #include <QCoreApplication>
 #include <QCursor>
 #include <QEvent>
+#include <QFontDatabase>
 #include <QGuiApplication>
 #include <QImage>
 #include <QKeyEvent>
+#include <QPainter>
 #include <QPixmap>
 #include <QScreen>
 #include <QTimer>
 #include <QWidget>
+#include <QWindow>
+#include <utility>
+
+class PickerPreviewWidget : public QWidget
+{
+public:
+    explicit PickerPreviewWidget()
+        : QWidget(nullptr, Qt::ToolTip | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint)
+    {
+        setAttribute(Qt::WA_ShowWithoutActivating);
+        setAttribute(Qt::WA_TranslucentBackground);
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setFixedSize(96, 38);
+    }
+
+    void update(const QColor &color, const QPoint &cursorPos)
+    {
+        m_color = color;
+        // Position bottom-right of cursor, nudged onto screen if needed
+        QScreen *screen = QGuiApplication::screenAt(cursorPos);
+        if (!screen) screen = QGuiApplication::primaryScreen();
+        const QRect avail = screen ? screen->geometry() : QRect();
+        QPoint pos = cursorPos + QPoint(20, 16);
+        if (!avail.isNull()) {
+            if (pos.x() + width()  > avail.right())  pos.setX(cursorPos.x() - width()  - 8);
+            if (pos.y() + height() > avail.bottom()) pos.setY(cursorPos.y() - height() - 8);
+        }
+        move(pos);
+        QWidget::update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        if (!m_color.isValid()) return;
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+
+        const QRectF r = QRectF(rect()).adjusted(1.5, 1.5, -1.5, -1.5);
+        p.setPen(QPen(QColor(30, 30, 30), 2.0));
+        p.setBrush(m_color);
+        p.drawRoundedRect(r, 7, 7);
+
+        const QColor fg = m_color.lightness() > 128 ? Qt::black : Qt::white;
+        p.setPen(fg);
+        QFont f = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+        f.setPointSize(9);
+        f.setBold(true);
+        p.setFont(f);
+        p.drawText(rect(), Qt::AlignCenter, m_color.name().toUpper());
+    }
+
+private:
+    QColor m_color;
+};
+
+// Build a cursor pixmap with a contrasting outline so the dropper is visible
+// against any background color. The outline color is chosen automatically:
+// white for a dark cursor, black for a light one.
+static QPixmap makePickerCursorPixmap(const QColor &color, int sz)
+{
+    const QColor outlineColor = color.lightness() > 128 ? Qt::black : Qt::white;
+    const QPixmap fg = recoloredIcon(QStringLiteral("color-picker"), color,        sz).pixmap(sz, sz);
+    const QPixmap bg = recoloredIcon(QStringLiteral("color-picker"), outlineColor, sz).pixmap(sz, sz);
+
+    QPixmap result(fg.size());
+    result.setDevicePixelRatio(fg.devicePixelRatio());
+    result.fill(Qt::transparent);
+    QPainter p(&result);
+    for (int dy = -1; dy <= 1; ++dy)
+        for (int dx = -1; dx <= 1; ++dx)
+            if (dx || dy) p.drawPixmap(dx, dy, bg);
+    p.drawPixmap(0, 0, fg);
+    return result;
+}
 
 #ifdef HEXEDIT_HAVE_DBUS
 #include <QDBusArgument>
@@ -35,7 +112,7 @@ void ScreenColorPicker::start(QWidget *owner, const QColor &cursorColor)
     if (!owner) return;
     cancel();
 
-    m_owner = owner;
+    m_owner = owner->window();
     m_active = true;
     emit activeChanged(true);
 
@@ -54,7 +131,7 @@ void ScreenColorPicker::cancel()
 
 bool ScreenColorPicker::eventFilter(QObject *obj, QEvent *event)
 {
-    if (!m_liveActive || obj != m_owner)
+    if (!m_liveActive || (obj != m_owner && !m_overlays.contains(qobject_cast<QWidget *>(obj))))
         return QObject::eventFilter(obj, event);
 
     if (event->type() == QEvent::MouseButtonPress) {
@@ -74,13 +151,24 @@ bool ScreenColorPicker::eventFilter(QObject *obj, QEvent *event)
 
 void ScreenColorPicker::startLivePick(const QColor &cursorColor)
 {
-    const QPixmap cursorPixmap =
-        recoloredIcon(QStringLiteral("color-picker"), cursorColor, 24).pixmap(24, 24);
+    const QPixmap cursorPixmap = makePickerCursorPixmap(cursorColor, 24);
     const QCursor cursor(cursorPixmap, 5, 23);
     m_liveActive = true;
     m_owner->installEventFilter(this);
+#ifdef Q_OS_WIN
+    createPickerOverlays(cursor);
+    if (!m_overlays.isEmpty()) {
+        m_overlays.first()->grabMouse(cursor);
+        m_overlays.first()->grabKeyboard();
+    }
+    QApplication::setOverrideCursor(cursor);
+#endif
+#ifndef Q_OS_WIN
     m_owner->grabMouse(cursor);
     QApplication::setOverrideCursor(cursor);
+#endif
+    m_preview = new PickerPreviewWidget();
+    m_preview->show();
     m_timer->start();
     sampleLiveColor();
 }
@@ -126,6 +214,8 @@ void ScreenColorPicker::sampleLiveColor()
             const QColor color = image.pixelColor(0, 0);
             if (color.isValid()) {
                 m_lastColor = color;
+                if (m_preview)
+                    static_cast<PickerPreviewWidget *>(m_preview)->update(color, globalPos);
                 emit colorHovered(color);
                 return;
             }
@@ -147,6 +237,8 @@ void ScreenColorPicker::sampleLiveColor()
     const QColor color = image.pixelColor(0, 0);
     if (color.isValid()) {
         m_lastColor = color;
+        if (m_preview)
+            static_cast<PickerPreviewWidget *>(m_preview)->update(color, globalPos);
         emit colorHovered(color);
     }
 }
@@ -160,11 +252,26 @@ void ScreenColorPicker::finish(bool picked)
     m_timer->stop();
     if (m_owner) {
         m_owner->removeEventFilter(this);
+#ifndef Q_OS_WIN
         if (hadLive)
             m_owner->releaseMouse();
+#endif
     }
+#ifdef Q_OS_WIN
+    if (!m_overlays.isEmpty()) {
+        m_overlays.first()->releaseKeyboard();
+        m_overlays.first()->releaseMouse();
+    }
+    destroyPickerOverlays();
+#endif
     if (hadLive)
         QApplication::restoreOverrideCursor();
+
+    if (m_preview) {
+        m_preview->hide();
+        m_preview->deleteLater();
+        m_preview = nullptr;
+    }
 
     m_active = false;
     m_liveActive = false;
@@ -175,6 +282,58 @@ void ScreenColorPicker::finish(bool picked)
         emit colorPicked(pickedColor);
     else if (hadActive)
         emit cancelled();
+}
+
+void ScreenColorPicker::createPickerOverlays(const QCursor &cursor)
+{
+#ifdef Q_OS_WIN
+    destroyPickerOverlays();
+
+    QRect virtualGeometry;
+    for (QScreen *screen : QGuiApplication::screens()) {
+        virtualGeometry = virtualGeometry.isNull()
+                              ? screen->geometry()
+                              : virtualGeometry.united(screen->geometry());
+    }
+    if (virtualGeometry.isNull())
+        return;
+
+    auto *overlay = new QWidget(nullptr, Qt::Window | Qt::FramelessWindowHint |
+                                         Qt::WindowStaysOnTopHint);
+    // Do NOT use WA_TranslucentBackground: it uses per-pixel alpha compositing,
+    // so fully-transparent pixels fail hit-testing and WM_SETCURSOR falls
+    // through to the window behind, resetting the cursor to the arrow.
+    // setWindowOpacity uses LWA_ALPHA instead — hit-testing is based on window
+    // geometry only and ignores the alpha value, as long as alpha >= 1/255.
+    // (alpha=0 is also skipped by Windows hit-testing, so 1/255 is the minimum.)
+    overlay->setAttribute(Qt::WA_ShowWithoutActivating);
+    overlay->setWindowOpacity(1.0 / 255.0);
+    overlay->setCursor(cursor);
+    overlay->setMouseTracking(true);
+    overlay->installEventFilter(this);
+    overlay->setGeometry(virtualGeometry);
+    overlay->show();
+    overlay->raise();
+    if (QWindow *window = overlay->windowHandle())
+        window->setFlag(Qt::WindowStaysOnTopHint, true);
+    m_overlays.append(overlay);
+#else
+    Q_UNUSED(cursor);
+#endif
+}
+
+void ScreenColorPicker::destroyPickerOverlays()
+{
+#ifdef Q_OS_WIN
+    for (QWidget *overlay : std::as_const(m_overlays)) {
+        if (!overlay)
+            continue;
+        overlay->removeEventFilter(this);
+        overlay->hide();
+        overlay->deleteLater();
+    }
+    m_overlays.clear();
+#endif
 }
 
 #ifdef HEXEDIT_HAVE_DBUS

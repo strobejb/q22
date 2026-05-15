@@ -643,10 +643,8 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
     m_screenPickerAction->setCheckable(true);
     m_screenPickerAction->setToolTip(tr("Pick colour from screen"));
     QTimer::singleShot(0, this, [this] {
-        for (QWidgetAction *action : m_hexEdit->findChildren<QWidgetAction*>()) {
-            if (action->defaultWidget())
-                action->defaultWidget()->setCursor(Qt::ArrowCursor);
-        }
+        for (QAbstractButton *btn : m_hexEdit->findChildren<QAbstractButton *>())
+            btn->setCursor(Qt::PointingHandCursor);
     });
     m_screenPicker = new ScreenColorPicker(this);
 
@@ -855,16 +853,21 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
 
     connect(m_screenPickerAction, &QAction::toggled,
             this, &PaletteEditorDialog::setScreenPickerActive);
-    connect(m_screenPicker, &ScreenColorPicker::colorHovered,
-            this, &PaletteEditorDialog::applyEditedColor);
     connect(m_screenPicker, &ScreenColorPicker::colorPicked,
             this, &PaletteEditorDialog::applyEditedColor);
     connect(m_screenPicker, &ScreenColorPicker::activeChanged, this, [this](bool active) {
         m_screenPickerActive = active;
-        if (m_screenPickerAction->isChecked() == active) return;
-        m_screenPickerAction->blockSignals(true);
-        m_screenPickerAction->setChecked(active);
-        m_screenPickerAction->blockSignals(false);
+        if (m_screenPickerAction->isChecked() != active) {
+            m_screenPickerAction->blockSignals(true);
+            m_screenPickerAction->setChecked(active);
+            m_screenPickerAction->blockSignals(false);
+        }
+        if (!active && m_hiddenForPicker) {
+            m_hiddenForPicker = false;
+            window()->setWindowOpacity(1.0);
+            window()->raise();
+            window()->activateWindow();
+        }
     });
 
     // Initialise UI state for the first list item.
@@ -1087,10 +1090,19 @@ void PaletteEditorDialog::setScreenPickerActive(bool active)
         return;
 
     m_screenPickerActive = active;
-    if (active)
-        m_screenPicker->start(this, palette().buttonText().color());
-    else
+    if (active) {
+        QTimer::singleShot(0, this, [this] {
+            if (!m_screenPickerActive) return;
+            m_screenPicker->start(this, palette().buttonText().color());
+            // Fade the window to invisible rather than hiding it — the window
+            // must stay in the Windows process model so the app remains active,
+            // SetCapture holds, and the Qt timer keeps firing.
+            m_hiddenForPicker = true;
+            window()->setWindowOpacity(0.0);
+        });
+    } else {
         m_screenPicker->cancel();
+    }
 }
 
 void PaletteEditorDialog::applyEditedColor(const QColor &c)
