@@ -30,6 +30,11 @@ public:
     // Emits selectionChanged if the selection changes.
     void     selectByData(const QVariant &data);
 
+    // Append a pre-built action (e.g. QWidgetAction) directly to the menu and
+    // m_actions list.  Call after buildMenu().  The caller is responsible for
+    // the action's lifetime; deleting the action removes it from the menu automatically.
+    void appendAction(QAction *action);
+
     QAction *addIconAction(const QIcon &icon, IconActionPosition position = LeadingPosition);
     QAction *addIconAction(const QString &iconName, IconActionPosition position = LeadingPosition);
     void     setLeadingIcon(const QIcon &icon);

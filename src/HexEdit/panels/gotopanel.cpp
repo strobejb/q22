@@ -218,12 +218,27 @@ void GotoPanel::refreshBookmarks()
     if (!bms.isEmpty())
         m_comboBookmarks->addItem(QString());   // separator
 
+    // Sort by offset ascending.
+    QList<int> sortedIdx;
+    sortedIdx.reserve(bms.size());
+    for (int i = 0; i < bms.size(); ++i)
+        sortedIdx.append(i);
+    std::sort(sortedIdx.begin(), sortedIdx.end(), [&bms](int a, int b) {
+        return bms[a].offset < bms[b].offset;
+    });
+
+    // Name truncated with ellipsis; hex after \t so QMenu places it in the
+    // shortcut column — right-aligned, rendered grey by TightMenuStyle.
+    const QFontMetrics fm(m_comboBookmarks->font());
+    constexpr int kMaxNamePx = 200;
+
     QStringList labels;
-    for (const Bookmark &bm : bms) {
-        const QString hex   = QString::number(bm.offset, 16).toUpper();
-        const QString label = bm.name.isEmpty()
-            ? QStringLiteral("(unnamed) (%1)").arg(hex)
-            : QStringLiteral("%1 (%2)").arg(bm.name, hex);
+    for (int i : sortedIdx) {
+        const Bookmark &bm    = bms[i];
+        const QString rawName = bm.name.isEmpty() ? tr("(unnamed)") : bm.name;
+        const QString name    = fm.elidedText(rawName, Qt::ElideRight, kMaxNamePx);
+        const QString hex     = QStringLiteral("0x") + QString::number(bm.offset, 16).toUpper();
+        const QString label   = name + QLatin1Char('\t') + hex;
         m_comboBookmarks->addItem(label);
         labels.append(label);
     }
@@ -231,8 +246,8 @@ void GotoPanel::refreshBookmarks()
     m_comboBookmarks->setDisplayText(tr("Bookmarks..."));
 
     m_comboBookmarks->setActionData(newBmLabel, QVariant::fromValue<int>(-1));
-    for (int i = 0; i < bms.size(); ++i)
-        m_comboBookmarks->setActionData(labels[i], QVariant::fromValue<int>(i));
+    for (int j = 0; j < sortedIdx.size(); ++j)
+        m_comboBookmarks->setActionData(labels[j], QVariant::fromValue<int>(sortedIdx[j]));
 
     m_comboBookmarks->setEnabled(true);   // always enabled; "New Bookmark..." is always present
 }

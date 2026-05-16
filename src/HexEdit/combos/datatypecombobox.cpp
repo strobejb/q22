@@ -103,6 +103,17 @@ QVariant DataTypeComboBox::selectionData() const
     return {};
 }
 
+void DataTypeComboBox::appendAction(QAction *action)
+{
+    const int idx = m_actions.size();
+    m_menu->addAction(action);
+    connect(action, &QAction::triggered, this, [this, idx]() {
+        m_selection = idx;
+        emit selectionChanged(idx);
+    });
+    m_actions.append(action);
+}
+
 void DataTypeComboBox::selectByData(const QVariant &data)
 {
     for (QAction *a : m_actions) {

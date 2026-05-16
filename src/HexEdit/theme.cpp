@@ -1211,6 +1211,7 @@ struct TightMenuStyle : public QProxyStyle
         }
         QProxyStyle::drawPrimitive(pe, opt, p, w);
     }
+
 };
 } // namespace
 
