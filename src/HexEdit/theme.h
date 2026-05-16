@@ -54,6 +54,20 @@ class QMenu;
 void themeMenu(QMenu *menu);
 
 class QWidget;
+// Apply the same frameless / transparent / shadow treatment as themeMenu() to
+// any popup QWidget (e.g. a custom QFrame panel).  The caller is responsible for
+// setting window flags to Qt::Popup before calling this.
+void themePopupWidget(QWidget *popup);
+
+// Compute the global position for a popup anchored to a widget.
+// The popup is placed immediately below the anchor (or above if needed).
+// rightAlign=true pins the popup's right edge to the anchor's right edge.
+// Overload accepting a pre-computed global anchor rect (e.g. when the anchor
+// is not a full QWidget, such as a drawn button inside a larger widget).
+#include <QRect>
+#include <QSize>
+QPoint smartMenuPos(QRect anchorGlobal, QSize popupSize, bool rightAlign = false);
+
 // Returns the border/separator colour used by the current theme.
 QColor themeBorderColor();
 
@@ -109,7 +123,7 @@ void recolorToolButtons(QWidget *parent);
 // placed immediately below the anchor when there is enough space, and
 // immediately above when there is not — so it never obscures the anchor.
 // Pass rightAlign=true to pin the menu's right edge to the anchor's right edge.
-QPoint smartMenuPos(const QWidget *anchor, const QMenu *menu, bool rightAlign = false);
+QPoint smartMenuPos(const QWidget *anchor, const QWidget *popup, bool rightAlign = false);
 int themedMenuRightAlignOffset();
 
 #ifdef Q_OS_WIN

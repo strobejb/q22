@@ -461,11 +461,9 @@ void applyListItemPadding(QListWidget *list, int vPad)
     list->setItemDelegate(new PaddedListDelegate(minH, list));
 }
 
-QPoint smartMenuPos(const QWidget *anchor, const QMenu *menu, bool rightAlign)
+QPoint smartMenuPos(QRect ag, QSize sz, bool rightAlign)
 {
-    const QSize sz    = menu->sizeHint();
-    const QRect ag    = QRect(anchor->mapToGlobal(QPoint(0, 0)), anchor->size());
-    QScreen *screen   = QGuiApplication::screenAt(ag.center());
+    QScreen *screen = QGuiApplication::screenAt(ag.center());
     if (!screen) screen = QGuiApplication::primaryScreen();
     const QRect avail = screen->availableGeometry();
 
@@ -486,6 +484,12 @@ QPoint smartMenuPos(const QWidget *anchor, const QMenu *menu, bool rightAlign)
         y = (avail.bottom() + 1 - yBelow >= ag.top() - avail.top()) ? yBelow : yAbove;
 
     return {x, y};
+}
+
+QPoint smartMenuPos(const QWidget *anchor, const QWidget *popup, bool rightAlign)
+{
+    return smartMenuPos(QRect(anchor->mapToGlobal(QPoint(0, 0)), anchor->size()),
+                        popup->sizeHint(), rightAlign);
 }
 
 int themedMenuRightAlignOffset()
@@ -1258,6 +1262,25 @@ void themeMenu(QMenu *menu)
 #ifndef Q_OS_WIN
     // Self-drawn shadow: child overlay paints into the 8px transparent QSS margin.
     auto *overlay = new MenuShadowOverlay(menu);
+    overlay->show();
+    overlay->raise();
+#endif
+}
+
+void themePopupWidget(QWidget *popup)
+{
+    // Same frameless / transparent / shadow treatment as themeMenu(), without the
+    // TightMenuStyle (which only handles check-column spacing inside QMenu items).
+#ifdef Q_OS_WIN
+    popup->setWindowFlags(Qt::Popup | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint);
+#else
+    popup->setWindowFlags(Qt::Popup | Qt::FramelessWindowHint);
+#endif
+    popup->setAttribute(Qt::WA_TranslucentBackground);
+    popup->setAttribute(Qt::WA_StyledBackground, true);
+    popup->installEventFilter(menuShadowFilter());
+#ifndef Q_OS_WIN
+    auto *overlay = new MenuShadowOverlay(popup);
     overlay->show();
     overlay->raise();
 #endif

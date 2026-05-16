@@ -278,7 +278,13 @@ signals:
     void findProgress(size_w pos, size_w len, double mbPerSec);
     void paneFocusRequested();   // Ctrl+Tab: caller should focus Find/Goto panel
     void bookmarksChanged();          // bookmark added, removed, or replaced
-    void bookmarkEditRequested(int idx); // user clicked the edit button on a note strip
+    void bookmarkEditRequested(int idx); // kept for compatibility — no longer emitted (dead)
+    void bookmarkSettingsRequested(int idx, QRect btnGlobal); // gear button → settings popup
+
+public:
+    // Mark a bookmark's gear button as "popup open" so it stays visually pressed.
+    // Pass -1 to clear.  Safe to call from outside HexView (e.g. MainWindow).
+    void setBookmarkPopupIdx(int idx) { m_bookmarkPopupIdx = idx; viewport()->update(); }
 
 protected:
     void paintEvent(QPaintEvent *event)        override;
@@ -353,6 +359,7 @@ private:
     void          drawNoteStrip(QPainter &painter, int asciiRight, int ny, const Bookmark &bm);
     void          openNoteEditor(int bmIdx, QPoint clickPos = {-1,-1});
     void          closeNoteEditor(bool save);
+    QFont         noteFont() const;
 
 
     // ── Coordinate / caret helpers ────────────────────────────────────────────
@@ -471,6 +478,10 @@ private:
     // Note strip inline editor
     QPlainTextEdit *m_noteEditor    = nullptr;
     int             m_noteEditorIdx = -1;
+
+    // Index of the bookmark whose settings popup is currently open (-1 = none).
+    // Set via setBookmarkPopupIdx() so the gear button stays in its pressed state.
+    int             m_bookmarkPopupIdx = -1;
 
     // Note strip hover/press state (updated in mouseMoveEvent idle path and press/release)
     int             m_hoverBookmarkIdx = -1;

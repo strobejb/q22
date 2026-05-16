@@ -25,10 +25,10 @@ static constexpr int kNoteBtnSz   = 16;  // button icon size (px)
 static constexpr int kNoteBtnGap  = 4;   // gap between text and close button (px)
 static constexpr int kNoteRangePad = 5;  // gap between note text and range label (px)
 
-static QTextDocument *makeNoteTextDoc(const QString &text, int width)
+static QTextDocument *makeNoteTextDoc(const QString &text, int width, const QFont &font)
 {
     auto *doc = new QTextDocument;
-    doc->setDefaultFont(QApplication::font());
+    doc->setDefaultFont(font);
     doc->setDocumentMargin(0);
     QTextOption opt;
     opt.setWrapMode(QTextOption::WordWrap);
@@ -36,6 +36,21 @@ static QTextDocument *makeNoteTextDoc(const QString &text, int width)
     doc->setTextWidth(width);
     doc->setPlainText(text);
     return doc;
+}
+
+// Returns the UI font scaled to the hex-view font size so bookmark note strips
+// grow and shrink consistently when the user changes the hex display font.
+QFont HexView::noteFont() const
+{
+    QFont f = QApplication::font();
+    const int px = m_font.pixelSize();
+    if (px > 0) {
+        f.setPixelSize(px);
+    } else {
+        const int pt = m_font.pointSize();
+        if (pt > 0) f.setPointSize(pt);
+    }
+    return f;
 }
 
 // ── Bookmark management ───────────────────────────────────────────────────────
@@ -111,7 +126,8 @@ HexView::NoteStripGeom HexView::noteStripGeom(const Bookmark &bm) const
     const int textW = rectW - 2 * kNotePadH - kNoteBtnSz - kNoteBtnGap;
     if (textW <= 0) return g;
 
-    const QFontMetrics fm(QApplication::font());
+    const QFont nf = noteFont();
+    const QFontMetrics fm(nf);
     // While this bookmark is being edited use the live editor text so the
     // strip and editor resize together as the user adds/removes lines.
     const int bmIdx_ = (int)(&bm - m_bookmarks.constData());
@@ -119,7 +135,7 @@ HexView::NoteStripGeom HexView::noteStripGeom(const Bookmark &bm) const
     const QString rawText = isEditing ? m_noteEditor->toPlainText() : bm.name;
     // Use a space as stand-in for empty text so height is never zero.
     const QString text = rawText.isEmpty() ? QStringLiteral(" ") : rawText;
-    QTextDocument *textDoc = makeNoteTextDoc(text, textW);
+    QTextDocument *textDoc = makeNoteTextDoc(text, textW, nf);
     const int textH = qRound(textDoc->size().height());
     delete textDoc;
 
@@ -199,7 +215,7 @@ void HexView::drawNoteStrip(QPainter &painter, int /*asciiRight*/, int /*ny*/,
     // Text: render via the same QTextDocument engine used for measurement so
     // the line positions in the painted strip exactly match the editor.
     {
-        QTextDocument *doc = makeNoteTextDoc(bm.name, geom.textRect.width());
+        QTextDocument *doc = makeNoteTextDoc(bm.name, geom.textRect.width(), noteFont());
         painter.save();
         painter.setClipRect(geom.textRect);
         painter.translate(geom.textRect.topLeft());
@@ -212,7 +228,7 @@ void HexView::drawNoteStrip(QPainter &painter, int /*asciiRight*/, int /*ny*/,
     }
 
     // Range label: dimmed foreground, single line, below the note text.
-    painter.setFont(QApplication::font());
+    painter.setFont(noteFont());
     QColor rangeFg = fgCol;
     rangeFg.setAlphaF(0.55);
     painter.setPen(rangeFg);
@@ -253,10 +269,13 @@ void HexView::drawNoteStrip(QPainter &painter, int /*asciiRight*/, int /*ny*/,
         // When no grab is active the normal m_hoverOn* state is used.
         const bool grabbed        = (QWidget::mouseGrabber() == viewport());
         const bool showHoverClose = grabbed ? m_pressedOnClose : m_hoverOnClose;
-        const bool showHoverEdit  = grabbed ? m_pressedOnEdit  : m_hoverOnEdit;
+        // Keep the gear button in its pressed state while its settings popup is open.
+        const bool popupOpenHere  = (bmIdx == m_bookmarkPopupIdx);
+        const bool showHoverEdit  = grabbed ? m_pressedOnEdit : (m_hoverOnEdit || popupOpenHere);
         //drawBtn(geom.closeRect, showHoverClose, m_pressedOnClose, QStringLiteral("window-close-symbolic"));
         //drawBtn(geom.editRect,  showHoverEdit,  m_pressedOnEdit,  QStringLiteral("document-edit-symbolic"));
-        drawBtn(geom.editRect,  showHoverEdit,  m_pressedOnEdit,  QStringLiteral("pen-to-square-solid-full"));
+        drawBtn(geom.editRect, showHoverEdit, m_pressedOnEdit || popupOpenHere,
+                QStringLiteral("document-edit-symbolic"));
     }
 
     painter.restore();
@@ -337,7 +356,7 @@ void HexView::openNoteEditor(int bmIdx, QPoint clickPos)
         "QPlainTextEdit:focus { border: none; padding: 0; }")
         .arg(bg.name()).arg(fg.name()));
 
-    m_noteEditor->setFont(QApplication::font());
+    m_noteEditor->setFont(noteFont());
     m_noteEditor->setPlainText(bm.name);
     m_noteEditor->setGeometry(geom.textRect.adjusted(0, 0, 0, 2));
     m_noteEditor->show();

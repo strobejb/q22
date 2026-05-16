@@ -378,8 +378,16 @@ void HexView::mouseReleaseEvent(QMouseEvent *event)
                 }
                 viewport()->update();
             } else {
-                closeNoteEditor(false);
-                emit bookmarkEditRequested(pressedIdx);
+                // bookmarkEditRequested is dead — settings popup replaces the dialog.
+                // emit bookmarkEditRequested(pressedIdx);
+                if (pressedIdx >= 0 && pressedIdx < m_bookmarks.size()) {
+                    const NoteStripGeom geom = noteStripGeom(m_bookmarks[pressedIdx]);
+                    // Pass the global rect of the button so the popup can right-align to it.
+                    const QRect btnGlobal = geom.valid
+                        ? QRect(viewport()->mapToGlobal(geom.editRect.topLeft()), geom.editRect.size())
+                        : QRect(event->globalPosition().toPoint(), QSize(0, 0));
+                    emit bookmarkSettingsRequested(pressedIdx, btnGlobal);
+                }
             }
         }
         return;

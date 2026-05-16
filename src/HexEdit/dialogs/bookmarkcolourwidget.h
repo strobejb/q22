@@ -21,7 +21,9 @@ public:
     int                   selectedIndex()  const { return m_selectedIndex; }
     const QVector<QColor> &colours()       const { return m_colours; }
 
-    QSize sizeHint() const override;
+    QSize sizeHint()        const override;
+    bool  hasHeightForWidth() const override { return true; }
+    int   heightForWidth(int w) const override;
 
 signals:
     void colourSelected(const QColor &colour);
@@ -29,8 +31,9 @@ signals:
 protected:
     void paintEvent(QPaintEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
-    void mousePressEvent(QMouseEvent *event) override;
-    void mouseMoveEvent(QMouseEvent *event) override;
+    void mousePressEvent(QMouseEvent *event)   override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event)    override;
     void leaveEvent(QEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
 

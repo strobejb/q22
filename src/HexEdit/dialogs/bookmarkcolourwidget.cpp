@@ -80,12 +80,18 @@ int BookmarkColourWidget::cellSize() const
     return (width() - 2 * SWATCH_PAD) / m_columns;
 }
 
-QSize BookmarkColourWidget::sizeHint() const
+int BookmarkColourWidget::heightForWidth(int w) const
 {
-    const int w    = width() > 0 ? width() : (m_columns * 38 + 2 * SWATCH_PAD);
     const int cell = qMax(1, (w - 2 * SWATCH_PAD) / m_columns);
     const int rows = (m_colours.size() + m_columns - 1) / m_columns;
-    return QSize(w, cell * rows + 2 * SWATCH_PAD);
+    return cell * rows + 2 * SWATCH_PAD;
+}
+
+QSize BookmarkColourWidget::sizeHint() const
+{
+    // Prefer the actual width if already laid out, otherwise use a sensible default.
+    const int w = width() > 0 ? width() : (m_columns * 38 + 2 * SWATCH_PAD);
+    return QSize(w, heightForWidth(w));
 }
 
 int BookmarkColourWidget::indexAt(const QPoint &pos) const
@@ -173,11 +179,19 @@ void BookmarkColourWidget::keyPressEvent(QKeyEvent *event)
 
 void BookmarkColourWidget::mousePressEvent(QMouseEvent *event)
 {
+    // Visual feedback only — selection is committed on release.
     if (event->button() != Qt::LeftButton) return;
     const int idx = indexAt(event->pos());
     if (idx < 0) return;
     m_selectedIndex = idx;
     update();
+}
+
+void BookmarkColourWidget::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (event->button() != Qt::LeftButton) return;
+    const int idx = indexAt(event->pos());
+    if (idx < 0 || idx != m_selectedIndex) return;
     emit colourSelected(m_colours[idx]);
 }
 
