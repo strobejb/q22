@@ -9,6 +9,7 @@
 #include <QPainterPath>
 #include <QPixmap>
 #include <QPlainTextEdit>
+#include <QScrollBar>
 #include <QTextCursor>
 #include <QAbstractTextDocumentLayout>
 #include <QTextDocument>
@@ -263,7 +264,7 @@ void HexView::drawNoteStrip(QPainter &painter, int /*asciiRight*/, int /*ny*/,
 
 // ── Inline note editor ────────────────────────────────────────────────────────
 
-void HexView::openNoteEditor(int bmIdx)
+void HexView::openNoteEditor(int bmIdx, QPoint clickPos)
 {
     if (bmIdx < 0 || bmIdx >= m_bookmarks.size()) return;
     closeNoteEditor(true);
@@ -290,10 +291,27 @@ void HexView::openNoteEditor(int bmIdx)
                 this, [this]() {
             if (m_noteEditorIdx < 0 || m_noteEditorIdx >= m_bookmarks.size()) return;
             const NoteStripGeom geom = noteStripGeom(m_bookmarks[m_noteEditorIdx]);
-            if (geom.valid && m_noteEditor->geometry() != geom.textRect) {
-                m_noteEditor->setGeometry(geom.textRect);
-                viewport()->update();
+            if (geom.valid) {
+                // Add 2px to the bottom so QPlainTextEdit never needs to scroll
+                // when the cursor sits on the last line (QTextDocument::size()
+                // can be a pixel or two short of what ensureCursorVisible needs).
+                const QRect editorRect = geom.textRect.adjusted(0, 0, 0, 2);
+                if (m_noteEditor->geometry() != editorRect) {
+                    m_noteEditor->setGeometry(editorRect);
+                    viewport()->update();
+                }
             }
+        });
+
+        // QPlainTextEdit calls ensureCursorVisible() on every cursor move
+        // (including during selection), which scrolls the internal document
+        // viewport even though the scrollbars are hidden.  Since the editor is
+        // always sized to fit the full text there is never anything to scroll —
+        // snap both axes back to zero on each cursor change.
+        connect(m_noteEditor, &QPlainTextEdit::cursorPositionChanged,
+                m_noteEditor, [this]() {
+            m_noteEditor->verticalScrollBar()->setValue(0);
+            m_noteEditor->horizontalScrollBar()->setValue(0);
         });
     }
 
@@ -321,11 +339,20 @@ void HexView::openNoteEditor(int bmIdx)
 
     m_noteEditor->setFont(QApplication::font());
     m_noteEditor->setPlainText(bm.name);
-    m_noteEditor->setGeometry(geom.textRect);
+    m_noteEditor->setGeometry(geom.textRect.adjusted(0, 0, 0, 2));
     m_noteEditor->show();
     m_noteEditor->raise();
     m_noteEditor->setFocus();
-    m_noteEditor->moveCursor(QTextCursor::End);
+    // Place the caret under the click when we know where the mouse landed;
+    // otherwise fall back to end-of-document.
+    if (clickPos.x() >= 0) {
+        // clickPos is in viewport coordinates; map to editor-viewport coordinates.
+        const QPoint localPos = clickPos - geom.textRect.topLeft();
+        QTextCursor cur = m_noteEditor->cursorForPosition(localPos);
+        m_noteEditor->setTextCursor(cur);
+    } else {
+        m_noteEditor->moveCursor(QTextCursor::End);
+    }
 
     // Repaint so the note strip behind the editor is suppressed.
     viewport()->update();

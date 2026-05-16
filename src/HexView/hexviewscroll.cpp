@@ -191,3 +191,17 @@ bool HexView::scrollTop(size_w offset)
     viewport()->update();
     return true;
 }
+
+bool HexView::scrollCenter(size_w offset)
+{
+    if (!m_pDataSeq || offset > m_pDataSeq->size()) return false;
+    if (m_nBytesPerLine == 0) return false;
+
+    const size_w line = offset / (size_w)m_nBytesPerLine;
+    const size_w half = (size_w)(m_nWindowLines / 2);
+    m_nVScrollPos = (line > half) ? line - half : 0;
+    setupScrollbars();
+    repositionCaret();
+    viewport()->update();
+    return true;
+}

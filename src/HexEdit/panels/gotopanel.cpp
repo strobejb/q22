@@ -84,7 +84,7 @@ GotoPanel::GotoPanel(HexView *hv, QWidget *parent)
             const Bookmark &bm = bms[idx];
             // Select the full bookmark range; cursor stays at the start.
             m_hv->setCurSel(bm.offset + bm.length, bm.offset);
-            m_hv->scrollTo(bm.offset);
+            m_hv->scrollCenter(bm.offset);
             m_hv->setFocus();
         }
     });

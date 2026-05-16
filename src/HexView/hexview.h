@@ -214,6 +214,7 @@ public:
     // Scroll
     bool   scrollTo(size_w offset);
     bool   scrollTop(size_w offset);
+    bool   scrollCenter(size_w offset);
 
     // Data access
     size_t getData(size_w offset, uint8_t *buf, size_t len);
@@ -350,7 +351,7 @@ private:
     int           findBookmark(size_w startoff, size_w endoff) const;
     NoteStripGeom noteStripGeom(const Bookmark &bm) const;
     void          drawNoteStrip(QPainter &painter, int asciiRight, int ny, const Bookmark &bm);
-    void          openNoteEditor(int bmIdx);
+    void          openNoteEditor(int bmIdx, QPoint clickPos = {-1,-1});
     void          closeNoteEditor(bool save);
 
 

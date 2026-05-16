@@ -312,7 +312,7 @@ void HexView::mousePressEvent(QMouseEvent *event)
     }
 
     if (ht == HVHT_BOOKMARK) {
-        openNoteEditor(m_highlightCurrentIdx);
+        openNoteEditor(m_highlightCurrentIdx, {x, y});
         return;
     }
 
