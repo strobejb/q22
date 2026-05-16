@@ -53,12 +53,28 @@ QFont HexView::noteFont() const
     return f;
 }
 
+// Returns the extra logical columns (character widths) that must be added to
+// m_nTotalWidth so the horizontal scrollbar gives enough range to scroll the
+// note strips fully into view.  Returns 0 when there are no bookmarks.
+//
+// The seam for a future "bookmark resize bar": kNoteMaxW drives the allocated
+// width.  When that bar is implemented, replace kNoteMaxW with a member
+// variable (e.g. m_nNoteMaxW) and call setupScrollbars() after a drag.
+int HexView::noteStripExtraColumns() const
+{
+    if (m_bookmarks.isEmpty() || m_nFontWidth <= 0) return 0;
+    // Gap (6 em-widths) + triangle pointer + maximum strip width, rounded up.
+    const int extraPx = m_nFontWidth * 6 + kNoteTriW + kNoteMaxW;
+    return (extraPx + m_nFontWidth - 1) / m_nFontWidth;
+}
+
 // ── Bookmark management ───────────────────────────────────────────────────────
 
 void HexView::setBookmarks(const QList<Bookmark> &bookmarks)
 {
     closeNoteEditor(false);
     m_bookmarks = bookmarks;
+    setupScrollbars();
     viewport()->update();
     emit bookmarksChanged();
 }
@@ -66,6 +82,7 @@ void HexView::setBookmarks(const QList<Bookmark> &bookmarks)
 void HexView::addBookmark(const Bookmark &bm)
 {
     m_bookmarks.append(bm);
+    setupScrollbars();
     viewport()->update();
     emit bookmarksChanged();
 }
@@ -75,6 +92,7 @@ void HexView::removeBookmark(int idx)
     if (idx < 0 || idx >= m_bookmarks.size()) return;
     closeNoteEditor(false);
     m_bookmarks.removeAt(idx);
+    setupScrollbars();
     viewport()->update();
     emit bookmarksChanged();
 }
@@ -84,6 +102,7 @@ void HexView::replaceBookmark(int idx, const Bookmark &bm)
     if (idx < 0 || idx >= m_bookmarks.size()) return;
     closeNoteEditor(false);
     m_bookmarks[idx] = bm;
+    setupScrollbars();
     viewport()->update();
     emit bookmarksChanged();
 }

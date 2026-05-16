@@ -48,6 +48,7 @@ HexView::HexView(QWidget *parent)
     });
     connect(horizontalScrollBar(), &QScrollBar::valueChanged, this, [this](int val) {
         m_nHScrollPos = val;
+        updateResizeBarPos();
         viewport()->update();
     });
 
@@ -304,6 +305,7 @@ int HexView::calcTotalWidth()
     width += checkStyle(HVS_ASCII_INVISIBLE) ? 0 : m_nHexPaddingRight;
     width += checkStyle(HVS_ASCII_INVISIBLE) ? 0 : m_nBytesPerLine;
     width += 1;
+    width += noteStripExtraColumns();
 
     return width;
 }

@@ -322,6 +322,7 @@ private:
     void   updateMetrics();
     void   recalcPositions();
     int    calcTotalWidth();
+    int    noteStripExtraColumns() const; // extra h-scroll columns for bookmark note strips
     void   emitResize();
     void   recalcLayout();
 
