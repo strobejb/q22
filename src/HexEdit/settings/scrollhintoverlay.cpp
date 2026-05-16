@@ -35,6 +35,20 @@ public:
         if (isVisible()) update();
     }
 
+    void fadeIn()
+    {
+        if (isVisible()) return;
+        auto *anim = new QVariantAnimation(this);
+        anim->setStartValue(0.0);
+        anim->setEndValue(1.0);
+        anim->setDuration(350);
+        anim->setEasingCurve(QEasingCurve::InCubic);
+        connect(anim, &QVariantAnimation::valueChanged, this, [this](const QVariant &v) {
+            setHintOpacity(v.toReal());
+        });
+        anim->start(QAbstractAnimation::DeleteWhenStopped);
+    }
+
     void fadeOut()
     {
         if (!isVisible()) return;
@@ -86,7 +100,8 @@ protected:
         p.setBrush(Qt::NoBrush);
 
         const QPointF c = circle.center();
-        constexpr qreal aw = 5.5, ah = 3.5;
+        //constexpr qreal aw = 5.5, ah = 3.5;
+        constexpr qreal aw = 7.5, ah = 6.5;
         // Down chevron
         p.drawLine(QPointF(c.x() - aw, c.y() - ah * 0.5), QPointF(c.x(), c.y() + ah * 0.5));
         p.drawLine(QPointF(c.x(),       c.y() + ah * 0.5), QPointF(c.x() + aw, c.y() - ah * 0.5));
@@ -103,7 +118,7 @@ protected:
     }
 
 private:
-    static constexpr int kSz = 32;
+    static constexpr int kSz = 48;
     QScrollBar *m_bar;
     qreal       m_opacity = 0.0;
     bool        m_hovered = false;
@@ -119,10 +134,19 @@ ScrollHintOverlay::ScrollHintOverlay(QScrollArea *scrollArea)
 
     m_hint = new HintWidget(bar, vp);
 
+    // bottom margin is kDialogCornerRadius+2  -->  10+2  --> 12px
+    // this avoids the scrollbar being clipped by the rounded bottom corner of dialogs
+    bar->setStyleSheet("QScrollBar:vertical { margin: 2px 2px 12px 2px; }");
+
     vp->installEventFilter(this);
     m_scroll->installEventFilter(this);
     connect(bar, &QScrollBar::rangeChanged, this, &ScrollHintOverlay::updateVisibility);
-    connect(bar, &QScrollBar::valueChanged, this, &ScrollHintOverlay::dismiss);
+    connect(bar, &QScrollBar::valueChanged, this, [this](int value) {
+        if (value == m_scroll->verticalScrollBar()->minimum())
+            reset();
+        else
+            dismiss();
+    });
 
     reposition();
     updateVisibility();
@@ -162,7 +186,7 @@ void ScrollHintOverlay::updateVisibility()
     if (m_dismissed) return;
     QScrollBar *bar = m_scroll->verticalScrollBar();
     if (bar->maximum() > bar->minimum()) {
-        m_hint->setHintOpacity(1.0);
+        m_hint->fadeIn();
         reposition();
     } else {
         m_hint->setHintOpacity(0.0);

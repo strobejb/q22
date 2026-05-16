@@ -10,6 +10,8 @@
 #include <QPixmap>
 #include <QPlainTextEdit>
 #include <QTextCursor>
+#include <QAbstractTextDocumentLayout>
+#include <QTextDocument>
 #include <QTextOption>
 
 // Geometry constants — shared by noteStripGeom, drawNoteStrip, and the editor.
@@ -21,6 +23,19 @@ static constexpr int kNoteMaxW    = 220; // max strip width (px)
 static constexpr int kNoteBtnSz   = 16;  // button icon size (px)
 static constexpr int kNoteBtnGap  = 4;   // gap between text and close button (px)
 static constexpr int kNoteRangePad = 5;  // gap between note text and range label (px)
+
+static QTextDocument *makeNoteTextDoc(const QString &text, int width)
+{
+    auto *doc = new QTextDocument;
+    doc->setDefaultFont(QApplication::font());
+    doc->setDocumentMargin(0);
+    QTextOption opt;
+    opt.setWrapMode(QTextOption::WordWrap);
+    doc->setDefaultTextOption(opt);
+    doc->setTextWidth(width);
+    doc->setPlainText(text);
+    return doc;
+}
 
 // ── Bookmark management ───────────────────────────────────────────────────────
 
@@ -103,10 +118,9 @@ HexView::NoteStripGeom HexView::noteStripGeom(const Bookmark &bm) const
     const QString rawText = isEditing ? m_noteEditor->toPlainText() : bm.name;
     // Use a space as stand-in for empty text so height is never zero.
     const QString text = rawText.isEmpty() ? QStringLiteral(" ") : rawText;
-    const QRect bounds = fm.boundingRect(QRect(0, 0, textW, 10000),
-                                          Qt::TextWordWrap | Qt::AlignLeft | Qt::AlignTop,
-                                          text);
-    const int textH = bounds.height();
+    QTextDocument *textDoc = makeNoteTextDoc(text, textW);
+    const int textH = qRound(textDoc->size().height());
+    delete textDoc;
 
     // Range label: "0xADDR  (N bytes)" or just "0xADDR" for single-byte bookmarks.
     // Width matches textW so the close button (bottom-right) doesn't overlap it.
@@ -181,15 +195,23 @@ void HexView::drawNoteStrip(QPainter &painter, int /*asciiRight*/, int /*ny*/,
     path.addPolygon(tri);
     painter.fillPath(path, bgCol);
 
-    // Text: UI font, word-wrapped (clipped to text area, not over the button).
-    painter.setFont(QApplication::font());
-    painter.setPen(fgCol);
-    painter.setClipRect(geom.textRect);
-    painter.drawText(geom.textRect, Qt::TextWordWrap | Qt::AlignLeft | Qt::AlignTop,
-                     bm.name);
+    // Text: render via the same QTextDocument engine used for measurement so
+    // the line positions in the painted strip exactly match the editor.
+    {
+        QTextDocument *doc = makeNoteTextDoc(bm.name, geom.textRect.width());
+        painter.save();
+        painter.setClipRect(geom.textRect);
+        painter.translate(geom.textRect.topLeft());
+        QAbstractTextDocumentLayout::PaintContext ctx;
+        ctx.palette.setColor(QPalette::Base, bgCol);
+        ctx.palette.setColor(QPalette::Text, fgCol);
+        doc->documentLayout()->draw(&painter, ctx);
+        painter.restore();
+        delete doc;
+    }
 
     // Range label: dimmed foreground, single line, below the note text.
-    painter.setClipping(false);
+    painter.setFont(QApplication::font());
     QColor rangeFg = fgCol;
     rangeFg.setAlphaF(0.55);
     painter.setPen(rangeFg);
