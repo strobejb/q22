@@ -72,10 +72,16 @@ void DockPanelRow::setControlAlignment(QWidget *widget)
 const int DEFAULT_PANEL_INPUT_HEIGHT = 36;
 int DockPanelRow::inputHeight(const QWidget *reference)
 {
+    int minHeight = DEFAULT_PANEL_INPUT_HEIGHT;
+#ifndef Q_OS_WIN
+    // GNOME/Adwaita gives the status bar controls a slightly taller native
+    // metric than Windows. Keep docked panel controls visually in scale.
+    minHeight += 6;
+#endif
     if (!reference)
-        return DEFAULT_PANEL_INPUT_HEIGHT;
+        return minHeight;
 
-    return qMax(DEFAULT_PANEL_INPUT_HEIGHT, reference->fontMetrics().height() + 14);
+    return qMax(minHeight, reference->fontMetrics().height() + 14);
 }
 
 void DockPanelRow::prepareControl(QWidget *widget, bool fixedHorizontal)
