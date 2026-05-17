@@ -781,24 +781,31 @@ MainWindow::MainWindow(QWidget *parent)
         m_bookmarkDialog->setForegroundColour(m_hv->palette().text().color());
     };
 
-    connect(ui->actionBookmark_here, &QAction::triggered, this, [this, populateBookmarkDialog]() {
+    // Shared inline-add path: used by Ctrl+B, the context menu action, and the
+    // goto panel.  Adds a blank bookmark at the cursor/selection, centres the
+    // view, scrolls the H-bar fully right so the note strip is visible, and
+    // opens the inline editor so the user can type the name immediately.
+    auto addBookmarkInline = [this]() {
         const size_w selSize = m_hv->selectionSize();
         const size_w offset  = selSize > 0 ? m_hv->selectionStart() : m_hv->cursorOffset();
         const size_w length  = selSize > 0 ? selSize : 1;
-        m_bookmarkDialog->setOffset(offset);
-        m_bookmarkDialog->setLength(length);
-        populateBookmarkDialog();
-        m_bookmarkDialog->setEditMode(-1, QString(), -1);
-        if (execCentered(m_bookmarkDialog) == QDialog::Accepted) {
-            Bookmark bm;
-            bm.offset      = m_bookmarkDialog->offset();
-            bm.length      = static_cast<size_w>(m_bookmarkDialog->length());
-            bm.name        = m_bookmarkDialog->bookmarkName();
-            bm.fgColour    = 0;
-            bm.colourIndex = qMax(0, m_bookmarkDialog->selectedColourIndex());
-            m_hv->addBookmark(bm);
-        }
-    });
+
+        Bookmark bm;
+        bm.offset      = offset;
+        bm.length      = length;
+        bm.name        = QString();
+        bm.fgColour    = 0;
+        bm.colourIndex = 0;
+        m_hv->addBookmark(bm);
+
+        const int newIdx = m_hv->bookmarks().size() - 1;
+        m_hv->scrollCenter(offset);
+        m_hv->scrollHEnd();
+        m_hv->openNoteEditor(newIdx);
+    };
+
+    connect(ui->actionBookmark_here, &QAction::triggered, this,
+            [addBookmarkInline]() { addBookmarkInline(); });
 
     connect(m_hv, &HexView::bookmarkEditRequested, this, [this, populateBookmarkDialog](int idx) {
         const QList<Bookmark> &bms = m_hv->bookmarks();
@@ -821,6 +828,11 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(m_hv, &HexView::bookmarkSettingsRequested,
             this, [this](int idx, QRect btnGlobal) {
+        // Toggle: if this bookmark's popup is already open, the deferred clear
+        // hasn't fired yet — the user clicked the gear button a second time to
+        // close it.  Qt has already dismissed the popup; just return.
+        if (m_hv->bookmarkPopupIdx() == idx) return;
+
         const QList<Bookmark> &bms = m_hv->bookmarks();
         if (idx < 0 || idx >= bms.size()) return;
         const Bookmark &bm = bms[idx];
@@ -953,16 +965,19 @@ MainWindow::MainWindow(QWidget *parent)
         menu->installEventFilter(new BookmarkMenuPositioner(btnGlobal, menu));
 
         // Keep the gear button visually pressed while the popup is open.
+        // Defer the clear so that m_bookmarkPopupIdx is still set when the
+        // mouse-release event fires after the user clicks the button again —
+        // the handler below checks it to avoid re-opening the popup (toggle).
         m_hv->setBookmarkPopupIdx(idx);
         connect(menu, &QMenu::aboutToHide, this, [this]() {
-            m_hv->setBookmarkPopupIdx(-1);
+            QTimer::singleShot(0, this, [this]() { m_hv->setBookmarkPopupIdx(-1); });
         });
 
         menu->popup({0, 0});   // Show event filter corrects the position
     });
 
-    connect(m_gotoDialog, &GotoPanel::bookmarkRequested,
-            ui->actionBookmark_here, &QAction::trigger);
+    connect(m_gotoDialog, &GotoPanel::bookmarkRequested, this,
+            [addBookmarkInline]() { addBookmarkInline(); });
 
     connect(m_hv, &HexView::bookmarksChanged,
             m_gotoDialog, &GotoPanel::refreshBookmarks);

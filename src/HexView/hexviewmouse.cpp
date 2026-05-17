@@ -607,7 +607,15 @@ void HexView::contextMenuEvent(QContextMenuEvent *event)
             themeMenu(&bmMenu);
             QAction *editAct   = bmMenu.addAction(tr("&Edit"));
             QAction *deleteAct = bmMenu.addAction(tr("&Delete"));
+
+            // Show the gear button in its pressed state for the duration of
+            // the context menu — same visual treatment as the settings popup.
+            m_bookmarkPopupIdx = bmIdx;
+            viewport()->update();
             QAction *act = bmMenu.exec(event->globalPos());
+            m_bookmarkPopupIdx = -1;
+            viewport()->update();
+
             if (act == editAct)
                 emit bookmarkEditRequested(bmIdx);
             else if (act == deleteAct)

@@ -44,11 +44,13 @@ HexView::HexView(QWidget *parent)
     // avoid a redundant repaint on every metrics update.
     connect(verticalScrollBar(),   &QScrollBar::valueChanged, this, [this](int val) {
         m_nVScrollPos = (size_w)val;
+        repositionCaret();
         viewport()->update();
     });
     connect(horizontalScrollBar(), &QScrollBar::valueChanged, this, [this](int val) {
         m_nHScrollPos = val;
         updateResizeBarPos();
+        repositionCaret();
         viewport()->update();
     });
 

@@ -205,3 +205,21 @@ bool HexView::scrollCenter(size_w offset)
     viewport()->update();
     return true;
 }
+
+void HexView::scrollHEnd()
+{
+    if (m_nHScrollPos >= m_nHScrollMax) return;
+    m_nHScrollPos = m_nHScrollMax;
+    setupScrollbars();
+    repositionCaret();
+    viewport()->update();
+}
+
+void HexView::scrollHStart()
+{
+    if (m_nHScrollPos <= 0) return;
+    m_nHScrollPos = 0;
+    setupScrollbars();
+    repositionCaret();
+    viewport()->update();
+}

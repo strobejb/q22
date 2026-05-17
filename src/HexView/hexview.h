@@ -215,6 +215,8 @@ public:
     bool   scrollTo(size_w offset);
     bool   scrollTop(size_w offset);
     bool   scrollCenter(size_w offset);
+    void   scrollHEnd();    // scroll to the far right (note strips visible)
+    void   scrollHStart();  // scroll to the far left  (address column visible)
 
     // Data access
     size_t getData(size_w offset, uint8_t *buf, size_t len);
@@ -251,6 +253,7 @@ public:
     void   replaceBookmark(int idx, const Bookmark &bm);
     void   setBookmarks(const QList<Bookmark> &bookmarks);
     const QList<Bookmark> &bookmarks() const { return m_bookmarks; }
+    void   openNoteEditor(int bmIdx, QPoint clickPos = {-1,-1});
 
     // Provide an external menu to use instead of the built-in context menu.
     // Pass nullptr to restore the built-in behaviour.  Ownership stays with
@@ -285,6 +288,7 @@ public:
     // Mark a bookmark's gear button as "popup open" so it stays visually pressed.
     // Pass -1 to clear.  Safe to call from outside HexView (e.g. MainWindow).
     void setBookmarkPopupIdx(int idx) { m_bookmarkPopupIdx = idx; viewport()->update(); }
+    int  bookmarkPopupIdx()    const  { return m_bookmarkPopupIdx; }
 
 protected:
     void paintEvent(QPaintEvent *event)        override;
@@ -358,7 +362,6 @@ private:
     int           findBookmark(size_w startoff, size_w endoff) const;
     NoteStripGeom noteStripGeom(const Bookmark &bm) const;
     void          drawNoteStrip(QPainter &painter, int asciiRight, int ny, const Bookmark &bm);
-    void          openNoteEditor(int bmIdx, QPoint clickPos = {-1,-1});
     void          closeNoteEditor(bool save);
     QFont         noteFont() const;
 
