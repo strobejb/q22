@@ -209,6 +209,7 @@ void GotoPanel::activate(const QString &initialText)
     ui->editOffset->selectAll();
 }
 
+
 void GotoPanel::refreshBookmarks()
 {
     const QList<Bookmark> &bms = m_hv->bookmarks();
@@ -233,14 +234,28 @@ void GotoPanel::refreshBookmarks()
     const QFontMetrics fm(m_comboBookmarks->font());
     constexpr int kMaxNamePx = 200;
 
+    // First bookmark sits at QComboBox item index 1 ("New Bookmark…") + 1
+    // (separator, if any bookmarks exist) = 2, otherwise 1.
+    int comboIdx = bms.isEmpty() ? 1 : 2;
+
     QStringList labels;
     for (int i : sortedIdx) {
         const Bookmark &bm    = bms[i];
         const QString rawName = bm.name.isEmpty() ? tr("(unnamed)") : bm.name;
         const QString name    = fm.elidedText(rawName, Qt::ElideRight, kMaxNamePx);
-        const QString hex     = QStringLiteral("0x") + QString::number(bm.offset, 16).toUpper();
+        const QString hex     = QStringLiteral("0x") + QString::number(bm.offset, 16).toUpper().rightJustified(8, QLatin1Char('0'));
         const QString label   = name + QLatin1Char('\t') + hex;
         m_comboBookmarks->addItem(label);
+
+        // Set the colour swatch icon on the item before buildMenu() reads it.
+        if (m_bookmarkSwatches) {
+            const QColor bgCol = bm.colourIndex >= 0
+                ? QColor(m_hv->getHexColour(HvColorSlot(HVC_BOOKMARK1 + bm.colourIndex)))
+                : (bm.bgColour ? QColor(bm.bgColour)
+                               : QColor(m_hv->getHexColour(HVC_BOOKMARK1)));
+            m_comboBookmarks->setItemData(comboIdx, bgCol, Qt::DecorationRole);
+        }
+        ++comboIdx;
         labels.append(label);
     }
     m_comboBookmarks->buildMenu(/*checkable=*/false);

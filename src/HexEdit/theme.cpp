@@ -677,7 +677,7 @@ QMenu {
     {menuMargin}
 }
 QMenu::item {
-    padding: 6px 28px 6px 16px;
+    padding: 6px 28px 6px 28px;
     min-width: 180px;
     border-radius: 4px;
     margin: 1px 4px;

@@ -44,15 +44,20 @@ HexView::HexView(QWidget *parent)
     // avoid a redundant repaint on every metrics update.
     connect(verticalScrollBar(),   &QScrollBar::valueChanged, this, [this](int val) {
         m_nVScrollPos = (size_w)val;
+        closeNoteEditor(/*save=*/true);
         repositionCaret();
         viewport()->update();
     });
     connect(horizontalScrollBar(), &QScrollBar::valueChanged, this, [this](int val) {
         m_nHScrollPos = val;
+        closeNoteEditor(/*save=*/true);
         updateResizeBarPos();
         repositionCaret();
         viewport()->update();
     });
+    // Note: setupScrollbars() blocks valueChanged via QSignalBlocker, so the
+    // lambdas above only fire on user scrollbar-drag.  Wheel/programmatic scrolling
+    // goes through scroll() which calls closeNoteEditor directly.
 
     connect(&m_caretTimer, &QTimer::timeout, this, [this] {
         m_caretVisible = !m_caretVisible;
@@ -113,9 +118,15 @@ bool HexView::eventFilter(QObject *obj, QEvent *ev)
     }
 
     if (m_noteEditor && (obj == m_noteEditor || obj == m_noteEditor->viewport())) {
-        // Always consume wheel events so they never reach the hexview.
-        if (ev->type() == QEvent::Wheel)
+        // Forward wheel events to the hex view so the file scrolls normally
+        // while editing a bookmark note.  Consume the event so the editor
+        // (which has no scrollbars) never sees it.
+        if (ev->type() == QEvent::Wheel) {
+            closeNoteEditor(/*save=*/true);
+            viewport()->setFocus();
+            wheelEvent(static_cast<QWheelEvent *>(ev));
             return true;
+        }
 
         // Right-click on the inline editor: show the bookmark edit/delete menu
         // instead of QPlainTextEdit's default context menu.
@@ -145,6 +156,16 @@ bool HexView::eventFilter(QObject *obj, QEvent *ev)
                 const auto *ke = static_cast<QKeyEvent *>(ev);
                 if (ke->key() == Qt::Key_Escape) {
                     closeNoteEditor(false);
+                    viewport()->setFocus();
+                    return true;
+                }
+                if (ke->key() == Qt::Key_Tab) {
+                    const size_w bmOffset =
+                        (m_noteEditorIdx >= 0 && m_noteEditorIdx < m_bookmarks.size())
+                        ? m_bookmarks[m_noteEditorIdx].offset : m_nCursorOffset;
+                    closeNoteEditor(/*save=*/true);
+                    setCurPos(bmOffset);
+                    setActivePane(1);   // ASCII column
                     viewport()->setFocus();
                     return true;
                 }
@@ -231,6 +252,14 @@ size_w HexView::selectionSize() const
 size_w HexView::size() const
 {
     return m_pDataSeq ? m_pDataSeq->size() : 0;
+}
+
+void HexView::setActivePane(int pane)
+{
+    if (pane == m_nWhichPane) return;
+    m_nWhichPane = qBound(0, pane, 1);
+    repositionCaret();
+    viewport()->update();
 }
 
 QRgb HexView::getHexColour(uint index)

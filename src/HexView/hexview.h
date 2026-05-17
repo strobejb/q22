@@ -178,6 +178,7 @@ public:
     size_w selectionSize()  const;
     size_w size()           const;
     int    activePane()     const { return m_nWhichPane; }  // 0=hex, 1=ascii
+    void   setActivePane(int pane);                         // 0=hex, 1=ascii
 
     QRgb   getHexColour(uint index);
     bool   setHexColour(HvColorSlot slot, QColor col);

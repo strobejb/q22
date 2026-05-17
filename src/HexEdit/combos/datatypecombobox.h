@@ -52,6 +52,7 @@ protected:
 
 private:
     QMenu          *m_menu              = nullptr;
+    QWidget        *m_swatchOverlay     = nullptr;
     QList<QAction*> m_actions;
     QAction        *m_leadingAction     = nullptr;
     int             m_selection         = 0;

@@ -160,7 +160,9 @@ HexView::NoteStripGeom HexView::noteStripGeom(const Bookmark &bm) const
 
     // Range label: "0xADDR  (N bytes)" or just "0xADDR" for single-byte bookmarks.
     // Width matches textW so the close button (bottom-right) doesn't overlap it.
-    const QString hexAddr = QStringLiteral("0x") + QString::number(bm.offset, 16).toUpper();
+    // Rendered at the standard UI font size (not scaled with the note text).
+    const QString hexAddr = QStringLiteral("0x") +
+                            QString::number(bm.offset, 16).toUpper().rightJustified(8, QLatin1Char('0'));
     QString rangeText;
     if (bm.length <= 1) {
         rangeText = hexAddr;
@@ -168,8 +170,9 @@ HexView::NoteStripGeom HexView::noteStripGeom(const Bookmark &bm) const
         rangeText = hexAddr + QStringLiteral("  (") +
                     QString::number(bm.length) + QStringLiteral(" bytes)");
     }
-    const QRect rangeBounds = fm.boundingRect(QRect(0, 0, textW, 10000),
-                                               Qt::AlignLeft | Qt::AlignTop, rangeText);
+    const QFontMetrics rangeFm(QApplication::font());
+    const QRect rangeBounds = rangeFm.boundingRect(QRect(0, 0, textW, 10000),
+                                                    Qt::AlignLeft | Qt::AlignTop, rangeText);
     const int rangeH = rangeBounds.height();
 
     const int rectH = kNotePadV + textH + kNoteRangePad + rangeH + kNotePadV;
@@ -247,7 +250,8 @@ void HexView::drawNoteStrip(QPainter &painter, int /*asciiRight*/, int /*ny*/,
     }
 
     // Range label: dimmed foreground, single line, below the note text.
-    painter.setFont(noteFont());
+    // Uses the standard UI font, not the scaled note font.
+    painter.setFont(QApplication::font());
     QColor rangeFg = fgCol;
     rangeFg.setAlphaF(0.55);
     painter.setPen(rangeFg);
@@ -399,10 +403,19 @@ void HexView::openNoteEditor(int bmIdx, QPoint clickPos)
 void HexView::closeNoteEditor(bool save)
 {
     if (!m_noteEditor || !m_noteEditor->isVisible()) return;
-    // Hide before saving so FocusOut doesn't re-enter.
+    // Capture focus state before hide() fires a synchronous FocusOut that
+    // would call us recursively (the re-entrant call returns early via isVisible()).
+    const bool hadFocus = m_noteEditor->hasFocus()
+                       || m_noteEditor->viewport()->hasFocus();
     m_noteEditor->hide();
     if (save && m_noteEditorIdx >= 0 && m_noteEditorIdx < m_bookmarks.size())
         m_bookmarks[m_noteEditorIdx].name = m_noteEditor->toPlainText();
     m_noteEditorIdx = -1;
+    // If the editor owned focus, return it to the hex view in the ASCII pane.
+    // Skip when FocusOut triggered us — focus is already moving elsewhere.
+    if (hadFocus) {
+        setActivePane(1);
+        viewport()->setFocus();
+    }
     viewport()->update();
 }

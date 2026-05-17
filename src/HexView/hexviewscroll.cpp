@@ -151,6 +151,7 @@ void HexView::scroll(int dx, int dy)
     m_nVScrollPos += dy;
 
     if (dx != 0 || dy != 0) {
+        closeNoteEditor(/*save=*/true);
         setupScrollbars();
         viewport()->update();
     }

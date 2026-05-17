@@ -585,8 +585,6 @@ void HexView::mouseDoubleClickEvent(QMouseEvent *event)
 
 void HexView::wheelEvent(QWheelEvent *event)
 {
-    if (m_noteEditor && m_noteEditor->hasFocus())
-        return;
     int nScrollLines  = 3;
     int nDelta        = event->angleDelta().y();
     int nScrollAmount = nDelta + m_nScrollMouseRemainder;

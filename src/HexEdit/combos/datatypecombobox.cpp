@@ -9,12 +9,62 @@
 #include <QStyleOptionComboBox>
 #include <QStylePainter>
 
+// Transparent overlay that paints swatch circles on top of the QMenu's own
+// rendering.  QStyleSheetStyle owns the entire CE_MenuItem paint pass and
+// suppresses QAction icon drawing, so we bypass the style system entirely
+// and paint directly in a raised child widget — exactly like MenuShadowOverlay.
+namespace {
+struct SwatchOverlay : public QWidget
+{
+    explicit SwatchOverlay(QMenu *menu) : QWidget(menu)
+    {
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setAttribute(Qt::WA_NoSystemBackground);
+        setGeometry(menu->rect());
+        menu->installEventFilter(this);
+    }
+
+    bool eventFilter(QObject *obj, QEvent *e) override
+    {
+        if (obj == parent()) {
+            if (e->type() == QEvent::Resize)
+                setGeometry(parentWidget()->rect());
+            if (e->type() == QEvent::Show)
+                update();
+        }
+        return false;
+    }
+
+    void paintEvent(QPaintEvent *) override
+    {
+        auto *menu = qobject_cast<QMenu *>(parentWidget());
+        if (!menu) return;
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        for (QAction *a : menu->actions()) {
+            const QVariant sc = a->property("swatchColor");
+            if (!sc.isValid()) continue;
+            const QColor col = sc.value<QColor>();
+            const QRect r = menu->actionGeometry(a);
+            if (r.isNull()) continue;
+            constexpr int kSz = 15;
+            const int x = r.left() + 10;
+            const int y = r.top() + (r.height() - kSz) / 2;
+            p.setBrush(col);
+            p.setPen(Qt::NoPen);
+            p.drawEllipse(x, y, kSz, kSz);
+        }
+    }
+};
+} // namespace
+
 DataTypeComboBox::DataTypeComboBox(QWidget *parent)
     : ValueComboBox(parent)
 {
     setFocusPolicy(Qt::StrongFocus);
     m_menu = new QMenu(this);
     themeMenu(m_menu);
+    m_swatchOverlay = new SwatchOverlay(m_menu);
 }
 
 QAction *DataTypeComboBox::addIconAction(const QIcon &icon, IconActionPosition position)
@@ -67,6 +117,18 @@ void DataTypeComboBox::buildMenu(bool checkable)
         }
         const int actionIndex = m_actions.size();
         QAction *a = m_menu->addAction(text);
+        // If the item has a QColor stored as DecorationRole, attach it as a
+        // property so SwatchOverlay can paint a swatch circle for that item.
+        const QVariant decoVar = itemData(i, Qt::DecorationRole);
+        if (decoVar.canConvert<QColor>()) {
+            const QColor c = decoVar.value<QColor>();
+            if (c.isValid())
+                a->setProperty("swatchColor", c);
+        } else {
+            const QIcon itemIcon = qvariant_cast<QIcon>(decoVar);
+            if (!itemIcon.isNull())
+                a->setIcon(itemIcon);
+        }
         if (checkable) {
             a->setCheckable(true);
             a->setChecked(actionIndex == m_selection);

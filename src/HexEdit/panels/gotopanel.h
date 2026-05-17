@@ -24,6 +24,10 @@ public:
     // Repopulate the bookmarks combo from the HexView's current bookmark list.
     void refreshBookmarks();
 
+    // Show a small coloured circle swatch next to each bookmark in the dropdown.
+    // On by default; call with false to disable without touching any user setting.
+    void setBookmarkSwatchesEnabled(bool enabled) { m_bookmarkSwatches = enabled; refreshBookmarks(); }
+
 signals:
     void bookmarkRequested();
 
@@ -43,6 +47,7 @@ private:
     bool              m_inRefresh      = false;
     DockPanelRow     *m_row            = nullptr;
     DataTypeComboBox *m_comboBookmarks  = nullptr;
+    bool              m_bookmarkSwatches = true;
     QPoint            m_optMenuClosePos { -1, -1 };
     QPoint            m_navMenuClosePos { -1, -1 };
 };
