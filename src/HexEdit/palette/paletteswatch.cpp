@@ -237,7 +237,7 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
         p.setPen(Qt::NoPen);
         p.drawEllipse(centre, kBadgeD / 2.0, kBadgeD / 2.0);
 
-        const QIcon tick = recoloredIcon("object-select-symbolic", Qt::white, kIconSz);
+        const QIcon tick = recoloredIcon("actions/object-select-symbolic", Qt::white, kIconSz);
         const QRectF iconRect(centre.x() - kIconSz / 2.0,
                               centre.y() - kIconSz / 2.0,
                               kIconSz, kIconSz);

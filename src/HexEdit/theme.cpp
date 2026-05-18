@@ -10,6 +10,7 @@
 #include <QFontDatabase>
 #include <QGuiApplication>
 #include <QDialogButtonBox>
+#include <QFile>
 #include <QFileDialog>
 #include <QLabel>
 #include <QLayout>
@@ -358,11 +359,27 @@ QIcon recoloredIcon(const QString &name, const QColor &color, int sz)
     // regardless of platform icon engine behaviour (KDE's engine can return
     // pre-coloured pixmaps that break SourceIn).  Fall back to fromTheme() only
     // when the resource is absent, preserving support for icons not yet bundled.
-    QIcon icon = QIcon(":/icons/actions/" + name + ".svg");
-    if (icon.isNull())
-        icon = QIcon(":/icons/ui/" + name + ".svg");
-    if (icon.isNull())
-        icon = QIcon::fromTheme(name);
+    //
+    // Callers that know the subdirectory pass a prefixed name ("actions/foo" or
+    // "ui/foo") for a direct, single-probe lookup.  Bare names (no "/") probe
+    // actions/ then ui/ via QFile::exists to avoid Qt SVG "Cannot open file"
+    // warnings on the miss; this path handles dynamic / legacy callers.
+    QIcon icon;
+    if (name.contains(u'/')) {
+        icon = QIcon(":/icons/" + name + ".svg");
+    } else {
+        auto tryPath = [](const QString &p) -> QIcon {
+            return QFile::exists(p) ? QIcon(p) : QIcon{};
+        };
+        icon = tryPath(":/icons/actions/" + name + ".svg");
+        if (icon.isNull())
+            icon = tryPath(":/icons/ui/" + name + ".svg");
+    }
+    // Strip any "subdir/" prefix before the fromTheme fallback.
+    if (icon.isNull()) {
+        const int slash = name.lastIndexOf(u'/');
+        icon = QIcon::fromTheme(slash >= 0 ? name.mid(slash + 1) : name);
+    }
     if (icon.isNull()) return icon;
     // Request a pixmap at the logical size; it may come back at a higher physical
     // resolution on HiDPI screens, so we copy the devicePixelRatio to dst so that
@@ -1367,11 +1384,11 @@ private:
         };
 
         if (vert) {
-            draw(subR, QStringLiteral("scrollbar-up-symbolic"),    s.subHov);
-            draw(addR, QStringLiteral("scrollbar-down-symbolic"),  s.addHov);
+            draw(subR, QStringLiteral("ui/scrollbar-up-symbolic"),    s.subHov);
+            draw(addR, QStringLiteral("ui/scrollbar-down-symbolic"),  s.addHov);
         } else {
-            draw(subR, QStringLiteral("scrollbar-left-symbolic"),  s.subHov);
-            draw(addR, QStringLiteral("scrollbar-right-symbolic"), s.addHov);
+            draw(subR, QStringLiteral("ui/scrollbar-left-symbolic"),  s.subHov);
+            draw(addR, QStringLiteral("ui/scrollbar-right-symbolic"), s.addHov);
         }
     }
 };
@@ -1394,7 +1411,7 @@ struct TightMenuStyle : public QProxyStyle
                 const QColor color = opt->palette.color(
                     sel ? QPalette::HighlightedText : QPalette::WindowText);
                 const QRect r = opt->rect.translated(kGlyphInset, 0);
-                recoloredIcon("object-select-symbolic", color, r.height()).paint(p, r);
+                recoloredIcon("actions/object-select-symbolic", color, r.height()).paint(p, r);
             }
             // Unchecked: no-op — space is already reserved by CE_MenuItem.
             return;

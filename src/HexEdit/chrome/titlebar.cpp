@@ -460,16 +460,16 @@ void TitleBar::refreshStylesheet()
             QIcon ic = recoloredIcon(name, fgColor, sz);
             if (!ic.isNull()) btn->setIcon(ic);
         };
-        recolor(m_hamburger, "document-open-symbolic",  14);
-        recolor(m_searchBtn,  "edit-find-symbolic",      14);
-        recolor(m_viewBtn,    "open-menu-symbolic",      14);
+        recolor(m_hamburger, "actions/document-open-symbolic",  14);
+        recolor(m_searchBtn,  "actions/edit-find-symbolic",      14);
+        recolor(m_viewBtn,    "actions/open-menu-symbolic",      14);
 #ifndef Q_OS_WIN
         // Caption buttons on Windows use Segoe text glyphs, not icons.
-        recolor(m_btnClose,   "window-close-symbolic");
-        recolor(m_btnMin,     "window-minimize-symbolic");
+        recolor(m_btnClose,   "actions/window-close-symbolic");
+        recolor(m_btnMin,     "actions/window-minimize-symbolic");
         if (m_btnMax) {
             bool maximized = window() && window()->isMaximized();
-            recolor(m_btnMax, maximized ? "window-restore-symbolic" : "window-maximize-symbolic");
+            recolor(m_btnMax, maximized ? "actions/window-restore-symbolic" : "actions/window-maximize-symbolic");
         }
 #endif
     }
@@ -489,16 +489,16 @@ void TitleBar::changeEvent(QEvent *e)
             QIcon ic = recoloredIcon(name, fg, sz);
             if (!ic.isNull()) btn->setIcon(ic);
         };
-        recolor(m_hamburger, "document-open-symbolic",  14);
-        recolor(m_searchBtn,  "edit-find-symbolic",      14);
-        recolor(m_viewBtn,    "open-menu-symbolic",      14);
+        recolor(m_hamburger, "actions/document-open-symbolic",  14);
+        recolor(m_searchBtn,  "actions/edit-find-symbolic",      14);
+        recolor(m_viewBtn,    "actions/open-menu-symbolic",      14);
 #ifndef Q_OS_WIN
         // Caption buttons on Windows use Segoe text glyphs, not icons.
-        recolor(m_btnClose,   "window-close-symbolic");
-        recolor(m_btnMin,     "window-minimize-symbolic");
+        recolor(m_btnClose,   "actions/window-close-symbolic");
+        recolor(m_btnMin,     "actions/window-minimize-symbolic");
         if (m_btnMax) {
             const bool maximized = window() && window()->isMaximized();
-            recolor(m_btnMax, maximized ? "window-restore-symbolic" : "window-maximize-symbolic");
+            recolor(m_btnMax, maximized ? "actions/window-restore-symbolic" : "actions/window-maximize-symbolic");
         }
 #endif
     }

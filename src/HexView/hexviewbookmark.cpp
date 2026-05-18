@@ -271,9 +271,9 @@ void HexView::drawNoteStrip(QPainter &painter, int /*asciiRight*/, int /*ny*/,
                 painter.setBrush(pressed ? pressedFill : hoverFill);
                 painter.drawRoundedRect(QRectF(btnRect).adjusted(-2, -2, 2, 2), 4, 4);
             }
-            QIcon icon = QIcon::fromTheme(iconName);
+            QIcon icon = QIcon(QStringLiteral(":/icons/actions/") + iconName + QStringLiteral(".svg"));
             if (icon.isNull())
-                icon = QIcon(QStringLiteral(":/icons/hicolor/scalable/actions/") + iconName + QStringLiteral(".svg"));
+                icon = QIcon::fromTheme(iconName);
             if (!icon.isNull()) {
                 QPixmap src = icon.pixmap(kNoteBtnSz, kNoteBtnSz);
                 QPixmap dst(src.size());

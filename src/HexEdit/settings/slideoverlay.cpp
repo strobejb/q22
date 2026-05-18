@@ -37,7 +37,7 @@ public:
         setFont(f);
 
         const QColor fg = palette().color(QPalette::WindowText);
-        m_icon = recoloredIcon("go-previous-symbolic", fg, kIconSz);
+        m_icon = recoloredIcon("ui/go-previous-symbolic", fg, kIconSz);
         setToolTip(label.isEmpty() ? tr("Back") : label);
     }
 
@@ -269,7 +269,7 @@ void SlideOverlay::slideIn(QDialog *dlg, std::function<void(int)> onFinished,
         }
     }
     if (!m_inlineMode) {
-        m_backBtn->setIcon(recoloredIcon("go-previous-symbolic", fg, 16));
+        m_backBtn->setIcon(recoloredIcon("ui/go-previous-symbolic", fg, 16));
         m_backBtn->setStyleSheet(btnSS);
         m_backBtn->installEventFilter(this);
         m_backBtn->show();

@@ -297,8 +297,8 @@ NavigationRow::NavigationRow(const QString &label, Icon icon, QWidget *parent)
     setCursor(Qt::PointingHandCursor);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     const QString iconName = (icon == Icon::ExternalLink)
-                             ? QLatin1String("external-link-symbolic")
-                             : QLatin1String("go-next-symbolic");
+                             ? QLatin1String("actions/external-link-symbolic")
+                             : QLatin1String("ui/go-next-symbolic");
     m_icon = recoloredIcon(iconName,
                            QApplication::palette().color(QPalette::WindowText),
                            ROW_ICON_SZ);

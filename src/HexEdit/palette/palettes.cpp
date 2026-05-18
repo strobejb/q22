@@ -550,13 +550,13 @@ public:
         const QColor col = base;
 
         if (hasBase)
-            recoloredIcon(QLatin1String("half-circle"), col, kSz)
+            recoloredIcon(QLatin1String("actions/half-circle"), col, kSz)
                 .paint(p, QRect(baseX, y, kSz, kSz));
         if (hasLight)
-            recoloredIcon(QLatin1String("light-mode"), col, kSz)
+            recoloredIcon(QLatin1String("actions/light-mode"), col, kSz)
                 .paint(p, QRect(lightX, y, kSz, kSz));
         if (hasDark)
-            recoloredIcon(QLatin1String("dark-mode"), col, kSz)
+            recoloredIcon(QLatin1String("actions/dark-mode"), col, kSz)
                 .paint(p, QRect(darkX, y, kSz, kSz));
     }
 };
@@ -637,7 +637,7 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
     m_hexEdit = new QLineEdit(this);
     m_hexEdit->setMaxLength(7);
     m_screenPickerAction = m_hexEdit->addAction(
-        recoloredIcon(QStringLiteral("color-picker"),
+        recoloredIcon(QStringLiteral("actions/color-picker"),
                       palette().buttonText().color(), 16),
         QLineEdit::TrailingPosition);
     m_screenPickerAction->setCheckable(true);
@@ -902,7 +902,7 @@ void PaletteEditorDialog::changeEvent(QEvent *e)
     QDialog::changeEvent(e);
     if (e->type() == QEvent::PaletteChange && m_screenPickerAction) {
         m_screenPickerAction->setIcon(
-            recoloredIcon(QStringLiteral("color-picker"),
+            recoloredIcon(QStringLiteral("actions/color-picker"),
                           palette().buttonText().color(), 16));
     }
 }

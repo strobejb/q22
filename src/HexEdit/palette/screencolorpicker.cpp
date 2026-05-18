@@ -77,8 +77,8 @@ private:
 static QPixmap makePickerCursorPixmap(const QColor &color, int sz)
 {
     const QColor outlineColor = color.lightness() > 128 ? Qt::black : Qt::white;
-    const QPixmap fg = recoloredIcon(QStringLiteral("color-picker"), color,        sz).pixmap(sz, sz);
-    const QPixmap bg = recoloredIcon(QStringLiteral("color-picker"), outlineColor, sz).pixmap(sz, sz);
+    const QPixmap fg = recoloredIcon(QStringLiteral("actions/color-picker"), color,        sz).pixmap(sz, sz);
+    const QPixmap bg = recoloredIcon(QStringLiteral("actions/color-picker"), outlineColor, sz).pixmap(sz, sz);
 
     QPixmap result(fg.size());
     result.setDevicePixelRatio(fg.devicePixelRatio());

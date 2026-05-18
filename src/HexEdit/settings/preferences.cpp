@@ -169,7 +169,7 @@ public:
         setCursor(Qt::PointingHandCursor);
         setFocusPolicy(Qt::StrongFocus);
         setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-        m_icon = recoloredIcon("go-next-symbolic",
+        m_icon = recoloredIcon("ui/go-next-symbolic",
                                QApplication::palette().color(QPalette::WindowText),
                                kIconSz);
     }

@@ -938,8 +938,8 @@ MainWindow::MainWindow(QWidget *parent)
                 return btn;
             };
 
-            auto *copyBtn   = makeBtn(tr("Copy"),   QStringLiteral("edit-copy-symbolic"));
-            auto *deleteBtn = makeBtn(tr("Delete"), QStringLiteral("user-trash-symbolic"));
+            auto *copyBtn   = makeBtn(tr("Copy"),   QStringLiteral("actions/edit-copy-symbolic"));
+            auto *deleteBtn = makeBtn(tr("Delete"), QStringLiteral("actions/user-trash-symbolic"));
             hlay->addWidget(copyBtn);
             hlay->addWidget(deleteBtn);
 
