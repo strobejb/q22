@@ -615,11 +615,22 @@ static void applyPalette(bool dark)
 }
 
 // ── Scrollbar geometry ────────────────────────────────────────────────────────
-// All scrollbar sizing lives here.
-static constexpr int kSbThumbWidth = 7;   // visible thumb/track width
-static constexpr int kSbOuter      = 4;   // gap on the far side  (right on vertical, bottom on horizontal)
-static constexpr int kSbInner      = 3;   // gap on the near side (left on vertical,  top on horizontal)
-static constexpr int kSbWidth      = kSbThumbWidth + kSbOuter + kSbInner;  // scrollbar widget width/height = arrow button size (square)
+// All scrollbar sizing lives here.  Change kSbThumbWidth, kSbOuter, kSbInner;
+// everything else derives automatically.
+//
+// Layout (vertical scrollbar, cross-axis = x):
+//
+//   ├─ kSbInner ─┤── kSbThumbWidth ──┤─ kSbOuter ─┤
+//   ←──────────────── kSbWidth ───────────────────→  widget width / PM_ScrollBarExtent
+//
+// kSbOuter / kSbInner are applied as handle cross-axis margin so the visual
+// thumb is kSbThumbWidth px wide.  No cross-axis margin on the widget itself —
+// the widget fills the full allocated slot (hit area = widget width).
+// Hover highlights when the mouse is directly over the handle subcontrol.
+static constexpr int kSbThumbWidth  = 7;   // rendered thumb width
+static constexpr int kSbOuter       = 4;   // gap on far side   (right / bottom)
+static constexpr int kSbInner       = 3;   // gap on near side  (left  / top)
+static constexpr int kSbWidth       = kSbThumbWidth + kSbOuter + kSbInner;  // = 14
 
 // ── Stylesheet ────────────────────────────────────────────────────────────────
 
@@ -836,11 +847,22 @@ QAbstractItemView::item:hover    { background: palette(window); }
 QAbstractItemView::item:selected { background: palette(highlight); color: palette(highlighted-text); }
 
 /* ── Scroll bars ─────────────────────────────────────────────── */
+/* Geometry tokens are substituted at runtime from the kSb* constants:        */
+/*   {sbWidth}  = kSbWidth  (widget width / PM_ScrollBarExtent)                */
+/*   {sbOuter}  = kSbOuter  (gap on far side)                                  */
+/*   {sbInner}  = kSbInner  (gap on near side)                                 */
+/*   {scrollbarArrowQss} = arrow sub-line/add-line rules (or zero-size stubs)  */
 QAbstractScrollArea::corner { background: transparent; border: none; }
-QScrollBar:vertical   { background: transparent; border-radius: 3px; width: {sbWidth}px; margin: {sbOuter}px; }
-QScrollBar:horizontal { background: transparent; border-radius: 3px; height: {sbWidth}px; margin: {sbOuter}px; }
-QScrollBar::handle:vertical   { background: palette(mid); border-radius: 3px; min-height: 24px; }
-QScrollBar::handle:horizontal { background: palette(mid); border-radius: 3px; min-width:  24px; }
+/* No cross-axis margin on the widget — it fills the full allocated slot so
+   clicks anywhere in the gutter hit the scrollbar (no dead zones).
+   The thumb's visual width comes from the handle's cross-axis margin alone. */
+QScrollBar:vertical   { background: transparent; border-radius: 3px; width: {sbWidth}px; margin: {sbOuter}px 0 {sbOuter}px 0; }
+QScrollBar:horizontal { background: transparent; border-radius: 3px; height: {sbWidth}px; margin: 0 {sbOuter}px 0 {sbOuter}px; }
+/* handle margin = kSbInner (near) + kSbOuter (far) → visual thumb = kSbThumbWidth px wide. */
+QScrollBar::handle:vertical   { background: palette(mid); border-radius: 3px; min-height: 24px; margin: 0 {sbOuter}px 0 {sbInner}px; }
+QScrollBar::handle:horizontal { background: palette(mid); border-radius: 3px; min-width:  24px; margin: {sbInner}px 0 {sbOuter}px 0; }
+/* Normal hover (mouse over handle, no button held).  Gutter-click hover —
+   when the thumb slides under a held cursor — is handled by ScrollBarArrowPainter. */
 QScrollBar::handle:vertical:hover,
 QScrollBar::handle:horizontal:hover { background: palette(dark); }
 {scrollbarArrowQss}
@@ -928,31 +950,35 @@ QFileDialog QTreeView::item {
     ss.replace("{tooltipPad}",  "2px 6px");
 #endif
 
-    // Scrollbar arrow buttons — hidden by default, shown on hover when setting is on.
-    // All four sub/add-line rules are emitted in both cases; the "no arrows" path
-    // collapses them to zero-size so no space is reserved.
-    // Substitute scrollbar geometry constants into the base rules.
-    const QString sbw = QString::number(kSbWidth);
-    const QString sbo = QString::number(kSbOuter);
-    const QString sbi = QString::number(kSbInner);
-    ss.replace("{sbWidth}", sbw);
-    ss.replace("{sbArrow}", sbw);   // arrow button strip = widget width (square)
-    ss.replace("{sbOuter}", sbo);
+    // Fill the scrollbar geometry tokens used in the QSS template above.
+    const QString sbw  = QString::number(kSbWidth);
+    const QString sbo  = QString::number(kSbOuter);
+    const QString sbi  = QString::number(kSbInner);
+    ss.replace("{sbWidth}",  sbw);
+    ss.replace("{sbOuter}",  sbo);
+    ss.replace("{sbInner}",  sbi);
 
+    // Scrollbar arrow buttons — shown when the user setting is on, otherwise
+    // collapsed to zero-size so no track space is reserved.
+    // {scrollbarArrowQss} is always replaced (both branches emit all four rules).
     if (scrollbarArrows) {
-        // ScrollBarArrowPainter (event filter) draws the triangles on top of the
-        // normal paint using live palette colours — no image files required.
-        // Vertical   margin: top=arrow  right=outer  bottom=arrow  left=inner
-        // Horizontal margin: top=inner  right=arrow  bottom=outer  left=arrow
+        // The arrow triangles themselves are drawn by ScrollBarArrowPainter (an
+        // application-wide event filter) on top of the normal Qt paint — no image
+        // files needed, colours track the live palette.
+        //
+        // The scroll-axis margin is widened to kSbWidth px at each end to reserve
+        // space for the sub-line/add-line subcontrols.  Cross-axis margin stays 0
+        // — the handle's cross-axis margin already handles the visual thumb inset,
+        // and adding it here too would shrink the content area twice.
         ss.replace("{scrollbarArrowQss}", QStringLiteral(
-            "\nQScrollBar:vertical   { margin: %1px %2px %1px %3px; }\n"
-            "QScrollBar:horizontal { margin: %3px %1px %2px %1px; }\n"
+            "\nQScrollBar:vertical   { margin: %1px 0px %1px 0px; }\n"
+            "QScrollBar:horizontal { margin: 0px %1px 0px %1px; }\n"
             "QScrollBar::sub-line:vertical   { height: %1px; subcontrol-position: top;    subcontrol-origin: margin; background: transparent; }\n"
             "QScrollBar::add-line:vertical   { height: %1px; subcontrol-position: bottom; subcontrol-origin: margin; background: transparent; }\n"
             "QScrollBar::sub-line:horizontal { width:  %1px; subcontrol-position: left;   subcontrol-origin: margin; background: transparent; }\n"
             "QScrollBar::add-line:horizontal { width:  %1px; subcontrol-position: right;  subcontrol-origin: margin; background: transparent; }\n"
             "QScrollBar::sub-line:pressed, QScrollBar::add-line:pressed { background: palette(mid); }\n"
-        ).arg(sbw, sbo, sbi));
+        ).arg(sbw));
     } else {
         ss.replace("{scrollbarArrowQss}",
             "QScrollBar::add-line:vertical,   QScrollBar::sub-line:vertical   { height: 0; }\n"
@@ -1274,10 +1300,13 @@ public:
     bool eventFilter(QObject *obj, QEvent *ev) override
     {
         auto *sb = qobject_cast<QScrollBar *>(obj);
-        if (!sb || !AppSettings::prefScrollbarArrows())
+        if (!sb)
             return false;
 
         const auto t = ev->type();
+
+        if (!AppSettings::prefScrollbarArrows())
+            return false;
 
         if (t == QEvent::HoverMove) {
             // Update stored hover state from the event's position (accurate)
@@ -1332,7 +1361,39 @@ public:
     }
 
 private:
+    // Arrow buttons are kSbWidth × kSbWidth px squares — their scroll-axis
+    // extent equals the widget's cross-axis width, which is also kSbWidth.
     static constexpr int kBtnSize = kSbWidth;
+
+    // Returns the current handle rect in widget coordinates.
+    // NOTE: only valid when arrow buttons are enabled (kBtnSize strips the
+    // arrow zones; without arrows the track starts at kSbOuter, not kSbWidth).
+    // Derived from our known geometry constants and the scrollbar's live
+    // value/range — avoids QStyleSheetStyle::subControlRect which can return
+    // the full widget rect when QStyleOptionSlider isn't initialised exactly
+    // as Qt's internal code does.
+    static QRect handleSubRect(const QScrollBar *sb)
+    {
+        const bool vert     = (sb->orientation() == Qt::Vertical);
+        const int  total    = vert ? sb->height() : sb->width();
+        const int  range    = sb->maximum() - sb->minimum();
+        const int  trackLen = total - 2 * kBtnSize;  // strip the two arrow zones
+
+        if (range <= 0 || trackLen <= 2)
+            return QRect();
+
+        const int ps        = sb->pageStep();
+        const int handleLen = qMax(24, trackLen * ps / (range + ps));
+        const int maxTravel = trackLen - handleLen;
+        const int handleOff = kBtnSize +
+                              (maxTravel > 0 ? maxTravel * (sb->value() - sb->minimum()) / range : 0);
+
+        // Cross-axis position matches the handle margin in the stylesheet:
+        //   vertical   → x = kSbInner, w = kSbThumbWidth
+        //   horizontal → y = kSbInner, h = kSbThumbWidth
+        return vert ? QRect(kSbInner, handleOff, kSbThumbWidth, handleLen)
+                    : QRect(handleOff, kSbInner, handleLen,     kSbThumbWidth);
+    }
 
     static void buttonRects(const QScrollBar *sb, QRect &subR, QRect &addR)
     {
@@ -1361,16 +1422,14 @@ private:
             return                 sb->palette().color(QPalette::Mid);
         };
 
-        // Centre the icon within the button rect on both axes.
-        // kSbOuter/kSbInner are *external* margins around the widget, not
-        // internal thumb-track insets, so the thumb spans the full cross-
-        // dimension.  Simple (dim - sz) / 2 gives a uniform 1px border.
-        const int crossSize = vert ? subR.width()  : subR.height();
-        const int sz        = crossSize - 2;            // 1px border each side
+        // Centre the icon over the visual thumb track.
+        // Thumb occupies [kSbInner, kSbInner+kSbThumbWidth] = [3, 10], centre = 6.5.
+        // sz = 11 (odd) → crossOff = (kSbWidth - sz) / 2 = 1 → icon at [1,12], centre = 6.5 ✓
+        const int sz        = kSbWidth - 3;                           // = 11
+        const int crossOff  = (kSbWidth - sz) / 2;                   // = 1
         auto iconRect = [&](const QRect &btnR) -> QRect {
             const int scrollDim = vert ? btnR.height() : btnR.width();
             const int scrollOff = (scrollDim - sz) / 2;
-            const int crossOff  = (crossSize - sz) / 2; // always 1 when sz = crossSize - 2
             if (vert)
                 return QRect(btnR.left() + crossOff, btnR.top() + scrollOff, sz, sz);
             else
@@ -1378,6 +1437,21 @@ private:
         };
 
         QPainter p(sb);
+
+        // If the left button is held and the thumb has slid under the cursor,
+        // overpaint it in the hover colour.  Qt won't fire ::handle:hover while
+        // a button is down, so we handle it manually here on every repaint.
+        if (btn) {
+            const QPoint cur = sb->mapFromGlobal(QCursor::pos());
+            const QRect  hr  = handleSubRect(sb);
+            if (hr.contains(cur)) {
+                p.setPen(Qt::NoPen);
+                p.setBrush(sb->palette().color(QPalette::Dark));
+                p.setRenderHint(QPainter::Antialiasing);
+                p.drawRoundedRect(hr, 3, 3);
+            }
+        }
+
         auto draw = [&](const QRect &btnR, const QString &name, bool hov) {
             const QRect ir = iconRect(btnR);
             recoloredIcon(name, arrowCol(hov), qMin(ir.width(), ir.height())).paint(&p, ir);
@@ -1435,8 +1509,16 @@ static TightMenuStyle *tightMenuStyle()
 
 static void ensureScrollBarArrowPainter()
 {
-    // Installed once; the event filter checks prefScrollbarArrows() at paint
-    // time so toggling the preference takes effect without reinstalling.
+    // Installed once on the application object.  The event filter checks
+    // prefScrollbarArrows() at paint time so the setting can be toggled
+    // without reinstalling the filter.
+    //
+    // Responsibilities:
+    //  • Draw arrow triangles on sub-line/add-line buttons (QSS provides the
+    //    button background; Qt's QStyleSheetStyle never draws the indicator).
+    //  • Overpaint the thumb in hover colour when the mouse button is held and
+    //    the thumb slides under the cursor (Qt suppresses ::handle:hover while
+    //    any mouse button is down).
     static ScrollBarArrowPainter *s = nullptr;
     if (!s) {
         s = new ScrollBarArrowPainter(qApp);
