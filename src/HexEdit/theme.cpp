@@ -19,7 +19,9 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPalette>
+#include <QCursor>
 #include <QProxyStyle>
+#include <QScrollBar>
 #include <QStyleOption>
 #include <QScreen>
 #include <QStyleFactory>
@@ -356,7 +358,9 @@ QIcon recoloredIcon(const QString &name, const QColor &color, int sz)
     // regardless of platform icon engine behaviour (KDE's engine can return
     // pre-coloured pixmaps that break SourceIn).  Fall back to fromTheme() only
     // when the resource is absent, preserving support for icons not yet bundled.
-    QIcon icon = QIcon(":/icons/hicolor/scalable/actions/" + name + ".svg");
+    QIcon icon = QIcon(":/icons/actions/" + name + ".svg");
+    if (icon.isNull())
+        icon = QIcon(":/icons/ui/" + name + ".svg");
     if (icon.isNull())
         icon = QIcon::fromTheme(name);
     if (icon.isNull()) return icon;
@@ -593,6 +597,13 @@ static void applyPalette(bool dark)
     QApplication::setPalette(p);
 }
 
+// ── Scrollbar geometry ────────────────────────────────────────────────────────
+// All scrollbar sizing lives here.
+static constexpr int kSbThumbWidth = 7;   // visible thumb/track width
+static constexpr int kSbOuter      = 4;   // gap on the far side  (right on vertical, bottom on horizontal)
+static constexpr int kSbInner      = 3;   // gap on the near side (left on vertical,  top on horizontal)
+static constexpr int kSbWidth      = kSbThumbWidth + kSbOuter + kSbInner;  // scrollbar widget width/height = arrow button size (square)
+
 // ── Stylesheet ────────────────────────────────────────────────────────────────
 
 static QString buildStylesheet(bool dark)
@@ -606,7 +617,8 @@ static QString buildStylesheet(bool dark)
     const QString fgDisabled       = pal.color(QPalette::Disabled, QPalette::WindowText).name();
     const QString btnHover         = (darkBtn ? btn.lighter(118) : btn.darker(103)).name();
     const QString btnActive        = (darkBtn ? btn.lighter(133) : btn.darker(106)).name();
-    const bool    menuUseHighlight = AppSettings::prefMenuHighlight();
+    const bool    menuUseHighlight  = AppSettings::prefMenuHighlight();
+    const bool    scrollbarArrows  = AppSettings::prefScrollbarArrows();
     const QString menuSelBg        = menuUseHighlight ? "palette(highlight)"  : btnHover;
     const QString menuSelFg        = menuUseHighlight ? "palette(highlighted-text)" : "palette(window-text)";
     const QColor  windowColor      = pal.window().color();
@@ -807,14 +819,14 @@ QAbstractItemView::item:hover    { background: palette(window); }
 QAbstractItemView::item:selected { background: palette(highlight); color: palette(highlighted-text); }
 
 /* ── Scroll bars ─────────────────────────────────────────────── */
-QScrollBar:vertical   { background: transparent; width: 10px; margin: 2px; }
-QScrollBar:horizontal { background: transparent; height: 10px; margin: 2px; }
-QScrollBar::handle:vertical   { background: palette(mid); border-radius: 5px; min-height: 24px; }
-QScrollBar::handle:horizontal { background: palette(mid); border-radius: 5px; min-width:  24px; }
+QAbstractScrollArea::corner { background: transparent; border: none; }
+QScrollBar:vertical   { background: transparent; border-radius: 3px; width: {sbWidth}px; margin: {sbOuter}px; }
+QScrollBar:horizontal { background: transparent; border-radius: 3px; height: {sbWidth}px; margin: {sbOuter}px; }
+QScrollBar::handle:vertical   { background: palette(mid); border-radius: 3px; min-height: 24px; }
+QScrollBar::handle:horizontal { background: palette(mid); border-radius: 3px; min-width:  24px; }
 QScrollBar::handle:vertical:hover,
-QScrollBar::handle:horizontal:hover { background: palette(shadow); }
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical   { height: 0; }
-QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
+QScrollBar::handle:horizontal:hover { background: palette(dark); }
+{scrollbarArrowQss}
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical,
 QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; }
 
@@ -898,6 +910,38 @@ QFileDialog QTreeView::item {
     ss.replace("{menuMargin}",  "margin: 8px;");
     ss.replace("{tooltipPad}",  "2px 6px");
 #endif
+
+    // Scrollbar arrow buttons — hidden by default, shown on hover when setting is on.
+    // All four sub/add-line rules are emitted in both cases; the "no arrows" path
+    // collapses them to zero-size so no space is reserved.
+    // Substitute scrollbar geometry constants into the base rules.
+    const QString sbw = QString::number(kSbWidth);
+    const QString sbo = QString::number(kSbOuter);
+    const QString sbi = QString::number(kSbInner);
+    ss.replace("{sbWidth}", sbw);
+    ss.replace("{sbArrow}", sbw);   // arrow button strip = widget width (square)
+    ss.replace("{sbOuter}", sbo);
+
+    if (scrollbarArrows) {
+        // ScrollBarArrowPainter (event filter) draws the triangles on top of the
+        // normal paint using live palette colours — no image files required.
+        // Vertical   margin: top=arrow  right=outer  bottom=arrow  left=inner
+        // Horizontal margin: top=inner  right=arrow  bottom=outer  left=arrow
+        ss.replace("{scrollbarArrowQss}", QStringLiteral(
+            "\nQScrollBar:vertical   { margin: %1px %2px %1px %3px; }\n"
+            "QScrollBar:horizontal { margin: %3px %1px %2px %1px; }\n"
+            "QScrollBar::sub-line:vertical   { height: %1px; subcontrol-position: top;    subcontrol-origin: margin; background: transparent; }\n"
+            "QScrollBar::add-line:vertical   { height: %1px; subcontrol-position: bottom; subcontrol-origin: margin; background: transparent; }\n"
+            "QScrollBar::sub-line:horizontal { width:  %1px; subcontrol-position: left;   subcontrol-origin: margin; background: transparent; }\n"
+            "QScrollBar::add-line:horizontal { width:  %1px; subcontrol-position: right;  subcontrol-origin: margin; background: transparent; }\n"
+            "QScrollBar::sub-line:pressed, QScrollBar::add-line:pressed { background: palette(mid); }\n"
+        ).arg(sbw, sbo, sbi));
+    } else {
+        ss.replace("{scrollbarArrowQss}",
+            "QScrollBar::add-line:vertical,   QScrollBar::sub-line:vertical   { height: 0; }\n"
+            "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width:  0; }\n");
+    }
+
     return ss;
 }
 
@@ -1190,6 +1234,148 @@ struct NoFocusRectStyle : public QProxyStyle
 
 };
 
+// Paints scrollbar arrow triangles on top of the normal scrollbar paint.
+// QStyleSheetStyle handles CC_ScrollBar entirely when scrollbar QSS rules
+// exist — it renders the sub-line/add-line button backgrounds from QSS but
+// never calls drawPrimitive for the arrow indicator itself.  This event
+// filter intercepts QEvent::Paint on every QScrollBar, lets the normal Qt
+// paint run (drawing the transparent button area), then draws the arrow
+// triangle on top using live palette colours and real-time mouse state.
+class ScrollBarArrowPainter : public QObject
+{
+    bool m_painting = false;
+
+    // Per-scrollbar hover state tracked from events rather than queried at
+    // paint time.  QCursor::pos() can be stale when a deferred paint fires
+    // after the mouse has already left, causing the hover colour to stick.
+    struct BtnState { bool subHov = false, addHov = false; };
+    QHash<QScrollBar *, BtnState> m_state;
+
+public:
+    explicit ScrollBarArrowPainter(QObject *parent = nullptr) : QObject(parent) {}
+
+    bool eventFilter(QObject *obj, QEvent *ev) override
+    {
+        auto *sb = qobject_cast<QScrollBar *>(obj);
+        if (!sb || !AppSettings::prefScrollbarArrows())
+            return false;
+
+        const auto t = ev->type();
+
+        if (t == QEvent::HoverMove) {
+            // Update stored hover state from the event's position (accurate)
+            // and repaint if it changed.
+            const QPoint mp = static_cast<QHoverEvent *>(ev)->position().toPoint();
+            QRect subR, addR;
+            buttonRects(sb, subR, addR);
+            BtnState now { subR.contains(mp), addR.contains(mp) };
+            BtnState &prev = m_state[sb];
+            if (now.subHov != prev.subHov || now.addHov != prev.addHov) {
+                prev = now;
+                sb->update(subR);
+                sb->update(addR);
+            }
+            return false;
+        }
+
+        if (t == QEvent::HoverLeave || t == QEvent::Leave) {
+            BtnState &s = m_state[sb];
+            if (s.subHov || s.addHov) {
+                s = {};
+                QRect subR, addR;
+                buttonRects(sb, subR, addR);
+                sb->update(subR);
+                sb->update(addR);
+            }
+            return false;
+        }
+
+        if (t == QEvent::MouseButtonPress || t == QEvent::MouseButtonRelease) {
+            // Pressed state changes the arrow colour — repaint the buttons.
+            QRect subR, addR;
+            buttonRects(sb, subR, addR);
+            sb->update(subR);
+            sb->update(addR);
+            return false;
+        }
+
+        if (t == QEvent::Destroy) {
+            m_state.remove(sb);
+            return false;
+        }
+
+        if (m_painting || t != QEvent::Paint)
+            return false;
+
+        m_painting = true;
+        QCoreApplication::sendEvent(sb, ev);
+        m_painting = false;
+        paintArrows(sb);
+        return true;
+    }
+
+private:
+    static constexpr int kBtnSize = kSbWidth;
+
+    static void buttonRects(const QScrollBar *sb, QRect &subR, QRect &addR)
+    {
+        const QRect r = sb->rect();
+        if (sb->orientation() == Qt::Vertical) {
+            subR = QRect(r.left(), r.top(),                    r.width(), kBtnSize);
+            addR = QRect(r.left(), r.bottom() - kBtnSize + 1, r.width(), kBtnSize);
+        } else {
+            subR = QRect(r.left(),                   r.top(), kBtnSize, r.height());
+            addR = QRect(r.right() - kBtnSize + 1,  r.top(), kBtnSize, r.height());
+        }
+    }
+
+    void paintArrows(QScrollBar *sb)
+    {
+        const bool vert = (sb->orientation() == Qt::Vertical);
+        QRect subR, addR;
+        buttonRects(sb, subR, addR);
+
+        const BtnState &s   = m_state[sb];
+        const bool      btn = QApplication::mouseButtons() & Qt::LeftButton;
+
+        auto arrowCol = [&](bool hov) -> QColor {
+            if (hov && btn) return sb->palette().color(QPalette::Light);
+            if (hov)        return sb->palette().color(QPalette::Dark);
+            return                 sb->palette().color(QPalette::Mid);
+        };
+
+        // Centre the icon within the button rect on both axes.
+        // kSbOuter/kSbInner are *external* margins around the widget, not
+        // internal thumb-track insets, so the thumb spans the full cross-
+        // dimension.  Simple (dim - sz) / 2 gives a uniform 1px border.
+        const int crossSize = vert ? subR.width()  : subR.height();
+        const int sz        = crossSize - 2;            // 1px border each side
+        auto iconRect = [&](const QRect &btnR) -> QRect {
+            const int scrollDim = vert ? btnR.height() : btnR.width();
+            const int scrollOff = (scrollDim - sz) / 2;
+            const int crossOff  = (crossSize - sz) / 2; // always 1 when sz = crossSize - 2
+            if (vert)
+                return QRect(btnR.left() + crossOff, btnR.top() + scrollOff, sz, sz);
+            else
+                return QRect(btnR.left() + scrollOff, btnR.top() + crossOff, sz, sz);
+        };
+
+        QPainter p(sb);
+        auto draw = [&](const QRect &btnR, const QString &name, bool hov) {
+            const QRect ir = iconRect(btnR);
+            recoloredIcon(name, arrowCol(hov), qMin(ir.width(), ir.height())).paint(&p, ir);
+        };
+
+        if (vert) {
+            draw(subR, QStringLiteral("scrollbar-up-symbolic"),    s.subHov);
+            draw(addR, QStringLiteral("scrollbar-down-symbolic"),  s.addHov);
+        } else {
+            draw(subR, QStringLiteral("scrollbar-left-symbolic"),  s.subHov);
+            draw(addR, QStringLiteral("scrollbar-right-symbolic"), s.addHov);
+        }
+    }
+};
+
 struct TightMenuStyle : public QProxyStyle
 {
     explicit TightMenuStyle(QStyle *base) : QProxyStyle(base) {}
@@ -1228,6 +1414,17 @@ static TightMenuStyle *tightMenuStyle()
         s->setParent(qApp);
     }
     return s;
+}
+
+static void ensureScrollBarArrowPainter()
+{
+    // Installed once; the event filter checks prefScrollbarArrows() at paint
+    // time so toggling the preference takes effect without reinstalling.
+    static ScrollBarArrowPainter *s = nullptr;
+    if (!s) {
+        s = new ScrollBarArrowPainter(qApp);
+        qApp->installEventFilter(s);
+    }
 }
 
 static MenuShadowFilter *menuShadowFilter()
@@ -1362,6 +1559,7 @@ public:
     }
 };
 
+
 #ifndef Q_OS_WIN
 // Reads the system UI font from whichever desktop environment is active.
 // On KDE, kdeglobals stores the font in QFont::toString() wire format so it
@@ -1427,6 +1625,7 @@ void applyAdwaitaTheme(ColorScheme scheme)
         if (!base) base = QStyleFactory::create("Fusion");
 #endif
         QApplication::setStyle(new NoFocusRectStyle(base));
+        ensureScrollBarArrowPainter();
     }
 
 #ifndef Q_OS_WIN

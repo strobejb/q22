@@ -83,7 +83,7 @@ QAction *DataTypeComboBox::addIconAction(const QIcon &icon, IconActionPosition p
 
 QAction *DataTypeComboBox::addIconAction(const QString &iconName, IconActionPosition position)
 {
-    QIcon icon(QStringLiteral(":/icons/hicolor/scalable/actions/") + iconName + QStringLiteral(".svg"));
+    QIcon icon(QStringLiteral(":/icons/actions/") + iconName + QStringLiteral(".svg"));
     if (icon.isNull())
         icon = QIcon::fromTheme(iconName);
 

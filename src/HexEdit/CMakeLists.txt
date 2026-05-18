@@ -105,9 +105,9 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
     qt_add_executable(hexedit
         MANUAL_FINALIZATION
         ${PROJECT_SOURCES}
-        resources/icons/hicolor/scalable/actions/document-edit-symbolic.svg resources/icons/hicolor/scalable/actions/edit-clear-symbolic.svg resources/icons/hicolor/scalable/actions/user-trash-symbolic.svg
-        resources/icons/hicolor/scalable/actions/pen-to-square-solid-full.svg
-        resources/icons/hicolor/scalable/actions/edit-copy-symbolic.svg resources/icons/hicolor/scalable/actions/edit-cut-symbolic.svg resources/icons/hicolor/scalable/actions/edit-delete-symbolic.svg
+        resources/icons/actions/document-edit-symbolic.svg resources/icons/actions/edit-clear-symbolic.svg resources/icons/actions/user-trash-symbolic.svg
+        resources/icons/actions/pen-to-square-solid-full.svg
+        resources/icons/actions/edit-copy-symbolic.svg resources/icons/actions/edit-cut-symbolic.svg resources/icons/actions/edit-delete-symbolic.svg
     )
 # Define target properties for Android with Qt 6 as:
 #    set_property(TARGET hexedit APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
@@ -129,7 +129,6 @@ endif()
 
 file(GLOB_RECURSE HEXEDIT_RESOURCES CONFIGURE_DEPENDS
     "${HEXEDIT_RESOURCE_DIR}/icons/*.svg"
-    "${HEXEDIT_RESOURCE_DIR}/icons/hicolor/index.theme"
     "${HEXEDIT_RESOURCE_DIR}/palettes/*.palette"
     "${HEXEDIT_RESOURCE_DIR}/hexedit.png"
 )

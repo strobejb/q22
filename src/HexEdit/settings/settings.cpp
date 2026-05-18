@@ -145,6 +145,18 @@ void AppSettings::setPrefMenuHighlight(bool on)
     s.setValue("preferences/menuHighlight", on);
 }
 
+bool AppSettings::prefScrollbarArrows()
+{
+    OPEN_SETTINGS;
+    return s.value("preferences/scrollbarArrows", true).toBool();
+}
+
+void AppSettings::setPrefScrollbarArrows(bool on)
+{
+    OPEN_SETTINGS;
+    s.setValue("preferences/scrollbarArrows", on);
+}
+
 int AppSettings::prefColorScheme()
 {
     OPEN_SETTINGS;

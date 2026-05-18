@@ -101,7 +101,7 @@ GotoPanel::GotoPanel(HexView *hv, QWidget *parent)
     // Leading icons: arrow in the address field, star in the bookmarks combo.
     {
         const QString iconName = QStringLiteral("forward");
-        QIcon arrowIc(QStringLiteral(":/icons/hicolor/scalable/actions/") + iconName + QStringLiteral(".svg"));
+        QIcon arrowIc(QStringLiteral(":/icons/actions/") + iconName + QStringLiteral(".svg"));
         if (arrowIc.isNull())
             arrowIc = QIcon::fromTheme(iconName);
         if (!arrowIc.isNull()) {

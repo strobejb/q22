@@ -111,8 +111,8 @@ private:
 class QIcon;
 // Recolors a symbolic icon by compositing `color` through its alpha channel,
 // the same technique GTK uses for -symbolic icons in Adwaita.  HiDPI-aware.
-// Tries QIcon::fromTheme() first; falls back to the embedded resource at
-// :/icons/hicolor/scalable/actions/<name>.svg when the theme lookup fails.
+// Tries :/icons/actions/<name>.svg then :/icons/ui/<name>.svg; falls back to
+// QIcon::fromTheme() when neither embedded resource exists.
 QIcon recoloredIcon(const QString &name, const QColor &color, int sz = 16);
 
 // Recolors QToolButton children and child/widget QAction icons with iconThemeName.

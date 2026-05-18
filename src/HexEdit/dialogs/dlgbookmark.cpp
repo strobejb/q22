@@ -262,7 +262,7 @@ void BookmarkDialog::updateDeleteIcon()
     // Build normal and hover icons; swap them explicitly via eventFilter.
     QIcon baseIcon = QIcon::fromTheme(QStringLiteral("user-trash-symbolic"));
     if (baseIcon.isNull())
-        baseIcon = QIcon(QStringLiteral(":/icons/hicolor/scalable/actions/user-trash-symbolic.svg"));
+        baseIcon = QIcon(QStringLiteral(":/icons/actions/user-trash-symbolic.svg"));
     if (baseIcon.isNull()) return;
 
     const int sz = ui->bookmarkDelete->iconSize().width();

@@ -574,7 +574,7 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
     m_nameEdit->setText(info.name);
 
     auto modeIcon = [](const QString &name) {
-        QIcon icon(QStringLiteral(":/icons/hicolor/scalable/actions/") + name + QStringLiteral(".svg"));
+        QIcon icon(QStringLiteral(":/icons/actions/") + name + QStringLiteral(".svg"));
         return icon.isNull() ? QIcon::fromTheme(name) : icon;
     };
     m_modeGroup = new ToggleButtonGroup({

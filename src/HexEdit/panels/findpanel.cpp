@@ -164,7 +164,7 @@ FindPanel::FindPanel(QWidget *parent)
     // Leading search icon inside the text field.
     {
         const QString iconName = QStringLiteral("edit-find-symbolic");
-        QIcon searchIc(QStringLiteral(":/icons/hicolor/scalable/actions/") + iconName + QStringLiteral(".svg"));
+        QIcon searchIc(QStringLiteral(":/icons/actions/") + iconName + QStringLiteral(".svg"));
         if (searchIc.isNull())
             searchIc = QIcon::fromTheme(iconName);
         if (!searchIc.isNull()) {

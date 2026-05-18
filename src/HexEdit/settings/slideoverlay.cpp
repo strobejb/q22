@@ -160,7 +160,7 @@ SlideOverlay::SlideOverlay(QWidget *parent)
     m_backBtn = new QToolButton(m_slidePanel);
     m_backBtn->setIcon(QIcon::fromTheme(
         "go-previous-symbolic",
-        QIcon(":/icons/hicolor/scalable/actions/go-previous-symbolic.svg")));
+        QIcon(":/icons/ui/go-previous-symbolic.svg")));
     m_backBtn->setProperty("iconThemeName", "go-previous-symbolic");
     m_backBtn->setIconSize(QSize(16, 16));
     m_backBtn->setAutoRaise(true);

@@ -27,13 +27,6 @@ int main(int argc, char *argv[])
 #endif
     AppSettings::ensureSettingsDir(); // must be called before any AppSettings read/write
 
-    // Use only the bundled hicolor theme for icon lookups.  This ensures
-    // QIcon::fromTheme() always resolves to our embedded resources, regardless
-    // of what icon themes are installed on the host system.  Correct for a
-    // self-contained binary/AppImage on both GNOME and KDE.
-    QIcon::setThemeSearchPaths({":/icons"});
-    QIcon::setThemeName("hicolor");
-
     applyAdwaitaTheme(static_cast<ColorScheme>(AppSettings::prefColorScheme()));
 
     MainWindow w;
