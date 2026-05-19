@@ -39,6 +39,12 @@ HexView::HexView(QWidget *parent)
     viewport()->setAcceptDrops(true);
     viewport()->setMouseTracking(true);
 
+    // Tag both scrollbars so the QSS arrow-button rules and ScrollBarArrowPainter
+    // only activate on HexView scrollbars, not on unrelated scrollbars elsewhere
+    // in the application (e.g. preferences dialog panels).
+    verticalScrollBar()  ->setProperty("hexViewScrollBar", true);
+    horizontalScrollBar()->setProperty("hexViewScrollBar", true);
+
     // Wire the QAbstractScrollArea scrollbars to the internal scroll positions.
     // Block signals when we set values programmatically (in setupScrollbars) to
     // avoid a redundant repaint on every metrics update.
@@ -155,7 +161,16 @@ bool HexView::eventFilter(QObject *obj, QEvent *ev)
             if (ev->type() == QEvent::KeyPress) {
                 const auto *ke = static_cast<QKeyEvent *>(ev);
                 if (ke->key() == Qt::Key_Escape) {
+                    // If this was a brand-new bookmark (name was empty when the
+                    // editor opened) and the user cancelled without saving any text,
+                    // remove it — don't leave an empty placeholder in the list.
+                    const bool deleteNew = m_noteEditorIsNew &&
+                                          m_noteEditorIdx >= 0 &&
+                                          m_noteEditorIdx < m_bookmarks.size() &&
+                                          m_noteEditor->toPlainText().trimmed().isEmpty();
+                    const int  idxToDelete = m_noteEditorIdx;
                     closeNoteEditor(false);
+                    if (deleteNew) removeBookmark(idxToDelete);
                     viewport()->setFocus();
                     return true;
                 }

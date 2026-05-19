@@ -253,20 +253,47 @@ uint HexView::hitTest(int x, int y, int *bookmarkIdx)
     }
 
     // Bookmark note strips (to the right of the ASCII column)?
-    for (int i = 0; i < m_bookmarks.size(); ++i) {
-        const NoteStripGeom geom = noteStripGeom(m_bookmarks[i]);
-        if (!geom.valid) continue;
-        if (geom.closeRect.contains(x, y)) {
-            if (bookmarkIdx) *bookmarkIdx = i;
-            return HVHT_BOOKMARK_CLOSE;
+    // Compute layout so we know which bookmarks are shown as full strips vs tabs.
+    // Among overlapping hit targets return the smallest-span bookmark (drawn on
+    // top); ties broken by higher storage index.
+    {
+        const QVector<BmLayout> layout = computeBookmarkLayout();
+
+        int    bestIdx = -1;
+        size_w bestLen = (size_w)-1;
+        uint   bestHt  = HVHT_NONE;
+
+        for (int i = 0; i < m_bookmarks.size(); ++i) {
+            const BmLayout &bml = layout.value(i);
+            if (bml.hidden) continue;   // not drawn, not hittable
+
+            const bool isTab = bml.inConflict && !bml.isActive;
+
+            uint ht = HVHT_NONE;
+            if (isTab) {
+                // Collapsed single-line strip — entire area navigates to bm.offset.
+                const QRect tab = noteCollapsedRect(m_bookmarks[i]);
+                if (tab.contains(x, y)) ht = HVHT_BOOKMARK_COLLAPSED;
+            } else {
+                // Full strip.
+                const NoteStripGeom geom = noteStripGeom(m_bookmarks[i]);
+                if (!geom.valid) continue;
+                if      (geom.closeRect.contains(x, y)) ht = HVHT_BOOKMARK_CLOSE;
+                else if (geom.editRect .contains(x, y)) ht = HVHT_BOOKMARK_EDIT;
+                else if (geom.rect     .contains(x, y)) ht = HVHT_BOOKMARK;
+            }
+            if (ht == HVHT_NONE) continue;
+
+            const size_w len = m_bookmarks[i].length;
+            const bool better = (bestIdx == -1)
+                                || (len < bestLen)
+                                || (len == bestLen && i > bestIdx);
+            if (better) { bestIdx = i; bestLen = len; bestHt = ht; }
         }
-        if (geom.editRect.contains(x, y)) {
-            if (bookmarkIdx) *bookmarkIdx = i;
-            return HVHT_BOOKMARK_EDIT;
-        }
-        if (geom.rect.contains(x, y)) {
-            if (bookmarkIdx) *bookmarkIdx = i;
-            return HVHT_BOOKMARK;
+
+        if (bestIdx != -1) {
+            if (bookmarkIdx) *bookmarkIdx = bestIdx;
+            return bestHt;
         }
     }
 
@@ -292,7 +319,6 @@ void HexView::mousePressEvent(QMouseEvent *event)
 
     viewport()->setFocus();
 
-
     int x = event->pos().x();
     int y = event->pos().y();
 
@@ -312,7 +338,44 @@ void HexView::mousePressEvent(QMouseEvent *event)
     }
 
     if (ht == HVHT_BOOKMARK) {
-        openNoteEditor(m_highlightCurrentIdx, {x, y});
+        // Full-strip body click: navigate caret and open the inline text editor.
+        const int bmIdx = m_highlightCurrentIdx;
+        if (bmIdx >= 0 && bmIdx < m_bookmarks.size()) {
+            pinBookmark(bmIdx);
+            const size_w target = m_bookmarks[bmIdx].offset;
+            m_nCursorOffset     = target;
+            m_nSelectionStart   = target;
+            m_nSelectionEnd     = target;
+            m_nSelectionMode    = SEL_NONE;
+            m_fCursorAdjustment = false;
+            scrollCenterIfOffScreen(target);
+            int cx, cy;
+            caretPosFromOffset(target, &cx, &cy);
+            positionCaret(cx, cy, m_nWhichPane);
+            emit cursorChanged(target);
+            openNoteEditor(bmIdx, {x, y});
+        }
+        return;
+    }
+
+    if (ht == HVHT_BOOKMARK_COLLAPSED) {
+        // Collapsed-strip click: navigate caret; the strip will expand on repaint.
+        const int bmIdx = m_highlightCurrentIdx;
+        if (bmIdx >= 0 && bmIdx < m_bookmarks.size()) {
+            pinBookmark(bmIdx);
+            const size_w target = m_bookmarks[bmIdx].offset;
+            m_nCursorOffset     = target;
+            m_nSelectionStart   = target;
+            m_nSelectionEnd     = target;
+            m_nSelectionMode    = SEL_NONE;
+            m_fCursorAdjustment = false;
+            scrollCenterIfOffScreen(target);
+            int cx, cy;
+            caretPosFromOffset(target, &cx, &cy);
+            positionCaret(cx, cy, m_nWhichPane);
+            emit cursorChanged(target);
+            viewport()->update();
+        }
         return;
     }
 
@@ -358,7 +421,7 @@ void HexView::mouseReleaseEvent(QMouseEvent *event)
         return;
     }
 
-    // Bookmark mini-button: fire only if the mouse is released over the same button.
+    // Bookmark button: fire only if the mouse is released over the same button.
     if (m_HitTestCurrent == HVHT_BOOKMARK_CLOSE || m_HitTestCurrent == HVHT_BOOKMARK_EDIT) {
         const uint pressedHt  = m_HitTestCurrent;
         const int  pressedIdx = m_highlightCurrentIdx;
@@ -378,11 +441,9 @@ void HexView::mouseReleaseEvent(QMouseEvent *event)
                 }
                 viewport()->update();
             } else {
-                // bookmarkEditRequested is dead — settings popup replaces the dialog.
-                // emit bookmarkEditRequested(pressedIdx);
+                // HVHT_BOOKMARK_EDIT — settings popup.
                 if (pressedIdx >= 0 && pressedIdx < m_bookmarks.size()) {
                     const NoteStripGeom geom = noteStripGeom(m_bookmarks[pressedIdx]);
-                    // Pass the global rect of the button so the popup can right-align to it.
                     const QRect btnGlobal = geom.valid
                         ? QRect(viewport()->mapToGlobal(geom.editRect.topLeft()), geom.editRect.size())
                         : QRect(event->globalPosition().toPoint(), QSize(0, 0));
@@ -411,6 +472,10 @@ void HexView::mouseReleaseEvent(QMouseEvent *event)
     } else {
         m_highlightCurrentIdx = -1;
     }
+
+    // Repaint so bookmark display reflects the final cursor position now that
+    // the mouse button is released and the drag-freeze has lifted.
+    viewport()->update();
 
     // No explicit releaseMouse() needed — Qt's implicit grab ends automatically
     // when the last mouse button is released.
@@ -526,7 +591,9 @@ void HexView::mouseMoveEvent(QMouseEvent *event)
                 viewport()->update();
             }
         } else {
-            const int  newHoverBm    = (ht == HVHT_BOOKMARK || ht == HVHT_BOOKMARK_CLOSE || ht == HVHT_BOOKMARK_EDIT) ? bmIdx : -1;
+            const int  newHoverBm    = (ht == HVHT_BOOKMARK           || ht == HVHT_BOOKMARK_CLOSE ||
+                                        ht == HVHT_BOOKMARK_EDIT       ||
+                                        ht == HVHT_BOOKMARK_COLLAPSED) ? bmIdx : -1;
             const bool newHoverClose = (ht == HVHT_BOOKMARK_CLOSE);
             const bool newHoverEdit  = (ht == HVHT_BOOKMARK_EDIT);
             if (newHoverBm != m_hoverBookmarkIdx || newHoverClose != m_hoverOnClose || newHoverEdit != m_hoverOnEdit) {
@@ -541,9 +608,10 @@ void HexView::mouseMoveEvent(QMouseEvent *event)
         case HVHT_RESIZE:
         case HVHT_RESIZE0:        viewport()->setCursor(Qt::SizeHorCursor); break;
         case HVHT_MAIN:
-        case HVHT_BOOKMARK:       viewport()->setCursor(Qt::IBeamCursor);   break;
+        case HVHT_BOOKMARK:           viewport()->setCursor(Qt::IBeamCursor);       break;
+        case HVHT_BOOKMARK_COLLAPSED:
         case HVHT_BOOKMARK_CLOSE:
-        case HVHT_BOOKMARK_EDIT:  viewport()->setCursor(Qt::PointingHandCursor); break;
+        case HVHT_BOOKMARK_EDIT:      viewport()->setCursor(Qt::PointingHandCursor); break;
         default:                  viewport()->setCursor(Qt::ArrowCursor);   break;
         }
     }

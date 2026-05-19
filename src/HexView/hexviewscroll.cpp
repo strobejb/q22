@@ -207,6 +207,18 @@ bool HexView::scrollCenter(size_w offset)
     return true;
 }
 
+// Like scrollCenter but only scrolls if the offset's row is not already
+// fully visible.  Use this for bookmark navigation so the view stays put
+// when the user clicks a strip that is already on screen.
+bool HexView::scrollCenterIfOffScreen(size_w offset)
+{
+    if (m_nBytesPerLine == 0) return false;
+    const size_w row = offset / (size_w)m_nBytesPerLine;
+    if (row >= m_nVScrollPos && row < m_nVScrollPos + (size_w)m_nWindowLines)
+        return false;   // already visible — don't touch the scroll position
+    return scrollCenter(offset);
+}
+
 void HexView::scrollHEnd()
 {
     if (m_nHScrollPos >= m_nHScrollMax) return;

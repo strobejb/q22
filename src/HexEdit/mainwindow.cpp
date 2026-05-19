@@ -785,10 +785,24 @@ MainWindow::MainWindow(QWidget *parent)
     // goto panel.  Adds a blank bookmark at the cursor/selection, centres the
     // view, scrolls the H-bar fully right so the note strip is visible, and
     // opens the inline editor so the user can type the name immediately.
+    //
+    // If a bookmark already exists at the same starting offset, we scroll to
+    // it and open its editor instead of creating a duplicate.
     auto addBookmarkInline = [this]() {
         const size_w selSize = m_hv->selectionSize();
         const size_w offset  = selSize > 0 ? m_hv->selectionStart() : m_hv->cursorOffset();
         const size_w length  = selSize > 0 ? selSize : 1;
+
+        // Redirect to existing bookmark at this offset rather than duplicating.
+        const QList<Bookmark> &existing = m_hv->bookmarks();
+        for (int i = 0; i < existing.size(); ++i) {
+            if (existing[i].offset == offset) {
+                m_hv->scrollCenterIfOffScreen(offset);
+                m_hv->scrollHEnd();
+                m_hv->openNoteEditor(i);
+                return;
+            }
+        }
 
         Bookmark bm;
         bm.offset      = offset;
@@ -798,8 +812,16 @@ MainWindow::MainWindow(QWidget *parent)
         bm.colourIndex = 0;
         m_hv->addBookmark(bm);
 
-        const int newIdx = m_hv->bookmarks().size() - 1;
-        m_hv->scrollCenter(offset);
+        // addBookmark uses a sorted insert, so the new entry is not necessarily
+        // at the end of the list.  Find it by offset (safe: we verified above
+        // that no bookmark existed at this offset before the insert).
+        const QList<Bookmark> &updated = m_hv->bookmarks();
+        int newIdx = updated.size() - 1;   // fallback — should never be needed
+        for (int i = 0; i < updated.size(); ++i) {
+            if (updated[i].offset == offset) { newIdx = i; break; }
+        }
+
+        m_hv->scrollCenterIfOffScreen(offset);
         m_hv->scrollHEnd();
         m_hv->openNoteEditor(newIdx);
     };

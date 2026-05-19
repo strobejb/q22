@@ -6,8 +6,10 @@
 #include <QFont>
 #include <QRawFont>
 
+#include <QHash>
 #include <QList>
 #include <QTimer>
+#include <QVector>
 #include <cstdint>
 #include <QAbstractScrollArea>
 #include "sequence.h"
@@ -119,9 +121,10 @@ enum HvColorSlot {
 #define HVHT_SELECTION     0x02
 #define HVHT_RESIZE        0x10
 #define HVHT_RESIZE0       (0x20 | HVHT_RESIZE)
-#define HVHT_BOOKMARK       0x100
-#define HVHT_BOOKMARK_CLOSE 0x200
-#define HVHT_BOOKMARK_EDIT  0x400
+#define HVHT_BOOKMARK           0x100  // full-strip body
+#define HVHT_BOOKMARK_CLOSE     0x200
+#define HVHT_BOOKMARK_EDIT      0x400
+#define HVHT_BOOKMARK_COLLAPSED 0x800  // collapsed single-line strip body
 
 // ── Data structures ───────────────────────────────────────────────────────────
 struct HEXCOL {
@@ -216,6 +219,7 @@ public:
     bool   scrollTo(size_w offset);
     bool   scrollTop(size_w offset);
     bool   scrollCenter(size_w offset);
+    bool   scrollCenterIfOffScreen(size_w offset);
     void   scrollHEnd();    // scroll to the far right (note strips visible)
     void   scrollHStart();  // scroll to the far left  (address column visible)
 
@@ -273,6 +277,17 @@ public:
         bool    valid = false;
     };
 
+    // Layout state for a single bookmark, computed by computeBookmarkLayout().
+    // Determines which of two visual states the strip is rendered in:
+    //   inConflict=false             → normal (always shown as full strip)
+    //   inConflict=true, isActive=true  → full strip (caret is within this bookmark's range)
+    //   inConflict=true, isActive=false → tab only (thin coloured bar + triangle pointer)
+    struct BmLayout {
+        bool inConflict = false;
+        bool isActive   = true;   // always true when inConflict=false
+        bool hidden     = false;  // non-active member whose collapsed strip overlaps the active full strip; draw nothing
+    };
+
 signals:
     void cursorChanged(size_w offset);
     void selectionChanged(size_w start, size_w end);
@@ -290,6 +305,11 @@ public:
     // Pass -1 to clear.  Safe to call from outside HexView (e.g. MainWindow).
     void setBookmarkPopupIdx(int idx) { m_bookmarkPopupIdx = idx; viewport()->update(); }
     int  bookmarkPopupIdx()    const  { return m_bookmarkPopupIdx; }
+
+    // Force a specific bookmark to be shown as the full strip in its conflict group,
+    // regardless of cursor position.  The pin auto-expires when the cursor leaves the
+    // bookmark's byte range, so normal navigation clears it naturally.
+    void pinBookmark(int idx)         { m_pinnedBookmarkIdx = idx; viewport()->update(); }
 
 protected:
     void paintEvent(QPaintEvent *event)        override;
@@ -362,7 +382,10 @@ private:
     // ── Bookmarks ─────────────────────────────────────────────────────────────
     int           findBookmark(size_w startoff, size_w endoff) const;
     NoteStripGeom noteStripGeom(const Bookmark &bm) const;
-    void          drawNoteStrip(QPainter &painter, int asciiRight, int ny, const Bookmark &bm);
+    QRect         noteCollapsedRect(const Bookmark &bm) const;
+    void          drawNoteStrip(QPainter &painter, const Bookmark &bm, const BmLayout &bml);
+    int           noteStripFullHeight(const Bookmark &bm) const;
+    QVector<BmLayout> computeBookmarkLayout() const;
     void          closeNoteEditor(bool save);
     QFont         noteFont() const;
 
@@ -481,12 +504,19 @@ private:
     int  m_highlightHotIdx      = -1;
 
     // Note strip inline editor
-    QPlainTextEdit *m_noteEditor    = nullptr;
-    int             m_noteEditorIdx = -1;
+    QPlainTextEdit *m_noteEditor      = nullptr;
+    int             m_noteEditorIdx   = -1;
+    bool            m_noteEditorIsNew = false;  // true when opened for a never-saved bookmark
+
 
     // Index of the bookmark whose settings popup is currently open (-1 = none).
     // Set via setBookmarkPopupIdx() so the gear button stays in its pressed state.
     int             m_bookmarkPopupIdx = -1;
+
+    // Pinned bookmark: overrides the cursor-based winner in computeBookmarkLayout().
+    // Effective only while m_nCursorOffset is within the pinned bookmark's byte range,
+    // so it auto-expires as soon as the user navigates elsewhere.
+    int             m_pinnedBookmarkIdx = -1;
 
     // Note strip hover/press state (updated in mouseMoveEvent idle path and press/release)
     int             m_hoverBookmarkIdx = -1;

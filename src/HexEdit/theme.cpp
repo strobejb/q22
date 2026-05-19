@@ -962,22 +962,33 @@ QFileDialog QTreeView::item {
     // collapsed to zero-size so no track space is reserved.
     // {scrollbarArrowQss} is always replaced (both branches emit all four rules).
     if (scrollbarArrows) {
-        // The arrow triangles themselves are drawn by ScrollBarArrowPainter (an
-        // application-wide event filter) on top of the normal Qt paint — no image
-        // files needed, colours track the live palette.
+        // Arrow buttons are scoped to scrollbars tagged with the hexViewScrollBar
+        // property (set in HexView's constructor) so they never appear on other
+        // scrollbars (e.g. preferences dialog panels).
+        //
+        // All QScrollBars first get explicit zero-size stubs so Qt doesn't
+        // reserve space for sub-line/add-line subcontrols by default; the
+        // hex-view-scoped rules below then override those to the full button size.
         //
         // The scroll-axis margin is widened to kSbWidth px at each end to reserve
         // space for the sub-line/add-line subcontrols.  Cross-axis margin stays 0
         // — the handle's cross-axis margin already handles the visual thumb inset,
         // and adding it here too would shrink the content area twice.
+        //
+        // The arrow triangles themselves are drawn by ScrollBarArrowPainter (an
+        // application-wide event filter) on top of the normal Qt paint — no image
+        // files needed, colours track the live palette.
         ss.replace("{scrollbarArrowQss}", QStringLiteral(
-            "\nQScrollBar:vertical   { margin: %1px 0px %1px 0px; }\n"
-            "QScrollBar:horizontal { margin: 0px %1px 0px %1px; }\n"
-            "QScrollBar::sub-line:vertical   { height: %1px; subcontrol-position: top;    subcontrol-origin: margin; background: transparent; }\n"
-            "QScrollBar::add-line:vertical   { height: %1px; subcontrol-position: bottom; subcontrol-origin: margin; background: transparent; }\n"
-            "QScrollBar::sub-line:horizontal { width:  %1px; subcontrol-position: left;   subcontrol-origin: margin; background: transparent; }\n"
-            "QScrollBar::add-line:horizontal { width:  %1px; subcontrol-position: right;  subcontrol-origin: margin; background: transparent; }\n"
-            "QScrollBar::sub-line:pressed, QScrollBar::add-line:pressed { background: palette(mid); }\n"
+            "QScrollBar::add-line:vertical,   QScrollBar::sub-line:vertical   { height: 0; }\n"
+            "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width:  0; }\n"
+            "\nQScrollBar[hexViewScrollBar=true]:vertical   { margin: %1px 0px %1px 0px; }\n"
+            "QScrollBar[hexViewScrollBar=true]:horizontal { margin: 0px %1px 0px %1px; }\n"
+            "QScrollBar[hexViewScrollBar=true]::sub-line:vertical   { height: %1px; subcontrol-position: top;    subcontrol-origin: margin; background: transparent; }\n"
+            "QScrollBar[hexViewScrollBar=true]::add-line:vertical   { height: %1px; subcontrol-position: bottom; subcontrol-origin: margin; background: transparent; }\n"
+            "QScrollBar[hexViewScrollBar=true]::sub-line:horizontal { width:  %1px; subcontrol-position: left;   subcontrol-origin: margin; background: transparent; }\n"
+            "QScrollBar[hexViewScrollBar=true]::add-line:horizontal { width:  %1px; subcontrol-position: right;  subcontrol-origin: margin; background: transparent; }\n"
+            "QScrollBar[hexViewScrollBar=true]::sub-line:pressed,\n"
+            "QScrollBar[hexViewScrollBar=true]::add-line:pressed { background: palette(mid); }\n"
         ).arg(sbw));
     } else {
         ss.replace("{scrollbarArrowQss}",
@@ -1305,7 +1316,9 @@ public:
 
         const auto t = ev->type();
 
-        if (!AppSettings::prefScrollbarArrows())
+        // Only activate for HexView scrollbars (tagged in HexView's constructor).
+        // This mirrors the QSS scoping: other scrollbars have no arrow space reserved.
+        if (!AppSettings::prefScrollbarArrows() || !sb->property("hexViewScrollBar").toBool())
             return false;
 
         if (t == QEvent::HoverMove) {
