@@ -97,6 +97,8 @@ enum HvColorSlot {
 // Bookmark display behaviour
 #define HVS_BOOKMARK_EXPAND_LONE   0x00400000  // lone (uncontested) bookmarks always show as full strips
 #define HVS_BOOKMARK_EXPAND_CURSOR 0x00800000  // expand when cursor/selection enters the range (on release)
+#define HVS_NESTED_BOOKMARKS            0x01000000  // allow overlapping bookmarks; when off, new overlaps redirect to existing
+#define HVS_BOOKMARK_SELECTION_HIGHLIGHTS 0x02000000  // selecting a bookmark also selects its byte range in the hex view
 
 // Edit modes
 #define HVMODE_READONLY     0
@@ -390,7 +392,7 @@ private:
     QRect         noteCollapsedRect(const Bookmark &bm) const;
     void          drawNoteStrip(QPainter &painter, const Bookmark &bm, const BmLayout &bml);
     int           noteStripFullHeight(const Bookmark &bm) const;
-    QVector<BmLayout> computeBookmarkLayout(bool treatMouseAsReleased = false) const;
+    QVector<BmLayout> computeBookmarkLayout(bool treatMouseAsReleased = false);
     void          closeNoteEditor(bool save);
     QFont         noteFont() const;
 
@@ -518,10 +520,18 @@ private:
     // Set via setBookmarkPopupIdx() so the gear button stays in its pressed state.
     int             m_bookmarkPopupIdx = -1;
 
-    // Pinned bookmark: overrides the cursor-based winner in computeBookmarkLayout().
-    // Effective only while m_nCursorOffset is within the pinned bookmark's byte range,
-    // so it auto-expires as soon as the user navigates elsewhere.
+    // Pinned bookmark: overrides / seeds the cursor-based winner in computeBookmarkLayout().
+    // Updated automatically when the cursor enters a bookmark's range (sticky: cleared only
+    // when another bookmark is pinned, not when the cursor leaves the range).
+    // Also set explicitly by pinBookmark() when the user clicks a bookmark strip.
     int             m_pinnedBookmarkIdx = -1;
+
+    // Surfaced bookmark: tracks the last collapsed-tab member that was brought to
+    // the front by cursor navigation (separate from m_pinnedBookmarkIdx so that
+    // surface-stickiness never causes unintended full-strip expansion).
+    // Updated whenever the cursor enters a group member's range with no active winner;
+    // used as a sticky fallback for surfacedIdx when the cursor has left the group.
+    int             m_surfacedBookmarkIdx = -1;
 
     // Note strip hover/press state (updated in mouseMoveEvent idle path and press/release)
     int             m_hoverBookmarkIdx = -1;

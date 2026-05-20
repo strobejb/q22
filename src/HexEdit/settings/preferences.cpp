@@ -308,8 +308,16 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     m_bmAutoExpand->setChecked(AppSettings::prefBookmarkExpandLone());
 
     m_bmSelExpand = new SettingsToggle(tr("Expand when selected"), this);
-    m_bmSelExpand->setToolTip(tr("Expand bookmarks when selected in the hex editor"));
+    m_bmSelExpand->setToolTip(tr("Expand a bookmark when the cursor or selection lands inside its byte range (takes effect on mouse release, never during drag)"));
     m_bmSelExpand->setChecked(AppSettings::prefBookmarkExpandCursor());
+
+    m_bmNested = new SettingsToggle(tr("Allow nested bookmarks"), this);
+    m_bmNested->setToolTip(tr("When off, creating a bookmark that overlaps an existing one opens the existing bookmark's editor instead"));
+    m_bmNested->setChecked(AppSettings::prefBookmarkNested());
+
+    m_bmSelHighlights = new SettingsToggle(tr("Highlight bookmark on selection"), this);
+    m_bmSelHighlights->setToolTip(tr("When a bookmark is activated, automatically select its annotated byte range in the hex view"));
+    m_bmSelHighlights->setChecked(AppSettings::prefBookmarkSelectionHighlights());
 
     // ── Signal connections ────────────────────────────────────────────────────
     connect(m_fontSize, &StepSpinBox::valueChanged,
@@ -358,6 +366,18 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
         emit bookmarkStyleChanged(HVS_BOOKMARK_EXPAND_CURSOR,
                                   on ? HVS_BOOKMARK_EXPAND_CURSOR : 0);
     });
+    connect(m_bmNested, &SettingsToggle::toggled,
+            this, [this](bool on) {
+        AppSettings::setPrefBookmarkNested(on);
+        emit bookmarkStyleChanged(HVS_NESTED_BOOKMARKS,
+                                  on ? HVS_NESTED_BOOKMARKS : 0);
+    });
+    connect(m_bmSelHighlights, &SettingsToggle::toggled,
+            this, [this](bool on) {
+        AppSettings::setPrefBookmarkSelectionHighlights(on);
+        emit bookmarkStyleChanged(HVS_BOOKMARK_SELECTION_HIGHLIGHTS,
+                                  on ? HVS_BOOKMARK_SELECTION_HIGHLIGHTS : 0);
+    });
 
     // ── Cards ─────────────────────────────────────────────────────────────────
     auto *fontGroup   = new SettingsCard(
@@ -367,7 +387,7 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
         {m_nativeMenu, m_nativeDialogs, m_nativeFileDialogs, m_menuHighlight},
         SettingsCard::Style::Spaced, this);
     auto *bmGroup = new SettingsCard(
-        {m_bmAutoExpand, m_bmSelExpand},
+        {m_bmAutoExpand, m_bmSelExpand, m_bmNested, m_bmSelHighlights},
         SettingsCard::Style::Spaced, this);
 
     // ── Reset button ──────────────────────────────────────────────────────────

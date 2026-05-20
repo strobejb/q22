@@ -599,10 +599,13 @@ MainWindow::MainWindow(QWidget *parent)
         // Base flags (always applied)
         uint mask   = HVS_RESIZEBAR | HVS_SHOWMODS | HVS_INVERTSELECTION | HVS_ENABLEDRAGDROP;
         uint styles = HVS_RESIZEBAR | HVS_SHOWMODS | HVS_ENABLEDRAGDROP;
-        // Bookmark flags — restore persisted values (default both on)
-        mask   |= HVS_BOOKMARK_EXPAND_LONE | HVS_BOOKMARK_EXPAND_CURSOR;
-        if (AppSettings::prefBookmarkExpandLone())   styles |= HVS_BOOKMARK_EXPAND_LONE;
-        if (AppSettings::prefBookmarkExpandCursor()) styles |= HVS_BOOKMARK_EXPAND_CURSOR;
+        // Bookmark flags — restore persisted values
+        mask   |= HVS_BOOKMARK_EXPAND_LONE | HVS_BOOKMARK_EXPAND_CURSOR |
+                  HVS_NESTED_BOOKMARKS | HVS_BOOKMARK_SELECTION_HIGHLIGHTS;
+        if (AppSettings::prefBookmarkExpandLone())          styles |= HVS_BOOKMARK_EXPAND_LONE;
+        if (AppSettings::prefBookmarkExpandCursor())        styles |= HVS_BOOKMARK_EXPAND_CURSOR;
+        if (AppSettings::prefBookmarkNested())             styles |= HVS_NESTED_BOOKMARKS;
+        if (AppSettings::prefBookmarkSelectionHighlights()) styles |= HVS_BOOKMARK_SELECTION_HIGHLIGHTS;
         m_hv->setStyle(mask, styles);
     }
     m_hv->setHexColour(HVC_HEXEVEN, QColor(0, 0, 255));
@@ -805,14 +808,39 @@ MainWindow::MainWindow(QWidget *parent)
         const size_w offset  = selSize > 0 ? m_hv->selectionStart() : m_hv->cursorOffset();
         const size_w length  = selSize > 0 ? selSize : 1;
 
-        // Redirect to existing bookmark at this offset rather than duplicating.
         const QList<Bookmark> &existing = m_hv->bookmarks();
-        for (int i = 0; i < existing.size(); ++i) {
-            if (existing[i].offset == offset) {
-                m_hv->scrollCenterIfOffScreen(offset);
+
+        if (!m_hv->checkStyle(HVS_NESTED_BOOKMARKS)) {
+            // Nesting disabled: if the new range overlaps any existing bookmark,
+            // open the best-matching one (smallest range, same shortest-wins logic
+            // as cursor-based selection) instead of creating a duplicate/nested one.
+            int    bestIdx = -1;
+            size_w bestLen = (size_w)-1;
+            for (int i = 0; i < existing.size(); ++i) {
+                const Bookmark &bm = existing[i];
+                const bool overlaps = offset < bm.offset + bm.length &&
+                                      offset + length > bm.offset;
+                if (overlaps && bm.length < bestLen) {
+                    bestIdx = i;
+                    bestLen = bm.length;
+                }
+            }
+            if (bestIdx >= 0) {
+                m_hv->scrollCenterIfOffScreen(existing[bestIdx].offset);
                 m_hv->scrollHEnd();
-                m_hv->openNoteEditor(i);
+                m_hv->openNoteEditor(bestIdx);
                 return;
+            }
+        } else {
+            // Nesting allowed: still redirect on an exact offset match to avoid
+            // creating a bookmark directly on top of an existing one.
+            for (int i = 0; i < existing.size(); ++i) {
+                if (existing[i].offset == offset) {
+                    m_hv->scrollCenterIfOffScreen(offset);
+                    m_hv->scrollHEnd();
+                    m_hv->openNoteEditor(i);
+                    return;
+                }
             }
         }
 

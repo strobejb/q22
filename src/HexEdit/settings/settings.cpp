@@ -247,3 +247,27 @@ void AppSettings::setPrefBookmarkExpandCursor(bool on)
     OPEN_SETTINGS;
     s.setValue("bookmarks/expandCursor", on);
 }
+
+bool AppSettings::prefBookmarkNested()
+{
+    OPEN_SETTINGS;
+    return s.value("bookmarks/nestedBookmarks", false).toBool();
+}
+
+void AppSettings::setPrefBookmarkNested(bool on)
+{
+    OPEN_SETTINGS;
+    s.setValue("bookmarks/nestedBookmarks", on);
+}
+
+bool AppSettings::prefBookmarkSelectionHighlights()
+{
+    OPEN_SETTINGS;
+    return s.value("bookmarks/selectionHighlights", true).toBool();
+}
+
+void AppSettings::setPrefBookmarkSelectionHighlights(bool on)
+{
+    OPEN_SETTINGS;
+    s.setValue("bookmarks/selectionHighlights", on);
+}

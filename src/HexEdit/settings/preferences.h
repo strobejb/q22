@@ -78,6 +78,8 @@ private:
     SettingsToggle *m_menuHighlight     = nullptr;
     SettingsToggle *m_bmAutoExpand      = nullptr;
     SettingsToggle *m_bmSelExpand       = nullptr;
+    SettingsToggle *m_bmNested          = nullptr;
+    SettingsToggle *m_bmSelHighlights   = nullptr;
     SlideOverlay   *m_overlay      = nullptr;
 };
 

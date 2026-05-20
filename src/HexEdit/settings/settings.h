@@ -63,6 +63,10 @@ bool    prefBookmarkExpandLone();   // true = uncontested bookmarks always show 
 void    setPrefBookmarkExpandLone(bool on);
 bool    prefBookmarkExpandCursor(); // true = expand when cursor lands in range (on mouse release)
 void    setPrefBookmarkExpandCursor(bool on);
+bool    prefBookmarkNested();      // true = allow overlapping bookmarks (default false)
+void    setPrefBookmarkNested(bool on);
+bool    prefBookmarkSelectionHighlights(); // true = activating a bookmark selects its byte range (default true)
+void    setPrefBookmarkSelectionHighlights(bool on);
 
 } // namespace AppSettings
 

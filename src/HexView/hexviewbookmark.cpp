@@ -88,6 +88,8 @@ static bool bmOffsetLess(const Bookmark &a, const Bookmark &b)
 void HexView::setBookmarks(const QList<Bookmark> &bookmarks)
 {
     closeNoteEditor(false);
+    m_pinnedBookmarkIdx   = -1;   // full replacement — old pin index is meaningless
+    m_surfacedBookmarkIdx = -1;
     m_bookmarks = bookmarks;
     std::sort(m_bookmarks.begin(), m_bookmarks.end(), bmOffsetLess);
     setupScrollbars();
@@ -110,6 +112,14 @@ void HexView::removeBookmark(int idx)
 {
     if (idx < 0 || idx >= m_bookmarks.size()) return;
     closeNoteEditor(false);
+    if (m_pinnedBookmarkIdx == idx)
+        m_pinnedBookmarkIdx = -1;
+    else if (m_pinnedBookmarkIdx > idx)
+        --m_pinnedBookmarkIdx;
+    if (m_surfacedBookmarkIdx == idx)
+        m_surfacedBookmarkIdx = -1;
+    else if (m_surfacedBookmarkIdx > idx)
+        --m_surfacedBookmarkIdx;
     m_bookmarks.removeAt(idx);
     setupScrollbars();
     viewport()->update();
@@ -121,8 +131,10 @@ void HexView::replaceBookmark(int idx, const Bookmark &bm)
     if (idx < 0 || idx >= m_bookmarks.size()) return;
     closeNoteEditor(false);  // sets m_noteEditorIdx = -1 before we re-sort
     m_bookmarks[idx] = bm;
-    // Re-sort in case the replacement bookmark has a different offset
-    // (e.g. editing offset via the bookmark dialog).
+    // Re-sort in case the replacement bookmark has a different offset.
+    // This invalidates all index-based pin state, so clear both pins.
+    m_pinnedBookmarkIdx   = -1;
+    m_surfacedBookmarkIdx = -1;
     std::sort(m_bookmarks.begin(), m_bookmarks.end(), bmOffsetLess);
     setupScrollbars();
     viewport()->update();
@@ -323,16 +335,21 @@ int HexView::noteStripFullHeight(const Bookmark &bm) const
 // conflict groups — runs of bookmarks whose full-height strips would overlap.
 //
 // Within each group (including a lone bookmark with no neighbours) the "active"
-// member (shown as a full strip) is determined by the current caret position:
-//   • If a pin is live (m_pinnedBookmarkIdx in range and cursor still inside
-//     that bookmark's byte range), the pin wins outright.
-//   • Otherwise: whichever member contains the caret wins; shortest-length
-//     breaks ties (most specific range).
-//   • If the caret is inside none of them, no winner — all collapse to tabs.
-// This applies equally to lone bookmarks: a bookmark that was expanded by a
-// click (pin) collapses back to a tab as soon as the cursor leaves its range,
-// preventing the strip from re-appearing after the user clicks elsewhere.
-QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsReleased) const
+// member is selected as follows:
+//   • Cursor-based: whichever member contains the caret wins; shortest-length
+//     breaks ties (most specific range).  The winner is pinned so it stays
+//     active (sticky) after the cursor moves away from all group members.
+//   • Sticky fallback: if the cursor is outside all members, the last-pinned
+//     member stays active — bookmarks don't collapse just because the cursor
+//     left their range.
+// Lone bookmarks use the same cursorExpand + pin logic.
+// During mouse drag the display is frozen: the pinned winner is kept regardless
+// of cursor movement so selection drags don't disturb the bookmark display.
+//
+// The function is non-const because it updates m_pinnedBookmarkIdx as a
+// deliberate UI-state side-effect.  hitTest() passes treatMouseAsReleased=true
+// which suppresses pin updates so hit-testing never disturbs layout state.
+QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsReleased)
 {
     const int n = m_bookmarks.size();
     QVector<BmLayout> layout(n);    // default: inConflict=false, isActive=true
@@ -351,18 +368,6 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
         fh[i] = noteStripFullHeight(m_bookmarks[i]);
     }
 
-    // While a mouse button is held (drag-select or drag-drop) freeze the
-    // bookmark display: keep the current pin alive regardless of where the
-    // cursor has moved, and skip cursor-based selection entirely.
-    // On mouse-release the repaint fires with no buttons held and both paths
-    // run normally against the final m_nCursorOffset.
-    // treatMouseAsReleased is set by hitTest() so the layout matches what the
-    // user actually sees on screen (computed without a button held) rather than
-    // the frozen state that exists at the instant mousePressEvent fires.
-    const bool mouseHeld = treatMouseAsReleased
-                           ? false
-                           : (QApplication::mouseButtons() != Qt::NoButton);
-
     // Sweep: find maximal conflict groups using full heights for all members.
     int i = 0;
     while (i < n) {
@@ -377,70 +382,102 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
             // Lone bookmark (no strip overlap with neighbours).
             //
             // HVS_BOOKMARK_EXPAND_LONE: show as a full strip unconditionally
-            //   (original "always active" behaviour) — nothing to do with cursor.
-            // HVS_BOOKMARK_EXPAND_CURSOR: additionally expand when the cursor
-            //   lands inside the range, but ONLY after mouse release (!mouseHeld).
-            //   The drag/selection freeze is intentional: we never expand mid-drag.
+            //   (the "always visible" behaviour) — nothing to do with cursor.
+            // HVS_BOOKMARK_EXPAND_CURSOR: the sticky-pin block above pins this
+            //   bookmark when the cursor is in range; the pin then keeps it
+            //   active even after the cursor moves away (sticky behaviour).
+            //   Never expands mid-drag (!mouseHeld guard on the pin block).
             // An explicit pin (set by clicking the bookmark strip) always wins.
-            //
-            // The mouseHeld gate would cause a collapse-on-press flicker when the
-            // cursor was already inside the range.  This is avoided by
-            // mousePressEvent auto-pinning the currently-active bookmark before
-            // it moves the cursor.
             const Bookmark &bm = m_bookmarks[i];
             const bool pinned  = (m_pinnedBookmarkIdx == i);
             const bool inRange = m_nCursorOffset >= bm.offset &&
                                  m_nCursorOffset <  bm.offset + bm.length;
-            const bool loneExpand   = checkStyle(HVS_BOOKMARK_EXPAND_LONE);                    // layout rule — independent of mouse state
-            const bool cursorExpand = checkStyle(HVS_BOOKMARK_EXPAND_CURSOR) && !mouseHeld && inRange; // never expand mid-drag
+            const bool loneExpand   = checkStyle(HVS_BOOKMARK_EXPAND_LONE);
+            const bool cursorExpand = checkStyle(HVS_BOOKMARK_EXPAND_CURSOR) && inRange;
+            // When the cursor enters this bookmark's range, pin it so it stays
+            // active (sticky) even after the cursor moves away.  Not done during
+            // hitTest calls (treatMouseAsReleased) to avoid layout side-effects.
+            if (cursorExpand && !treatMouseAsReleased)
+                m_pinnedBookmarkIdx = i;
             const bool active = pinned || loneExpand || cursorExpand;
             // active=true  → {false,true,false}  showTab=false → full strip
             // active=false → {true,false,false}  showTab=true  → collapsed tab
             layout[i] = { !active, active, false };
         } else {
             // Conflict group [i, end).
-            // Determine the active (full-strip) winner:
-            //   1. A pin set by a bookmark-body click wins unconditionally —
-            //      overrides cursor-based selection so the explicitly-clicked
-            //      bookmark stays active even if a shorter overlapping bookmark
-            //      would otherwise win.  The pin is cleared on release over a
-            //      non-bookmark area.
-            //   2. Otherwise: whichever member contains the caret wins, with
-            //      shortest-length breaking ties (most specific range).
-            //      Gated on !mouseHeld to freeze the display during drag.
-            //   3. If the caret is outside all members, no winner — all collapse.
+            // Determine the active (full-strip) winner — see the three-step rule
+            // in the function doc-comment above.
             int    winnerIdx = -1;
             size_w winnerLen = (size_w)-1;
 
-            // Pin check: unconditional — body-click always wins.
-            if (m_pinnedBookmarkIdx >= i && m_pinnedBookmarkIdx < end)
-                winnerIdx = m_pinnedBookmarkIdx;
-
-            // Cursor-based fallback — runs when no pin is active.
-            // Gated on HVS_BOOKMARK_EXPAND_CURSOR and !mouseHeld: bookmarks never
-            // expand mid-drag; expansion only triggers on mouse release.
-            if (winnerIdx == -1 &&
-                checkStyle(HVS_BOOKMARK_EXPAND_CURSOR) && !mouseHeld) {
+            // Cursor-based: whichever member contains the cursor wins;
+            // shortest-length breaks ties.  The winner is pinned so it
+            // stays active (sticky) after the cursor moves away.
+            // Only runs when HVS_BOOKMARK_EXPAND_CURSOR is on — the flag
+            // controls cursor-driven expansion, not explicit clicks.
+            if (checkStyle(HVS_BOOKMARK_EXPAND_CURSOR)) {
                 for (int j = i; j < end; ++j) {
                     const Bookmark &bm = m_bookmarks[j];
                     if (m_nCursorOffset >= bm.offset &&
-                        m_nCursorOffset <  bm.offset + bm.length) {
-                        if (bm.length < winnerLen) {
-                            winnerIdx = j;
-                            winnerLen = bm.length;
+                        m_nCursorOffset <  bm.offset + bm.length &&
+                        bm.length < winnerLen) {
+                        winnerIdx = j;
+                        winnerLen = bm.length;
+                    }
+                }
+                if (winnerIdx >= 0 && !treatMouseAsReleased)
+                    m_pinnedBookmarkIdx = winnerIdx;
+            }
+
+            // Sticky winner fallback: the pinned member stays expanded.
+            //
+            // With expansion OFF, only an explicit bookmark-tab click sets
+            // the pin; cursor position is irrelevant for expansion.  The pin
+            // therefore wins unconditionally — navigating into a different
+            // member's byte range (keyboard or mouse) does not collapse it.
+            //
+            // With expansion ON the cursor drives expansion, so the fallback
+            // yields when the cursor has entered a *different* member's range
+            // (that member's cursor-based winner path handles it above).
+            // It still fires when the cursor is in the pinned member's own
+            // range or outside all members entirely.
+            if (winnerIdx == -1 &&
+                m_pinnedBookmarkIdx >= i && m_pinnedBookmarkIdx < end) {
+                bool usePin = true;
+                if (checkStyle(HVS_BOOKMARK_EXPAND_CURSOR)) {
+                    // Expansion ON: yield if cursor is inside a different member.
+                    const Bookmark &pb = m_bookmarks[m_pinnedBookmarkIdx];
+                    const bool cursorInPinned =
+                        m_nCursorOffset >= pb.offset &&
+                        m_nCursorOffset <  pb.offset + pb.length;
+                    if (!cursorInPinned) {
+                        for (int j = i; j < end; ++j) {
+                            if (j == m_pinnedBookmarkIdx) continue;
+                            const Bookmark &bm = m_bookmarks[j];
+                            if (m_nCursorOffset >= bm.offset &&
+                                m_nCursorOffset <  bm.offset + bm.length) {
+                                usePin = false;
+                                break;
+                            }
                         }
                     }
                 }
+                if (usePin)
+                    winnerIdx = m_pinnedBookmarkIdx;
             }
 
             // When no bookmark is fully active, surface the group member whose
             // byte range contains the cursor — it becomes the front collapsed tab.
-            // This runs regardless of HVS_BOOKMARK_EXPAND_CURSOR so that cursor
-            // navigation always reveals the relevant bookmark even when expansion
-            // is disabled.  Gated on !mouseHeld (same as cursor-based expansion).
+            // Runs regardless of HVS_BOOKMARK_EXPAND_CURSOR so cursor navigation
+            // always reveals the relevant bookmark even when expansion is off.
+            //
+            // Sticky surface: when the cursor leaves all group members, the last
+            // surfaced member stays at the front (m_surfacedBookmarkIdx).  This is
+            // completely independent of m_pinnedBookmarkIdx so it never triggers
+            // full-strip expansion.
             int    surfacedIdx = -1;
             size_w surfacedLen = (size_w)-1;
-            if (winnerIdx < 0 && !mouseHeld) {
+            if (winnerIdx < 0) {
                 for (int j = i; j < end; ++j) {
                     const Bookmark &bm = m_bookmarks[j];
                     if (m_nCursorOffset >= bm.offset &&
@@ -450,6 +487,14 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
                         surfacedLen = bm.length;
                     }
                 }
+                // Update sticky surface record whenever cursor is in range.
+                if (surfacedIdx >= 0 && !treatMouseAsReleased)
+                    m_surfacedBookmarkIdx = surfacedIdx;
+                // Sticky fallback: cursor has left all group members — keep the
+                // last-surfaced tab at the front so navigation sticks.
+                if (surfacedIdx < 0 &&
+                    m_surfacedBookmarkIdx >= i && m_surfacedBookmarkIdx < end)
+                    surfacedIdx = m_surfacedBookmarkIdx;
             }
 
             // For non-active members: hide those whose collapsed strip would
