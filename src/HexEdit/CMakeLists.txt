@@ -54,6 +54,8 @@ set(PROJECT_SOURCES
         settings/settings.h
         statusbar.cpp
         statusbar.h
+        themepicker.cpp
+        themepicker.h
         chrome/titlebar.cpp
         chrome/titlebar.h
         chrome/windows-chrome.cpp

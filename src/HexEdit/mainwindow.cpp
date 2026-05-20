@@ -21,6 +21,7 @@
 #include "statusbar.h"
 #include "chrome/titlebar.h"
 #include "theme.h"
+#include "themepicker.h"
 #include <functional>
 #include <QActionGroup>
 #include <QShortcut>
@@ -59,8 +60,6 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QToolButton>
-#include <QHelpEvent>
-#include <QToolTip>
 #include <QWidgetAction>
 #include <QWindow>
 #include <QUrl>
@@ -164,188 +163,6 @@ static QCursor cursorForEdges(Qt::Edges edges) {
         return Qt::SizeVerCursor;
     return Qt::ArrowCursor;
 }
-
-// ─── ThemePickerWidget ────────────────────────────────────────────────────────
-// Three circles (Light / System / Dark) embedded as a QWidgetAction at the top
-// of the Tools menu.  No Q_OBJECT needed — uses a std::function callback.
-
-class ThemePickerWidget : public QWidget
-{
-public:
-    static constexpr int VPAD     = 14;  // vertical padding above & below
-    static constexpr int TARGET_D = 52;  // desired circle diameter
-    static constexpr int GAP      = 12;  // fixed gap between circle edges
-
-    ThemePickerWidget(ColorScheme current,
-                      std::function<void(ColorScheme)> cb,
-                      QWidget *parent = nullptr)
-        : QWidget(parent), m_current(current), m_cb(std::move(cb))
-    {
-        setMouseTracking(true);
-        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    }
-
-    QSize sizeHint() const override
-    {
-        // Height drives d() — set it so circles come out TARGET_D tall.
-        // Width is just a sensible minimum; the menu stretches us to its width.
-        return QSize(TARGET_D * 3 + GAP * 2 + TARGET_D, VPAD + TARGET_D + VPAD);
-    }
-
-    void setCurrent(ColorScheme s) { m_current = s; update(); }
-
-    // Always derived from the actual rendered height so it stays in sync.
-    int d() const { return height() - 2 * VPAD; }
-
-private:
-
-protected:
-    void paintEvent(QPaintEvent *) override
-    {
-        QPainter p(this);
-        p.setRenderHint(QPainter::Antialiasing);
-
-        const QPalette &pal  = palette();
-        const QColor    bord = pal.color(QPalette::Mid);
-        const QColor    sel  = pal.color(QPalette::Highlight);
-
-        static const QColor sLight("#f8f8f8");
-        static const QColor sDark ("#242424");
-
-        for (int i = 0; i < 3; ++i) {
-            const QRectF cr   = QRectF(circleRect(i)).adjusted(0.5, 0.5, -0.5, -0.5);
-            const bool   hov  = (m_hovered == i);
-            const bool   curr = (static_cast<int>(m_current) == i);
-
-            if (i == 1) {
-                // System — left half dark, right half light
-                p.setPen(Qt::NoPen);
-                QPainterPath clip;
-                clip.addEllipse(cr);
-                p.setClipPath(clip);
-                p.setBrush(sDark);
-                p.drawRect(QRectF(cr.left(), cr.top(), cr.width() / 2, cr.height()));
-                p.setBrush(sLight);
-                p.drawRect(QRectF(cr.left() + cr.width() / 2, cr.top(),
-                                  cr.width() / 2, cr.height()));
-                p.setClipping(false);
-            } else {
-                p.setPen(Qt::NoPen);
-                p.setBrush(i == 0 ? sLight : sDark);
-                p.drawEllipse(cr);
-            }
-
-            // Border: accent if selected, hover-lightened if hovered, normal otherwise
-            p.setBrush(Qt::NoBrush);
-            p.setPen(QPen(curr ? sel : (hov ? bord.lighter(140) : bord),
-                          curr ? 2.5 : 1.0));
-            p.drawEllipse(cr);
-        }
-    }
-
-    bool event(QEvent *e) override
-    {
-        if (e->type() == QEvent::ToolTip) {
-            auto *he = static_cast<QHelpEvent *>(e);
-            const int h = hitCircle(he->pos());
-            static const char *tips[] = { "Light", "System", "Dark" };
-            if (h >= 0)
-                QToolTip::showText(he->globalPos(), tips[h], this);
-            else
-                QToolTip::hideText();
-            return true;
-        }
-        return QWidget::event(e);
-    }
-
-    void mouseMoveEvent(QMouseEvent *e) override
-    {
-        const int h = hitCircle(e->pos());
-        if (h != m_hovered) { m_hovered = h; update(); }
-    }
-
-    void leaveEvent(QEvent *) override
-    {
-        if (m_hovered != -1) { m_hovered = -1; update(); }
-    }
-
-    void mousePressEvent(QMouseEvent *e) override
-    {
-        if (e->button() != Qt::LeftButton) return;
-        const int h = hitCircle(e->pos());
-        if (h >= 0) {
-            m_current = static_cast<ColorScheme>(h);
-            update();
-            m_cb(m_current);
-        }
-    }
-
-private:
-    // Circles grouped with GAP between them, centered in the widget width.
-    QRect circleRect(int i) const
-    {
-        const int diam   = d();
-        const int groupW = diam * 3 + GAP * 2;
-        const int startX = (width() - groupW) / 2;
-        const int cx     = startX + diam / 2 + i * (diam + GAP);
-        const int cy     = height() / 2;
-        return QRect(cx - diam / 2, cy - diam / 2, diam, diam);
-    }
-
-    int hitCircle(QPoint pos) const
-    {
-        for (int i = 0; i < 3; ++i)
-            if (circleRect(i).adjusted(-6, -6, 6, 6).contains(pos))
-                return i;
-        return -1;
-    }
-
-    ColorScheme                      m_current;
-    int                              m_hovered = -1;
-    std::function<void(ColorScheme)> m_cb;
-};
-
-// QWidgetAction subclass: overrides createWidget so every menu that receives
-// this action gets its own properly-parented ThemePickerWidget instance.
-// (setDefaultWidget only works for the *first* container added; subsequent
-// containers get null from the default createWidget implementation.)
-class ThemePickerAction : public QWidgetAction
-{
-public:
-    ThemePickerAction(ColorScheme current,
-                      std::function<void(ColorScheme)> cb,
-                      QObject *parent = nullptr)
-        : QWidgetAction(parent), m_current(current), m_cb(std::move(cb)) {}
-
-    void setCurrent(ColorScheme current)
-    {
-        m_current = current;
-        for (auto it = m_widgets.begin(); it != m_widgets.end();) {
-            if (*it) {
-                (*it)->setCurrent(current);
-                ++it;
-            } else {
-                it = m_widgets.erase(it);
-            }
-        }
-    }
-
-protected:
-    QWidget *createWidget(QWidget *parent) override
-    {
-        auto *widget = new ThemePickerWidget(m_current, [this](ColorScheme s) {
-            setCurrent(s);
-            m_cb(s);
-        }, parent);
-        m_widgets.append(widget);
-        return widget;
-    }
-
-private:
-    ColorScheme                      m_current;
-    std::function<void(ColorScheme)> m_cb;
-    QList<QPointer<ThemePickerWidget>> m_widgets;
-};
 
 void MainWindow::setupPaletteWatcher()
 {
