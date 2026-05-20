@@ -437,6 +437,10 @@ void MainWindow::createPreferencesDialog()
         m_titleBar->refreshStylesheet();
         AppSettings::setPrefPaletteName(info.name);
     });
+    connect(m_prefsDialog, &PreferencesDialog::bookmarkStyleChanged,
+            this, [this](uint mask, uint styles) {
+        m_hv->setStyle(mask, styles);
+    });
 }
 
 // ─── Bookmark settings popup ──────────────────────────────────────────────────
@@ -591,8 +595,16 @@ MainWindow::MainWindow(QWidget *parent)
     m_hv = new HexView(this);
     m_hv->setObjectName("HexView");
     m_hv->setFrameShape(QFrame::NoFrame);
-    m_hv->setStyle(HVS_RESIZEBAR | HVS_SHOWMODS | HVS_INVERTSELECTION | HVS_ENABLEDRAGDROP,
-                   HVS_RESIZEBAR | HVS_SHOWMODS | HVS_ENABLEDRAGDROP);
+    {
+        // Base flags (always applied)
+        uint mask   = HVS_RESIZEBAR | HVS_SHOWMODS | HVS_INVERTSELECTION | HVS_ENABLEDRAGDROP;
+        uint styles = HVS_RESIZEBAR | HVS_SHOWMODS | HVS_ENABLEDRAGDROP;
+        // Bookmark flags — restore persisted values (default both on)
+        mask   |= HVS_BOOKMARK_EXPAND_LONE | HVS_BOOKMARK_EXPAND_CURSOR;
+        if (AppSettings::prefBookmarkExpandLone())   styles |= HVS_BOOKMARK_EXPAND_LONE;
+        if (AppSettings::prefBookmarkExpandCursor()) styles |= HVS_BOOKMARK_EXPAND_CURSOR;
+        m_hv->setStyle(mask, styles);
+    }
     m_hv->setHexColour(HVC_HEXEVEN, QColor(0, 0, 255));
     m_hv->setHexColour(HVC_HEXODD,  QColor(0, 0, 128));
     m_hv->setGrouping(2);

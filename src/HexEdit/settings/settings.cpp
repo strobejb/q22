@@ -223,3 +223,27 @@ void AppSettings::setPrefRecentPaletteOrdering(bool on)
     OPEN_SETTINGS;
     s.setValue("preferences/recentPaletteOrdering", on);
 }
+
+bool AppSettings::prefBookmarkExpandLone()
+{
+    OPEN_SETTINGS;
+    return s.value("bookmarks/expandLone", true).toBool();
+}
+
+void AppSettings::setPrefBookmarkExpandLone(bool on)
+{
+    OPEN_SETTINGS;
+    s.setValue("bookmarks/expandLone", on);
+}
+
+bool AppSettings::prefBookmarkExpandCursor()
+{
+    OPEN_SETTINGS;
+    return s.value("bookmarks/expandCursor", true).toBool();
+}
+
+void AppSettings::setPrefBookmarkExpandCursor(bool on)
+{
+    OPEN_SETTINGS;
+    s.setValue("bookmarks/expandCursor", on);
+}

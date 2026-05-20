@@ -6,6 +6,7 @@
 #include "settings.h"
 #include "slideoverlay.h"
 #include "theme.h"
+#include "HexView/hexview.h"
 
 #include <algorithm>
 #include <functional>
@@ -301,6 +302,15 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     m_menuHighlight = new SettingsToggle(tr("Menus use highlight colour"), this);
     m_menuHighlight->setChecked(AppSettings::prefMenuHighlight());
 
+    // ── Bookmark behaviour toggles ────────────────────────────────────────────
+    m_bmAutoExpand = new SettingsToggle(tr("Expand when space allows"), this);
+    m_bmAutoExpand->setToolTip(tr("Expand bookmarks when space allows"));
+    m_bmAutoExpand->setChecked(AppSettings::prefBookmarkExpandLone());
+
+    m_bmSelExpand = new SettingsToggle(tr("Expand when selected"), this);
+    m_bmSelExpand->setToolTip(tr("Expand bookmarks when selected in the hex editor"));
+    m_bmSelExpand->setChecked(AppSettings::prefBookmarkExpandCursor());
+
     // ── Signal connections ────────────────────────────────────────────────────
     connect(m_fontSize, &StepSpinBox::valueChanged,
             this, [this](int size) {
@@ -336,6 +346,18 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
         AppSettings::setPrefMenuHighlight(on);
         emit menuHighlightChanged(on);
     });
+    connect(m_bmAutoExpand, &SettingsToggle::toggled,
+            this, [this](bool on) {
+        AppSettings::setPrefBookmarkExpandLone(on);
+        emit bookmarkStyleChanged(HVS_BOOKMARK_EXPAND_LONE,
+                                  on ? HVS_BOOKMARK_EXPAND_LONE : 0);
+    });
+    connect(m_bmSelExpand, &SettingsToggle::toggled,
+            this, [this](bool on) {
+        AppSettings::setPrefBookmarkExpandCursor(on);
+        emit bookmarkStyleChanged(HVS_BOOKMARK_EXPAND_CURSOR,
+                                  on ? HVS_BOOKMARK_EXPAND_CURSOR : 0);
+    });
 
     // ── Cards ─────────────────────────────────────────────────────────────────
     auto *fontGroup   = new SettingsCard(
@@ -343,6 +365,9 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
         SettingsCard::Style::Spaced, this);
     auto *appearGroup = new SettingsCard(
         {m_nativeMenu, m_nativeDialogs, m_nativeFileDialogs, m_menuHighlight},
+        SettingsCard::Style::Spaced, this);
+    auto *bmGroup = new SettingsCard(
+        {m_bmAutoExpand, m_bmSelExpand},
         SettingsCard::Style::Spaced, this);
 
     // ── Reset button ──────────────────────────────────────────────────────────
@@ -419,6 +444,10 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     vlay->addWidget(makeSectionLabel(tr("Appearance")));
     vlay->addSpacing(kHeaderBottomGap);
     vlay->addWidget(appearGroup);
+    vlay->addSpacing(kGroupTopGap);
+    vlay->addWidget(makeSectionLabel(tr("Bookmarks")));
+    vlay->addSpacing(kHeaderBottomGap);
+    vlay->addWidget(bmGroup);
     vlay->addSpacing(kGroupTopGap);
     vlay->addWidget(resetCard);
     vlay->addStretch();

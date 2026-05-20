@@ -94,6 +94,10 @@ enum HvColorSlot {
 #define HVS_INVERTSELECTION     0x80000000
 #define HVS_SELECTION_OVERRIDES 0x00200000  // selection BG overrides all other highlights
 
+// Bookmark display behaviour
+#define HVS_BOOKMARK_EXPAND_LONE   0x00400000  // lone (uncontested) bookmarks always show as full strips
+#define HVS_BOOKMARK_EXPAND_CURSOR 0x00800000  // expand when cursor/selection enters the range (on release)
+
 // Edit modes
 #define HVMODE_READONLY     0
 #define HVMODE_INSERT       1
@@ -274,6 +278,7 @@ public:
         QRect   closeRect;  // close button hit area (top-right of rect)
         QRect   editRect;   // edit button hit area (below close)
         QString rangeText;  // e.g. "0x1A3F  (16 bytes)"
+        int     tipY  = 0;  // screen Y of the triangle tip (arrow point into the hex area)
         bool    valid = false;
     };
 
@@ -385,7 +390,7 @@ private:
     QRect         noteCollapsedRect(const Bookmark &bm) const;
     void          drawNoteStrip(QPainter &painter, const Bookmark &bm, const BmLayout &bml);
     int           noteStripFullHeight(const Bookmark &bm) const;
-    QVector<BmLayout> computeBookmarkLayout() const;
+    QVector<BmLayout> computeBookmarkLayout(bool treatMouseAsReleased = false) const;
     void          closeNoteEditor(bool save);
     QFont         noteFont() const;
 

@@ -160,7 +160,6 @@ HexView::NoteStripGeom HexView::noteStripGeom(const Bookmark &bm) const
 
     const size_w startLine = bm.offset / (size_w)m_nBytesPerLine;
     const int ny    = (int)((qint64)startLine - (qint64)m_nVScrollPos) * m_nFontHeight;
-    const int rectY = ny + kNotePadV;
 
     const int rectW = std::min(kNoteMaxW, viewW - rectX);
     // Text width leaves room for the gear button on the right.
@@ -191,16 +190,56 @@ HexView::NoteStripGeom HexView::noteStripGeom(const Bookmark &bm) const
     delete textDoc;
 
     const int rectH = kNotePadV + textH + kNoteRangePad + rangeH + kNotePadV;
-    if (rectY + rectH <= 0 || rectY >= viewH) return g;
 
-    const int rangeY = rectY + kNotePadV + textH + kNoteRangePad;
+    // ── Arrow tip positioning ─────────────────────────────────────────────────
+    // The tip tracks the vertical midpoint of the bookmark's byte range on screen.
+    //
+    // minMargin: the triangle spans ±(fontHeight/2) around the tip, and the
+    // rounded corners occupy kNoteRadius, so this is the minimum distance the tip
+    // must sit from either edge of the rect.
+    //
+    // Two cases:
+    //   (normal) Centre the strip on the byte-range midpoint.  This guarantees the
+    //            tip is equidistant from both edges and never crowds the top corner,
+    //            regardless of whether the range is short (1–2 lines) or medium.
+    //   (a) Byte range is large enough that the midpoint falls below the strip's
+    //       safe bottom zone — anchor strip at start line, tip at strip centre.
+    const int endLine_i    = (int)((bm.offset + (bm.length > 0 ? bm.length - 1 : 0))
+                                   / (size_w)m_nBytesPerLine);
+    const int numLines     = endLine_i - (int)startLine + 1;
+    const int rangeSpanPx  = numLines * m_nFontHeight;
+    const int idealTipY    = ny + rangeSpanPx / 2;   // centre of byte range, screen coords
+    const int minMargin    = m_nFontHeight / 2 + kNoteRadius;
+    const int defaultRectY = ny + kNotePadV;
 
-    g.rect      = QRect(rectX, rectY, rectW, rectH);
-    g.textRect  = QRect(rectX + kNotePadH, rectY + kNotePadV, textW, textH);
+    int finalRectY, tipY;
+    if (idealTipY > defaultRectY + rectH - minMargin) {
+        // (a) Byte range much larger than strip — anchor at start line, tip at centre.
+        finalRectY = defaultRectY;
+        tipY       = finalRectY + rectH / 2;
+    } else {
+        // (normal) Centre the strip on the byte-range midpoint so the arrow always
+        // has equal breathing room above and below, whether the range is 1 line or
+        // several lines shorter than the strip.
+        tipY       = idealTipY;
+        finalRectY = tipY - rectH / 2;
+    }
+
+    // Never let the strip clip above the top of the viewport.  The tip stays at
+    // its computed position (tracking the hex selection); only the body moves down.
+    finalRectY = std::max(finalRectY, 0);
+
+    if (finalRectY + rectH <= 0 || finalRectY >= viewH) return g;
+
+    const int rangeY = finalRectY + kNotePadV + textH + kNoteRangePad;
+
+    g.rect      = QRect(rectX, finalRectY, rectW, rectH);
+    g.textRect  = QRect(rectX + kNotePadH, finalRectY + kNotePadV, textW, textH);
     g.rangeRect = QRect(rectX + kNotePadH, rangeY, textW, rangeH);
     g.rangeText = rangeText;
-    g.editRect  = QRect(btnX, rectY + kNotePadV,                    kNoteBtnSz, kNoteBtnSz);
-    g.closeRect = QRect(btnX, rangeY + (rangeH - kNoteBtnSz) / 2,   kNoteBtnSz, kNoteBtnSz);
+    g.editRect  = QRect(btnX, finalRectY + kNotePadV,                    kNoteBtnSz, kNoteBtnSz);
+    g.closeRect = QRect(btnX, rangeY + (rangeH - kNoteBtnSz) / 2,        kNoteBtnSz, kNoteBtnSz);
+    g.tipY      = tipY;
     g.valid     = true;
     return g;
 }
@@ -227,11 +266,14 @@ QRect HexView::noteCollapsedRect(const Bookmark &bm) const
 
     const size_w startLine = bm.offset / (size_w)m_nBytesPerLine;
     const int ny   = (int)((qint64)startLine - (qint64)m_nVScrollPos) * m_nFontHeight;
-    const int rectY = ny + kNotePadV;
 
     const QFontMetrics fm(QApplication::font());
     const int rangeH = fm.height();
     const int rectH  = kNotePadV + rangeH + kNotePadV;
+
+    // Centre the collapsed strip on the bookmark's start line so the arrow tip
+    // (which sits at the strip's vertical midpoint) aligns with the line centre.
+    const int rectY = ny + (m_nFontHeight - rectH) / 2;
 
     if (rectY + rectH <= 0 || rectY >= viewH) return QRect();
     return QRect(rectX, rectY, rectW, rectH);
@@ -280,17 +322,17 @@ int HexView::noteStripFullHeight(const Bookmark &bm) const
 // Algorithm: sweep bookmarks in offset order (already sorted) and find maximal
 // conflict groups — runs of bookmarks whose full-height strips would overlap.
 //
-// Within each conflict group the "active" member (shown as a full strip) is
-// determined by the current caret position (m_nCursorOffset):
-//   • If the caret falls inside exactly one group member's byte range, that
-//     member is active.
-//   • If the caret falls inside multiple members (nested bookmarks), the
-//     shortest-length one is chosen (most specific).
-//   • If the caret is inside none of them, the first member is shown as the
-//     default (so there is always one full strip visible per group when any
-//     of its bookmarks are on screen).
-// All non-active members of a conflict group are drawn as thin tabs.
-QVector<HexView::BmLayout> HexView::computeBookmarkLayout() const
+// Within each group (including a lone bookmark with no neighbours) the "active"
+// member (shown as a full strip) is determined by the current caret position:
+//   • If a pin is live (m_pinnedBookmarkIdx in range and cursor still inside
+//     that bookmark's byte range), the pin wins outright.
+//   • Otherwise: whichever member contains the caret wins; shortest-length
+//     breaks ties (most specific range).
+//   • If the caret is inside none of them, no winner — all collapse to tabs.
+// This applies equally to lone bookmarks: a bookmark that was expanded by a
+// click (pin) collapses back to a tab as soon as the cursor leaves its range,
+// preventing the strip from re-appearing after the user clicks elsewhere.
+QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsReleased) const
 {
     const int n = m_bookmarks.size();
     QVector<BmLayout> layout(n);    // default: inConflict=false, isActive=true
@@ -309,6 +351,18 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout() const
         fh[i] = noteStripFullHeight(m_bookmarks[i]);
     }
 
+    // While a mouse button is held (drag-select or drag-drop) freeze the
+    // bookmark display: keep the current pin alive regardless of where the
+    // cursor has moved, and skip cursor-based selection entirely.
+    // On mouse-release the repaint fires with no buttons held and both paths
+    // run normally against the final m_nCursorOffset.
+    // treatMouseAsReleased is set by hitTest() so the layout matches what the
+    // user actually sees on screen (computed without a button held) rather than
+    // the frozen state that exists at the instant mousePressEvent fires.
+    const bool mouseHeld = treatMouseAsReleased
+                           ? false
+                           : (QApplication::mouseButtons() != Qt::NoButton);
+
     // Sweep: find maximal conflict groups using full heights for all members.
     int i = 0;
     while (i < n) {
@@ -320,39 +374,53 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout() const
         }
 
         if (end - i == 1) {
-            // Single bookmark — no conflict, always active, never hidden.
-            layout[i] = {false, true, false};
+            // Lone bookmark (no strip overlap with neighbours).
+            //
+            // HVS_BOOKMARK_EXPAND_LONE: show as a full strip unconditionally
+            //   (original "always active" behaviour) — nothing to do with cursor.
+            // HVS_BOOKMARK_EXPAND_CURSOR: additionally expand when the cursor
+            //   lands inside the range, but ONLY after mouse release (!mouseHeld).
+            //   The drag/selection freeze is intentional: we never expand mid-drag.
+            // An explicit pin (set by clicking the bookmark strip) always wins.
+            //
+            // The mouseHeld gate would cause a collapse-on-press flicker when the
+            // cursor was already inside the range.  This is avoided by
+            // mousePressEvent auto-pinning the currently-active bookmark before
+            // it moves the cursor.
+            const Bookmark &bm = m_bookmarks[i];
+            const bool pinned  = (m_pinnedBookmarkIdx == i);
+            const bool inRange = m_nCursorOffset >= bm.offset &&
+                                 m_nCursorOffset <  bm.offset + bm.length;
+            const bool loneExpand   = checkStyle(HVS_BOOKMARK_EXPAND_LONE);                    // layout rule — independent of mouse state
+            const bool cursorExpand = checkStyle(HVS_BOOKMARK_EXPAND_CURSOR) && !mouseHeld && inRange; // never expand mid-drag
+            const bool active = pinned || loneExpand || cursorExpand;
+            // active=true  → {false,true,false}  showTab=false → full strip
+            // active=false → {true,false,false}  showTab=true  → collapsed tab
+            layout[i] = { !active, active, false };
         } else {
             // Conflict group [i, end).
             // Determine the active (full-strip) winner:
-            //   1. If m_pinnedBookmarkIdx is in this group AND the cursor is still
-            //      within the pinned bookmark's byte range, the pin wins outright.
-            //      This lets the caller force a specific bookmark visible even when
-            //      multiple bookmarks share the same start offset.
-            //   2. Otherwise: whichever group member contains the caret wins, with
+            //   1. A pin set by a bookmark-body click wins unconditionally —
+            //      overrides cursor-based selection so the explicitly-clicked
+            //      bookmark stays active even if a shorter overlapping bookmark
+            //      would otherwise win.  The pin is cleared on release over a
+            //      non-bookmark area.
+            //   2. Otherwise: whichever member contains the caret wins, with
             //      shortest-length breaking ties (most specific range).
+            //      Gated on !mouseHeld to freeze the display during drag.
             //   3. If the caret is outside all members, no winner — all collapse.
             int    winnerIdx = -1;
             size_w winnerLen = (size_w)-1;
 
-            // While a mouse button is held (drag-select or drag-drop) we freeze
-            // the bookmark display: keep the current pin alive regardless of where
-            // the cursor has moved, and skip cursor-based selection entirely.
-            // On mouse-release the repaint fires with no buttons held and both
-            // paths run normally against the final m_nCursorOffset.
-            const bool mouseHeld = QApplication::mouseButtons() != Qt::NoButton;
+            // Pin check: unconditional — body-click always wins.
+            if (m_pinnedBookmarkIdx >= i && m_pinnedBookmarkIdx < end)
+                winnerIdx = m_pinnedBookmarkIdx;
 
-            // Pin check: overrides cursor logic when the pin is live.
-            // During drag the range check is suspended so the pin doesn't expire.
-            if (m_pinnedBookmarkIdx >= i && m_pinnedBookmarkIdx < end) {
-                const Bookmark &p = m_bookmarks[m_pinnedBookmarkIdx];
-                if (mouseHeld ||
-                    (m_nCursorOffset >= p.offset && m_nCursorOffset < p.offset + p.length))
-                    winnerIdx = m_pinnedBookmarkIdx;
-            }
-
-            // Cursor-based fallback — only when no button is held.
-            if (winnerIdx == -1 && !mouseHeld) {
+            // Cursor-based fallback — runs when no pin is active.
+            // Gated on HVS_BOOKMARK_EXPAND_CURSOR and !mouseHeld: bookmarks never
+            // expand mid-drag; expansion only triggers on mouse release.
+            if (winnerIdx == -1 &&
+                checkStyle(HVS_BOOKMARK_EXPAND_CURSOR) && !mouseHeld) {
                 for (int j = i; j < end; ++j) {
                     const Bookmark &bm = m_bookmarks[j];
                     if (m_nCursorOffset >= bm.offset &&
@@ -365,25 +433,69 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout() const
                 }
             }
 
+            // When no bookmark is fully active, surface the group member whose
+            // byte range contains the cursor — it becomes the front collapsed tab.
+            // This runs regardless of HVS_BOOKMARK_EXPAND_CURSOR so that cursor
+            // navigation always reveals the relevant bookmark even when expansion
+            // is disabled.  Gated on !mouseHeld (same as cursor-based expansion).
+            int    surfacedIdx = -1;
+            size_w surfacedLen = (size_w)-1;
+            if (winnerIdx < 0 && !mouseHeld) {
+                for (int j = i; j < end; ++j) {
+                    const Bookmark &bm = m_bookmarks[j];
+                    if (m_nCursorOffset >= bm.offset &&
+                        m_nCursorOffset <  bm.offset + bm.length &&
+                        bm.length < surfacedLen) {
+                        surfacedIdx = j;
+                        surfacedLen = bm.length;
+                    }
+                }
+            }
+
             // For non-active members: hide those whose collapsed strip would
             // overlap the active full strip.  When there is no active member
-            // (cursor outside the group) nothing is hidden.
-            const int activeTop = (winnerIdx >= 0) ? sy[winnerIdx]              : INT_MIN;
+            // (cursor outside the group) nothing is hidden — except that stacked
+            // collapsed tabs on the same line are hidden behind the surfaced one.
+            const int activeTop = (winnerIdx >= 0) ? sy[winnerIdx]                 : INT_MIN;
             const int activeBot = (winnerIdx >= 0) ? sy[winnerIdx] + fh[winnerIdx] : INT_MIN;
 
             for (int j = i; j < end; ++j) {
                 const bool active = (winnerIdx != -1 && j == winnerIdx);
                 bool hidden = false;
                 if (!active && winnerIdx >= 0) {
-                    // Collapsed strip for bookmark j spans [sy[j], sy[j]+collapsedH].
-                    // Hide it if that range intersects the active full strip.
+                    // Hide collapsed tab if it intersects the active full strip.
                     hidden = (sy[j] < activeBot) && (sy[j] + collapsedH > activeTop);
+                }
+                if (!active && !hidden && surfacedIdx >= 0 && j != surfacedIdx) {
+                    // Hide collapsed tabs stacked on the same line behind the
+                    // surfaced (cursor-matching) one.
+                    if (sy[j] == sy[surfacedIdx])
+                        hidden = true;
                 }
                 layout[j] = {true, active, hidden};
             }
         }
         i = end;
     }
+
+    // Second pass: hide collapsed tabs that visually overlap an active full
+    // strip from a *different* group.  The per-group hiding above only covers
+    // same-group members; cross-group tabs can intrude when a strip is clamped
+    // to y=0 (its visual footprint then extends above sy[winnerIdx]).
+    // noteStripGeom() returns the actual clamped rect, so this is exact.
+    for (int k = 0; k < n; ++k) {
+        if (!layout[k].isActive) continue;
+        const NoteStripGeom geom = noteStripGeom(m_bookmarks[k]);
+        if (!geom.valid) continue;
+        for (int j = 0; j < n; ++j) {
+            if (layout[j].isActive || layout[j].hidden) continue;
+            const int tabTop = sy[j];
+            const int tabBot = sy[j] + collapsedH;
+            if (tabTop < geom.rect.bottom() && tabBot > geom.rect.top())
+                layout[j].hidden = true;
+        }
+    }
+
     return layout;
 }
 
@@ -523,12 +635,46 @@ void HexView::drawNoteStrip(QPainter &painter, const Bookmark &bm, const BmLayou
     painter.setRenderHint(QPainter::Antialiasing, true);
     painter.setPen(Qt::NoPen);
 
-    // Rounded rect + triangle pointer at left-middle.
+    // Rounded rect + triangle pointer.  The tip Y is provided by noteStripGeom()
+    // and reflects the vertical midpoint of the bookmark's byte range, so the
+    // arrow points into the highlighted region rather than always sitting at the
+    // strip centre.  The triangle base spans one font-height; minMargin inside
+    // noteStripGeom() guarantees the base clears the rounded corners.
     QPainterPath path;
-    path.setFillRule(Qt::WindingFill);
-    path.addRoundedRect(QRectF(r), kNoteRadius, kNoteRadius);
-    const qreal mid  = r.top() + r.height() / 2.0;
+    const qreal mid  = geom.tipY;
     const qreal triH = m_nFontHeight;
+
+    // Square off a left corner only when the strip is clamped to that viewport
+    // edge AND the triangle base sits inside the arc zone.  All other positions
+    // keep fully rounded corners (TL rounds just like TR, BR, BL by default).
+    const int  viewH_   = viewport()->height();
+    const bool squareTL = (r.top() == 0)             && (mid - triH / 2.0 <= (qreal)kNoteRadius);
+    const bool squareBL = (r.bottom() >= viewH_ - 1) && (mid + triH / 2.0 >= r.bottom() - (qreal)kNoteRadius);
+    {
+        const qreal x0 = r.left(), y0 = r.top(), x1 = r.right(), y1 = r.bottom();
+        const qreal rad = kNoteRadius;
+        path.setFillRule(Qt::WindingFill);
+
+        // Start on the top edge (after TL arc if rounded, at corner if square).
+        path.moveTo(squareTL ? x0 : x0 + rad, y0);
+        path.lineTo(x1 - rad, y0);                                        // top edge →
+        path.arcTo(QRectF(x1-2*rad, y0,       2*rad, 2*rad),  90, -90);  // top-right arc ↘
+        path.lineTo(x1, y1 - rad);                                        // right edge ↓
+        path.arcTo(QRectF(x1-2*rad, y1-2*rad, 2*rad, 2*rad),   0, -90);  // bottom-right arc ↙
+        if (squareBL) {
+            path.lineTo(x0, y1);                                          // bottom edge ← (square BL)
+        } else {
+            path.lineTo(x0 + rad, y1);                                    // bottom edge ←
+            path.arcTo(QRectF(x0, y1-2*rad, 2*rad, 2*rad), 270, -90);    // bottom-left arc ↖
+        }
+        // Left edge ↑; add TL arc when rounded.
+        if (!squareTL) {
+            path.lineTo(x0, y0 + rad);
+            path.arcTo(QRectF(x0, y0, 2*rad, 2*rad), 180, -90);          // top-left arc ↗
+        }
+        path.closeSubpath();
+    }
+
     QPolygonF tri;
     tri << QPointF(r.left() - kNoteTriW, mid)
         << QPointF(r.left(),             mid - triH / 2.0)

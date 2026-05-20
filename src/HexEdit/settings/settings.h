@@ -58,6 +58,12 @@ void        addRecentPalette(const QString &name);
 bool    prefRecentPaletteOrdering(); // true = compact palette picker uses recent-first order
 void    setPrefRecentPaletteOrdering(bool on);
 
+// Bookmark behaviour
+bool    prefBookmarkExpandLone();   // true = uncontested bookmarks always show as full strips
+void    setPrefBookmarkExpandLone(bool on);
+bool    prefBookmarkExpandCursor(); // true = expand when cursor lands in range (on mouse release)
+void    setPrefBookmarkExpandCursor(bool on);
+
 } // namespace AppSettings
 
 #endif // SETTINGS_H

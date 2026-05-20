@@ -42,6 +42,8 @@ signals:
     void nativeDialogsChanged(bool on);
     void menuHighlightChanged(bool on);
     void paletteSelected(const PaletteInfo &info);
+    // Emitted when a bookmark HVS_ flag changes; use setStyle(mask, styles).
+    void bookmarkStyleChanged(uint mask, uint styles);
 
 protected:
     bool eventFilter(QObject *obj, QEvent *e) override;
@@ -70,10 +72,12 @@ private:
     StepSpinBox    *m_fontSize     = nullptr;
     StepSpinBox    *m_horizSpacing = nullptr;
     StepSpinBox    *m_lineSpacing  = nullptr;
-    SettingsToggle *m_nativeMenu       = nullptr;
-    SettingsToggle *m_nativeDialogs    = nullptr;
+    SettingsToggle *m_nativeMenu        = nullptr;
+    SettingsToggle *m_nativeDialogs     = nullptr;
     SettingsToggle *m_nativeFileDialogs = nullptr;
-    SettingsToggle *m_menuHighlight    = nullptr;
+    SettingsToggle *m_menuHighlight     = nullptr;
+    SettingsToggle *m_bmAutoExpand      = nullptr;
+    SettingsToggle *m_bmSelExpand       = nullptr;
     SlideOverlay   *m_overlay      = nullptr;
 };
 

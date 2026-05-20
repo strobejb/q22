@@ -257,7 +257,12 @@ uint HexView::hitTest(int x, int y, int *bookmarkIdx)
     // Among overlapping hit targets return the smallest-span bookmark (drawn on
     // top); ties broken by higher storage index.
     {
-        const QVector<BmLayout> layout = computeBookmarkLayout();
+        // Use treatMouseAsReleased=true so the layout matches the last rendered
+        // frame (no button was held when that frame was drawn).  Without this,
+        // mousePressEvent fires with mouseHeld=true which freezes cursor-based
+        // selection and misclassifies an expanded strip as a collapsed tab,
+        // causing the click to miss and fall through to HVHT_MAIN.
+        const QVector<BmLayout> layout = computeBookmarkLayout(/*treatMouseAsReleased=*/true);
 
         int    bestIdx = -1;
         size_w bestLen = (size_w)-1;
@@ -388,6 +393,22 @@ void HexView::mousePressEvent(QMouseEvent *event)
         return;
     }
 
+    // Auto-pin the currently-active bookmark before the cursor moves.
+    // The mouseHeld gate in computeBookmarkLayout() prevents cursor-based
+    // expansion mid-drag, which is correct — but it would also cause a
+    // visible collapse flicker when the cursor was already inside a range at
+    // the moment of the press.  Pinning here keeps the bookmark stable
+    // throughout the press; the pin is cleared on release as usual.
+    if (m_pinnedBookmarkIdx < 0) {
+        const QVector<BmLayout> layout = computeBookmarkLayout(/*treatMouseAsReleased=*/true);
+        for (int bi = 0; bi < m_bookmarks.size(); ++bi) {
+            if (layout.value(bi).isActive) {
+                m_pinnedBookmarkIdx = bi;
+                break;
+            }
+        }
+    }
+
     // Normal click: position cursor
     m_nSubItem      = 0;
     m_nCursorOffset = offsetFromPhysCoord(x, y, &m_nWhichPane, &x, &y, &m_nSubItem);
@@ -471,6 +492,18 @@ void HexView::mouseReleaseEvent(QMouseEvent *event)
             m_nSelectionMode = SEL_NONE;
     } else {
         m_highlightCurrentIdx = -1;
+    }
+
+    // Clear the bookmark pin only when the user releases over the main hex/ascii
+    // area (i.e. they clicked away from any bookmark strip).  When the press was
+    // on a bookmark body we deliberately keep the pin live: cursor-based winner
+    // selection always picks the *shortest* bookmark containing the cursor, which
+    // could be a different (shorter overlapping) bookmark — not the one the user
+    // explicitly clicked.  The pin ensures the right one stays active.
+    // For non-bookmark releases the pin is cleared; computeBookmarkLayout() then
+    // falls back to cursor-based selection (or collapses if cursor left all ranges).
+    if (m_HitTestCurrent != HVHT_BOOKMARK && m_HitTestCurrent != HVHT_BOOKMARK_COLLAPSED) {
+        m_pinnedBookmarkIdx = -1;
     }
 
     // Repaint so bookmark display reflects the final cursor position now that
