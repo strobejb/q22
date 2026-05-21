@@ -1,10 +1,9 @@
 #include "mainwindow.h"
 #include "./ui_mainwindow.h"
-#include "dialogs/bookmarkstore.h"
-#include "dialogs/bookmarkcolourwidget.h"
+#include "bookmarks/bookmarkstore.h"
 #include "HexView/hexview.h"
 #include "HexView/seqbase.h"
-#include "dialogs/dlgbookmark.h"
+#include "bookmarks/dlgbookmark.h"
 #include "dialogs/dlgabout.h"
 #include "dialogs/dlgcopyas.h"
 #include "chrome/dialog-chrome.h"
@@ -22,6 +21,7 @@
 #include "chrome/titlebar.h"
 #include "theme.h"
 #include "themepicker.h"
+#include "bookmarks/bookmarkpopup.h"
 #include <functional>
 #include <QActionGroup>
 #include <QShortcut>
@@ -51,14 +51,11 @@
 #include <QMessageBox>
 #include <QIcon>
 #include <QMenu>
-#include <QPainter>
-#include <QPainterPath>
 #include <QPointer>
 #include <QStyle>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QVBoxLayout>
-#include <QHBoxLayout>
 #include <QToolButton>
 #include <QWidgetAction>
 #include <QWindow>
@@ -259,39 +256,6 @@ void MainWindow::createPreferencesDialog()
         m_hv->setStyle(mask, styles);
     });
 }
-
-// ─── Bookmark settings popup ──────────────────────────────────────────────────
-// Uses a standard themed QMenu (same as titlebar search/tools) with QWidgetAction
-// items for the colour picker and button row.  themeMenu() provides background,
-// shadow, border-radius and separator styling for free — no custom paintEvent.
-//
-// Positioning reuses the exact titlebar formula: in the QEvent::Show handler,
-// move the menu so its right edge aligns with the button's right edge.
-
-namespace {
-
-// Event filter installed on the popup QMenu; positions it right-aligned under
-// a button whose global rect is supplied at construction time.
-class BookmarkMenuPositioner : public QObject {
-    QRect m_btn;
-public:
-    BookmarkMenuPositioner(QRect btnGlobal, QObject *parent)
-        : QObject(parent), m_btn(btnGlobal) {}
-
-    bool eventFilter(QObject *obj, QEvent *e) override
-    {
-        if (e->type() == QEvent::Show) {
-            auto *w = static_cast<QWidget *>(obj);
-            // Identical to the titlebar formula:
-            // btn->mapToGlobal(QPoint(btn->width() - menu->width() + offset, btn->height()))
-            w->move(m_btn.left() + m_btn.width() - w->width() + themedMenuRightAlignOffset(),
-                    m_btn.top()  + m_btn.height());
-        }
-        return false;
-    }
-};
-
-} // namespace
 
 // ─── MainWindow ───────────────────────────────────────────────────────────────
 
@@ -613,78 +577,7 @@ MainWindow::MainWindow(QWidget *parent)
         m_bookmarkDialog->setForegroundColour(m_hv->palette().text().color());
     };
 
-    // Shared inline-add path: used by Ctrl+B, the context menu action, and the
-    // goto panel.  Adds a blank bookmark at the cursor/selection, centres the
-    // view, scrolls the H-bar fully right so the note strip is visible, and
-    // opens the inline editor so the user can type the name immediately.
-    //
-    // If a bookmark already exists at the same starting offset, we scroll to
-    // it and open its editor instead of creating a duplicate.
-    auto addBookmarkInline = [this]() {
-        const size_w selSize = m_hv->selectionSize();
-        const size_w offset  = selSize > 0 ? m_hv->selectionStart() : m_hv->cursorOffset();
-        const size_w length  = selSize > 0 ? selSize : 1;
-
-        const QList<Bookmark> &existing = m_hv->bookmarks();
-
-        if (!m_hv->checkStyle(HVS_NESTED_BOOKMARKS)) {
-            // Nesting disabled: if the new range overlaps any existing bookmark,
-            // open the best-matching one (smallest range, same shortest-wins logic
-            // as cursor-based selection) instead of creating a duplicate/nested one.
-            int    bestIdx = -1;
-            size_w bestLen = (size_w)-1;
-            for (int i = 0; i < existing.size(); ++i) {
-                const Bookmark &bm = existing[i];
-                const bool overlaps = offset < bm.offset + bm.length &&
-                                      offset + length > bm.offset;
-                if (overlaps && bm.length < bestLen) {
-                    bestIdx = i;
-                    bestLen = bm.length;
-                }
-            }
-            if (bestIdx >= 0) {
-                m_hv->scrollCenterIfOffScreen(existing[bestIdx].offset);
-                m_hv->scrollHEnd();
-                m_hv->openNoteEditor(bestIdx);
-                return;
-            }
-        } else {
-            // Nesting allowed: still redirect on an exact offset match to avoid
-            // creating a bookmark directly on top of an existing one.
-            for (int i = 0; i < existing.size(); ++i) {
-                if (existing[i].offset == offset) {
-                    m_hv->scrollCenterIfOffScreen(offset);
-                    m_hv->scrollHEnd();
-                    m_hv->openNoteEditor(i);
-                    return;
-                }
-            }
-        }
-
-        Bookmark bm;
-        bm.offset      = offset;
-        bm.length      = length;
-        bm.name        = QString();
-        bm.fgColour    = 0;
-        bm.colourIndex = 0;
-        m_hv->addBookmark(bm);
-
-        // addBookmark uses a sorted insert, so the new entry is not necessarily
-        // at the end of the list.  Find it by offset (safe: we verified above
-        // that no bookmark existed at this offset before the insert).
-        const QList<Bookmark> &updated = m_hv->bookmarks();
-        int newIdx = updated.size() - 1;   // fallback — should never be needed
-        for (int i = 0; i < updated.size(); ++i) {
-            if (updated[i].offset == offset) { newIdx = i; break; }
-        }
-
-        m_hv->scrollCenterIfOffScreen(offset);
-        m_hv->scrollHEnd();
-        m_hv->openNoteEditor(newIdx);
-    };
-
-    connect(ui->actionBookmark_here, &QAction::triggered, this,
-            [addBookmarkInline]() { addBookmarkInline(); });
+    connect(ui->actionBookmark_here, &QAction::triggered, m_hv, &HexView::addBookmarkInline);
 
     connect(m_hv, &HexView::bookmarkEditRequested, this, [this, populateBookmarkDialog](int idx) {
         const QList<Bookmark> &bms = m_hv->bookmarks();
@@ -707,156 +600,10 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(m_hv, &HexView::bookmarkSettingsRequested,
             this, [this](int idx, QRect btnGlobal) {
-        // Toggle: if this bookmark's popup is already open, the deferred clear
-        // hasn't fired yet — the user clicked the gear button a second time to
-        // close it.  Qt has already dismissed the popup; just return.
-        if (m_hv->bookmarkPopupIdx() == idx) return;
-
-        const QList<Bookmark> &bms = m_hv->bookmarks();
-        if (idx < 0 || idx >= bms.size()) return;
-        const Bookmark &bm = bms[idx];
-
-        // Build swatches from the first 5 palette-indexed bookmark colours.
-        QVector<QColor> swatches;
-        for (int i = 0; i < 5; ++i)
-            swatches.append(QColor(m_hv->getHexColour(HvColorSlot(HVC_BOOKMARK1 + i))));
-
-        // Standard themed QMenu — background, shadow, separator come for free.
-        auto *menu = new QMenu(nullptr);
-        menu->setAttribute(Qt::WA_DeleteOnClose);
-        themeMenu(menu);
-
-        // ── Colour picker (QWidgetAction) ──────────────────────────────────────
-        {
-            // Wrap in a transparent container so the QMenu background shows through.
-            auto *container = new QWidget;
-            container->setAutoFillBackground(false);
-            auto *lay = new QVBoxLayout(container);
-            // 11px left/right: 8px base + 3px extra padding requested.
-            // minimum width: swatch default (5×38 + 8 = 198px) + margins (22px)
-            // + 32px extra requested = 252px.
-            lay->setContentsMargins(11, 8, 11, 6);
-            lay->setSpacing(0);
-            container->setMinimumWidth(252);
-
-            auto *cw = new BookmarkColourWidget(container);
-            cw->setColumns(5);
-            cw->setColours(swatches);
-            if (bm.colourIndex >= 0 && bm.colourIndex < swatches.size())
-                cw->setSelectedColour(swatches[bm.colourIndex]);
-            lay->addWidget(cw);
-
-            // QMenu calls sizeHint() on widget actions before they have a real
-            // width (width()==0), so the height estimate is based on the default
-            // cell size and comes up short.  Pre-compute the correct height at
-            // the known content width and pin it as the container's minimum height
-            // so the menu allocates exactly the right item slot.
-            {
-                const auto &cm = lay->contentsMargins();
-                const int contentW = container->minimumWidth() - cm.left() - cm.right();
-                const int contentH = cw->heightForWidth(contentW);
-                container->setMinimumHeight(contentH + cm.top() + cm.bottom());
-            }
-
-            auto *act = new QWidgetAction(menu);
-            act->setDefaultWidget(container);
-            menu->addAction(act);
-
-            connect(cw, &BookmarkColourWidget::colourSelected, menu,
-                    [this, idx, cw, menu](const QColor &) {
-                const QList<Bookmark> &bms = m_hv->bookmarks();
-                if (idx >= 0 && idx < bms.size()) {
-                    Bookmark updated = bms[idx];
-                    updated.colourIndex = cw->selectedIndex();
-                    m_hv->replaceBookmark(idx, updated);
-                }
-                menu->close();
-            });
-        }
-
-        menu->addSeparator();
-
-        // ── Copy / Delete button row (QWidgetAction) ───────────────────────────
-        {
-            auto *container = new QWidget;
-            container->setAutoFillBackground(false);
-            auto *hlay = new QHBoxLayout(container);
-            hlay->setContentsMargins(7, 2, 7, 2);
-            hlay->setSpacing(2);
-
-            auto makeBtn = [container](const QString &label, const QString &iconName) {
-                auto *btn = new QPushButton(label, container);
-                btn->setFlat(true);
-                // palette(button) = neutral grey, matches QMenu item hover colour.
-                btn->setStyleSheet(
-                    QStringLiteral("QPushButton {"
-                    "  border: none; border-radius: 5px; background: transparent;"
-                    "  padding: 8px 10px; }"
-                    "QPushButton:hover   { background: palette(button); }"
-                    "QPushButton:pressed { background: palette(mid); }"));
-
-                // Qt's CE_PushButtonLabel hardcodes a 4px icon-text gap and ignores
-                // QSS spacing:.  The only reliable workaround: render the icon onto a
-                // wider transparent canvas so the gap is baked into the pixmap itself.
-                constexpr int kIconSz = 16;
-                constexpr int kGap    = 14;
-                const QColor fg = btn->palette().buttonText().color();
-                const QPixmap src = recoloredIcon(iconName, fg, kIconSz).pixmap(kIconSz, kIconSz);
-                if (!src.isNull()) {
-                    const qreal dpr = src.devicePixelRatio();
-                    QPixmap padded(qRound((kIconSz + kGap) * dpr), qRound(kIconSz * dpr));
-                    padded.setDevicePixelRatio(dpr);
-                    padded.fill(Qt::transparent);
-                    QPainter pp(&padded);
-                    pp.drawPixmap(0, 0, src);
-                    btn->setIcon(QIcon(padded));
-                    btn->setIconSize(QSize(kIconSz + kGap, kIconSz));
-                }
-
-                btn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-                return btn;
-            };
-
-            auto *copyBtn   = makeBtn(tr("Copy"),   QStringLiteral("actions/edit-copy-symbolic"));
-            auto *deleteBtn = makeBtn(tr("Delete"), QStringLiteral("actions/user-trash-symbolic"));
-            hlay->addWidget(copyBtn);
-            hlay->addWidget(deleteBtn);
-
-            connect(copyBtn, &QPushButton::clicked, menu, [this, idx, menu]() {
-                const QList<Bookmark> &bms = m_hv->bookmarks();
-                if (idx >= 0 && idx < bms.size())
-                    QApplication::clipboard()->setText(bms[idx].name);
-                menu->close();
-            });
-            connect(deleteBtn, &QPushButton::clicked, menu, [this, idx, menu]() {
-                m_hv->removeBookmark(idx);
-                menu->close();
-            });
-
-            auto *act = new QWidgetAction(menu);
-            act->setDefaultWidget(container);
-            menu->addAction(act);
-        }
-
-        // Right-align under the gear button — identical to the titlebar pattern.
-        // The BookmarkMenuPositioner event filter fires on QEvent::Show and moves
-        // the menu so its right edge aligns with the button's right edge.
-        menu->installEventFilter(new BookmarkMenuPositioner(btnGlobal, menu));
-
-        // Keep the gear button visually pressed while the popup is open.
-        // Defer the clear so that m_bookmarkPopupIdx is still set when the
-        // mouse-release event fires after the user clicks the button again —
-        // the handler below checks it to avoid re-opening the popup (toggle).
-        m_hv->setBookmarkPopupIdx(idx);
-        connect(menu, &QMenu::aboutToHide, this, [this]() {
-            QTimer::singleShot(0, this, [this]() { m_hv->setBookmarkPopupIdx(-1); });
-        });
-
-        menu->popup({0, 0});   // Show event filter corrects the position
+        showBookmarkContextPopup(m_hv, idx, btnGlobal);
     });
 
-    connect(m_gotoDialog, &GotoPanel::bookmarkRequested, this,
-            [addBookmarkInline]() { addBookmarkInline(); });
+    connect(m_gotoDialog, &GotoPanel::bookmarkRequested, m_hv, &HexView::addBookmarkInline);
 
     connect(m_hv, &HexView::bookmarksChanged,
             m_gotoDialog, &GotoPanel::refreshBookmarks);

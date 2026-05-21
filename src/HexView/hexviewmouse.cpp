@@ -370,6 +370,7 @@ void HexView::mousePressEvent(QMouseEvent *event)
 
     if (ht == HVHT_BOOKMARK_COLLAPSED) {
         // Collapsed-strip click: navigate caret; the strip will expand on repaint.
+        closeNoteEditor(true);   // save & close any open editor before switching pin
         const int bmIdx = m_highlightCurrentIdx;
         if (bmIdx >= 0 && bmIdx < m_bookmarks.size()) {
             pinBookmark(bmIdx);
@@ -406,6 +407,31 @@ void HexView::mousePressEvent(QMouseEvent *event)
     // Normal click: position cursor
     m_nSubItem      = 0;
     m_nCursorOffset = offsetFromPhysCoord(x, y, &m_nWhichPane, &x, &y, &m_nSubItem);
+
+    // Mouse-down is a navigation event even if it later becomes a selection drag.
+    // Seed the surfaced bookmark now; computeBookmarkLayout() freezes live cursor
+    // updates while the button is held, so waiting until release shows the old
+    // winner for one frame.
+    {
+        int    cursorIdx = -1;
+        size_w cursorLen = (size_w)-1;
+        for (int i = 0; i < m_bookmarks.size(); ++i) {
+            const Bookmark &bm = m_bookmarks[i];
+            if (m_nCursorOffset >= bm.offset &&
+                m_nCursorOffset <  bm.offset + bm.length &&
+                bm.length < cursorLen) {
+                cursorIdx = i;
+                cursorLen = bm.length;
+            }
+        }
+        if (cursorIdx >= 0) {
+            m_surfacedBookmarkIdx = cursorIdx;
+            if (checkStyle(HVS_BOOKMARK_EXPAND_CURSOR))
+                m_pinnedBookmarkIdx = cursorIdx;
+            else if (m_pinnedBookmarkIdx >= 0 && m_pinnedBookmarkIdx != cursorIdx)
+                m_pinnedBookmarkIdx = -1;
+        }
+    }
 
     if (inrange(m_nCursorOffset, m_nSelectionStart, m_nSelectionEnd)) {
         // Click inside selection — potential drag-drop start
@@ -449,17 +475,7 @@ void HexView::mouseReleaseEvent(QMouseEvent *event)
         uint releaseHt  = hitTest(event->pos().x(), event->pos().y(), &releaseIdx);
         if (releaseHt == pressedHt && releaseIdx == pressedIdx) {
             if (pressedHt == HVHT_BOOKMARK_CLOSE) {
-                closeNoteEditor(false);
-                if (pressedIdx >= 0 && pressedIdx < m_bookmarks.size()) {
-                    // Keep m_pinnedBookmarkIdx valid after the removal.
-                    if (m_pinnedBookmarkIdx == pressedIdx)
-                        m_pinnedBookmarkIdx = -1;
-                    else if (m_pinnedBookmarkIdx > pressedIdx)
-                        --m_pinnedBookmarkIdx;
-                    m_bookmarks.removeAt(pressedIdx);
-                    emit bookmarksChanged();
-                }
-                viewport()->update();
+                removeBookmark(pressedIdx);   // handles closeNoteEditor + index adjustment
             } else {
                 // HVHT_BOOKMARK_EDIT — settings popup.
                 if (pressedIdx >= 0 && pressedIdx < m_bookmarks.size()) {

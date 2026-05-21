@@ -6,13 +6,15 @@ set(PROJECT_SOURCES
         mainwindow.cpp
         mainwindow.h
         mainwindow.ui
-        dialogs/bookmarkstore.h
-        dialogs/bookmarkstore.cpp
-        dialogs/dlgbookmark.h
-        dialogs/dlgbookmark.cpp
-        dialogs/bookmarkcolourwidget.h
-        dialogs/bookmarkcolourwidget.cpp
-        dialogs/bookmarks.ui
+        bookmarks/bookmarkpopup.h
+        bookmarks/bookmarkpopup.cpp
+        bookmarks/bookmarkstore.h
+        bookmarks/bookmarkstore.cpp
+        bookmarks/dlgbookmark.h
+        bookmarks/dlgbookmark.cpp
+        bookmarks/bookmarkcolourwidget.h
+        bookmarks/bookmarkcolourwidget.cpp
+        bookmarks/bookmarks.ui
         combos/datatypecombobox.h
         combos/datatypecombobox.cpp
         combos/valuecombobox.h
@@ -88,7 +90,7 @@ set(PROJECT_SOURCES
 
 set(PROJECT_FORMS
         mainwindow.ui
-        dialogs/bookmarks.ui
+        bookmarks/bookmarks.ui
         dialogs/copyas.ui
         dialogs/pastespecial.ui
         panels/findpanel.ui
@@ -145,7 +147,7 @@ target_include_directories(hexedit PRIVATE
     ${PROJECT_SOURCE_DIR}/src
 )
 set_target_properties(hexedit PROPERTIES
-    AUTOUIC_SEARCH_PATHS "${HEXEDIT_SOURCE_DIR}"
+    AUTOUIC_SEARCH_PATHS "${HEXEDIT_SOURCE_DIR};${HEXEDIT_SOURCE_DIR}/bookmarks"
 )
 target_link_libraries(hexedit PRIVATE Qt${QT_VERSION_MAJOR}::Widgets HexView)
 if(TARGET Qt${QT_VERSION_MAJOR}::DBus)

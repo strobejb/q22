@@ -265,6 +265,7 @@ public:
     void   setBookmarks(const QList<Bookmark> &bookmarks);
     const QList<Bookmark> &bookmarks() const { return m_bookmarks; }
     void   openNoteEditor(int bmIdx, QPoint clickPos = {-1,-1});
+    void   addBookmarkInline();   // add/open bookmark at cursor / selection
 
     // Provide an external menu to use instead of the built-in context menu.
     // Pass nullptr to restore the built-in behaviour.  Ownership stays with
@@ -521,16 +522,16 @@ private:
     int             m_bookmarkPopupIdx = -1;
 
     // Pinned bookmark: overrides / seeds the cursor-based winner in computeBookmarkLayout().
-    // Updated automatically when the cursor enters a bookmark's range (sticky: cleared only
-    // when another bookmark is pinned, not when the cursor leaves the range).
+    // Updated automatically when expansion-on-navigation enters a bookmark's
+    // range; blank-space navigation leaves the current pin alone.
     // Also set explicitly by pinBookmark() when the user clicks a bookmark strip.
     int             m_pinnedBookmarkIdx = -1;
 
     // Surfaced bookmark: tracks the last collapsed-tab member that was brought to
     // the front by cursor navigation (separate from m_pinnedBookmarkIdx so that
     // surface-stickiness never causes unintended full-strip expansion).
-    // Updated whenever the cursor enters a group member's range with no active winner;
-    // used as a sticky fallback for surfacedIdx when the cursor has left the group.
+    // Updated whenever the cursor enters a bookmark range; used as a sticky
+    // fallback when the cursor has left the group.
     int             m_surfacedBookmarkIdx = -1;
 
     // Note strip hover/press state (updated in mouseMoveEvent idle path and press/release)
