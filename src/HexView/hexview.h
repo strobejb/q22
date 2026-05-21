@@ -97,8 +97,9 @@ enum HvColorSlot {
 // Bookmark display behaviour
 #define HVS_BOOKMARK_EXPAND_LONE   0x00400000  // lone (uncontested) bookmarks always show as full strips
 #define HVS_BOOKMARK_EXPAND_CURSOR 0x00800000  // expand when cursor/selection enters the range (on release)
-#define HVS_NESTED_BOOKMARKS            0x01000000  // allow overlapping bookmarks; when off, new overlaps redirect to existing
+#define HVS_BOOKMARK_NESTED       0x01000000  // allow overlapping bookmarks; when off, new overlaps redirect to existing
 #define HVS_BOOKMARK_SELECTION_HIGHLIGHTS 0x02000000  // selecting a bookmark also selects its byte range in the hex view
+#define HVS_BOOKMARK_EXPAND_ALWAYS 0x04000000  // every conflict group keeps one bookmark expanded
 
 // Edit modes
 #define HVMODE_READONLY     0
@@ -527,6 +528,7 @@ private:
     // range; cleared when blank-space navigation leaves the pinned range.
     // Also set explicitly by pinBookmark() when the user clicks a bookmark strip.
     int             m_expandedBookmarkIdx = -1;
+    QHash<int, int> m_expandedBookmarkByGroup;
 
     // Surfaced bookmark: tracks the last collapsed-tab member that was brought to
     // the front by cursor navigation (separate from m_pinnedBookmarkIdx so that

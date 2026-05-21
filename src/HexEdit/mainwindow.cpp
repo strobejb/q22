@@ -382,10 +382,12 @@ MainWindow::MainWindow(QWidget *parent)
         uint styles = HVS_RESIZEBAR | HVS_SHOWMODS | HVS_ENABLEDRAGDROP;
         // Bookmark flags — restore persisted values
         mask   |= HVS_BOOKMARK_EXPAND_LONE | HVS_BOOKMARK_EXPAND_CURSOR |
-                  HVS_NESTED_BOOKMARKS | HVS_BOOKMARK_SELECTION_HIGHLIGHTS;
-        if (AppSettings::prefBookmarkExpandLone())          styles |= HVS_BOOKMARK_EXPAND_LONE;
-        if (AppSettings::prefBookmarkExpandCursor())        styles |= HVS_BOOKMARK_EXPAND_CURSOR;
-        if (AppSettings::prefBookmarkNested())             styles |= HVS_NESTED_BOOKMARKS;
+                  HVS_BOOKMARK_NESTED | HVS_BOOKMARK_SELECTION_HIGHLIGHTS |
+                  HVS_BOOKMARK_EXPAND_ALWAYS;
+        if (AppSettings::prefBookmarkAutoExpand()) {
+            styles |= HVS_BOOKMARK_EXPAND_LONE | HVS_BOOKMARK_EXPAND_CURSOR | HVS_BOOKMARK_EXPAND_ALWAYS;
+        }
+        if (AppSettings::prefBookmarkNested())              styles |= HVS_BOOKMARK_NESTED;
         if (AppSettings::prefBookmarkSelectionHighlights()) styles |= HVS_BOOKMARK_SELECTION_HIGHLIGHTS;
         m_hv->setStyle(mask, styles);
     }

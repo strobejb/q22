@@ -303,16 +303,12 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     m_menuHighlight->setChecked(AppSettings::prefMenuHighlight());
 
     // ── Bookmark behaviour toggles ────────────────────────────────────────────
-    m_bmAutoExpand = new SettingsToggle(tr("Expand when space allows"), this);
-    m_bmAutoExpand->setToolTip(tr("Expand bookmarks when space allows"));
-    m_bmAutoExpand->setChecked(AppSettings::prefBookmarkExpandLone());
-
-    m_bmSelExpand = new SettingsToggle(tr("Expand on navigation"), this);
-    m_bmSelExpand->setToolTip(tr("Expand a bookmark when the cursor moves to the bookmarked byte range"));
-    m_bmSelExpand->setChecked(AppSettings::prefBookmarkExpandCursor());
+    m_bmAutoExpand = new SettingsToggle(tr("Expand automatically"), this);
+    m_bmAutoExpand->setToolTip(tr("Automatically expand bookmarks when space allows or when navigating to them"));
+    m_bmAutoExpand->setChecked(AppSettings::prefBookmarkAutoExpand());
 
     m_bmNested = new SettingsToggle(tr("Nested bookmarks"), this);
-    m_bmNested->setToolTip(tr("ALlow overlapping and nested bookmarks to be defined"));
+    m_bmNested->setToolTip(tr("Allow overlapping and nested bookmarks to be defined"));
     m_bmNested->setChecked(AppSettings::prefBookmarkNested());
 
     m_bmSelHighlights = new SettingsToggle(tr("Highlight bookmarked range"), this);
@@ -356,21 +352,17 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     });
     connect(m_bmAutoExpand, &SettingsToggle::toggled,
             this, [this](bool on) {
-        AppSettings::setPrefBookmarkExpandLone(on);
-        emit bookmarkStyleChanged(HVS_BOOKMARK_EXPAND_LONE,
-                                  on ? HVS_BOOKMARK_EXPAND_LONE : 0);
-    });
-    connect(m_bmSelExpand, &SettingsToggle::toggled,
-            this, [this](bool on) {
-        AppSettings::setPrefBookmarkExpandCursor(on);
-        emit bookmarkStyleChanged(HVS_BOOKMARK_EXPAND_CURSOR,
-                                  on ? HVS_BOOKMARK_EXPAND_CURSOR : 0);
+        AppSettings::setPrefBookmarkAutoExpand(on);
+        const uint mask = HVS_BOOKMARK_EXPAND_LONE |
+                          HVS_BOOKMARK_EXPAND_CURSOR |
+                          HVS_BOOKMARK_EXPAND_ALWAYS;
+        emit bookmarkStyleChanged(mask, on ? mask : 0);
     });
     connect(m_bmNested, &SettingsToggle::toggled,
             this, [this](bool on) {
         AppSettings::setPrefBookmarkNested(on);
-        emit bookmarkStyleChanged(HVS_NESTED_BOOKMARKS,
-                                  on ? HVS_NESTED_BOOKMARKS : 0);
+        emit bookmarkStyleChanged(HVS_BOOKMARK_NESTED,
+                                  on ? HVS_BOOKMARK_NESTED : 0);
     });
     connect(m_bmSelHighlights, &SettingsToggle::toggled,
             this, [this](bool on) {
@@ -387,7 +379,7 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
         {m_nativeMenu, m_nativeDialogs, m_nativeFileDialogs, m_menuHighlight},
         SettingsCard::Style::Spaced, this);
     auto *bmGroup = new SettingsCard(
-        {m_bmAutoExpand, m_bmSelExpand, m_bmNested, m_bmSelHighlights},
+        {m_bmAutoExpand, m_bmNested, m_bmSelHighlights},
         SettingsCard::Style::Spaced, this);
 
     // ── Reset button ──────────────────────────────────────────────────────────

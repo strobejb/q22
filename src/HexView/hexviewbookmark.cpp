@@ -90,6 +90,7 @@ void HexView::setBookmarks(const QList<Bookmark> &bookmarks)
     closeNoteEditor(false);
     m_expandedBookmarkIdx   = -1;   // full replacement — old pin index is meaningless
     m_surfacedBookmarkIdx = -1;
+    m_expandedBookmarkByGroup.clear();
     m_bookmarks = bookmarks;
     std::sort(m_bookmarks.begin(), m_bookmarks.end(), bmOffsetLess);
     setupScrollbars();
@@ -112,6 +113,7 @@ void HexView::addBookmark(const Bookmark &bm)
         ++m_expandedBookmarkIdx;
     if (m_surfacedBookmarkIdx >= insertIdx)
         ++m_surfacedBookmarkIdx;
+    m_expandedBookmarkByGroup.clear();
 
     // If the new bookmark's byte range overlaps the currently-pinned bookmark's
     // range, the two have just formed a conflict group.  A pin acquired while
@@ -127,6 +129,7 @@ void HexView::addBookmark(const Bookmark &bm)
             added.offset  + added.length  > pinned.offset) {
             m_expandedBookmarkIdx   = -1;
             m_surfacedBookmarkIdx = -1;
+            m_expandedBookmarkByGroup.clear();
         }
     }
 
@@ -147,6 +150,7 @@ void HexView::removeBookmark(int idx)
         m_surfacedBookmarkIdx = -1;
     else if (m_surfacedBookmarkIdx > idx)
         --m_surfacedBookmarkIdx;
+    m_expandedBookmarkByGroup.clear();
     m_bookmarks.removeAt(idx);
     setupScrollbars();
     viewport()->update();
@@ -162,6 +166,7 @@ void HexView::replaceBookmark(int idx, const Bookmark &bm)
     // This invalidates all index-based pin state, so clear both pins.
     m_expandedBookmarkIdx   = -1;
     m_surfacedBookmarkIdx = -1;
+    m_expandedBookmarkByGroup.clear();
     std::sort(m_bookmarks.begin(), m_bookmarks.end(), bmOffsetLess);
     setupScrollbars();
     viewport()->update();
@@ -372,7 +377,8 @@ int HexView::noteStripFullHeight(const Bookmark &bm) const
 //      sticky surfaced tab so hidden collapsed bookmarks can be brought forward.
 //
 // Lone bookmarks use the HVS_BOOKMARK_EXPAND_LONE / HVS_BOOKMARK_EXPAND_CURSOR
-// style flags.  Cursor/surface pins are sticky across blank-space navigation.
+// style flags.  HVS_BOOKMARK_EXPAND_ALWAYS keeps one member of every conflict
+// group expanded even when the cursor is elsewhere.
 // During mouse drag the display is frozen: the pinned winner is kept regardless
 // of cursor movement so selection drags don't disturb the bookmark display.
 //
@@ -421,6 +427,24 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
         tabBot[i] = tabTop[i] + collapsedH;
     }
 
+    auto isInConflictGroup = [&](int idx) {
+        if (idx < 0 || idx >= n)
+            return false;
+        int start = 0;
+        while (start < n) {
+            int end = start + 1;
+            int groupBot = fullBot[start];
+            while (end < n && fullTop[end] < groupBot) {
+                groupBot = std::max(groupBot, fullBot[end]);
+                ++end;
+            }
+            if (idx >= start && idx < end)
+                return end - start > 1;
+            start = end;
+        }
+        return false;
+    };
+
     const bool mouseHeld = treatMouseAsReleased
                            ? false
                            : (QApplication::mouseButtons() != Qt::NoButton);
@@ -448,8 +472,10 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
                              m_nCursorOffset <  pinned.offset + pinned.length;
         }
 
-        // Blank space deliberately leaves the surfaced tab alone, but an expanded
-        // bookmark should collapse once the cursor leaves its byte range.
+        // Blank space deliberately leaves the surfaced tab alone.  When always
+        // expand is enabled, a grouped expanded bookmark stays open too;
+        // otherwise expansion-on-navigation collapses when the cursor leaves
+        // bookmark ranges.
         if (cursorIdx >= 0) {
             m_surfacedBookmarkIdx = cursorIdx;
             if (checkStyle(HVS_BOOKMARK_EXPAND_CURSOR)) {
@@ -460,7 +486,10 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
                 m_expandedBookmarkIdx = -1;
             }
         } else if (m_expandedBookmarkIdx >= 0 && !cursorInPinned) {
-            m_expandedBookmarkIdx = -1;
+            const bool keepGroupedExpansion = checkStyle(HVS_BOOKMARK_EXPAND_ALWAYS) &&
+                                              isInConflictGroup(m_expandedBookmarkIdx);
+            if (!keepGroupedExpansion)
+                m_expandedBookmarkIdx = -1;
         }
     }
 
@@ -508,8 +537,10 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
             if (m_noteEditorIdx >= i && m_noteEditorIdx < end &&
                 m_noteEditor && m_noteEditor->isVisible()) {
                 winnerIdx = m_noteEditorIdx;
-                if (!treatMouseAsReleased)
+                if (!treatMouseAsReleased) {
                     m_expandedBookmarkIdx = m_noteEditorIdx;
+                    m_expandedBookmarkByGroup[i] = winnerIdx;
+                }
             }
 
             // While dragging, keep the existing display stable.
@@ -524,6 +555,8 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
             if (winnerIdx < 0 &&
                 m_expandedBookmarkIdx >= i && m_expandedBookmarkIdx < end) {
                 winnerIdx = m_expandedBookmarkIdx;
+                if (!treatMouseAsReleased)
+                    m_expandedBookmarkByGroup[i] = winnerIdx;
             }
 
             // Step 3: cursor-based expansion.  The preference gates full-strip
@@ -539,8 +572,10 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
                         winnerLen = bm.length;
                     }
                 }
-                if (winnerIdx >= 0 && !treatMouseAsReleased)
+                if (winnerIdx >= 0 && !treatMouseAsReleased) {
                     m_expandedBookmarkIdx = winnerIdx;
+                    m_expandedBookmarkByGroup[i] = winnerIdx;
+                }
             }
 
             // When no bookmark is fully active, surface the group member whose
@@ -574,10 +609,19 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
                 m_surfacedBookmarkIdx >= i && m_surfacedBookmarkIdx < end)
                 surfacedIdx = m_surfacedBookmarkIdx;
 
-            // For non-active members: hide those whose collapsed strip would
-            // overlap the active full strip.  When there is no active member
-            // (cursor outside the group) nothing is hidden — except that stacked
-            // collapsed tabs on the same line are hidden behind the surfaced one.
+            if (winnerIdx < 0 && checkStyle(HVS_BOOKMARK_EXPAND_ALWAYS)) {
+                const int stickyIdx = m_expandedBookmarkByGroup.value(i, -1);
+                winnerIdx = (stickyIdx >= i && stickyIdx < end)
+                            ? stickyIdx
+                            : (surfacedIdx >= 0 ? surfacedIdx : i);
+                if (!treatMouseAsReleased)
+                    m_expandedBookmarkByGroup[i] = winnerIdx;
+            }
+
+            // For non-active members: hide collapsed tabs that overlap the
+            // active full strip.  If no member is active (only possible when
+            // HVS_BOOKMARK_EXPAND_ALWAYS is disabled), stacked collapsed tabs on
+            // the same line are hidden behind the surfaced one.
             const int activeTop = (winnerIdx >= 0) ? fullTop[winnerIdx] : INT_MIN;
             const int activeBot = (winnerIdx >= 0) ? fullBot[winnerIdx] : INT_MIN;
 
@@ -1015,7 +1059,7 @@ void HexView::addBookmarkInline()
 
     const QList<Bookmark> &existing = bookmarks();
 
-    if (!checkStyle(HVS_NESTED_BOOKMARKS)) {
+    if (!checkStyle(HVS_BOOKMARK_NESTED)) {
         // Nesting disabled: if the new range overlaps any existing bookmark,
         // open the best-matching one (smallest range, same shortest-wins logic
         // as cursor-based selection) instead of creating a duplicate/nested one.
@@ -1107,6 +1151,7 @@ void HexView::closeNoteEditor(bool save)
                 if (sy_next >= sy_self + oldH && sy_next < sy_self + newH) {
                     m_expandedBookmarkIdx   = -1;
                     m_surfacedBookmarkIdx = -1;
+                    m_expandedBookmarkByGroup.clear();
                 }
             }
         }

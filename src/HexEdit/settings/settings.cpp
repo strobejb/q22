@@ -224,28 +224,27 @@ void AppSettings::setPrefRecentPaletteOrdering(bool on)
     s.setValue("preferences/recentPaletteOrdering", on);
 }
 
-bool AppSettings::prefBookmarkExpandLone()
+bool AppSettings::prefBookmarkAutoExpand()
 {
     OPEN_SETTINGS;
-    return s.value("bookmarks/expandLone", true).toBool();
+    if (s.contains("bookmarks/autoExpand"))
+        return s.value("bookmarks/autoExpand", true).toBool();
+
+    const bool hasLegacyLone = s.contains("bookmarks/expandLone");
+    const bool hasLegacyCursor = s.contains("bookmarks/expandCursor");
+    if (hasLegacyLone || hasLegacyCursor) {
+        const bool expandLone = s.value("bookmarks/expandLone", true).toBool();
+        const bool expandCursor = s.value("bookmarks/expandCursor", true).toBool();
+        return expandLone && expandCursor;
+    }
+
+    return true;
 }
 
-void AppSettings::setPrefBookmarkExpandLone(bool on)
+void AppSettings::setPrefBookmarkAutoExpand(bool on)
 {
     OPEN_SETTINGS;
-    s.setValue("bookmarks/expandLone", on);
-}
-
-bool AppSettings::prefBookmarkExpandCursor()
-{
-    OPEN_SETTINGS;
-    return s.value("bookmarks/expandCursor", true).toBool();
-}
-
-void AppSettings::setPrefBookmarkExpandCursor(bool on)
-{
-    OPEN_SETTINGS;
-    s.setValue("bookmarks/expandCursor", on);
+    s.setValue("bookmarks/autoExpand", on);
 }
 
 bool AppSettings::prefBookmarkNested()
