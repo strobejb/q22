@@ -10,6 +10,7 @@
 #include <QPalette>
 #include <QStyle>
 #include <QToolButton>
+#include <QTimer>
 #include <QWindow>
 
 #ifdef Q_OS_LINUX
@@ -277,6 +278,10 @@ TitleBar::TitleBar(QWidget *parent, const TitleBarOptions &options)
     // widgets.  Watch the parent window so we can update our label.
     if (parent)
         parent->installEventFilter(this);
+    for (QToolButton *btn : findChildren<QToolButton *>()) {
+        btn->setMouseTracking(true);
+        btn->installEventFilter(this);
+    }
 
     refreshStylesheet();
 }
@@ -542,10 +547,43 @@ void TitleBar::updateMaxButton()
 #endif
 }
 
+void TitleBar::clearStaleButtonHover()
+{
+    const QPoint global = QCursor::pos();
+    for (QToolButton *btn : findChildren<QToolButton *>()) {
+        if (!btn || !btn->isVisible())
+            continue;
+
+        const bool actuallyUnderMouse =
+            btn->rect().contains(btn->mapFromGlobal(global));
+        if (!actuallyUnderMouse && btn->testAttribute(Qt::WA_UnderMouse)) {
+            btn->setAttribute(Qt::WA_UnderMouse, false);
+            QEvent leave(QEvent::Leave);
+            QApplication::sendEvent(btn, &leave);
+            btn->style()->unpolish(btn);
+            btn->style()->polish(btn);
+            btn->update();
+        }
+    }
+}
+
 bool TitleBar::eventFilter(QObject *obj, QEvent *e)
 {
     if (e->type() == QEvent::WindowTitleChange && obj == window())
         m_title->setText(window()->windowTitle());
+
+    if (auto *btn = qobject_cast<QToolButton *>(obj); btn && btn->window() == window()) {
+        switch (e->type()) {
+        case QEvent::Enter:
+        case QEvent::Leave:
+        case QEvent::MouseMove:
+        case QEvent::MouseButtonRelease:
+            QTimer::singleShot(0, this, &TitleBar::clearStaleButtonHover);
+            break;
+        default:
+            break;
+        }
+    }
 
     if (e->type() == QEvent::Show) {
         QToolButton *btn  = nullptr;
@@ -558,6 +596,11 @@ bool TitleBar::eventFilter(QObject *obj, QEvent *e)
                        btn->height()));
             menu->move(pos);
         }
+    } else if (e->type() == QEvent::Hide ||
+               e->type() == QEvent::WindowDeactivate ||
+               e->type() == QEvent::ActivationChange ||
+               e->type() == QEvent::Leave) {
+        QTimer::singleShot(0, this, &TitleBar::clearStaleButtonHover);
     }
     return QWidget::eventFilter(obj, e);
 }

@@ -53,6 +53,7 @@ private:
     void addWindowButtons(QHBoxLayout *layout, const QStringList &names);
     QToolButton *makeWindowButton(const QString &name);
     void updateMaxButton();
+    void clearStaleButtonHover();
 
     int m_btnRadius = 6;
 
