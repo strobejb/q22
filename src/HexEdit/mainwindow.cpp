@@ -71,6 +71,24 @@ static bool importFormatNeedsAddress(IMPEXP_FORMAT fmt)
     return fmt == FORMAT_HEXDUMP || fmt == FORMAT_INTELHEX || fmt == FORMAT_SRECORD;
 }
 
+static uint dataFormatStyle(const QString &format)
+{
+    if (format == "dec") return HVS_FORMAT_DEC;
+    if (format == "oct") return HVS_FORMAT_OCT;
+    if (format == "bin") return HVS_FORMAT_BIN;
+    return HVS_FORMAT_HEX;
+}
+
+static QString dataFormatKey(uint style)
+{
+    switch (style & HVS_FORMAT_MASK) {
+    case HVS_FORMAT_DEC: return QStringLiteral("dec");
+    case HVS_FORMAT_OCT: return QStringLiteral("oct");
+    case HVS_FORMAT_BIN: return QStringLiteral("bin");
+    default:             return QStringLiteral("hex");
+    }
+}
+
 static int searchTypeToExportComboIndex(const QComboBox *combo, SEARCHTYPE st)
 {
     const int idx = combo->findData(QVariant::fromValue(int(st)));
@@ -395,7 +413,9 @@ MainWindow::MainWindow(QWidget *parent)
     }
     m_hv->setHexColour(HVC_HEXEVEN, QColor(0, 0, 255));
     m_hv->setHexColour(HVC_HEXODD,  QColor(0, 0, 128));
-    m_hv->setGrouping(2);
+    m_hv->setStyle(HVS_FORMAT_MASK, dataFormatStyle(AppSettings::prefDataFormat()));
+    m_hv->setGrouping(AppSettings::prefBytesPerGroup());
+    m_hv->setLineLen(AppSettings::prefBytesPerLine());
     m_hv->setPadding(3, 3);
     setAcceptDrops(true);
     // Container: HexView fills available space; FindPanel sits flush above
@@ -479,40 +499,73 @@ MainWindow::MainWindow(QWidget *parent)
                        ui->action32_bit_Dword_2, ui->action64_bit_Qword})
         sizeGroup->addAction(a);
 
+    switch (m_hv->getStyle(HVS_FORMAT_MASK)) {
+    case HVS_FORMAT_DEC: ui->actionDecimal_2->setChecked(true); break;
+    case HVS_FORMAT_OCT: ui->actionOctal_2->setChecked(true); break;
+    case HVS_FORMAT_BIN: ui->actionBinary_2->setChecked(true); break;
+    default:             ui->actionHexadecimal_2->setChecked(true); break;
+    }
+
+    switch (m_hv->getGrouping()) {
+    case 1:  ui->action8_bit_Byte->setChecked(true); break;
+    case 4:  ui->action32_bit_Dword_2->setChecked(true); break;
+    case 8:  ui->action64_bit_Qword->setChecked(true); break;
+    default: ui->action16_bit_Word->setChecked(true); break;
+    }
+
     // Format → HexView::setStyle
     connect(ui->actionHexadecimal_2, &QAction::toggled, this, [this](bool on) {
-        if (on)
+        if (on) {
             m_hv->setStyle(HVS_FORMAT_MASK, HVS_FORMAT_HEX);
+            AppSettings::setPrefDataFormat(dataFormatKey(HVS_FORMAT_HEX));
+        }
     });
     connect(ui->actionDecimal_2, &QAction::toggled, this, [this](bool on) {
-        if (on)
+        if (on) {
             m_hv->setStyle(HVS_FORMAT_MASK, HVS_FORMAT_DEC);
+            AppSettings::setPrefDataFormat(dataFormatKey(HVS_FORMAT_DEC));
+        }
     });
     connect(ui->actionOctal_2, &QAction::toggled, this, [this](bool on) {
-        if (on)
+        if (on) {
             m_hv->setStyle(HVS_FORMAT_MASK, HVS_FORMAT_OCT);
+            AppSettings::setPrefDataFormat(dataFormatKey(HVS_FORMAT_OCT));
+        }
     });
     connect(ui->actionBinary_2, &QAction::toggled, this, [this](bool on) {
-        if (on)
+        if (on) {
             m_hv->setStyle(HVS_FORMAT_MASK, HVS_FORMAT_BIN);
+            AppSettings::setPrefDataFormat(dataFormatKey(HVS_FORMAT_BIN));
+        }
     });
 
     // Size → HexView::setGrouping
     connect(ui->action8_bit_Byte, &QAction::toggled, this, [this](bool on) {
-        if (on)
+        if (on) {
             m_hv->setGrouping(1);
+            AppSettings::setPrefBytesPerGroup(1);
+        }
     });
     connect(ui->action16_bit_Word, &QAction::toggled, this, [this](bool on) {
-        if (on)
+        if (on) {
             m_hv->setGrouping(2);
+            AppSettings::setPrefBytesPerGroup(2);
+        }
     });
     connect(ui->action32_bit_Dword_2, &QAction::toggled, this, [this](bool on) {
-        if (on)
+        if (on) {
             m_hv->setGrouping(4);
+            AppSettings::setPrefBytesPerGroup(4);
+        }
     });
     connect(ui->action64_bit_Qword, &QAction::toggled, this, [this](bool on) {
-        if (on)
+        if (on) {
             m_hv->setGrouping(8);
+            AppSettings::setPrefBytesPerGroup(8);
+        }
+    });
+    connect(m_hv, &HexView::lineLengthChanged, this, [](uint bytesPerLine) {
+        AppSettings::setPrefBytesPerLine((int)bytesPerLine);
     });
 
     m_statusBar = new StatusBar(m_hv, ui->statusbar, this);

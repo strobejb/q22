@@ -5,6 +5,8 @@
 #include <QSettings>
 #include <QCoreApplication>
 
+#include <algorithm>
+
 //#define ORG "Catch22"
 //#define APP "HexEdit"
 
@@ -263,6 +265,50 @@ void AppSettings::setPrefRecentPaletteOrdering(bool on)
 {
     OPEN_SETTINGS;
     s.setValue("theme/recentPaletteOrdering", on);
+}
+
+int AppSettings::prefBytesPerLine()
+{
+    OPEN_SETTINGS;
+    return std::max(1, s.value("format/bytesPerLine", 16).toInt());
+}
+
+void AppSettings::setPrefBytesPerLine(int bytes)
+{
+    OPEN_SETTINGS;
+    s.setValue("format/bytesPerLine", std::max(1, bytes));
+}
+
+int AppSettings::prefBytesPerGroup()
+{
+    OPEN_SETTINGS;
+    const int bytes = s.value("format/bytesPerGroup", 2).toInt();
+    return (bytes == 1 || bytes == 2 || bytes == 4 || bytes == 8) ? bytes : 2;
+}
+
+void AppSettings::setPrefBytesPerGroup(int bytes)
+{
+    OPEN_SETTINGS;
+    if (bytes != 1 && bytes != 2 && bytes != 4 && bytes != 8)
+        bytes = 2;
+    s.setValue("format/bytesPerGroup", bytes);
+}
+
+QString AppSettings::prefDataFormat()
+{
+    OPEN_SETTINGS;
+    const QString format = s.value("format/dataFormat", "hex").toString().toLower();
+    return (format == "hex" || format == "dec" || format == "oct" || format == "bin")
+        ? format : QStringLiteral("hex");
+}
+
+void AppSettings::setPrefDataFormat(const QString &format)
+{
+    OPEN_SETTINGS;
+    const QString lower = format.toLower();
+    s.setValue("format/dataFormat",
+               (lower == "hex" || lower == "dec" || lower == "oct" || lower == "bin")
+                   ? lower : QStringLiteral("hex"));
 }
 
 bool AppSettings::prefBookmarkAutoExpand()

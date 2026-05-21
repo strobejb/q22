@@ -315,6 +315,7 @@ signals:
     void editModeChanged(uint mode);
     void contentChanged(size_w offset, size_w length, uint method);
     void lengthChanged(size_w length);
+    void lineLengthChanged(uint bytesPerLine);
     void findProgress(size_w pos, size_w len, double mbPerSec);
     void paneFocusRequested();   // Ctrl+Tab: caller should focus Find/Goto panel
     void bookmarksChanged();          // bookmark added, removed, or replaced

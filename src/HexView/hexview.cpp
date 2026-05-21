@@ -431,9 +431,14 @@ void HexView::emitResize()
 }
 uint HexView::setLineLen(uint nLineLen)
 {
+    nLineLen = std::max(1u, nLineLen);
+    if (m_nBytesPerLine == (int)nLineLen)
+        return m_nBytesPerLine;
+
     m_nBytesPerLine = nLineLen;
     recalcPositions();
     emitResize();
+    emit lineLengthChanged(m_nBytesPerLine);
     return m_nBytesPerLine;
 }
 
@@ -649,6 +654,7 @@ void HexView::resizeEvent(QResizeEvent *event)
             if (m_nVScrollPos > 0)
                 pinToOffset(m_nVScrollPinned);
             m_nHScrollPos = 0;
+            emit lineLengthChanged(m_nBytesPerLine);
         }
     }
 

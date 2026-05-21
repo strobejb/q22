@@ -590,6 +590,7 @@ void HexView::mouseMoveEvent(QMouseEvent *event)
             setupScrollbars();
             repositionCaret();
             viewport()->update();
+            emit lineLengthChanged(m_nBytesPerLine);
         }
 
     } else if (m_fResizeAddr) {

@@ -66,6 +66,14 @@ void        addRecentPalette(const QString &name);
 bool    prefRecentPaletteOrdering(); // true = compact palette picker uses recent-first order
 void    setPrefRecentPaletteOrdering(bool on);
 
+// Hex display format
+int     prefBytesPerLine();
+void    setPrefBytesPerLine(int bytes);
+int     prefBytesPerGroup();
+void    setPrefBytesPerGroup(int bytes);
+QString prefDataFormat();          // "hex", "dec", "oct", or "bin"
+void    setPrefDataFormat(const QString &format);
+
 // Bookmark behaviour
 bool    prefBookmarkAutoExpand();  // true = enable both automatic bookmark expansion modes
 void    setPrefBookmarkAutoExpand(bool on);
