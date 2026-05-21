@@ -37,6 +37,12 @@ protected:
     void changeEvent(QEvent *e)      override;
 
 private:
+    enum class GotoOrigin {
+        FromStart,
+        FromCursor,
+        FromEnd,
+    };
+
     void       refreshStylesheet();
     QByteArray buildPattern() const;
     void       triggerSearch(uint flags);
@@ -45,6 +51,8 @@ private:
     Ui::GotoPanel   *ui;
     HexView          *m_hv;
     bool              m_inRefresh      = false;
+    QAction          *m_actHexAddress  = nullptr;
+    GotoOrigin        m_origin         = GotoOrigin::FromStart;
     DockPanelRow     *m_row            = nullptr;
     DataTypeComboBox *m_comboBookmarks  = nullptr;
     bool              m_bookmarkSwatches = true;
@@ -53,4 +61,3 @@ private:
 };
 
 #endif // GOTOPANEL_H
-

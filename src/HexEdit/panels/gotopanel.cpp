@@ -6,6 +6,7 @@
 #include "HexView/hexview.h"
 #include "HexView/hexviewbookmark.h"
 #include <QAction>
+#include <QActionGroup>
 #include <QApplication>
 #include <QCursor>
 #include <QEvent>
@@ -44,7 +45,51 @@ GotoPanel::GotoPanel(HexView *hv, QWidget *parent)
     auto *optMenu = new QMenu(this);
     themeMenu(optMenu);
 
+    m_actHexAddress = optMenu->addAction(tr("Hex address"));
+    m_actHexAddress->setCheckable(true);
+    m_actHexAddress->setChecked(true);
+    connect(m_actHexAddress, &QAction::toggled, this, [this](bool on) {
+        const QString pattern = on ? QStringLiteral("[0-9A-Fa-f]*")
+                                   : QStringLiteral("[0-9]*");
+        ui->editOffset->setValidator(
+            new QRegularExpressionValidator(QRegularExpression(pattern), ui->editOffset));
+    });
 
+    optMenu->addSeparator();
+    auto *originGroup = new QActionGroup(optMenu);
+    originGroup->setExclusive(true);
+
+    auto *fromStart = optMenu->addAction(tr("From start"));
+    fromStart->setCheckable(true);
+    fromStart->setChecked(true);
+    fromStart->setData(QVariant::fromValue<int>(int(GotoOrigin::FromStart)));
+    originGroup->addAction(fromStart);
+
+    auto *fromCursor = optMenu->addAction(tr("From cursor"));
+    fromCursor->setCheckable(true);
+    fromCursor->setData(QVariant::fromValue<int>(int(GotoOrigin::FromCursor)));
+    originGroup->addAction(fromCursor);
+
+    auto *fromEnd = optMenu->addAction(tr("From end"));
+    fromEnd->setCheckable(true);
+    fromEnd->setData(QVariant::fromValue<int>(int(GotoOrigin::FromEnd)));
+    originGroup->addAction(fromEnd);
+
+    connect(originGroup, &QActionGroup::triggered, this, [this](QAction *action) {
+        m_origin = GotoOrigin(action->data().toInt());
+    });
+
+    connect(ui->btnGotoOptions, &QToolButton::clicked, this, [this, optMenu]() {
+        if (optMenu->isVisible()) { optMenu->hide(); return; }
+        const QPoint cur = QCursor::pos();
+        const bool same  = (m_optMenuClosePos == cur);
+        m_optMenuClosePos = {-1, -1};
+        if (same) return;
+        connect(optMenu, &QMenu::aboutToHide, this,
+                [this]() { m_optMenuClosePos = QCursor::pos(); },
+                Qt::SingleShotConnection);
+        optMenu->popup(smartMenuPos(ui->btnGotoOptions, optMenu));
+    });
 
     // Scale inner padding with screen DPI: 2 px at 100 %, 3 px at 150 %, 4 px at 200 %.
     const int kPad = qMax(1, qRound(qApp->devicePixelRatio() * 2.0));
@@ -301,14 +346,33 @@ void GotoPanel::triggerSearch(uint /*flags*/)
         return;
 
     bool ok = false;
-    size_w offset = text.toULongLong(&ok, 16);
+    const int base = m_actHexAddress && m_actHexAddress->isChecked() ? 16 : 10;
+    const size_w value = text.toULongLong(&ok, base);
     if (!ok)
         return;
+
+    size_w offset = value;
+    switch (m_origin) {
+    case GotoOrigin::FromStart:
+        offset = value;
+        break;
+    case GotoOrigin::FromCursor:
+    {
+        const size_w cursor = qMin(m_hv->cursorOffset(), m_hv->size());
+        if (value > m_hv->size() - cursor)
+            return;
+        offset = cursor + value;
+        break;
+    }
+    case GotoOrigin::FromEnd:
+        if (value > m_hv->size())
+            return;
+        offset = m_hv->size() - value;
+        break;
+    }
 
     if (m_hv->setCurPos(offset)) {
         m_hv->scrollTo(offset);
         m_hv->setFocus();
     }
 }
-
-
