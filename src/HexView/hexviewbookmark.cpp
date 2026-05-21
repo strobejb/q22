@@ -85,13 +85,19 @@ static bool bmOffsetLess(const Bookmark &a, const Bookmark &b)
     return a.length > b.length;   // longer span first → drawn underneath
 }
 
+static void clearBookmarkActive(QList<Bookmark> &bookmarks)
+{
+    for (Bookmark &bm : bookmarks)
+        bm._active = false;
+}
+
 void HexView::setBookmarks(const QList<Bookmark> &bookmarks)
 {
     closeNoteEditor(false);
     m_expandedBookmarkIdx   = -1;   // full replacement — old pin index is meaningless
     m_surfacedBookmarkIdx = -1;
-    m_expandedBookmarkByGroup.clear();
     m_bookmarks = bookmarks;
+    clearBookmarkActive(m_bookmarks);
     std::sort(m_bookmarks.begin(), m_bookmarks.end(), bmOffsetLess);
     setupScrollbars();
     viewport()->update();
@@ -113,7 +119,7 @@ void HexView::addBookmark(const Bookmark &bm)
         ++m_expandedBookmarkIdx;
     if (m_surfacedBookmarkIdx >= insertIdx)
         ++m_surfacedBookmarkIdx;
-    m_expandedBookmarkByGroup.clear();
+    clearBookmarkActive(m_bookmarks);
 
     // If the new bookmark's byte range overlaps the currently-pinned bookmark's
     // range, the two have just formed a conflict group.  A pin acquired while
@@ -129,7 +135,7 @@ void HexView::addBookmark(const Bookmark &bm)
             added.offset  + added.length  > pinned.offset) {
             m_expandedBookmarkIdx   = -1;
             m_surfacedBookmarkIdx = -1;
-            m_expandedBookmarkByGroup.clear();
+            clearBookmarkActive(m_bookmarks);
         }
     }
 
@@ -150,8 +156,8 @@ void HexView::removeBookmark(int idx)
         m_surfacedBookmarkIdx = -1;
     else if (m_surfacedBookmarkIdx > idx)
         --m_surfacedBookmarkIdx;
-    m_expandedBookmarkByGroup.clear();
     m_bookmarks.removeAt(idx);
+    clearBookmarkActive(m_bookmarks);
     setupScrollbars();
     viewport()->update();
     emit bookmarksChanged();
@@ -166,8 +172,8 @@ void HexView::replaceBookmark(int idx, const Bookmark &bm)
     // This invalidates all index-based pin state, so clear both pins.
     m_expandedBookmarkIdx   = -1;
     m_surfacedBookmarkIdx = -1;
-    m_expandedBookmarkByGroup.clear();
     std::sort(m_bookmarks.begin(), m_bookmarks.end(), bmOffsetLess);
+    clearBookmarkActive(m_bookmarks);
     setupScrollbars();
     viewport()->update();
     emit bookmarksChanged();
@@ -444,6 +450,22 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
         }
         return false;
     };
+    auto clearActiveInGroup = [&](int start, int end) {
+        for (int j = start; j < end; ++j)
+            m_bookmarks[j]._active = false;
+    };
+    auto activeInGroup = [&](int start, int end) {
+        for (int j = start; j < end; ++j) {
+            if (m_bookmarks[j]._active)
+                return j;
+        }
+        return -1;
+    };
+    auto setActiveInGroup = [&](int start, int end, int idx) {
+        clearActiveInGroup(start, end);
+        if (idx >= start && idx < end)
+            m_bookmarks[idx]._active = true;
+    };
 
     const bool mouseHeld = treatMouseAsReleased
                            ? false
@@ -539,7 +561,7 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
                 winnerIdx = m_noteEditorIdx;
                 if (!treatMouseAsReleased) {
                     m_expandedBookmarkIdx = m_noteEditorIdx;
-                    m_expandedBookmarkByGroup[i] = winnerIdx;
+                    setActiveInGroup(i, end, winnerIdx);
                 }
             }
 
@@ -556,7 +578,7 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
                 m_expandedBookmarkIdx >= i && m_expandedBookmarkIdx < end) {
                 winnerIdx = m_expandedBookmarkIdx;
                 if (!treatMouseAsReleased)
-                    m_expandedBookmarkByGroup[i] = winnerIdx;
+                    setActiveInGroup(i, end, winnerIdx);
             }
 
             // Step 3: cursor-based expansion.  The preference gates full-strip
@@ -574,7 +596,7 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
                 }
                 if (winnerIdx >= 0 && !treatMouseAsReleased) {
                     m_expandedBookmarkIdx = winnerIdx;
-                    m_expandedBookmarkByGroup[i] = winnerIdx;
+                    setActiveInGroup(i, end, winnerIdx);
                 }
             }
 
@@ -610,12 +632,10 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
                 surfacedIdx = m_surfacedBookmarkIdx;
 
             if (winnerIdx < 0 && checkStyle(HVS_BOOKMARK_EXPAND_ALWAYS)) {
-                const int stickyIdx = m_expandedBookmarkByGroup.value(i, -1);
-                winnerIdx = (stickyIdx >= i && stickyIdx < end)
-                            ? stickyIdx
-                            : (surfacedIdx >= 0 ? surfacedIdx : i);
+                const int activeIdx = activeInGroup(i, end);
+                winnerIdx = activeIdx >= 0 ? activeIdx : (surfacedIdx >= 0 ? surfacedIdx : i);
                 if (!treatMouseAsReleased)
-                    m_expandedBookmarkByGroup[i] = winnerIdx;
+                    setActiveInGroup(i, end, winnerIdx);
             }
 
             // For non-active members: hide collapsed tabs that overlap the
@@ -1123,6 +1143,7 @@ void HexView::closeNoteEditor(bool save)
     const bool hadFocus = m_noteEditor->hasFocus()
                        || m_noteEditor->viewport()->hasFocus();
     m_noteEditor->hide();
+    bool changed = false;
     if (save && m_noteEditorIdx >= 0 && m_noteEditorIdx < m_bookmarks.size()) {
         const int idx = m_noteEditorIdx;
 
@@ -1133,7 +1154,11 @@ void HexView::closeNoteEditor(bool save)
         const int oldH = (m_expandedBookmarkIdx == idx && m_nBytesPerLine > 0)
                          ? noteStripFullHeight(m_bookmarks[idx]) : 0;
 
-        m_bookmarks[idx].name = m_noteEditor->toPlainText();
+        const QString newName = m_noteEditor->toPlainText();
+        if (m_bookmarks[idx].name != newName) {
+            m_bookmarks[idx].name = newName;
+            changed = true;
+        }
 
         // If saving grew the strip AND the pinned bookmark is the one just
         // edited, check whether the taller strip now pulls in a right
@@ -1151,12 +1176,14 @@ void HexView::closeNoteEditor(bool save)
                 if (sy_next >= sy_self + oldH && sy_next < sy_self + newH) {
                     m_expandedBookmarkIdx   = -1;
                     m_surfacedBookmarkIdx = -1;
-                    m_expandedBookmarkByGroup.clear();
+                    clearBookmarkActive(m_bookmarks);
                 }
             }
         }
     }
     m_noteEditorIdx = -1;
+    if (changed)
+        emit bookmarksChanged();
     // If the editor owned focus, return it to the hex view in the ASCII pane.
     // Skip when FocusOut triggered us — focus is already moving elsewhere.
     if (hadFocus) {

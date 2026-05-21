@@ -22,6 +22,10 @@ struct Bookmark {
     // colourIndex == -2 marks the synthetic selection range; colours are
     // resolved at paint time so focus/palette changes cannot leave stale RGBs.
     int     colourIndex = -1;
+
+    // Transient HexView display state.  This is deliberately not persisted by
+    // BookmarkStore.
+    bool    _active = false;
 };
 
 #endif // HEXVIEWBOOKMARK_H

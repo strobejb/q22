@@ -6,7 +6,6 @@
 #include <QFont>
 #include <QRawFont>
 
-#include <QHash>
 #include <QList>
 #include <QTimer>
 #include <QVector>
@@ -528,7 +527,6 @@ private:
     // range; cleared when blank-space navigation leaves the pinned range.
     // Also set explicitly by pinBookmark() when the user clicks a bookmark strip.
     int             m_expandedBookmarkIdx = -1;
-    QHash<int, int> m_expandedBookmarkByGroup;
 
     // Surfaced bookmark: tracks the last collapsed-tab member that was brought to
     // the front by cursor navigation (separate from m_pinnedBookmarkIdx so that

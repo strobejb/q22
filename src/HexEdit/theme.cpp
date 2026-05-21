@@ -20,6 +20,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPalette>
+#include <QPointer>
 #include <QCursor>
 #include <QProxyStyle>
 #include <QScrollBar>
@@ -1903,6 +1904,8 @@ void styleMessageBox(QMessageBox *box)
 {
     if (!box) return;
     removeDialogIcon(box);
+    if (!AppSettings::prefNativeDialogs())
+        box->setWindowFlag(Qt::FramelessWindowHint, true);
 
     QTimer::singleShot(0, box, [box]() {
         auto *iconLabel = box->findChild<QLabel *>(QStringLiteral("qt_msgboxex_icon_label"));
@@ -1933,7 +1936,33 @@ void styleMessageBox(QMessageBox *box)
         for (QAbstractButton *btn : buttonBox->buttons())
             btn->setIcon(QIcon());
     }
-    installDialogChrome(box);
+
+    QPointer<QMessageBox> guard(box);
+    QTimer::singleShot(0, box, [guard]() {
+        if (!guard)
+            return;
+
+        installDialogChrome(guard);
+
+        QPalette pal = guard->palette();
+        pal.setColor(QPalette::Window, qApp->palette().color(QPalette::Window));
+        guard->setPalette(pal);
+        if (guard->property("_qexedDialogShadowInstalled").toBool()) {
+            guard->setAttribute(Qt::WA_StyledBackground, false);
+            guard->setAutoFillBackground(false);
+        } else {
+            guard->setAttribute(Qt::WA_StyledBackground, true);
+            guard->setAutoFillBackground(true);
+        }
+        guard->ensurePolished();
+        guard->adjustSize();
+
+        if (QWidget *parent = guard->parentWidget()) {
+            const QSize sz = guard->size();
+            const QPoint c = parent->frameGeometry().center();
+            guard->move(c.x() - sz.width() / 2, c.y() - sz.height() / 2);
+        }
+    });
 }
 
 #ifndef Q_OS_WIN
