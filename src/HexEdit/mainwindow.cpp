@@ -943,11 +943,9 @@ MainWindow::MainWindow(QWidget *parent)
         ShowAboutDlg(this);
     });
 
-    // Apply saved font (family + size + spacing)
-    const QString savedFamily = AppSettings::prefFontFamily();
-    if (!savedFamily.isEmpty())
-        m_hv->setFont(QFont(savedFamily, AppSettings::prefFontSize()),
-                      AppSettings::prefHorizSpacing(), AppSettings::prefLineSpacing());
+    // Apply configured font, or Qt's platform fixed font when no family is set.
+    m_hv->setFont(AppSettings::hexFont(),
+                  AppSettings::prefHorizSpacing(), AppSettings::prefLineSpacing());
 
     // Apply saved palette
     const QString savedPalette = AppSettings::prefPaletteName();
@@ -982,6 +980,12 @@ MainWindow::MainWindow(QWidget *parent)
 
     // Apply saved menu mode (may switch away from the default custom titlebar)
     applyMenuMode(!AppSettings::prefNativeMenu());
+
+    if (AppSettings::prefRestoreWindowGeometry()) {
+        const QByteArray geometry = AppSettings::windowGeometry();
+        if (!geometry.isEmpty())
+            restoreGeometry(geometry);
+    }
 
     // Edge-resize event filter: catches mouse events on any child widget
     qApp->installEventFilter(this);
@@ -1070,6 +1074,8 @@ void MainWindow::closeEvent(QCloseEvent *e)
         e->ignore();
         return;
     }
+    if (AppSettings::prefRestoreWindowGeometry())
+        AppSettings::setWindowGeometry(saveGeometry());
     QMainWindow::closeEvent(e);
 }
 

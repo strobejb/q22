@@ -21,8 +21,7 @@
 
 static int computeSwatchWidth(const QFont &widgetFont)
 {
-    const QString hexFamily = AppSettings::prefFontFamily();
-    QFont mono = QFont(hexFamily.isEmpty() ? QStringLiteral("monospace") : hexFamily);
+    QFont mono = AppSettings::hexFont();
     mono.setPointSize(widgetFont.pointSize());
     mono.setBold(false);
 
@@ -39,8 +38,7 @@ static int computeSwatchWidth(const QFont &widgetFont)
 
 static int computeSwatchHeight(const QFont &widgetFont)
 {
-    const QString hexFamily = AppSettings::prefFontFamily();
-    QFont mono = QFont(hexFamily.isEmpty() ? QStringLiteral("monospace") : hexFamily);
+    QFont mono = AppSettings::hexFont();
     mono.setPointSize(widgetFont.pointSize());
     mono.setBold(false);
 
@@ -175,8 +173,7 @@ void PaletteSwatch::paintEvent(QPaintEvent *)
     p.setPen(textCol);
     p.drawText(QPointF(card.left() + kPadX, card.top() + kPadTop + fm.ascent()), elidedName);
 
-    const QString hexFamily = AppSettings::prefFontFamily();
-    qfont = QFont(hexFamily.isEmpty() ? QStringLiteral("monospace") : hexFamily);
+    qfont = AppSettings::hexFont();
     qfont.setPointSize(font().pointSize());
     qfont.setBold(false);
     p.setFont(qfont);

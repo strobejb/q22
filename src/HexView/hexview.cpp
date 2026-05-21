@@ -29,8 +29,9 @@ HexView::HexView(QWidget *parent)
     // for HexView defaults, so clearing a slot and never setting it are equal.
 
     // Font
-    //setFont(QFont("Courier New", 12));
-    setFont(QFont("Consolas", 13));
+    QFont defaultFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    defaultFont.setPointSize(13);
+    setFont(defaultFont);
 
 
     setFocusPolicy(Qt::StrongFocus);

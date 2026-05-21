@@ -1,6 +1,7 @@
 #include "settings.h"
 #include <QDir>
 #include <QFileInfo>
+#include <QFontDatabase>
 #include <QSettings>
 #include <QCoreApplication>
 
@@ -36,49 +37,65 @@ void AppSettings::addRecentFile(const QString &path)
 QString AppSettings::prefFontFamily()
 {
     OPEN_SETTINGS;
-    return s.value("preferences/fontFamily", "").toString();
+    return s.value("font/family", "").toString();
 }
 
 void AppSettings::setPrefFontFamily(const QString &family)
 {
     OPEN_SETTINGS;
-    s.setValue("preferences/fontFamily", family);
+    s.setValue("font/family", family);
 }
 
 int AppSettings::prefFontSize()
 {
     OPEN_SETTINGS;
-    return s.value("preferences/fontSize", 13).toInt();
+    return s.value("font/size", 13).toInt();
 }
 
 void AppSettings::setPrefFontSize(int size)
 {
     OPEN_SETTINGS;
-    s.setValue("preferences/fontSize", size);
+    s.setValue("font/size", size);
+}
+
+QFont AppSettings::defaultHexFont()
+{
+    QFont font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    font.setPointSize(prefFontSize());
+    return font;
+}
+
+QFont AppSettings::hexFont()
+{
+    const QString family = prefFontFamily();
+    if (family.isEmpty())
+        return defaultHexFont();
+
+    return QFont(family, prefFontSize());
 }
 
 int AppSettings::prefHorizSpacing()
 {
     OPEN_SETTINGS;
-    return s.value("preferences/horizSpacing", 2).toInt();
+    return s.value("font/horizSpacing", 2).toInt();
 }
 
 void AppSettings::setPrefHorizSpacing(int px)
 {
     OPEN_SETTINGS;
-    s.setValue("preferences/horizSpacing", px);
+    s.setValue("font/horizSpacing", px);
 }
 
 int AppSettings::prefLineSpacing()
 {
     OPEN_SETTINGS;
-    return s.value("preferences/lineSpacing", 2).toInt();
+    return s.value("font/lineSpacing", 1).toInt();
 }
 
 void AppSettings::setPrefLineSpacing(int px)
 {
     OPEN_SETTINGS;
-    s.setValue("preferences/lineSpacing", px);
+    s.setValue("font/lineSpacing", px);
 }
 
 // Default native-menu behaviour:
@@ -100,91 +117,115 @@ static bool defaultNativeMenu()
 bool AppSettings::prefNativeMenu()
 {
     OPEN_SETTINGS;
-    return s.value("preferences/nativeMenu", defaultNativeMenu()).toBool();
+    return s.value("appearance/nativeMenu", defaultNativeMenu()).toBool();
 }
 
 void AppSettings::setPrefNativeMenu(bool on)
 {
     OPEN_SETTINGS;
-    s.setValue("preferences/nativeMenu", on);
+    s.setValue("appearance/nativeMenu", on);
 }
 
 bool AppSettings::prefNativeFileDialogs()
 {
     OPEN_SETTINGS;
-    return s.value("preferences/nativeFileDialogs", false).toBool();
+    return s.value("window/nativeFilePicker", false).toBool();
 }
 
 void AppSettings::setPrefNativeFileDialogs(bool on)
 {
     OPEN_SETTINGS;
-    s.setValue("preferences/nativeFileDialogs", on);
+    s.setValue("window/nativeFilePicker", on);
 }
 
 bool AppSettings::prefNativeDialogs()
 {
     OPEN_SETTINGS;
-    return s.value("preferences/nativeDialogs", false).toBool();
+    return s.value("window/nativeDialogs", false).toBool();
 }
 
 void AppSettings::setPrefNativeDialogs(bool on)
 {
     OPEN_SETTINGS;
-    s.setValue("preferences/nativeDialogs", on);
+    s.setValue("window/nativeDialogs", on);
+}
+
+bool AppSettings::prefRestoreWindowGeometry()
+{
+    OPEN_SETTINGS;
+    return s.value("window/restoreGeometry", true).toBool();
+}
+
+void AppSettings::setPrefRestoreWindowGeometry(bool on)
+{
+    OPEN_SETTINGS;
+    s.setValue("window/restoreGeometry", on);
+}
+
+QByteArray AppSettings::windowGeometry()
+{
+    OPEN_SETTINGS;
+    return s.value("window/geometry").toByteArray();
+}
+
+void AppSettings::setWindowGeometry(const QByteArray &geometry)
+{
+    OPEN_SETTINGS;
+    s.setValue("window/geometry", geometry);
 }
 
 bool AppSettings::prefMenuHighlight()
 {
     OPEN_SETTINGS;
-    return s.value("preferences/menuHighlight", false).toBool();
+    return s.value("appearance/menuHighlight", false).toBool();
 }
 
 void AppSettings::setPrefMenuHighlight(bool on)
 {
     OPEN_SETTINGS;
-    s.setValue("preferences/menuHighlight", on);
+    s.setValue("appearance/menuHighlight", on);
 }
 
 bool AppSettings::prefScrollbarArrows()
 {
     OPEN_SETTINGS;
-    return s.value("preferences/scrollbarArrows", true).toBool();
+    return s.value("appearance/scrollbarArrows", true).toBool();
 }
 
 void AppSettings::setPrefScrollbarArrows(bool on)
 {
     OPEN_SETTINGS;
-    s.setValue("preferences/scrollbarArrows", on);
+    s.setValue("appearance/scrollbarArrows", on);
 }
 
 int AppSettings::prefColorScheme()
 {
     OPEN_SETTINGS;
-    return s.value("preferences/colorScheme", 0).toInt();
+    return s.value("theme/colorScheme", 0).toInt();
 }
 
 void AppSettings::setPrefColorScheme(int scheme)
 {
     OPEN_SETTINGS;
-    s.setValue("preferences/colorScheme", scheme);
+    s.setValue("theme/colorScheme", scheme);
 }
 
 QString AppSettings::prefPaletteName()
 {
     OPEN_SETTINGS;
-    return s.value("preferences/paletteName", "").toString();
+    return s.value("theme/paletteName", "").toString();
 }
 
 void AppSettings::setPrefPaletteName(const QString &name)
 {
     OPEN_SETTINGS;
-    s.setValue("preferences/paletteName", name);
+    s.setValue("theme/paletteName", name);
 }
 
 QStringList AppSettings::prefRecentPalettes()
 {
     OPEN_SETTINGS;
-    const QString csv = s.value("preferences/recentPalettes", "").toString();
+    const QString csv = s.value("theme/recentPalettes", "").toString();
     QStringList result;
     for (const QString &part : csv.split(',', Qt::SkipEmptyParts)) {
         const QString name = part.trimmed();
@@ -209,36 +250,25 @@ void AppSettings::addRecentPalette(const QString &name)
         names.removeLast();
 
     OPEN_SETTINGS;
-    s.setValue("preferences/recentPalettes", names.join(','));
+    s.setValue("theme/recentPalettes", names.join(','));
 }
 
 bool AppSettings::prefRecentPaletteOrdering()
 {
     OPEN_SETTINGS;
-    return s.value("preferences/recentPaletteOrdering", true).toBool();
+    return s.value("theme/recentPaletteOrdering", true).toBool();
 }
 
 void AppSettings::setPrefRecentPaletteOrdering(bool on)
 {
     OPEN_SETTINGS;
-    s.setValue("preferences/recentPaletteOrdering", on);
+    s.setValue("theme/recentPaletteOrdering", on);
 }
 
 bool AppSettings::prefBookmarkAutoExpand()
 {
     OPEN_SETTINGS;
-    if (s.contains("bookmarks/autoExpand"))
-        return s.value("bookmarks/autoExpand", true).toBool();
-
-    const bool hasLegacyLone = s.contains("bookmarks/expandLone");
-    const bool hasLegacyCursor = s.contains("bookmarks/expandCursor");
-    if (hasLegacyLone || hasLegacyCursor) {
-        const bool expandLone = s.value("bookmarks/expandLone", true).toBool();
-        const bool expandCursor = s.value("bookmarks/expandCursor", true).toBool();
-        return expandLone && expandCursor;
-    }
-
-    return true;
+    return s.value("bookmarks/autoExpand", true).toBool();
 }
 
 void AppSettings::setPrefBookmarkAutoExpand(bool on)

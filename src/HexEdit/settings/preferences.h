@@ -72,6 +72,7 @@ private:
     StepSpinBox    *m_fontSize     = nullptr;
     StepSpinBox    *m_horizSpacing = nullptr;
     StepSpinBox    *m_lineSpacing  = nullptr;
+    SettingsToggle *m_restoreWindowGeometry = nullptr;
     SettingsToggle *m_nativeMenu        = nullptr;
     SettingsToggle *m_nativeDialogs     = nullptr;
     SettingsToggle *m_nativeFileDialogs = nullptr;

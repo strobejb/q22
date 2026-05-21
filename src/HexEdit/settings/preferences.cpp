@@ -277,6 +277,8 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     m_fontNav = new NavigationRow(tr("Font"), NavigationRow::Icon::Next, this);
     if (!m_fontFamily.isEmpty())
         m_fontNav->setValueText(m_fontFamily);
+    else
+        m_fontNav->setValueText(AppSettings::defaultHexFont().family());
 
     // ── Font size ────────────────────────────────────────────────────────────
     m_fontSize = new StepSpinBox(tr("Font Size"), 6, 72, 1, this);
@@ -289,15 +291,19 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     m_lineSpacing = new StepSpinBox(tr("Line Spacing"), 0, 20, 1, this);
     m_lineSpacing->setValue(AppSettings::prefLineSpacing());
 
+    // ── Window toggles ───────────────────────────────────────────────────────
+    m_restoreWindowGeometry = new SettingsToggle(tr("Restore window size/pos"), this);
+    m_restoreWindowGeometry->setChecked(AppSettings::prefRestoreWindowGeometry());
+
+    m_nativeDialogs = new SettingsToggle(tr("Native dialogs"), this);
+    m_nativeDialogs->setChecked(AppSettings::prefNativeDialogs());
+
+    m_nativeFileDialogs = new SettingsToggle(tr("Native file picker"), this);
+    m_nativeFileDialogs->setChecked(AppSettings::prefNativeFileDialogs());
+
     // ── Appearance toggles ───────────────────────────────────────────────────
     m_nativeMenu = new SettingsToggle(tr("Native menu bar"), this);
     m_nativeMenu->setChecked(AppSettings::prefNativeMenu());
-
-    m_nativeDialogs = new SettingsToggle(tr("Use native dialogs"), this);
-    m_nativeDialogs->setChecked(AppSettings::prefNativeDialogs());
-
-    m_nativeFileDialogs = new SettingsToggle(tr("Use native file dialogs"), this);
-    m_nativeFileDialogs->setChecked(AppSettings::prefNativeFileDialogs());
 
     m_menuHighlight = new SettingsToggle(tr("Menus use highlight colour"), this);
     m_menuHighlight->setChecked(AppSettings::prefMenuHighlight());
@@ -319,7 +325,7 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     connect(m_fontSize, &StepSpinBox::valueChanged,
             this, [this](int size) {
         AppSettings::setPrefFontSize(size);
-        emit fontChanged(QFont(m_fontFamily, size));
+        emit fontChanged(AppSettings::hexFont());
     });
     connect(m_horizSpacing, &StepSpinBox::valueChanged,
             this, [this](int h) {
@@ -335,6 +341,10 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
             this, [this](bool on) {
         AppSettings::setPrefNativeMenu(on);
         emit nativeMenuChanged(on);
+    });
+    connect(m_restoreWindowGeometry, &SettingsToggle::toggled,
+            this, [](bool on) {
+        AppSettings::setPrefRestoreWindowGeometry(on);
     });
     connect(m_nativeFileDialogs, &SettingsToggle::toggled,
             this, [](bool on) {
@@ -375,8 +385,11 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     auto *fontGroup   = new SettingsCard(
         {m_fontNav, m_fontSize, m_horizSpacing, m_lineSpacing},
         SettingsCard::Style::Spaced, this);
+    auto *windowGroup = new SettingsCard(
+        {m_restoreWindowGeometry, m_nativeDialogs, m_nativeFileDialogs},
+        SettingsCard::Style::Spaced, this);
     auto *appearGroup = new SettingsCard(
-        {m_nativeMenu, m_nativeDialogs, m_nativeFileDialogs, m_menuHighlight},
+        {m_nativeMenu, m_menuHighlight},
         SettingsCard::Style::Spaced, this);
     auto *bmGroup = new SettingsCard(
         {m_bmAutoExpand, m_bmNested, m_bmSelHighlights},
@@ -453,6 +466,10 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     vlay->addSpacing(kHeaderBottomGap);
     vlay->addWidget(fontGroup);
     vlay->addSpacing(kGroupTopGap);
+    vlay->addWidget(makeSectionLabel(tr("Window")));
+    vlay->addSpacing(kHeaderBottomGap);
+    vlay->addWidget(windowGroup);
+    vlay->addSpacing(kGroupTopGap);
     vlay->addWidget(makeSectionLabel(tr("Appearance")));
     vlay->addSpacing(kHeaderBottomGap);
     vlay->addWidget(appearGroup);
@@ -485,13 +502,13 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     // Font picker opens as an overlay slide-in
     connect(m_fontNav, &QAbstractButton::clicked, this, [this]() {
         if (hasActiveOverlay()) return;
-        auto *dlg = new FontPickerDialog(QFont(m_fontFamily), this);
+        auto *dlg = new FontPickerDialog(AppSettings::hexFont(), this);
         m_overlay->slideIn(dlg, [this, dlg](int result) {
             if (result == QDialog::Accepted) {
                 m_fontFamily = dlg->selectedFont().family();
                 m_fontNav->setValueText(m_fontFamily);
                 AppSettings::setPrefFontFamily(m_fontFamily);
-                emit fontChanged(QFont(m_fontFamily, m_fontSize->value()));
+                emit fontChanged(AppSettings::hexFont());
             }
         });
     });

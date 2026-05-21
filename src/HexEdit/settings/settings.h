@@ -1,6 +1,8 @@
 #ifndef SETTINGS_H
 #define SETTINGS_H
 
+#include <QByteArray>
+#include <QFont>
 #include <QStringList>
 
 // Returns a ready-to-use QSettings object for the app's config file.
@@ -35,6 +37,8 @@ QString prefFontFamily();
 void    setPrefFontFamily(const QString &family);
 int     prefFontSize();
 void    setPrefFontSize(int size);
+QFont   defaultHexFont();
+QFont   hexFont();
 int     prefHorizSpacing();
 void    setPrefHorizSpacing(int px);
 int     prefLineSpacing();
@@ -45,6 +49,10 @@ bool    prefNativeFileDialogs();
 void    setPrefNativeFileDialogs(bool on);
 bool    prefNativeDialogs();
 void    setPrefNativeDialogs(bool on);
+bool    prefRestoreWindowGeometry();
+void    setPrefRestoreWindowGeometry(bool on);
+QByteArray windowGeometry();
+void       setWindowGeometry(const QByteArray &geometry);
 bool    prefMenuHighlight();        // true = use palette(highlight) for menu selection
 void    setPrefMenuHighlight(bool on);
 bool    prefScrollbarArrows();      // true = show arrow buttons on scrollbar hover
