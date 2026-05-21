@@ -36,6 +36,7 @@ public:
     bool    isRegex()     const;
     bool    isWholeWord() const;
     bool    isWrapAround() const;
+    bool    highlightAllOccurrences() const;
     QString dataType()    const;
 
 signals:
@@ -43,6 +44,7 @@ signals:
     void findNext();
     void searchRequested(const QByteArray &pattern, uint flags);
     void searchHexChanged(const QString &hex);  // live hex-tuple preview of current pattern
+    void highlightAllOccurrencesChanged(bool on);
 
 protected:
     void keyPressEvent(QKeyEvent *e)            override;
@@ -64,6 +66,7 @@ private:
     QAction          *m_actRegex       = nullptr;
     QAction          *m_actWholeWord   = nullptr;
     QAction          *m_actWrap        = nullptr;
+    QAction          *m_actHighlightAll = nullptr;
     DockPanelRow     *m_row            = nullptr;
     DataTypeComboBox *m_comboDataType  = nullptr;
     QPoint            m_optMenuClosePos { -1, -1 };
@@ -72,4 +75,3 @@ private:
 };
 
 #endif // FINDPANEL_H
-

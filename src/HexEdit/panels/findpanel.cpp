@@ -132,9 +132,17 @@ FindPanel::FindPanel(QWidget *parent)
 
     m_actRegex     = optMenu->addAction(tr("Regular expression"));
     m_actRegex->setCheckable(true);
+    m_actRegex->setEnabled(false);
 
     m_actWholeWord = optMenu->addAction(tr("Match whole word"));
     m_actWholeWord->setCheckable(true);
+    m_actWholeWord->setEnabled(false);
+
+    m_actHighlightAll = optMenu->addAction(tr("Highlight all occurrences"));
+    m_actHighlightAll->setCheckable(true);
+    m_actHighlightAll->setChecked(true);
+    connect(m_actHighlightAll, &QAction::toggled,
+            this, &FindPanel::highlightAllOccurrencesChanged);
 
     optMenu->addSeparator();
 
@@ -368,6 +376,7 @@ void FindPanel::keyPressEvent(QKeyEvent *e)
 bool    FindPanel::isRegex()     const { return m_actRegex->isChecked(); }
 bool    FindPanel::isWholeWord() const { return m_actWholeWord->isChecked(); }
 bool    FindPanel::isWrapAround() const { return m_actWrap->isChecked(); }
+bool    FindPanel::highlightAllOccurrences() const { return m_actHighlightAll->isChecked(); }
 QString FindPanel::dataType()    const { return m_comboDataType->selectionText(); }
 
 QByteArray FindPanel::buildPattern() const
@@ -431,4 +440,3 @@ void FindPanel::hideEvent(QHideEvent *e)
     emit searchHexChanged({});
     QWidget::hideEvent(e);
 }
-

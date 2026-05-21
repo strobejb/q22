@@ -378,8 +378,10 @@ MainWindow::MainWindow(QWidget *parent)
     m_hv->setFrameShape(QFrame::NoFrame);
     {
         // Base flags (always applied)
-        uint mask   = HVS_RESIZEBAR | HVS_SHOWMODS | HVS_INVERTSELECTION | HVS_ENABLEDRAGDROP;
-        uint styles = HVS_RESIZEBAR | HVS_SHOWMODS | HVS_ENABLEDRAGDROP;
+        uint mask   = HVS_RESIZEBAR | HVS_SHOWMODS | HVS_INVERTSELECTION |
+                      HVS_ENABLEDRAGDROP | HVS_SEARCH_HIGHLIGHT_ALL;
+        uint styles = HVS_RESIZEBAR | HVS_SHOWMODS | HVS_ENABLEDRAGDROP |
+                      HVS_SEARCH_HIGHLIGHT_ALL;
         // Bookmark flags — restore persisted values
         mask   |= HVS_BOOKMARK_EXPAND_LONE | HVS_BOOKMARK_EXPAND_CURSOR |
                   HVS_BOOKMARK_NESTED | HVS_BOOKMARK_SELECTION_HIGHLIGHTS |
@@ -604,6 +606,7 @@ MainWindow::MainWindow(QWidget *parent)
             this, [this](int idx, QRect btnGlobal) {
         showBookmarkContextPopup(m_hv, idx, btnGlobal);
     });
+    m_hv->setBookmarkContextMenuExternallyHandled(true);
 
     connect(m_gotoDialog, &GotoPanel::bookmarkRequested, m_hv, &HexView::addBookmarkInline);
 
@@ -657,6 +660,10 @@ MainWindow::MainWindow(QWidget *parent)
     });
 #endif
     connect(m_findDialog, &FindPanel::searchHexChanged, m_statusBar, &StatusBar::showSearchHex);
+    connect(m_findDialog, &FindPanel::highlightAllOccurrencesChanged,
+            this, [this](bool on) {
+        m_hv->setStyle(HVS_SEARCH_HIGHLIGHT_ALL, on ? HVS_SEARCH_HIGHLIGHT_ALL : 0);
+    });
 
     connect(ui->actionExit, &QAction::triggered, this, &MainWindow::close);
 
@@ -1099,12 +1106,29 @@ void MainWindow::execFind(const QByteArray &pattern, uint flags)
     m_lastPattern   = pattern;
     m_lastFindFlags = flags & ~HVFF_BACKWARD; // strip direction; stored flags are always "forward"
     size_w result   = 0;
-    if (m_hv->findNext(&result, flags)) {
+    uint searchFlags = flags;
+    if (m_findDialog->isWrapAround())
+        searchFlags |= HVFF_WRAP_AROUND;
+
+    const HvFindResult findResult = m_hv->findNextEx(&result, searchFlags);
+    if (findResult == HVFR_Found || findResult == HVFR_FoundWrapped) {
         m_hv->setCurSel(result, result + (size_t)pattern.size());
         m_hv->scrollTo(result);
-        m_statusBar->showMessage({});
-    } else if (!m_hv->isFindCancelled()) {
-        m_statusBar->showMessage(tr("Could not find any more data"));
+        if (findResult == HVFR_FoundWrapped) {
+            m_statusBar->showMessage((flags & HVFF_BACKWARD)
+                ? tr("Search wrapped to end of file")
+                : tr("Search wrapped to start of file"));
+        } else {
+            m_statusBar->showMessage({});
+        }
+    } else if (findResult == HVFR_NotFound) {
+        if (m_findDialog->isWrapAround()) {
+            m_statusBar->showMessage(tr("No matches found"));
+        } else {
+            m_statusBar->showMessage((flags & HVFF_BACKWARD)
+                ? tr("Past start of file")
+                : tr("Past end of file"));
+        }
     } else {
         m_statusBar->showMessage({});
     }

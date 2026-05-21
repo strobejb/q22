@@ -92,6 +92,7 @@ enum HvColorSlot {
 #define HVS_RESIZEBAR           0x40000000
 #define HVS_INVERTSELECTION     0x80000000
 #define HVS_SELECTION_OVERRIDES 0x00200000  // selection BG overrides all other highlights
+#define HVS_SEARCH_HIGHLIGHT_ALL 0x08000000  // highlight all visible matches for the active search pattern
 
 // Bookmark display behaviour
 #define HVS_BOOKMARK_EXPAND_LONE   0x00400000  // lone (uncontested) bookmarks always show as full strips
@@ -120,6 +121,14 @@ enum HvColorSlot {
 #define HVFF_SCOPE_SELECTION    0x0001
 #define HVFF_CASE_INSENSITIVE   0x0002
 #define HVFF_BACKWARD           0x0004
+#define HVFF_WRAP_AROUND        0x0008
+
+enum HvFindResult {
+    HVFR_NotFound,
+    HVFR_Found,
+    HVFR_FoundWrapped,
+    HVFR_Cancelled,
+};
 
 // Hit-test regions
 enum HitTestRegion : uint {
@@ -242,6 +251,7 @@ public:
     // Find
     bool   findInit(const uint8_t *pat, size_t length);
     bool   findNext(size_w *result, uint options = 0);
+    HvFindResult findNextEx(size_w *result, uint options = 0);
     void   cancelFind()      { m_findCancelled = true; }
     bool   isFindCancelled() const { return m_findCancelled; }
 
@@ -273,6 +283,7 @@ public:
     // Pass nullptr to restore the built-in behaviour.  Ownership stays with
     // the caller; HexView only holds a non-owning pointer.
     void   setContextMenu(QMenu *menu) { m_contextMenu = menu; }
+    void   setBookmarkContextMenuExternallyHandled(bool on) { m_bookmarkContextMenuExternallyHandled = on; }
 
 
     // Geometry of a bookmark note strip.
@@ -541,6 +552,7 @@ private:
     bool            m_hoverOnEdit      = false;
     bool            m_pressedOnClose   = false;
     bool            m_pressedOnEdit    = false;
+    bool            m_bookmarkContextMenuExternallyHandled = false;
 
     // Mouse / interaction
     bool    m_fResizeBar        = false;

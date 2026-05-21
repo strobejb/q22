@@ -205,3 +205,38 @@ bool HexView::findNext(size_w *result, uint options)
 
     return false;
 }
+
+HvFindResult HexView::findNextEx(size_w *result, uint options)
+{
+    const uint findOptions = options & ~HVFF_WRAP_AROUND;
+    if (findNext(result, findOptions))
+        return HVFR_Found;
+    if (isFindCancelled())
+        return HVFR_Cancelled;
+
+    const bool canWrap = (options & HVFF_WRAP_AROUND) &&
+                         !(options & HVFF_SCOPE_SELECTION) &&
+                         size() > 0;
+    if (!canWrap)
+        return HVFR_NotFound;
+
+    const size_w originalStart = selectionStart();
+    const size_w originalEnd = selectionEnd();
+    const size_w originalCursor = cursorOffset();
+
+    if (options & HVFF_BACKWARD)
+        setCurSel(size(), size());
+    else
+        setCurSel(0, 0);
+
+    if (findNext(result, findOptions))
+        return HVFR_FoundWrapped;
+    if (isFindCancelled())
+        return HVFR_Cancelled;
+
+    if (originalStart == originalEnd)
+        setCurSel(originalCursor, originalCursor);
+    else
+        setCurSel(originalStart, originalEnd);
+    return HVFR_NotFound;
+}

@@ -811,7 +811,9 @@ void HexView::paintEvent(QPaintEvent *event)
     buflen += (size_t)shift;
 
     size_w bufBaseOffset = startFileOff - (size_w)shift2;
-    QList<Bookmark> matchHighlights = identifySearchPatterns(bigbuf + shift, buflen - shift, bufBaseOffset);
+    QList<Bookmark> matchHighlights;
+    if (checkStyle(HVS_SEARCH_HIGHLIGHT_ALL))
+        matchHighlights = identifySearchPatterns(bigbuf + shift, buflen - shift, bufBaseOffset);
 
     // ── Fill right margin with background ─────────────────────────────────────
     {
