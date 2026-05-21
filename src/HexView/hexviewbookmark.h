@@ -9,7 +9,7 @@
 struct Bookmark {
     size_w  offset      = 0;
     size_w  length      = 0;
-    QString name;
+    QString text;
     QRgb    fgColour    = 0;
     QRgb    bgColour    = 0;
     // bgColour == 0 is a sentinel meaning "FG-only" — used for modified-byte

@@ -590,10 +590,10 @@ MainWindow::MainWindow(QWidget *parent)
         m_bookmarkDialog->setOffset(existing.offset);
         m_bookmarkDialog->setLength(existing.length);
         populateBookmarkDialog();
-        m_bookmarkDialog->setEditMode(idx, existing.name, existing.colourIndex);
+        m_bookmarkDialog->setEditMode(idx, existing.text, existing.colourIndex);
         if (execCentered(m_bookmarkDialog) == QDialog::Accepted) {
             Bookmark bm = existing;
-            bm.name        = m_bookmarkDialog->bookmarkName();
+            bm.text        = m_bookmarkDialog->bookmarkName();
             bm.colourIndex = qMax(0, m_bookmarkDialog->selectedColourIndex());
             m_hv->replaceBookmark(idx, bm);
         }

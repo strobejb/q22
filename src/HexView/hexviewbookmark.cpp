@@ -232,7 +232,7 @@ HexView::NoteStripGeom HexView::noteStripGeom(const Bookmark &bm) const
     // strip and editor resize together as the user adds/removes lines.
     const int bmIdx_ = (int)(&bm - m_bookmarks.constData());
     const bool isEditing = (bmIdx_ == m_noteEditorIdx && m_noteEditor && m_noteEditor->isVisible());
-    const QString rawText = isEditing ? m_noteEditor->toPlainText() : bm.name;
+    const QString rawText = isEditing ? m_noteEditor->toPlainText() : bm.text;
     // Use a space as stand-in for empty text so height is never zero.
     const QString text = rawText.isEmpty() ? QStringLiteral(" ") : rawText;
     QTextDocument *textDoc = makeNoteTextDoc(text, textW, nf);
@@ -352,7 +352,7 @@ int HexView::noteStripFullHeight(const Bookmark &bm) const
     // computeBookmarkLayout() sees the current height, not the last-saved height.
     const int bmIdx_ = (int)(&bm - m_bookmarks.constData());
     const bool isEditing = (bmIdx_ == m_noteEditorIdx && m_noteEditor && m_noteEditor->isVisible());
-    const QString rawText = isEditing ? m_noteEditor->toPlainText() : bm.name;
+    const QString rawText = isEditing ? m_noteEditor->toPlainText() : bm.text;
     const QString text = rawText.isEmpty() ? QStringLiteral(" ") : rawText;
     QTextDocument doc;
     doc.setDefaultFont(noteFont());
@@ -868,7 +868,7 @@ void HexView::drawNoteStrip(QPainter &painter, const Bookmark &bm, const BmLayou
 
     // Text content.
     {
-        QTextDocument *doc = makeNoteTextDoc(bm.name, geom.textRect.width(), noteFont());
+        QTextDocument *doc = makeNoteTextDoc(bm.text, geom.textRect.width(), noteFont());
         painter.save();
         painter.setClipRect(geom.textRect);
         painter.translate(geom.textRect.topLeft());
@@ -983,7 +983,7 @@ void HexView::openNoteEditor(int bmIdx, QPoint clickPos)
     if (!geom.valid) return;
 
     m_noteEditorIdx   = bmIdx;
-    m_noteEditorIsNew = bm.name.isEmpty();  // flag for Escape-cancels-new-bookmark logic
+    m_noteEditorIsNew = bm.text.isEmpty();  // flag for Escape-cancels-new-bookmark logic
 
     if (!m_noteEditor) {
         m_noteEditor = new QPlainTextEdit(viewport());
@@ -1048,7 +1048,7 @@ void HexView::openNoteEditor(int bmIdx, QPoint clickPos)
         .arg(bg.name()).arg(fg.name()));
 
     m_noteEditor->setFont(noteFont());
-    m_noteEditor->setPlainText(bm.name);
+    m_noteEditor->setPlainText(bm.text);
     m_noteEditor->setGeometry(geom.textRect.adjusted(0, 0, 0, 2));
     m_noteEditor->show();
     m_noteEditor->raise();
@@ -1116,7 +1116,7 @@ void HexView::addBookmarkInline()
     Bookmark bm;
     bm.offset      = offset;
     bm.length      = length;
-    bm.name        = QString();
+    bm.text        = QString();
     bm.fgColour    = 0;
     bm.colourIndex = 0;
     addBookmark(bm);
@@ -1149,14 +1149,14 @@ void HexView::closeNoteEditor(bool save)
 
         // Record the strip height before saving so we can detect whether
         // the new text makes the strip taller.  The editor is already hidden
-        // so noteStripFullHeight() now reads bm.name (the old text) rather
+        // so noteStripFullHeight() now reads bm.text (the old text) rather
         // than the live editor content — exactly the pre-save height.
         const int oldH = (m_expandedBookmarkIdx == idx && m_nBytesPerLine > 0)
                          ? noteStripFullHeight(m_bookmarks[idx]) : 0;
 
-        const QString newName = m_noteEditor->toPlainText();
-        if (m_bookmarks[idx].name != newName) {
-            m_bookmarks[idx].name = newName;
+        const QString newText = m_noteEditor->toPlainText();
+        if (m_bookmarks[idx].text != newText) {
+            m_bookmarks[idx].text = newText;
             changed = true;
         }
 

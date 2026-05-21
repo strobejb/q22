@@ -167,7 +167,7 @@ void showBookmarkContextPopup(HexView *hv, int idx, QRect btnGlobal)
         QObject::connect(copyBtn, &QPushButton::clicked, menu, [hv, idx, menu]() {
             const QList<Bookmark> &bms2 = hv->bookmarks();
             if (idx >= 0 && idx < bms2.size())
-                QApplication::clipboard()->setText(bms2[idx].name);
+                QApplication::clipboard()->setText(bms2[idx].text);
             menu->close();
         });
         QObject::connect(deleteBtn, &QPushButton::clicked, menu, [hv, idx, menu]() {

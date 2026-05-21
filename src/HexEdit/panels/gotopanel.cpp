@@ -289,8 +289,8 @@ void GotoPanel::refreshBookmarks()
     QStringList labels;
     for (int i : sortedIdx) {
         const Bookmark &bm    = bms[i];
-        const QString rawName = bm.name.isEmpty() ? tr("(unnamed)") : bm.name;
-        const QString name    = fm.elidedText(rawName, Qt::ElideRight, kMaxNamePx);
+        const QString rawText = bm.text.isEmpty() ? tr("(empty)") : bm.text;
+        const QString name    = fm.elidedText(rawText, Qt::ElideRight, kMaxNamePx);
         const QString hex     = QStringLiteral("0x") + QString::number(bm.offset, 16).toUpper().rightJustified(8, QLatin1Char('0'));
         const QString label   = name + QLatin1Char('\t') + hex;
         m_comboBookmarks->addItem(label);
