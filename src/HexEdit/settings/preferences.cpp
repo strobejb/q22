@@ -307,15 +307,15 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     m_bmAutoExpand->setToolTip(tr("Expand bookmarks when space allows"));
     m_bmAutoExpand->setChecked(AppSettings::prefBookmarkExpandLone());
 
-    m_bmSelExpand = new SettingsToggle(tr("Expand when selected"), this);
-    m_bmSelExpand->setToolTip(tr("Expand a bookmark when the cursor or selection lands inside its byte range (takes effect on mouse release, never during drag)"));
+    m_bmSelExpand = new SettingsToggle(tr("Expand on navigation"), this);
+    m_bmSelExpand->setToolTip(tr("Expand a bookmark when the cursor moves to the bookmarked byte range"));
     m_bmSelExpand->setChecked(AppSettings::prefBookmarkExpandCursor());
 
-    m_bmNested = new SettingsToggle(tr("Allow nested bookmarks"), this);
-    m_bmNested->setToolTip(tr("When off, creating a bookmark that overlaps an existing one opens the existing bookmark's editor instead"));
+    m_bmNested = new SettingsToggle(tr("Nested bookmarks"), this);
+    m_bmNested->setToolTip(tr("ALlow overlapping and nested bookmarks to be defined"));
     m_bmNested->setChecked(AppSettings::prefBookmarkNested());
 
-    m_bmSelHighlights = new SettingsToggle(tr("Highlight bookmark on selection"), this);
+    m_bmSelHighlights = new SettingsToggle(tr("Highlight bookmarked range"), this);
     m_bmSelHighlights->setToolTip(tr("When a bookmark is activated, automatically select its annotated byte range in the hex view"));
     m_bmSelHighlights->setChecked(AppSettings::prefBookmarkSelectionHighlights());
 

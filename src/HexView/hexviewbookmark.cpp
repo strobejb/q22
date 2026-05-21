@@ -439,8 +439,15 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
             }
         }
 
-        // Blank space deliberately leaves both sticky values alone.  Only entering
-        // another bookmark range changes which hidden/collapsed strip is surfaced.
+        bool cursorInPinned = false;
+        if (m_pinnedBookmarkIdx >= 0 && m_pinnedBookmarkIdx < n) {
+            const Bookmark &pinned = m_bookmarks[m_pinnedBookmarkIdx];
+            cursorInPinned = m_nCursorOffset >= pinned.offset &&
+                             m_nCursorOffset <  pinned.offset + pinned.length;
+        }
+
+        // Blank space deliberately leaves the surfaced tab alone, but an expanded
+        // bookmark should collapse once the cursor leaves its byte range.
         if (cursorIdx >= 0) {
             m_surfacedBookmarkIdx = cursorIdx;
             if (checkStyle(HVS_BOOKMARK_EXPAND_CURSOR)) {
@@ -450,6 +457,8 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
                 // any previous expanded winner, but the surfaced tab still switches.
                 m_pinnedBookmarkIdx = -1;
             }
+        } else if (m_pinnedBookmarkIdx >= 0 && !cursorInPinned) {
+            m_pinnedBookmarkIdx = -1;
         }
     }
 
