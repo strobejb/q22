@@ -88,7 +88,7 @@ static bool bmOffsetLess(const Bookmark &a, const Bookmark &b)
 void HexView::setBookmarks(const QList<Bookmark> &bookmarks)
 {
     closeNoteEditor(false);
-    m_pinnedBookmarkIdx   = -1;   // full replacement — old pin index is meaningless
+    m_expandedBookmarkIdx   = -1;   // full replacement — old pin index is meaningless
     m_surfacedBookmarkIdx = -1;
     m_bookmarks = bookmarks;
     std::sort(m_bookmarks.begin(), m_bookmarks.end(), bmOffsetLess);
@@ -108,8 +108,8 @@ void HexView::addBookmark(const Bookmark &bm)
     // Adjust pin-state indices for the insertion, exactly as removeBookmark
     // adjusts them for deletion.  Without this a pin at or after the insertion
     // point silently migrates to a different bookmark.
-    if (m_pinnedBookmarkIdx >= insertIdx)
-        ++m_pinnedBookmarkIdx;
+    if (m_expandedBookmarkIdx >= insertIdx)
+        ++m_expandedBookmarkIdx;
     if (m_surfacedBookmarkIdx >= insertIdx)
         ++m_surfacedBookmarkIdx;
 
@@ -119,13 +119,13 @@ void HexView::addBookmark(const Bookmark &bm)
     // editor) now locks it as the permanent group winner and hides the newly-
     // added bookmark with no way for the user to reach it.  Reset both indices
     // so the group starts in the neutral (all-collapsed) state.
-    if (m_pinnedBookmarkIdx >= 0 && m_pinnedBookmarkIdx < m_bookmarks.size()
-            && m_pinnedBookmarkIdx != insertIdx) {
-        const Bookmark &pinned = m_bookmarks[m_pinnedBookmarkIdx];
+    if (m_expandedBookmarkIdx >= 0 && m_expandedBookmarkIdx < m_bookmarks.size()
+            && m_expandedBookmarkIdx != insertIdx) {
+        const Bookmark &pinned = m_bookmarks[m_expandedBookmarkIdx];
         const Bookmark &added  = m_bookmarks[insertIdx];
         if (added.offset  < pinned.offset + pinned.length &&
             added.offset  + added.length  > pinned.offset) {
-            m_pinnedBookmarkIdx   = -1;
+            m_expandedBookmarkIdx   = -1;
             m_surfacedBookmarkIdx = -1;
         }
     }
@@ -139,10 +139,10 @@ void HexView::removeBookmark(int idx)
 {
     if (idx < 0 || idx >= m_bookmarks.size()) return;
     closeNoteEditor(false);
-    if (m_pinnedBookmarkIdx == idx)
-        m_pinnedBookmarkIdx = -1;
-    else if (m_pinnedBookmarkIdx > idx)
-        --m_pinnedBookmarkIdx;
+    if (m_expandedBookmarkIdx == idx)
+        m_expandedBookmarkIdx = -1;
+    else if (m_expandedBookmarkIdx > idx)
+        --m_expandedBookmarkIdx;
     if (m_surfacedBookmarkIdx == idx)
         m_surfacedBookmarkIdx = -1;
     else if (m_surfacedBookmarkIdx > idx)
@@ -160,7 +160,7 @@ void HexView::replaceBookmark(int idx, const Bookmark &bm)
     m_bookmarks[idx] = bm;
     // Re-sort in case the replacement bookmark has a different offset.
     // This invalidates all index-based pin state, so clear both pins.
-    m_pinnedBookmarkIdx   = -1;
+    m_expandedBookmarkIdx   = -1;
     m_surfacedBookmarkIdx = -1;
     std::sort(m_bookmarks.begin(), m_bookmarks.end(), bmOffsetLess);
     setupScrollbars();
@@ -376,7 +376,7 @@ int HexView::noteStripFullHeight(const Bookmark &bm) const
 // During mouse drag the display is frozen: the pinned winner is kept regardless
 // of cursor movement so selection drags don't disturb the bookmark display.
 //
-// The function is non-const because it updates m_pinnedBookmarkIdx as a
+// The function is non-const because it updates m_expandedBookmarkIdx as a
 // deliberate UI-state side-effect.  hitTest() passes treatMouseAsReleased=true
 // which suppresses pin updates so hit-testing never disturbs layout state.
 QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsReleased)
@@ -442,8 +442,8 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
         }
 
         bool cursorInPinned = false;
-        if (m_pinnedBookmarkIdx >= 0 && m_pinnedBookmarkIdx < n) {
-            const Bookmark &pinned = m_bookmarks[m_pinnedBookmarkIdx];
+        if (m_expandedBookmarkIdx >= 0 && m_expandedBookmarkIdx < n) {
+            const Bookmark &pinned = m_bookmarks[m_expandedBookmarkIdx];
             cursorInPinned = m_nCursorOffset >= pinned.offset &&
                              m_nCursorOffset <  pinned.offset + pinned.length;
         }
@@ -453,14 +453,14 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
         if (cursorIdx >= 0) {
             m_surfacedBookmarkIdx = cursorIdx;
             if (checkStyle(HVS_BOOKMARK_EXPAND_CURSOR)) {
-                m_pinnedBookmarkIdx = cursorIdx;
-            } else if (m_pinnedBookmarkIdx >= 0 && m_pinnedBookmarkIdx != cursorIdx) {
+                m_expandedBookmarkIdx = cursorIdx;
+            } else if (m_expandedBookmarkIdx >= 0 && m_expandedBookmarkIdx != cursorIdx) {
                 // Navigation expansion is off: entering another bookmark collapses
                 // any previous expanded winner, but the surfaced tab still switches.
-                m_pinnedBookmarkIdx = -1;
+                m_expandedBookmarkIdx = -1;
             }
-        } else if (m_pinnedBookmarkIdx >= 0 && !cursorInPinned) {
-            m_pinnedBookmarkIdx = -1;
+        } else if (m_expandedBookmarkIdx >= 0 && !cursorInPinned) {
+            m_expandedBookmarkIdx = -1;
         }
     }
 
@@ -484,7 +484,7 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
             //   Never expands mid-drag (!mouseHeld guard on the pin block).
             // An explicit pin (set by clicking the bookmark strip) always wins.
             const Bookmark &bm = m_bookmarks[i];
-            const bool pinned  = (m_pinnedBookmarkIdx == i);
+            const bool pinned  = (m_expandedBookmarkIdx == i);
             const bool inRange = m_nCursorOffset >= bm.offset &&
                                  m_nCursorOffset <  bm.offset + bm.length;
             const bool loneExpand   = checkStyle(HVS_BOOKMARK_EXPAND_LONE);
@@ -493,7 +493,7 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
             // Redundant with the pre-sweep update, but harmless when a repaint
             // starts with no existing pin.  hitTest calls suppress side-effects.
             if (cursorExpand && !treatMouseAsReleased)
-                m_pinnedBookmarkIdx = i;
+                m_expandedBookmarkIdx = i;
             const bool active = pinned || loneExpand || cursorExpand;
             // active=true  → {false,true,false}  showTab=false → full strip
             // active=false → {true,false,false}  showTab=true  → collapsed tab
@@ -509,21 +509,21 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
                 m_noteEditor && m_noteEditor->isVisible()) {
                 winnerIdx = m_noteEditorIdx;
                 if (!treatMouseAsReleased)
-                    m_pinnedBookmarkIdx = m_noteEditorIdx;
+                    m_expandedBookmarkIdx = m_noteEditorIdx;
             }
 
             // While dragging, keep the existing display stable.
             if (winnerIdx < 0 && mouseHeld &&
-                m_pinnedBookmarkIdx >= i && m_pinnedBookmarkIdx < end) {
-                winnerIdx = m_pinnedBookmarkIdx;
+                m_expandedBookmarkIdx >= i && m_expandedBookmarkIdx < end) {
+                winnerIdx = m_expandedBookmarkIdx;
             }
 
             // Step 2: explicit pin — direct bookmark-tab/body activation should
             // still open the selected bookmark even when cursor navigation
             // expansion is disabled.
             if (winnerIdx < 0 &&
-                m_pinnedBookmarkIdx >= i && m_pinnedBookmarkIdx < end) {
-                winnerIdx = m_pinnedBookmarkIdx;
+                m_expandedBookmarkIdx >= i && m_expandedBookmarkIdx < end) {
+                winnerIdx = m_expandedBookmarkIdx;
             }
 
             // Step 3: cursor-based expansion.  The preference gates full-strip
@@ -540,7 +540,7 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
                     }
                 }
                 if (winnerIdx >= 0 && !treatMouseAsReleased)
-                    m_pinnedBookmarkIdx = winnerIdx;
+                    m_expandedBookmarkIdx = winnerIdx;
             }
 
             // When no bookmark is fully active, surface the group member whose
@@ -899,7 +899,7 @@ void HexView::openNoteEditor(int bmIdx, QPoint clickPos)
     // Always pin this bookmark so it wins in its conflict group regardless of
     // what m_pinnedBookmarkIdx was before (e.g. a stale pin from a previously
     // active overlapping bookmark would otherwise suppress the new one).
-    pinBookmark(bmIdx);
+    expandBookmark(bmIdx);
 
     // Guarantee the caret is inside this bookmark's byte range so
     // computeBookmarkLayout() sees it as the cursor-based winner too.
@@ -1086,7 +1086,7 @@ void HexView::closeNoteEditor(bool save)
         // the new text makes the strip taller.  The editor is already hidden
         // so noteStripFullHeight() now reads bm.name (the old text) rather
         // than the live editor content — exactly the pre-save height.
-        const int oldH = (m_pinnedBookmarkIdx == idx && m_nBytesPerLine > 0)
+        const int oldH = (m_expandedBookmarkIdx == idx && m_nBytesPerLine > 0)
                          ? noteStripFullHeight(m_bookmarks[idx]) : 0;
 
         m_bookmarks[idx].name = m_noteEditor->toPlainText();
@@ -1096,7 +1096,7 @@ void HexView::closeNoteEditor(bool save)
         // neighbour that wasn't previously in the conflict group.  If so,
         // reset the pin so that newly-formed group starts in the neutral
         // (all-collapsed) state rather than permanently hiding the neighbour.
-        if (m_pinnedBookmarkIdx == idx && oldH > 0 && m_nFontHeight > 0) {
+        if (m_expandedBookmarkIdx == idx && oldH > 0 && m_nFontHeight > 0) {
             const int newH = noteStripFullHeight(m_bookmarks[idx]);
             if (newH > oldH && idx + 1 < m_bookmarks.size()) {
                 const int line     = (int)(m_bookmarks[idx].offset / (size_w)m_nBytesPerLine);
@@ -1105,7 +1105,7 @@ void HexView::closeNoteEditor(bool save)
                 const int sy_next  = (nextLine - (int)m_nVScrollPos) * m_nFontHeight;
                 // Newly captured = was outside the old footprint, now inside.
                 if (sy_next >= sy_self + oldH && sy_next < sy_self + newH) {
-                    m_pinnedBookmarkIdx   = -1;
+                    m_expandedBookmarkIdx   = -1;
                     m_surfacedBookmarkIdx = -1;
                 }
             }

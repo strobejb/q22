@@ -84,7 +84,7 @@ GotoPanel::GotoPanel(HexView *hv, QWidget *parent)
             const Bookmark &bm = bms[idx];
             // Pin this bookmark so it wins in its conflict group even if another
             // member at the same offset would normally take priority.
-            m_hv->pinBookmark(idx);
+            m_hv->expandBookmark(idx);
             // Select the full bookmark range; cursor stays at the start.
             m_hv->setCurSel(bm.offset + bm.length, bm.offset);
             m_hv->scrollCenterIfOffScreen(bm.offset);

@@ -235,7 +235,7 @@ bool HexView::isOverResizeBar(int x) const
     return (x / BARWIDTH) == (m_nResizeBarPos / BARWIDTH);
 }
 
-uint HexView::hitTest(int x, int y, int *bookmarkIdx)
+HitTestRegion HexView::hitTest(int x, int y, int *bookmarkIdx)
 {
     const int BARWIDTH = 8;
 
@@ -266,7 +266,7 @@ uint HexView::hitTest(int x, int y, int *bookmarkIdx)
 
         int    bestIdx = -1;
         size_w bestLen = (size_w)-1;
-        uint   bestHt  = HVHT_NONE;
+        HitTestRegion bestHt = HVHT_NONE;
 
         for (int i = 0; i < m_bookmarks.size(); ++i) {
             const BmLayout &bml = layout.value(i);
@@ -274,7 +274,7 @@ uint HexView::hitTest(int x, int y, int *bookmarkIdx)
 
             const bool isTab = bml.inConflict && !bml.isActive;
 
-            uint ht = HVHT_NONE;
+            HitTestRegion ht = HVHT_NONE;
             if (isTab) {
                 // Collapsed single-line strip — entire area navigates to bm.offset.
                 const QRect tab = noteCollapsedRect(m_bookmarks[i]);
@@ -329,10 +329,8 @@ void HexView::mousePressEvent(QMouseEvent *event)
 
     //qDebug() << "press:" << x << y;
 
-    uint ht = hitTest(x, y, &m_highlightCurrentIdx);
-    m_highlightHotIdx = m_highlightCurrentIdx;
-    m_HitTestCurrent  = ht;
-    m_HitTestHot      = ht;
+    HitTestRegion ht = hitTest(x, y, &m_pressedBookmarkIdx);
+    m_pressedHitTest = ht;
 
     if (ht & HVHT_RESIZE) {
         if (ht == HVHT_RESIZE)
@@ -344,9 +342,9 @@ void HexView::mousePressEvent(QMouseEvent *event)
 
     if (ht == HVHT_BOOKMARK) {
         // Full-strip body click: navigate caret and open the inline text editor.
-        const int bmIdx = m_highlightCurrentIdx;
+        const int bmIdx = m_pressedBookmarkIdx;
         if (bmIdx >= 0 && bmIdx < m_bookmarks.size()) {
-            pinBookmark(bmIdx);
+            expandBookmark(bmIdx);
             const size_w target = m_bookmarks[bmIdx].offset;
             m_nCursorOffset   = target;
             m_nSelectionMode  = SEL_NONE;
@@ -371,9 +369,9 @@ void HexView::mousePressEvent(QMouseEvent *event)
     if (ht == HVHT_BOOKMARK_COLLAPSED) {
         // Collapsed-strip click: navigate caret; the strip will expand on repaint.
         closeNoteEditor(true);   // save & close any open editor before switching pin
-        const int bmIdx = m_highlightCurrentIdx;
+        const int bmIdx = m_pressedBookmarkIdx;
         if (bmIdx >= 0 && bmIdx < m_bookmarks.size()) {
-            pinBookmark(bmIdx);
+            expandBookmark(bmIdx);
             const size_w target = m_bookmarks[bmIdx].offset;
             m_nCursorOffset  = target;
             m_nSelectionMode = SEL_NONE;
@@ -427,9 +425,9 @@ void HexView::mousePressEvent(QMouseEvent *event)
         if (cursorIdx >= 0) {
             m_surfacedBookmarkIdx = cursorIdx;
             if (checkStyle(HVS_BOOKMARK_EXPAND_CURSOR))
-                m_pinnedBookmarkIdx = cursorIdx;
-            else if (m_pinnedBookmarkIdx >= 0 && m_pinnedBookmarkIdx != cursorIdx)
-                m_pinnedBookmarkIdx = -1;
+                m_expandedBookmarkIdx = cursorIdx;
+            else if (m_expandedBookmarkIdx >= 0 && m_expandedBookmarkIdx != cursorIdx)
+                m_expandedBookmarkIdx = -1;
         }
     }
 
@@ -463,16 +461,16 @@ void HexView::mouseReleaseEvent(QMouseEvent *event)
     }
 
     // Bookmark button: fire only if the mouse is released over the same button.
-    if (m_HitTestCurrent == HVHT_BOOKMARK_CLOSE || m_HitTestCurrent == HVHT_BOOKMARK_EDIT) {
-        const uint pressedHt  = m_HitTestCurrent;
-        const int  pressedIdx = m_highlightCurrentIdx;
-        m_HitTestCurrent      = HVHT_NONE;
-        m_highlightCurrentIdx = -1;
+    if (m_pressedHitTest == HVHT_BOOKMARK_CLOSE || m_pressedHitTest == HVHT_BOOKMARK_EDIT) {
+        const HitTestRegion pressedHt = m_pressedHitTest;
+        const int  pressedIdx = m_pressedBookmarkIdx;
+        m_pressedHitTest      = HVHT_NONE;
+        m_pressedBookmarkIdx = -1;
         m_pressedOnClose      = false;
         m_pressedOnEdit       = false;
         viewport()->releaseMouse();
         int  releaseIdx = -1;
-        uint releaseHt  = hitTest(event->pos().x(), event->pos().y(), &releaseIdx);
+        HitTestRegion releaseHt = hitTest(event->pos().x(), event->pos().y(), &releaseIdx);
         if (releaseHt == pressedHt && releaseIdx == pressedIdx) {
             if (pressedHt == HVHT_BOOKMARK_CLOSE) {
                 removeBookmark(pressedIdx);   // handles closeNoteEditor + index adjustment
@@ -506,7 +504,7 @@ void HexView::mouseReleaseEvent(QMouseEvent *event)
         if (m_nSelectionMode == SEL_NORMAL)
             m_nSelectionMode = SEL_NONE;
     } else {
-        m_highlightCurrentIdx = -1;
+        m_pressedBookmarkIdx = -1;
     }
 
     // Repaint so bookmark display reflects the final cursor position.
@@ -615,12 +613,12 @@ void HexView::mouseMoveEvent(QMouseEvent *event)
     } else {
         // Idle — update cursor and hover/press state from hit-test.
         int  bmIdx = -1;
-        uint ht    = hitTest(mx, my, &bmIdx);
+        HitTestRegion ht = hitTest(mx, my, &bmIdx);
 
-        if (m_HitTestCurrent == HVHT_BOOKMARK_CLOSE || m_HitTestCurrent == HVHT_BOOKMARK_EDIT) {
+        if (m_pressedHitTest == HVHT_BOOKMARK_CLOSE || m_pressedHitTest == HVHT_BOOKMARK_EDIT) {
             // Only track position for the originally-pressed button — never activate any other.
-            const bool stillOver = (ht == m_HitTestCurrent && bmIdx == m_highlightCurrentIdx);
-            bool &pressedFlag = (m_HitTestCurrent == HVHT_BOOKMARK_CLOSE) ? m_pressedOnClose : m_pressedOnEdit;
+            const bool stillOver = (ht == m_pressedHitTest && bmIdx == m_pressedBookmarkIdx);
+            bool &pressedFlag = (m_pressedHitTest == HVHT_BOOKMARK_CLOSE) ? m_pressedOnClose : m_pressedOnEdit;
             if (stillOver != pressedFlag) {
                 pressedFlag = stillOver;
                 viewport()->update();
@@ -662,7 +660,7 @@ void HexView::mouseDoubleClickEvent(QMouseEvent *event)
     int x = event->pos().x();
     int y = event->pos().y();
 
-    uint ht = hitTest(x, y, &m_highlightCurrentIdx);
+    HitTestRegion ht = hitTest(x, y, &m_pressedBookmarkIdx);
     if (ht & HVHT_BOOKMARK) return;
 
     // Select the alphanumeric word under the cursor
@@ -702,7 +700,7 @@ void HexView::contextMenuEvent(QContextMenuEvent *event)
     {
         const QPoint vp = viewport()->mapFromGlobal(event->globalPos());
         int bmIdx = -1;
-        const uint ht = hitTest(vp.x(), vp.y(), &bmIdx);
+        const HitTestRegion ht = hitTest(vp.x(), vp.y(), &bmIdx);
         if (ht == HVHT_BOOKMARK || ht == HVHT_BOOKMARK_CLOSE || ht == HVHT_BOOKMARK_EDIT) {
             QMenu bmMenu(this);
             themeMenu(&bmMenu);

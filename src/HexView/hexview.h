@@ -122,15 +122,17 @@ enum HvColorSlot {
 #define HVFF_BACKWARD           0x0004
 
 // Hit-test regions
-#define HVHT_NONE          0x00
-#define HVHT_MAIN          0x01
-#define HVHT_SELECTION     0x02
-#define HVHT_RESIZE        0x10
-#define HVHT_RESIZE0       (0x20 | HVHT_RESIZE)
-#define HVHT_BOOKMARK           0x100  // full-strip body
-#define HVHT_BOOKMARK_CLOSE     0x200
-#define HVHT_BOOKMARK_EDIT      0x400
-#define HVHT_BOOKMARK_COLLAPSED 0x800  // collapsed single-line strip body
+enum HitTestRegion : uint {
+    HVHT_NONE               = 0x00,
+    HVHT_MAIN               = 0x01,
+    HVHT_SELECTION          = 0x02,
+    HVHT_RESIZE             = 0x10,
+    HVHT_RESIZE0            = 0x20 | HVHT_RESIZE,
+    HVHT_BOOKMARK           = 0x100,  // full-strip body
+    HVHT_BOOKMARK_CLOSE     = 0x200,
+    HVHT_BOOKMARK_EDIT      = 0x400,
+    HVHT_BOOKMARK_COLLAPSED = 0x800   // collapsed single-line strip body
+};
 
 // ── Data structures ───────────────────────────────────────────────────────────
 struct HEXCOL {
@@ -317,7 +319,7 @@ public:
     // Force a specific bookmark to be shown as the full strip in its conflict group,
     // regardless of cursor position.  The pin auto-expires when the cursor leaves the
     // bookmark's byte range, so normal navigation clears it naturally.
-    void pinBookmark(int idx)         { m_pinnedBookmarkIdx = idx; viewport()->update(); }
+    void expandBookmark(int idx)         { m_expandedBookmarkIdx = idx; viewport()->update(); }
 
 protected:
     void paintEvent(QPaintEvent *event)        override;
@@ -413,7 +415,7 @@ private:
     void   scrollToCaret();
 
     // ── Hit testing ───────────────────────────────────────────────────────────
-    uint   hitTest(int x, int y, int *bookmarkIdx = nullptr);
+    HitTestRegion hitTest(int x, int y, int *bookmarkIdx = nullptr);
     bool   isOverResizeBar(int x) const;
     bool   hasAppFocus() const;
 
@@ -508,8 +510,7 @@ private:
 
     // Bookmarks
     QList<Bookmark> m_bookmarks;
-    int  m_highlightCurrentIdx  = -1;
-    int  m_highlightHotIdx      = -1;
+    int  m_pressedBookmarkIdx = -1;
 
     // Note strip inline editor
     QPlainTextEdit *m_noteEditor      = nullptr;
@@ -525,7 +526,7 @@ private:
     // Updated automatically when expansion-on-navigation enters a bookmark's
     // range; cleared when blank-space navigation leaves the pinned range.
     // Also set explicitly by pinBookmark() when the user clicks a bookmark strip.
-    int             m_pinnedBookmarkIdx = -1;
+    int             m_expandedBookmarkIdx = -1;
 
     // Surfaced bookmark: tracks the last collapsed-tab member that was brought to
     // the front by cursor navigation (separate from m_pinnedBookmarkIdx so that
@@ -546,8 +547,7 @@ private:
     bool    m_fResizeAddr       = false;
     bool    m_fStartDrag        = false;
     QPoint  m_dragStartPos;
-    uint    m_HitTestCurrent    = 0;
-    uint    m_HitTestHot        = 0;
+    HitTestRegion m_pressedHitTest = HVHT_NONE;
 
     // Scroll timer (for auto-scroll during mouse drag)
     QTimer  m_scrollTimer;
