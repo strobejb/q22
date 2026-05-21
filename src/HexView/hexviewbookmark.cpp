@@ -390,10 +390,12 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
     // kNotePadV + one text line + kNotePadV.
     const int collapsedH = kNotePadV + QFontMetrics(QApplication::font()).height() + kNotePadV;
 
-    // Precompute display start-Y, full visual height, and actual full-strip
-    // top/bottom for each bookmark.  Conflict grouping must use the drawn
+    // Precompute display start-Y, full visual height, and natural full-strip
+    // top/bottom for each bookmark.  Conflict grouping must use the unclamped
     // rectangle, not just the byte range's start line: tall notes are centered
-    // around their range midpoint and can overlap earlier bookmarks.
+    // around their range midpoint and can overlap earlier bookmarks.  Do not use
+    // the viewport-clamped y=0 drawing position here; offscreen bookmarks would
+    // otherwise manufacture conflicts with visible bookmarks farther down.
     QVarLengthArray<int, 32> sy(n), fh(n), fullTop(n), fullBot(n), tabTop(n), tabBot(n);
     for (int i = 0; i < n; ++i) {
         const Bookmark &bm = m_bookmarks[i];
@@ -412,8 +414,8 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
             rectY = defaultRectY;
         else
             rectY = idealTipY - fh[i] / 2;
-        fullTop[i] = std::max(rectY, 0);
-        fullBot[i] = fullTop[i] + fh[i];
+        fullTop[i] = rectY;
+        fullBot[i] = rectY + fh[i];
 
         tabTop[i] = sy[i] + (m_nFontHeight - collapsedH) / 2;
         tabBot[i] = tabTop[i] + collapsedH;
