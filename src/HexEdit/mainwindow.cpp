@@ -215,8 +215,8 @@ void MainWindow::reloadWatchedPalettes()
     PaletteInfo info;
     if (reloadPalette(QDir(paletteStorageDir()), currentName, &info)) {
         m_currentPalette = info;
-        applyPalette(m_hv, info);
         applyUiPalette(info);
+        applyPalette(m_hv, info);
         m_titleBar->refreshStylesheet();
 #ifdef Q_OS_WIN
         if (m_useCustomTitleBar)
@@ -264,8 +264,8 @@ void MainWindow::createPreferencesDialog()
     connect(m_prefsDialog, &PreferencesDialog::paletteSelected,
             this, [this](const PaletteInfo &info) {
         m_currentPalette = info;
-        applyPalette(m_hv, info);
         applyUiPalette(info);
+        applyPalette(m_hv, info);
         m_titleBar->refreshStylesheet();
         AppSettings::setPrefPaletteName(info.name);
     });
@@ -350,8 +350,8 @@ MainWindow::MainWindow(QWidget *parent)
             if (AppSettings::prefColorScheme() != static_cast<int>(s))
                 return;
             if (!m_currentPalette.name.isEmpty()) {
-                applyPalette(m_hv, m_currentPalette);
                 applyUiPalette(m_currentPalette);
+                applyPalette(m_hv, m_currentPalette);
             }
             if (m_hv)
                 m_hv->refreshWindow();
@@ -1011,8 +1011,8 @@ MainWindow::MainWindow(QWidget *parent)
         for (const PaletteInfo &info : palettes) {
             if (info.name == savedPalette) {
                 m_currentPalette = info;
-                applyPalette(m_hv, info);
                 applyUiPalette(info);
+                applyPalette(m_hv, info);
                 m_titleBar->refreshStylesheet();
                 break;
             }

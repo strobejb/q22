@@ -1806,7 +1806,14 @@ void setUiColourOverrides(const UiColourOverrides &o)
         o.panelDividers == s_uiOverrides.panelDividers)
         return;
     s_uiOverrides = o;
-    applyAdwaitaTheme(s_currentScheme);
+
+    // Palette selection only changes colour roles layered on top of the current
+    // scheme.  Rebuilding the whole application style here is noticeably slow
+    // and unnecessary; reserve applyAdwaitaTheme() for actual light/dark scheme
+    // changes.
+    const bool dark = darkForScheme(s_currentScheme);
+    applyPalette(dark);
+    qApp->setStyleSheet(buildStylesheet(dark));
 }
 
 const UiColourOverrides &uiColourOverrides()
