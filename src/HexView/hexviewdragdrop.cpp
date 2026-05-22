@@ -94,6 +94,16 @@ Qt::DropAction internalDragAction(uint editMode, const QDropEvent *event = nullp
                                   dragModifiers(event));
 }
 
+bool isInDropAutoScrollBand(const QRect &rect, const QPoint &pos)
+{
+    constexpr int kEdgeBand = 24;
+
+    return pos.x() <= rect.left() + kEdgeBand ||
+           pos.x() >= rect.right() - kEdgeBand ||
+           pos.y() <= rect.top() + kEdgeBand ||
+           pos.y() >= rect.bottom() - kEdgeBand;
+}
+
 } // namespace
 
 HexSnapshot *HexView::createSnapshot(size_w start, size_w len) const
@@ -368,6 +378,19 @@ void HexView::dragMoveEvent(QDragMoveEvent *event)
     }
 
     updateDropCaret(event->position().toPoint());
+
+    QRect rect(0, 0, viewport()->width(), viewport()->height());
+    if (m_nFontHeight > 0)
+        rect.setBottom(rect.bottom() - rect.bottom() % m_nFontHeight);
+
+    if (isInDropAutoScrollBand(rect, event->position().toPoint())) {
+        if (!m_scrollTimer.isActive()) {
+            m_nScrollCounter = 0;
+            m_scrollTimer.start(30);
+        }
+    } else if (m_scrollTimer.isActive()) {
+        m_scrollTimer.stop();
+    }
 
     if (m_internalDragActive && m_dragOverlayAction != Qt::IgnoreAction) {
 #ifdef Q_OS_WIN

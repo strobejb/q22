@@ -772,30 +772,42 @@ void HexView::onScrollTimer()
     QPoint pt = viewport()->mapFromGlobal(QCursor::pos());
 
     int dx = 0, dy = 0;
-    if      (pt.y() < rect.top())    dy = scrollDir(m_nScrollCounter, pt.y() - rect.top());
-    else if (pt.y() >= rect.bottom()) dy = scrollDir(m_nScrollCounter, pt.y() - rect.bottom());
-    if      (pt.x() < rect.left())   dx = scrollDir(m_nScrollCounter, pt.x() - rect.left());
-    else if (pt.x() > rect.right())  dx = scrollDir(m_nScrollCounter, pt.x() - rect.right());
+    if (m_nSelectionMode == SEL_DRAGDROP) {
+        constexpr int kEdgeBand = 24;
+        if      (pt.y() <= rect.top() + kEdgeBand)    dy = scrollDir(m_nScrollCounter, pt.y() - (rect.top() + kEdgeBand));
+        else if (pt.y() >= rect.bottom() - kEdgeBand) dy = scrollDir(m_nScrollCounter, pt.y() - (rect.bottom() - kEdgeBand));
+        if      (pt.x() <= rect.left() + kEdgeBand)   dx = scrollDir(m_nScrollCounter, pt.x() - (rect.left() + kEdgeBand));
+        else if (pt.x() >= rect.right() - kEdgeBand)  dx = scrollDir(m_nScrollCounter, pt.x() - (rect.right() - kEdgeBand));
+    } else {
+        if      (pt.y() < rect.top())    dy = scrollDir(m_nScrollCounter, pt.y() - rect.top());
+        else if (pt.y() >= rect.bottom()) dy = scrollDir(m_nScrollCounter, pt.y() - rect.bottom());
+        if      (pt.x() < rect.left())   dx = scrollDir(m_nScrollCounter, pt.x() - rect.left());
+        else if (pt.x() > rect.right())  dx = scrollDir(m_nScrollCounter, pt.x() - rect.right());
+    }
 
     if (dx != 0 || dy != 0) {
         scroll(dx, dy);
 
-        // Fake a mouse-move to update selection
-        int x = pt.x(), y = pt.y();
-        int pane;
-        size_w offset = offsetFromPhysCoord(x, y, &pane, &x, &y);
+        if (m_nSelectionMode == SEL_DRAGDROP) {
+            updateDropCaret(pt);
+        } else {
+            // Fake a mouse-move to update selection
+            int x = pt.x(), y = pt.y();
+            int pane;
+            size_w offset = offsetFromPhysCoord(x, y, &pane, &x, &y);
 
-        if (pane != m_nWhichPane)
-            m_nWhichPane = pane;
+            if (pane != m_nWhichPane)
+                m_nWhichPane = pane;
 
-        if (m_nCursorOffset != offset) {
-            m_nCursorOffset = offset;
-            m_nSubItem      = 0;
-            invalidateRange(m_nCursorOffset, m_nSelectionEnd);
-            m_nSelectionEnd = m_nCursorOffset;
-            positionCaret(x, y, m_nWhichPane);
-            emit selectionChanged(selectionStart(), selectionEnd());
-            emit cursorChanged(m_nCursorOffset);
+            if (m_nCursorOffset != offset) {
+                m_nCursorOffset = offset;
+                m_nSubItem      = 0;
+                invalidateRange(m_nCursorOffset, m_nSelectionEnd);
+                m_nSelectionEnd = m_nCursorOffset;
+                positionCaret(x, y, m_nWhichPane);
+                emit selectionChanged(selectionStart(), selectionEnd());
+                emit cursorChanged(m_nCursorOffset);
+            }
         }
 
         viewport()->update();
