@@ -1443,6 +1443,9 @@ bool sequence::rendersnapshot(size_t count, span_desc *desclist, size_w offset, 
 	// convert linear offset to a span-relative offset
 	for(ioff = 0; ioff < offset; )
 	{
+		if(i >= count)
+			return false;
+
 		offadjust = offset - ioff;
 
 		if(offadjust < desclist[i].length)
@@ -1457,10 +1460,10 @@ bool sequence::rendersnapshot(size_t count, span_desc *desclist, size_w offset, 
 	}
 
 	// now render each span into the buffer
-	for( ; i < count; i++)
+	for( ; length > 0 && i < count; i++)
 	{
 		size_w off = desclist[i].offset + offadjust;
-		size_w len = desclist[i].length - offadjust;
+		size_w len = std::min(desclist[i].length - offadjust, (size_w)length);
 		buffer_control *bc = buffer_list[desclist[i].buffer];
 
 		while(len > 0)
@@ -1468,17 +1471,21 @@ bool sequence::rendersnapshot(size_t count, span_desc *desclist, size_w offset, 
 			size_t tlen = (size_t)std::min(len, (size_w)100);
 			seqchar * src = bc->getptr(off, tlen);
 
+			if(src == 0)
+				return false;
+
 			memcpy(buf, src, tlen * sizeof(seqchar));
 
 			buf += tlen;
 			len -= tlen;
 			off += tlen;
+			length -= tlen;
 		}
 
 		offadjust = 0;
 	}
 
-	return true;
+	return length == 0;
 }
 
 bool sequence::injectsnapshot(size_w index, span_desc *desclist, size_t desclen)
