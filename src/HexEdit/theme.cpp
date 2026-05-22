@@ -1911,8 +1911,17 @@ void styleMessageBox(QMessageBox *box)
 {
     if (!box) return;
     removeDialogIcon(box);
-    if (!AppSettings::prefNativeDialogs())
+    if (!AppSettings::prefNativeDialogs()) {
         box->setWindowFlag(Qt::FramelessWindowHint, true);
+#ifdef Q_OS_WIN
+        // QMessageBox finishes arranging its private grid late, so the titlebar
+        // chrome is installed from the deferred polish pass below.  The Windows
+        // transparent surface, however, must exist before show or the later
+        // self-painted shadow margin can be backed by black pixels.
+        box->setAttribute(Qt::WA_TranslucentBackground, true);
+        box->setAutoFillBackground(false);
+#endif
+    }
 
     QTimer::singleShot(0, box, [box]() {
         auto *iconLabel = box->findChild<QLabel *>(QStringLiteral("qt_msgboxex_icon_label"));

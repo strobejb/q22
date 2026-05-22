@@ -15,6 +15,7 @@
 #include <QChildEvent>
 #include <QEnterEvent>
 #include <QMouseEvent>
+#include <QMessageBox>
 #include <QPainter>
 #include <QPlatformSurfaceEvent>
 #include <QPointer>
@@ -558,7 +559,14 @@ static bool insertDialogChromeIntoGrid(QDialog *dlg, QGridLayout *grid, TitleBar
         haveItems = true;
     }
 
-    if (qobject_cast<QFileDialog *>(dlg)) {
+    const bool fullWidthTitleBar =
+        qobject_cast<QFileDialog *>(dlg)
+#ifdef Q_OS_WIN
+        || qobject_cast<QMessageBox *>(dlg)
+#endif
+        ;
+
+    if (fullWidthTitleBar) {
         const int padX = qMax(18, qMax(margins.left(), margins.right()));
 
         for (const Item &it : items) {
