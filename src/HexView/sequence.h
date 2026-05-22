@@ -23,8 +23,12 @@ const size_w MEM_BLOCK_SIZE = 0x40000;	// 256kb view size
 
 struct seqchar_info
 {
-	size_t	buffer;
-	size_t	userdata;
+	size_t	flags;
+};
+
+enum seqchar_flags : size_t
+{
+	SEQCHAR_MODIFIED = 1u << 0
 };
 
 //
@@ -242,11 +246,12 @@ class sequence::span
 
 public:
 	// constructor
-	span(size_w off, size_w len, size_t buf, span *nx = 0, span *pr = 0)
+	span(size_w off, size_w len, size_t buf, size_t fl = 0, span *nx = 0, span *pr = 0)
 			:
 			offset(off),
 			length(len),
 			buffer(buf),
+			flags(fl),
 			next(nx),
 			prev(pr)
 	  {
@@ -263,6 +268,7 @@ private:
 	size_w  offset;
 	size_w  length;
 	size_t  buffer;
+	size_t  flags;
 
 	size_t	id;
 };
@@ -516,6 +522,7 @@ struct sequence::span_desc
 	size_w  offset;
 	size_w  length;
 	size_t	buffer;
+	size_t	flags;
 };
 
 

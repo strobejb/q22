@@ -141,7 +141,7 @@ bool sequence::init (const seqchar *buffer, size_t length, bool duplicate_buf /*
 	bc->id = (int)buffer_list.size();		// assign the id
 	buffer_list.push_back(bc);
 
-	span *sptr = new span(0, length, bc->id, tail, head);
+	span *sptr = new span(0, length, bc->id, 0, tail, head);
 	head->next = sptr;
 	tail->prev = sptr;
 
@@ -190,7 +190,7 @@ bool sequence::open(const std::string &filename, bool readonly, bool quickload)
 		bc->id = buffer_list.size();		// assign the id
 		buffer_list.push_back(bc);
 
-		span *sptr = new span(0, bc->length, bc->id, tail, head);
+		span *sptr = new span(0, bc->length, bc->id, 0, tail, head);
 		head->next = sptr;
 		tail->prev = sptr;
 
@@ -798,6 +798,7 @@ bool sequence::insert_worker (size_w index, const seqchar *buf, size_w length, a
 
 	clearstack(redostack);
 	insoffset = index - spanindex;
+	const size_t spanFlags = buf ? SEQCHAR_MODIFIED : 0;
 
 	// special-case #1: inserting at the end of a prior insertion, at a span-boundary
 	if(insoffset == 0 && can_optimize(act, index))
@@ -821,7 +822,8 @@ bool sequence::insert_worker (size_w index, const seqchar *buf, size_w length, a
 		newspans.append(new span(
 			modbuf_offset,
 			length,
-			modifybuffer_id)
+			modifybuffer_id,
+			spanFlags)
 			);
 
 		// link the span into the sequence
@@ -841,21 +843,24 @@ bool sequence::insert_worker (size_w index, const seqchar *buf, size_w length, a
 		newspans.append(new span(
 							sptr->offset,
 							insoffset,
-							sptr->buffer)
+							sptr->buffer,
+							sptr->flags)
 						);
 
 		// make a span for the inserted data
 		newspans.append(new span(
 							modbuf_offset,
 							length,
-							modifybuffer_id)
+							modifybuffer_id,
+							spanFlags)
 						);
 
 		// span for the existing data after the insertion
 		newspans.append(new span(
 							sptr->offset + insoffset,
 							sptr->length - insoffset,
-							sptr->buffer)
+							sptr->buffer,
+							sptr->flags)
 						);
 
 		swap_spanrange(oldspans, &newspans);
@@ -1021,7 +1026,7 @@ bool sequence::erase_worker (size_w index, size_w length, action act)
 	if(remoffset != 0)
 	{
 		// split the span - keep the first "half"
-		newspans.append(new span(sptr->offset, remoffset, sptr->buffer));
+		newspans.append(new span(sptr->offset, remoffset, sptr->buffer, sptr->flags));
 		frag1 = newspans.first;
 
 		// have we split a single span into two?
@@ -1032,7 +1037,8 @@ bool sequence::erase_worker (size_w index, size_w length, action act)
 			newspans.append(new span(
 							sptr->offset + remoffset + removelen,
 							sptr->length - remoffset - removelen,
-							sptr->buffer)
+							sptr->buffer,
+							sptr->flags)
 							);
 
 			frag2 = newspans.last;
@@ -1056,7 +1062,8 @@ bool sequence::erase_worker (size_w index, size_w length, action act)
 			newspans.append(new span(
 						sptr->offset + removelen,
 						sptr->length - removelen,
-						sptr->buffer)
+						sptr->buffer,
+						sptr->flags)
 						);
 
 			frag2 = newspans.last;
@@ -1296,10 +1303,7 @@ size_t sequence::render(size_w index, seqchar *dest, size_t length, seqchar_info
 			if(infobuf)
 			{
 				for(size_t i = 0; i < len; i++)
-				{
-					infobuf[i].buffer	= sptr->buffer;
-					infobuf[i].userdata = 0;
-				}
+					infobuf[i].flags = sptr->flags;
 
 				infobuf += len;
 			}
@@ -1420,6 +1424,7 @@ bool sequence::takesnapshot(size_w index, size_w length, span_desc *desclist, si
 			desclist[i].offset = sptr->offset + (index - spanindex);
 			desclist[i].length = tmplen;
 			desclist[i].buffer = sptr->buffer;
+			desclist[i].flags = sptr->flags;
 		}
 
 		spanindex += sptr->length;
@@ -1506,7 +1511,10 @@ bool sequence::injectsnapshot(size_w index, span_desc *desclist, size_t desclen)
 	{
 		span *sptr;
 
-		if((sptr = new span(desclist[i].offset, desclist[i].length, desclist[i].buffer)) == 0)
+		if((sptr = new span(desclist[i].offset,
+							desclist[i].length,
+							desclist[i].buffer,
+							desclist[i].flags | SEQCHAR_MODIFIED)) == 0)
 			return false;
 
 		newspans.append(sptr);
@@ -1558,6 +1566,7 @@ size_w sequence::replace_file(const std::string &filename, size_w index, bool li
 
 	span *sptr = loadspan(filename, true);
 	if(!sptr) return 0;
+	sptr->flags |= SEQCHAR_MODIFIED;
 
 	if(replace(index, (seqchar *)nullptr, sptr->length))
 	{
@@ -1615,6 +1624,7 @@ size_w sequence::insert_file(const std::string &filename, size_w index, bool lin
 
 	span *sptr = loadspan(filename, true);
 	if(!sptr) return 0;
+	sptr->flags |= SEQCHAR_MODIFIED;
 
 	if(insert(index, (seqchar *)nullptr, sptr->length))
 	{

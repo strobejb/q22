@@ -490,7 +490,7 @@ size_t HexView::formatLine(uint8_t *data, size_t length, size_w offset, size_t d
     if (checkStyle(HVS_SHOWMODS)) {
         size_t rangeStart = length;  // length == no open range
         for (size_t j = 0; j <= length; j++) {
-            bool mod = j < length && infobuf[j].buffer != m_pDataSeq->origfileid();
+            bool mod = j < length && (infobuf[j].flags & SEQCHAR_MODIFIED);
             if (mod && rangeStart == length) {
                 rangeStart = j;
             } else if (!mod && rangeStart != length) {

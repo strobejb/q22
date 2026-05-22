@@ -30,7 +30,7 @@ void expectContent(const sequence &seq, const QByteArray &expected)
     QCOMPARE(actual, expected);
 }
 
-QVector<size_t> renderBuffers(const sequence &seq)
+QVector<size_t> renderFlags(const sequence &seq)
 {
     QByteArray actual(static_cast<int>(seq.size()), Qt::Uninitialized);
     QVector<seqchar_info> info(static_cast<int>(seq.size()));
@@ -40,11 +40,16 @@ QVector<size_t> renderBuffers(const sequence &seq)
                                        info.data());
     Q_ASSERT(rendered == static_cast<size_t>(actual.size()));
 
-    QVector<size_t> buffers;
-    buffers.reserve(info.size());
+    QVector<size_t> flags;
+    flags.reserve(info.size());
     for(const seqchar_info &item : info)
-        buffers.append(item.buffer);
-    return buffers;
+        flags.append(item.flags);
+    return flags;
+}
+
+QVector<size_t> repeatedFlags(size_t flags, int count)
+{
+    return QVector<size_t>(count, flags);
 }
 
 bool insertBytes(sequence &seq, size_w index, const QByteArray &bytes)
@@ -130,7 +135,13 @@ private slots:
     void snapshotAcrossMultipleSpansRenders();
     void insertSnapshotRoundTripContent();
     void replaceSnapshotRoundTripContent();
-    void snapshotInsertPreservesSourceBufferMetadata();
+    void initialDataRendersUnmodified();
+    void insertedDataRendersModified();
+    void snapshotInsertedOriginalDataRendersModified();
+    void snapshotReplacementRendersModified();
+    void splitOriginalSpansStayUnmodified();
+    void splitModifiedSpansStayModified();
+    void undoRedoPreservesModifiedFlags();
 
     void invalidOperationsDoNotModifyContent();
     void renderPastEndReturnsAvailableBytes();
@@ -504,21 +515,88 @@ void SequenceTests::replaceSnapshotRoundTripContent()
     expectContent(seq, "cXXdedef");
 }
 
-void SequenceTests::snapshotInsertPreservesSourceBufferMetadata()
+void SequenceTests::initialDataRendersUnmodified()
 {
     sequence seq;
     init(seq, "abcdef");
+
+    QCOMPARE(renderFlags(seq), repeatedFlags(0, 6));
+}
+
+void SequenceTests::insertedDataRendersModified()
+{
+    sequence seq;
+    init(seq, "abcdef");
+
     QVERIFY(insertBytes(seq, 3, "XX"));
     expectContent(seq, "abcXXdef");
+    QCOMPARE(renderFlags(seq),
+             (QVector<size_t>{0, 0, 0, SEQCHAR_MODIFIED, SEQCHAR_MODIFIED, 0, 0, 0}));
+}
 
-    QVector<sequence::span_desc> spans = takeSnapshot(seq, 2, 5);
-    QVector<size_t> sourceBuffers = renderBuffers(seq).mid(2, 5);
+void SequenceTests::snapshotInsertedOriginalDataRendersModified()
+{
+    sequence seq;
+    init(seq, "abcdef");
 
-    QVERIFY(seq.insert_snapshot(seq.size(), 5, spans.data(), static_cast<size_t>(spans.size())));
-    QVector<size_t> allBuffers = renderBuffers(seq);
-    QVector<size_t> insertedBuffers = allBuffers.mid(8, 5);
+    QVector<sequence::span_desc> spans = takeSnapshot(seq, 2, 3);
+    QVERIFY(seq.insert_snapshot(seq.size(), 3, spans.data(), static_cast<size_t>(spans.size())));
+    expectContent(seq, "abcdefcde");
+    QCOMPARE(renderFlags(seq),
+             (QVector<size_t>{0, 0, 0, 0, 0, 0,
+                              SEQCHAR_MODIFIED, SEQCHAR_MODIFIED, SEQCHAR_MODIFIED}));
+}
 
-    QCOMPARE(insertedBuffers, sourceBuffers);
+void SequenceTests::snapshotReplacementRendersModified()
+{
+    sequence seq;
+    init(seq, "abcdef");
+
+    QVector<sequence::span_desc> spans = takeSnapshot(seq, 2, 3);
+    QVERIFY(seq.replace_snapshot(0, 3, spans.data(), static_cast<size_t>(spans.size())));
+    expectContent(seq, "cdedef");
+    QCOMPARE(renderFlags(seq),
+             (QVector<size_t>{SEQCHAR_MODIFIED, SEQCHAR_MODIFIED, SEQCHAR_MODIFIED, 0, 0, 0}));
+}
+
+void SequenceTests::splitOriginalSpansStayUnmodified()
+{
+    sequence seq;
+    init(seq, "abcdef");
+
+    QVERIFY(insertBytes(seq, 3, "XX"));
+    QVERIFY(seq.erase(3, 2));
+    expectContent(seq, "abcdef");
+    QCOMPARE(renderFlags(seq), repeatedFlags(0, 6));
+}
+
+void SequenceTests::splitModifiedSpansStayModified()
+{
+    sequence seq;
+    init(seq, "abcdef");
+
+    QVERIFY(insertBytes(seq, 3, "XXXX"));
+    QVERIFY(seq.erase(4, 2));
+    expectContent(seq, "abcXXdef");
+    QCOMPARE(renderFlags(seq),
+             (QVector<size_t>{0, 0, 0, SEQCHAR_MODIFIED, SEQCHAR_MODIFIED, 0, 0, 0}));
+}
+
+void SequenceTests::undoRedoPreservesModifiedFlags()
+{
+    sequence seq;
+    init(seq, "abcdef");
+
+    QVERIFY(insertBytes(seq, 3, "XX"));
+    QCOMPARE(renderFlags(seq),
+             (QVector<size_t>{0, 0, 0, SEQCHAR_MODIFIED, SEQCHAR_MODIFIED, 0, 0, 0}));
+
+    QVERIFY(seq.undo());
+    QCOMPARE(renderFlags(seq), repeatedFlags(0, 6));
+
+    QVERIFY(seq.redo());
+    QCOMPARE(renderFlags(seq),
+             (QVector<size_t>{0, 0, 0, SEQCHAR_MODIFIED, SEQCHAR_MODIFIED, 0, 0, 0}));
 }
 
 void SequenceTests::invalidOperationsDoNotModifyContent()
