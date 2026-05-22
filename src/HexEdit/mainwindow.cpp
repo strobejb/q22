@@ -628,7 +628,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     auto populateBookmarkDialog = [this]() {
         QVector<QColor> swatchColours;
-        for (int i = 0; i < 7; ++i)
+        for (int i = 0; i < MAX_BOOKMARK_COLORS; ++i)
             swatchColours.append(QColor(m_hv->getHexColour(HvColorSlot(HVC_BOOKMARK1 + i))));
         m_bookmarkDialog->setSwatchColours(swatchColours);
         m_bookmarkDialog->setForegroundColour(m_hv->palette().text().color());
@@ -636,7 +636,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(ui->actionBookmark_here, &QAction::triggered, m_hv, &HexView::addBookmarkInline);
 
-    connect(m_hv, &HexView::bookmarkEditRequested, this, [this, populateBookmarkDialog](int idx) {
+    auto editBookmark = [this, populateBookmarkDialog](int idx) {
         const QList<Bookmark> &bms = m_hv->bookmarks();
         if (idx < 0 || idx >= bms.size()) return;
         const Bookmark &existing = bms[idx];
@@ -650,12 +650,16 @@ MainWindow::MainWindow(QWidget *parent)
             bm.colourIndex = qMax(0, m_bookmarkDialog->selectedColourIndex());
             m_hv->replaceBookmark(idx, bm);
         }
-    });
+    };
+
+    connect(m_hv, &HexView::bookmarkEditRequested, this, editBookmark);
+    connect(m_hv, &HexView::bookmarkSettingsRequested, this,
+            [editBookmark](int idx, QRect) { editBookmark(idx); });
 
     connect(m_bookmarkDialog, &BookmarkDialog::deleteRequested,
             this, [this](int idx) { m_hv->removeBookmark(idx); });
 
-    connect(m_hv, &HexView::bookmarkSettingsRequested,
+    connect(m_hv, &HexView::bookmarkContextRequested,
             this, [this](int idx, QRect btnGlobal) {
         showBookmarkContextPopup(m_hv, idx, btnGlobal);
     });

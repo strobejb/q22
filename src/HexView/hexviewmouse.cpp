@@ -704,7 +704,7 @@ void HexView::contextMenuEvent(QContextMenuEvent *event)
         const HitTestRegion ht = hitTest(vp.x(), vp.y(), &bmIdx);
         if (ht == HVHT_BOOKMARK || ht == HVHT_BOOKMARK_CLOSE || ht == HVHT_BOOKMARK_EDIT) {
             if (m_bookmarkContextMenuExternallyHandled) {
-                emit bookmarkSettingsRequested(bmIdx, QRect(event->globalPos(), QSize(1, 1)));
+                emit bookmarkContextRequested(bmIdx, QRect(event->globalPos(), QSize(1, 1)));
                 return;
             }
 

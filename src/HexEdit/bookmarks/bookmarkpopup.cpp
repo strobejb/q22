@@ -22,8 +22,6 @@
 
 namespace {
 
-const int MAX_BOOKMARK_COLORS = 5;
-
 class BookmarkMenuPositioner : public QObject {
     QRect m_btn;
 public:

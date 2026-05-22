@@ -320,7 +320,8 @@ signals:
     void paneFocusRequested();   // Ctrl+Tab: caller should focus Find/Goto panel
     void bookmarksChanged();          // bookmark added, removed, or replaced
     void bookmarkEditRequested(int idx); // kept for compatibility — no longer emitted (dead)
-    void bookmarkSettingsRequested(int idx, QRect btnGlobal); // gear button → settings popup
+    void bookmarkContextRequested(int idx, QRect globalRect); // right-click on bookmark/editor
+    void bookmarkSettingsRequested(int idx, QRect btnGlobal); // bookmark tool button
 
 public:
     // Mark a bookmark's gear button as "popup open" so it stays visually pressed.

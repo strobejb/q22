@@ -135,22 +135,13 @@ bool HexView::eventFilter(QObject *obj, QEvent *ev)
             return true;
         }
 
-        // Right-click on the inline editor: show the bookmark edit/delete menu
-        // instead of QPlainTextEdit's default context menu.
+        // Right-click on the inline editor: use the same bookmark context-menu
+        // signal as right-clicking the note strip.
         if (ev->type() == QEvent::ContextMenu) {
             const auto *ce = static_cast<QContextMenuEvent *>(ev);
             const int bmIdx = m_noteEditorIdx;
-            if (bmIdx >= 0 && bmIdx < m_bookmarks.size()) {
-                QMenu bmMenu(this);
-                themeMenu(&bmMenu);
-                QAction *editAct   = bmMenu.addAction(tr("&Edit"));
-                QAction *deleteAct = bmMenu.addAction(tr("&Delete"));
-                QAction *act = bmMenu.exec(ce->globalPos());
-                if (act == editAct)
-                    emit bookmarkEditRequested(bmIdx);
-                else if (act == deleteAct)
-                    removeBookmark(bmIdx);
-            }
+            if (bmIdx >= 0 && bmIdx < m_bookmarks.size())
+                emit bookmarkContextRequested(bmIdx, QRect(ce->globalPos(), QSize(1, 1)));
             return true;   // always suppress the default QPlainTextEdit menu
         }
 

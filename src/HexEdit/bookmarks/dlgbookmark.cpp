@@ -1,6 +1,7 @@
 #include "dlgbookmark.h"
 #include "ui_bookmarks.h"
 #include "bookmarkcolourwidget.h"
+#include "bookmarkpopup.h"
 
 #include <QApplication>
 #include <QAbstractButton>
@@ -125,7 +126,7 @@ BookmarkDialog::BookmarkDialog(QWidget *parent)
     ui->setupUi(this);
     removeDialogIcon(this);
 
-    ui->colourPicker->setColumns(7);
+    ui->colourPicker->setColumns(MAX_BOOKMARK_COLORS);
     ui->bookmarkName->setTabChangesFocus(true);
     ui->bookmarkName->setStyleSheet(
         "QPlainTextEdit {"
