@@ -43,6 +43,38 @@ static void addAttr(ATTR **pp, QRgb fg, QRgb bg, size_t count)
     *pp += count;
 }
 
+static void drawTintedIconOrFallbackText(QPainter &painter,
+                                         const QRect &rect,
+                                         const QString &iconName,
+                                         const QColor &colour,
+                                         const QString &fallbackText)
+{
+    QIcon icon(QStringLiteral(":/icons/actions/") + iconName + QStringLiteral(".svg"));
+    if (icon.isNull())
+        icon = QIcon::fromTheme(iconName);
+
+    const QPixmap src = icon.pixmap(rect.size());
+    if (!src.isNull()) {
+        QPixmap tinted(src.size());
+        tinted.setDevicePixelRatio(src.devicePixelRatio());
+        tinted.fill(Qt::transparent);
+
+        QPainter iconPainter(&tinted);
+        iconPainter.drawPixmap(0, 0, src);
+        iconPainter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+        iconPainter.fillRect(tinted.rect(), colour);
+        iconPainter.end();
+
+        painter.drawPixmap(rect, tinted);
+        return;
+    }
+
+    painter.save();
+    painter.setPen(colour);
+    painter.drawText(rect, Qt::AlignCenter, fallbackText);
+    painter.restore();
+}
+
 // WCAG relative luminance. QColor::lightness() is HSL-based, which treats
 // bright saturated colours like yellow as mid-light and can pick white text.
 static double srgbChannelToLinear(int channel)
@@ -937,26 +969,13 @@ void HexView::paintDragOverlay(QPainter &painter)
     const QRect iconRect(r.left() + padX, r.top() + (r.height() - iconSize) / 2,
                          iconSize, iconSize);
     if (copyAction) {
-        QIcon copyIcon(QStringLiteral(":/icons/actions/edit-copy-symbolic.svg"));
-        if (copyIcon.isNull())
-            copyIcon = QIcon::fromTheme(QStringLiteral("edit-copy-symbolic"));
-        QPixmap iconPm = copyIcon.pixmap(iconSize, iconSize);
-        if (!iconPm.isNull()) {
-            QPainter iconPainter(&iconPm);
-            iconPainter.setCompositionMode(QPainter::CompositionMode_SourceIn);
-            iconPainter.fillRect(iconPm.rect(), overlayFg);
-            iconPainter.end();
-            painter.drawPixmap(iconRect, iconPm);
-        } else {
-            painter.setPen(QPen(overlayFg, 2));
-            painter.drawText(iconRect, Qt::AlignCenter, QStringLiteral("+"));
-        }
+        drawTintedIconOrFallbackText(painter, iconRect,
+                                     QStringLiteral("edit-copy-symbolic"),
+                                     overlayFg, QStringLiteral("+"));
     } else {
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(overlayFg);
-        painter.drawRoundedRect(QRectF(iconRect).adjusted(1, 1, -1, -1), 3, 3);
-        painter.setPen(overlayBg);
-        painter.drawText(iconRect, Qt::AlignCenter, QStringLiteral("M"));
+        drawTintedIconOrFallbackText(painter, iconRect,
+                                     QStringLiteral("edit-cut-symbolic"),
+                                     overlayFg, QStringLiteral("[-]"));
     }
 
     painter.setPen(overlayFg);

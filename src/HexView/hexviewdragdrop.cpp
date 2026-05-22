@@ -1,5 +1,6 @@
 #include "hexview.h"
 
+#include <QApplication>
 #include <QByteArray>
 #include <QDrag>
 #include <QDragEnterEvent>
@@ -45,6 +46,53 @@ struct DragSelection {
     size_w start = 0;
     size_w length = 0;
 };
+
+Qt::DropActions internalDragActions(uint editMode)
+{
+    return editMode == HVMODE_INSERT
+        ? (Qt::CopyAction | Qt::MoveAction)
+        : Qt::CopyAction;
+}
+
+Qt::DropAction defaultInternalDragAction(uint editMode)
+{
+    return editMode == HVMODE_INSERT ? Qt::MoveAction : Qt::CopyAction;
+}
+
+Qt::DropAction dropActionForModifiers(Qt::DropActions actions,
+                                      Qt::DropAction defaultAction,
+                                      Qt::KeyboardModifiers modifiers)
+{
+    if ((modifiers & Qt::ControlModifier) && (actions & Qt::CopyAction))
+        return Qt::CopyAction;
+
+    if (actions & defaultAction)
+        return defaultAction;
+
+    if (actions & Qt::MoveAction)
+        return Qt::MoveAction;
+
+    if (actions & Qt::CopyAction)
+        return Qt::CopyAction;
+
+    return Qt::IgnoreAction;
+}
+
+Qt::KeyboardModifiers dragModifiers(const QDropEvent *event)
+{
+    Qt::KeyboardModifiers modifiers = event ? event->modifiers() : Qt::NoModifier;
+#ifdef Q_OS_WIN
+    modifiers |= QApplication::queryKeyboardModifiers();
+#endif
+    return modifiers;
+}
+
+Qt::DropAction internalDragAction(uint editMode, const QDropEvent *event = nullptr)
+{
+    return dropActionForModifiers(internalDragActions(editMode),
+                                  defaultInternalDragAction(editMode),
+                                  dragModifiers(event));
+}
 
 } // namespace
 
@@ -107,13 +155,13 @@ bool HexView::startDrag()
     auto *drag = new QDrag(this);
     drag->setMimeData(mime);
 
-    const Qt::DropActions actions =
-        (m_nEditMode == HVMODE_INSERT)
-            ? (Qt::CopyAction | Qt::MoveAction)
-            : Qt::CopyAction;
-    const Qt::DropAction defaultAction =
-        (m_nEditMode == HVMODE_INSERT) ? Qt::MoveAction : Qt::CopyAction;
+    const Qt::DropActions actions = internalDragActions(m_nEditMode);
+    const Qt::DropAction defaultAction = defaultInternalDragAction(m_nEditMode);
+#ifdef Q_OS_WIN
+    m_dragOverlayAction = internalDragAction(m_nEditMode);
+#else
     m_dragOverlayAction = defaultAction;
+#endif
     m_internalDragActive = true;
     // Wayland/Qt can report stale target-side proposed actions during an
     // internal drag, causing Ctrl-copy feedback to flicker back to Move while
@@ -281,6 +329,9 @@ void HexView::dragEnterEvent(QDragEnterEvent *event)
     updateDropCaret(event->position().toPoint());
 
     if (m_internalDragActive && m_dragOverlayAction != Qt::IgnoreAction) {
+#ifdef Q_OS_WIN
+        m_dragOverlayAction = internalDragAction(m_nEditMode, event);
+#endif
         event->setDropAction(m_dragOverlayAction);
         event->accept();
     } else {
@@ -319,6 +370,9 @@ void HexView::dragMoveEvent(QDragMoveEvent *event)
     updateDropCaret(event->position().toPoint());
 
     if (m_internalDragActive && m_dragOverlayAction != Qt::IgnoreAction) {
+#ifdef Q_OS_WIN
+        m_dragOverlayAction = internalDragAction(m_nEditMode, event);
+#endif
         event->setDropAction(m_dragOverlayAction);
         event->accept();
     } else {
@@ -342,7 +396,11 @@ void HexView::dropEvent(QDropEvent *event)
 
     const Qt::DropAction action =
         (m_internalDragActive && m_dragOverlayAction != Qt::IgnoreAction)
+#ifdef Q_OS_WIN
+            ? internalDragAction(m_nEditMode, event)
+#else
             ? m_dragOverlayAction
+#endif
             : event->proposedAction();
     m_dragOverlayAction = action;
     event->setDropAction(action);
