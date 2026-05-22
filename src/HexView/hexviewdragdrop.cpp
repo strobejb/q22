@@ -138,6 +138,7 @@ void HexView::updateDropCaret(const QPoint &pos)
     m_nWhichPane = pane;
     m_nSubItem = 0;
 
+    m_caretVisible = true;
     positionCaret(x, y, m_nWhichPane);
     emit cursorChanged(m_nCursorOffset);
     viewport()->update();

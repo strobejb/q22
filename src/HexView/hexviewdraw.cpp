@@ -328,6 +328,9 @@ QColor blendColor(const QColor &i_color1, const QColor &i_color2, double i_alpha
 
 bool HexView::hasAppFocus() const
 {
+    if (m_nSelectionMode == SEL_DRAGDROP)
+        return true;
+
 #ifdef Q_OS_WIN
     QWidget *topLevel = window();
     if (!topLevel)
@@ -904,7 +907,9 @@ void HexView::paintEvent(QPaintEvent *event)
 
 void HexView::paintCaret(QPainter &painter)
 {
-    if (!m_caretVisible || !hasFocus() || QApplication::activeModalWidget()) return;
+    if ((!m_caretVisible && m_nSelectionMode != SEL_DRAGDROP) ||
+        (m_nSelectionMode != SEL_DRAGDROP && !hasFocus() && !viewport()->hasFocus()) ||
+        QApplication::activeModalWidget()) return;
 
     painter.setCompositionMode(QPainter::RasterOp_SourceXorDestination);
     painter.fillRect(m_nCaretX, m_nCaretY, 2, m_nFontHeight, Qt::white);
