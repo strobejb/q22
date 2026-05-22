@@ -1937,7 +1937,7 @@ void styleMessageBox(QMessageBox *box)
     });
 
     if (auto *buttonBox = box->findChild<QDialogButtonBox *>()) {
-        buttonBox->setContentsMargins(0, 10, 0, 0);
+        buttonBox->setContentsMargins(0, 24, 0, 0);
         if (buttonBox->layout())
             buttonBox->layout()->setSpacing(12);
         for (QAbstractButton *btn : buttonBox->buttons())
