@@ -214,6 +214,10 @@ private:
 	bufferlist		buffer_list;
 	size_t			modifybuffer_id;
 	size_t			modifybuffer_pos;
+	// TODO: Split buffer identity from buffer role.  origfile_id currently drives
+	// readonly/quicksave decisions while span flags drive modified rendering; a
+	// future cleanup should give buffer_control an explicit kind instead of
+	// relying on reserved or remembered numeric ids.
 	size_t			origfile_id;
 	std::string		origfile_name;
 
