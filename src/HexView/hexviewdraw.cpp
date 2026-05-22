@@ -11,6 +11,7 @@
 #include <QApplication>
 #include <QFontMetrics>
 #include <QGlyphRun>
+#include <QIcon>
 #include <QPainter>
 #include <QPaintEvent>
 #include <QWindow>
@@ -892,9 +893,78 @@ void HexView::paintEvent(QPaintEvent *event)
     }
 
     paintCaret(painter);
+    paintDragOverlay(painter);
 
     delete[] bigbuf;
     delete[] bufinfo;
+}
+
+void HexView::paintDragOverlay(QPainter &painter)
+{
+    if (!m_dragOverlayVisible || m_dragOverlayLength == 0)
+        return;
+
+    const bool copyAction = m_dragOverlayAction == Qt::CopyAction;
+    const QString text = m_dragOverlayLength == 1
+        ? tr("1 byte")
+        : tr("%1 bytes").arg(static_cast<qulonglong>(m_dragOverlayLength));
+
+    const QFont uiFont = QApplication::font();
+    const QFontMetrics fm(uiFont);
+    const int padX = 10;
+    const int iconSize = 16;
+    const int iconGap = 7;
+    const int w = qMax(72, iconSize + iconGap + fm.horizontalAdvance(text) + padX * 2);
+    const int h = qMax(26, fm.height() + 8);
+    QPoint pos = m_dragOverlayPos;
+    pos.setX(qBound(4, pos.x(), qMax(4, viewport()->width() - w - 4)));
+    pos.setY(qBound(4, pos.y(), qMax(4, viewport()->height() - h - 4)));
+    const QRect r(pos, QSize(w, h));
+
+    const QColor bg = QColor(getHexColour(HVC_BACKGROUND));
+    const QColor fg = QColor(getHexColour(HVC_ASCII));
+    const QColor overlayBg(255 - bg.red(), 255 - bg.green(), 255 - bg.blue());
+    const QColor overlayFg(255 - fg.red(), 255 - fg.green(), 255 - fg.blue());
+    const QColor overlayBorder(255 - overlayBg.red(),
+                               255 - overlayBg.green(),
+                               255 - overlayBg.blue());
+
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setPen(QPen(overlayBorder, 1));
+    painter.setBrush(overlayBg);
+    painter.drawRoundedRect(QRectF(r).adjusted(0.5, 0.5, -0.5, -0.5), 6, 6);
+
+    const QRect iconRect(r.left() + padX, r.top() + (r.height() - iconSize) / 2,
+                         iconSize, iconSize);
+    if (copyAction) {
+        QIcon copyIcon(QStringLiteral(":/icons/actions/edit-copy-symbolic.svg"));
+        if (copyIcon.isNull())
+            copyIcon = QIcon::fromTheme(QStringLiteral("edit-copy-symbolic"));
+        QPixmap iconPm = copyIcon.pixmap(iconSize, iconSize);
+        if (!iconPm.isNull()) {
+            QPainter iconPainter(&iconPm);
+            iconPainter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+            iconPainter.fillRect(iconPm.rect(), overlayFg);
+            iconPainter.end();
+            painter.drawPixmap(iconRect, iconPm);
+        } else {
+            painter.setPen(QPen(overlayFg, 2));
+            painter.drawText(iconRect, Qt::AlignCenter, QStringLiteral("+"));
+        }
+    } else {
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(overlayFg);
+        painter.drawRoundedRect(QRectF(iconRect).adjusted(1, 1, -1, -1), 3, 3);
+        painter.setPen(overlayBg);
+        painter.drawText(iconRect, Qt::AlignCenter, QStringLiteral("M"));
+    }
+
+    painter.setPen(overlayFg);
+    painter.setFont(uiFont);
+    painter.drawText(r.adjusted(padX + iconSize + iconGap, 0, -padX, 0),
+                     Qt::AlignVCenter | Qt::AlignLeft,
+                     text);
+    painter.setRenderHint(QPainter::Antialiasing, false);
 }
 
 // ── paintCaret ────────────────────────────────────────────────────────────────

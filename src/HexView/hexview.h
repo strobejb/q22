@@ -396,6 +396,7 @@ private:
                      uint8_t *data, size_t datalen, seqchar_info *infobuf, size_t datashift,
                      const QList<Bookmark> &matchHighlights);
     void   paintCaret(QPainter &painter);
+    void   paintDragOverlay(QPainter &painter);
     void   drawVLine(QPainter &painter, const QRect &paintRect, QRgb col, int pos);
     void   invalidateRange(size_w start, size_w finish);
     void drawTextFixed(QPainter &p, QPoint origin,
@@ -464,6 +465,11 @@ private:
     HexSnapshot *createSnapshot(size_w start, size_w len) const;
     HexSnapshot *m_lastSnapshot = nullptr;  // kept alive while our data is on the clipboard
     HexSnapshot *m_dragSnapshot = nullptr;  // kept alive only while QDrag::exec() is running
+    bool         m_dragOverlayVisible = false;
+    QPoint       m_dragOverlayPos;
+    size_w       m_dragOverlayLength = 0;
+    Qt::DropAction m_dragOverlayAction = Qt::IgnoreAction;
+    bool         m_internalDragActive = false;
 
     // ── State ─────────────────────────────────────────────────────────────────
     QMenu      *m_contextMenu   = nullptr;  // nullptr → use built-in menu

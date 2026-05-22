@@ -81,6 +81,10 @@ bool HexView::startDrag()
 
     delete m_dragSnapshot;
     m_dragSnapshot = createSnapshot(start, len);
+    m_dragOverlayLength = len;
+    m_dragOverlayPos = m_dragStartPos;
+    m_dragOverlayVisible = true;
+    viewport()->update();
 
     auto *mime = new QMimeData();
 
@@ -109,12 +113,27 @@ bool HexView::startDrag()
             : Qt::CopyAction;
     const Qt::DropAction defaultAction =
         (m_nEditMode == HVMODE_INSERT) ? Qt::MoveAction : Qt::CopyAction;
+    m_dragOverlayAction = defaultAction;
+    m_internalDragActive = true;
+    // Wayland/Qt can report stale target-side proposed actions during an
+    // internal drag, causing Ctrl-copy feedback to flicker back to Move while
+    // the mouse moves.  Treat the source QDrag actionChanged signal as
+    // authoritative and have target drag-move events accept that action below.
+    connect(drag, &QDrag::actionChanged, this, [this](Qt::DropAction action) {
+        if (action == Qt::IgnoreAction || action == m_dragOverlayAction)
+            return;
+        m_dragOverlayAction = action;
+        viewport()->update();
+    });
 
     drag->exec(actions, defaultAction);
 
+    m_internalDragActive = false;
     endDragDropMode();
     delete m_dragSnapshot;
     m_dragSnapshot = nullptr;
+    m_dragOverlayLength = 0;
+    m_dragOverlayAction = Qt::IgnoreAction;
     return true;
 }
 
@@ -130,6 +149,11 @@ bool HexView::canDropMimeData(const QMimeData *mime) const
 
 void HexView::updateDropCaret(const QPoint &pos)
 {
+    if (m_dragOverlayLength > 0) {
+        m_dragOverlayVisible = true;
+        m_dragOverlayPos = pos + QPoint(14, 14);
+    }
+
     int x = pos.x();
     int y = pos.y();
     int pane = m_nWhichPane;
@@ -151,6 +175,12 @@ void HexView::endDragDropMode()
 
     if (m_nSelectionMode == SEL_DRAGDROP)
         m_nSelectionMode = SEL_NONE;
+
+    if (m_dragOverlayVisible) {
+        m_dragOverlayVisible = false;
+        m_dragOverlayAction = Qt::IgnoreAction;
+        viewport()->update();
+    }
 }
 
 bool HexView::dropMimeData(const QMimeData *mime, Qt::DropAction action)
@@ -250,7 +280,13 @@ void HexView::dragEnterEvent(QDragEnterEvent *event)
     m_nSelectionMode = SEL_DRAGDROP;
     updateDropCaret(event->position().toPoint());
 
-    event->acceptProposedAction();
+    if (m_internalDragActive && m_dragOverlayAction != Qt::IgnoreAction) {
+        event->setDropAction(m_dragOverlayAction);
+        event->accept();
+    } else {
+        m_dragOverlayAction = event->proposedAction();
+        event->acceptProposedAction();
+    }
 }
 
 bool HexView::viewportEvent(QEvent *event)
@@ -282,11 +318,18 @@ void HexView::dragMoveEvent(QDragMoveEvent *event)
 
     updateDropCaret(event->position().toPoint());
 
-    event->acceptProposedAction();
+    if (m_internalDragActive && m_dragOverlayAction != Qt::IgnoreAction) {
+        event->setDropAction(m_dragOverlayAction);
+        event->accept();
+    } else {
+        m_dragOverlayAction = event->proposedAction();
+        event->acceptProposedAction();
+    }
 }
 
 void HexView::dragLeaveEvent(QDragLeaveEvent *event)
 {
+    m_dragOverlayVisible = false;
     endDragDropMode();
     repositionCaret();
     viewport()->update();
@@ -297,8 +340,15 @@ void HexView::dropEvent(QDropEvent *event)
 {
     updateDropCaret(event->position().toPoint());
 
-    if (dropMimeData(event->mimeData(), event->dropAction()))
-        event->acceptProposedAction();
+    const Qt::DropAction action =
+        (m_internalDragActive && m_dragOverlayAction != Qt::IgnoreAction)
+            ? m_dragOverlayAction
+            : event->proposedAction();
+    m_dragOverlayAction = action;
+    event->setDropAction(action);
+
+    if (dropMimeData(event->mimeData(), action))
+        event->accept();
     else
         event->ignore();
 
