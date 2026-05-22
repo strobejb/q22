@@ -10,14 +10,15 @@ enum class ColorScheme { System = 0, Light = 1, Dark = 2 };
 // Per-palette UI colour overrides. An invalid QColor means "use theme default".
 // PE_WINDOW    → titlebar / window-panel background
 // PE_WINDOWTEXT → text on title bar, panels, and status bar
-// PE_TOOLBAR   → status-bar background
-// PE_PANELBORDERS → dock panel separators / hairlines
+// PE_TOOLBAR   → undocumented statusbar/panel background override
+// PE_UI_ACCENT → app accent colour (focus rings, selected list rows, active controls)
+// PE_PANEL_DIVIDERS → dock panel separators / hairlines
 struct UiColourOverrides {
     QColor window;
     QColor windowText;
     QColor toolbar;
-    QColor highlight;
-    QColor panelBorders;
+    QColor uiAccent;
+    QColor panelDividers;
 };
 
 // Applies Adwaita Light or Dark using the built-in Fusion style + palette + QSS.
@@ -40,7 +41,7 @@ const UiColourOverrides &uiColourOverrides();
 
 // Returns the base Adwaita palette for the current scheme, without any active
 // UI colour overrides applied. Use this for UI that should not shift colour
-// when a palette overrides Window/WindowText/Highlight.
+// when a palette overrides Window/WindowText/UI Accent.
 QPalette systemPalette();
 
 // Takes the hue of `source` and returns a new colour with that hue but with

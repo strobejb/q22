@@ -24,7 +24,7 @@ class ScreenColorPicker;
 // ── PaletteElem ───────────────────────────────────────────────────────────────
 // Enumerates every colour slot editable in PaletteEditorDialog.
 // Slots up to PE_BOOKMARK_7 are forwarded to HexView via applyPalette().
-// Future UI-level colour slots (window chrome, toolbar, etc.) should be added
+// Future UI-level colour slots (window chrome, panels, etc.) should be added
 // after PE_BOOKMARK_7 and before PE_COUNT; add matching fields to PaletteInfo.
 enum PaletteElem {
     // ── HexView colours ───────────────────────────────────────────────────
@@ -39,8 +39,8 @@ enum PaletteElem {
     PE_SELECTION_INACTIVE,
     PE_SELECTION_TEXT_INACTIVE,
     PE_MODIFIED,
-    PE_MATCHED,
-    PE_MATCH_SELECTED,
+    PE_MATCH_HIGHLIGHT,
+    PE_MATCH_HIGHLIGHT_SELECTED,
     PE_RESIZE_BAR,
     PE_BOOKMARK_1,
     PE_BOOKMARK_2,
@@ -51,13 +51,11 @@ enum PaletteElem {
     PE_BOOKMARK_7,
 
     // ── UI colours (not forwarded to HexView) ─────────────────────────────
-    // (none yet — add fields to PaletteInfo and cases to elemName/colorAt/setColorAt)
-
     PE_WINDOW,
     PE_WINDOWTEXT,
-    PE_HIGHLIGHT,
+    PE_UI_ACCENT,
     PE_TOOLBAR,
-    PE_PANELBORDERS,
+    PE_PANEL_DIVIDERS,
     PE_COUNT
 };
 
@@ -75,18 +73,18 @@ struct PaletteInfo {
     QColor  selectionInactive; // Selection background when unfocused
     QColor  selectionTextInactive; // Selection text when unfocused
     QColor  modified;          // Modified-byte indicator
-    QColor  matched;           // Search-match highlight (background)
-    QColor  matchSelected;     // Highlight when also selected; invalid = auto-mix selection+match
-    QColor  resizeBar  ;         // Resize bar
+    QColor  matchHighlight;          // Match/highlight range background
+    QColor  matchHighlightSelected;  // When also selected; invalid = auto-mix selection+match
+    QColor  resizeBar;               // Resize bar
     QColor  bookmarks[7];      // Bookmark preset colours
 
     // ── UI colours (not forwarded to HexView) ─────────────────────────────
     // Add fields here as new PE_* enum values are defined above.
     QColor  window;
     QColor  windowText;
-    QColor  toolbar;
-    QColor  highlight;
-    QColor  panelBorders;
+    QColor  toolbar; // Undocumented statusbar/panel background override
+    QColor  uiAccent;
+    QColor  panelDividers;
 
     // ── Per-mode overrides ────────────────────────────────────────────────
     // Key = PaletteElem cast to int.  Only elements that differ between modes
@@ -168,7 +166,7 @@ private:
     void   applyEditedColor(const QColor &c);
     static QPixmap makeColorSwatch(const QColor &c);
 
-    void updateItemIndicator(int row);
+    void updateItemIndicator(PaletteElem e);
 
     QLineEdit         *m_nameEdit   = nullptr;
     QListWidget       *m_list       = nullptr;

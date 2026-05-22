@@ -120,10 +120,10 @@ QColor effectiveHexColour(const PaletteInfo &info, HvColorSlot slot, const QPale
         case HVC_MODIFY:             return info.modified.isValid()          ? info.modified          : HexView::defaultColourForSlot(slot, pal);
         case HVC_MODIFYSEL:          return info.modified.isValid()          ? info.modified          : HexView::defaultColourForSlot(slot, pal);
         case HVC_RESIZEBAR:          return info.resizeBar.isValid()         ? info.resizeBar         : HexView::defaultColourForSlot(slot, pal);
-        case HVC_MATCHED:            return info.matched.isValid()           ? info.matched           : HexView::defaultColourForSlot(slot, pal);
+        case HVC_MATCHED:            return info.matchHighlight.isValid()    ? info.matchHighlight    : HexView::defaultColourForSlot(slot, pal);
         case HVC_MATCHEDSEL:
-            return info.matchSelected.isValid()
-                ? info.matchSelected
+            return info.matchHighlightSelected.isValid()
+                ? info.matchHighlightSelected
                 : //darken(effectiveHexColour(info, HVC_SELECTION, pal), 130);
                        blend(effectiveHexColour(info, HVC_SELECTION, pal), effectiveHexColour(info, HVC_MATCHED, pal));
         case HVC_BOOKMARK1:
@@ -168,8 +168,8 @@ static const char *elemIniKey(PaletteElem e)
         case PE_SELECTION_INACTIVE:      return "SelectionInactive";
         case PE_SELECTION_TEXT_INACTIVE: return "SelectionTextInactive";
         case PE_MODIFIED:                return "Modified";
-        case PE_MATCHED:                 return "Matched";
-        case PE_MATCH_SELECTED:          return "MatchSelected";
+        case PE_MATCH_HIGHLIGHT:          return "MatchHighlight";
+        case PE_MATCH_HIGHLIGHT_SELECTED: return "MatchHighlightSelected";
         case PE_RESIZE_BAR:              return "ResizeBar";
         case PE_BOOKMARK_1:              return "Bookmark1";
         case PE_BOOKMARK_2:              return "Bookmark2";
@@ -180,12 +180,23 @@ static const char *elemIniKey(PaletteElem e)
         case PE_BOOKMARK_7:              return "Bookmark7";
         case PE_WINDOW:                  return "Window";
         case PE_WINDOWTEXT:              return "WindowText";
-        case PE_HIGHLIGHT:               return "Highlight";
+        case PE_UI_ACCENT:               return "UiAccent";
         case PE_TOOLBAR:                 return "Toolbar";
-        case PE_PANELBORDERS:            return "PanelBorders";
+        case PE_PANEL_DIVIDERS:          return "PanelDividers";
         case PE_COUNT:                   return nullptr;
     }
     return nullptr;
+}
+
+static const char *legacyElemIniKey(PaletteElem e)
+{
+    switch (e) {
+        case PE_MATCH_HIGHLIGHT:          return "Matched";
+        case PE_MATCH_HIGHLIGHT_SELECTED: return "MatchSelected";
+        case PE_UI_ACCENT:                return "Highlight";
+        case PE_PANEL_DIVIDERS:           return "PanelBorders";
+        default:                          return nullptr;
+    }
 }
 
 // Fold mode-specific overrides into a flat PaletteInfo for the given mode.
@@ -208,8 +219,8 @@ PaletteInfo resolvedPaletteForMode(const PaletteInfo &base, bool dark)
             case PE_SELECTION_INACTIVE:      r.selectionInactive     = it.value(); break;
             case PE_SELECTION_TEXT_INACTIVE: r.selectionTextInactive = it.value(); break;
             case PE_MODIFIED:                r.modified              = it.value(); break;
-            case PE_MATCHED:                 r.matched               = it.value(); break;
-            case PE_MATCH_SELECTED:          r.matchSelected         = it.value(); break;
+            case PE_MATCH_HIGHLIGHT:          r.matchHighlight         = it.value(); break;
+            case PE_MATCH_HIGHLIGHT_SELECTED: r.matchHighlightSelected = it.value(); break;
             case PE_RESIZE_BAR:              r.resizeBar             = it.value(); break;
             case PE_BOOKMARK_1:              r.bookmarks[0]          = it.value(); break;
             case PE_BOOKMARK_2:              r.bookmarks[1]          = it.value(); break;
@@ -221,8 +232,8 @@ PaletteInfo resolvedPaletteForMode(const PaletteInfo &base, bool dark)
             case PE_WINDOW:                  r.window                = it.value(); break;
             case PE_WINDOWTEXT:              r.windowText            = it.value(); break;
             case PE_TOOLBAR:                 r.toolbar               = it.value(); break;
-            case PE_HIGHLIGHT:               r.highlight             = it.value(); break;
-            case PE_PANELBORDERS:            r.panelBorders          = it.value(); break;
+            case PE_UI_ACCENT:               r.uiAccent              = it.value(); break;
+            case PE_PANEL_DIVIDERS:          r.panelDividers         = it.value(); break;
             case PE_COUNT:                   break;
         }
     }
@@ -275,8 +286,8 @@ void applyUiPalette(const PaletteInfo &info)
         eff.window,
         eff.windowText,
         eff.toolbar,
-        eff.highlight,
-        eff.panelBorders,
+        eff.uiAccent,
+        eff.panelDividers,
     });
 }
 
@@ -298,8 +309,8 @@ static PaletteInfo parsePaletteFile(const QString &path)
     info.selectionInactive = QColor(s.value("SelectionInactive").toString());
     info.selectionTextInactive = QColor(s.value("SelectionTextInactive").toString());
     info.modified          = QColor(s.value("Modified").toString());
-    info.matched           = QColor(s.value("Matched").toString());
-    info.matchSelected     = QColor(s.value("MatchSelected").toString());
+    info.matchHighlight = QColor(s.value("MatchHighlight", s.value("Matched")).toString());
+    info.matchHighlightSelected = QColor(s.value("MatchHighlightSelected", s.value("MatchSelected")).toString());
     info.resizeBar         = QColor(s.value("ResizeBar").toString());
     // Backward compat: 'Foreground' was a catch-all for text colours in older files.
     // Propagate it only to the two slots that used it as an orElse fallback.
@@ -314,8 +325,8 @@ static PaletteInfo parsePaletteFile(const QString &path)
     info.window     = QColor(s.value("Window").toString());
     info.windowText = QColor(s.value("WindowText").toString());
     info.toolbar    = QColor(s.value("Toolbar").toString());
-    info.highlight  = QColor(s.value("Highlight").toString());
-    info.panelBorders = QColor(s.value("PanelBorders").toString());
+    info.uiAccent   = QColor(s.value("UiAccent", s.value("Highlight")).toString());
+    info.panelDividers = QColor(s.value("PanelDividers", s.value("PanelBorders")).toString());
     s.endGroup();
 
     // Per-mode override sections [Palette-Light] and [Palette-Dark].
@@ -324,7 +335,9 @@ static PaletteInfo parsePaletteFile(const QString &path)
         for (int i = 0; i < PE_COUNT; ++i) {
             const char *key = elemIniKey(PaletteElem(i));
             if (!key) continue;
-            const QColor c(s.value(QLatin1String(key)).toString());
+            const char *legacyKey = legacyElemIniKey(PaletteElem(i));
+            const QString fallback = legacyKey ? s.value(QLatin1String(legacyKey)).toString() : QString();
+            const QColor c(s.value(QLatin1String(key), fallback).toString());
             if (c.isValid()) map[i] = c;
         }
         s.endGroup();
@@ -440,8 +453,8 @@ bool savePalette(const PaletteInfo &info)
     s.setValue("HexEven",           cs(info.hexEven));
     s.setValue("Ascii",             cs(info.ascii));
     s.setValue("Modified",          cs(info.modified));
-    s.setValue("Matched",           cs(info.matched));
-    s.setValue("MatchSelected",     cs(info.matchSelected));
+    s.setValue("MatchHighlight", cs(info.matchHighlight));
+    s.setValue("MatchHighlightSelected", cs(info.matchHighlightSelected));
     s.setValue("Selection",         cs(info.selection));
     s.setValue("SelectionText",     cs(info.selectionText));
     s.setValue("SelectionInactive", cs(info.selectionInactive));
@@ -452,8 +465,8 @@ bool savePalette(const PaletteInfo &info)
     s.setValue("Window",     cs(info.window));
     s.setValue("WindowText", cs(info.windowText));
     s.setValue("Toolbar",    cs(info.toolbar));
-    s.setValue("Highlight",  cs(info.highlight));
-    s.setValue("PanelBorders", cs(info.panelBorders));
+    s.setValue("UiAccent",   cs(info.uiAccent));
+    s.setValue("PanelDividers", cs(info.panelDividers));
     s.endGroup();
 
     // Clear old override sections before rewriting (handles removed overrides).
@@ -515,6 +528,22 @@ static bool isValidPaletteName(const QString &raw, QString *reason = nullptr)
 
 // Delegate that appends a right-aligned "L", "D", or "L,D" indicator in mid
 // colour for list items that have mode-specific colour overrides.
+static constexpr int kPaletteElemRole = Qt::UserRole + 1;
+
+static bool isPaletteElemVisible(PaletteElem e)
+{
+    return e != PE_BOOKMARK_6 && e != PE_BOOKMARK_7 &&
+           e != PE_WINDOW && e != PE_WINDOWTEXT &&
+           e != PE_SELECTION_TEXT_INACTIVE &&
+           e != PE_TOOLBAR && e != PE_PANEL_DIVIDERS &&
+           e != PE_COUNT;
+}
+
+static PaletteElem itemPaletteElem(const QListWidgetItem *item)
+{
+    return item ? PaletteElem(item->data(kPaletteElemRole).toInt()) : PE_COUNT;
+}
+
 class PaletteItemDelegate : public QStyledItemDelegate
 {
 public:
@@ -619,10 +648,13 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
     }
     for (int i = 0; i < PE_COUNT; ++i) {
         const auto e = PaletteElem(i);
+        if (!isPaletteElemVisible(e))
+            continue;
         auto *item = new QListWidgetItem(tr(elemName(e)));
+        item->setData(kPaletteElemRole, i);
         item->setData(Qt::DecorationRole, makeColorSwatch(colorAt(e)));
         m_list->addItem(item);
-        updateItemIndicator(i);
+        updateItemIndicator(e);
     }
     m_list->setCurrentRow(0);
 
@@ -794,26 +826,29 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
     updateNameBg(m_nameEdit->text()); // set initial background and save-button state
 
     connect(m_list, &QListWidget::currentRowChanged, this, [this](int row) {
-        if (row < 0 || row >= PE_COUNT) return;
-        updateColorUI(PaletteElem(row));
+        if (row < 0) return;
+        updateColorUI(itemPaletteElem(m_list->item(row)));
     });
 
     connect(m_modeGroup, &ToggleButtonGroup::modeChanged, this, [this](int mode) {
         emit previewModeRequested(mode);
         // Refresh every list item swatch to show effective colours for the new mode.
-        for (int i = 0; i < PE_COUNT; ++i)
-            m_list->item(i)->setData(Qt::DecorationRole, makeColorSwatch(colorAt(PaletteElem(i))));
+        for (int i = 0; i < m_list->count(); ++i) {
+            const PaletteElem e = itemPaletteElem(m_list->item(i));
+            m_list->item(i)->setData(Qt::DecorationRole, makeColorSwatch(colorAt(e)));
+        }
         const int row = m_list->currentRow();
-        if (row >= 0 && row < PE_COUNT)
-            updateColorUI(PaletteElem(row));
+        if (row >= 0)
+            updateColorUI(itemPaletteElem(m_list->item(row)));
         // Defer paletteChanged so it fires after previewModeRequested updates isDarkMode().
         QTimer::singleShot(0, this, [this]() { emit paletteChanged(m_info); });
     });
 
     connect(m_autoToggle, &SettingsToggle::toggled, this, [this](bool hasOverride) {
         const int row = m_list->currentRow();
-        if (row < 0 || row >= PE_COUNT) return;
-        const auto e = PaletteElem(row);
+        if (row < 0) return;
+        const PaletteElem e = itemPaletteElem(m_list->item(row));
+        if (e == PE_COUNT) return;
         if (hasOverride) {
             // Restore from the hex edit — updateColorUI always populates it, so
             // the previous colour survives while override is off.
@@ -937,13 +972,13 @@ const char *PaletteEditorDialog::elemName(PaletteElem e)
         case PE_ASCII:              return "ASCII";
         case PE_MODIFIED:           return "Modified";
         case PE_SELECTION:          return "Selection";
-        case PE_MATCHED:            return "Search Match";
-        case PE_MATCH_SELECTED:     return "Match (Selected)";
+        case PE_MATCH_HIGHLIGHT:          return "Match Highlight";
+        case PE_MATCH_HIGHLIGHT_SELECTED: return "Match Highlight (Selected)";
         case PE_SELECTION_TEXT:     return "Selection Text";
         case PE_SELECTION_INACTIVE: return "Selection (Inactive)";
         case PE_SELECTION_TEXT_INACTIVE: return "Selection Text (Inactive)";
         case PE_ADDRESS:            return "Address";
-        case PE_RESIZE_BAR:         return "Resize Bar";
+        case PE_RESIZE_BAR:         return "Resize Bars";
         case PE_BOOKMARK_1:         return "Bookmark 1";
         case PE_BOOKMARK_2:         return "Bookmark 2";
         case PE_BOOKMARK_3:         return "Bookmark 3";
@@ -956,8 +991,8 @@ const char *PaletteEditorDialog::elemName(PaletteElem e)
         case PE_WINDOW:             return "Window";
         case PE_WINDOWTEXT:         return "Window Text";
         case PE_TOOLBAR:            return "Toolbar";
-        case PE_PANELBORDERS:       return "Panel Borders";
-        case PE_HIGHLIGHT:          return "Window Highlight";
+        case PE_PANEL_DIVIDERS:     return "Panel Dividers";
+        case PE_UI_ACCENT:          return "UI Accent";
         case PE_COUNT:              return "";
     }
     return "";
@@ -981,8 +1016,8 @@ QColor PaletteEditorDialog::colorAt(PaletteElem e) const
         case PE_ASCII:              return effectiveHexColour(m_info, HVC_ASCII, pal);
         case PE_MODIFIED:           return effectiveHexColour(m_info, HVC_MODIFY, pal);
         case PE_SELECTION:          return effectiveHexColour(m_info, HVC_SELECTION, pal);
-        case PE_MATCHED:            return effectiveHexColour(m_info, HVC_MATCHED, pal);
-        case PE_MATCH_SELECTED:     return effectiveHexColour(m_info, HVC_MATCHEDSEL, pal);
+        case PE_MATCH_HIGHLIGHT:    return effectiveHexColour(m_info, HVC_MATCHED, pal);
+        case PE_MATCH_HIGHLIGHT_SELECTED: return effectiveHexColour(m_info, HVC_MATCHEDSEL, pal);
         case PE_SELECTION_TEXT:     return effectiveHexColour(m_info, HVC_SELTEXT, pal);
         case PE_SELECTION_INACTIVE: return effectiveHexColour(m_info, HVC_SELECTION_INACTIVE, pal);
         case PE_SELECTION_TEXT_INACTIVE: return effectiveHexColour(m_info, HVC_SELTEXT_INACTIVE, pal);
@@ -999,8 +1034,8 @@ QColor PaletteEditorDialog::colorAt(PaletteElem e) const
         case PE_WINDOW:             return m_info.window.isValid()     ? m_info.window     : pal.color(QPalette::Window);
         case PE_WINDOWTEXT:         return m_info.windowText.isValid() ? m_info.windowText : pal.color(QPalette::WindowText);
         case PE_TOOLBAR:            return m_info.toolbar.isValid()    ? m_info.toolbar    : pal.color(QPalette::AlternateBase);
-        case PE_HIGHLIGHT:          return m_info.highlight.isValid()  ? m_info.highlight  : pal.color(QPalette::Highlight);
-        case PE_PANELBORDERS:       return m_info.panelBorders.isValid() ? m_info.panelBorders : themeBorderColor();
+        case PE_UI_ACCENT:          return m_info.uiAccent.isValid() ? m_info.uiAccent : pal.color(QPalette::Highlight);
+        case PE_PANEL_DIVIDERS:     return m_info.panelDividers.isValid() ? m_info.panelDividers : themeBorderColor();
         case PE_COUNT:              return {};
     }
     return {};
@@ -1022,8 +1057,8 @@ QColor PaletteEditorDialog::rawColorAt(PaletteElem e) const
         case PE_ASCII:              return m_info.ascii;
         case PE_MODIFIED:           return m_info.modified;
         case PE_SELECTION:          return m_info.selection;
-        case PE_MATCHED:            return m_info.matched;
-        case PE_MATCH_SELECTED:     return m_info.matchSelected;
+        case PE_MATCH_HIGHLIGHT:    return m_info.matchHighlight;
+        case PE_MATCH_HIGHLIGHT_SELECTED: return m_info.matchHighlightSelected;
         case PE_SELECTION_TEXT:     return m_info.selectionText;
         case PE_SELECTION_INACTIVE: return m_info.selectionInactive;
         case PE_SELECTION_TEXT_INACTIVE: return m_info.selectionTextInactive;
@@ -1039,24 +1074,31 @@ QColor PaletteEditorDialog::rawColorAt(PaletteElem e) const
         case PE_WINDOW:             return m_info.window;
         case PE_WINDOWTEXT:         return m_info.windowText;
         case PE_TOOLBAR:            return m_info.toolbar;
-        case PE_HIGHLIGHT:          return m_info.highlight;
-        case PE_PANELBORDERS:       return m_info.panelBorders;
+        case PE_UI_ACCENT:          return m_info.uiAccent;
+        case PE_PANEL_DIVIDERS:     return m_info.panelDividers;
         case PE_COUNT:              return {};
     }
     return {};
 }
 
-void PaletteEditorDialog::updateItemIndicator(int row)
+void PaletteEditorDialog::updateItemIndicator(PaletteElem e)
 {
-    if (row < 0 || row >= PE_COUNT) return;
-    const bool hasBase  = rawColorAt(PaletteElem(row)).isValid();
-    const bool hasLight = m_info.lightOverrides.contains(row);
-    const bool hasDark  = m_info.darkOverrides.contains(row);
+    if (!isPaletteElemVisible(e)) return;
+    const int elem = int(e);
+    const bool hasBase  = rawColorAt(e).isValid();
+    const bool hasLight = m_info.lightOverrides.contains(elem);
+    const bool hasDark  = m_info.darkOverrides.contains(elem);
     QString indicator;
     if (hasBase)  indicator += QLatin1Char('B');
     if (hasLight) indicator += QLatin1Char('L');
     if (hasDark)  indicator += QLatin1Char('D');
-    m_list->item(row)->setData(Qt::UserRole, indicator);
+    for (int row = 0; row < m_list->count(); ++row) {
+        QListWidgetItem *item = m_list->item(row);
+        if (itemPaletteElem(item) == e) {
+            item->setData(Qt::UserRole, indicator);
+            return;
+        }
+    }
 }
 
 void PaletteEditorDialog::updateColorUI(PaletteElem e)
@@ -1108,8 +1150,10 @@ void PaletteEditorDialog::setScreenPickerActive(bool active)
 void PaletteEditorDialog::applyEditedColor(const QColor &c)
 {
     const int row = m_list->currentRow();
-    if (row < 0 || row >= PE_COUNT || !c.isValid()) return;
-    setColorAt(PaletteElem(row), c);
+    if (row < 0 || !c.isValid()) return;
+    const PaletteElem e = itemPaletteElem(m_list->item(row));
+    if (e == PE_COUNT) return;
+    setColorAt(e, c);
     m_picker->blockSignals(true);
     m_picker->setColor(c);
     m_picker->blockSignals(false);
@@ -1125,7 +1169,7 @@ void PaletteEditorDialog::setColorAt(PaletteElem e, const QColor &c)
         auto &ov = editMode == 2 ? m_info.darkOverrides : m_info.lightOverrides;
         if (c.isValid()) ov[int(e)] = c;
         else             ov.remove(int(e));
-        updateItemIndicator(int(e));
+        updateItemIndicator(e);
         return;
     }
     switch (e) {
@@ -1135,8 +1179,8 @@ void PaletteEditorDialog::setColorAt(PaletteElem e, const QColor &c)
         case PE_ASCII:              m_info.ascii             = c; break;
         case PE_MODIFIED:           m_info.modified          = c; break;
         case PE_SELECTION:          m_info.selection         = c; break;
-        case PE_MATCHED:            m_info.matched           = c; break;
-        case PE_MATCH_SELECTED:     m_info.matchSelected     = c; break;
+        case PE_MATCH_HIGHLIGHT:          m_info.matchHighlight = c; break;
+        case PE_MATCH_HIGHLIGHT_SELECTED: m_info.matchHighlightSelected = c; break;
         case PE_SELECTION_TEXT:     m_info.selectionText     = c; break;
         case PE_SELECTION_INACTIVE: m_info.selectionInactive = c; break;
         case PE_SELECTION_TEXT_INACTIVE: m_info.selectionTextInactive = c; break;
@@ -1153,8 +1197,8 @@ void PaletteEditorDialog::setColorAt(PaletteElem e, const QColor &c)
         case PE_WINDOW:             m_info.window            = c; break;
         case PE_WINDOWTEXT:         m_info.windowText        = c; break;
         case PE_TOOLBAR:            m_info.toolbar           = c; break;
-        case PE_HIGHLIGHT:          m_info.highlight         = c; break;
-        case PE_PANELBORDERS:       m_info.panelBorders      = c; break;
+        case PE_UI_ACCENT:          m_info.uiAccent          = c; break;
+        case PE_PANEL_DIVIDERS:     m_info.panelDividers     = c; break;
         case PE_COUNT:              break;
     }
 }

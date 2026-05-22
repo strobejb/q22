@@ -333,7 +333,7 @@ void Hairline::paintEvent(QPaintEvent *)
 
 QColor themeBorderColor()
 {
-    const QColor override = uiColourOverrides().panelBorders;
+    const QColor override = uiColourOverrides().panelDividers;
     return override.isValid()
         ? override
         : QColor(QApplication::palette().mid().color().name());
@@ -603,8 +603,8 @@ static void applyPalette(bool dark)
         p.setColor(QPalette::Text,       s_uiOverrides.windowText);
         p.setColor(QPalette::ButtonText, s_uiOverrides.windowText);
     }
-    if (s_uiOverrides.highlight.isValid()) {
-        const QColor hlOver     = s_uiOverrides.highlight;
+    if (s_uiOverrides.uiAccent.isValid()) {
+        const QColor hlOver     = s_uiOverrides.uiAccent;
         const QColor hlOverText = hlOver.lightness() < 160 ? Qt::white : windowText;
         p.setColor(QPalette::Highlight,       hlOver);
         p.setColor(QPalette::HighlightedText, hlOverText);
@@ -1802,8 +1802,8 @@ void setUiColourOverrides(const UiColourOverrides &o)
     if (o.window == s_uiOverrides.window &&
         o.windowText == s_uiOverrides.windowText &&
         o.toolbar == s_uiOverrides.toolbar &&
-        o.highlight == s_uiOverrides.highlight &&
-        o.panelBorders == s_uiOverrides.panelBorders)
+        o.uiAccent == s_uiOverrides.uiAccent &&
+        o.panelDividers == s_uiOverrides.panelDividers)
         return;
     s_uiOverrides = o;
     applyAdwaitaTheme(s_currentScheme);
