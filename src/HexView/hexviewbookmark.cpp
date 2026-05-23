@@ -345,8 +345,15 @@ int HexView::noteStripFullHeight(const Bookmark &bm) const
     const int textW = rectW - 2 * kNotePadH - kNoteBtnSz - kNoteBtnGap;
     if (textW <= 0) return m_nFontHeight;
 
+    const QString hexAddr = QStringLiteral("0x") +
+                            QString::number(bm.offset, 16).toUpper().rightJustified(8, QLatin1Char('0'));
+    const QString rangeText = (bm.length <= 1)
+        ? hexAddr
+        : (hexAddr + QStringLiteral("  (") + QString::number(bm.length) + QStringLiteral(" bytes)"));
     const QFontMetrics rangeFm(QApplication::font());
-    const int rangeH = rangeFm.height();
+    const QRect rangeBounds = rangeFm.boundingRect(QRect(0, 0, textW, 10000),
+                                                    Qt::AlignLeft | Qt::AlignTop, rangeText);
+    const int rangeH = rangeBounds.height();
 
     // Use live editor text while this bookmark is being edited so that
     // computeBookmarkLayout() sees the current height, not the last-saved height.
@@ -433,37 +440,57 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
         tabBot[i] = tabTop[i] + collapsedH;
     }
 
+    QVector<int> visualOrder(n);
+    for (int i = 0; i < n; ++i)
+        visualOrder[i] = i;
+    std::stable_sort(visualOrder.begin(), visualOrder.end(),
+                     [&](int a, int b) {
+                         if (fullTop[a] != fullTop[b]) return fullTop[a] < fullTop[b];
+                         return a < b;
+                     });
+
+    QVector<QVector<int>> groups;
+    for (int p = 0; p < n;) {
+        QVector<int> group;
+        group.append(visualOrder[p]);
+        int groupBot = fullBot[visualOrder[p]];
+        ++p;
+        while (p < n && fullTop[visualOrder[p]] < groupBot) {
+            const int idx = visualOrder[p];
+            group.append(idx);
+            groupBot = std::max(groupBot, fullBot[idx]);
+            ++p;
+        }
+        std::sort(group.begin(), group.end());
+        groups.append(group);
+    }
+
     auto isInConflictGroup = [&](int idx) {
         if (idx < 0 || idx >= n)
             return false;
-        int start = 0;
-        while (start < n) {
-            int end = start + 1;
-            int groupBot = fullBot[start];
-            while (end < n && fullTop[end] < groupBot) {
-                groupBot = std::max(groupBot, fullBot[end]);
-                ++end;
-            }
-            if (idx >= start && idx < end)
-                return end - start > 1;
-            start = end;
+        for (const QVector<int> &group : groups) {
+            if (group.size() > 1 && group.contains(idx))
+                return true;
         }
         return false;
     };
-    auto clearActiveInGroup = [&](int start, int end) {
-        for (int j = start; j < end; ++j)
+    auto clearActiveInGroup = [&](const QVector<int> &group) {
+        for (int j : group)
             m_bookmarks[j]._active = false;
     };
-    auto activeInGroup = [&](int start, int end) {
-        for (int j = start; j < end; ++j) {
+    auto activeInGroup = [&](const QVector<int> &group) {
+        for (int j : group) {
             if (m_bookmarks[j]._active)
                 return j;
         }
         return -1;
     };
-    auto setActiveInGroup = [&](int start, int end, int idx) {
-        clearActiveInGroup(start, end);
-        if (idx >= start && idx < end)
+    auto groupContains = [](const QVector<int> &group, int idx) {
+        return std::binary_search(group.begin(), group.end(), idx);
+    };
+    auto setActiveInGroup = [&](const QVector<int> &group, int idx) {
+        clearActiveInGroup(group);
+        if (groupContains(group, idx))
             m_bookmarks[idx]._active = true;
     };
 
@@ -515,17 +542,10 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
         }
     }
 
-    // Sweep: find maximal conflict groups using full heights for all members.
-    int i = 0;
-    while (i < n) {
-        int end      = i + 1;
-        int groupBot = fullBot[i];
-        while (end < n && fullTop[end] < groupBot) {
-            groupBot = std::max(groupBot, fullBot[end]);
-            ++end;
-        }
-
-        if (end - i == 1) {
+    // Sweep visual conflict groups using full heights for all members.
+    for (const QVector<int> &group : groups) {
+        if (group.size() == 1) {
+            const int i = group.first();
             // Lone bookmark (no strip overlap with neighbours).
             //
             // HVS_BOOKMARK_EXPAND_LONE: show as a full strip unconditionally
@@ -550,24 +570,24 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
             // active=false → {true,false,false}  showTab=true  → collapsed tab
             layout[i] = { !active, active, false };
         } else {
-            // Conflict group [i, end).
+            // Conflict group.
             int    winnerIdx = -1;
             size_w winnerLen = (size_w)-1;
 
             // Step 1: inline editor takes priority — cannot collapse a strip that
             // holds a live text editor regardless of where the cursor is.
-            if (m_noteEditorIdx >= i && m_noteEditorIdx < end &&
+            if (groupContains(group, m_noteEditorIdx) &&
                 m_noteEditor && m_noteEditor->isVisible()) {
                 winnerIdx = m_noteEditorIdx;
                 if (!treatMouseAsReleased) {
                     m_expandedBookmarkIdx = m_noteEditorIdx;
-                    setActiveInGroup(i, end, winnerIdx);
+                    setActiveInGroup(group, winnerIdx);
                 }
             }
 
             // While dragging, keep the existing display stable.
             if (winnerIdx < 0 && mouseHeld &&
-                m_expandedBookmarkIdx >= i && m_expandedBookmarkIdx < end) {
+                groupContains(group, m_expandedBookmarkIdx)) {
                 winnerIdx = m_expandedBookmarkIdx;
             }
 
@@ -575,17 +595,17 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
             // still open the selected bookmark even when cursor navigation
             // expansion is disabled.
             if (winnerIdx < 0 &&
-                m_expandedBookmarkIdx >= i && m_expandedBookmarkIdx < end) {
+                groupContains(group, m_expandedBookmarkIdx)) {
                 winnerIdx = m_expandedBookmarkIdx;
                 if (!treatMouseAsReleased)
-                    setActiveInGroup(i, end, winnerIdx);
+                    setActiveInGroup(group, winnerIdx);
             }
 
             // Step 3: cursor-based expansion.  The preference gates full-strip
             // expansion; the pre-sweep state update above still records the
             // matching collapsed tab for surfacing even when expansion is off.
             if (winnerIdx < 0 && checkStyle(HVS_BOOKMARK_EXPAND_CURSOR) && !mouseHeld) {
-                for (int j = i; j < end; ++j) {
+                for (int j : group) {
                     const Bookmark &bm = m_bookmarks[j];
                     if (m_nCursorOffset >= bm.offset &&
                         m_nCursorOffset <  bm.offset + bm.length &&
@@ -596,7 +616,7 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
                 }
                 if (winnerIdx >= 0 && !treatMouseAsReleased) {
                     m_expandedBookmarkIdx = winnerIdx;
-                    setActiveInGroup(i, end, winnerIdx);
+                    setActiveInGroup(group, winnerIdx);
                 }
             }
 
@@ -612,7 +632,7 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
             int    surfacedIdx = -1;
             size_w surfacedLen = (size_w)-1;
             if (winnerIdx < 0 && !mouseHeld) {
-                for (int j = i; j < end; ++j) {
+                for (int j : group) {
                     const Bookmark &bm = m_bookmarks[j];
                     if (m_nCursorOffset >= bm.offset &&
                         m_nCursorOffset <  bm.offset + bm.length &&
@@ -628,14 +648,14 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
             // held and live cursor updates are frozen.  Keep the last-surfaced tab
             // at the front so navigation sticks without changing state mid-drag.
             if (surfacedIdx < 0 &&
-                m_surfacedBookmarkIdx >= i && m_surfacedBookmarkIdx < end)
+                groupContains(group, m_surfacedBookmarkIdx))
                 surfacedIdx = m_surfacedBookmarkIdx;
 
             if (winnerIdx < 0 && checkStyle(HVS_BOOKMARK_EXPAND_ALWAYS)) {
-                const int activeIdx = activeInGroup(i, end);
-                winnerIdx = activeIdx >= 0 ? activeIdx : (surfacedIdx >= 0 ? surfacedIdx : i);
+                const int activeIdx = activeInGroup(group);
+                winnerIdx = activeIdx >= 0 ? activeIdx : (surfacedIdx >= 0 ? surfacedIdx : group.first());
                 if (!treatMouseAsReleased)
-                    setActiveInGroup(i, end, winnerIdx);
+                    setActiveInGroup(group, winnerIdx);
             }
 
             // For non-active members: hide collapsed tabs that overlap the
@@ -645,7 +665,7 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
             const int activeTop = (winnerIdx >= 0) ? fullTop[winnerIdx] : INT_MIN;
             const int activeBot = (winnerIdx >= 0) ? fullBot[winnerIdx] : INT_MIN;
 
-            for (int j = i; j < end; ++j) {
+            for (int j : group) {
                 const bool active = (winnerIdx != -1 && j == winnerIdx);
                 bool hidden = false;
                 if (!active && winnerIdx >= 0) {
@@ -661,7 +681,6 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
                 layout[j] = {true, active, hidden};
             }
         }
-        i = end;
     }
 
     // Second pass: hide collapsed tabs that visually overlap an active full
