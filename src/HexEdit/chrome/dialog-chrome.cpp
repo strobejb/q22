@@ -694,6 +694,7 @@ void installDialogChrome(QDialog *dlg)
     TitleBarOptions opts;
     opts.showFileMenu = false;
     opts.showSearchMenu = false;
+    opts.showFileInfoButton = false;
     opts.showViewMenu = false;
     opts.showMinimize = false;
     opts.showMaximize = false;

@@ -21,6 +21,7 @@ struct TitleBarOptions
 {
     bool showFileMenu = true;
     bool showSearchMenu = true;
+    bool showFileInfoButton = true;
     bool showViewMenu = true;
     bool showMinimize = true;
     bool showMaximize = true;
@@ -40,7 +41,11 @@ public:
     void   setHamburgerMenu(QMenu *menu);
     QMenu *viewMenu()                   const { return m_viewMenu; }
     void   setSearchMenu(QMenu *menu);
+    void   setFileInfoPanelOpen(bool open);
     void   refreshStylesheet();
+
+signals:
+    void fileInfoToggled();
 
 protected:
     void mousePressEvent(QMouseEvent *event)       override;
@@ -59,6 +64,7 @@ private:
 
     QToolButton *m_hamburger  = nullptr;
     QToolButton *m_searchBtn  = nullptr;
+    QToolButton *m_fileInfoBtn = nullptr;
     QToolButton *m_viewBtn    = nullptr;
     QToolButton *m_btnMin    = nullptr;
     QToolButton *m_btnMax    = nullptr;

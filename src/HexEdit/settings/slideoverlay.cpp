@@ -185,6 +185,11 @@ bool SlideOverlay::isActive() const { return m_content != nullptr; }
 // Dismiss the hosted dialog immediately (equivalent to the back button).
 void SlideOverlay::dismiss() { if (m_content) m_content->reject(); }
 
+void SlideOverlay::setDirection(Direction direction)
+{
+    m_direction = direction;
+}
+
 
 // ── public ────────────────────────────────────────────────────────────────────
 
@@ -292,7 +297,7 @@ void SlideOverlay::slideIn(QDialog *dlg, std::function<void(int)> onFinished,
     // Critically: the panel is moved before show() so it is never rendered at
     // its resting position (0, 0) before the animation begins.
     syncToParent();
-    m_slidePanel->move(-width(), 0);
+    m_slidePanel->move(m_direction == Direction::FromRight ? width() : -width(), 0);
     show();
     raise();
     m_slidePanel->show();
@@ -390,10 +395,11 @@ QRect SlideOverlay::overlayRect() const
     if (qobject_cast<SlideOverlay *>(par))
         return par->rect();
 
+    const int overlayTopInset = qMax(0, par->property("_qexedOverlayTopInset").toInt());
     const QMargins chrome = chromeMargins();
     const int title = chromeTopInset();
     return par->rect().adjusted(chrome.left(),
-                                chrome.top() + title,
+                                chrome.top() + title + overlayTopInset,
                                 -chrome.right(),
                                 -chrome.bottom());
 }
@@ -433,7 +439,7 @@ void SlideOverlay::startSlideOut()
     m_anim->disconnect();
     m_anim->setEasingCurve(QEasingCurve::InCubic);
     m_anim->setStartValue(m_slidePanel->pos());
-    m_anim->setEndValue(QPoint(-width(), 0));  // exit to the left
+    m_anim->setEndValue(QPoint(m_direction == Direction::FromRight ? width() : -width(), 0));
 
     connect(m_anim, &QPropertyAnimation::finished, this, [this]() {
         hide();
@@ -516,7 +522,7 @@ bool SlideOverlay::eventFilter(QObject *obj, QEvent *event)
             }
             // Update the slide-out end position if currently animating.
             if (m_anim->state() == QAbstractAnimation::Running)
-                m_anim->setEndValue(QPoint(-width(), 0));
+                m_anim->setEndValue(QPoint(m_direction == Direction::FromRight ? width() : -width(), 0));
         }
         return false;   // don't consume — parent still needs to process it
     }

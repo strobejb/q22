@@ -10,6 +10,7 @@
 #include "dialogs/dlgexport.h"
 #include "dialogs/dlgimport.h"
 #include "dialogs/dlgpastespecial.h"
+#include "fileproperties.h"
 #include "panels/dockpanelhost.h"
 #include "panels/findpanel.h"
 #include "panels/gotopanel.h"
@@ -47,11 +48,13 @@
 #include <QFileInfo>
 #include <QFileSystemWatcher>
 #include <QGridLayout>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QMessageBox>
 #include <QIcon>
 #include <QMenu>
 #include <QPointer>
+#include <QPropertyAnimation>
 #include <QStyle>
 #include <QKeyEvent>
 #include <QMouseEvent>
@@ -149,6 +152,9 @@ static QString getThemedSaveFileName(QWidget *parent, const QString &caption)
     const int result = useNativeFileDialogs ? dlg.exec() : execCentered(&dlg);
     return result == QDialog::Accepted ? dlg.selectedFiles().value(0) : QString();
 }
+
+static constexpr int kFileInfoPaneWidth = 400;
+static constexpr int kFileInfoPaneAnimMs = 220;
 
 #ifdef Q_OS_WIN
 #include "chrome/windows-chrome.h"
@@ -435,7 +441,33 @@ MainWindow::MainWindow(QWidget *parent)
     m_titleHairline->setCursor(Qt::ArrowCursor);
     m_titleHairline->setAcceptDrops(true);
     vlay->addWidget(m_titleHairline);
-    vlay->addWidget(m_hv, 1);
+
+    auto *contentRow = new QWidget(central);
+    contentRow->setAcceptDrops(true);
+    auto *contentLay = new QHBoxLayout(contentRow);
+    contentLay->setContentsMargins(0, 0, 0, 0);
+    contentLay->setSpacing(0);
+    contentLay->addWidget(m_hv, 1);
+
+    m_fileInfoHost = new QWidget(contentRow);
+    m_fileInfoHost->setAcceptDrops(true);
+    m_fileInfoHost->setMinimumWidth(0);
+    m_fileInfoHost->setMaximumWidth(0);
+    m_fileInfoHost->hide();
+    auto *fileInfoHostLay = new QHBoxLayout(m_fileInfoHost);
+    fileInfoHostLay->setContentsMargins(0, 0, 0, 0);
+    fileInfoHostLay->setSpacing(0);
+    auto *fileInfoHairline = new Hairline(m_fileInfoHost, Hairline::Edge::Left);
+    fileInfoHairline->setCursor(Qt::ArrowCursor);
+    fileInfoHairline->setAcceptDrops(true);
+    fileInfoHostLay->addWidget(fileInfoHairline);
+    contentLay->addWidget(m_fileInfoHost, 0);
+
+    m_fileInfoWidthAnim = new QPropertyAnimation(m_fileInfoHost, "maximumWidth", this);
+    m_fileInfoWidthAnim->setDuration(kFileInfoPaneAnimMs);
+    m_fileInfoWidthAnim->setEasingCurve(QEasingCurve::OutCubic);
+
+    vlay->addWidget(contentRow, 1);
     m_bookmarkDialog = new BookmarkDialog(this);
     auto *dockPanelHost = new DockPanelHost(m_hv, central);
     dockPanelHost->setCursor(Qt::ArrowCursor);
@@ -458,6 +490,11 @@ MainWindow::MainWindow(QWidget *parent)
     statusHairline->setAcceptDrops(true);
     vlay->addWidget(statusHairline);  // separator between content and status bar
     setCentralWidget(central);
+
+    connect(m_titleBar, &TitleBar::fileInfoToggled,
+            this, &MainWindow::toggleFileInfoPanel);
+    connect(ui->actionProperties, &QAction::triggered,
+            this, &MainWindow::toggleFileInfoPanel);
 
     // Build a standalone Edit menu for the HexView context menu, sharing the
     // same QActions so any connections added later apply automatically.
@@ -601,6 +638,7 @@ MainWindow::MainWindow(QWidget *parent)
     // Keep Edit action enabled-states in sync with HexView and clipboard state.
     connect(m_hv, &HexView::selectionChanged, this, [this](size_w, size_w) { updateEditActions(); });
     connect(m_hv, &HexView::contentChanged,   this, [this](size_w, size_w, uint) { updateEditActions(); });
+    connect(m_hv, &HexView::contentChanged,   this, [this](size_w, size_w, uint) { refreshFileInfoPanel(); });
     connect(m_hv, &HexView::editModeChanged,  this, [this](uint) {
         m_statusBar->update();
         updateEditActions();
@@ -624,7 +662,10 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_hv, &HexView::selectionChanged, this,
             [this](size_w, size_w) { m_statusBar->update(); });
     connect(m_hv, &HexView::lengthChanged, this,
-            [this](size_w) { m_statusBar->update(); });
+            [this](size_w) {
+        m_statusBar->update();
+        refreshFileInfoPanel();
+    });
 
     auto populateBookmarkDialog = [this]() {
         QVector<QColor> swatchColours;
@@ -797,6 +838,7 @@ MainWindow::MainWindow(QWidget *parent)
         if (!maybeSave()) return;
         m_hv->clearFile();
         setWindowTitle(QApplication::applicationDisplayName());
+        refreshFileInfoPanel();
     });
 
     connect(ui->actionOpen, &QAction::triggered, this, [this]() {
@@ -1142,6 +1184,78 @@ void MainWindow::openFile(const QString &path) {
     AppSettings::addRecentFile(path);
     updateRecentMenu();
     setWindowTitle(QFileInfo(path).fileName() + " \u2013 " + QApplication::applicationDisplayName());
+    refreshFileInfoPanel();
+}
+
+void MainWindow::toggleFileInfoPanel()
+{
+    if (!m_fileInfoHost)
+        return;
+
+    if (m_filePropertiesPanel) {
+        m_titleBar->setFileInfoPanelOpen(false);
+        setFileInfoPaneExpanded(false);
+        return;
+    }
+
+    auto *panel = new FilePropertiesPanel(m_hv, m_fileInfoHost);
+    panel->setWindowFlags(Qt::Widget);
+    panel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    m_filePropertiesPanel = panel;
+    if (auto *layout = qobject_cast<QHBoxLayout *>(m_fileInfoHost->layout()))
+        layout->addWidget(panel);
+    panel->show();
+
+    connect(panel, &FilePropertiesPanel::closeRequested, this, [this]() {
+        m_titleBar->setFileInfoPanelOpen(false);
+        setFileInfoPaneExpanded(false);
+    });
+
+    m_titleBar->setFileInfoPanelOpen(true);
+    setFileInfoPaneExpanded(true);
+}
+
+void MainWindow::refreshFileInfoPanel()
+{
+    if (m_filePropertiesPanel)
+        m_filePropertiesPanel->refresh();
+}
+
+void MainWindow::setFileInfoPaneExpanded(bool expanded)
+{
+    if (!m_fileInfoHost || !m_fileInfoWidthAnim)
+        return;
+
+    m_fileInfoWidthAnim->stop();
+    m_fileInfoWidthAnim->disconnect();
+
+    m_fileInfoHost->setMinimumWidth(0);
+    if (expanded)
+        m_fileInfoHost->show();
+
+    m_fileInfoWidthAnim->setEasingCurve(expanded ? QEasingCurve::OutCubic
+                                                 : QEasingCurve::InCubic);
+    m_fileInfoWidthAnim->setStartValue(m_fileInfoHost->maximumWidth());
+    m_fileInfoWidthAnim->setEndValue(expanded ? kFileInfoPaneWidth : 0);
+
+    if (expanded) {
+        connect(m_fileInfoWidthAnim, &QPropertyAnimation::finished, this, [this]() {
+            if (m_fileInfoHost && m_fileInfoHost->maximumWidth() == kFileInfoPaneWidth)
+                m_fileInfoHost->setMinimumWidth(kFileInfoPaneWidth);
+        }, Qt::SingleShotConnection);
+    } else {
+        connect(m_fileInfoWidthAnim, &QPropertyAnimation::finished, this, [this]() {
+            if (m_fileInfoHost && m_fileInfoHost->maximumWidth() == 0) {
+                if (m_filePropertiesPanel) {
+                    m_filePropertiesPanel->deleteLater();
+                    m_filePropertiesPanel = nullptr;
+                }
+                m_fileInfoHost->hide();
+            }
+        }, Qt::SingleShotConnection);
+    }
+
+    m_fileInfoWidthAnim->start();
 }
 
 void MainWindow::updateRecentMenu() {

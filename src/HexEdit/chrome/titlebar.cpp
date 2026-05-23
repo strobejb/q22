@@ -194,6 +194,26 @@ TitleBar::TitleBar(QWidget *parent, const TitleBarOptions &options)
     m_searchBtn->setPopupMode(QToolButton::InstantPopup);
     m_searchBtn->setVisible(m_options.showSearchMenu);
 
+    // ── File information button (between Search and Tools) ─────────────────
+    m_fileInfoBtn = new QToolButton(this);
+    m_fileInfoBtn->setObjectName("fileInfoBtn");
+    QIcon infoIcon = QIcon::fromTheme("help-about-symbolic");
+    if (!infoIcon.isNull())
+        m_fileInfoBtn->setIcon(infoIcon);
+    else
+        m_fileInfoBtn->setText("i");
+    m_fileInfoBtn->setFocusPolicy(Qt::NoFocus);
+    m_fileInfoBtn->setAutoRaise(true);
+    m_fileInfoBtn->setCheckable(true);
+#ifdef Q_OS_WIN
+    m_fileInfoBtn->setFixedSize(40, barH);
+#else
+    m_fileInfoBtn->setFixedSize(btnSz, btnSz);
+#endif
+    m_fileInfoBtn->setIconSize(QSize(menuBtnIconSz, menuBtnIconSz));
+    m_fileInfoBtn->setVisible(m_options.showFileInfoButton);
+    connect(m_fileInfoBtn, &QToolButton::clicked, this, &TitleBar::fileInfoToggled);
+
     // ── Title label ───────────────────────────────────────────────────────
     m_title = new QLabel(this);
     m_title->setText(window()->windowTitle());
@@ -271,6 +291,7 @@ TitleBar::TitleBar(QWidget *parent, const TitleBarOptions &options)
     layout->addWidget(m_title);
     layout->addStretch();
     layout->addWidget(m_searchBtn);
+    layout->addWidget(m_fileInfoBtn);
     layout->addWidget(m_viewBtn);
     layout->addWidget(rightGroup);
 
@@ -431,9 +452,11 @@ void TitleBar::refreshStylesheet()
         }
         #TitleBar QToolButton:hover   { background: %3; }
         #TitleBar QToolButton:pressed { background: %4; }
+        #TitleBar QToolButton:checked { background: %4; }
         #TitleBar QToolButton#hamburger::menu-indicator  { image: none; width: 0; }
         #TitleBar QToolButton#viewMenu::menu-indicator   { image: none; width: 0; }
         #TitleBar QToolButton#searchBtn::menu-indicator  { image: none; width: 0; }
+        #TitleBar QToolButton#fileInfoBtn::menu-indicator { image: none; width: 0; }
     )").arg(bg, fg, hover,
             dark ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.18)",
             border,
@@ -443,6 +466,7 @@ void TitleBar::refreshStylesheet()
     setStyleSheet(styleSheet() + R"(
         #TitleBar QToolButton#hamburger,
         #TitleBar QToolButton#searchBtn,
+        #TitleBar QToolButton#fileInfoBtn,
         #TitleBar QToolButton#viewMenu  { border-radius: 0; }
 
         #TitleBar QToolButton#close,
@@ -467,6 +491,7 @@ void TitleBar::refreshStylesheet()
         };
         recolor(m_hamburger, "actions/document-open-symbolic",  14);
         recolor(m_searchBtn,  "actions/edit-find-symbolic",      14);
+        recolor(m_fileInfoBtn, "actions/help-about-symbolic",     14);
         recolor(m_viewBtn,    "actions/open-menu-symbolic",      14);
 #ifndef Q_OS_WIN
         // Caption buttons on Windows use Segoe text glyphs, not icons.
@@ -496,6 +521,7 @@ void TitleBar::changeEvent(QEvent *e)
         };
         recolor(m_hamburger, "actions/document-open-symbolic",  14);
         recolor(m_searchBtn,  "actions/edit-find-symbolic",      14);
+        recolor(m_fileInfoBtn, "actions/help-about-symbolic",     14);
         recolor(m_viewBtn,    "actions/open-menu-symbolic",      14);
 #ifndef Q_OS_WIN
         // Caption buttons on Windows use Segoe text glyphs, not icons.
@@ -523,6 +549,12 @@ void TitleBar::setSearchMenu(QMenu *menu)
     m_searchBtn->setMenu(menu);
     m_searchMenu = menu;
     m_searchMenu->installEventFilter(this);
+}
+
+void TitleBar::setFileInfoPanelOpen(bool open)
+{
+    if (m_fileInfoBtn)
+        m_fileInfoBtn->setChecked(open);
 }
 
 // Switch maximize ↔ restore icon whenever the window state changes.

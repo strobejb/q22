@@ -4,6 +4,7 @@
 #include <QByteArray>
 #include <QCloseEvent>
 #include <QMainWindow>
+#include <QPointer>
 #include "palette/palettes.h"
 
 QT_BEGIN_NAMESPACE
@@ -13,14 +14,17 @@ QT_END_NAMESPACE
 class BookmarkDialog;
 class FindPanel;
 class GotoPanel;
+class FilePropertiesPanel;
 class PreferencesDialog;
 class HexView;
 class Hairline;
 class QFileSystemWatcher;
 class QMenu;
+class QPropertyAnimation;
 class QTimer;
 class StatusBar;
 class TitleBar;
+class QWidget;
 
 class MainWindow : public QMainWindow
 {
@@ -52,6 +56,9 @@ private:
     void reloadWatchedPalettes();
     void runFind(bool forward);
     void execFind(const QByteArray &pattern, uint flags);
+    void toggleFileInfoPanel();
+    void refreshFileInfoPanel();
+    void setFileInfoPaneExpanded(bool expanded);
     void applyMenuMode(bool useCustomTitleBar);
 #ifdef Q_OS_WIN
     void updateWinChromeColors();
@@ -70,6 +77,9 @@ private:
     BookmarkDialog    *m_bookmarkDialog = nullptr;
     FindPanel         *m_findDialog     = nullptr;
     GotoPanel         *m_gotoDialog     = nullptr;
+    QWidget           *m_fileInfoHost    = nullptr;
+    QPropertyAnimation *m_fileInfoWidthAnim = nullptr;
+    QPointer<FilePropertiesPanel> m_filePropertiesPanel;
     PreferencesDialog *m_prefsDialog    = nullptr;
     bool            m_useCustomTitleBar = true;
     bool            m_inResizeZone      = false;

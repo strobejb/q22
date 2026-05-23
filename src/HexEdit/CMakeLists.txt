@@ -3,6 +3,8 @@ set(HEXEDIT_RESOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/resources)
 
 set(PROJECT_SOURCES
         main.cpp
+        fileproperties.cpp
+        fileproperties.h
         mainwindow.cpp
         mainwindow.h
         mainwindow.ui
@@ -112,6 +114,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         resources/icons/actions/document-edit-symbolic.svg resources/icons/actions/edit-clear-symbolic.svg resources/icons/actions/user-trash-symbolic.svg
         resources/icons/actions/pen-to-square-solid-full.svg
         resources/icons/actions/edit-copy-symbolic.svg resources/icons/actions/edit-cut-symbolic.svg resources/icons/actions/edit-delete-symbolic.svg
+        resources/icons/actions/help-about-symbolic.svg
     )
 # Define target properties for Android with Qt 6 as:
 #    set_property(TARGET hexedit APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR

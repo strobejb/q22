@@ -12,7 +12,7 @@ class QToolButton;
 
 // ── SlideOverlay ──────────────────────────────────────────────────────────────
 // Full-size in-place panel that hosts a QDialog as an overlay over its parent,
-// sliding in from the right when shown and back out when dismissed.
+// sliding in from the configured side when shown and back out when dismissed.
 //
 // The overlay owns a fixed 36 px header strip containing a back-chevron
 // QToolButton; the hosted dialog fills the remaining area beneath it.
@@ -39,7 +39,11 @@ class SlideOverlay : public QWidget
 {
     Q_OBJECT
 public:
+    enum class Direction { FromLeft, FromRight };
+
     explicit SlideOverlay(QWidget *parent);
+
+    void setDirection(Direction direction);
 
     // Embed dlg and animate in.  dlg must not have been shown or exec()'d.
     // The overlay takes ownership of dlg.
@@ -80,6 +84,7 @@ private:
     QSize               m_savedParentSize;
     bool                m_inlineMode     = false; // back btn embedded in dialog header row
     bool                m_didResizeParent = false; // whether we resized the parent on open
+    Direction           m_direction      = Direction::FromLeft;
 };
 
 #endif // SLIDEOVERLAY_H

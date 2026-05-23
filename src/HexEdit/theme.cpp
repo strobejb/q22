@@ -276,8 +276,13 @@ struct MenuShadowFilter : public QObject
 Hairline::Hairline(QWidget *parent, Edge edge, QWidget *bgSource)
     : QWidget(parent), m_edge(edge), m_bgSource(bgSource)
 {
-    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    setFixedHeight(1);
+    if (m_edge == Edge::Left || m_edge == Edge::Right) {
+        setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
+        setFixedWidth(1);
+    } else {
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        setFixedHeight(1);
+    }
     if (m_bgSource)
         m_bgSource->installEventFilter(this);
 }
@@ -294,7 +299,11 @@ void Hairline::setBgSource(QWidget *bgSource)
 
 void Hairline::showEvent(QShowEvent *e)
 {
-    setFixedHeight(qCeil(devicePixelRatioF()));
+    const int logicalPx = qCeil(devicePixelRatioF());
+    if (m_edge == Edge::Left || m_edge == Edge::Right)
+        setFixedWidth(logicalPx);
+    else
+        setFixedHeight(logicalPx);
     QWidget::showEvent(e);
 }
 
@@ -312,21 +321,31 @@ void Hairline::paintEvent(QPaintEvent *)
     p.setRenderHint(QPainter::Antialiasing, false);
     const qreal dpr      = devicePixelRatioF();
     const qreal linePhys = qRound(dpr);
-    const qreal topPhys  = (m_edge == Edge::Bottom)
-                           ? (height() * dpr - linePhys)
-                           : 0.0;
-    const qreal gapPhys  = height() * dpr - linePhys;
+    const bool vertical  = m_edge == Edge::Left || m_edge == Edge::Right;
+    const qreal extentPhys = (vertical ? width() : height()) * dpr;
+    const qreal linePosPhys = (m_edge == Edge::Bottom || m_edge == Edge::Right)
+                              ? (extentPhys - linePhys)
+                              : 0.0;
+    const qreal gapPhys = extentPhys - linePhys;
 
     p.scale(1.0 / dpr, 1.0 / dpr);
 
     // Fill the gap (non-line portion) with bgSource palette if provided.
     if (m_bgSource && gapPhys > 0) {
         const QColor bg = m_bgSource->palette().window().color();
-        const qreal gapTop = (m_edge == Edge::Bottom) ? 0.0 : linePhys;
-        p.fillRect(QRectF(0, gapTop, width() * dpr, gapPhys), bg);
+        if (vertical) {
+            const qreal gapLeft = (m_edge == Edge::Right) ? 0.0 : linePhys;
+            p.fillRect(QRectF(gapLeft, 0, gapPhys, height() * dpr), bg);
+        } else {
+            const qreal gapTop = (m_edge == Edge::Bottom) ? 0.0 : linePhys;
+            p.fillRect(QRectF(0, gapTop, width() * dpr, gapPhys), bg);
+        }
     }
 
-    p.fillRect(QRectF(0, topPhys, width() * dpr, linePhys), themeBorderColor());
+    if (vertical)
+        p.fillRect(QRectF(linePosPhys, 0, linePhys, height() * dpr), themeBorderColor());
+    else
+        p.fillRect(QRectF(0, linePosPhys, width() * dpr, linePhys), themeBorderColor());
 }
 
 // ── Smart menu positioning ────────────────────────────────────────────────────
