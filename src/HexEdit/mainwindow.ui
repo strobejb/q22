@@ -32,8 +32,6 @@
     <addaction name="actionSave"/>
     <addaction name="actionSave_As"/>
     <addaction name="separator"/>
-    <addaction name="actionProperties"/>
-    <addaction name="separator"/>
     <addaction name="actionImport"/>
     <addaction name="actionExport"/>
     <addaction name="separator"/>
@@ -116,8 +114,10 @@
     <addaction name="separator"/>
     <addaction name="menuView_2"/>
     <addaction name="separator"/>
+    <addaction name="actionProperties"/>
     <addaction name="actionChecksum"/>
     <addaction name="actionStrings"/>
+    <addaction name="separator"/>
     <addaction name="actionFill"/>
     <addaction name="separator"/>
     <addaction name="actionPreferences"/>
@@ -451,11 +451,8 @@
    </property>
   </action>
   <action name="actionChecksum">
-   <property name="enabled">
-    <bool>false</bool>
-   </property>
    <property name="text">
-    <string>Checksum...</string>
+    <string>Checksums...</string>
    </property>
   </action>
   <action name="actionStrings">

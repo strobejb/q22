@@ -153,7 +153,9 @@ static QString getThemedSaveFileName(QWidget *parent, const QString &caption)
     return result == QDialog::Accepted ? dlg.selectedFiles().value(0) : QString();
 }
 
-static constexpr int kFileInfoPaneWidth = 400;
+static constexpr int kFileInfoPaneMinWidth = 280;
+static constexpr int kFileInfoPaneMaxWidth = 720;
+static constexpr int kFileInfoResizeHandleWidth = 8;
 static constexpr int kFileInfoPaneAnimMs = 220;
 
 #ifdef Q_OS_WIN
@@ -458,9 +460,16 @@ MainWindow::MainWindow(QWidget *parent)
     fileInfoHostLay->setContentsMargins(0, 0, 0, 0);
     fileInfoHostLay->setSpacing(0);
     auto *fileInfoHairline = new Hairline(m_fileInfoHost, Hairline::Edge::Left);
-    fileInfoHairline->setCursor(Qt::ArrowCursor);
+    fileInfoHairline->setProperty("fileInfoResizeHandle", true);
+    fileInfoHairline->setCursor(Qt::SizeHorCursor);
     fileInfoHairline->setAcceptDrops(true);
+    m_fileInfoResizeHandle = new QWidget(m_fileInfoHost);
+    m_fileInfoResizeHandle->setProperty("fileInfoResizeHandle", true);
+    m_fileInfoResizeHandle->setFixedWidth(kFileInfoResizeHandleWidth);
+    m_fileInfoResizeHandle->setCursor(Qt::SizeHorCursor);
+    m_fileInfoResizeHandle->setAcceptDrops(true);
     fileInfoHostLay->addWidget(fileInfoHairline);
+    fileInfoHostLay->addWidget(m_fileInfoResizeHandle);
     contentLay->addWidget(m_fileInfoHost, 0);
 
     m_fileInfoWidthAnim = new QPropertyAnimation(m_fileInfoHost, "maximumWidth", this);
@@ -494,7 +503,10 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_titleBar, &TitleBar::fileInfoToggled,
             this, &MainWindow::toggleFileInfoPanel);
     connect(ui->actionProperties, &QAction::triggered,
-            this, &MainWindow::toggleFileInfoPanel);
+            this, [this]() { openFileInfoPanel(FilePropertiesPanel::Section::Properties); });
+    ui->actionChecksum->setEnabled(true);
+    connect(ui->actionChecksum, &QAction::triggered,
+            this, [this]() { openFileInfoPanel(FilePropertiesPanel::Section::Checksums); });
 
     // Build a standalone Edit menu for the HexView context menu, sharing the
     // same QActions so any connections added later apply automatically.
@@ -1198,6 +1210,22 @@ void MainWindow::toggleFileInfoPanel()
         return;
     }
 
+    openFileInfoPanel(FilePropertiesPanel::Section::Properties);
+}
+
+void MainWindow::openFileInfoPanel(FilePropertiesPanel::Section section)
+{
+    if (!m_fileInfoHost)
+        return;
+
+    if (m_filePropertiesPanel) {
+        m_filePropertiesPanel->showSection(section);
+        m_titleBar->setFileInfoPanelOpen(true);
+        if (!m_fileInfoHost->isVisible() || m_fileInfoHost->maximumWidth() < m_fileInfoPaneWidth)
+            setFileInfoPaneExpanded(true);
+        return;
+    }
+
     auto *panel = new FilePropertiesPanel(m_hv, m_fileInfoHost);
     panel->setWindowFlags(Qt::Widget);
     panel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
@@ -1211,14 +1239,17 @@ void MainWindow::toggleFileInfoPanel()
         setFileInfoPaneExpanded(false);
     });
 
+    panel->showSection(section);
     m_titleBar->setFileInfoPanelOpen(true);
     setFileInfoPaneExpanded(true);
 }
 
 void MainWindow::refreshFileInfoPanel()
 {
-    if (m_filePropertiesPanel)
+    if (m_filePropertiesPanel) {
         m_filePropertiesPanel->refresh();
+        m_filePropertiesPanel->maybeStartChecksumCalculation();
+    }
 }
 
 void MainWindow::setFileInfoPaneExpanded(bool expanded)
@@ -1229,6 +1260,9 @@ void MainWindow::setFileInfoPaneExpanded(bool expanded)
     m_fileInfoWidthAnim->stop();
     m_fileInfoWidthAnim->disconnect();
 
+    if (m_filePropertiesPanel)
+        m_filePropertiesPanel->setPanelFullyOpened(false);
+
     m_fileInfoHost->setMinimumWidth(0);
     if (expanded)
         m_fileInfoHost->show();
@@ -1236,12 +1270,15 @@ void MainWindow::setFileInfoPaneExpanded(bool expanded)
     m_fileInfoWidthAnim->setEasingCurve(expanded ? QEasingCurve::OutCubic
                                                  : QEasingCurve::InCubic);
     m_fileInfoWidthAnim->setStartValue(m_fileInfoHost->maximumWidth());
-    m_fileInfoWidthAnim->setEndValue(expanded ? kFileInfoPaneWidth : 0);
+    m_fileInfoWidthAnim->setEndValue(expanded ? m_fileInfoPaneWidth : 0);
 
     if (expanded) {
         connect(m_fileInfoWidthAnim, &QPropertyAnimation::finished, this, [this]() {
-            if (m_fileInfoHost && m_fileInfoHost->maximumWidth() == kFileInfoPaneWidth)
-                m_fileInfoHost->setMinimumWidth(kFileInfoPaneWidth);
+            if (m_fileInfoHost && m_fileInfoHost->maximumWidth() == m_fileInfoPaneWidth) {
+                m_fileInfoHost->setMinimumWidth(m_fileInfoPaneWidth);
+                if (m_filePropertiesPanel)
+                    m_filePropertiesPanel->setPanelFullyOpened(true);
+            }
         }, Qt::SingleShotConnection);
     } else {
         connect(m_fileInfoWidthAnim, &QPropertyAnimation::finished, this, [this]() {
@@ -1256,6 +1293,16 @@ void MainWindow::setFileInfoPaneExpanded(bool expanded)
     }
 
     m_fileInfoWidthAnim->start();
+}
+
+void MainWindow::setFileInfoPaneWidth(int width)
+{
+    if (!m_fileInfoHost)
+        return;
+
+    m_fileInfoPaneWidth = qBound(kFileInfoPaneMinWidth, width, kFileInfoPaneMaxWidth);
+    m_fileInfoHost->setMinimumWidth(m_fileInfoPaneWidth);
+    m_fileInfoHost->setMaximumWidth(m_fileInfoPaneWidth);
 }
 
 void MainWindow::updateRecentMenu() {
@@ -1403,6 +1450,36 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
             return true;
         }
     }
+
+    const bool fileInfoResizeZone = w->property("fileInfoResizeHandle").toBool();
+    if (fileInfoResizeZone || m_fileInfoResizing) {
+        if (type == QEvent::MouseButtonPress && fileInfoResizeZone) {
+            auto *me = static_cast<QMouseEvent *>(event);
+            if (me->button() == Qt::LeftButton && m_fileInfoHost && m_fileInfoHost->isVisible()) {
+                m_fileInfoWidthAnim->stop();
+                m_fileInfoResizing = true;
+                m_fileInfoResizeStartX = me->globalPosition().x();
+                m_fileInfoResizeStartWidth = m_fileInfoHost->width();
+                m_fileInfoResizeHandle->grabMouse();
+                return true;
+            }
+        }
+
+        if (type == QEvent::MouseMove && m_fileInfoResizing) {
+            auto *me = static_cast<QMouseEvent *>(event);
+            const int delta = qRound(me->globalPosition().x() - m_fileInfoResizeStartX);
+            setFileInfoPaneWidth(m_fileInfoResizeStartWidth - delta);
+            return true;
+        }
+
+        if ((type == QEvent::MouseButtonRelease || type == QEvent::UngrabMouse) && m_fileInfoResizing) {
+            if (m_fileInfoResizeHandle)
+                m_fileInfoResizeHandle->releaseMouse();
+            m_fileInfoResizing = false;
+            return type == QEvent::MouseButtonRelease;
+        }
+    }
+
     auto isDropOnHexView = [this](const QPoint &pos) {
         if (!m_hv)
             return false;

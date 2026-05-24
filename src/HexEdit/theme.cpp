@@ -652,6 +652,13 @@ static constexpr int kSbOuter       = 4;   // gap on far side   (right / bottom)
 static constexpr int kSbInner       = 3;   // gap on near side  (left  / top)
 static constexpr int kSbWidth       = kSbThumbWidth + kSbOuter + kSbInner;  // = 14
 
+static constexpr int kPanelSbThumbWidth = kSbThumbWidth - 2; // file properties panel
+static constexpr int kPanelSbMask       = 1;
+static constexpr int kPanelSbOuter      = kSbOuter - kPanelSbMask;
+static constexpr int kPanelSbInner      = kSbWidth - kPanelSbOuter - kSbThumbWidth;
+static_assert(kPanelSbThumbWidth == 5);
+static_assert(kPanelSbOuter + kPanelSbMask == 4);
+
 // ── Stylesheet ────────────────────────────────────────────────────────────────
 
 static QString buildStylesheet(bool dark)
@@ -885,6 +892,22 @@ QScrollBar::handle:horizontal { background: palette(mid); border-radius: 3px; mi
    when the thumb slides under a held cursor — is handled by ScrollBarArrowPainter. */
 QScrollBar::handle:vertical:hover,
 QScrollBar::handle:horizontal:hover { background: palette(dark); }
+QScrollBar[scrollHintOverlay=true]:vertical {
+    margin: 2px 2px 12px 2px;
+}
+QScrollBar[filePropertiesScrollBar=true]:vertical {
+    margin: 8px 0px 8px 0px;
+}
+QScrollBar[filePropertiesScrollBar=true]::handle:vertical {
+    background: palette(mid);
+    border-left: {panelSbMask}px solid transparent;
+    border-right: {panelSbMask}px solid transparent;
+    border-radius: 3px;
+    margin: 0 {panelSbOuter}px 0 {panelSbInner}px;
+}
+QScrollBar[filePropertiesScrollBar=true]::handle:vertical:hover {
+    background: palette(dark);
+}
 {scrollbarArrowQss}
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical,
 QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; }
@@ -974,9 +997,15 @@ QFileDialog QTreeView::item {
     const QString sbw  = QString::number(kSbWidth);
     const QString sbo  = QString::number(kSbOuter);
     const QString sbi  = QString::number(kSbInner);
+    const QString psbo = QString::number(kPanelSbOuter);
+    const QString psbi = QString::number(kPanelSbInner);
+    const QString psbm = QString::number(kPanelSbMask);
     ss.replace("{sbWidth}",  sbw);
     ss.replace("{sbOuter}",  sbo);
     ss.replace("{sbInner}",  sbi);
+    ss.replace("{panelSbOuter}", psbo);
+    ss.replace("{panelSbInner}", psbi);
+    ss.replace("{panelSbMask}",  psbm);
 
     // Scrollbar arrow buttons — shown when the user setting is on, otherwise
     // collapsed to zero-size so no track space is reserved.

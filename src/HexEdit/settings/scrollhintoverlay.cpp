@@ -7,6 +7,7 @@
 #include <QPropertyAnimation>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QStyle>
 #include <QVariantAnimation>
 
 // ── HintWidget ────────────────────────────────────────────────────────────────
@@ -134,9 +135,11 @@ ScrollHintOverlay::ScrollHintOverlay(QScrollArea *scrollArea)
 
     m_hint = new HintWidget(bar, vp);
 
-    // bottom margin is kDialogCornerRadius+2  -->  10+2  --> 12px
-    // this avoids the scrollbar being clipped by the rounded bottom corner of dialogs
-    bar->setStyleSheet("QScrollBar:vertical { margin: 2px 2px 12px 2px; }");
+    // Styled in theme.cpp. The bottom margin is kDialogCornerRadius+2
+    // to avoid clipping by rounded dialog corners.
+    bar->setProperty("scrollHintOverlay", true);
+    bar->style()->unpolish(bar);
+    bar->style()->polish(bar);
 
     vp->installEventFilter(this);
     m_scroll->installEventFilter(this);
