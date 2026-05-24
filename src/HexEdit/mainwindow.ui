@@ -456,9 +456,6 @@
    </property>
   </action>
   <action name="actionStrings">
-   <property name="enabled">
-    <bool>false</bool>
-   </property>
    <property name="text">
     <string>Strings...</string>
    </property>

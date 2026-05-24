@@ -1,15 +1,21 @@
 #include "fileproperties.h"
 
 #include "HexView/hexview.h"
+#include "combos/menucombobox.h"
 #include "settings/scrollhintoverlay.h"
 #include "settings/settingscard.h"
 #include "theme.h"
 
 #include <QApplication>
+#include <QAbstractItemView>
+#include <QBrush>
 #include <QClipboard>
+#include <QComboBox>
 #include <QCryptographicHash>
 #include <QCursor>
 #include <QDesktopServices>
+#include <QEnterEvent>
+#include <QEvent>
 #include <QFile>
 #include <QFileInfo>
 #include <QFrame>
@@ -26,13 +32,19 @@
 #include <QPointer>
 #include <QProgressBar>
 #include <QPropertyAnimation>
+#include <QPushButton>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QHeaderView>
 #include <QStyle>
 #include <QThread>
 #include <QTimer>
+#include <QToolButton>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <QVariantMap>
 
 #include <array>
 #include <algorithm>
@@ -45,6 +57,7 @@ static constexpr int kHeaderControlGap = 2;
 static constexpr int kGroupTopGap = 20;
 static constexpr int kSectionHeaderHeight = 32;
 static constexpr int kCardScrollbarInset = 6;
+static constexpr int kStringsListMinHeight = 160;
 
 static QString cssColor(const QColor &color)
 {
@@ -291,7 +304,10 @@ static QHash<QString, QString> unavailableChecksums(const QString &message)
     return results;
 }
 
-static QHash<QString, QString> calculateChecksums(const QString &path)
+static QHash<QString, QString> calculateChecksums(
+    const QString &path,
+    const std::shared_ptr<std::atomic_bool> &cancelFlag,
+    const std::function<void(int)> &progressCallback)
 {
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly))
@@ -306,8 +322,11 @@ static QHash<QString, QString> calculateChecksums(const QString &path)
     QCryptographicHash sha256(QCryptographicHash::Sha256);
     quint16 crc16 = 0xFFFF;
     quint32 crc32 = 0xFFFFFFFFu;
+    const qint64 total = file.size();
+    qint64 scanned = 0;
+    int lastProgress = -1;
 
-    while (!file.atEnd()) {
+    while (!cancelFlag->load() && !file.atEnd()) {
         const QByteArray chunk = file.read(1024 * 1024);
         if (chunk.isEmpty() && file.error() != QFileDevice::NoError)
             return unavailableChecksums(FilePropertiesPanel::tr("Read failed"));
@@ -319,7 +338,18 @@ static QHash<QString, QString> calculateChecksums(const QString &path)
         sha256.addData(QByteArrayView(chunk.constData(), chunk.size()));
         crc16 = updateCrc16Ccitt(crc16, chunk);
         crc32 = updateCrc32Iso(crc32, chunk);
+
+        scanned += chunk.size();
+        const int progress = total > 0
+                                 ? static_cast<int>((scanned * 1000) / total)
+                                 : 1000;
+        if (progress != lastProgress) {
+            lastProgress = progress;
+            progressCallback(progress);
+        }
     }
+    if (cancelFlag->load())
+        return {};
 
     QHash<QString, QString> results;
     results.insert(QStringLiteral("MD2"), hexDigest(md2.result()));
@@ -330,6 +360,234 @@ static QHash<QString, QString> calculateChecksums(const QString &path)
     results.insert(QStringLiteral("CRC16"), hexNumber(crc16, 4));
     results.insert(QStringLiteral("CRC32"), hexNumber(crc32 ^ 0xFFFFFFFFu, 8));
     return results;
+}
+
+static bool isAsciiStringByte(unsigned char ch)
+{
+    return ch >= 0x20 && ch <= 0x7E;
+}
+
+static QToolButton *createProgressStopButton(QWidget *parent)
+{
+    auto *button = new QToolButton(parent);
+    button->setAutoRaise(true);
+    button->setCursor(Qt::PointingHandCursor);
+    button->setFixedSize(22, 22);
+    button->setIconSize(QSize(16, 16));
+    button->setToolTip(QObject::tr("Stop"));
+    button->setProperty("iconThemeName", QStringLiteral("actions/stopcircle"));
+    button->setProperty("iconSize", 16);
+    button->setIcon(recoloredIcon(QStringLiteral("actions/stopcircle"),
+                                  parent->palette().buttonText().color(), 16));
+    const bool dark = parent->palette().window().color().lightness() < 128;
+    const QString hover = dark ? QStringLiteral("rgba(255,255,255,0.15)")
+                               : QStringLiteral("rgba(0,0,0,0.10)");
+    const QString pressed = dark ? QStringLiteral("rgba(255,255,255,0.25)")
+                                 : QStringLiteral("rgba(0,0,0,0.18)");
+    button->setStyleSheet(QStringLiteral(R"(
+        QToolButton {
+            border: none;
+            border-radius: 6px;
+            background: transparent;
+        }
+        QToolButton:hover { background: %1; }
+        QToolButton:pressed { background: %2; }
+        QToolButton::menu-indicator { image: none; width: 0; }
+    )").arg(hover, pressed));
+    button->hide();
+    return button;
+}
+
+static QWidget *createRecalculateStrip(QWidget *parent,
+                                       Qt::Alignment buttonAlignment,
+                                       const std::function<void()> &onClicked)
+{
+    auto *strip = new QFrame(parent);
+    strip->setObjectName(QStringLiteral("recalculateStrip"));
+    strip->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+
+    const QColor accent(QStringLiteral("#a7652f"));
+    const bool dark = parent->palette().window().color().lightness() < 128;
+    const QColor bg = dark ? QColor(167, 101, 47, 55) : QColor(167, 101, 47, 35);
+    const QColor hover = dark ? accent.lighter(118) : accent.lighter(108);
+    const QColor pressed = dark ? accent.lighter(130) : accent.darker(108);
+    const QColor text = accent.lightness() < 150 ? QColor(Qt::white) : QColor(Qt::black);
+
+    strip->setStyleSheet(QStringLiteral(R"(
+        QFrame#recalculateStrip {
+            background: %1;
+            border-radius: 6px;
+        }
+        QFrame#recalculateStrip QPushButton {
+            background: %2;
+            color: %3;
+            border: 1px solid %2;
+            border-radius: 6px;
+            min-width: 0;
+            padding: 4px 14px;
+        }
+        QFrame#recalculateStrip QPushButton:hover {
+            background: %4;
+            border-color: %4;
+        }
+        QFrame#recalculateStrip QPushButton:pressed {
+            background: %5;
+            border-color: %5;
+        }
+    )").arg(cssColor(bg), cssColor(accent), cssColor(text),
+            cssColor(hover), cssColor(pressed)));
+
+    auto *layout = new QHBoxLayout(strip);
+    layout->setContentsMargins(8, 6, 8, 6);
+    layout->setSpacing(0);
+
+    auto *button = new QPushButton(QObject::tr("Recalculate"), strip);
+    button->setCursor(Qt::PointingHandCursor);
+    QObject::connect(button, &QPushButton::clicked, strip, onClicked);
+
+    if (buttonAlignment & Qt::AlignRight)
+        layout->addStretch();
+    else if (buttonAlignment & Qt::AlignHCenter)
+        layout->addStretch();
+    layout->addWidget(button, 0, Qt::AlignVCenter);
+    if (buttonAlignment & Qt::AlignHCenter)
+        layout->addStretch();
+
+    strip->hide();
+    return strip;
+}
+
+class VerticalResizeHandle : public QWidget
+{
+public:
+    static constexpr int kHeight = 14;
+
+    explicit VerticalResizeHandle(std::function<void(int)> onDrag, QWidget *parent = nullptr)
+        : QWidget(parent), m_onDrag(std::move(onDrag))
+    {
+        setFixedHeight(kHeight);
+        setCursor(Qt::SizeVerCursor);
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        QColor col = palette().color(QPalette::Mid);
+        col.setAlphaF(m_hovered ? 0.9 : 0.35);
+        p.setPen(QPen(col, 2, Qt::SolidLine, Qt::RoundCap));
+        const int cy = height() / 2;
+        const int cx = width() / 2;
+        for (int i = -1; i <= 1; ++i)
+            p.drawLine(cx + i * 12 - 5, cy, cx + i * 12 + 5, cy);
+    }
+
+    void enterEvent(QEnterEvent *) override { m_hovered = true; update(); }
+    void leaveEvent(QEvent *) override { m_hovered = false; update(); }
+
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton)
+            m_dragY = qRound(event->globalPosition().y());
+    }
+
+    void mouseMoveEvent(QMouseEvent *event) override
+    {
+        if (!(event->buttons() & Qt::LeftButton))
+            return;
+        const int y = qRound(event->globalPosition().y());
+        const int dy = y - m_dragY;
+        if (dy != 0) {
+            m_dragY = y;
+            m_onDrag(dy);
+        }
+    }
+
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton)
+            m_dragY = 0;
+    }
+
+private:
+    std::function<void(int)> m_onDrag;
+    bool m_hovered = false;
+    int m_dragY = 0;
+};
+
+class StringListFrame : public QFrame
+{
+public:
+    explicit StringListFrame(QWidget *parent = nullptr)
+        : QFrame(parent)
+    {
+    }
+
+    void setListWidget(QWidget *list)
+    {
+        m_list = list;
+        positionList();
+    }
+
+protected:
+    void resizeEvent(QResizeEvent *event) override
+    {
+        QFrame::resizeEvent(event);
+        positionList();
+    }
+
+private:
+    void positionList()
+    {
+        if (!m_list)
+            return;
+        m_list->setGeometry(rect().adjusted(kInset, kInset, -kInset, -kInset));
+    }
+
+    static constexpr int kInset = 4;
+    QWidget *m_list = nullptr;
+};
+
+struct StringScanState {
+    QVector<QVariantMap> results;
+    QByteArray run;
+    qulonglong runStart = 0;
+    qulonglong runLength = 0;
+    qulonglong offset = 0;
+    int resultCount = 0;
+};
+
+static void flushAsciiRun(StringScanState &state, int minLength)
+{
+    static constexpr int kMaxStringResults = 10000;
+    if (state.runLength >= static_cast<qulonglong>(minLength) && state.resultCount < kMaxStringResults) {
+        QVariantMap row;
+        row.insert(QStringLiteral("offset"), state.runStart);
+        row.insert(QStringLiteral("length"), state.runLength);
+        row.insert(QStringLiteral("text"), QString::fromLatin1(state.run.constData(), state.run.size()));
+        state.results.append(row);
+        ++state.resultCount;
+    }
+    state.run.clear();
+    state.runLength = 0;
+}
+
+static void scanAsciiChunk(StringScanState &state, const QByteArray &chunk, int minLength)
+{
+    static constexpr int kMaxBufferedStringLength = 4096;
+    for (char byte : chunk) {
+        if (isAsciiStringByte(static_cast<unsigned char>(byte))) {
+            if (state.runLength == 0)
+                state.runStart = state.offset;
+            if (state.run.size() < kMaxBufferedStringLength)
+                state.run.append(byte);
+            ++state.runLength;
+        } else {
+            flushAsciiRun(state, minLength);
+        }
+        ++state.offset;
+    }
 }
 
 class PropertyRow : public QWidget
@@ -640,7 +898,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     m_scrollArea->setFrameShape(QFrame::NoFrame);
     m_scrollArea->setWidgetResizable(true);
     m_scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    m_scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
+    m_scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     m_scrollArea->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     m_scrollArea->verticalScrollBar()->setFocusPolicy(Qt::NoFocus);
     m_scrollArea->viewport()->setAutoFillBackground(false);
@@ -721,7 +979,26 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     m_checksumProgress->setRange(0, 0);
     m_checksumProgress->setTextVisible(false);
     m_checksumProgress->setFixedHeight(6);
-    checksumBodyLayout->addWidget(m_checksumProgress);
+    m_checksumStopButton = createProgressStopButton(m_checksumSectionBody);
+    m_checksumProgressRow = new QWidget(m_checksumSectionBody);
+    auto *checksumProgressLayout = new QHBoxLayout(m_checksumProgressRow);
+    checksumProgressLayout->setContentsMargins(kContentMargin, 0, kContentMargin, 0);
+    checksumProgressLayout->setSpacing(8);
+    checksumProgressLayout->addWidget(m_checksumProgress, 1, Qt::AlignVCenter);
+    checksumProgressLayout->addWidget(m_checksumStopButton, 0, Qt::AlignVCenter);
+    checksumBodyLayout->addWidget(m_checksumProgressRow);
+    m_checksumProgress->hide();
+    m_checksumProgressRow->hide();
+    m_checksumRecalculateStrip = createRecalculateStrip(m_checksumSectionBody, Qt::AlignHCenter, [this]() {
+        m_checksumStarted = false;
+        maybeStartChecksumCalculation();
+    });
+    auto *checksumRecalcWrap = new QWidget(m_checksumSectionBody);
+    auto *checksumRecalcLayout = new QVBoxLayout(checksumRecalcWrap);
+    checksumRecalcLayout->setContentsMargins(kContentMargin, 0, kContentMargin, 0);
+    checksumRecalcLayout->setSpacing(0);
+    checksumRecalcLayout->addWidget(m_checksumRecalculateStrip);
+    checksumBodyLayout->addWidget(checksumRecalcWrap);
     checksumBodyLayout->addSpacing(kHeaderControlGap);
 
     auto checksumRow = [this](const QString &name) {
@@ -743,6 +1020,135 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     checksumCard->setMinimumWidth(0);
     checksumBodyLayout->addWidget(checksumCard);
     contentLayout->addWidget(m_checksumSectionBody);
+
+    m_betweenChecksumStringsGap = new QSpacerItem(0, kGroupTopGap, QSizePolicy::Minimum, QSizePolicy::Fixed);
+    contentLayout->addSpacerItem(m_betweenChecksumStringsGap);
+    m_stringsHeader = new SectionHeader(tr("Strings"), m_content);
+    m_stringsHeader->setClickedCallback([this]() {
+        setStringsSectionCollapsed(!m_stringsSectionCollapsed);
+    });
+    contentLayout->addWidget(m_stringsHeader);
+    contentLayout->setAlignment(m_stringsHeader, Qt::AlignLeft);
+    m_stringsHeader->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+    m_stringsHeaderGap = new QSpacerItem(0, kHeaderControlGap, QSizePolicy::Minimum, QSizePolicy::Fixed);
+    contentLayout->addSpacerItem(m_stringsHeaderGap);
+
+    m_stringsSectionBody = new QWidget(m_content);
+    m_stringsSectionBody->setMinimumWidth(0);
+    auto *stringsBodyLayout = new QVBoxLayout(m_stringsSectionBody);
+    stringsBodyLayout->setContentsMargins(kSectionHeaderOuterMargin, 0,
+                                          kSectionHeaderOuterMargin + kCardScrollbarInset, 0);
+    stringsBodyLayout->setSpacing(0);
+
+    m_stringsProgress = new QProgressBar(m_stringsSectionBody);
+    m_stringsProgress->setRange(0, 0);
+    m_stringsProgress->setTextVisible(false);
+    m_stringsProgress->setFixedHeight(6);
+    m_stringsProgress->hide();
+    m_stringsStopButton = createProgressStopButton(m_stringsSectionBody);
+    stringsBodyLayout->addSpacing(kHeaderControlGap + 4);
+    m_stringsProgressRow = new QWidget(m_stringsSectionBody);
+    auto *stringsProgressLayout = new QHBoxLayout(m_stringsProgressRow);
+    stringsProgressLayout->setContentsMargins(kContentMargin, 0, kContentMargin, 0);
+    stringsProgressLayout->setSpacing(8);
+    stringsProgressLayout->addWidget(m_stringsProgress, 1, Qt::AlignVCenter);
+    stringsProgressLayout->addWidget(m_stringsStopButton, 0, Qt::AlignVCenter);
+    stringsBodyLayout->addWidget(m_stringsProgressRow);
+    m_stringsProgressRow->hide();
+    m_stringsRecalculateStrip = createRecalculateStrip(m_stringsSectionBody, Qt::AlignHCenter, [this]() {
+        m_stringsStarted = false;
+        if (m_stringsList)
+            m_stringsList->clear();
+        maybeStartStringScan();
+    });
+    auto *stringsRecalcWrap = new QWidget(m_stringsSectionBody);
+    auto *stringsRecalcLayout = new QVBoxLayout(stringsRecalcWrap);
+    stringsRecalcLayout->setContentsMargins(kContentMargin, 0, kContentMargin, 0);
+    stringsRecalcLayout->setSpacing(0);
+    stringsRecalcLayout->addWidget(m_stringsRecalculateStrip);
+    stringsBodyLayout->addWidget(stringsRecalcWrap);
+    stringsBodyLayout->addSpacing(kContentMargin + 4);
+
+    m_stringEncoding = new MenuComboBox(m_stringsSectionBody);
+    m_stringEncoding->addItems({tr("Ascii"), tr("Unicode"), tr("Ascii and Unicode")});
+    m_stringEncoding->setFocusPolicy(Qt::StrongFocus);
+    m_stringEncoding->setFixedHeight(qMax(24, m_stringEncoding->sizeHint().height() - 4));
+
+    m_minStringLength = new StepSpinBox(tr("Characters"), 3, 128, 1, m_stringsSectionBody);
+    m_minStringLength->setValue(3);
+    m_minStringLength->setLabelAlignment(Qt::AlignRight);
+
+    auto *stringsControls = new QWidget(m_stringsSectionBody);
+    auto *stringsControlsLayout = new QHBoxLayout(stringsControls);
+    stringsControlsLayout->setContentsMargins(kContentMargin, 0, kContentMargin, 0);
+    stringsControlsLayout->setSpacing(kContentMargin + 6);
+    stringsControlsLayout->addWidget(m_stringEncoding, 1, Qt::AlignVCenter);
+    stringsControlsLayout->addWidget(m_minStringLength, 0);
+    stringsBodyLayout->addWidget(stringsControls);
+    stringsBodyLayout->addSpacing(kHeaderControlGap + 4);
+
+    auto *stringsListFrame = new StringListFrame(m_stringsSectionBody);
+    stringsListFrame->setObjectName(QStringLiteral("stringsListFrame"));
+    stringsListFrame->setFixedHeight(kStringsListMinHeight);
+    stringsListFrame->setStyleSheet(QStringLiteral(R"(
+        QFrame#stringsListFrame {
+            background: palette(base);
+            border: 1px solid palette(mid);
+            border-radius: 6px;
+        }
+    )"));
+
+    m_stringsList = new QTreeWidget(stringsListFrame);
+    m_stringsList->setMinimumSize(0, 0);
+    m_stringsList->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
+    m_stringsList->setColumnCount(2);
+    m_stringsList->setHeaderHidden(true);
+    m_stringsList->setRootIsDecorated(false);
+    m_stringsList->setAlternatingRowColors(false);
+    m_stringsList->setUniformRowHeights(true);
+    m_stringsList->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_stringsList->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_stringsList->header()->setStretchLastSection(false);
+    m_stringsList->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    m_stringsList->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    m_stringsList->setStyleSheet(QStringLiteral(R"(
+        QTreeWidget {
+            background: palette(base);
+            border: none;
+            padding: 0px;
+        }
+        QTreeWidget::item {
+            padding: 3px 6px;
+        }
+        QTreeWidget::item:hover {
+            background: palette(button);
+        }
+        QTreeWidget::item:selected {
+            background: palette(highlight);
+            color: palette(highlighted-text);
+        }
+    )"));
+    stringsListFrame->setListWidget(m_stringsList);
+    auto *stringsListWrap = new QWidget(m_stringsSectionBody);
+    auto *stringsListLayout = new QVBoxLayout(stringsListWrap);
+    stringsListLayout->setContentsMargins(kContentMargin, 0, kContentMargin, 0);
+    stringsListLayout->setSpacing(0);
+    stringsListLayout->addWidget(stringsListFrame);
+    stringsBodyLayout->addWidget(stringsListWrap);
+
+    auto *stringsResizeWrap = new QWidget(m_stringsSectionBody);
+    auto *stringsResizeLayout = new QVBoxLayout(stringsResizeWrap);
+    stringsResizeLayout->setContentsMargins(kContentMargin, 0, kContentMargin, 0);
+    stringsResizeLayout->setSpacing(0);
+    m_stringsResizeHandle = new VerticalResizeHandle([this](int dy) {
+        resizeStringsList(dy);
+    }, stringsResizeWrap);
+    stringsResizeLayout->addWidget(m_stringsResizeHandle);
+    stringsResizeLayout->setAlignment(m_stringsResizeHandle, Qt::AlignTop);
+    stringsBodyLayout->addWidget(stringsResizeWrap);
+    contentLayout->addWidget(m_stringsSectionBody);
+    m_stringsResizeSlack = new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Fixed);
+    contentLayout->addSpacerItem(m_stringsResizeSlack);
     contentLayout->addStretch();
 
     m_scrollArea->setWidget(m_content);
@@ -756,7 +1162,10 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
             return;
         const int fileY = m_fileHeader->mapTo(m_scrollArea->viewport(), QPoint(0, 0)).y();
         const int checksumY = m_checksumHeader->mapTo(m_scrollArea->viewport(), QPoint(0, 0)).y();
-        if (checksumY <= 0 || (fileY > 0 && checksumY < fileY))
+        const int stringsY = m_stringsHeader->mapTo(m_scrollArea->viewport(), QPoint(0, 0)).y();
+        if (stringsY <= 0 || (checksumY > 0 && stringsY < checksumY && fileY > 0))
+            setStringsSectionCollapsed(!m_stringsSectionCollapsed);
+        else if (checksumY <= 0 || (fileY > 0 && checksumY < fileY))
             setChecksumSectionCollapsed(!m_checksumSectionCollapsed);
         else
             setFileSectionCollapsed(!m_fileSectionCollapsed);
@@ -765,7 +1174,36 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
             this, [this](Section section) {
                 if (section == Section::Checksums)
                     maybeStartChecksumCalculation();
+                else if (section == Section::Strings)
+                    maybeStartStringScan();
             });
+    connect(m_checksumStopButton, &QToolButton::clicked,
+            this, &FilePropertiesPanel::cancelChecksumCalculation);
+    connect(m_stringsStopButton, &QToolButton::clicked,
+            this, &FilePropertiesPanel::cancelStringScan);
+    connect(m_minStringLength, &StepSpinBox::valueChanged, this, [this](int) {
+        m_stringsStarted = false;
+        if (m_stringsList)
+            m_stringsList->clear();
+        maybeStartStringScan();
+    });
+    connect(m_stringEncoding, &QComboBox::currentIndexChanged, this, [this](int) {
+        m_stringsStarted = false;
+        if (m_stringsList)
+            m_stringsList->clear();
+        maybeStartStringScan();
+    });
+    auto navigateToStringItem = [this](QTreeWidgetItem *item, int) {
+        if (!item || !m_hexView)
+            return;
+        const size_w offset = static_cast<size_w>(item->data(0, Qt::UserRole).toULongLong());
+        const size_w length = static_cast<size_w>(item->data(0, Qt::UserRole + 1).toULongLong());
+        m_hexView->setCurSel(offset, qMin(offset + length, m_hexView->size()));
+        m_hexView->scrollCenterIfOffScreen(offset);
+        m_hexView->setFocus();
+    };
+    connect(m_stringsList, &QTreeWidget::itemClicked, this, navigateToStringItem);
+    connect(m_stringsList, &QTreeWidget::itemActivated, this, navigateToStringItem);
     connect(m_scrollArea->verticalScrollBar(), &QScrollBar::valueChanged,
             this, &FilePropertiesPanel::updateStickyHeader);
     connect(m_scrollArea->verticalScrollBar(), &QScrollBar::rangeChanged,
@@ -776,14 +1214,27 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     refresh();
     setFileSectionCollapsed(true);
     setChecksumSectionCollapsed(true);
+    setStringsSectionCollapsed(true);
+}
+
+FilePropertiesPanel::~FilePropertiesPanel()
+{
+    ++m_checksumGeneration;
+    ++m_stringGeneration;
+    if (m_checksumCancel)
+        m_checksumCancel->store(true);
+    if (m_stringCancel)
+        m_stringCancel->store(true);
 }
 
 void FilePropertiesPanel::showSection(Section section)
 {
     if (section == Section::Properties)
         setFileSectionCollapsed(false);
-    else
+    else if (section == Section::Checksums)
         setChecksumSectionCollapsed(false);
+    else
+        setStringsSectionCollapsed(false);
 }
 
 void FilePropertiesPanel::setPanelFullyOpened(bool opened)
@@ -794,6 +1245,8 @@ void FilePropertiesPanel::setPanelFullyOpened(bool opened)
             emitSectionReadyIfPossible(Section::Properties);
         if (!m_checksumSectionCollapsed)
             emitSectionReadyIfPossible(Section::Checksums);
+        if (!m_stringsSectionCollapsed)
+            emitSectionReadyIfPossible(Section::Strings);
     }
 }
 
@@ -810,6 +1263,23 @@ void FilePropertiesPanel::refresh()
     m_sizeValue->setText(formatSize(static_cast<qulonglong>(m_hexView->size())));
     m_stateValue->setText(m_hexView->canUndo() ? tr("Modified") : tr("Saved"));
     m_checksumStarted = false;
+    ++m_checksumGeneration;
+    if (m_checksumCancel)
+        m_checksumCancel->store(true);
+    m_stringsStarted = false;
+    if (m_checksumProgress)
+        m_checksumProgress->hide();
+    if (m_checksumStopButton)
+        m_checksumStopButton->hide();
+    if (m_checksumProgressRow)
+        m_checksumProgressRow->hide();
+    if (m_checksumRecalculateStrip)
+        m_checksumRecalculateStrip->hide();
+    cancelStringScan();
+    if (m_stringsRecalculateStrip)
+        m_stringsRecalculateStrip->hide();
+    if (m_stringsList)
+        m_stringsList->clear();
 }
 
 void FilePropertiesPanel::maybeStartChecksumCalculation()
@@ -822,6 +1292,25 @@ void FilePropertiesPanel::maybeStartChecksumCalculation()
         return;
     m_checksumStarted = true;
     startChecksumCalculation();
+}
+
+void FilePropertiesPanel::maybeStartStringScan()
+{
+    if (!m_panelFullyOpened)
+        return;
+    if (m_stringsSectionCollapsed)
+        return;
+    if (m_stringsStarted)
+        return;
+    m_stringsStarted = true;
+    startStringScan();
+}
+
+void FilePropertiesPanel::changeEvent(QEvent *event)
+{
+    QDialog::changeEvent(event);
+    if (event->type() == QEvent::PaletteChange)
+        recolorToolButtons(this);
 }
 
 void FilePropertiesPanel::resizeEvent(QResizeEvent *event)
@@ -839,8 +1328,17 @@ void FilePropertiesPanel::setChecksumRowsPending()
 {
     for (QLabel *label : std::as_const(m_checksumValues))
         label->setText(tr("Calculating..."));
-    if (m_checksumProgress)
+    if (m_checksumProgress) {
+        m_checksumProgress->setRange(0, 1000);
+        m_checksumProgress->setValue(0);
         m_checksumProgress->show();
+    }
+    if (m_checksumStopButton)
+        m_checksumStopButton->show();
+    if (m_checksumProgressRow)
+        m_checksumProgressRow->show();
+    if (m_checksumRecalculateStrip)
+        m_checksumRecalculateStrip->hide();
 }
 
 void FilePropertiesPanel::startChecksumCalculation()
@@ -849,12 +1347,23 @@ void FilePropertiesPanel::startChecksumCalculation()
         return;
 
     const int generation = ++m_checksumGeneration;
+    if (m_checksumCancel)
+        m_checksumCancel->store(true);
+    auto cancelFlag = std::make_shared<std::atomic_bool>(false);
+    m_checksumCancel = cancelFlag;
     setChecksumRowsPending();
 
     const QString path = m_hexView->filePath();
     QPointer<FilePropertiesPanel> guard(this);
-    auto *thread = QThread::create([guard, generation, path]() {
-        const QHash<QString, QString> results = calculateChecksums(path);
+    auto *thread = QThread::create([guard, generation, path, cancelFlag]() {
+        const QHash<QString, QString> results = calculateChecksums(path, cancelFlag, [guard, generation](int progress) {
+            QMetaObject::invokeMethod(qApp, [guard, generation, progress]() {
+                if (guard)
+                    guard->updateChecksumProgress(generation, progress);
+            }, Qt::QueuedConnection);
+        });
+        if (cancelFlag->load())
+            return;
         QMetaObject::invokeMethod(qApp, [guard, generation, results]() {
             if (guard)
                 guard->applyChecksumResults(generation, results);
@@ -862,6 +1371,13 @@ void FilePropertiesPanel::startChecksumCalculation()
     });
     connect(thread, &QThread::finished, thread, &QObject::deleteLater);
     thread->start();
+}
+
+void FilePropertiesPanel::updateChecksumProgress(int generation, int value)
+{
+    if (generation != m_checksumGeneration || !m_checksumProgress)
+        return;
+    m_checksumProgress->setValue(qBound(0, value, 1000));
 }
 
 void FilePropertiesPanel::applyChecksumResults(int generation, const QHash<QString, QString> &results)
@@ -875,6 +1391,199 @@ void FilePropertiesPanel::applyChecksumResults(int generation, const QHash<QStri
     }
     if (m_checksumProgress)
         m_checksumProgress->hide();
+    if (m_checksumStopButton)
+        m_checksumStopButton->hide();
+    if (m_checksumProgressRow)
+        m_checksumProgressRow->hide();
+    if (m_checksumRecalculateStrip)
+        m_checksumRecalculateStrip->show();
+}
+
+void FilePropertiesPanel::startStringScan()
+{
+    if (!m_hexView || !m_minStringLength)
+        return;
+
+    const int generation = ++m_stringGeneration;
+    const int minLength = m_minStringLength->value();
+    const QString path = m_hexView->filePath();
+    if (m_stringCancel)
+        m_stringCancel->store(true);
+    auto cancelFlag = std::make_shared<std::atomic_bool>(false);
+    m_stringCancel = cancelFlag;
+    if (m_stringsProgress) {
+        m_stringsProgress->setRange(0, 1000);
+        m_stringsProgress->setValue(0);
+        m_stringsProgress->show();
+    }
+    if (m_stringsStopButton)
+        m_stringsStopButton->show();
+    if (m_stringsProgressRow)
+        m_stringsProgressRow->show();
+    if (m_stringsRecalculateStrip)
+        m_stringsRecalculateStrip->hide();
+    if (m_stringsList)
+        m_stringsList->clear();
+
+    QPointer<FilePropertiesPanel> guard(this);
+    auto *thread = QThread::create([guard, generation, minLength, path, cancelFlag]() {
+        QVector<QVariantMap> results;
+        QFile file(path);
+        if (file.open(QIODevice::ReadOnly)) {
+            StringScanState state;
+            const qint64 total = file.size();
+            qint64 scanned = 0;
+            int lastProgress = -1;
+            static constexpr qint64 kChunkSize = 1024 * 1024;
+
+            while (!cancelFlag->load() && !file.atEnd()) {
+                const QByteArray chunk = file.read(kChunkSize);
+                if (chunk.isEmpty())
+                    break;
+                scanAsciiChunk(state, chunk, minLength);
+                if (!state.results.isEmpty()) {
+                    const QVector<QVariantMap> batch = std::move(state.results);
+                    state.results.clear();
+                    QMetaObject::invokeMethod(qApp, [guard, generation, batch]() {
+                        if (guard)
+                            guard->appendStringResults(generation, batch);
+                    }, Qt::QueuedConnection);
+                }
+                scanned += chunk.size();
+                const int progress = total > 0
+                                         ? static_cast<int>((scanned * 1000) / total)
+                                         : 1000;
+                if (progress != lastProgress) {
+                    lastProgress = progress;
+                    QMetaObject::invokeMethod(qApp, [guard, generation, progress]() {
+                        if (guard)
+                            guard->updateStringProgress(generation, progress);
+                    }, Qt::QueuedConnection);
+                }
+            }
+            if (!cancelFlag->load()) {
+                flushAsciiRun(state, minLength);
+                if (!state.results.isEmpty())
+                    results = std::move(state.results);
+            }
+        }
+        if (cancelFlag->load())
+            return;
+        QMetaObject::invokeMethod(qApp, [guard, generation, results]() {
+            if (guard) {
+                if (!results.isEmpty())
+                    guard->appendStringResults(generation, results);
+                guard->applyStringResults(generation, {});
+            }
+        }, Qt::QueuedConnection);
+    });
+    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+    thread->start();
+}
+
+void FilePropertiesPanel::updateStringProgress(int generation, int value)
+{
+    if (generation != m_stringGeneration || !m_stringsProgress)
+        return;
+    m_stringsProgress->setValue(qBound(0, value, 1000));
+}
+
+void FilePropertiesPanel::cancelChecksumCalculation()
+{
+    ++m_checksumGeneration;
+    m_checksumStarted = false;
+    if (m_checksumCancel)
+        m_checksumCancel->store(true);
+    for (QLabel *label : std::as_const(m_checksumValues))
+        label->setText(tr("Cancelled"));
+    if (m_checksumProgress)
+        m_checksumProgress->hide();
+    if (m_checksumStopButton)
+        m_checksumStopButton->hide();
+    if (m_checksumProgressRow)
+        m_checksumProgressRow->hide();
+    if (m_checksumRecalculateStrip)
+        m_checksumRecalculateStrip->show();
+}
+
+void FilePropertiesPanel::cancelStringScan()
+{
+    ++m_stringGeneration;
+    m_stringsStarted = false;
+    if (m_stringCancel)
+        m_stringCancel->store(true);
+    if (m_stringsProgress)
+        m_stringsProgress->hide();
+    if (m_stringsStopButton)
+        m_stringsStopButton->hide();
+    if (m_stringsProgressRow)
+        m_stringsProgressRow->hide();
+    if (m_stringsRecalculateStrip)
+        m_stringsRecalculateStrip->show();
+}
+
+void FilePropertiesPanel::resizeStringsList(int dy)
+{
+    if (!m_stringsList)
+        return;
+    QWidget *frame = m_stringsList->parentWidget();
+    if (!frame)
+        return;
+    const int maxHeight = qMax(kStringsListMinHeight, height() - kSectionHeaderHeight * 2);
+    const int newHeight = qBound(kStringsListMinHeight, frame->height() + dy, maxHeight);
+    if (newHeight == frame->height())
+        return;
+    const int delta = newHeight - frame->height();
+    frame->setFixedHeight(newHeight);
+    if (m_stringsResizeSlack) {
+        if (delta < 0)
+            m_stringsResizeSlackHeight += -delta;
+        else
+            m_stringsResizeSlackHeight = qMax(0, m_stringsResizeSlackHeight - delta);
+        m_stringsResizeSlack->changeSize(0, m_stringsResizeSlackHeight,
+                                         QSizePolicy::Minimum, QSizePolicy::Fixed);
+    }
+    if (m_content && m_content->layout())
+        m_content->layout()->invalidate();
+    updateStickyHeader();
+}
+
+void FilePropertiesPanel::appendStringResults(int generation, const QVector<QVariantMap> &results)
+{
+    if (generation != m_stringGeneration)
+        return;
+
+    if (m_stringsList && !results.isEmpty()) {
+        m_stringsList->setUpdatesEnabled(false);
+        const QColor offsetColor = subduedTextColor(palette());
+        for (const QVariantMap &row : results) {
+            const qulonglong offset = row.value(QStringLiteral("offset")).toULongLong();
+            const qulonglong length = row.value(QStringLiteral("length")).toULongLong();
+            auto *item = new QTreeWidgetItem(m_stringsList);
+            item->setText(0, row.value(QStringLiteral("text")).toString());
+            item->setText(1, QStringLiteral("%1").arg(offset, 8, 16, QLatin1Char('0')).toUpper());
+            item->setForeground(1, QBrush(offsetColor));
+            item->setData(0, Qt::UserRole, offset);
+            item->setData(0, Qt::UserRole + 1, length);
+        }
+        m_stringsList->setUpdatesEnabled(true);
+    }
+}
+
+void FilePropertiesPanel::applyStringResults(int generation, const QVector<QVariantMap> &results)
+{
+    if (generation != m_stringGeneration)
+        return;
+
+    appendStringResults(generation, results);
+    if (m_stringsProgress)
+        m_stringsProgress->hide();
+    if (m_stringsStopButton)
+        m_stringsStopButton->hide();
+    if (m_stringsProgressRow)
+        m_stringsProgressRow->hide();
+    if (m_stringsRecalculateStrip)
+        m_stringsRecalculateStrip->show();
 }
 
 void FilePropertiesPanel::setFileSectionCollapsed(bool collapsed)
@@ -910,6 +1619,9 @@ void FilePropertiesPanel::setChecksumSectionCollapsed(bool collapsed)
     if (m_checksumHeaderGap)
         m_checksumHeaderGap->changeSize(0, collapsed ? 0 : kHeaderControlGap,
                                         QSizePolicy::Minimum, QSizePolicy::Fixed);
+    if (m_betweenChecksumStringsGap)
+        m_betweenChecksumStringsGap->changeSize(0, collapsed ? kHeaderControlGap : kGroupTopGap,
+                                                QSizePolicy::Minimum, QSizePolicy::Fixed);
     if (m_checksumHeader)
         m_checksumHeader->setCollapsed(collapsed);
     if (m_content && m_content->layout())
@@ -922,21 +1634,46 @@ void FilePropertiesPanel::setChecksumSectionCollapsed(bool collapsed)
     QTimer::singleShot(0, this, &FilePropertiesPanel::updateStickyHeader);
 }
 
+void FilePropertiesPanel::setStringsSectionCollapsed(bool collapsed)
+{
+    const bool wasCollapsed = m_stringsSectionCollapsed;
+    m_stringsSectionCollapsed = collapsed;
+    if (m_stringsSectionBody)
+        m_stringsSectionBody->setVisible(!collapsed);
+    if (m_stringsHeaderGap)
+        m_stringsHeaderGap->changeSize(0, collapsed ? 0 : kHeaderControlGap,
+                                       QSizePolicy::Minimum, QSizePolicy::Fixed);
+    if (m_stringsHeader)
+        m_stringsHeader->setCollapsed(collapsed);
+    if (m_content && m_content->layout())
+        m_content->layout()->invalidate();
+    if (wasCollapsed && !collapsed) {
+        emit sectionExpanded(Section::Strings);
+        emitSectionReadyIfPossible(Section::Strings);
+    }
+    updateStickyHeader();
+    QTimer::singleShot(0, this, &FilePropertiesPanel::updateStickyHeader);
+}
+
 void FilePropertiesPanel::emitSectionReadyIfPossible(Section section)
 {
     if (!m_panelFullyOpened)
         return;
 
-    const bool sectionExpanded = section == Section::Properties
-                                     ? !m_fileSectionCollapsed
-                                     : !m_checksumSectionCollapsed;
+    bool sectionExpanded = false;
+    if (section == Section::Properties)
+        sectionExpanded = !m_fileSectionCollapsed;
+    else if (section == Section::Checksums)
+        sectionExpanded = !m_checksumSectionCollapsed;
+    else
+        sectionExpanded = !m_stringsSectionCollapsed;
     if (sectionExpanded)
         emit sectionReady(section);
 }
 
 void FilePropertiesPanel::syncStickyHeader()
 {
-    if (!m_scrollArea || !m_stickyHeader || !m_fileHeader || !m_checksumHeader)
+    if (!m_scrollArea || !m_stickyHeader || !m_fileHeader || !m_checksumHeader || !m_stringsHeader)
         return;
 
     const int headerWidth = qMax(1, m_scrollArea->viewport()->width()
@@ -946,12 +1683,30 @@ void FilePropertiesPanel::syncStickyHeader()
         m_fileHeader->setFixedWidth(headerWidth);
     if (m_checksumHeader->width() != headerWidth)
         m_checksumHeader->setFixedWidth(headerWidth);
+    if (m_stringsHeader->width() != headerWidth)
+        m_stringsHeader->setFixedWidth(headerWidth);
 
     const int fileY = m_fileHeader->mapTo(m_scrollArea->viewport(), QPoint(0, 0)).y();
     const int checksumY = m_checksumHeader->mapTo(m_scrollArea->viewport(), QPoint(0, 0)).y();
-    const bool checksumsActive = checksumY <= 0;
+    const int stringsY = m_stringsHeader->mapTo(m_scrollArea->viewport(), QPoint(0, 0)).y();
+    Section activeSection = Section::Properties;
+    int nextHeaderY = checksumY;
+    if (checksumY <= 0) {
+        activeSection = Section::Checksums;
+        nextHeaderY = stringsY;
+    }
+    if (stringsY <= 0) {
+        activeSection = Section::Strings;
+        nextHeaderY = kSectionHeaderHeight;
+    }
 
-    if (checksumsActive) {
+    if (activeSection == Section::Strings) {
+        m_stickyHeader->setTitle(m_stringsHeader->title());
+        m_stickyHeader->setCollapsed(m_stringsSectionCollapsed);
+        m_stickyHeader->setClickedCallback([this]() {
+            setStringsSectionCollapsed(!m_stringsSectionCollapsed);
+        });
+    } else if (activeSection == Section::Checksums) {
         m_stickyHeader->setTitle(m_checksumHeader->title());
         m_stickyHeader->setCollapsed(m_checksumSectionCollapsed);
         m_stickyHeader->setClickedCallback([this]() {
@@ -965,15 +1720,13 @@ void FilePropertiesPanel::syncStickyHeader()
         });
     }
 
-    const bool shouldStick = checksumsActive || fileY <= 0;
+    const bool shouldStick = activeSection != Section::Properties || fileY <= 0;
     if (!shouldStick) {
         m_stickyHeader->hide();
         return;
     }
 
-    const int nextHeaderPush = checksumsActive ? kSectionHeaderHeight
-                                               : checksumY;
-    const int y = qMin(0, nextHeaderPush - kSectionHeaderHeight);
+    const int y = qMin(0, nextHeaderY - kSectionHeaderHeight);
     m_stickyHeader->setGeometry(kSectionHeaderOuterMargin, y, headerWidth, kSectionHeaderHeight);
     m_stickyHeader->show();
     m_stickyHeader->raise();

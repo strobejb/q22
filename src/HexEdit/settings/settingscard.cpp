@@ -447,6 +447,12 @@ void StepSpinBox::setValue(int v)
     emit valueChanged(m_value);
 }
 
+void StepSpinBox::setLabelAlignment(Qt::Alignment alignment)
+{
+    m_labelAlignment = alignment | Qt::AlignVCenter;
+    update();
+}
+
 QSize StepSpinBox::sizeHint() const
 {
     const QFontMetrics fm(font());
@@ -488,15 +494,14 @@ void StepSpinBox::paintEvent(QPaintEvent *)
     const QRect      r   = rect();
     const QFontMetrics fm(font());
 
-    // Label
-    const int ty = (r.height() + fm.ascent() - fm.descent()) / 2;
     p.setPen(pal.color(QPalette::WindowText));
     p.setFont(font());
-    p.drawText(QPoint(0, ty), m_label);
 
     // Value text
     const QRect grp  = groupRect();
     const QRect valR(0, 0, grp.left() - SSB_VAL_GAP, r.height());
+    const QRect labelR(0, 0, qMax(0, valR.width() - SSB_VAL_W - SSB_SPACING), r.height());
+    p.drawText(labelR, m_labelAlignment, m_label);
     p.drawText(valR, Qt::AlignRight | Qt::AlignVCenter, QString::number(m_value));
 
     // Button group background

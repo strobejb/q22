@@ -507,6 +507,9 @@ MainWindow::MainWindow(QWidget *parent)
     ui->actionChecksum->setEnabled(true);
     connect(ui->actionChecksum, &QAction::triggered,
             this, [this]() { openFileInfoPanel(FilePropertiesPanel::Section::Checksums); });
+    ui->actionStrings->setEnabled(true);
+    connect(ui->actionStrings, &QAction::triggered,
+            this, [this]() { openFileInfoPanel(FilePropertiesPanel::Section::Strings); });
 
     // Build a standalone Edit menu for the HexView context menu, sharing the
     // same QActions so any connections added later apply automatically.

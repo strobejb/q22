@@ -116,6 +116,7 @@ public:
 
     int  value() const { return m_value; }
     void setValue(int v);
+    void setLabelAlignment(Qt::Alignment alignment);
 
     QSize sizeHint() const override;
 
@@ -138,6 +139,7 @@ private:
     QRect   plusRect()  const;
 
     QString m_label;
+    Qt::Alignment m_labelAlignment = Qt::AlignLeft | Qt::AlignVCenter;
     int     m_value = 0, m_min = 0, m_max = 99, m_step = 1;
     HitZone m_hover   = None;
     HitZone m_pressed = None;
