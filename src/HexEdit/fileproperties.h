@@ -56,6 +56,7 @@ private:
     void cancelChecksumCalculation();
     void cancelStringScan();
     void resizeStringsList(int dy);
+    void showRecalculateStrip(QWidget *strip, const QString &message);
     void setChecksumRowsPending();
     void updateChecksumProgress(int generation, int value);
     void applyChecksumResults(int generation, const QHash<QString, QString> &results);

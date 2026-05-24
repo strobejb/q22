@@ -406,9 +406,9 @@ static QWidget *createRecalculateStrip(QWidget *parent,
     strip->setObjectName(QStringLiteral("recalculateStrip"));
     strip->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
-    const QColor accent(QStringLiteral("#a7652f"));
+    const QColor accent(QStringLiteral("#d18a4a"));
     const bool dark = parent->palette().window().color().lightness() < 128;
-    const QColor bg = dark ? QColor(167, 101, 47, 55) : QColor(167, 101, 47, 35);
+    const QColor bg = dark ? QColor(209, 138, 74, 45) : QColor(209, 138, 74, 30);
     const QColor hover = dark ? accent.lighter(118) : accent.lighter(108);
     const QColor pressed = dark ? accent.lighter(130) : accent.darker(108);
     const QColor text = accent.lightness() < 150 ? QColor(Qt::white) : QColor(Qt::black);
@@ -434,20 +434,27 @@ static QWidget *createRecalculateStrip(QWidget *parent,
             background: %5;
             border-color: %5;
         }
+        QLabel {
+            color: %2;
+            font-weight: bold;
+        }
     )").arg(cssColor(bg), cssColor(accent), cssColor(text),
             cssColor(hover), cssColor(pressed)));
 
     auto *layout = new QHBoxLayout(strip);
     layout->setContentsMargins(8, 6, 8, 6);
-    layout->setSpacing(0);
+    layout->setSpacing(8);
+
+    auto *label = new QLabel(strip);
+    label->setObjectName(QStringLiteral("recalculateMessage"));
+    label->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    layout->addWidget(label, 1, Qt::AlignVCenter);
 
     auto *button = new QPushButton(QObject::tr("Recalculate"), strip);
     button->setCursor(Qt::PointingHandCursor);
     QObject::connect(button, &QPushButton::clicked, strip, onClicked);
 
-    if (buttonAlignment & Qt::AlignRight)
-        layout->addStretch();
-    else if (buttonAlignment & Qt::AlignHCenter)
+    if (buttonAlignment & Qt::AlignHCenter)
         layout->addStretch();
     layout->addWidget(button, 0, Qt::AlignVCenter);
     if (buttonAlignment & Qt::AlignHCenter)
@@ -989,7 +996,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     checksumBodyLayout->addWidget(m_checksumProgressRow);
     m_checksumProgress->hide();
     m_checksumProgressRow->hide();
-    m_checksumRecalculateStrip = createRecalculateStrip(m_checksumSectionBody, Qt::AlignHCenter, [this]() {
+    m_checksumRecalculateStrip = createRecalculateStrip(m_checksumSectionBody, Qt::AlignRight, [this]() {
         m_checksumStarted = false;
         maybeStartChecksumCalculation();
     });
@@ -1055,7 +1062,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     stringsProgressLayout->addWidget(m_stringsStopButton, 0, Qt::AlignVCenter);
     stringsBodyLayout->addWidget(m_stringsProgressRow);
     m_stringsProgressRow->hide();
-    m_stringsRecalculateStrip = createRecalculateStrip(m_stringsSectionBody, Qt::AlignHCenter, [this]() {
+    m_stringsRecalculateStrip = createRecalculateStrip(m_stringsSectionBody, Qt::AlignRight, [this]() {
         m_stringsStarted = false;
         if (m_stringsList)
             m_stringsList->clear();
@@ -1396,7 +1403,7 @@ void FilePropertiesPanel::applyChecksumResults(int generation, const QHash<QStri
     if (m_checksumProgressRow)
         m_checksumProgressRow->hide();
     if (m_checksumRecalculateStrip)
-        m_checksumRecalculateStrip->show();
+        showRecalculateStrip(m_checksumRecalculateStrip, tr("Operation complete"));
 }
 
 void FilePropertiesPanel::startStringScan()
@@ -1503,7 +1510,7 @@ void FilePropertiesPanel::cancelChecksumCalculation()
     if (m_checksumProgressRow)
         m_checksumProgressRow->hide();
     if (m_checksumRecalculateStrip)
-        m_checksumRecalculateStrip->show();
+        showRecalculateStrip(m_checksumRecalculateStrip, tr("Operation cancelled"));
 }
 
 void FilePropertiesPanel::cancelStringScan()
@@ -1519,7 +1526,16 @@ void FilePropertiesPanel::cancelStringScan()
     if (m_stringsProgressRow)
         m_stringsProgressRow->hide();
     if (m_stringsRecalculateStrip)
-        m_stringsRecalculateStrip->show();
+        showRecalculateStrip(m_stringsRecalculateStrip, tr("Operation cancelled"));
+}
+
+void FilePropertiesPanel::showRecalculateStrip(QWidget *strip, const QString &message)
+{
+    if (!strip)
+        return;
+    if (auto *label = strip->findChild<QLabel *>(QStringLiteral("recalculateMessage")))
+        label->setText(message);
+    strip->show();
 }
 
 void FilePropertiesPanel::resizeStringsList(int dy)
@@ -1583,7 +1599,7 @@ void FilePropertiesPanel::applyStringResults(int generation, const QVector<QVari
     if (m_stringsProgressRow)
         m_stringsProgressRow->hide();
     if (m_stringsRecalculateStrip)
-        m_stringsRecalculateStrip->show();
+        showRecalculateStrip(m_stringsRecalculateStrip, tr("Operation complete"));
 }
 
 void FilePropertiesPanel::setFileSectionCollapsed(bool collapsed)
