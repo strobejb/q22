@@ -69,6 +69,141 @@ static bool formatNeedsEndian(IMPEXP_FORMAT fmt)
     return fmt == FORMAT_CPP || fmt == FORMAT_ASM;
 }
 
+static QColor fileChangedBannerAccent()
+{
+    return QColor(QStringLiteral("#C8792F"));
+}
+
+static constexpr qreal kFileChangedBannerIconScale = 0.75;
+
+static QFrame *createFileChangedBanner(QWidget *parent)
+{
+    auto *banner = new QFrame(parent);
+    banner->setObjectName(QStringLiteral("fileChangedBanner"));
+    banner->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+
+    const QColor accent = fileChangedBannerAccent();
+    const bool dark = parent->palette().window().color().lightness() < 128;
+    const QColor base(QStringLiteral("#F2E4CA"));
+    const QColor bg = dark ? QColor(base.red(), base.green(), base.blue(), 70) : base;
+    const QColor hover = dark ? accent.lighter(118) : accent.lighter(108);
+    const QColor pressed = dark ? accent.lighter(130) : accent.darker(108);
+    const QColor text = accent.lightness() < 150 ? QColor(Qt::white) : QColor(Qt::black);
+    const QString toolHover = dark ? QStringLiteral("rgba(255,255,255,0.15)")
+                                   : QStringLiteral("rgba(0,0,0,0.10)");
+    const QString toolPressed = dark ? QStringLiteral("rgba(255,255,255,0.25)")
+                                     : QStringLiteral("rgba(0,0,0,0.18)");
+    auto cssColor = [](const QColor &color) {
+        return color.name(QColor::HexArgb);
+    };
+
+    banner->setStyleSheet(QStringLiteral(R"(
+        QFrame#fileChangedBanner {
+            background: %1;
+            border: none;
+        }
+        QFrame#fileChangedBanner QLabel {
+            color: %2;
+            font-weight: bold;
+        }
+        QFrame#fileChangedBanner QPushButton {
+            background: %2;
+            color: %3;
+            border: 1px solid %2;
+            border-radius: 6px;
+            min-width: 0;
+            padding: 4px 14px;
+        }
+        QFrame#fileChangedBanner QPushButton:hover {
+            background: %4;
+            border-color: %4;
+        }
+        QFrame#fileChangedBanner QPushButton:pressed {
+            background: %5;
+            border-color: %5;
+        }
+        QFrame#fileChangedBanner QToolButton {
+            border: none;
+            border-radius: 6px;
+            background: transparent;
+        }
+        QFrame#fileChangedBanner QToolButton:hover { background: %6; }
+        QFrame#fileChangedBanner QToolButton:pressed { background: %7; }
+    )").arg(cssColor(bg), cssColor(accent), cssColor(text),
+            cssColor(hover), cssColor(pressed), toolHover, toolPressed));
+
+    return banner;
+}
+
+static QFileSystemWatcher *fileChangeWatcher(QObject *owner)
+{
+    return owner->findChild<QFileSystemWatcher *>(QStringLiteral("fileChangedWatcher"));
+}
+
+static QTimer *fileChangeTimer(QObject *owner)
+{
+    return owner->findChild<QTimer *>(QStringLiteral("fileChangedTimer"));
+}
+
+static QWidget *fileChangedBanner(QWidget *owner)
+{
+    return owner->findChild<QWidget *>(QStringLiteral("fileChangedBanner"));
+}
+
+static void showFileChangedBanner(QWidget *window)
+{
+    if (window->property("watchedFilePath").toString().isEmpty())
+        return;
+
+    if (QWidget *banner = fileChangedBanner(window))
+        banner->show();
+    if (QTimer *timer = fileChangeTimer(window))
+        timer->stop();
+}
+
+static void checkWatchedFileChanged(QWidget *window)
+{
+    const QString watchedPath = window->property("watchedFilePath").toString();
+    if (watchedPath.isEmpty())
+        return;
+
+    const QFileInfo watchedInfo(watchedPath);
+    const QDateTime watchedModified = window->property("watchedFileModified").toDateTime();
+    if (!watchedInfo.exists() || watchedInfo.lastModified() != watchedModified)
+        showFileChangedBanner(window);
+}
+
+static void updateWatchedFile(QWidget *window, const QString &path)
+{
+    if (QFileSystemWatcher *watcher = fileChangeWatcher(window)) {
+        const QStringList watchedFiles = watcher->files();
+        if (!watchedFiles.isEmpty())
+            watcher->removePaths(watchedFiles);
+    }
+
+    window->setProperty("watchedFilePath", QString());
+    window->setProperty("watchedFileModified", QDateTime());
+    if (QWidget *banner = fileChangedBanner(window))
+        banner->hide();
+    if (QTimer *timer = fileChangeTimer(window))
+        timer->stop();
+
+    if (path.isEmpty())
+        return;
+
+    const QFileInfo info(path);
+    if (!info.exists())
+        return;
+
+    const QString watchedPath = info.absoluteFilePath();
+    window->setProperty("watchedFilePath", watchedPath);
+    window->setProperty("watchedFileModified", info.lastModified());
+    if (QFileSystemWatcher *watcher = fileChangeWatcher(window))
+        watcher->addPath(watchedPath);
+    if (QTimer *timer = fileChangeTimer(window))
+        timer->start();
+}
+
 static bool importFormatNeedsAddress(IMPEXP_FORMAT fmt)
 {
     return fmt == FORMAT_HEXDUMP || fmt == FORMAT_INTELHEX || fmt == FORMAT_SRECORD;
@@ -449,7 +584,46 @@ MainWindow::MainWindow(QWidget *parent)
     auto *contentLay = new QHBoxLayout(contentRow);
     contentLay->setContentsMargins(0, 0, 0, 0);
     contentLay->setSpacing(0);
-    contentLay->addWidget(m_hv, 1);
+
+    auto *hexColumn = new QWidget(contentRow);
+    hexColumn->setAcceptDrops(true);
+    auto *hexColumnLay = new QVBoxLayout(hexColumn);
+    hexColumnLay->setContentsMargins(0, 0, 0, 0);
+    hexColumnLay->setSpacing(0);
+
+    auto *fileChanged = createFileChangedBanner(hexColumn);
+    auto *fileChangedLayout = new QHBoxLayout(fileChanged);
+    fileChangedLayout->setContentsMargins(10, 6, 10, 6);
+    fileChangedLayout->setSpacing(6);
+    auto *fileChangedLabel = new QLabel(tr("File has changed on disk"), fileChanged);
+    fileChangedLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    auto *fileChangedReload = new QPushButton(tr("Reload"), fileChanged);
+    fileChangedReload->setCursor(Qt::PointingHandCursor);
+    auto *fileChangedClose = new QToolButton(fileChanged);
+    fileChangedClose->setAutoRaise(true);
+    fileChangedClose->setCursor(Qt::PointingHandCursor);
+    fileChangedClose->setFixedSize(30, 30);
+    fileChangedClose->setIconSize(QSize(16, 16));
+    fileChangedClose->setProperty("iconThemeName", QStringLiteral("actions/window-close-symbolic"));
+    fileChangedClose->setIcon(recoloredIcon(QStringLiteral("actions/window-close-symbolic"),
+                                            palette().windowText().color(), 16));
+    const int bannerIconSize = qRound(fileChangedReload->sizeHint().height()
+                                      * kFileChangedBannerIconScale);
+    auto *fileChangedIcon = new QLabel(fileChanged);
+    fileChangedIcon->setFixedSize(bannerIconSize + 8, bannerIconSize);
+    fileChangedIcon->setAlignment(Qt::AlignCenter);
+    fileChangedIcon->setPixmap(recoloredIcon(QStringLiteral("actions/help-about-symbolic"),
+                                             fileChangedBannerAccent(),
+                                             bannerIconSize).pixmap(bannerIconSize, bannerIconSize));
+    fileChangedLayout->addWidget(fileChangedIcon, 0, Qt::AlignVCenter);
+    fileChangedLayout->addWidget(fileChangedLabel, 1, Qt::AlignVCenter);
+    fileChangedLayout->addWidget(fileChangedReload, 0, Qt::AlignVCenter);
+    fileChangedLayout->addWidget(fileChangedClose, 0, Qt::AlignVCenter);
+    recolorToolButtons(fileChanged);
+    fileChanged->hide();
+    hexColumnLay->addWidget(fileChanged);
+    hexColumnLay->addWidget(m_hv, 1);
+    contentLay->addWidget(hexColumn, 1);
 
     m_fileInfoHost = new QWidget(contentRow);
     m_fileInfoHost->setAcceptDrops(true);
@@ -502,6 +676,21 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(m_titleBar, &TitleBar::fileInfoToggled,
             this, &MainWindow::toggleFileInfoPanel);
+    auto *fileWatcher = new QFileSystemWatcher(this);
+    fileWatcher->setObjectName(QStringLiteral("fileChangedWatcher"));
+    connect(fileWatcher, &QFileSystemWatcher::fileChanged,
+            this, [this]() { showFileChangedBanner(this); });
+    auto *fileChangeTimer = new QTimer(this);
+    fileChangeTimer->setObjectName(QStringLiteral("fileChangedTimer"));
+    fileChangeTimer->setInterval(1000);
+    connect(fileChangeTimer, &QTimer::timeout,
+            this, [this]() { checkWatchedFileChanged(this); });
+    connect(fileChangedReload, &QPushButton::clicked, this, [this]() {
+        const QString path = property("watchedFilePath").toString();
+        if (!path.isEmpty() && maybeSave())
+            openFile(path);
+    });
+    connect(fileChangedClose, &QToolButton::clicked, fileChanged, &QWidget::hide);
     connect(ui->actionProperties, &QAction::triggered,
             this, [this]() { openFileInfoPanel(FilePropertiesPanel::Section::Properties); });
     ui->actionChecksum->setEnabled(true);
@@ -853,6 +1042,7 @@ MainWindow::MainWindow(QWidget *parent)
         if (!maybeSave()) return;
         m_hv->clearFile();
         setWindowTitle(QApplication::applicationDisplayName());
+        updateWatchedFile(this, QString());
         refreshFileInfoPanel();
     });
 
@@ -1199,6 +1389,7 @@ void MainWindow::openFile(const QString &path) {
     AppSettings::addRecentFile(path);
     updateRecentMenu();
     setWindowTitle(QFileInfo(path).fileName() + " \u2013 " + QApplication::applicationDisplayName());
+    updateWatchedFile(this, path);
     refreshFileInfoPanel();
 }
 
