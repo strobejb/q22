@@ -76,6 +76,10 @@ QColor themeBorderColor();
 // Matches Adwaita's @error_color: brighter in dark mode for contrast.
 QColor errorColour();
 
+// Shared warm warning/banner colours used by reload and recalculation notices.
+QColor warningBannerAccent();
+QColor warningBannerBackground(const QPalette &palette);
+
 class QListWidget;
 // Installs a delegate that enforces a minimum item height of (font height +
 // 2*vPad) pixels, independent of QSS.  On KDE/Breeze, QListWidget::item

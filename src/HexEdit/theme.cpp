@@ -16,12 +16,14 @@
 #include <QLayout>
 #include <QMenu>
 #include <QMessageBox>
+#include <QMouseEvent>
 #include <QPlatformSurfaceEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPalette>
 #include <QPointer>
 #include <QCursor>
+#include <QEasingCurve>
 #include <QProxyStyle>
 #include <QScrollBar>
 #include <QStyleOption>
@@ -31,6 +33,7 @@
 #include <QStyleOption>
 #include <QStyledItemDelegate>
 #include <QTimer>
+#include <QVariantAnimation>
 #include <QPointer>
 #include <QWidget>
 #include <QAbstractButton>
@@ -367,6 +370,18 @@ QColor errorColour()
     return isDarkMode() ? QColor("#FF3F49") : QColor("#c01c28");
 }
 
+QColor warningBannerAccent()
+{
+    return QColor(QStringLiteral("#C8792F"));
+}
+
+QColor warningBannerBackground(const QPalette &palette)
+{
+    const QColor base(QStringLiteral("#F2E4CA"));
+    const bool dark = palette.window().color().lightness() < 128;
+    return dark ? QColor(base.red(), base.green(), base.blue(), 70) : base;
+}
+
 #include <QIcon>
 #include <QPixmap>
 #include <QSet>
@@ -658,6 +673,16 @@ static constexpr int kPanelSbOuter      = kSbOuter - kPanelSbMask;
 static constexpr int kPanelSbInner      = kSbWidth - kPanelSbOuter - kSbThumbWidth;
 static_assert(kPanelSbThumbWidth == 5);
 static_assert(kPanelSbOuter + kPanelSbMask == 4);
+
+enum class ScrollBarArrowPressEffect {
+    Shrink,
+    Invert
+};
+
+static constexpr ScrollBarArrowPressEffect kScrollBarArrowPressEffect =
+    ScrollBarArrowPressEffect::Shrink;
+static constexpr qreal kSbArrowPressedScale = 0.70;
+static constexpr int kSbArrowReleaseAnimMs = 120;
 
 // ── Stylesheet ────────────────────────────────────────────────────────────────
 
@@ -1027,6 +1052,11 @@ QFileDialog QTreeView::item {
         // The arrow triangles themselves are drawn by ScrollBarArrowPainter (an
         // application-wide event filter) on top of the normal Qt paint — no image
         // files needed, colours track the live palette.
+        const QString pressedQss =
+            kScrollBarArrowPressEffect == ScrollBarArrowPressEffect::Invert
+                ? QStringLiteral("QScrollBar[hexViewScrollBar=true]::sub-line:pressed,\n"
+                                 "QScrollBar[hexViewScrollBar=true]::add-line:pressed { background: palette(mid); }\n")
+                : QString();
         ss.replace("{scrollbarArrowQss}", QStringLiteral(
             "QScrollBar::add-line:vertical,   QScrollBar::sub-line:vertical   { height: 0; }\n"
             "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width:  0; }\n"
@@ -1036,9 +1066,8 @@ QFileDialog QTreeView::item {
             "QScrollBar[hexViewScrollBar=true]::add-line:vertical   { height: %1px; subcontrol-position: bottom; subcontrol-origin: margin; background: transparent; }\n"
             "QScrollBar[hexViewScrollBar=true]::sub-line:horizontal { width:  %1px; subcontrol-position: left;   subcontrol-origin: margin; background: transparent; }\n"
             "QScrollBar[hexViewScrollBar=true]::add-line:horizontal { width:  %1px; subcontrol-position: right;  subcontrol-origin: margin; background: transparent; }\n"
-            "QScrollBar[hexViewScrollBar=true]::sub-line:pressed,\n"
-            "QScrollBar[hexViewScrollBar=true]::add-line:pressed { background: palette(mid); }\n"
-        ).arg(sbw));
+            "%2"
+        ).arg(sbw).arg(pressedQss));
     } else {
         ss.replace("{scrollbarArrowQss}",
             "QScrollBar::add-line:vertical,   QScrollBar::sub-line:vertical   { height: 0; }\n"
@@ -1351,7 +1380,16 @@ class ScrollBarArrowPainter : public QObject
     // Per-scrollbar hover state tracked from events rather than queried at
     // paint time.  QCursor::pos() can be stale when a deferred paint fires
     // after the mouse has already left, causing the hover colour to stick.
-    struct BtnState { bool subHov = false, addHov = false; };
+    struct BtnState {
+        bool subHov = false;
+        bool addHov = false;
+        bool subPressed = false;
+        bool addPressed = false;
+        qreal subScale = 1.0;
+        qreal addScale = 1.0;
+        QPointer<QVariantAnimation> subAnim;
+        QPointer<QVariantAnimation> addAnim;
+    };
     QHash<QScrollBar *, BtnState> m_state;
 
 public:
@@ -1376,10 +1414,12 @@ public:
             const QPoint mp = static_cast<QHoverEvent *>(ev)->position().toPoint();
             QRect subR, addR;
             buttonRects(sb, subR, addR);
-            BtnState now { subR.contains(mp), addR.contains(mp) };
             BtnState &prev = m_state[sb];
-            if (now.subHov != prev.subHov || now.addHov != prev.addHov) {
-                prev = now;
+            const bool subHov = subR.contains(mp);
+            const bool addHov = addR.contains(mp);
+            if (subHov != prev.subHov || addHov != prev.addHov) {
+                prev.subHov = subHov;
+                prev.addHov = addHov;
                 sb->update(subR);
                 sb->update(addR);
             }
@@ -1389,7 +1429,8 @@ public:
         if (t == QEvent::HoverLeave || t == QEvent::Leave) {
             BtnState &s = m_state[sb];
             if (s.subHov || s.addHov) {
-                s = {};
+                s.subHov = false;
+                s.addHov = false;
                 QRect subR, addR;
                 buttonRects(sb, subR, addR);
                 sb->update(subR);
@@ -1399,9 +1440,32 @@ public:
         }
 
         if (t == QEvent::MouseButtonPress || t == QEvent::MouseButtonRelease) {
-            // Pressed state changes the arrow colour — repaint the buttons.
             QRect subR, addR;
             buttonRects(sb, subR, addR);
+            BtnState &s = m_state[sb];
+            if (t == QEvent::MouseButtonPress) {
+                const QPoint mp = static_cast<QMouseEvent *>(ev)->position().toPoint();
+                if (subR.contains(mp)) {
+                    stopArrowAnim(s, true);
+                    s.subPressed = true;
+                    s.subScale = kScrollBarArrowPressEffect == ScrollBarArrowPressEffect::Shrink
+                        ? kSbArrowPressedScale : 1.0;
+                } else if (addR.contains(mp)) {
+                    stopArrowAnim(s, false);
+                    s.addPressed = true;
+                    s.addScale = kScrollBarArrowPressEffect == ScrollBarArrowPressEffect::Shrink
+                        ? kSbArrowPressedScale : 1.0;
+                }
+            } else {
+                if (s.subPressed) {
+                    s.subPressed = false;
+                    animateArrowScale(sb, true, s.subScale, 1.0);
+                }
+                if (s.addPressed) {
+                    s.addPressed = false;
+                    animateArrowScale(sb, false, s.addScale, 1.0);
+                }
+            }
             sb->update(subR);
             sb->update(addR);
             return false;
@@ -1426,6 +1490,55 @@ private:
     // Arrow buttons are kSbWidth × kSbWidth px squares — their scroll-axis
     // extent equals the widget's cross-axis width, which is also kSbWidth.
     static constexpr int kBtnSize = kSbWidth;
+
+    static void stopArrowAnim(BtnState &s, bool sub)
+    {
+        QPointer<QVariantAnimation> &anim = sub ? s.subAnim : s.addAnim;
+        if (anim) {
+            anim->stop();
+            anim->deleteLater();
+            anim = nullptr;
+        }
+    }
+
+    void animateArrowScale(QScrollBar *sb, bool sub, qreal from, qreal to)
+    {
+        if (kScrollBarArrowPressEffect != ScrollBarArrowPressEffect::Shrink) {
+            BtnState &s = m_state[sb];
+            (sub ? s.subScale : s.addScale) = to;
+            return;
+        }
+
+        BtnState &s = m_state[sb];
+        stopArrowAnim(s, sub);
+
+        auto *anim = new QVariantAnimation(sb);
+        anim->setDuration(kSbArrowReleaseAnimMs);
+        anim->setEasingCurve(QEasingCurve::OutCubic);
+        anim->setStartValue(from);
+        anim->setEndValue(to);
+        if (sub)
+            s.subAnim = anim;
+        else
+            s.addAnim = anim;
+
+        connect(anim, &QVariantAnimation::valueChanged, sb, [this, sb, sub](const QVariant &value) {
+            BtnState &state = m_state[sb];
+            (sub ? state.subScale : state.addScale) = value.toDouble();
+            QRect subR, addR;
+            buttonRects(sb, subR, addR);
+            sb->update(sub ? subR : addR);
+        });
+        connect(anim, &QVariantAnimation::finished, sb, [this, sb, sub, anim]() {
+            BtnState &state = m_state[sb];
+            (sub ? state.subScale : state.addScale) = 1.0;
+            QPointer<QVariantAnimation> &slot = sub ? state.subAnim : state.addAnim;
+            if (slot == anim)
+                slot = nullptr;
+            anim->deleteLater();
+        });
+        anim->start();
+    }
 
     // Returns the current handle rect in widget coordinates.
     // NOTE: only valid when arrow buttons are enabled (kBtnSize strips the
@@ -1478,8 +1591,9 @@ private:
         const BtnState &s   = m_state[sb];
         const bool      btn = QApplication::mouseButtons() & Qt::LeftButton;
 
-        auto arrowCol = [&](bool hov) -> QColor {
-            if (hov && btn) return sb->palette().color(QPalette::Light);
+        auto arrowCol = [&](bool hov, bool pressed) -> QColor {
+            if (kScrollBarArrowPressEffect == ScrollBarArrowPressEffect::Invert && hov && pressed)
+                return sb->palette().color(QPalette::Light);
             if (hov)        return sb->palette().color(QPalette::Dark);
             return                 sb->palette().color(QPalette::Mid);
         };
@@ -1489,13 +1603,19 @@ private:
         // sz = 11 (odd) → crossOff = (kSbWidth - sz) / 2 = 1 → icon at [1,12], centre = 6.5 ✓
         const int sz        = kSbWidth - 3;                           // = 11
         const int crossOff  = (kSbWidth - sz) / 2;                   // = 1
-        auto iconRect = [&](const QRect &btnR) -> QRect {
+        auto iconRect = [&](const QRect &btnR, qreal scale) -> QRect {
             const int scrollDim = vert ? btnR.height() : btnR.width();
             const int scrollOff = (scrollDim - sz) / 2;
-            if (vert)
-                return QRect(btnR.left() + crossOff, btnR.top() + scrollOff, sz, sz);
-            else
-                return QRect(btnR.left() + scrollOff, btnR.top() + crossOff, sz, sz);
+            const QRect full = vert
+                ? QRect(btnR.left() + crossOff, btnR.top() + scrollOff, sz, sz)
+                : QRect(btnR.left() + scrollOff, btnR.top() + crossOff, sz, sz);
+            if (kScrollBarArrowPressEffect != ScrollBarArrowPressEffect::Shrink)
+                return full;
+
+            const int scaled = qMax(1, qRound(sz * scale));
+            return QRect(full.center().x() - scaled / 2,
+                         full.center().y() - scaled / 2,
+                         scaled, scaled);
         };
 
         QPainter p(sb);
@@ -1514,17 +1634,17 @@ private:
             }
         }
 
-        auto draw = [&](const QRect &btnR, const QString &name, bool hov) {
-            const QRect ir = iconRect(btnR);
-            recoloredIcon(name, arrowCol(hov), qMin(ir.width(), ir.height())).paint(&p, ir);
+        auto draw = [&](const QRect &btnR, const QString &name, bool hov, bool pressed, qreal scale) {
+            const QRect ir = iconRect(btnR, scale);
+            recoloredIcon(name, arrowCol(hov, pressed), qMin(ir.width(), ir.height())).paint(&p, ir);
         };
 
         if (vert) {
-            draw(subR, QStringLiteral("ui/scrollbar-up-symbolic"),    s.subHov);
-            draw(addR, QStringLiteral("ui/scrollbar-down-symbolic"),  s.addHov);
+            draw(subR, QStringLiteral("ui/scrollbar-up-symbolic"),    s.subHov, s.subPressed, s.subScale);
+            draw(addR, QStringLiteral("ui/scrollbar-down-symbolic"),  s.addHov, s.addPressed, s.addScale);
         } else {
-            draw(subR, QStringLiteral("ui/scrollbar-left-symbolic"),  s.subHov);
-            draw(addR, QStringLiteral("ui/scrollbar-right-symbolic"), s.addHov);
+            draw(subR, QStringLiteral("ui/scrollbar-left-symbolic"),  s.subHov, s.subPressed, s.subScale);
+            draw(addR, QStringLiteral("ui/scrollbar-right-symbolic"), s.addHov, s.addPressed, s.addScale);
         }
     }
 };

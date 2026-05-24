@@ -69,11 +69,6 @@ static bool formatNeedsEndian(IMPEXP_FORMAT fmt)
     return fmt == FORMAT_CPP || fmt == FORMAT_ASM;
 }
 
-static QColor fileChangedBannerAccent()
-{
-    return QColor(QStringLiteral("#C8792F"));
-}
-
 static constexpr qreal kFileChangedBannerIconScale = 0.75;
 
 static QFrame *createFileChangedBanner(QWidget *parent)
@@ -82,17 +77,14 @@ static QFrame *createFileChangedBanner(QWidget *parent)
     banner->setObjectName(QStringLiteral("fileChangedBanner"));
     banner->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
-    const QColor accent = fileChangedBannerAccent();
+    const QColor accent = warningBannerAccent();
     const bool dark = parent->palette().window().color().lightness() < 128;
-    const QColor base(QStringLiteral("#F2E4CA"));
-    const QColor bg = dark ? QColor(base.red(), base.green(), base.blue(), 70) : base;
+    const QColor bg = warningBannerBackground(parent->palette());
     const QColor hover = dark ? accent.lighter(118) : accent.lighter(108);
     const QColor pressed = dark ? accent.lighter(130) : accent.darker(108);
     const QColor text = accent.lightness() < 150 ? QColor(Qt::white) : QColor(Qt::black);
-    const QString toolHover = dark ? QStringLiteral("rgba(255,255,255,0.15)")
-                                   : QStringLiteral("rgba(0,0,0,0.10)");
-    const QString toolPressed = dark ? QStringLiteral("rgba(255,255,255,0.25)")
-                                     : QStringLiteral("rgba(0,0,0,0.18)");
+    const QColor toolHover(accent.red(), accent.green(), accent.blue(), dark ? 55 : 35);
+    const QColor toolPressed(accent.red(), accent.green(), accent.blue(), dark ? 80 : 55);
     auto cssColor = [](const QColor &color) {
         return color.name(QColor::HexArgb);
     };
@@ -130,7 +122,8 @@ static QFrame *createFileChangedBanner(QWidget *parent)
         QFrame#fileChangedBanner QToolButton:hover { background: %6; }
         QFrame#fileChangedBanner QToolButton:pressed { background: %7; }
     )").arg(cssColor(bg), cssColor(accent), cssColor(text),
-            cssColor(hover), cssColor(pressed), toolHover, toolPressed));
+            cssColor(hover), cssColor(pressed),
+            cssColor(toolHover), cssColor(toolPressed)));
 
     return banner;
 }
@@ -593,7 +586,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     auto *fileChanged = createFileChangedBanner(hexColumn);
     auto *fileChangedLayout = new QHBoxLayout(fileChanged);
-    fileChangedLayout->setContentsMargins(10, 6, 10, 6);
+    fileChangedLayout->setContentsMargins(10, 6, 4, 6);
     fileChangedLayout->setSpacing(6);
     auto *fileChangedLabel = new QLabel(tr("File has changed on disk"), fileChanged);
     fileChangedLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
@@ -605,21 +598,21 @@ MainWindow::MainWindow(QWidget *parent)
     fileChangedClose->setFixedSize(30, 30);
     fileChangedClose->setIconSize(QSize(16, 16));
     fileChangedClose->setProperty("iconThemeName", QStringLiteral("actions/window-close-symbolic"));
+    fileChangedClose->setProperty("iconColorRole", QStringLiteral("bannerAccent"));
     fileChangedClose->setIcon(recoloredIcon(QStringLiteral("actions/window-close-symbolic"),
-                                            palette().windowText().color(), 16));
+                                            warningBannerAccent(), 16));
     const int bannerIconSize = qRound(fileChangedReload->sizeHint().height()
                                       * kFileChangedBannerIconScale);
     auto *fileChangedIcon = new QLabel(fileChanged);
     fileChangedIcon->setFixedSize(bannerIconSize + 8, bannerIconSize);
     fileChangedIcon->setAlignment(Qt::AlignCenter);
     fileChangedIcon->setPixmap(recoloredIcon(QStringLiteral("actions/help-about-symbolic"),
-                                             fileChangedBannerAccent(),
+                                             warningBannerAccent(),
                                              bannerIconSize).pixmap(bannerIconSize, bannerIconSize));
     fileChangedLayout->addWidget(fileChangedIcon, 0, Qt::AlignVCenter);
     fileChangedLayout->addWidget(fileChangedLabel, 1, Qt::AlignVCenter);
     fileChangedLayout->addWidget(fileChangedReload, 0, Qt::AlignVCenter);
     fileChangedLayout->addWidget(fileChangedClose, 0, Qt::AlignVCenter);
-    recolorToolButtons(fileChanged);
     fileChanged->hide();
     hexColumnLay->addWidget(fileChanged);
     hexColumnLay->addWidget(m_hv, 1);

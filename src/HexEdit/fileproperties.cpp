@@ -406,9 +406,9 @@ static QWidget *createRecalculateStrip(QWidget *parent,
     strip->setObjectName(QStringLiteral("recalculateStrip"));
     strip->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
-    const QColor accent(QStringLiteral("#d18a4a"));
+    const QColor accent = warningBannerAccent();
     const bool dark = parent->palette().window().color().lightness() < 128;
-    const QColor bg = dark ? QColor(209, 138, 74, 45) : QColor(209, 138, 74, 30);
+    const QColor bg = warningBannerBackground(parent->palette());
     const QColor hover = dark ? accent.lighter(118) : accent.lighter(108);
     const QColor pressed = dark ? accent.lighter(130) : accent.darker(108);
     const QColor text = accent.lightness() < 150 ? QColor(Qt::white) : QColor(Qt::black);

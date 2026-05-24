@@ -211,7 +211,7 @@ HexView::NoteStripGeom HexView::noteStripGeom(const Bookmark &bm) const
     const size_w startLine = bm.offset / (size_w)m_nBytesPerLine;
     const int ny    = (int)((qint64)startLine - (qint64)m_nVScrollPos) * m_nFontHeight;
 
-    const int rectW = std::min(kNoteMaxW, viewW - rectX);
+    const int rectW = kNoteMaxW;
     // Text width leaves room for the gear button on the right.
     const int textW = rectW - 2 * kNotePadH - kNoteBtnSz - kNoteBtnGap;
     if (textW <= 0) return g;
@@ -310,7 +310,7 @@ QRect HexView::noteCollapsedRect(const Bookmark &bm) const
     const int rectX      = asciiRight + m_nFontWidth * 4 + kNoteTriW;
     if (rectX >= viewW) return QRect();
 
-    const int rectW = std::min(kNoteMaxW, viewW - rectX);
+    const int rectW = kNoteMaxW;
     const int textW = rectW - 2 * kNotePadH - kNoteBtnSz - kNoteBtnGap;
     if (textW <= 0) return QRect();
 
@@ -341,7 +341,7 @@ int HexView::noteStripFullHeight(const Bookmark &bm) const
     const int rectX      = asciiRight + m_nFontWidth * 4 + kNoteTriW;
     if (rectX >= viewW) return m_nFontHeight;
 
-    const int rectW = std::min(kNoteMaxW, viewW - rectX);
+    const int rectW = kNoteMaxW;
     const int textW = rectW - 2 * kNotePadH - kNoteBtnSz - kNoteBtnGap;
     if (textW <= 0) return m_nFontHeight;
 
