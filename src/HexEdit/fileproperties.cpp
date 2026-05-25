@@ -445,14 +445,23 @@ static QWidget *createRecalculateStrip(QWidget *parent,
     layout->setContentsMargins(8, 6, 8, 6);
     layout->setSpacing(8);
 
+    auto *button = new QPushButton(QObject::tr("Recalculate"), strip);
+    button->setCursor(Qt::PointingHandCursor);
+    QObject::connect(button, &QPushButton::clicked, strip, onClicked);
+
+    const int iconSize = qRound(button->sizeHint().height() * 0.75);
+    auto *icon = new QLabel(strip);
+    icon->setFixedSize(iconSize + 8, iconSize);
+    icon->setAlignment(Qt::AlignCenter);
+    icon->setPixmap(recoloredIcon(QStringLiteral("actions/help-about-symbolic"),
+                                  warningBannerAccent(),
+                                  iconSize).pixmap(iconSize, iconSize));
+    layout->addWidget(icon, 0, Qt::AlignVCenter);
+
     auto *label = new QLabel(strip);
     label->setObjectName(QStringLiteral("recalculateMessage"));
     label->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     layout->addWidget(label, 1, Qt::AlignVCenter);
-
-    auto *button = new QPushButton(QObject::tr("Recalculate"), strip);
-    button->setCursor(Qt::PointingHandCursor);
-    QObject::connect(button, &QPushButton::clicked, strip, onClicked);
 
     if (buttonAlignment & Qt::AlignHCenter)
         layout->addStretch();
@@ -1403,7 +1412,7 @@ void FilePropertiesPanel::applyChecksumResults(int generation, const QHash<QStri
     if (m_checksumProgressRow)
         m_checksumProgressRow->hide();
     if (m_checksumRecalculateStrip)
-        showRecalculateStrip(m_checksumRecalculateStrip, tr("Operation complete"));
+        m_checksumRecalculateStrip->hide();
 }
 
 void FilePropertiesPanel::startStringScan()
@@ -1599,7 +1608,7 @@ void FilePropertiesPanel::applyStringResults(int generation, const QVector<QVari
     if (m_stringsProgressRow)
         m_stringsProgressRow->hide();
     if (m_stringsRecalculateStrip)
-        showRecalculateStrip(m_stringsRecalculateStrip, tr("Operation complete"));
+        m_stringsRecalculateStrip->hide();
 }
 
 void FilePropertiesPanel::setFileSectionCollapsed(bool collapsed)

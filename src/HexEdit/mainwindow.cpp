@@ -143,13 +143,41 @@ static QWidget *fileChangedBanner(QWidget *owner)
     return owner->findChild<QWidget *>(QStringLiteral("fileChangedBanner"));
 }
 
+static void refreshCursorUnderMouse(QWidget *window)
+{
+    QWidget *target = QApplication::widgetAt(QCursor::pos());
+    if (!target || target->window() != window)
+        return;
+
+    const QPoint global = QCursor::pos();
+    const QPoint local = target->mapFromGlobal(global);
+    const QPoint windowLocal = window->mapFromGlobal(global);
+    QEnterEvent enter(local, windowLocal, global);
+    QApplication::sendEvent(target, &enter);
+
+    QMouseEvent move(QEvent::MouseMove,
+                     local,
+                     windowLocal,
+                     global,
+                     Qt::NoButton,
+                     QApplication::mouseButtons(),
+                     QApplication::keyboardModifiers());
+    QApplication::sendEvent(target, &move);
+}
+
 static void showFileChangedBanner(QWidget *window)
 {
     if (window->property("watchedFilePath").toString().isEmpty())
         return;
 
-    if (QWidget *banner = fileChangedBanner(window))
+    if (QWidget *banner = fileChangedBanner(window)) {
         banner->show();
+        QPointer<QWidget> guard(window);
+        QTimer::singleShot(0, window, [guard]() {
+            if (guard)
+                refreshCursorUnderMouse(guard);
+        });
+    }
     if (QTimer *timer = fileChangeTimer(window))
         timer->stop();
 }
