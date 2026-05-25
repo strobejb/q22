@@ -18,6 +18,9 @@
 #include <QEasingCurve>
 #include <QResizeEvent>
 #include <QScreen>
+#include <QScrollArea>
+#include <QScrollBar>
+#include <QStyle>
 #include <QTimer>
 #include <QToolButton>
 
@@ -135,6 +138,23 @@ static bool isInPaletteSwatchGrid(QWidget *widget)
             return true;
     }
     return false;
+}
+
+static void tagSlideOverlayScrollBars(QWidget *root)
+{
+    if (!root)
+        return;
+
+    const auto scrollAreas = root->findChildren<QScrollArea *>();
+    for (QScrollArea *scroll : scrollAreas) {
+        QScrollBar *bar = scroll->verticalScrollBar();
+        if (!bar)
+            continue;
+        bar->setProperty("preferenceScrollBar", true);
+        bar->style()->unpolish(bar);
+        bar->style()->polish(bar);
+        bar->update();
+    }
 }
 
 // ── SlideOverlay ──────────────────────────────────────────────────────────────
@@ -305,6 +325,7 @@ void SlideOverlay::slideIn(QDialog *dlg, std::function<void(int)> onFinished,
     m_content->show();
     for (QWidget *child : m_content->findChildren<QWidget *>())
         child->installEventFilter(this);
+    tagSlideOverlayScrollBars(m_content);
     auto *tabScope = m_inlineMode ? static_cast<QWidget *>(m_content)
                                   : static_cast<QWidget *>(this);
     // The inline back button is inserted dynamically and overlay geometry is

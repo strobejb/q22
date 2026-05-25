@@ -490,6 +490,9 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     scroll->verticalScrollBar()->setFocusPolicy(Qt::NoFocus);
     scroll->setWidget(content);
     ScrollHintOverlay::install(scroll);
+    scroll->verticalScrollBar()->setProperty("preferenceScrollBar", true);
+    scroll->verticalScrollBar()->style()->unpolish(scroll->verticalScrollBar());
+    scroll->verticalScrollBar()->style()->polish(scroll->verticalScrollBar());
 
     auto *dialogLay = new QVBoxLayout(this);
     dialogLay->setContentsMargins(0, 0, 0, 0);
@@ -801,6 +804,9 @@ void PreferencesDialog::showPaletteListOverlay()
     scroll->setFocusPolicy(Qt::NoFocus);
     scroll->setWidget(grid);
     ScrollHintOverlay::install(scroll);
+    scroll->verticalScrollBar()->setProperty("preferenceScrollBar", true);
+    scroll->verticalScrollBar()->style()->unpolish(scroll->verticalScrollBar());
+    scroll->verticalScrollBar()->style()->polish(scroll->verticalScrollBar());
 
     auto *lay = new QVBoxLayout(dlg);
     lay->setContentsMargins(0, 0, 0, 0);

@@ -674,6 +674,16 @@ static constexpr int kPanelSbInner      = kSbWidth - kPanelSbOuter - kSbThumbWid
 static_assert(kPanelSbThumbWidth == 5);
 static_assert(kPanelSbOuter + kPanelSbMask == 4);
 
+static constexpr int kPreferenceSbThumbWidth = 4; // preferences + slide overlays
+static constexpr int kPreferenceSbMask       = 1;
+static constexpr int kPreferenceSbOuter      = kSbOuter - kPreferenceSbMask;
+static constexpr int kPreferenceSbInner      = kSbWidth - kPreferenceSbOuter
+                                             - kPreferenceSbThumbWidth
+                                             - 2 * kPreferenceSbMask;
+static constexpr int kPreferenceSbRadius     = 3;
+static_assert(kPreferenceSbThumbWidth == 4);
+static_assert(kPreferenceSbOuter + kPreferenceSbMask == 4);
+
 enum class ScrollBarArrowPressEffect {
     Shrink,
     Invert
@@ -933,6 +943,19 @@ QScrollBar[filePropertiesScrollBar=true]::handle:vertical {
 QScrollBar[filePropertiesScrollBar=true]::handle:vertical:hover {
     background: palette(dark);
 }
+QScrollBar[preferenceScrollBar=true]:vertical {
+    margin: 8px 0px 8px 0px;
+}
+QScrollBar[preferenceScrollBar=true]::handle:vertical {
+    background: palette(mid);
+    border-left: {preferenceSbMask}px solid transparent;
+    border-right: {preferenceSbMask}px solid transparent;
+    border-radius: {preferenceSbRadius}px;
+    margin: 0 {preferenceSbOuter}px 0 {preferenceSbInner}px;
+}
+QScrollBar[preferenceScrollBar=true]::handle:vertical:hover {
+    background: palette(dark);
+}
 {scrollbarArrowQss}
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical,
 QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; }
@@ -1025,12 +1048,20 @@ QFileDialog QTreeView::item {
     const QString psbo = QString::number(kPanelSbOuter);
     const QString psbi = QString::number(kPanelSbInner);
     const QString psbm = QString::number(kPanelSbMask);
+    const QString prefSbo = QString::number(kPreferenceSbOuter);
+    const QString prefSbi = QString::number(kPreferenceSbInner);
+    const QString prefSbm = QString::number(kPreferenceSbMask);
+    const QString prefSbr = QString::number(kPreferenceSbRadius);
     ss.replace("{sbWidth}",  sbw);
     ss.replace("{sbOuter}",  sbo);
     ss.replace("{sbInner}",  sbi);
     ss.replace("{panelSbOuter}", psbo);
     ss.replace("{panelSbInner}", psbi);
     ss.replace("{panelSbMask}",  psbm);
+    ss.replace("{preferenceSbOuter}", prefSbo);
+    ss.replace("{preferenceSbInner}", prefSbi);
+    ss.replace("{preferenceSbMask}",  prefSbm);
+    ss.replace("{preferenceSbRadius}", prefSbr);
 
     // Scrollbar arrow buttons — shown when the user setting is on, otherwise
     // collapsed to zero-size so no track space is reserved.
