@@ -3,8 +3,15 @@ set(HEXEDIT_RESOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/resources)
 
 set(PROJECT_SOURCES
         main.cpp
-        fileproperties.cpp
         fileproperties.h
+        filestats/banner.cpp
+        filestats/banner.h
+        filestats/checksum.cpp
+        filestats/properties.cpp
+        filestats/sidepanel.cpp
+        filestats/sidepanel.h
+        filestats/strings.cpp
+        filestats/widgets.h
         mainwindow.cpp
         mainwindow.h
         mainwindow.ui
