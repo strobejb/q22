@@ -372,7 +372,7 @@ QColor errorColour()
 
 QColor warningBannerAccent()
 {
-    return QColor(QStringLiteral("#C8792F"));
+    return QColor(QStringLiteral("#E39E0C"));
 }
 
 QColor warningBannerBackground(const QPalette &palette)

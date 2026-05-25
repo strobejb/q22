@@ -8,6 +8,8 @@ set(PROJECT_SOURCES
         filestats/banner.h
         filestats/checksum.cpp
         filestats/properties.cpp
+        filestats/resizegrip.cpp
+        filestats/resizegrip.h
         filestats/sidepanel.cpp
         filestats/sidepanel.h
         filestats/strings.cpp

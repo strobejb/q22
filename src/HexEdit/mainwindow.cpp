@@ -11,6 +11,7 @@
 #include "dialogs/dlgimport.h"
 #include "dialogs/dlgpastespecial.h"
 #include "fileproperties.h"
+#include "filestats/resizegrip.h"
 #include "panels/dockpanelhost.h"
 #include "panels/findpanel.h"
 #include "panels/gotopanel.h"
@@ -311,7 +312,6 @@ static QString getThemedSaveFileName(QWidget *parent, const QString &caption)
 
 static constexpr int kFileInfoPaneMinWidth = 280;
 static constexpr int kFileInfoPaneMaxWidth = 720;
-static constexpr int kFileInfoResizeHandleWidth = 8;
 static constexpr int kFileInfoPaneAnimMs = 220;
 
 #ifdef Q_OS_WIN
@@ -654,16 +654,7 @@ MainWindow::MainWindow(QWidget *parent)
     auto *fileInfoHostLay = new QHBoxLayout(m_fileInfoHost);
     fileInfoHostLay->setContentsMargins(0, 0, 0, 0);
     fileInfoHostLay->setSpacing(0);
-    auto *fileInfoHairline = new Hairline(m_fileInfoHost, Hairline::Edge::Left);
-    fileInfoHairline->setProperty("fileInfoResizeHandle", true);
-    fileInfoHairline->setCursor(Qt::SizeHorCursor);
-    fileInfoHairline->setAcceptDrops(true);
-    m_fileInfoResizeHandle = new QWidget(m_fileInfoHost);
-    m_fileInfoResizeHandle->setProperty("fileInfoResizeHandle", true);
-    m_fileInfoResizeHandle->setFixedWidth(kFileInfoResizeHandleWidth);
-    m_fileInfoResizeHandle->setCursor(Qt::SizeHorCursor);
-    m_fileInfoResizeHandle->setAcceptDrops(true);
-    fileInfoHostLay->addWidget(fileInfoHairline);
+    m_fileInfoResizeHandle = new filestats::SidePanelResizeGrip(m_fileInfoHost);
     fileInfoHostLay->addWidget(m_fileInfoResizeHandle);
     contentLay->addWidget(m_fileInfoHost, 0);
 
@@ -1675,6 +1666,8 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
                 m_fileInfoResizing = true;
                 m_fileInfoResizeStartX = me->globalPosition().x();
                 m_fileInfoResizeStartWidth = m_fileInfoHost->width();
+                if (m_fileInfoResizeHandle)
+                    static_cast<filestats::SidePanelResizeGrip *>(m_fileInfoResizeHandle)->setActive(true);
                 m_fileInfoResizeHandle->grabMouse();
                 return true;
             }
@@ -1690,6 +1683,8 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
         if ((type == QEvent::MouseButtonRelease || type == QEvent::UngrabMouse) && m_fileInfoResizing) {
             if (m_fileInfoResizeHandle)
                 m_fileInfoResizeHandle->releaseMouse();
+            if (m_fileInfoResizeHandle)
+                static_cast<filestats::SidePanelResizeGrip *>(m_fileInfoResizeHandle)->setActive(false);
             m_fileInfoResizing = false;
             return type == QEvent::MouseButtonRelease;
         }
