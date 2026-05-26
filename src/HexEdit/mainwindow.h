@@ -4,7 +4,6 @@
 #include <QByteArray>
 #include <QCloseEvent>
 #include <QMainWindow>
-#include <QPointer>
 #include "fileproperties.h"
 #include "palette/palettes.h"
 
@@ -20,7 +19,6 @@ class HexView;
 class Hairline;
 class QFileSystemWatcher;
 class QMenu;
-class QPropertyAnimation;
 class QTimer;
 class StatusBar;
 class TitleBar;
@@ -59,8 +57,6 @@ private:
     void toggleFileInfoPanel();
     void openFileInfoPanel(FilePropertiesPanel::Section section);
     void refreshFileInfoPanel();
-    void setFileInfoPaneExpanded(bool expanded);
-    void setFileInfoPaneWidth(int width);
     void applyMenuMode(bool useCustomTitleBar);
 #ifdef Q_OS_WIN
     void updateWinChromeColors();
@@ -79,17 +75,10 @@ private:
     BookmarkDialog    *m_bookmarkDialog = nullptr;
     FindPanel         *m_findDialog     = nullptr;
     GotoPanel         *m_gotoDialog     = nullptr;
-    QWidget           *m_fileInfoHost    = nullptr;
-    QWidget           *m_fileInfoResizeHandle = nullptr;
-    QPropertyAnimation *m_fileInfoWidthAnim = nullptr;
-    QPointer<FilePropertiesPanel> m_filePropertiesPanel;
+    FilePropertiesPanelHost *m_fileInfoHost = nullptr;
     PreferencesDialog *m_prefsDialog    = nullptr;
     bool            m_useCustomTitleBar = true;
     bool            m_inResizeZone      = false;
-    bool            m_fileInfoResizing  = false;
-    int             m_fileInfoPaneWidth = 400;
-    int             m_fileInfoResizeStartWidth = 0;
-    qreal           m_fileInfoResizeStartX = 0.0;
 #ifndef Q_OS_WIN
     QWidget        *m_cornerClipper     = nullptr;
 #endif

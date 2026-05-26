@@ -2,6 +2,7 @@
 
 #include "HexView/hexview.h"
 #include "combos/menucombobox.h"
+#include "filestats/resizegrip.h"
 #include "filestats/widgets.h"
 #include "settings/scrollhintoverlay.h"
 #include "settings/settingscard.h"
@@ -46,6 +47,7 @@
 #include <QUrl>
 #include <QVBoxLayout>
 #include <QVariantMap>
+#include <QtMath>
 
 #include <array>
 #include <algorithm>
@@ -53,6 +55,10 @@
 #include <utility>
 
 using namespace filestats;
+
+static constexpr int kFileInfoPaneMinWidth = 280;
+static constexpr int kFileInfoPaneMaxWidth = 720;
+static constexpr int kFileInfoPaneAnimMs = 220;
 
 FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     : QDialog(parent), m_hexView(hexView)
@@ -550,4 +556,169 @@ void FilePropertiesPanel::syncStickyHeader()
 void FilePropertiesPanel::updateStickyHeader()
 {
     syncStickyHeader();
+}
+
+FilePropertiesPanelHost::FilePropertiesPanelHost(HexView *hexView, QWidget *parent)
+    : QWidget(parent), m_hexView(hexView)
+{
+    setAcceptDrops(true);
+    setMinimumWidth(0);
+    setMaximumWidth(0);
+    hide();
+
+    auto *layout = new QHBoxLayout(this);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+
+    m_resizeHandle = new SidePanelResizeGrip(this);
+    m_resizeHandle->installEventFilter(this);
+    layout->addWidget(m_resizeHandle);
+
+    m_widthAnim = new QPropertyAnimation(this, "maximumWidth", this);
+    m_widthAnim->setDuration(kFileInfoPaneAnimMs);
+    m_widthAnim->setEasingCurve(QEasingCurve::OutCubic);
+}
+
+bool FilePropertiesPanelHost::isOpen() const
+{
+    return m_panel != nullptr;
+}
+
+void FilePropertiesPanelHost::toggle()
+{
+    if (m_panel) {
+        closePanel();
+        return;
+    }
+
+    openSection(FilePropertiesPanel::Section::Properties);
+}
+
+void FilePropertiesPanelHost::openSection(FilePropertiesPanel::Section section)
+{
+    if (m_panel) {
+        m_panel->showSection(section);
+        if (!isVisible() || maximumWidth() < m_paneWidth)
+            setExpanded(true);
+        emit openChanged(true);
+        return;
+    }
+
+    auto *panel = new FilePropertiesPanel(m_hexView, this);
+    panel->setWindowFlags(Qt::Widget);
+    panel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    m_panel = panel;
+    if (auto *hostLayout = qobject_cast<QHBoxLayout *>(layout()))
+        hostLayout->addWidget(panel);
+    panel->show();
+
+    connect(panel, &FilePropertiesPanel::closeRequested,
+            this, &FilePropertiesPanelHost::closePanel);
+
+    panel->showSection(section);
+    emit openChanged(true);
+    setExpanded(true);
+}
+
+void FilePropertiesPanelHost::closePanel()
+{
+    emit openChanged(false);
+    setExpanded(false);
+}
+
+void FilePropertiesPanelHost::refreshPanel()
+{
+    if (m_panel) {
+        m_panel->refresh();
+        m_panel->maybeStartChecksumCalculation();
+    }
+}
+
+void FilePropertiesPanelHost::setExpanded(bool expanded)
+{
+    if (!m_widthAnim)
+        return;
+
+    m_widthAnim->stop();
+    m_widthAnim->disconnect();
+
+    if (m_panel)
+        m_panel->setPanelFullyOpened(false);
+
+    setMinimumWidth(0);
+    if (expanded)
+        show();
+
+    m_widthAnim->setEasingCurve(expanded ? QEasingCurve::OutCubic
+                                         : QEasingCurve::InCubic);
+    m_widthAnim->setStartValue(maximumWidth());
+    m_widthAnim->setEndValue(expanded ? m_paneWidth : 0);
+
+    if (expanded) {
+        connect(m_widthAnim, &QPropertyAnimation::finished, this, [this]() {
+            if (maximumWidth() == m_paneWidth) {
+                setMinimumWidth(m_paneWidth);
+                if (m_panel)
+                    m_panel->setPanelFullyOpened(true);
+            }
+        }, Qt::SingleShotConnection);
+    } else {
+        connect(m_widthAnim, &QPropertyAnimation::finished, this, [this]() {
+            if (maximumWidth() == 0) {
+                if (m_panel) {
+                    m_panel->deleteLater();
+                    m_panel = nullptr;
+                }
+                hide();
+            }
+        }, Qt::SingleShotConnection);
+    }
+
+    m_widthAnim->start();
+}
+
+void FilePropertiesPanelHost::setPaneWidth(int width)
+{
+    m_paneWidth = qBound(kFileInfoPaneMinWidth, width, kFileInfoPaneMaxWidth);
+    setMinimumWidth(m_paneWidth);
+    setMaximumWidth(m_paneWidth);
+}
+
+bool FilePropertiesPanelHost::eventFilter(QObject *obj, QEvent *event)
+{
+    if (obj != m_resizeHandle)
+        return QWidget::eventFilter(obj, event);
+
+    const auto type = event->type();
+    if (type == QEvent::MouseButtonPress) {
+        auto *me = static_cast<QMouseEvent *>(event);
+        if (me->button() == Qt::LeftButton && isVisible()) {
+            m_widthAnim->stop();
+            m_resizing = true;
+            m_resizeStartX = me->globalPosition().x();
+            m_resizeStartWidth = width();
+            if (m_resizeHandle)
+                static_cast<SidePanelResizeGrip *>(m_resizeHandle)->setActive(true);
+            m_resizeHandle->grabMouse();
+            return true;
+        }
+    }
+
+    if (type == QEvent::MouseMove && m_resizing) {
+        auto *me = static_cast<QMouseEvent *>(event);
+        const int delta = qRound(me->globalPosition().x() - m_resizeStartX);
+        setPaneWidth(m_resizeStartWidth - delta);
+        return true;
+    }
+
+    if ((type == QEvent::MouseButtonRelease || type == QEvent::UngrabMouse) && m_resizing) {
+        if (m_resizeHandle)
+            m_resizeHandle->releaseMouse();
+        if (m_resizeHandle)
+            static_cast<SidePanelResizeGrip *>(m_resizeHandle)->setActive(false);
+        m_resizing = false;
+        return type == QEvent::MouseButtonRelease;
+    }
+
+    return QWidget::eventFilter(obj, event);
 }

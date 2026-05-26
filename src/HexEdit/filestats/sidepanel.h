@@ -3,6 +3,7 @@
 
 #include <QDialog>
 #include <QHash>
+#include <QPointer>
 #include <QString>
 #include <QVariantMap>
 #include <QVector>
@@ -17,6 +18,7 @@ class QScrollArea;
 class QSpacerItem;
 class QComboBox;
 class QLabel;
+class QPropertyAnimation;
 class QToolButton;
 class QTreeWidget;
 class StepSpinBox;
@@ -111,6 +113,38 @@ private:
     bool m_checksumSectionCollapsed = false;
     bool m_stringsSectionCollapsed = false;
     int m_stringsResizeSlackHeight = 0;
+};
+
+class FilePropertiesPanelHost : public QWidget
+{
+    Q_OBJECT
+public:
+    explicit FilePropertiesPanelHost(HexView *hexView, QWidget *parent = nullptr);
+
+    bool isOpen() const;
+    void toggle();
+    void openSection(FilePropertiesPanel::Section section);
+    void closePanel();
+    void refreshPanel();
+
+signals:
+    void openChanged(bool open);
+
+protected:
+    bool eventFilter(QObject *obj, QEvent *event) override;
+
+private:
+    void setExpanded(bool expanded);
+    void setPaneWidth(int width);
+
+    HexView *m_hexView = nullptr;
+    QWidget *m_resizeHandle = nullptr;
+    QPropertyAnimation *m_widthAnim = nullptr;
+    QPointer<FilePropertiesPanel> m_panel;
+    bool m_resizing = false;
+    int m_paneWidth = 400;
+    int m_resizeStartWidth = 0;
+    qreal m_resizeStartX = 0.0;
 };
 
 #endif // FILESTATS_SIDEPANEL_H
