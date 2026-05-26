@@ -33,7 +33,9 @@ static constexpr int kSectionHeaderOuterMargin = 0;
 static constexpr int kHeaderControlGap = 2;
 static constexpr int kGroupTopGap = 20;
 static constexpr int kSectionHeaderHeight = 32;
+static constexpr int kCardLeftInset = 5;
 static constexpr int kCardScrollbarInset = 6;
+static constexpr int kSettingsCardShadowInset = 4;
 static constexpr int kStringsListMinHeight = 160;
 
 inline QString cssColor(const QColor &color)
@@ -204,6 +206,14 @@ inline QWidget *createRecalculateStrip(QWidget *parent,
         strip->layout()->setAlignment(Qt::AlignHCenter);
 
     return strip;
+}
+
+inline QHBoxLayout *createProgressRowLayout(QWidget *row)
+{
+    auto *layout = new QHBoxLayout(row);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(8);
+    return layout;
 }
 
 class VerticalResizeHandle : public QWidget
@@ -406,12 +416,14 @@ protected:
     {
         QWidget::leaveEvent(event);
         setActionIconPressed(false);
-        updateHoverIcon();
+        if (!rect().contains(mapFromGlobal(QCursor::pos())))
+            clearHoveredRow(this);
     }
 
     void hideEvent(QHideEvent *event) override
     {
         QWidget::hideEvent(event);
+        clearHoveredRow(this);
         if (m_actionIcon)
             m_actionIcon->hide();
         setActionIconPressed(false);
@@ -461,16 +473,13 @@ protected:
         switch (event->type()) {
         case QEvent::Enter:
         case QEvent::MouseMove:
-            m_iconHovered = true;
-            updateActionIconStyle();
-            updateHoverIcon();
-            QTimer::singleShot(0, this, [this]() { updateHoverIcon(); });
+            setHoveredRow(this);
             break;
         case QEvent::Leave:
-            m_iconHovered = rect().contains(mapFromGlobal(QCursor::pos()));
-            updateActionIconStyle();
-            updateHoverIcon();
-            QTimer::singleShot(0, this, [this]() { updateHoverIcon(); });
+            QTimer::singleShot(0, this, [this]() {
+                if (!rect().contains(mapFromGlobal(QCursor::pos())))
+                    clearHoveredRow(this);
+            });
             break;
         default:
             break;
@@ -484,10 +493,48 @@ private:
         if (!m_actionIcon)
             return;
 
-        const QPoint local = mapFromGlobal(QCursor::pos());
-        m_iconHovered = isVisible() && rect().contains(local);
         m_actionIcon->setVisible(m_iconHovered);
         updateActionIconStyle();
+    }
+
+    static PropertyRow *&hoveredRow()
+    {
+        static PropertyRow *row = nullptr;
+        return row;
+    }
+
+    static void setHoveredRow(PropertyRow *row)
+    {
+        PropertyRow *&current = hoveredRow();
+        if (current == row) {
+            row->m_iconHovered = true;
+            row->updateHoverIcon();
+            return;
+        }
+
+        if (current) {
+            current->m_iconHovered = false;
+            current->setActionIconPressed(false);
+            current->updateHoverIcon();
+        }
+
+        current = row;
+        if (current) {
+            current->m_iconHovered = true;
+            current->updateHoverIcon();
+        }
+    }
+
+    static void clearHoveredRow(PropertyRow *row)
+    {
+        PropertyRow *&current = hoveredRow();
+        if (current != row)
+            return;
+
+        current->m_iconHovered = false;
+        current->setActionIconPressed(false);
+        current->updateHoverIcon();
+        current = nullptr;
     }
 
     void setActionIconPressed(bool pressed)

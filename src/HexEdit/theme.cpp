@@ -943,6 +943,11 @@ QScrollBar[filePropertiesScrollBar=true]::handle:vertical {
 QScrollBar[filePropertiesScrollBar=true]::handle:vertical:hover {
     background: palette(dark);
 }
+QScrollBar[filePropertiesScrollBar=true]:disabled,
+QScrollBar[filePropertiesScrollBar=true]::handle:vertical:disabled {
+    background: transparent;
+    border: none;
+}
 QScrollBar[preferenceScrollBar=true]:vertical {
     margin: 8px 0px 8px 0px;
 }

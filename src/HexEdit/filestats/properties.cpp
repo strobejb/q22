@@ -11,7 +11,9 @@
 
 QString FilePropertiesPanel::formatSize(qulonglong bytes)
 {
-    return tr("%1 bytes").arg(QLocale().toString(bytes));
+    const QLocale locale;
+    return tr("%1 (%2 bytes)").arg(locale.formattedDataSize(bytes),
+                                  locale.toString(bytes));
 }
 
 void FilePropertiesPanel::refresh()

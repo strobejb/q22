@@ -125,6 +125,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         resources/icons/actions/edit-copy-symbolic.svg resources/icons/actions/edit-cut-symbolic.svg resources/icons/actions/edit-delete-symbolic.svg
         resources/icons/actions/help-about-symbolic.svg
         resources/icons/actions/media-playback-stop-symbolic.svg resources/icons/actions/media-playlist-repeat-symbolic.svg resources/icons/actions/stopcircle.svg
+        resources/icons/actions/media-playback-start-symbolic.svg
     )
 # Define target properties for Android with Qt 6 as:
 #    set_property(TARGET hexedit APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR

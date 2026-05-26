@@ -72,7 +72,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     m_scrollArea->setFrameShape(QFrame::NoFrame);
     m_scrollArea->setWidgetResizable(true);
     m_scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    m_scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    m_scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
     m_scrollArea->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     m_scrollArea->verticalScrollBar()->setFocusPolicy(Qt::NoFocus);
     m_scrollArea->viewport()->setAutoFillBackground(false);
@@ -108,7 +108,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     m_fileSectionBody = new QWidget(m_content);
     m_fileSectionBody->setMinimumWidth(0);
     auto *fileBodyLayout = new QVBoxLayout(m_fileSectionBody);
-    fileBodyLayout->setContentsMargins(kSectionHeaderOuterMargin, 0,
+    fileBodyLayout->setContentsMargins(kSectionHeaderOuterMargin + kCardLeftInset, 0,
                                        kSectionHeaderOuterMargin + kCardScrollbarInset, 0);
     fileBodyLayout->setSpacing(0);
 
@@ -145,9 +145,15 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     m_checksumSectionBody = new QWidget(m_content);
     m_checksumSectionBody->setMinimumWidth(0);
     auto *checksumBodyLayout = new QVBoxLayout(m_checksumSectionBody);
-    checksumBodyLayout->setContentsMargins(kSectionHeaderOuterMargin, 0,
+    checksumBodyLayout->setContentsMargins(kSectionHeaderOuterMargin + kCardLeftInset, 0,
                                            kSectionHeaderOuterMargin + kCardScrollbarInset, 0);
     checksumBodyLayout->setSpacing(0);
+
+    auto *checksumControls = new QWidget(m_checksumSectionBody);
+    auto *checksumControlsLayout = new QVBoxLayout(checksumControls);
+    checksumControlsLayout->setContentsMargins(kSettingsCardShadowInset, 0,
+                                               kSettingsCardShadowInset, 0);
+    checksumControlsLayout->setSpacing(0);
 
     m_checksumProgress = new QProgressBar(m_checksumSectionBody);
     m_checksumProgress->setRange(0, 0);
@@ -155,12 +161,10 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     m_checksumProgress->setFixedHeight(6);
     m_checksumStopButton = createProgressStopButton(m_checksumSectionBody);
     m_checksumProgressRow = new QWidget(m_checksumSectionBody);
-    auto *checksumProgressLayout = new QHBoxLayout(m_checksumProgressRow);
-    checksumProgressLayout->setContentsMargins(kContentMargin, 0, kContentMargin, 0);
-    checksumProgressLayout->setSpacing(8);
-    checksumProgressLayout->addWidget(m_checksumProgress, 1, Qt::AlignVCenter);
+    auto *checksumProgressLayout = createProgressRowLayout(m_checksumProgressRow);
     checksumProgressLayout->addWidget(m_checksumStopButton, 0, Qt::AlignVCenter);
-    checksumBodyLayout->addWidget(m_checksumProgressRow);
+    checksumProgressLayout->addWidget(m_checksumProgress, 1, Qt::AlignVCenter);
+    checksumControlsLayout->addWidget(m_checksumProgressRow);
     m_checksumProgress->hide();
     m_checksumProgressRow->hide();
     m_checksumRecalculateStrip = createRecalculateStrip(m_checksumSectionBody, Qt::AlignRight, [this]() {
@@ -169,11 +173,12 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     });
     auto *checksumRecalcWrap = new QWidget(m_checksumSectionBody);
     auto *checksumRecalcLayout = new QVBoxLayout(checksumRecalcWrap);
-    checksumRecalcLayout->setContentsMargins(kContentMargin, 0, kContentMargin, 0);
+    checksumRecalcLayout->setContentsMargins(0, 0, 0, 0);
     checksumRecalcLayout->setSpacing(0);
     checksumRecalcLayout->addWidget(m_checksumRecalculateStrip);
-    checksumBodyLayout->addWidget(checksumRecalcWrap);
-    checksumBodyLayout->addSpacing(kHeaderControlGap);
+    checksumControlsLayout->addWidget(checksumRecalcWrap);
+    checksumControlsLayout->addSpacing(kHeaderControlGap);
+    checksumBodyLayout->addWidget(checksumControls);
 
     auto checksumRow = [this](const QString &name) {
         QLabel *value = nullptr;
@@ -210,9 +215,15 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     m_stringsSectionBody = new QWidget(m_content);
     m_stringsSectionBody->setMinimumWidth(0);
     auto *stringsBodyLayout = new QVBoxLayout(m_stringsSectionBody);
-    stringsBodyLayout->setContentsMargins(kSectionHeaderOuterMargin, 0,
+    stringsBodyLayout->setContentsMargins(kSectionHeaderOuterMargin + kCardLeftInset, 0,
                                           kSectionHeaderOuterMargin + kCardScrollbarInset, 0);
     stringsBodyLayout->setSpacing(0);
+
+    auto *stringsControlsStack = new QWidget(m_stringsSectionBody);
+    auto *stringsControlsStackLayout = new QVBoxLayout(stringsControlsStack);
+    stringsControlsStackLayout->setContentsMargins(kSettingsCardShadowInset, 0,
+                                                   kSettingsCardShadowInset, 0);
+    stringsControlsStackLayout->setSpacing(0);
 
     m_stringsProgress = new QProgressBar(m_stringsSectionBody);
     m_stringsProgress->setRange(0, 0);
@@ -220,14 +231,12 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     m_stringsProgress->setFixedHeight(6);
     m_stringsProgress->hide();
     m_stringsStopButton = createProgressStopButton(m_stringsSectionBody);
-    stringsBodyLayout->addSpacing(kHeaderControlGap + 4);
+    stringsControlsStackLayout->addSpacing(kHeaderControlGap + 4);
     m_stringsProgressRow = new QWidget(m_stringsSectionBody);
-    auto *stringsProgressLayout = new QHBoxLayout(m_stringsProgressRow);
-    stringsProgressLayout->setContentsMargins(kContentMargin, 0, kContentMargin, 0);
-    stringsProgressLayout->setSpacing(8);
-    stringsProgressLayout->addWidget(m_stringsProgress, 1, Qt::AlignVCenter);
+    auto *stringsProgressLayout = createProgressRowLayout(m_stringsProgressRow);
     stringsProgressLayout->addWidget(m_stringsStopButton, 0, Qt::AlignVCenter);
-    stringsBodyLayout->addWidget(m_stringsProgressRow);
+    stringsProgressLayout->addWidget(m_stringsProgress, 1, Qt::AlignVCenter);
+    stringsControlsStackLayout->addWidget(m_stringsProgressRow);
     m_stringsProgressRow->hide();
     m_stringsRecalculateStrip = createRecalculateStrip(m_stringsSectionBody, Qt::AlignRight, [this]() {
         m_stringsStarted = false;
@@ -237,11 +246,11 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     });
     auto *stringsRecalcWrap = new QWidget(m_stringsSectionBody);
     auto *stringsRecalcLayout = new QVBoxLayout(stringsRecalcWrap);
-    stringsRecalcLayout->setContentsMargins(kContentMargin, 0, kContentMargin, 0);
+    stringsRecalcLayout->setContentsMargins(0, 0, 0, 0);
     stringsRecalcLayout->setSpacing(0);
     stringsRecalcLayout->addWidget(m_stringsRecalculateStrip);
-    stringsBodyLayout->addWidget(stringsRecalcWrap);
-    stringsBodyLayout->addSpacing(kContentMargin + 4);
+    stringsControlsStackLayout->addWidget(stringsRecalcWrap);
+    stringsControlsStackLayout->addSpacing(kContentMargin + 4);
 
     m_stringEncoding = new MenuComboBox(m_stringsSectionBody);
     m_stringEncoding->addItems({tr("Ascii"), tr("Unicode"), tr("Ascii and Unicode")});
@@ -254,12 +263,12 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
 
     auto *stringsControls = new QWidget(m_stringsSectionBody);
     auto *stringsControlsLayout = new QHBoxLayout(stringsControls);
-    stringsControlsLayout->setContentsMargins(kContentMargin, 0, kContentMargin, 0);
+    stringsControlsLayout->setContentsMargins(0, 0, 0, 0);
     stringsControlsLayout->setSpacing(kContentMargin + 6);
     stringsControlsLayout->addWidget(m_stringEncoding, 1, Qt::AlignVCenter);
     stringsControlsLayout->addWidget(m_minStringLength, 0);
-    stringsBodyLayout->addWidget(stringsControls);
-    stringsBodyLayout->addSpacing(kHeaderControlGap + 4);
+    stringsControlsStackLayout->addWidget(stringsControls);
+    stringsControlsStackLayout->addSpacing(kHeaderControlGap + 4);
 
     auto *stringsListFrame = new StringListFrame(m_stringsSectionBody);
     stringsListFrame->setObjectName(QStringLiteral("stringsListFrame"));
@@ -303,23 +312,19 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
         }
     )"));
     stringsListFrame->setListWidget(m_stringsList);
-    auto *stringsListWrap = new QWidget(m_stringsSectionBody);
-    auto *stringsListLayout = new QVBoxLayout(stringsListWrap);
-    stringsListLayout->setContentsMargins(kContentMargin, 0, kContentMargin, 0);
-    stringsListLayout->setSpacing(0);
-    stringsListLayout->addWidget(stringsListFrame);
-    stringsBodyLayout->addWidget(stringsListWrap);
+    stringsControlsStackLayout->addWidget(stringsListFrame);
 
     auto *stringsResizeWrap = new QWidget(m_stringsSectionBody);
     auto *stringsResizeLayout = new QVBoxLayout(stringsResizeWrap);
-    stringsResizeLayout->setContentsMargins(kContentMargin, 0, kContentMargin, 0);
+    stringsResizeLayout->setContentsMargins(0, 0, 0, 0);
     stringsResizeLayout->setSpacing(0);
     m_stringsResizeHandle = new VerticalResizeHandle([this](int dy) {
         resizeStringsList(dy);
     }, stringsResizeWrap);
     stringsResizeLayout->addWidget(m_stringsResizeHandle);
     stringsResizeLayout->setAlignment(m_stringsResizeHandle, Qt::AlignTop);
-    stringsBodyLayout->addWidget(stringsResizeWrap);
+    stringsControlsStackLayout->addWidget(stringsResizeWrap);
+    stringsBodyLayout->addWidget(stringsControlsStack);
     contentLayout->addWidget(m_stringsSectionBody);
     m_stringsResizeSlack = new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Fixed);
     contentLayout->addSpacerItem(m_stringsResizeSlack);
@@ -537,8 +542,7 @@ void FilePropertiesPanel::syncStickyHeader()
         return;
 
     const int headerWidth = qMax(1, m_scrollArea->viewport()->width()
-                                       - 2 * kSectionHeaderOuterMargin
-                                       - kCardScrollbarInset);
+                                       - 2 * kSectionHeaderOuterMargin);
     if (m_fileHeader->width() != headerWidth)
         m_fileHeader->setFixedWidth(headerWidth);
     if (m_checksumHeader->width() != headerWidth)
