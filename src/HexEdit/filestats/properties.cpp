@@ -28,7 +28,6 @@ void FilePropertiesPanel::refresh()
     m_nameValue->setText(path.isEmpty() ? tr("Untitled") : info.fileName());
     m_locationValue->setText(path.isEmpty() ? tr("Memory") : info.absolutePath());
     m_sizeValue->setText(formatSize(static_cast<qulonglong>(m_hexView->size())));
-    m_stateValue->setText(m_hexView->canUndo() ? tr("Modified") : tr("Saved"));
     m_checksumStarted = false;
     ++m_checksumGeneration;
     if (m_checksumCancel)

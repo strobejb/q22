@@ -356,7 +356,7 @@ void HexView::mousePressEvent(QMouseEvent *event)
                 m_nSelectionEnd   = target;
             }
             m_fCursorAdjustment = false;
-            scrollCenterIfOffScreen(target);
+            scrollCenterIfOffScreen(target, m_bookmarks[bmIdx].length);
             int cx, cy;
             caretPosFromOffset(target, &cx, &cy);
             positionCaret(cx, cy, m_nWhichPane);
@@ -383,7 +383,7 @@ void HexView::mousePressEvent(QMouseEvent *event)
                 m_nSelectionEnd   = target;
             }
             m_fCursorAdjustment = false;
-            scrollCenterIfOffScreen(target);
+            scrollCenterIfOffScreen(target, m_bookmarks[bmIdx].length);
             int cx, cy;
             caretPosFromOffset(target, &cx, &cy);
             positionCaret(cx, cy, m_nWhichPane);

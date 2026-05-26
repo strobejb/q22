@@ -167,18 +167,19 @@ private:
     bool m_hover = false;
 };
 
-inline QToolButton *createProgressStopButton(QWidget *parent)
+inline QToolButton *createProgressToolButton(QWidget *parent,
+                                             const QString &iconName,
+                                             const QString &toolTip)
 {
     auto *button = new QToolButton(parent);
     button->setAutoRaise(true);
     button->setCursor(Qt::PointingHandCursor);
     button->setFixedSize(22, 22);
     button->setIconSize(QSize(16, 16));
-    button->setToolTip(QObject::tr("Stop"));
-    button->setProperty("iconThemeName", QStringLiteral("actions/stopcircle"));
+    button->setToolTip(toolTip);
+    button->setProperty("iconThemeName", iconName);
     button->setProperty("iconSize", 16);
-    button->setIcon(recoloredIcon(QStringLiteral("actions/stopcircle"),
-                                  parent->palette().buttonText().color(), 16));
+    button->setIcon(recoloredIcon(iconName, parent->palette().buttonText().color(), 16));
     const bool dark = parent->palette().window().color().lightness() < 128;
     const QString hover = dark ? QStringLiteral("rgba(255,255,255,0.15)")
                                : QStringLiteral("rgba(0,0,0,0.10)");
@@ -198,15 +199,18 @@ inline QToolButton *createProgressStopButton(QWidget *parent)
     return button;
 }
 
-inline QWidget *createRecalculateStrip(QWidget *parent,
-                                       Qt::Alignment buttonAlignment,
-                                       const std::function<void()> &onClicked)
+inline QToolButton *createProgressStopButton(QWidget *parent)
 {
-    auto *strip = new ActionBanner(QObject::tr("Recalculate"), onClicked, parent);
-    if (buttonAlignment & Qt::AlignHCenter)
-        strip->layout()->setAlignment(Qt::AlignHCenter);
+    return createProgressToolButton(parent,
+                                    QStringLiteral("actions/stopcircle"),
+                                    QObject::tr("Stop"));
+}
 
-    return strip;
+inline QToolButton *createProgressStartButton(QWidget *parent)
+{
+    return createProgressToolButton(parent,
+                                    QStringLiteral("actions/media-playback-start-symbolic"),
+                                    QObject::tr("Start"));
 }
 
 inline QHBoxLayout *createProgressRowLayout(QWidget *row)
@@ -221,6 +225,7 @@ class SectionOperationStrip
 {
 public:
     SectionOperationStrip(QWidget *parent,
+                          const std::function<void()> &onStart,
                           const std::function<void()> &onStop,
                           const std::function<void()> &onRetry)
     {
@@ -236,6 +241,17 @@ public:
         inner->setSpacing(0);
         outer->addLayout(inner);
 
+        m_startButton = createProgressStartButton(m_strip);
+        m_startLabel = new QLabel(QObject::tr("Begin scan"), m_strip);
+        m_startLabel->setStyleSheet(QStringLiteral("color: %1;")
+                                    .arg(cssColor(subduedTextColor(parent->palette()))));
+        m_startRow = new QWidget(m_strip);
+        auto *startLayout = createProgressRowLayout(m_startRow);
+        startLayout->addWidget(m_startButton, 0, Qt::AlignVCenter);
+        startLayout->addWidget(m_startLabel, 0, Qt::AlignVCenter);
+        startLayout->addStretch(1);
+        inner->addWidget(m_startRow);
+
         m_progress = new QProgressBar(m_strip);
         m_progress->setRange(0, 0);
         m_progress->setTextVisible(false);
@@ -248,7 +264,7 @@ public:
         progressLayout->addWidget(m_progress, 1, Qt::AlignVCenter);
         inner->addWidget(m_progressRow);
 
-        m_retryStrip = new ActionBanner(QObject::tr("Recalculate"), onRetry, m_strip);
+        m_retryStrip = new ActionBanner(QObject::tr("Restart"), onRetry, m_strip);
         auto *retryWrap = new QWidget(m_strip);
         auto *retryLayout = new QVBoxLayout(retryWrap);
         retryLayout->setContentsMargins(0, 0, 0, 0);
@@ -257,6 +273,7 @@ public:
         inner->addWidget(retryWrap);
         inner->addSpacing(kHeaderControlGap);
 
+        QObject::connect(m_startButton, &QToolButton::clicked, m_strip, [onStart]() { onStart(); });
         QObject::connect(m_stopButton, &QToolButton::clicked, m_strip, [onStop]() { onStop(); });
         clear();
     }
@@ -264,6 +281,10 @@ public:
     QWidget *widget() const { return m_strip; }
     QProgressBar *progressBar() const { return m_progress; }
     QToolButton *stopButton() const { return m_stopButton; }
+    bool hasOperation() const
+    {
+        return !m_startRow->isHidden() || !m_progressRow->isHidden() || !m_retryStrip->isHidden();
+    }
 
     void setCollapsed(bool collapsed)
     {
@@ -273,6 +294,8 @@ public:
 
     void showProgress()
     {
+        m_startButton->hide();
+        m_startRow->hide();
         m_progress->setRange(0, 1000);
         m_progress->setValue(0);
         m_progress->show();
@@ -284,6 +307,8 @@ public:
 
     void showRetry(const QString &message)
     {
+        m_startButton->hide();
+        m_startRow->hide();
         m_progress->hide();
         m_stopButton->hide();
         m_progressRow->hide();
@@ -292,8 +317,22 @@ public:
         updateVisibility();
     }
 
+    void showStart(const QString &message)
+    {
+        m_startLabel->setText(message);
+        m_startButton->show();
+        m_startRow->show();
+        m_progress->hide();
+        m_stopButton->hide();
+        m_progressRow->hide();
+        m_retryStrip->hide();
+        updateVisibility();
+    }
+
     void clear()
     {
+        m_startButton->hide();
+        m_startRow->hide();
         m_progress->hide();
         m_stopButton->hide();
         m_progressRow->hide();
@@ -304,11 +343,13 @@ public:
 private:
     void updateVisibility()
     {
-        const bool hasOperation = !m_progressRow->isHidden() || !m_retryStrip->isHidden();
-        m_strip->setVisible(!m_collapsed && hasOperation);
+        m_strip->setVisible(!m_collapsed && hasOperation());
     }
 
     QWidget *m_strip = nullptr;
+    QWidget *m_startRow = nullptr;
+    QLabel *m_startLabel = nullptr;
+    QToolButton *m_startButton = nullptr;
     QWidget *m_progressRow = nullptr;
     QProgressBar *m_progress = nullptr;
     QToolButton *m_stopButton = nullptr;

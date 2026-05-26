@@ -59,6 +59,7 @@ using namespace filestats;
 static constexpr int kFileInfoPaneMinWidth = 280;
 static constexpr int kFileInfoPaneMaxWidth = 720;
 static constexpr int kFileInfoPaneAnimMs = 220;
+static constexpr bool kAutoStartPanelOperations = true;
 
 FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     : QDialog(parent), m_hexView(hexView)
@@ -130,7 +131,6 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
                                 QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(path).absolutePath()));
                         }),
         new PropertyRow(tr("Size"), &m_sizeValue, m_fileSectionBody),
-        new PropertyRow(tr("State"), &m_stateValue, m_fileSectionBody),
     }, SettingsCard::Style::Spaced, m_fileSectionBody);
     card->setMinimumWidth(0);
     fileBodyLayout->addWidget(card);
@@ -155,12 +155,16 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
                                            kSectionHeaderOuterMargin + kCardScrollbarInset, 0);
     checksumBodyLayout->setSpacing(0);
 
+    auto startChecksums = [this]() {
+        if (m_checksumStarted)
+            return;
+        m_checksumStarted = true;
+        startChecksumCalculation();
+    };
     m_checksumOperation = new SectionOperationStrip(m_content,
+        startChecksums,
         [this]() { cancelChecksumCalculation(); },
-        [this]() {
-            m_checksumStarted = false;
-            maybeStartChecksumCalculation();
-        });
+        startChecksums);
     contentLayout->addWidget(m_checksumOperation->widget());
 
     auto checksumRow = [this](const QString &name) {
@@ -202,13 +206,19 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
                                           kSectionHeaderOuterMargin + kCardScrollbarInset, 0);
     stringsBodyLayout->setSpacing(0);
 
+    auto startStrings = [this]() {
+        if (m_stringsStarted)
+            return;
+        m_stringsStarted = true;
+        startStringScan();
+    };
     m_stringsOperation = new SectionOperationStrip(m_content,
+        startStrings,
         [this]() { cancelStringScan(); },
-        [this]() {
-            m_stringsStarted = false;
+        [this, startStrings]() {
             if (m_stringsList)
                 m_stringsList->clear();
-            maybeStartStringScan();
+            startStrings();
         });
     contentLayout->addWidget(m_stringsOperation->widget());
 
@@ -326,12 +336,16 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
         m_stringsStarted = false;
         if (m_stringsList)
             m_stringsList->clear();
+        if (m_stringsOperation)
+            m_stringsOperation->clear();
         maybeStartStringScan();
     });
     connect(m_stringEncoding, &QComboBox::currentIndexChanged, this, [this](int) {
         m_stringsStarted = false;
         if (m_stringsList)
             m_stringsList->clear();
+        if (m_stringsOperation)
+            m_stringsOperation->clear();
         maybeStartStringScan();
     });
     auto navigateToStringItem = [this](QTreeWidgetItem *item, int) {
@@ -339,8 +353,8 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
             return;
         const size_w offset = static_cast<size_w>(item->data(0, Qt::UserRole).toULongLong());
         const size_w length = static_cast<size_w>(item->data(0, Qt::UserRole + 1).toULongLong());
+        m_hexView->scrollCenterIfOffScreen(offset, length);
         m_hexView->setCurSel(offset, qMin(offset + length, m_hexView->size()));
-        m_hexView->scrollCenterIfOffScreen(offset);
         m_hexView->setFocus();
     };
     connect(m_stringsList, &QTreeWidget::itemClicked, this, navigateToStringItem);
@@ -366,6 +380,11 @@ FilePropertiesPanel::~FilePropertiesPanel()
         m_checksumCancel->store(true);
     if (m_stringCancel)
         m_stringCancel->store(true);
+}
+
+bool FilePropertiesPanel::shouldAutoStartOperations() const
+{
+    return kAutoStartPanelOperations;
 }
 
 void FilePropertiesPanel::showSection(Section section)

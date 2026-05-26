@@ -74,6 +74,7 @@ private:
     void emitSectionReadyIfPossible(Section section);
     void updateStickyHeader();
     void syncStickyHeader();
+    bool shouldAutoStartOperations() const;
 
     HexView *m_hexView = nullptr;
     QScrollArea *m_scrollArea = nullptr;
@@ -94,7 +95,6 @@ private:
     QLabel  *m_nameValue = nullptr;
     QLabel  *m_locationValue = nullptr;
     QLabel  *m_sizeValue = nullptr;
-    QLabel  *m_stateValue = nullptr;
     filestats::SectionOperationStrip *m_checksumOperation = nullptr;
     QHash<QString, QLabel *> m_checksumValues;
     filestats::SectionOperationStrip *m_stringsOperation = nullptr;

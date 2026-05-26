@@ -992,7 +992,7 @@ void HexView::openNoteEditor(int bmIdx, QPoint clickPos)
         m_nSelectionEnd     = bm.offset;
         m_nSelectionMode    = SEL_NONE;
         m_fCursorAdjustment = false;
-        scrollCenterIfOffScreen(bm.offset);
+        scrollCenterIfOffScreen(bm.offset, bm.length);
         int cx, cy;
         caretPosFromOffset(bm.offset, &cx, &cy);
         positionCaret(cx, cy, m_nWhichPane);
@@ -1114,7 +1114,7 @@ void HexView::addBookmarkInline()
             }
         }
         if (bestIdx >= 0) {
-            scrollCenterIfOffScreen(existing[bestIdx].offset);
+            scrollCenterIfOffScreen(existing[bestIdx].offset, existing[bestIdx].length);
             scrollHEnd();
             openNoteEditor(bestIdx);
             return;
@@ -1124,7 +1124,7 @@ void HexView::addBookmarkInline()
         // creating a bookmark directly on top of an existing one.
         for (int i = 0; i < existing.size(); ++i) {
             if (existing[i].offset == offset) {
-                scrollCenterIfOffScreen(offset);
+                scrollCenterIfOffScreen(offset, existing[i].length);
                 scrollHEnd();
                 openNoteEditor(i);
                 return;
@@ -1149,7 +1149,7 @@ void HexView::addBookmarkInline()
         if (updated[i].offset == offset) { newIdx = i; break; }
     }
 
-    scrollCenterIfOffScreen(offset);
+    scrollCenterIfOffScreen(offset, length);
     scrollHEnd();
     openNoteEditor(newIdx);
 }

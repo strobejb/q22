@@ -81,6 +81,11 @@ void FilePropertiesPanel::maybeStartStringScan()
         return;
     if (m_stringsStarted)
         return;
+    if (!shouldAutoStartOperations()) {
+        if (m_stringsOperation && !m_stringsOperation->hasOperation())
+            m_stringsOperation->showStart(tr("Begin scan"));
+        return;
+    }
     m_stringsStarted = true;
     startStringScan();
 }

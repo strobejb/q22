@@ -207,6 +207,11 @@ void FilePropertiesPanel::maybeStartChecksumCalculation()
         return;
     if (m_checksumStarted)
         return;
+    if (!shouldAutoStartOperations()) {
+        if (m_checksumOperation && !m_checksumOperation->hasOperation())
+            m_checksumOperation->showStart(tr("Begin scan"));
+        return;
+    }
     m_checksumStarted = true;
     startChecksumCalculation();
 }

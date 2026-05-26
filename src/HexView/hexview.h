@@ -236,7 +236,7 @@ public:
     bool   scrollTo(size_w offset);
     bool   scrollTop(size_w offset);
     bool   scrollCenter(size_w offset);
-    bool   scrollCenterIfOffScreen(size_w offset);
+    bool   scrollCenterIfOffScreen(size_w offset, size_w length = 1);
     void   scrollHEnd();    // scroll to the far right (note strips visible)
     void   scrollHStart();  // scroll to the far left  (address column visible)
 
