@@ -97,17 +97,8 @@ void FilePropertiesPanel::startStringScan()
         m_stringCancel->store(true);
     auto cancelFlag = std::make_shared<std::atomic_bool>(false);
     m_stringCancel = cancelFlag;
-    if (m_stringsProgress) {
-        m_stringsProgress->setRange(0, 1000);
-        m_stringsProgress->setValue(0);
-        m_stringsProgress->show();
-    }
-    if (m_stringsStopButton)
-        m_stringsStopButton->show();
-    if (m_stringsProgressRow)
-        m_stringsProgressRow->show();
-    if (m_stringsRecalculateStrip)
-        m_stringsRecalculateStrip->hide();
+    if (m_stringsOperation)
+        m_stringsOperation->showProgress();
     if (m_stringsList)
         m_stringsList->clear();
 
@@ -169,9 +160,9 @@ void FilePropertiesPanel::startStringScan()
 
 void FilePropertiesPanel::updateStringProgress(int generation, int value)
 {
-    if (generation != m_stringGeneration || !m_stringsProgress)
+    if (generation != m_stringGeneration || !m_stringsOperation)
         return;
-    m_stringsProgress->setValue(qBound(0, value, 1000));
+    m_stringsOperation->progressBar()->setValue(qBound(0, value, 1000));
 }
 
 void FilePropertiesPanel::cancelStringScan()
@@ -180,14 +171,8 @@ void FilePropertiesPanel::cancelStringScan()
     m_stringsStarted = false;
     if (m_stringCancel)
         m_stringCancel->store(true);
-    if (m_stringsProgress)
-        m_stringsProgress->hide();
-    if (m_stringsStopButton)
-        m_stringsStopButton->hide();
-    if (m_stringsProgressRow)
-        m_stringsProgressRow->hide();
-    if (m_stringsRecalculateStrip)
-        showRecalculateStrip(m_stringsRecalculateStrip, tr("Operation cancelled"));
+    if (m_stringsOperation)
+        m_stringsOperation->showRetry(tr("Operation cancelled"));
 }
 
 void FilePropertiesPanel::resizeStringsList(int dy)
@@ -244,12 +229,6 @@ void FilePropertiesPanel::applyStringResults(int generation, const QVector<QVari
         return;
 
     appendStringResults(generation, results);
-    if (m_stringsProgress)
-        m_stringsProgress->hide();
-    if (m_stringsStopButton)
-        m_stringsStopButton->hide();
-    if (m_stringsProgressRow)
-        m_stringsProgressRow->hide();
-    if (m_stringsRecalculateStrip)
-        m_stringsRecalculateStrip->hide();
+    if (m_stringsOperation)
+        m_stringsOperation->clear();
 }

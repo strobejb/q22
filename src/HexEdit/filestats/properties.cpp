@@ -1,6 +1,7 @@
 #include "filestats/sidepanel.h"
 
 #include "HexView/hexview.h"
+#include "filestats/widgets.h"
 
 #include <QFileInfo>
 #include <QLabel>
@@ -33,17 +34,11 @@ void FilePropertiesPanel::refresh()
     if (m_checksumCancel)
         m_checksumCancel->store(true);
     m_stringsStarted = false;
-    if (m_checksumProgress)
-        m_checksumProgress->hide();
-    if (m_checksumStopButton)
-        m_checksumStopButton->hide();
-    if (m_checksumProgressRow)
-        m_checksumProgressRow->hide();
-    if (m_checksumRecalculateStrip)
-        m_checksumRecalculateStrip->hide();
+    if (m_checksumOperation)
+        m_checksumOperation->clear();
     cancelStringScan();
-    if (m_stringsRecalculateStrip)
-        m_stringsRecalculateStrip->hide();
+    if (m_stringsOperation)
+        m_stringsOperation->clear();
     if (m_stringsList)
         m_stringsList->clear();
 }

@@ -1,6 +1,7 @@
 #include "filestats/sidepanel.h"
 
 #include "HexView/hexview.h"
+#include "filestats/widgets.h"
 #include "theme.h"
 
 #include <QApplication>
@@ -214,17 +215,8 @@ void FilePropertiesPanel::setChecksumRowsPending()
 {
     for (QLabel *label : std::as_const(m_checksumValues))
         label->setText(tr("Calculating..."));
-    if (m_checksumProgress) {
-        m_checksumProgress->setRange(0, 1000);
-        m_checksumProgress->setValue(0);
-        m_checksumProgress->show();
-    }
-    if (m_checksumStopButton)
-        m_checksumStopButton->show();
-    if (m_checksumProgressRow)
-        m_checksumProgressRow->show();
-    if (m_checksumRecalculateStrip)
-        m_checksumRecalculateStrip->hide();
+    if (m_checksumOperation)
+        m_checksumOperation->showProgress();
 }
 
 void FilePropertiesPanel::startChecksumCalculation()
@@ -261,9 +253,9 @@ void FilePropertiesPanel::startChecksumCalculation()
 
 void FilePropertiesPanel::updateChecksumProgress(int generation, int value)
 {
-    if (generation != m_checksumGeneration || !m_checksumProgress)
+    if (generation != m_checksumGeneration || !m_checksumOperation)
         return;
-    m_checksumProgress->setValue(qBound(0, value, 1000));
+    m_checksumOperation->progressBar()->setValue(qBound(0, value, 1000));
 }
 
 void FilePropertiesPanel::applyChecksumResults(int generation, const QHash<QString, QString> &results)
@@ -275,14 +267,8 @@ void FilePropertiesPanel::applyChecksumResults(int generation, const QHash<QStri
         if (QLabel *label = m_checksumValues.value(it.key()))
             label->setText(it.value());
     }
-    if (m_checksumProgress)
-        m_checksumProgress->hide();
-    if (m_checksumStopButton)
-        m_checksumStopButton->hide();
-    if (m_checksumProgressRow)
-        m_checksumProgressRow->hide();
-    if (m_checksumRecalculateStrip)
-        m_checksumRecalculateStrip->hide();
+    if (m_checksumOperation)
+        m_checksumOperation->clear();
 }
 
 void FilePropertiesPanel::cancelChecksumCalculation()
@@ -293,12 +279,6 @@ void FilePropertiesPanel::cancelChecksumCalculation()
         m_checksumCancel->store(true);
     for (QLabel *label : std::as_const(m_checksumValues))
         label->setText(tr("Cancelled"));
-    if (m_checksumProgress)
-        m_checksumProgress->hide();
-    if (m_checksumStopButton)
-        m_checksumStopButton->hide();
-    if (m_checksumProgressRow)
-        m_checksumProgressRow->hide();
-    if (m_checksumRecalculateStrip)
-        showRecalculateStrip(m_checksumRecalculateStrip, tr("Operation cancelled"));
+    if (m_checksumOperation)
+        m_checksumOperation->showRetry(tr("Operation cancelled"));
 }

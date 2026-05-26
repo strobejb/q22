@@ -16,6 +16,7 @@
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QProgressBar>
 #include <QPropertyAnimation>
 #include <QPushButton>
 #include <QSizePolicy>
@@ -215,6 +216,105 @@ inline QHBoxLayout *createProgressRowLayout(QWidget *row)
     layout->setSpacing(8);
     return layout;
 }
+
+class SectionOperationStrip
+{
+public:
+    SectionOperationStrip(QWidget *parent,
+                          const std::function<void()> &onStop,
+                          const std::function<void()> &onRetry)
+    {
+        m_strip = new QWidget(parent);
+        auto *outer = new QVBoxLayout(m_strip);
+        outer->setContentsMargins(kSectionHeaderOuterMargin + kCardLeftInset, 0,
+                                  kSectionHeaderOuterMargin + kCardScrollbarInset, 0);
+        outer->setSpacing(0);
+
+        auto *inner = new QVBoxLayout;
+        inner->setContentsMargins(kSettingsCardShadowInset, 0,
+                                  kSettingsCardShadowInset, 0);
+        inner->setSpacing(0);
+        outer->addLayout(inner);
+
+        m_progress = new QProgressBar(m_strip);
+        m_progress->setRange(0, 0);
+        m_progress->setTextVisible(false);
+        m_progress->setFixedHeight(6);
+
+        m_stopButton = createProgressStopButton(m_strip);
+        m_progressRow = new QWidget(m_strip);
+        auto *progressLayout = createProgressRowLayout(m_progressRow);
+        progressLayout->addWidget(m_stopButton, 0, Qt::AlignVCenter);
+        progressLayout->addWidget(m_progress, 1, Qt::AlignVCenter);
+        inner->addWidget(m_progressRow);
+
+        m_retryStrip = new ActionBanner(QObject::tr("Recalculate"), onRetry, m_strip);
+        auto *retryWrap = new QWidget(m_strip);
+        auto *retryLayout = new QVBoxLayout(retryWrap);
+        retryLayout->setContentsMargins(0, 0, 0, 0);
+        retryLayout->setSpacing(0);
+        retryLayout->addWidget(m_retryStrip);
+        inner->addWidget(retryWrap);
+        inner->addSpacing(kHeaderControlGap);
+
+        QObject::connect(m_stopButton, &QToolButton::clicked, m_strip, [onStop]() { onStop(); });
+        clear();
+    }
+
+    QWidget *widget() const { return m_strip; }
+    QProgressBar *progressBar() const { return m_progress; }
+    QToolButton *stopButton() const { return m_stopButton; }
+
+    void setCollapsed(bool collapsed)
+    {
+        m_collapsed = collapsed;
+        updateVisibility();
+    }
+
+    void showProgress()
+    {
+        m_progress->setRange(0, 1000);
+        m_progress->setValue(0);
+        m_progress->show();
+        m_stopButton->show();
+        m_progressRow->show();
+        m_retryStrip->hide();
+        updateVisibility();
+    }
+
+    void showRetry(const QString &message)
+    {
+        m_progress->hide();
+        m_stopButton->hide();
+        m_progressRow->hide();
+        m_retryStrip->setMessage(message);
+        m_retryStrip->show();
+        updateVisibility();
+    }
+
+    void clear()
+    {
+        m_progress->hide();
+        m_stopButton->hide();
+        m_progressRow->hide();
+        m_retryStrip->hide();
+        updateVisibility();
+    }
+
+private:
+    void updateVisibility()
+    {
+        const bool hasOperation = !m_progressRow->isHidden() || !m_retryStrip->isHidden();
+        m_strip->setVisible(!m_collapsed && hasOperation);
+    }
+
+    QWidget *m_strip = nullptr;
+    QWidget *m_progressRow = nullptr;
+    QProgressBar *m_progress = nullptr;
+    QToolButton *m_stopButton = nullptr;
+    ActionBanner *m_retryStrip = nullptr;
+    bool m_collapsed = false;
+};
 
 class VerticalResizeHandle : public QWidget
 {

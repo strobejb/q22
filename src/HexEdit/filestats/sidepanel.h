@@ -23,6 +23,7 @@ class StepSpinBox;
 class QWidget;
 
 namespace filestats {
+class SectionOperationStrip;
 class SectionHeader;
 }
 
@@ -59,7 +60,6 @@ private:
     void cancelChecksumCalculation();
     void cancelStringScan();
     void resizeStringsList(int dy);
-    void showRecalculateStrip(QWidget *strip, const QString &message);
     void setChecksumRowsPending();
     void updateChecksumProgress(int generation, int value);
     void applyChecksumResults(int generation, const QHash<QString, QString> &results);
@@ -93,15 +93,9 @@ private:
     QLabel  *m_locationValue = nullptr;
     QLabel  *m_sizeValue = nullptr;
     QLabel  *m_stateValue = nullptr;
-    QWidget *m_checksumProgressRow = nullptr;
-    QProgressBar *m_checksumProgress = nullptr;
-    QToolButton *m_checksumStopButton = nullptr;
-    QWidget *m_checksumRecalculateStrip = nullptr;
+    filestats::SectionOperationStrip *m_checksumOperation = nullptr;
     QHash<QString, QLabel *> m_checksumValues;
-    QWidget *m_stringsProgressRow = nullptr;
-    QProgressBar *m_stringsProgress = nullptr;
-    QToolButton *m_stringsStopButton = nullptr;
-    QWidget *m_stringsRecalculateStrip = nullptr;
+    filestats::SectionOperationStrip *m_stringsOperation = nullptr;
     StepSpinBox *m_minStringLength = nullptr;
     QComboBox *m_stringEncoding = nullptr;
     QTreeWidget *m_stringsList = nullptr;

@@ -149,36 +149,13 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
                                            kSectionHeaderOuterMargin + kCardScrollbarInset, 0);
     checksumBodyLayout->setSpacing(0);
 
-    auto *checksumControls = new QWidget(m_checksumSectionBody);
-    auto *checksumControlsLayout = new QVBoxLayout(checksumControls);
-    checksumControlsLayout->setContentsMargins(kSettingsCardShadowInset, 0,
-                                               kSettingsCardShadowInset, 0);
-    checksumControlsLayout->setSpacing(0);
-
-    m_checksumProgress = new QProgressBar(m_checksumSectionBody);
-    m_checksumProgress->setRange(0, 0);
-    m_checksumProgress->setTextVisible(false);
-    m_checksumProgress->setFixedHeight(6);
-    m_checksumStopButton = createProgressStopButton(m_checksumSectionBody);
-    m_checksumProgressRow = new QWidget(m_checksumSectionBody);
-    auto *checksumProgressLayout = createProgressRowLayout(m_checksumProgressRow);
-    checksumProgressLayout->addWidget(m_checksumStopButton, 0, Qt::AlignVCenter);
-    checksumProgressLayout->addWidget(m_checksumProgress, 1, Qt::AlignVCenter);
-    checksumControlsLayout->addWidget(m_checksumProgressRow);
-    m_checksumProgress->hide();
-    m_checksumProgressRow->hide();
-    m_checksumRecalculateStrip = createRecalculateStrip(m_checksumSectionBody, Qt::AlignRight, [this]() {
-        m_checksumStarted = false;
-        maybeStartChecksumCalculation();
-    });
-    auto *checksumRecalcWrap = new QWidget(m_checksumSectionBody);
-    auto *checksumRecalcLayout = new QVBoxLayout(checksumRecalcWrap);
-    checksumRecalcLayout->setContentsMargins(0, 0, 0, 0);
-    checksumRecalcLayout->setSpacing(0);
-    checksumRecalcLayout->addWidget(m_checksumRecalculateStrip);
-    checksumControlsLayout->addWidget(checksumRecalcWrap);
-    checksumControlsLayout->addSpacing(kHeaderControlGap);
-    checksumBodyLayout->addWidget(checksumControls);
+    m_checksumOperation = new SectionOperationStrip(m_content,
+        [this]() { cancelChecksumCalculation(); },
+        [this]() {
+            m_checksumStarted = false;
+            maybeStartChecksumCalculation();
+        });
+    contentLayout->addWidget(m_checksumOperation->widget());
 
     auto checksumRow = [this](const QString &name) {
         QLabel *value = nullptr;
@@ -219,38 +196,21 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
                                           kSectionHeaderOuterMargin + kCardScrollbarInset, 0);
     stringsBodyLayout->setSpacing(0);
 
+    m_stringsOperation = new SectionOperationStrip(m_content,
+        [this]() { cancelStringScan(); },
+        [this]() {
+            m_stringsStarted = false;
+            if (m_stringsList)
+                m_stringsList->clear();
+            maybeStartStringScan();
+        });
+    contentLayout->addWidget(m_stringsOperation->widget());
+
     auto *stringsControlsStack = new QWidget(m_stringsSectionBody);
     auto *stringsControlsStackLayout = new QVBoxLayout(stringsControlsStack);
     stringsControlsStackLayout->setContentsMargins(kSettingsCardShadowInset, 0,
                                                    kSettingsCardShadowInset, 0);
     stringsControlsStackLayout->setSpacing(0);
-
-    m_stringsProgress = new QProgressBar(m_stringsSectionBody);
-    m_stringsProgress->setRange(0, 0);
-    m_stringsProgress->setTextVisible(false);
-    m_stringsProgress->setFixedHeight(6);
-    m_stringsProgress->hide();
-    m_stringsStopButton = createProgressStopButton(m_stringsSectionBody);
-    stringsControlsStackLayout->addSpacing(kHeaderControlGap + 4);
-    m_stringsProgressRow = new QWidget(m_stringsSectionBody);
-    auto *stringsProgressLayout = createProgressRowLayout(m_stringsProgressRow);
-    stringsProgressLayout->addWidget(m_stringsStopButton, 0, Qt::AlignVCenter);
-    stringsProgressLayout->addWidget(m_stringsProgress, 1, Qt::AlignVCenter);
-    stringsControlsStackLayout->addWidget(m_stringsProgressRow);
-    m_stringsProgressRow->hide();
-    m_stringsRecalculateStrip = createRecalculateStrip(m_stringsSectionBody, Qt::AlignRight, [this]() {
-        m_stringsStarted = false;
-        if (m_stringsList)
-            m_stringsList->clear();
-        maybeStartStringScan();
-    });
-    auto *stringsRecalcWrap = new QWidget(m_stringsSectionBody);
-    auto *stringsRecalcLayout = new QVBoxLayout(stringsRecalcWrap);
-    stringsRecalcLayout->setContentsMargins(0, 0, 0, 0);
-    stringsRecalcLayout->setSpacing(0);
-    stringsRecalcLayout->addWidget(m_stringsRecalculateStrip);
-    stringsControlsStackLayout->addWidget(stringsRecalcWrap);
-    stringsControlsStackLayout->addSpacing(kContentMargin + 4);
 
     m_stringEncoding = new MenuComboBox(m_stringsSectionBody);
     m_stringEncoding->addItems({tr("Ascii"), tr("Unicode"), tr("Ascii and Unicode")});
@@ -356,10 +316,6 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
                 else if (section == Section::Strings)
                     maybeStartStringScan();
             });
-    connect(m_checksumStopButton, &QToolButton::clicked,
-            this, &FilePropertiesPanel::cancelChecksumCalculation);
-    connect(m_stringsStopButton, &QToolButton::clicked,
-            this, &FilePropertiesPanel::cancelStringScan);
     connect(m_minStringLength, &StepSpinBox::valueChanged, this, [this](int) {
         m_stringsStarted = false;
         if (m_stringsList)
@@ -442,15 +398,6 @@ void FilePropertiesPanel::resizeEvent(QResizeEvent *event)
     updateStickyHeader();
 }
 
-void FilePropertiesPanel::showRecalculateStrip(QWidget *strip, const QString &message)
-{
-    if (!strip)
-        return;
-    if (auto *label = strip->findChild<QLabel *>(QStringLiteral("recalculateMessage")))
-        label->setText(message);
-    strip->show();
-}
-
 void FilePropertiesPanel::setFileSectionCollapsed(bool collapsed)
 {
     const bool wasCollapsed = m_fileSectionCollapsed;
@@ -481,6 +428,8 @@ void FilePropertiesPanel::setChecksumSectionCollapsed(bool collapsed)
     m_checksumSectionCollapsed = collapsed;
     if (m_checksumSectionBody)
         m_checksumSectionBody->setVisible(!collapsed);
+    if (m_checksumOperation)
+        m_checksumOperation->setCollapsed(collapsed);
     if (m_checksumHeaderGap)
         m_checksumHeaderGap->changeSize(0, collapsed ? 0 : kHeaderControlGap,
                                         QSizePolicy::Minimum, QSizePolicy::Fixed);
@@ -505,6 +454,8 @@ void FilePropertiesPanel::setStringsSectionCollapsed(bool collapsed)
     m_stringsSectionCollapsed = collapsed;
     if (m_stringsSectionBody)
         m_stringsSectionBody->setVisible(!collapsed);
+    if (m_stringsOperation)
+        m_stringsOperation->setCollapsed(collapsed);
     if (m_stringsHeaderGap)
         m_stringsHeaderGap->changeSize(0, collapsed ? 0 : kHeaderControlGap,
                                        QSizePolicy::Minimum, QSizePolicy::Fixed);
