@@ -453,10 +453,29 @@ void StepSpinBox::setLabelAlignment(Qt::Alignment alignment)
     update();
 }
 
+void StepSpinBox::setLabelValueSpacing(int spacing)
+{
+    spacing = qMax(0, spacing);
+    if (m_labelValueSpacing == spacing)
+        return;
+    m_labelValueSpacing = spacing;
+    updateGeometry();
+    update();
+}
+
+void StepSpinBox::setValueBold(bool bold)
+{
+    if (m_valueBold == bold)
+        return;
+    m_valueBold = bold;
+    update();
+}
+
 QSize StepSpinBox::sizeHint() const
 {
     const QFontMetrics fm(font());
-    return QSize(fm.horizontalAdvance(m_label) + SSB_SPACING
+    const int labelValueSpacing = m_labelValueSpacing >= 0 ? m_labelValueSpacing : SSB_SPACING;
+    return QSize(fm.horizontalAdvance(m_label) + labelValueSpacing
                  + SSB_VAL_W + SSB_VAL_GAP + SSB_BTN_W * 2 + 1,
                  qMax(fm.height(), SSB_BTN_H) + 2 * ROW_VPAD);
 }
@@ -499,10 +518,18 @@ void StepSpinBox::paintEvent(QPaintEvent *)
 
     // Value text
     const QRect grp  = groupRect();
-    const QRect valR(0, 0, grp.left() - SSB_VAL_GAP, r.height());
-    const QRect labelR(0, 0, qMax(0, valR.width() - SSB_VAL_W - SSB_SPACING), r.height());
+    const int labelValueSpacing = m_labelValueSpacing >= 0 ? m_labelValueSpacing : SSB_SPACING;
+    const QRect valueR(qMax(0, grp.left() - SSB_VAL_GAP - SSB_VAL_W), 0,
+                       SSB_VAL_W, r.height());
+    const QRect labelR(0, 0, qMax(0, valueR.left() - labelValueSpacing), r.height());
     p.drawText(labelR, m_labelAlignment, m_label);
-    p.drawText(valR, Qt::AlignRight | Qt::AlignVCenter, QString::number(m_value));
+    if (m_valueBold) {
+        QFont valueFont = font();
+        valueFont.setBold(true);
+        p.setFont(valueFont);
+    }
+    p.drawText(valueR, Qt::AlignRight | Qt::AlignVCenter, QString::number(m_value));
+    p.setFont(font());
 
     // Button group background
     const QColor btnBg     = pal.color(QPalette::Button);

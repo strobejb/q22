@@ -3,6 +3,7 @@
 
 #include <QDialog>
 #include <QHash>
+#include <QPoint>
 #include <QPointer>
 #include <QString>
 #include <QVariantMap>
@@ -19,6 +20,7 @@ class QSpacerItem;
 class QComboBox;
 class QLabel;
 class QPropertyAnimation;
+class QPushButton;
 class QToolButton;
 class QTreeWidget;
 class StepSpinBox;
@@ -58,7 +60,7 @@ private:
     static QString formatSize(qulonglong bytes);
     void startChecksumCalculation();
     void maybeStartStringScan();
-    void startStringScan();
+    void startStringScan(qulonglong startOffset = 0, bool append = false);
     void cancelChecksumCalculation();
     void cancelStringScan();
     void resizeStringsList(int dy);
@@ -67,7 +69,12 @@ private:
     void applyChecksumResults(int generation, const QHash<QString, QString> &results);
     void updateStringProgress(int generation, int value);
     void appendStringResults(int generation, const QVector<QVariantMap> &results);
-    void applyStringResults(int generation, const QVector<QVariantMap> &results);
+    void finishStringScan(int generation, const QVector<QVariantMap> &results,
+                          bool capped, qulonglong nextOffset, int progress);
+    void setChecksumProgressTitle(int value);
+    void setStringsProgressTitle(int value);
+    void resetChecksumTitle();
+    void resetStringsTitle();
     void setFileSectionCollapsed(bool collapsed);
     void setChecksumSectionCollapsed(bool collapsed);
     void setStringsSectionCollapsed(bool collapsed);
@@ -98,21 +105,30 @@ private:
     filestats::SectionOperationStrip *m_checksumOperation = nullptr;
     QHash<QString, QLabel *> m_checksumValues;
     filestats::SectionOperationStrip *m_stringsOperation = nullptr;
+    QToolButton *m_stringOptionsButton = nullptr;
     StepSpinBox *m_minStringLength = nullptr;
     QComboBox *m_stringEncoding = nullptr;
     QTreeWidget *m_stringsList = nullptr;
+    QWidget *m_stringsStatusRow = nullptr;
+    QLabel *m_stringsStatusLabel = nullptr;
+    QLabel *m_stringsProgressLabel = nullptr;
+    QPushButton *m_stringsNextButton = nullptr;
     QWidget *m_stringsResizeHandle = nullptr;
     std::shared_ptr<std::atomic_bool> m_checksumCancel;
     std::shared_ptr<std::atomic_bool> m_stringCancel;
     int m_checksumGeneration = 0;
     int m_stringGeneration = 0;
+    int m_stringProgress = 0;
     bool m_checksumStarted = false;
     bool m_stringsStarted = false;
     bool m_panelFullyOpened = false;
+    bool m_stringMoreAvailable = false;
     bool m_fileSectionCollapsed = false;
     bool m_checksumSectionCollapsed = false;
     bool m_stringsSectionCollapsed = false;
     int m_stringsResizeSlackHeight = 0;
+    qulonglong m_stringNextOffset = 0;
+    QPoint m_stringOptionsMenuClosePos { -1, -1 };
 };
 
 class FilePropertiesPanelHost : public QWidget

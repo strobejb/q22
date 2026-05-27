@@ -32,12 +32,18 @@ void FilePropertiesPanel::refresh()
     ++m_checksumGeneration;
     if (m_checksumCancel)
         m_checksumCancel->store(true);
+    resetChecksumTitle();
     m_stringsStarted = false;
     if (m_checksumOperation)
         m_checksumOperation->clear();
     cancelStringScan();
+    resetStringsTitle();
     if (m_stringsOperation)
         m_stringsOperation->clear();
     if (m_stringsList)
         m_stringsList->clear();
+    m_stringMoreAvailable = false;
+    m_stringNextOffset = 0;
+    if (m_stringsStatusRow)
+        m_stringsStatusRow->hide();
 }

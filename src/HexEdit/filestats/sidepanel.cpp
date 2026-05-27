@@ -10,6 +10,7 @@
 
 #include <QApplication>
 #include <QAbstractItemView>
+#include <QAction>
 #include <QBrush>
 #include <QClipboard>
 #include <QComboBox>
@@ -22,12 +23,14 @@
 #include <QFileInfo>
 #include <QFrame>
 #include <QGraphicsOpacityEffect>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QHideEvent>
 #include <QLabel>
 #include <QLocale>
 #include <QMetaObject>
 #include <QMouseEvent>
+#include <QMenu>
 #include <QPaintEvent>
 #include <QPalette>
 #include <QPainter>
@@ -228,20 +231,65 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
                                                    kSettingsCardShadowInset, 0);
     stringsControlsStackLayout->setSpacing(0);
 
+    auto *stringsOptionsMenu = new QMenu(this);
+    themeMenu(stringsOptionsMenu);
+    QAction *advancedPlaceholder = stringsOptionsMenu->addAction(tr("Advanced options"));
+    advancedPlaceholder->setEnabled(false);
+
+    m_stringOptionsButton = new QToolButton(m_stringsSectionBody);
+    m_stringOptionsButton->setFixedSize(28, 28);
+    m_stringOptionsButton->setFocusPolicy(Qt::TabFocus);
+    m_stringOptionsButton->setToolTip(tr("String options"));
+    m_stringOptionsButton->setAutoRaise(true);
+    m_stringOptionsButton->setPopupMode(QToolButton::InstantPopup);
+    m_stringOptionsButton->setProperty("iconThemeName", QStringLiteral("permissions"));
+    m_stringOptionsButton->setProperty("iconSize", 16);
+    m_stringOptionsButton->setIconSize(QSize(16, 16));
+    m_stringOptionsButton->setIcon(recoloredIcon(QStringLiteral("permissions"),
+                                                 palette().buttonText().color(), 16));
+    {
+        const bool dark = QApplication::palette().window().color().lightness() < 128;
+        const QString hover = dark ? QStringLiteral("rgba(255,255,255,0.15)")
+                                   : QStringLiteral("rgba(0,0,0,0.10)");
+        const QString pressed = dark ? QStringLiteral("rgba(255,255,255,0.25)")
+                                     : QStringLiteral("rgba(0,0,0,0.18)");
+        m_stringOptionsButton->setStyleSheet(QStringLiteral(R"(
+            QToolButton {
+                border: none;
+                border-radius: 6px;
+                background: transparent;
+            }
+            QToolButton:hover { background: %1; }
+            QToolButton:focus { border: 2px solid palette(highlight); }
+            QToolButton:pressed { background: %2; }
+            QToolButton::menu-indicator { image: none; width: 0; }
+        )").arg(hover, pressed));
+    }
+
     m_stringEncoding = new MenuComboBox(m_stringsSectionBody);
-    m_stringEncoding->addItems({tr("Ascii"), tr("Unicode"), tr("Ascii and Unicode")});
+    m_stringEncoding->addItem(tr("Printable ASCII"), QStringLiteral("[ -~]"));
+    m_stringEncoding->addItem(tr("Alphanumeric"), QStringLiteral("[A-Za-z0-9]"));
+    m_stringEncoding->addItem(tr("ASCII text"), QStringLiteral("[\\t -~]"));
+    m_stringEncoding->addItem(tr("C identifiers"), QStringLiteral("[A-Za-z_][A-Za-z0-9_]*\\0"));
+    m_stringEncoding->setCurrentIndex(1);
     m_stringEncoding->setFocusPolicy(Qt::StrongFocus);
+    m_stringEncoding->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     m_stringEncoding->setFixedHeight(qMax(24, m_stringEncoding->sizeHint().height() - 4));
 
-    m_minStringLength = new StepSpinBox(tr("Characters"), 3, 128, 1, m_stringsSectionBody);
+    m_minStringLength = new StepSpinBox(tr("Min:"), 3, 128, 1, m_stringsSectionBody);
     m_minStringLength->setValue(3);
+    m_minStringLength->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     m_minStringLength->setLabelAlignment(Qt::AlignRight);
+    m_minStringLength->setLabelValueSpacing(4);
+    m_minStringLength->setValueBold(true);
 
     auto *stringsControls = new QWidget(m_stringsSectionBody);
     auto *stringsControlsLayout = new QHBoxLayout(stringsControls);
     stringsControlsLayout->setContentsMargins(0, 0, 0, 0);
     stringsControlsLayout->setSpacing(kContentMargin + 6);
-    stringsControlsLayout->addWidget(m_stringEncoding, 1, Qt::AlignVCenter);
+    stringsControlsLayout->addWidget(m_stringOptionsButton, 0, Qt::AlignVCenter);
+    stringsControlsLayout->addWidget(m_stringEncoding, 0, Qt::AlignVCenter);
+    stringsControlsLayout->addStretch(1);
     stringsControlsLayout->addWidget(m_minStringLength, 0);
     stringsControlsStackLayout->addWidget(stringsControls);
     stringsControlsStackLayout->addSpacing(kHeaderControlGap + 4);
@@ -290,6 +338,64 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     stringsListFrame->setListWidget(m_stringsList);
     stringsControlsStackLayout->addWidget(stringsListFrame);
 
+    m_stringsStatusRow = new QWidget(m_stringsSectionBody);
+    auto *stringsStatusLayout = new QGridLayout(m_stringsStatusRow);
+    stringsStatusLayout->setContentsMargins(6, 6, 6, 2);
+    stringsStatusLayout->setHorizontalSpacing(8);
+    stringsStatusLayout->setVerticalSpacing(0);
+    m_stringsStatusLabel = new QLabel(m_stringsStatusRow);
+    m_stringsStatusLabel->setWordWrap(true);
+    m_stringsStatusLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    m_stringsStatusLabel->setStyleSheet(QStringLiteral("color: %1;")
+                                        .arg(cssColor(subduedTextColor(palette()))));
+    m_stringsProgressLabel = new QLabel(m_stringsStatusRow);
+    m_stringsProgressLabel->setStyleSheet(QStringLiteral("color: %1;")
+                                          .arg(cssColor(subduedTextColor(palette()))));
+    m_stringsNextButton = new QPushButton(tr("Next 1000"), m_stringsStatusRow);
+    m_stringsNextButton->setFlat(false);
+    m_stringsNextButton->setCursor(Qt::PointingHandCursor);
+    m_stringsNextButton->setIcon(recoloredIcon(QStringLiteral("ui/go-next-symbolic"),
+                                               palette().buttonText().color(), 12));
+    m_stringsNextButton->setIconSize(QSize(12, 12));
+    m_stringsNextButton->setLayoutDirection(Qt::RightToLeft);
+    const QColor nextBg = palette().button().color();
+    const bool nextDark = palette().window().color().lightness() < 128;
+    auto overlayColor = [](const QColor &base, const QColor &overlay, int alpha) {
+        const int inv = 255 - alpha;
+        return QColor((base.red() * inv + overlay.red() * alpha) / 255,
+                      (base.green() * inv + overlay.green() * alpha) / 255,
+                      (base.blue() * inv + overlay.blue() * alpha) / 255);
+    };
+    const QColor nextHover = nextDark
+                                 ? overlayColor(nextBg, QColor(255, 255, 255), 30)
+                                 : overlayColor(nextBg, QColor(0, 0, 0), 22);
+    const QColor nextPressed = palette().mid().color();
+    const QColor nextBorder = palette().mid().color();
+    m_stringsNextButton->setStyleSheet(QStringLiteral(R"(
+        QPushButton {
+            border: 1px solid %1;
+            border-radius: 6px;
+            padding: 4px 8px 4px 9px;
+            color: %2;
+            background: %3;
+        }
+        QPushButton:hover {
+            background: %4;
+        }
+        QPushButton:pressed {
+            background: %5;
+        }
+    )").arg(cssColor(nextBorder),
+            cssColor(palette().buttonText().color()),
+            cssColor(nextBg),
+            cssColor(nextHover),
+            cssColor(nextPressed)));
+    stringsStatusLayout->addWidget(m_stringsStatusLabel, 0, 0, Qt::AlignVCenter);
+    stringsStatusLayout->addWidget(m_stringsNextButton, 0, 1, Qt::AlignVCenter);
+    stringsStatusLayout->addWidget(m_stringsProgressLabel, 1, 0);
+    stringsStatusLayout->setColumnStretch(0, 1);
+    m_stringsStatusRow->hide();
+
     auto *stringsResizeWrap = new QWidget(m_stringsSectionBody);
     auto *stringsResizeLayout = new QVBoxLayout(stringsResizeWrap);
     stringsResizeLayout->setContentsMargins(0, 0, 0, 0);
@@ -300,6 +406,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     stringsResizeLayout->addWidget(m_stringsResizeHandle);
     stringsResizeLayout->setAlignment(m_stringsResizeHandle, Qt::AlignTop);
     stringsControlsStackLayout->addWidget(stringsResizeWrap);
+    stringsControlsStackLayout->addWidget(m_stringsStatusRow);
     stringsBodyLayout->addWidget(stringsControlsStack);
     contentLayout->addWidget(m_stringsSectionBody);
     m_stringsResizeSlack = new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Fixed);
@@ -334,19 +441,48 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
             });
     connect(m_minStringLength, &StepSpinBox::valueChanged, this, [this](int) {
         m_stringsStarted = false;
+        m_stringMoreAvailable = false;
+        m_stringNextOffset = 0;
         if (m_stringsList)
             m_stringsList->clear();
+        if (m_stringsStatusRow)
+            m_stringsStatusRow->hide();
         if (m_stringsOperation)
             m_stringsOperation->clear();
         maybeStartStringScan();
     });
     connect(m_stringEncoding, &QComboBox::currentIndexChanged, this, [this](int) {
         m_stringsStarted = false;
+        m_stringMoreAvailable = false;
+        m_stringNextOffset = 0;
         if (m_stringsList)
             m_stringsList->clear();
+        if (m_stringsStatusRow)
+            m_stringsStatusRow->hide();
         if (m_stringsOperation)
             m_stringsOperation->clear();
         maybeStartStringScan();
+    });
+    connect(m_stringOptionsButton, &QToolButton::clicked, this, [this, stringsOptionsMenu]() {
+        if (stringsOptionsMenu->isVisible()) {
+            stringsOptionsMenu->hide();
+            return;
+        }
+        const QPoint cur = QCursor::pos();
+        const bool same = (m_stringOptionsMenuClosePos == cur);
+        m_stringOptionsMenuClosePos = {-1, -1};
+        if (same)
+            return;
+        connect(stringsOptionsMenu, &QMenu::aboutToHide, this,
+                [this]() { m_stringOptionsMenuClosePos = QCursor::pos(); },
+                Qt::SingleShotConnection);
+        stringsOptionsMenu->popup(smartMenuPos(m_stringOptionsButton, stringsOptionsMenu));
+    });
+    connect(m_stringsNextButton, &QPushButton::clicked, this, [this]() {
+        if (m_stringsStarted || !m_stringMoreAvailable)
+            return;
+        m_stringsStarted = true;
+        startStringScan(m_stringNextOffset, true);
     });
     auto navigateToStringItem = [this](QTreeWidgetItem *item, int) {
         if (!item || !m_hexView)
@@ -385,6 +521,34 @@ FilePropertiesPanel::~FilePropertiesPanel()
 bool FilePropertiesPanel::shouldAutoStartOperations() const
 {
     return kAutoStartPanelOperations;
+}
+
+void FilePropertiesPanel::setChecksumProgressTitle(int value)
+{
+    if (m_checksumHeader)
+        m_checksumHeader->setTitle(tr("Checksums (%1%)").arg(qBound(0, value, 1000) / 10));
+    syncStickyHeader();
+}
+
+void FilePropertiesPanel::setStringsProgressTitle(int value)
+{
+    if (m_stringsHeader)
+        m_stringsHeader->setTitle(tr("Strings (%1%)").arg(qBound(0, value, 1000) / 10));
+    syncStickyHeader();
+}
+
+void FilePropertiesPanel::resetChecksumTitle()
+{
+    if (m_checksumHeader)
+        m_checksumHeader->setTitle(tr("Checksums"));
+    syncStickyHeader();
+}
+
+void FilePropertiesPanel::resetStringsTitle()
+{
+    if (m_stringsHeader)
+        m_stringsHeader->setTitle(tr("Strings"));
+    syncStickyHeader();
 }
 
 void FilePropertiesPanel::showSection(Section section)

@@ -220,6 +220,7 @@ void FilePropertiesPanel::setChecksumRowsPending()
 {
     for (QLabel *label : std::as_const(m_checksumValues))
         label->setText(tr("Calculating..."));
+    setChecksumProgressTitle(0);
     if (m_checksumOperation)
         m_checksumOperation->showProgress();
 }
@@ -260,7 +261,9 @@ void FilePropertiesPanel::updateChecksumProgress(int generation, int value)
 {
     if (generation != m_checksumGeneration || !m_checksumOperation)
         return;
-    m_checksumOperation->progressBar()->setValue(qBound(0, value, 1000));
+    const int progress = qBound(0, value, 1000);
+    m_checksumOperation->progressBar()->setValue(progress);
+    setChecksumProgressTitle(progress);
 }
 
 void FilePropertiesPanel::applyChecksumResults(int generation, const QHash<QString, QString> &results)
@@ -274,6 +277,7 @@ void FilePropertiesPanel::applyChecksumResults(int generation, const QHash<QStri
     }
     if (m_checksumOperation)
         m_checksumOperation->clear();
+    resetChecksumTitle();
 }
 
 void FilePropertiesPanel::cancelChecksumCalculation()
@@ -286,4 +290,5 @@ void FilePropertiesPanel::cancelChecksumCalculation()
         label->setText(tr("Cancelled"));
     if (m_checksumOperation)
         m_checksumOperation->showRetry(tr("Operation cancelled"));
+    resetChecksumTitle();
 }
