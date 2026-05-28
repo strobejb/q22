@@ -94,6 +94,7 @@ QIcon segoeIcon(uint codePoint, const QColor &color, int logicalPx)
 // around the menu window for the self-drawn shadow.  Must stay in sync with the
 // {menuMargin} substitution in buildStylesheet() and MenuShadowOverlay::S.
 static constexpr int kMenuShadowMargin = 8;
+static constexpr int kTooltipRadius = 6;
 
 // ── UI colour overrides ───────────────────────────────────────────────────────
 // Set by applyUiPalette() when an active palette defines window/toolbar colours.
@@ -1822,25 +1823,46 @@ public:
             return false;
         auto *w = static_cast<QWidget *>(obj);
 #ifdef Q_OS_WIN
-        if (e->type() == QEvent::Show || e->type() == QEvent::Resize)
+        if (e->type() == QEvent::Polish) {
+            w->setWindowFlags(w->windowFlags() | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint);
+        } else if (e->type() == QEvent::PlatformSurface) {
+            auto *pse = static_cast<QPlatformSurfaceEvent *>(e);
+            if (pse->surfaceEventType() == QPlatformSurfaceEvent::SurfaceCreated) {
+                applyDwmShadow(w);
+                applyRoundedMask(w);
+            }
+        } else if (e->type() == QEvent::Resize) {
             applyRoundedMask(w);
+        }
 #else
-        if (e->type() == QEvent::Polish)
+        if (e->type() == QEvent::Polish) {
             w->setAttribute(Qt::WA_TranslucentBackground);
+        }
 #endif
         return false;
     }
-#ifdef Q_OS_WIN
 private:
+#ifdef Q_OS_WIN
+    static void applyDwmShadow(QWidget *w)
+    {
+        if (!w)
+            return;
+        HWND hwnd = reinterpret_cast<HWND>(w->winId());
+        MARGINS margins = {-1, -1, -1, -1};
+        DwmExtendFrameIntoClientArea(hwnd, &margins);
+        DWORD cornerPref = DWMWCP_ROUND;
+        DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+                              &cornerPref, sizeof(cornerPref));
+    }
+
     static void applyRoundedMask(QWidget *w)
     {
-        constexpr int R = 6;
         QBitmap bm(w->size());
         bm.fill(Qt::color0);
         QPainter p(&bm);
         p.setBrush(Qt::color1);
         p.setPen(Qt::NoPen);
-        p.drawRoundedRect(w->rect(), R, R);
+        p.drawRoundedRect(w->rect(), kTooltipRadius, kTooltipRadius);
         w->setMask(bm);
     }
 #endif
