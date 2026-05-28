@@ -37,6 +37,7 @@ static constexpr int kInitialStringResultBatchLimit = 1000;
 static constexpr int kMaxStringResultBatchLimit = 100000;
 static constexpr qint64 kMinimumStringScanMs = 10000;
 static constexpr int kMaxBufferedStringLength = 4096;
+static constexpr int kStringTruncationRole = Qt::UserRole + 2;
 
 enum class StringScanMode {
     PrintableAscii = 0,
@@ -259,6 +260,8 @@ QString FilePropertiesPanel::createStringExportTemp()
     if (m_stringsList) {
         for (int i = 0; i < m_stringsList->topLevelItemCount(); ++i) {
             if (QTreeWidgetItem *item = m_stringsList->topLevelItem(i)) {
+                if (item->data(0, kStringTruncationRole).toBool())
+                    continue;
                 const qulonglong offset = item->data(0, Qt::UserRole).toULongLong();
                 out << exportStringLine(item->text(0), offset, prefixHexOffset) << '\n';
             }
@@ -304,8 +307,13 @@ void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, b
         m_stringNextOffset = 0;
     if (m_stringCancel)
         m_stringCancel->store(true);
+    if (m_stringPause)
+        m_stringPause->wake();
     auto cancelFlag = std::make_shared<std::atomic_bool>(false);
     m_stringCancel = cancelFlag;
+    auto pause = std::make_shared<filestats::OperationPause>();
+    pause->setPaused(m_stringsSectionCollapsed);
+    m_stringPause = pause;
     if (m_stringsOperation)
         m_stringsOperation->showProgress();
     const qint64 fileSize = QFileInfo(path).size();
@@ -323,7 +331,7 @@ void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, b
     auto *thread = QThread::create([guard, generation, minLength, mode, includeWhitespace,
                                     path, startOffset, scanAll, cancelFlag,
                                     visibleBaseCount, initialResultCount, exportTempPath,
-                                    prefixHexOffset]() {
+                                    prefixHexOffset, pause]() {
         QVector<QVariantMap> results;
         bool capped = false;
         qulonglong nextOffset = 0;
@@ -355,6 +363,8 @@ void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, b
             static constexpr qint64 kChunkSize = 1024 * 1024;
 
             while (!cancelFlag->load() && !file.atEnd() && !state.capped) {
+                if (pause && !pause->waitIfPaused(cancelFlag))
+                    break;
                 const QByteArray chunk = file.read(kChunkSize);
                 if (chunk.isEmpty())
                     break;
@@ -439,6 +449,8 @@ void FilePropertiesPanel::cancelStringScan()
     m_stringMoreAvailable = false;
     if (m_stringCancel)
         m_stringCancel->store(true);
+    if (m_stringPause)
+        m_stringPause->wake();
     clearStringExportTemp();
     if (m_stringsStatusRow)
         m_stringsStatusRow->hide();
@@ -479,6 +491,7 @@ void FilePropertiesPanel::appendStringResults(int generation, const QVector<QVar
         return;
 
     if (m_stringsList && !results.isEmpty()) {
+        removeStringTruncationItem();
         m_stringsList->setUpdatesEnabled(false);
         const QColor offsetColor = subduedTextColor(palette());
         for (const QVariantMap &row : results) {
@@ -493,6 +506,48 @@ void FilePropertiesPanel::appendStringResults(int generation, const QVector<QVar
         }
         m_stringsList->setUpdatesEnabled(true);
     }
+}
+
+void FilePropertiesPanel::removeStringTruncationItem()
+{
+    if (!m_stringsList)
+        return;
+
+    for (int i = m_stringsList->topLevelItemCount() - 1; i >= 0; --i) {
+        QTreeWidgetItem *item = m_stringsList->topLevelItem(i);
+        if (item && item->data(0, kStringTruncationRole).toBool())
+            delete m_stringsList->takeTopLevelItem(i);
+    }
+}
+
+void FilePropertiesPanel::addStringTruncationItem(const QString &message)
+{
+    if (!m_stringsList)
+        return;
+
+    removeStringTruncationItem();
+    auto *item = new QTreeWidgetItem(m_stringsList);
+    item->setText(0, message);
+    item->setFirstColumnSpanned(true);
+    item->setTextAlignment(0, Qt::AlignHCenter | Qt::AlignBottom);
+    item->setForeground(0, QBrush(subduedTextColor(palette())));
+    item->setData(0, kStringTruncationRole, true);
+    item->setSizeHint(0, QSize(0, m_stringsList->fontMetrics().height() + 10));
+    item->setFlags(Qt::NoItemFlags);
+}
+
+int FilePropertiesPanel::visibleStringResultCount() const
+{
+    if (!m_stringsList)
+        return 0;
+
+    int count = 0;
+    for (int i = 0; i < m_stringsList->topLevelItemCount(); ++i) {
+        QTreeWidgetItem *item = m_stringsList->topLevelItem(i);
+        if (item && !item->data(0, kStringTruncationRole).toBool())
+            ++count;
+    }
+    return count;
 }
 
 void FilePropertiesPanel::finishStringScan(int generation, const QVector<QVariantMap> &results,
@@ -515,7 +570,7 @@ void FilePropertiesPanel::finishStringScan(int generation, const QVector<QVarian
         m_stringsExportTempComplete = exportTempComplete && !capped;
     }
     if (m_stringsStatusRow && m_stringsStatusLabel && m_stringsProgressLabel) {
-        const int visibleCount = m_stringsList ? m_stringsList->topLevelItemCount() : 0;
+        const int visibleCount = visibleStringResultCount();
         const qulonglong count = qMax(totalResults, static_cast<qulonglong>(visibleCount));
         if (capped) {
             m_stringsStatusLabel->setText(tr("Showing first %1 results")
@@ -528,6 +583,7 @@ void FilePropertiesPanel::finishStringScan(int generation, const QVector<QVarian
                 m_stringsAllButton->setVisible(true);
             if (m_stringsExportButton)
                 m_stringsExportButton->hide();
+            addStringTruncationItem(tr("More results available - use Next or All"));
         } else {
             m_stringsStatusLabel->setText(tr("Found %1 results")
                                               .arg(QLocale().toString(count)));
@@ -539,6 +595,10 @@ void FilePropertiesPanel::finishStringScan(int generation, const QVector<QVarian
                 m_stringsAllButton->hide();
             if (m_stringsExportButton)
                 m_stringsExportButton->setVisible(count > 0);
+            if (count > static_cast<qulonglong>(visibleCount))
+                addStringTruncationItem(tr("List truncated - export to view full list"));
+            else
+                removeStringTruncationItem();
         }
         m_stringsStatusRow->show();
     }

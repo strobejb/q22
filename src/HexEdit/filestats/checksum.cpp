@@ -155,6 +155,7 @@ static QHash<QString, QString> calculateChecksums(
     const QString &path,
     const QStringList &algorithms,
     const std::shared_ptr<std::atomic_bool> &cancelFlag,
+    const std::shared_ptr<filestats::OperationPause> &pause,
     const std::function<void(int)> &progressCallback)
 {
     const QSet<QString> selected(algorithms.cbegin(), algorithms.cend());
@@ -179,6 +180,8 @@ static QHash<QString, QString> calculateChecksums(
     int lastProgress = -1;
 
     while (!cancelFlag->load() && !file.atEnd()) {
+        if (pause && !pause->waitIfPaused(cancelFlag))
+            return {};
         const QByteArray chunk = file.read(1024 * 1024);
         if (chunk.isEmpty() && file.error() != QFileDevice::NoError)
             return unavailableChecksums(algorithms, FilePropertiesPanel::tr("Read failed"));
@@ -248,6 +251,8 @@ void FilePropertiesPanel::markChecksumAlgorithmsChanged()
     ++m_checksumGeneration;
     if (m_checksumCancel)
         m_checksumCancel->store(true);
+    if (m_checksumPause)
+        m_checksumPause->wake();
     resetChecksumTitle();
     if (m_checksumOperation)
         m_checksumOperation->showRescan(m_checksumRescanMessage);
@@ -304,15 +309,20 @@ void FilePropertiesPanel::startChecksumCalculation()
     const int generation = ++m_checksumGeneration;
     if (m_checksumCancel)
         m_checksumCancel->store(true);
+    if (m_checksumPause)
+        m_checksumPause->wake();
     auto cancelFlag = std::make_shared<std::atomic_bool>(false);
     m_checksumCancel = cancelFlag;
+    auto pause = std::make_shared<filestats::OperationPause>();
+    pause->setPaused(m_checksumSectionCollapsed);
+    m_checksumPause = pause;
     setChecksumRowsPending();
 
     const QString path = m_hexView->filePath();
     const QStringList algorithms = selectedChecksumAlgorithms();
     QPointer<FilePropertiesPanel> guard(this);
-    auto *thread = QThread::create([guard, generation, path, algorithms, cancelFlag]() {
-        const QHash<QString, QString> results = calculateChecksums(path, algorithms, cancelFlag, [guard, generation](int progress) {
+    auto *thread = QThread::create([guard, generation, path, algorithms, cancelFlag, pause]() {
+        const QHash<QString, QString> results = calculateChecksums(path, algorithms, cancelFlag, pause, [guard, generation](int progress) {
             QMetaObject::invokeMethod(qApp, [guard, generation, progress]() {
                 if (guard)
                     guard->updateChecksumProgress(generation, progress);
@@ -365,6 +375,8 @@ void FilePropertiesPanel::cancelChecksumCalculation()
     m_checksumStarted = false;
     if (m_checksumCancel)
         m_checksumCancel->store(true);
+    if (m_checksumPause)
+        m_checksumPause->wake();
     for (QLabel *label : std::as_const(m_checksumValues))
         label->setText(tr("Cancelled"));
     if (m_checksumOperation)

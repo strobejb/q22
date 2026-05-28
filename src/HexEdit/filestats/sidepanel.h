@@ -10,6 +10,8 @@
 #include <QVariantMap>
 #include <QVector>
 #include <atomic>
+#include <condition_variable>
+#include <mutex>
 #include <memory>
 
 class HexView;
@@ -32,6 +34,36 @@ class QWidget;
 namespace filestats {
 class SectionOperationStrip;
 class SectionHeader;
+
+struct OperationPause {
+    void setPaused(bool value)
+    {
+        paused.store(value);
+        if (!value)
+            cv.notify_all();
+    }
+
+    void wake()
+    {
+        paused.store(false);
+        cv.notify_all();
+    }
+
+    bool waitIfPaused(const std::shared_ptr<std::atomic_bool> &cancelFlag)
+    {
+        if (!paused.load())
+            return !cancelFlag->load();
+        std::unique_lock<std::mutex> lock(mutex);
+        cv.wait(lock, [this, &cancelFlag]() {
+            return !paused.load() || cancelFlag->load();
+        });
+        return !cancelFlag->load();
+    }
+
+    std::atomic_bool paused { false };
+    std::mutex mutex;
+    std::condition_variable cv;
+};
 }
 
 class FilePropertiesPanel : public QDialog
@@ -77,6 +109,9 @@ private:
     void applyChecksumResults(int generation, const QHash<QString, QString> &results);
     void updateStringProgress(int generation, int value);
     void appendStringResults(int generation, const QVector<QVariantMap> &results);
+    void removeStringTruncationItem();
+    void addStringTruncationItem(const QString &message);
+    int visibleStringResultCount() const;
     void finishStringScan(int generation, const QVector<QVariantMap> &results,
                           bool capped, qulonglong nextOffset, int progress,
                           qulonglong totalResults, const QString &exportTempPath,
@@ -131,6 +166,8 @@ private:
     QWidget *m_stringsResizeHandle = nullptr;
     std::shared_ptr<std::atomic_bool> m_checksumCancel;
     std::shared_ptr<std::atomic_bool> m_stringCancel;
+    std::shared_ptr<filestats::OperationPause> m_checksumPause;
+    std::shared_ptr<filestats::OperationPause> m_stringPause;
     int m_checksumGeneration = 0;
     int m_stringGeneration = 0;
     int m_stringProgress = 0;

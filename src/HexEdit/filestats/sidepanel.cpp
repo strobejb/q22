@@ -491,6 +491,11 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
             });
     connect(m_minStringLength, &StepSpinBox::valueChanged, this, [this](int) {
         m_stringsStarted = false;
+        ++m_stringGeneration;
+        if (m_stringCancel)
+            m_stringCancel->store(true);
+        if (m_stringPause)
+            m_stringPause->wake();
         m_stringMoreAvailable = false;
         m_stringsRescanRequired = true;
         m_stringsRescanMessage = tr("Options changed");
@@ -505,6 +510,11 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     });
     connect(m_stringEncoding, &QComboBox::currentIndexChanged, this, [this](int) {
         m_stringsStarted = false;
+        ++m_stringGeneration;
+        if (m_stringCancel)
+            m_stringCancel->store(true);
+        if (m_stringPause)
+            m_stringPause->wake();
         m_stringMoreAvailable = false;
         m_stringsRescanRequired = true;
         m_stringsRescanMessage = tr("Options changed");
@@ -519,6 +529,11 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     });
     connect(m_includeWhitespaceAction, &QAction::toggled, this, [this](bool) {
         m_stringsStarted = false;
+        ++m_stringGeneration;
+        if (m_stringCancel)
+            m_stringCancel->store(true);
+        if (m_stringPause)
+            m_stringPause->wake();
         m_stringMoreAvailable = false;
         m_stringsRescanRequired = true;
         m_stringsRescanMessage = tr("Options changed");
@@ -533,6 +548,11 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     });
     connect(m_prefixHexOffsetAction, &QAction::toggled, this, [this](bool) {
         m_stringsStarted = false;
+        ++m_stringGeneration;
+        if (m_stringCancel)
+            m_stringCancel->store(true);
+        if (m_stringPause)
+            m_stringPause->wake();
         m_stringMoreAvailable = false;
         m_stringsRescanRequired = true;
         m_stringsRescanMessage = tr("Options changed");
@@ -577,6 +597,8 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     auto navigateToStringItem = [this](QTreeWidgetItem *item, int) {
         if (!item || !m_hexView)
             return;
+        if (item->data(0, Qt::UserRole + 2).toBool())
+            return;
         const size_w offset = static_cast<size_w>(item->data(0, Qt::UserRole).toULongLong());
         const size_w length = static_cast<size_w>(item->data(0, Qt::UserRole + 1).toULongLong());
         m_hexView->scrollCenterIfOffScreen(offset, length);
@@ -604,8 +626,12 @@ FilePropertiesPanel::~FilePropertiesPanel()
     ++m_stringGeneration;
     if (m_checksumCancel)
         m_checksumCancel->store(true);
+    if (m_checksumPause)
+        m_checksumPause->wake();
     if (m_stringCancel)
         m_stringCancel->store(true);
+    if (m_stringPause)
+        m_stringPause->wake();
     clearStringExportTemp();
 }
 
@@ -660,6 +686,8 @@ void FilePropertiesPanel::exportStringResults()
         const bool prefixHexOffset = m_prefixHexOffsetAction && m_prefixHexOffsetAction->isChecked();
         for (int i = 0; i < m_stringsList->topLevelItemCount(); ++i) {
             if (QTreeWidgetItem *item = m_stringsList->topLevelItem(i)) {
+                if (item->data(0, Qt::UserRole + 2).toBool())
+                    continue;
                 if (prefixHexOffset) {
                     const qulonglong offset = item->data(0, Qt::UserRole).toULongLong();
                     out << QStringLiteral("%1 ")
@@ -776,6 +804,8 @@ void FilePropertiesPanel::setChecksumSectionCollapsed(bool collapsed)
                                                 QSizePolicy::Minimum, QSizePolicy::Fixed);
     if (m_checksumHeader)
         m_checksumHeader->setCollapsed(collapsed);
+    if (m_checksumPause && m_checksumStarted)
+        m_checksumPause->setPaused(collapsed);
     if (m_content && m_content->layout())
         m_content->layout()->invalidate();
     if (wasCollapsed && !collapsed) {
@@ -799,6 +829,8 @@ void FilePropertiesPanel::setStringsSectionCollapsed(bool collapsed)
                                        QSizePolicy::Minimum, QSizePolicy::Fixed);
     if (m_stringsHeader)
         m_stringsHeader->setCollapsed(collapsed);
+    if (m_stringPause && m_stringsStarted)
+        m_stringPause->setPaused(collapsed);
     if (m_content && m_content->layout())
         m_content->layout()->invalidate();
     if (wasCollapsed && !collapsed) {

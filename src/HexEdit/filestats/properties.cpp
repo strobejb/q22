@@ -35,12 +35,16 @@ void FilePropertiesPanel::refresh()
     ++m_checksumGeneration;
     if (m_checksumCancel)
         m_checksumCancel->store(true);
+    if (m_checksumPause)
+        m_checksumPause->wake();
     resetChecksumTitle();
 
     m_stringsStarted = false;
     ++m_stringGeneration;
     if (m_stringCancel)
         m_stringCancel->store(true);
+    if (m_stringPause)
+        m_stringPause->wake();
     m_stringMoreAvailable = false;
     m_stringNextOffset = 0;
     clearStringExportTemp();
