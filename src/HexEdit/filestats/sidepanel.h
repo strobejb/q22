@@ -67,6 +67,8 @@ private:
     void cancelChecksumCalculation();
     void cancelStringScan();
     void exportStringResults();
+    void clearStringExportTemp();
+    QString createStringExportTemp();
     QStringList selectedChecksumAlgorithms() const;
     void markChecksumAlgorithmsChanged();
     void resizeStringsList(int dy);
@@ -76,7 +78,9 @@ private:
     void updateStringProgress(int generation, int value);
     void appendStringResults(int generation, const QVector<QVariantMap> &results);
     void finishStringScan(int generation, const QVector<QVariantMap> &results,
-                          bool capped, qulonglong nextOffset, int progress);
+                          bool capped, qulonglong nextOffset, int progress,
+                          qulonglong totalResults, const QString &exportTempPath,
+                          bool exportTempComplete);
     void setChecksumProgressTitle(int value);
     void setStringsProgressTitle(int value);
     void resetChecksumTitle();
@@ -114,6 +118,7 @@ private:
     filestats::SectionOperationStrip *m_stringsOperation = nullptr;
     QToolButton *m_stringOptionsButton = nullptr;
     QAction *m_includeWhitespaceAction = nullptr;
+    QAction *m_prefixHexOffsetAction = nullptr;
     StepSpinBox *m_minStringLength = nullptr;
     QComboBox *m_stringEncoding = nullptr;
     QTreeWidget *m_stringsList = nullptr;
@@ -140,11 +145,14 @@ private:
     bool m_stringsRescanRequired = false;
     QString m_checksumRescanMessage;
     QString m_stringsRescanMessage;
+    QString m_stringsExportTempPath;
     bool m_fileSectionCollapsed = false;
     bool m_checksumSectionCollapsed = false;
     bool m_stringsSectionCollapsed = false;
     int m_stringsResizeSlackHeight = 0;
     qulonglong m_stringNextOffset = 0;
+    qulonglong m_stringResultCount = 0;
+    bool m_stringsExportTempComplete = false;
     QPoint m_stringOptionsMenuClosePos { -1, -1 };
 };
 

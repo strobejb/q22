@@ -250,6 +250,10 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     m_includeWhitespaceAction = stringsOptionsMenu->addAction(tr("Include whitespace"));
     m_includeWhitespaceAction->setCheckable(true);
     m_includeWhitespaceAction->setChecked(true);
+    stringsOptionsMenu->addSeparator();
+    m_prefixHexOffsetAction = stringsOptionsMenu->addAction(tr("Prefix hex offset"));
+    m_prefixHexOffsetAction->setCheckable(true);
+    m_prefixHexOffsetAction->setChecked(false);
 
     m_stringOptionsButton = new QToolButton(m_stringsSectionBody);
     m_stringOptionsButton->setFixedSize(28, 28);
@@ -491,6 +495,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
         m_stringsRescanRequired = true;
         m_stringsRescanMessage = tr("Options changed");
         m_stringNextOffset = 0;
+        clearStringExportTemp();
         if (m_stringsList)
             m_stringsList->clear();
         if (m_stringsStatusRow)
@@ -504,6 +509,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
         m_stringsRescanRequired = true;
         m_stringsRescanMessage = tr("Options changed");
         m_stringNextOffset = 0;
+        clearStringExportTemp();
         if (m_stringsList)
             m_stringsList->clear();
         if (m_stringsStatusRow)
@@ -517,6 +523,21 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
         m_stringsRescanRequired = true;
         m_stringsRescanMessage = tr("Options changed");
         m_stringNextOffset = 0;
+        clearStringExportTemp();
+        if (m_stringsList)
+            m_stringsList->clear();
+        if (m_stringsStatusRow)
+            m_stringsStatusRow->hide();
+        if (m_stringsOperation)
+            m_stringsOperation->showRescan(m_stringsRescanMessage);
+    });
+    connect(m_prefixHexOffsetAction, &QAction::toggled, this, [this](bool) {
+        m_stringsStarted = false;
+        m_stringMoreAvailable = false;
+        m_stringsRescanRequired = true;
+        m_stringsRescanMessage = tr("Options changed");
+        m_stringNextOffset = 0;
+        clearStringExportTemp();
         if (m_stringsList)
             m_stringsList->clear();
         if (m_stringsStatusRow)
@@ -585,6 +606,7 @@ FilePropertiesPanel::~FilePropertiesPanel()
         m_checksumCancel->store(true);
     if (m_stringCancel)
         m_stringCancel->store(true);
+    clearStringExportTemp();
 }
 
 bool FilePropertiesPanel::shouldAutoStartOperations() const
@@ -598,7 +620,8 @@ void FilePropertiesPanel::exportStringResults()
         return;
 
     const bool useNativeFileDialogs = AppSettings::prefNativeFileDialogs();
-    QFileDialog dlg(this, tr("Export Strings"));
+    QWidget *dialogParent = window();
+    QFileDialog dlg(dialogParent ? dialogParent : this, tr("Export Strings"));
     dlg.setOption(QFileDialog::DontUseNativeDialog, !useNativeFileDialogs);
     dlg.setAcceptMode(QFileDialog::AcceptSave);
     dlg.setNameFilter(tr("Text files (*.txt);;All files (*)"));
@@ -620,10 +643,31 @@ void FilePropertiesPanel::exportStringResults()
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
         return;
 
-    QTextStream out(&file);
-    for (int i = 0; i < m_stringsList->topLevelItemCount(); ++i) {
-        if (QTreeWidgetItem *item = m_stringsList->topLevelItem(i))
-            out << item->text(0) << '\n';
+    if (m_stringsExportTempComplete && !m_stringsExportTempPath.isEmpty()) {
+        QFile temp(m_stringsExportTempPath);
+        if (!temp.open(QIODevice::ReadOnly)) {
+            file.cancelWriting();
+            return;
+        }
+        while (!temp.atEnd()) {
+            const QByteArray chunk = temp.read(1024 * 1024);
+            if (chunk.isEmpty())
+                break;
+            file.write(chunk);
+        }
+    } else {
+        QTextStream out(&file);
+        const bool prefixHexOffset = m_prefixHexOffsetAction && m_prefixHexOffsetAction->isChecked();
+        for (int i = 0; i < m_stringsList->topLevelItemCount(); ++i) {
+            if (QTreeWidgetItem *item = m_stringsList->topLevelItem(i)) {
+                if (prefixHexOffset) {
+                    const qulonglong offset = item->data(0, Qt::UserRole).toULongLong();
+                    out << QStringLiteral("%1 ")
+                               .arg(offset, 8, 16, QLatin1Char('0')).toUpper();
+                }
+                out << item->text(0) << '\n';
+            }
+        }
     }
     file.commit();
 }

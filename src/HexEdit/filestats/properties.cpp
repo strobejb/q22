@@ -43,6 +43,7 @@ void FilePropertiesPanel::refresh()
         m_stringCancel->store(true);
     m_stringMoreAvailable = false;
     m_stringNextOffset = 0;
+    clearStringExportTemp();
     resetStringsTitle();
     if (m_stringsStatusRow)
         m_stringsStatusRow->hide();

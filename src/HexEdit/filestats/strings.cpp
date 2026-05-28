@@ -9,6 +9,7 @@
 #include <QBrush>
 #include <QElapsedTimer>
 #include <QComboBox>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QLabel>
@@ -20,6 +21,8 @@
 #include <QToolButton>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
+#include <QTemporaryFile>
+#include <QTextStream>
 #include <QVariantMap>
 
 #include <atomic>
@@ -111,6 +114,8 @@ struct StringScanState {
     qulonglong offset = 0;
     int resultCount = 0;
     int resultLimit = kInitialStringResultBatchLimit;
+    int visibleBaseCount = 0;
+    qulonglong totalResultCount = 0;
     bool scanAll = false;
     bool capped = false;
     qulonglong nextOffset = 0;
@@ -131,19 +136,41 @@ QString displayString(QByteArrayView bytes)
     return text;
 }
 
-void flushAsciiRun(StringScanState &state, int minLength, qulonglong resumeOffset, bool terminated)
+QString hexOffsetString(qulonglong offset)
+{
+    return QStringLiteral("%1").arg(offset, 8, 16, QLatin1Char('0')).toUpper();
+}
+
+QString exportStringLine(const QString &text, qulonglong offset, bool prefixHexOffset)
+{
+    if (!prefixHexOffset)
+        return text;
+    return QStringLiteral("%1 %2").arg(hexOffsetString(offset), text);
+}
+
+void flushAsciiRun(StringScanState &state, int minLength, qulonglong resumeOffset,
+                   bool terminated, QTextStream *exportStream, bool prefixHexOffset)
 {
     const bool allowRun = state.runLength >= static_cast<qulonglong>(minLength) && terminated;
-    if (allowRun && state.resultCount < state.resultLimit) {
-        QVariantMap row;
-        row.insert(QStringLiteral("offset"), state.runStart);
-        row.insert(QStringLiteral("length"), state.runLength);
-        row.insert(QStringLiteral("text"), displayString(QByteArrayView(state.run.constData(), state.run.size())));
-        state.results.append(row);
-        ++state.resultCount;
-        if (state.resultCount >= state.resultLimit) {
-            if (state.scanAll)
-                return;
+    if (allowRun) {
+        const QString text = displayString(QByteArrayView(state.run.constData(), state.run.size()));
+        ++state.totalResultCount;
+        if (exportStream)
+            *exportStream << exportStringLine(text, state.runStart, prefixHexOffset) << '\n';
+
+        const bool mayAppendVisible = state.resultCount < state.resultLimit
+                                      && (!state.scanAll
+                                          || state.visibleBaseCount + state.resultCount < kMaxStringResultBatchLimit);
+        if (mayAppendVisible) {
+            QVariantMap row;
+            row.insert(QStringLiteral("offset"), state.runStart);
+            row.insert(QStringLiteral("length"), state.runLength);
+            row.insert(QStringLiteral("text"), text);
+            state.results.append(row);
+            ++state.resultCount;
+        }
+
+        if (!state.scanAll && state.resultCount >= state.resultLimit) {
             if (state.elapsed.isValid()
                     && state.elapsed.elapsed() < kMinimumStringScanMs
                     && state.resultLimit < kMaxStringResultBatchLimit) {
@@ -159,7 +186,8 @@ void flushAsciiRun(StringScanState &state, int minLength, qulonglong resumeOffse
 }
 
 void scanAsciiChunk(StringScanState &state, const QByteArray &chunk, int minLength,
-                    StringScanMode mode, bool includeWhitespace)
+                    StringScanMode mode, bool includeWhitespace, QTextStream *exportStream,
+                    bool prefixHexOffset)
 {
     for (char byte : chunk) {
         if (state.capped)
@@ -175,7 +203,8 @@ void scanAsciiChunk(StringScanState &state, const QByteArray &chunk, int minLeng
             ++state.runLength;
         } else {
             flushAsciiRun(state, minLength, state.offset + 1,
-                          mode != StringScanMode::CIdentifiers || ch == '\0');
+                          mode != StringScanMode::CIdentifiers || ch == '\0',
+                          exportStream, prefixHexOffset);
         }
         ++state.offset;
     }
@@ -209,6 +238,37 @@ void FilePropertiesPanel::maybeStartStringScan()
     startStringScan();
 }
 
+void FilePropertiesPanel::clearStringExportTemp()
+{
+    if (!m_stringsExportTempPath.isEmpty())
+        QFile::remove(m_stringsExportTempPath);
+    m_stringsExportTempPath.clear();
+    m_stringsExportTempComplete = false;
+    m_stringResultCount = 0;
+}
+
+QString FilePropertiesPanel::createStringExportTemp()
+{
+    QTemporaryFile temp(QDir::tempPath() + QStringLiteral("/qexed-strings-XXXXXX.txt"));
+    temp.setAutoRemove(false);
+    if (!temp.open())
+        return {};
+
+    QTextStream out(&temp);
+    const bool prefixHexOffset = m_prefixHexOffsetAction && m_prefixHexOffsetAction->isChecked();
+    if (m_stringsList) {
+        for (int i = 0; i < m_stringsList->topLevelItemCount(); ++i) {
+            if (QTreeWidgetItem *item = m_stringsList->topLevelItem(i)) {
+                const qulonglong offset = item->data(0, Qt::UserRole).toULongLong();
+                out << exportStringLine(item->text(0), offset, prefixHexOffset) << '\n';
+            }
+        }
+    }
+    const QString path = temp.fileName();
+    temp.close();
+    return path;
+}
+
 void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, bool scanAll)
 {
     if (!m_hexView || !m_minStringLength) {
@@ -221,7 +281,21 @@ void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, b
     const int minLength = m_minStringLength->value();
     const StringScanMode mode = stringScanModeFromIndex(m_stringEncoding ? m_stringEncoding->currentIndex() : 0);
     const bool includeWhitespace = !m_includeWhitespaceAction || m_includeWhitespaceAction->isChecked();
+    const bool prefixHexOffset = m_prefixHexOffsetAction && m_prefixHexOffsetAction->isChecked();
     const QString path = m_hexView->filePath();
+    if (!append)
+        clearStringExportTemp();
+    QString exportTempPath;
+    int visibleBaseCount = m_stringsList ? m_stringsList->topLevelItemCount() : 0;
+    qulonglong initialResultCount = append ? m_stringResultCount : 0;
+    if (scanAll) {
+        if (m_stringsExportTempPath.isEmpty())
+            m_stringsExportTempPath = createStringExportTemp();
+        exportTempPath = m_stringsExportTempPath;
+        m_stringsExportTempComplete = false;
+        if (initialResultCount == 0)
+            initialResultCount = static_cast<qulonglong>(visibleBaseCount);
+    }
     m_stringsRescanRequired = false;
     m_stringsRescanMessage.clear();
     m_stringMoreAvailable = false;
@@ -246,12 +320,24 @@ void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, b
         m_stringsList->clear();
 
     QPointer<FilePropertiesPanel> guard(this);
-    auto *thread = QThread::create([guard, generation, minLength, mode, includeWhitespace, path, startOffset, scanAll, cancelFlag]() {
+    auto *thread = QThread::create([guard, generation, minLength, mode, includeWhitespace,
+                                    path, startOffset, scanAll, cancelFlag,
+                                    visibleBaseCount, initialResultCount, exportTempPath,
+                                    prefixHexOffset]() {
         QVector<QVariantMap> results;
         bool capped = false;
         qulonglong nextOffset = 0;
         int finalProgress = 1000;
+        qulonglong totalResults = initialResultCount;
+        bool exportTempComplete = false;
         QFile file(path);
+        QFile exportFile(exportTempPath);
+        QTextStream exportStream(&exportFile);
+        QTextStream *exportOut = nullptr;
+        if (scanAll && !exportTempPath.isEmpty()
+                && exportFile.open(QIODevice::Append | QIODevice::Text)) {
+            exportOut = &exportStream;
+        }
         if (file.open(QIODevice::ReadOnly)) {
             StringScanState state;
             const qint64 total = file.size();
@@ -259,6 +345,10 @@ void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, b
             file.seek(seekOffset);
             state.offset = static_cast<qulonglong>(seekOffset);
             state.scanAll = scanAll;
+            state.visibleBaseCount = visibleBaseCount;
+            state.totalResultCount = initialResultCount;
+            if (scanAll)
+                state.resultLimit = kMaxStringResultBatchLimit;
             state.elapsed.start();
             qint64 scanned = seekOffset;
             int lastProgress = -1;
@@ -268,7 +358,8 @@ void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, b
                 const QByteArray chunk = file.read(kChunkSize);
                 if (chunk.isEmpty())
                     break;
-                scanAsciiChunk(state, chunk, minLength, mode, includeWhitespace);
+                scanAsciiChunk(state, chunk, minLength, mode, includeWhitespace, exportOut,
+                               prefixHexOffset);
                 if (state.capped)
                     scanned = qMin<qint64>(static_cast<qint64>(state.nextOffset), total);
                 else
@@ -293,23 +384,37 @@ void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, b
                 }
             }
             if (!cancelFlag->load()) {
-                flushAsciiRun(state, minLength, state.offset, mode != StringScanMode::CIdentifiers);
+                flushAsciiRun(state, minLength, state.offset,
+                              mode != StringScanMode::CIdentifiers, exportOut,
+                              prefixHexOffset);
                 if (!state.results.isEmpty())
                     results = std::move(state.results);
                 capped = state.capped && state.nextOffset < static_cast<qulonglong>(total);
                 nextOffset = state.nextOffset;
+                totalResults = state.totalResultCount;
                 finalProgress = total > 0
                                     ? static_cast<int>((qMin<qint64>(scanned, total) * 1000) / total)
                                     : 1000;
+                exportTempComplete = scanAll && exportOut && !capped;
             }
         }
-        if (cancelFlag->load())
+        if (exportOut) {
+            exportStream.flush();
+            exportFile.close();
+        }
+        if (cancelFlag->load()) {
+            if (!exportTempPath.isEmpty())
+                QFile::remove(exportTempPath);
             return;
-        QMetaObject::invokeMethod(qApp, [guard, generation, results, capped, nextOffset, finalProgress]() {
+        }
+        QMetaObject::invokeMethod(qApp, [guard, generation, results, capped, nextOffset,
+                                         finalProgress, totalResults, exportTempPath,
+                                         exportTempComplete]() {
             if (guard) {
                 if (!results.isEmpty())
                     guard->appendStringResults(generation, results);
-                guard->finishStringScan(generation, {}, capped, nextOffset, finalProgress);
+                guard->finishStringScan(generation, {}, capped, nextOffset, finalProgress,
+                                        totalResults, exportTempPath, exportTempComplete);
             }
         }, Qt::QueuedConnection);
     });
@@ -334,6 +439,7 @@ void FilePropertiesPanel::cancelStringScan()
     m_stringMoreAvailable = false;
     if (m_stringCancel)
         m_stringCancel->store(true);
+    clearStringExportTemp();
     if (m_stringsStatusRow)
         m_stringsStatusRow->hide();
     if (m_stringsOperation)
@@ -380,7 +486,7 @@ void FilePropertiesPanel::appendStringResults(int generation, const QVector<QVar
             const qulonglong length = row.value(QStringLiteral("length")).toULongLong();
             auto *item = new QTreeWidgetItem(m_stringsList);
             item->setText(0, row.value(QStringLiteral("text")).toString());
-            item->setText(1, QStringLiteral("%1").arg(offset, 8, 16, QLatin1Char('0')).toUpper());
+            item->setText(1, hexOffsetString(offset));
             item->setForeground(1, QBrush(offsetColor));
             item->setData(0, Qt::UserRole, offset);
             item->setData(0, Qt::UserRole + 1, length);
@@ -390,7 +496,10 @@ void FilePropertiesPanel::appendStringResults(int generation, const QVector<QVar
 }
 
 void FilePropertiesPanel::finishStringScan(int generation, const QVector<QVariantMap> &results,
-                                           bool capped, qulonglong nextOffset, int progress)
+                                           bool capped, qulonglong nextOffset, int progress,
+                                           qulonglong totalResults,
+                                           const QString &exportTempPath,
+                                           bool exportTempComplete)
 {
     if (generation != m_stringGeneration)
         return;
@@ -400,11 +509,17 @@ void FilePropertiesPanel::finishStringScan(int generation, const QVector<QVarian
     m_stringProgress = qBound(0, progress, 1000);
     m_stringMoreAvailable = capped;
     m_stringNextOffset = nextOffset;
+    m_stringResultCount = totalResults;
+    if (!exportTempPath.isEmpty()) {
+        m_stringsExportTempPath = exportTempPath;
+        m_stringsExportTempComplete = exportTempComplete && !capped;
+    }
     if (m_stringsStatusRow && m_stringsStatusLabel && m_stringsProgressLabel) {
-        const int count = m_stringsList ? m_stringsList->topLevelItemCount() : 0;
+        const int visibleCount = m_stringsList ? m_stringsList->topLevelItemCount() : 0;
+        const qulonglong count = qMax(totalResults, static_cast<qulonglong>(visibleCount));
         if (capped) {
             m_stringsStatusLabel->setText(tr("Showing first %1 results")
-                                              .arg(QLocale().toString(count)));
+                                              .arg(QLocale().toString(visibleCount)));
             m_stringsProgressLabel->setText(tr("(%1% complete)").arg(m_stringProgress / 10));
             m_stringsProgressLabel->show();
             if (m_stringsNextButton)
