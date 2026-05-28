@@ -529,10 +529,9 @@ void FilePropertiesPanel::addStringTruncationItem(const QString &message)
     auto *item = new QTreeWidgetItem(m_stringsList);
     item->setText(0, message);
     item->setFirstColumnSpanned(true);
-    item->setTextAlignment(0, Qt::AlignHCenter | Qt::AlignBottom);
+    item->setTextAlignment(0, Qt::AlignCenter);
     item->setForeground(0, QBrush(subduedTextColor(palette())));
     item->setData(0, kStringTruncationRole, true);
-    item->setSizeHint(0, QSize(0, m_stringsList->fontMetrics().height() + 10));
     item->setFlags(Qt::NoItemFlags);
 }
 
