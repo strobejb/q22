@@ -2,6 +2,7 @@
 #include "scrollhintoverlay.h"
 #include "chrome/dialog-chrome.h"
 #include "preferences.h"
+#include "chrome/roundedlistwidget.h"
 #include "settingscard.h"
 #include "settings.h"
 #include "slideoverlay.h"
@@ -62,15 +63,17 @@ FontPickerDialog::FontPickerDialog(const QFont &current, QWidget *parent)
     resize(460, 540);
 
     // ── List ─────────────────────────────────────────────────────────────────
-    m_list = new QListWidget(this);
+    m_list = new RoundedListWidget(this);
     {
-        const bool dark = qApp->palette().window().color().lightness() < 128;
-        const QString border = dark ? QLatin1String("rgba(255,255,255,0.18)")
-                                    : QLatin1String("rgba(0,0,0,0.15)");
-        m_list->setStyleSheet(QString(
-            "QListWidget { border: 1px solid %1; outline: 0; }"
-            "QListWidget::item { padding-left: 4px; }"
-        ).arg(border));
+        m_list->setStyleSheet(QStringLiteral(
+            "RoundedListWidget {"
+            "  border: 1px solid palette(mid);"
+            "  border-radius: 6px;"
+            "  background: palette(base);"
+            "  outline: 0;"
+            "}"
+            "RoundedListWidget::item { padding-left: 4px; }"
+        ));
     }
     applyListItemPadding(m_list);
 
@@ -97,8 +100,15 @@ FontPickerDialog::FontPickerDialog(const QFont &current, QWidget *parent)
     m_preview->setContentsMargins(10, 8, 10, 8);
 
     auto *previewFrame = new QFrame(this);
-    previewFrame->setFrameShape(QFrame::StyledPanel);
-    previewFrame->setFrameShadow(QFrame::Sunken);
+    previewFrame->setObjectName(QStringLiteral("fontPreviewFrame"));
+    previewFrame->setFrameShape(QFrame::NoFrame);
+    previewFrame->setStyleSheet(QStringLiteral(R"(
+        QFrame#fontPreviewFrame {
+            border: 1px solid palette(mid);
+            border-radius: 6px;
+            background: palette(base);
+        }
+    )"));
     previewFrame->setMinimumHeight(90);
     auto *previewLay = new QVBoxLayout(previewFrame);
     previewLay->setContentsMargins(0, 0, 0, 0);

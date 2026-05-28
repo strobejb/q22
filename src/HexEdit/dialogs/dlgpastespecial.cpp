@@ -73,15 +73,17 @@ PasteSpecialDialog::PasteSpecialDialog(HexView *hv, QWidget *parent)
     // immediately below.  Item padding is handled by applyListItemPadding()
     // rather than QSS because KDE/Breeze ignores QSS padding in sizeHint().
     {
-        const bool dark = qApp->palette().window().color().lightness() < 128;
-        const QString border = dark ? QLatin1String("rgba(255,255,255,0.18)")
-                                    : QLatin1String("rgba(0,0,0,0.15)");
-        ui->listClipFormats->setStyleSheet(QString(
-            "QListWidget        { border: 1px solid %1; outline: 0; }"
-            "QListWidget:hover  { border: 1px solid %1; }"
-            "QListWidget:focus  { border: 1px solid %1; }"
-            "QListWidget::item  { padding-left: 4px; }"
-        ).arg(border));
+        ui->listClipFormats->setStyleSheet(QStringLiteral(
+            "RoundedListWidget        {"
+            "  border: 1px solid palette(mid);"
+            "  border-radius: 6px;"
+            "  background: palette(base);"
+            "  outline: 0;"
+            "}"
+            "RoundedListWidget:hover  { border: 1px solid palette(mid); }"
+            "RoundedListWidget:focus  { border: 1px solid palette(mid); }"
+            "RoundedListWidget::item  { padding-left: 4px; }"
+        ));
     }
     applyListItemPadding(ui->listClipFormats);
 

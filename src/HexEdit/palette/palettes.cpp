@@ -1,5 +1,6 @@
 #include "palettes.h"
 #include "palette/screencolorpicker.h"
+#include "chrome/roundedlistwidget.h"
 #include "settings/settingscard.h"
 #include "settings/settings.h"
 
@@ -633,18 +634,20 @@ PaletteEditorDialog::PaletteEditorDialog(const PaletteInfo &info, QWidget *paren
     }
 
     // ── Element list ──────────────────────────────────────────────────────────
-    m_list = new QListWidget(this);
+    m_list = new RoundedListWidget(this);
     m_list->setUniformItemSizes(true);
     m_list->setItemDelegate(new PaletteItemDelegate(m_list));
     {
         const int vPad = qMax(4, m_list->fontMetrics().height() / 2);
-        const bool dark = qApp->palette().window().color().lightness() < 128;
-        const QString border = dark ? QLatin1String("rgba(255,255,255,0.18)")
-                                    : QLatin1String("rgba(0,0,0,0.15)");
         m_list->setStyleSheet(QString(
-            "QListWidget { border: 1px solid %1; outline: 0; }"
-            "QListWidget::item { padding: %2px 4px; }"
-        ).arg(border).arg(vPad));
+            "RoundedListWidget {"
+            "  border: 1px solid palette(mid);"
+            "  border-radius: 6px;"
+            "  background: palette(base);"
+            "  outline: 0;"
+            "}"
+            "RoundedListWidget::item { padding: %1px 4px; }"
+        ).arg(vPad));
     }
     for (int i = 0; i < PE_COUNT; ++i) {
         const auto e = PaletteElem(i);

@@ -59,7 +59,7 @@
     </spacer>
    </item>
    <item>
-    <widget class="QListWidget" name="listClipFormats">
+    <widget class="RoundedListWidget" name="listClipFormats">
      <property name="sizePolicy">
       <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
        <horstretch>0</horstretch>
@@ -277,6 +277,11 @@
   </layout>
  </widget>
  <customwidgets>
+  <customwidget>
+   <class>RoundedListWidget</class>
+   <extends>QListWidget</extends>
+   <header>chrome/roundedlistwidget.h</header>
+  </customwidget>
   <customwidget>
    <class>MenuComboBox</class>
    <extends>QComboBox</extends>

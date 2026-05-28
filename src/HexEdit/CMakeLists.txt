@@ -17,6 +17,8 @@ set(PROJECT_SOURCES
         mainwindow.cpp
         mainwindow.h
         mainwindow.ui
+        chrome/roundedlistwidget.cpp
+        chrome/roundedlistwidget.h
         bookmarks/bookmarkpopup.h
         bookmarks/bookmarkpopup.cpp
         bookmarks/bookmarkstore.h
