@@ -5,6 +5,7 @@
 #include <functional>
 
 class QLabel;
+class QPushButton;
 
 namespace filestats {
 
@@ -16,9 +17,11 @@ public:
                           QWidget *parent = nullptr);
 
     void setMessage(const QString &message);
+    void setButtonText(const QString &text);
 
 private:
     QLabel *m_message = nullptr;
+    QPushButton *m_button = nullptr;
 };
 
 } // namespace filestats

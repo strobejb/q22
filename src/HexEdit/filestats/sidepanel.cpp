@@ -1,10 +1,12 @@
 #include "filestats/sidepanel.h"
 
 #include "HexView/hexview.h"
+#include "chrome/dialog-chrome.h"
 #include "combos/menucombobox.h"
 #include "filestats/resizegrip.h"
 #include "filestats/widgets.h"
 #include "settings/scrollhintoverlay.h"
+#include "settings/settings.h"
 #include "settings/settingscard.h"
 #include "theme.h"
 
@@ -13,6 +15,7 @@
 #include <QAction>
 #include <QBrush>
 #include <QClipboard>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QCryptographicHash>
 #include <QCursor>
@@ -20,6 +23,7 @@
 #include <QEnterEvent>
 #include <QEvent>
 #include <QFile>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QFrame>
 #include <QGraphicsOpacityEffect>
@@ -38,11 +42,13 @@
 #include <QProgressBar>
 #include <QPropertyAnimation>
 #include <QPushButton>
+#include <QSaveFile>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QHeaderView>
 #include <QStyle>
 #include <QThread>
+#include <QTextStream>
 #include <QTimer>
 #include <QToolButton>
 #include <QTreeWidget>
@@ -170,21 +176,29 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
         startChecksums);
     contentLayout->addWidget(m_checksumOperation->widget());
 
-    auto checksumRow = [this](const QString &name) {
+    auto checksumRow = [this](const QString &name, bool checked) {
         QLabel *value = nullptr;
-        auto *row = new PropertyRow(name, &value, m_checksumSectionBody);
+        QCheckBox *checkBox = nullptr;
+        auto *row = new PropertyRow(name, &value, m_checksumSectionBody,
+                                    PropertyRow::Action::CopyValue, {},
+                                    &checkBox, checked);
         m_checksumValues.insert(name, value);
+        if (checkBox) {
+            m_checksumChecks.insert(name, checkBox);
+            connect(checkBox, &QCheckBox::toggled,
+                    this, &FilePropertiesPanel::markChecksumAlgorithmsChanged);
+        }
         return row;
     };
 
     auto *checksumCard = new SettingsCard({
-        checksumRow(QStringLiteral("SHA1")),
-        checksumRow(QStringLiteral("SHA256")),
-        checksumRow(QStringLiteral("MD2")),
-        checksumRow(QStringLiteral("MD4")),
-        checksumRow(QStringLiteral("MD5")),
-        checksumRow(QStringLiteral("CRC16")),
-        checksumRow(QStringLiteral("CRC32")),
+        checksumRow(QStringLiteral("CRC32"), true),
+        checksumRow(QStringLiteral("CRC16"), false),
+        checksumRow(QStringLiteral("SHA256"), true),
+        checksumRow(QStringLiteral("SHA1"), false),
+        checksumRow(QStringLiteral("MD5"), false),
+        checksumRow(QStringLiteral("MD4"), false),
+        checksumRow(QStringLiteral("MD2"), false),
     }, SettingsCard::Style::Spaced, m_checksumSectionBody);
     checksumCard->setMinimumWidth(0);
     checksumBodyLayout->addWidget(checksumCard);
@@ -233,8 +247,9 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
 
     auto *stringsOptionsMenu = new QMenu(this);
     themeMenu(stringsOptionsMenu);
-    QAction *advancedPlaceholder = stringsOptionsMenu->addAction(tr("Advanced options"));
-    advancedPlaceholder->setEnabled(false);
+    m_includeWhitespaceAction = stringsOptionsMenu->addAction(tr("Include whitespace"));
+    m_includeWhitespaceAction->setCheckable(true);
+    m_includeWhitespaceAction->setChecked(true);
 
     m_stringOptionsButton = new QToolButton(m_stringsSectionBody);
     m_stringOptionsButton->setFixedSize(28, 28);
@@ -351,13 +366,34 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     m_stringsProgressLabel = new QLabel(m_stringsStatusRow);
     m_stringsProgressLabel->setStyleSheet(QStringLiteral("color: %1;")
                                           .arg(cssColor(subduedTextColor(palette()))));
-    m_stringsNextButton = new QPushButton(tr("Next 1000"), m_stringsStatusRow);
+    static constexpr int kStringsFooterButtonSize = 24;
+
+    m_stringsNextButton = new QPushButton(m_stringsStatusRow);
     m_stringsNextButton->setFlat(false);
     m_stringsNextButton->setCursor(Qt::PointingHandCursor);
+    m_stringsNextButton->setToolTip(tr("Next"));
+    m_stringsNextButton->setFixedSize(kStringsFooterButtonSize, kStringsFooterButtonSize);
     m_stringsNextButton->setIcon(recoloredIcon(QStringLiteral("ui/go-next-symbolic"),
                                                palette().buttonText().color(), 12));
     m_stringsNextButton->setIconSize(QSize(12, 12));
-    m_stringsNextButton->setLayoutDirection(Qt::RightToLeft);
+
+    m_stringsAllButton = new QPushButton(m_stringsStatusRow);
+    m_stringsAllButton->setFlat(false);
+    m_stringsAllButton->setCursor(Qt::PointingHandCursor);
+    m_stringsAllButton->setToolTip(tr("Complete scan to end of file"));
+    m_stringsAllButton->setFixedSize(kStringsFooterButtonSize, kStringsFooterButtonSize);
+    m_stringsAllButton->setIcon(recoloredIcon(QStringLiteral("actions/go-last-symbolic"),
+                                              palette().buttonText().color(), 12));
+    m_stringsAllButton->setIconSize(QSize(12, 12));
+
+    m_stringsExportButton = new QPushButton(m_stringsStatusRow);
+    m_stringsExportButton->setFlat(false);
+    m_stringsExportButton->setCursor(Qt::PointingHandCursor);
+    m_stringsExportButton->setToolTip(tr("Export results"));
+    m_stringsExportButton->setFixedSize(kStringsFooterButtonSize, kStringsFooterButtonSize);
+    m_stringsExportButton->setIcon(recoloredIcon(QStringLiteral("actions/downloads"),
+                                                 palette().buttonText().color(), 12));
+    m_stringsExportButton->setIconSize(QSize(12, 12));
     const QColor nextBg = palette().button().color();
     const bool nextDark = palette().window().color().lightness() < 128;
     auto overlayColor = [](const QColor &base, const QColor &overlay, int alpha) {
@@ -371,11 +407,15 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
                                  : overlayColor(nextBg, QColor(0, 0, 0), 22);
     const QColor nextPressed = palette().mid().color();
     const QColor nextBorder = palette().mid().color();
-    m_stringsNextButton->setStyleSheet(QStringLiteral(R"(
+    const QString stringsFooterButtonStyle = QStringLiteral(R"(
         QPushButton {
             border: 1px solid %1;
             border-radius: 6px;
-            padding: 4px 8px 4px 9px;
+            min-width: %6px;
+            max-width: %6px;
+            min-height: %6px;
+            max-height: %6px;
+            padding: 0px;
             color: %2;
             background: %3;
         }
@@ -389,9 +429,15 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
             cssColor(palette().buttonText().color()),
             cssColor(nextBg),
             cssColor(nextHover),
-            cssColor(nextPressed)));
+            cssColor(nextPressed),
+            QString::number(kStringsFooterButtonSize));
+    m_stringsNextButton->setStyleSheet(stringsFooterButtonStyle);
+    m_stringsAllButton->setStyleSheet(stringsFooterButtonStyle);
+    m_stringsExportButton->setStyleSheet(stringsFooterButtonStyle);
     stringsStatusLayout->addWidget(m_stringsStatusLabel, 0, 0, Qt::AlignVCenter);
     stringsStatusLayout->addWidget(m_stringsNextButton, 0, 1, Qt::AlignVCenter);
+    stringsStatusLayout->addWidget(m_stringsAllButton, 0, 2, Qt::AlignVCenter);
+    stringsStatusLayout->addWidget(m_stringsExportButton, 0, 3, Qt::AlignVCenter);
     stringsStatusLayout->addWidget(m_stringsProgressLabel, 1, 0);
     stringsStatusLayout->setColumnStretch(0, 1);
     m_stringsStatusRow->hide();
@@ -442,26 +488,41 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     connect(m_minStringLength, &StepSpinBox::valueChanged, this, [this](int) {
         m_stringsStarted = false;
         m_stringMoreAvailable = false;
+        m_stringsRescanRequired = true;
+        m_stringsRescanMessage = tr("Options changed");
         m_stringNextOffset = 0;
         if (m_stringsList)
             m_stringsList->clear();
         if (m_stringsStatusRow)
             m_stringsStatusRow->hide();
         if (m_stringsOperation)
-            m_stringsOperation->clear();
-        maybeStartStringScan();
+            m_stringsOperation->showRescan(m_stringsRescanMessage);
     });
     connect(m_stringEncoding, &QComboBox::currentIndexChanged, this, [this](int) {
         m_stringsStarted = false;
         m_stringMoreAvailable = false;
+        m_stringsRescanRequired = true;
+        m_stringsRescanMessage = tr("Options changed");
         m_stringNextOffset = 0;
         if (m_stringsList)
             m_stringsList->clear();
         if (m_stringsStatusRow)
             m_stringsStatusRow->hide();
         if (m_stringsOperation)
-            m_stringsOperation->clear();
-        maybeStartStringScan();
+            m_stringsOperation->showRescan(m_stringsRescanMessage);
+    });
+    connect(m_includeWhitespaceAction, &QAction::toggled, this, [this](bool) {
+        m_stringsStarted = false;
+        m_stringMoreAvailable = false;
+        m_stringsRescanRequired = true;
+        m_stringsRescanMessage = tr("Options changed");
+        m_stringNextOffset = 0;
+        if (m_stringsList)
+            m_stringsList->clear();
+        if (m_stringsStatusRow)
+            m_stringsStatusRow->hide();
+        if (m_stringsOperation)
+            m_stringsOperation->showRescan(m_stringsRescanMessage);
     });
     connect(m_stringOptionsButton, &QToolButton::clicked, this, [this, stringsOptionsMenu]() {
         if (stringsOptionsMenu->isVisible()) {
@@ -484,6 +545,14 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
         m_stringsStarted = true;
         startStringScan(m_stringNextOffset, true);
     });
+    connect(m_stringsAllButton, &QPushButton::clicked, this, [this]() {
+        if (m_stringsStarted || !m_stringMoreAvailable)
+            return;
+        m_stringsStarted = true;
+        startStringScan(m_stringNextOffset, true, true);
+    });
+    connect(m_stringsExportButton, &QPushButton::clicked,
+            this, &FilePropertiesPanel::exportStringResults);
     auto navigateToStringItem = [this](QTreeWidgetItem *item, int) {
         if (!item || !m_hexView)
             return;
@@ -521,6 +590,42 @@ FilePropertiesPanel::~FilePropertiesPanel()
 bool FilePropertiesPanel::shouldAutoStartOperations() const
 {
     return kAutoStartPanelOperations;
+}
+
+void FilePropertiesPanel::exportStringResults()
+{
+    if (!m_stringsList || m_stringsList->topLevelItemCount() == 0)
+        return;
+
+    const bool useNativeFileDialogs = AppSettings::prefNativeFileDialogs();
+    QFileDialog dlg(this, tr("Export Strings"));
+    dlg.setOption(QFileDialog::DontUseNativeDialog, !useNativeFileDialogs);
+    dlg.setAcceptMode(QFileDialog::AcceptSave);
+    dlg.setNameFilter(tr("Text files (*.txt);;All files (*)"));
+    dlg.selectFile(QStringLiteral("strings.txt"));
+    dlg.setDefaultSuffix(QStringLiteral("txt"));
+    if (!useNativeFileDialogs) {
+        installThemedFileDialogComboPopups(&dlg);
+        installDialogChrome(&dlg);
+    }
+
+    if ((useNativeFileDialogs ? dlg.exec() : execCentered(&dlg)) != QDialog::Accepted)
+        return;
+
+    const QString path = dlg.selectedFiles().value(0);
+    if (path.isEmpty())
+        return;
+
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+        return;
+
+    QTextStream out(&file);
+    for (int i = 0; i < m_stringsList->topLevelItemCount(); ++i) {
+        if (QTreeWidgetItem *item = m_stringsList->topLevelItem(i))
+            out << item->text(0) << '\n';
+    }
+    file.commit();
 }
 
 void FilePropertiesPanel::setChecksumProgressTitle(int value)
@@ -811,10 +916,8 @@ void FilePropertiesPanelHost::closePanel()
 
 void FilePropertiesPanelHost::refreshPanel()
 {
-    if (m_panel) {
+    if (m_panel)
         m_panel->refresh();
-        m_panel->maybeStartChecksumCalculation();
-    }
 }
 
 void FilePropertiesPanelHost::setExpanded(bool expanded)

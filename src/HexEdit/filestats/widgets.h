@@ -6,6 +6,7 @@
 
 #include <QApplication>
 #include <QClipboard>
+#include <QCheckBox>
 #include <QCursor>
 #include <QEnterEvent>
 #include <QEvent>
@@ -307,12 +308,23 @@ public:
 
     void showRetry(const QString &message)
     {
+        showAction(message, QObject::tr("Restart"));
+    }
+
+    void showRescan(const QString &message)
+    {
+        showAction(message, QObject::tr("Rescan"));
+    }
+
+    void showAction(const QString &message, const QString &buttonText)
+    {
         m_startButton->hide();
         m_startRow->hide();
         m_progress->hide();
         m_stopButton->hide();
         m_progressRow->hide();
         m_retryStrip->setMessage(message);
+        m_retryStrip->setButtonText(buttonText);
         m_retryStrip->show();
         updateVisibility();
     }
@@ -456,7 +468,9 @@ public:
 
     explicit PropertyRow(const QString &label, QLabel **valueOut, QWidget *parent = nullptr,
                          Action action = Action::CopyValue,
-                         std::function<void()> actionCallback = {})
+                         std::function<void()> actionCallback = {},
+                         QCheckBox **checkBoxOut = nullptr,
+                         bool checked = false)
         : QWidget(parent), m_action(action), m_actionCallback(std::move(actionCallback))
     {
         setMinimumWidth(0);
@@ -468,22 +482,40 @@ public:
         layout->setContentsMargins(0, 2, 0, 2);
         layout->setSpacing(8);
 
+        if (checkBoxOut) {
+            static constexpr int kCheckBoxLeftPadding = 0;
+            static constexpr int kCheckBoxRightPadding = 6;
+            auto *checkWrap = new QWidget(this);
+            checkWrap->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
+            auto *checkLayout = new QHBoxLayout(checkWrap);
+            checkLayout->setContentsMargins(kCheckBoxLeftPadding, 0,
+                                            kCheckBoxRightPadding, 0);
+            checkLayout->setSpacing(0);
+            auto *checkBox = new QCheckBox(checkWrap);
+            checkBox->setChecked(checked);
+            checkBox->setCursor(Qt::PointingHandCursor);
+            checkBox->setFocusPolicy(Qt::StrongFocus);
+            checkLayout->addWidget(checkBox, 0, Qt::AlignVCenter);
+            layout->addWidget(checkWrap, 0, Qt::AlignVCenter);
+            *checkBoxOut = checkBox;
+        }
+
         auto *textLayout = new QVBoxLayout;
         textLayout->setContentsMargins(0, 0, 0, 0);
         textLayout->setSpacing(3);
 
-        auto *nameLabel = new QLabel(label, this);
-        QFont labelFont = nameLabel->font();
+        m_nameLabel = new QLabel(label, this);
+        QFont labelFont = m_nameLabel->font();
         if (labelFont.pointSizeF() > 0)
             labelFont.setPointSizeF(qMax(1.0, labelFont.pointSizeF() - 1.0));
         else if (labelFont.pixelSize() > 0)
             labelFont.setPixelSize(qMax(1, labelFont.pixelSize() - 1));
-        nameLabel->setFont(labelFont);
-        nameLabel->setMinimumWidth(0);
-        nameLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        m_nameLabel->setFont(labelFont);
+        m_nameLabel->setMinimumWidth(0);
+        m_nameLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
-        nameLabel->setStyleSheet(QStringLiteral("color: %1;")
-                                 .arg(cssColor(subduedTextColor(palette()))));
+        m_nameLabel->setStyleSheet(QStringLiteral("color: %1;")
+                                   .arg(cssColor(subduedTextColor(palette()))));
 
         m_valueLabel = new QLabel(this);
         m_valueLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
@@ -492,7 +524,7 @@ public:
         m_valueLabel->setMinimumWidth(0);
         m_valueLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
 
-        textLayout->addWidget(nameLabel);
+        textLayout->addWidget(m_nameLabel);
         textLayout->addWidget(m_valueLabel);
         layout->addLayout(textLayout, 1);
 
@@ -524,7 +556,7 @@ public:
         connect(m_feedbackFadeOut, &QPropertyAnimation::finished, m_feedback, &QWidget::hide);
 
         installHoverFilter(this);
-        installHoverFilter(nameLabel);
+        installHoverFilter(m_nameLabel);
         installHoverFilter(m_valueLabel);
 
         if (valueOut)
@@ -546,7 +578,8 @@ protected:
     void mousePressEvent(QMouseEvent *event) override
     {
         if (event->button() == Qt::LeftButton && rect().contains(event->pos())) {
-            setActionIconPressed(true);
+            if (isActionHit(event->pos()))
+                setActionIconPressed(true);
             event->accept();
             return;
         }
@@ -576,7 +609,8 @@ protected:
     {
         if (event->button() == Qt::LeftButton && rect().contains(event->pos())) {
             setActionIconPressed(false);
-            triggerAction(event->pos());
+            if (isActionHit(event->pos()))
+                triggerAction(event->pos());
             event->accept();
             return;
         }
@@ -595,8 +629,10 @@ protected:
             if (mouseEvent->button() == Qt::LeftButton) {
                 const QPoint rowPos = mapFromGlobal(eventWidget->mapToGlobal(mouseEvent->pos()));
                 if (rect().contains(rowPos)) {
-                    updateHoverIcon();
-                    setActionIconPressed(true);
+                    if (isActionHit(rowPos)) {
+                        updateHoverIcon();
+                        setActionIconPressed(true);
+                    }
                 }
             }
         } else if (event->type() == QEvent::MouseButtonRelease) {
@@ -605,7 +641,8 @@ protected:
                 const QPoint rowPos = mapFromGlobal(eventWidget->mapToGlobal(mouseEvent->pos()));
                 if (rect().contains(rowPos)) {
                     setActionIconPressed(false);
-                    triggerAction(rowPos);
+                    if (isActionHit(rowPos))
+                        triggerAction(rowPos);
                     return true;
                 }
             }
@@ -713,6 +750,16 @@ private:
         }
     }
 
+    bool isActionHit(const QPoint &pos) const
+    {
+        int left = width();
+        if (m_nameLabel)
+            left = qMin(left, m_nameLabel->geometry().left());
+        if (m_valueLabel)
+            left = qMin(left, m_valueLabel->geometry().left());
+        return pos.x() >= left;
+    }
+
     void positionFeedback(const QPoint &clickPos)
     {
         if (!m_feedback)
@@ -759,6 +806,7 @@ private:
         widget->installEventFilter(this);
     }
 
+    QLabel *m_nameLabel = nullptr;
     QLabel *m_valueLabel = nullptr;
     QLabel *m_actionIcon = nullptr;
     QLabel *m_feedback = nullptr;

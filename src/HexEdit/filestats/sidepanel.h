@@ -6,18 +6,21 @@
 #include <QPoint>
 #include <QPointer>
 #include <QString>
+#include <QStringList>
 #include <QVariantMap>
 #include <QVector>
 #include <atomic>
 #include <memory>
 
 class HexView;
+class QAction;
 class QEvent;
 class QProgressBar;
 class QResizeEvent;
 class QScrollArea;
 class QSpacerItem;
 class QComboBox;
+class QCheckBox;
 class QLabel;
 class QPropertyAnimation;
 class QPushButton;
@@ -60,9 +63,12 @@ private:
     static QString formatSize(qulonglong bytes);
     void startChecksumCalculation();
     void maybeStartStringScan();
-    void startStringScan(qulonglong startOffset = 0, bool append = false);
+    void startStringScan(qulonglong startOffset = 0, bool append = false, bool scanAll = false);
     void cancelChecksumCalculation();
     void cancelStringScan();
+    void exportStringResults();
+    QStringList selectedChecksumAlgorithms() const;
+    void markChecksumAlgorithmsChanged();
     void resizeStringsList(int dy);
     void setChecksumRowsPending();
     void updateChecksumProgress(int generation, int value);
@@ -104,8 +110,10 @@ private:
     QLabel  *m_sizeValue = nullptr;
     filestats::SectionOperationStrip *m_checksumOperation = nullptr;
     QHash<QString, QLabel *> m_checksumValues;
+    QHash<QString, QCheckBox *> m_checksumChecks;
     filestats::SectionOperationStrip *m_stringsOperation = nullptr;
     QToolButton *m_stringOptionsButton = nullptr;
+    QAction *m_includeWhitespaceAction = nullptr;
     StepSpinBox *m_minStringLength = nullptr;
     QComboBox *m_stringEncoding = nullptr;
     QTreeWidget *m_stringsList = nullptr;
@@ -113,6 +121,8 @@ private:
     QLabel *m_stringsStatusLabel = nullptr;
     QLabel *m_stringsProgressLabel = nullptr;
     QPushButton *m_stringsNextButton = nullptr;
+    QPushButton *m_stringsAllButton = nullptr;
+    QPushButton *m_stringsExportButton = nullptr;
     QWidget *m_stringsResizeHandle = nullptr;
     std::shared_ptr<std::atomic_bool> m_checksumCancel;
     std::shared_ptr<std::atomic_bool> m_stringCancel;
@@ -121,8 +131,15 @@ private:
     int m_stringProgress = 0;
     bool m_checksumStarted = false;
     bool m_stringsStarted = false;
+    bool m_checksumAutoStartConsumed = false;
+    bool m_stringsAutoStartConsumed = false;
     bool m_panelFullyOpened = false;
     bool m_stringMoreAvailable = false;
+    bool m_hasRefreshed = false;
+    bool m_checksumRescanRequired = false;
+    bool m_stringsRescanRequired = false;
+    QString m_checksumRescanMessage;
+    QString m_stringsRescanMessage;
     bool m_fileSectionCollapsed = false;
     bool m_checksumSectionCollapsed = false;
     bool m_stringsSectionCollapsed = false;

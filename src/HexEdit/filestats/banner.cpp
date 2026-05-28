@@ -66,11 +66,11 @@ ActionBanner::ActionBanner(const QString &buttonText,
     layout->setContentsMargins(8, 6, 8, 6);
     layout->setSpacing(8);
 
-    auto *button = new QPushButton(buttonText, this);
-    button->setCursor(Qt::PointingHandCursor);
-    QObject::connect(button, &QPushButton::clicked, this, [onClicked]() { onClicked(); });
+    m_button = new QPushButton(buttonText, this);
+    m_button->setCursor(Qt::PointingHandCursor);
+    QObject::connect(m_button, &QPushButton::clicked, this, [onClicked]() { onClicked(); });
 
-    const int iconSize = qRound(button->sizeHint().height() * 0.75);
+    const int iconSize = qRound(m_button->sizeHint().height() * 0.75);
     auto *icon = new QLabel(this);
     icon->setFixedSize(iconSize + 8, iconSize);
     icon->setAlignment(Qt::AlignCenter);
@@ -83,7 +83,7 @@ ActionBanner::ActionBanner(const QString &buttonText,
     m_message->setObjectName(QStringLiteral("recalculateMessage"));
     m_message->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     layout->addWidget(m_message, 1, Qt::AlignVCenter);
-    layout->addWidget(button, 0, Qt::AlignVCenter);
+    layout->addWidget(m_button, 0, Qt::AlignVCenter);
 
     hide();
 }
@@ -92,6 +92,12 @@ void ActionBanner::setMessage(const QString &message)
 {
     if (m_message)
         m_message->setText(message);
+}
+
+void ActionBanner::setButtonText(const QString &text)
+{
+    if (m_button)
+        m_button->setText(text);
 }
 
 } // namespace filestats
