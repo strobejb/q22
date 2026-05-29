@@ -927,8 +927,7 @@ QScrollBar:horizontal { background: transparent; border-radius: 3px; height: {sb
 /* handle margin = kSbInner (near) + kSbOuter (far) → visual thumb = kSbThumbWidth px wide. */
 QScrollBar::handle:vertical   { background: palette(mid); border-radius: 3px; min-height: 24px; margin: 0 {sbOuter}px 0 {sbInner}px; }
 QScrollBar::handle:horizontal { background: palette(mid); border-radius: 3px; min-width:  24px; margin: {sbInner}px 0 {sbOuter}px 0; }
-/* Normal hover (mouse over handle, no button held).  Gutter-click hover —
-   when the thumb slides under a held cursor — is handled by ScrollBarArrowPainter. */
+/* Highlight thumb when cursor is directly over it. */
 QScrollBar::handle:vertical:hover,
 QScrollBar::handle:horizontal:hover { background: {sbHover}; }
 QScrollBar::handle:vertical:pressed,
@@ -1435,6 +1434,7 @@ class ScrollBarArrowPainter : public QObject
         bool addHov = false;
         bool subPressed = false;
         bool addPressed = false;
+
         qreal subScale = 1.0;
         qreal addScale = 1.0;
         QPointer<QVariantAnimation> subAnim;
@@ -1452,6 +1452,22 @@ public:
             return false;
 
         const auto t = ev->type();
+
+        // Qt does not reliably re-send QHoverEvent after a mouse-button release,
+        // so ::handle:hover never re-engages after a thumb drag even when the
+        // cursor is still over the thumb.  Post a synthetic HoverMove after every
+        // release so the QSS engine re-evaluates the sub-control hover state.
+        if (t == QEvent::MouseButtonRelease) {
+            QPointer<QScrollBar> guard(sb);
+            const QPointF local  = sb->mapFromGlobal(QCursor::pos());
+            const QPointF global = QCursor::pos();
+            QTimer::singleShot(0, sb, [guard, local, global]() {
+                if (guard) {
+                    QHoverEvent hov(QEvent::HoverMove, local, global, local);
+                    QApplication::sendEvent(guard, &hov);
+                }
+            });
+        }
 
         // Only activate for HexView scrollbars (tagged in HexView's constructor).
         // This mirrors the QSS scoping: other scrollbars have no arrow space reserved.
@@ -1738,9 +1754,8 @@ static void ensureScrollBarArrowPainter()
     // Responsibilities:
     //  • Draw arrow triangles on sub-line/add-line buttons (QSS provides the
     //    button background; Qt's QStyleSheetStyle never draws the indicator).
-    //  • Overpaint the thumb in hover colour when the mouse button is held and
-    //    the thumb slides under the cursor (Qt suppresses ::handle:hover while
-    //    any mouse button is down).
+    //  • Track per-button hover/pressed state for arrow colour and shrink
+    //    animations.
     static ScrollBarArrowPainter *s = nullptr;
     if (!s) {
         s = new ScrollBarArrowPainter(qApp);
