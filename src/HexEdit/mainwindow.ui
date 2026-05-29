@@ -282,11 +282,17 @@
    </property>
   </action>
   <action name="action_Replace">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
    <property name="text">
     <string>&amp;Replace...</string>
    </property>
    <property name="shortcut">
     <string>Ctrl+H</string>
+   </property>
+   <property name="visible">
+    <bool>false</bool>
    </property>
   </action>
   <action name="actionC_ut">
@@ -448,6 +454,9 @@
    </property>
    <property name="text">
     <string>Fill...</string>
+   </property>
+   <property name="visible">
+    <bool>false</bool>
    </property>
   </action>
   <action name="actionChecksum">

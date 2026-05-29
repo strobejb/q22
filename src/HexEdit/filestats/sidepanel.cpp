@@ -116,8 +116,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
         setFileSectionCollapsed(!m_fileSectionCollapsed);
     });
     contentLayout->addWidget(m_fileHeader);
-    contentLayout->setAlignment(m_fileHeader, Qt::AlignLeft);
-    m_fileHeader->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+    m_fileHeader->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     m_fileHeaderGap = new QSpacerItem(0, kHeaderControlGap, QSizePolicy::Minimum, QSizePolicy::Fixed);
     contentLayout->addSpacerItem(m_fileHeaderGap);
 
@@ -152,8 +151,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
         setChecksumSectionCollapsed(!m_checksumSectionCollapsed);
     });
     contentLayout->addWidget(m_checksumHeader);
-    contentLayout->setAlignment(m_checksumHeader, Qt::AlignLeft);
-    m_checksumHeader->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+    m_checksumHeader->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     m_checksumHeaderGap = new QSpacerItem(0, kHeaderControlGap, QSizePolicy::Minimum, QSizePolicy::Fixed);
     contentLayout->addSpacerItem(m_checksumHeaderGap);
 
@@ -211,8 +209,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
         setStringsSectionCollapsed(!m_stringsSectionCollapsed);
     });
     contentLayout->addWidget(m_stringsHeader);
-    contentLayout->setAlignment(m_stringsHeader, Qt::AlignLeft);
-    m_stringsHeader->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+    m_stringsHeader->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     m_stringsHeaderGap = new QSpacerItem(0, kHeaderControlGap, QSizePolicy::Minimum, QSizePolicy::Fixed);
     contentLayout->addSpacerItem(m_stringsHeaderGap);
 
@@ -864,12 +861,6 @@ void FilePropertiesPanel::syncStickyHeader()
 
     const int headerWidth = qMax(1, m_scrollArea->viewport()->width()
                                        - 2 * kSectionHeaderOuterMargin);
-    if (m_fileHeader->width() != headerWidth)
-        m_fileHeader->setFixedWidth(headerWidth);
-    if (m_checksumHeader->width() != headerWidth)
-        m_checksumHeader->setFixedWidth(headerWidth);
-    if (m_stringsHeader->width() != headerWidth)
-        m_stringsHeader->setFixedWidth(headerWidth);
 
     const int fileY = m_fileHeader->mapTo(m_scrollArea->viewport(), QPoint(0, 0)).y();
     const int checksumY = m_checksumHeader->mapTo(m_scrollArea->viewport(), QPoint(0, 0)).y();
