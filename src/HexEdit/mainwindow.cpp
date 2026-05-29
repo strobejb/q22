@@ -1652,10 +1652,16 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
         return false;
     }
 
-    // Restore cursor if mouse leaves the window entirely
+    // Restore cursor if mouse leaves the window entirely.
+    // startSystemResize() calls ReleaseCapture() internally, which causes a
+    // synthetic QEvent::Leave before the OS drag begins.  Guard against this by
+    // checking that the cursor is physically outside the window before clearing
+    // the override — if it's still inside, the Leave is spurious and we ignore it.
     if (type == QEvent::Leave && obj == this && m_inResizeZone) {
-        m_inResizeZone = false;
-        QApplication::restoreOverrideCursor();
+        if (!rect().contains(mapFromGlobal(QCursor::pos()))) {
+            m_inResizeZone = false;
+            QApplication::restoreOverrideCursor();
+        }
         return false;
     }
 
