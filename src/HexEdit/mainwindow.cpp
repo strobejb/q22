@@ -30,6 +30,9 @@
 #include <QVariant>
 #include <QVector>
 #include <QApplication>
+#include <QDataStream>
+#include <QGuiApplication>
+#include <QScreen>
 #include <QClipboard>
 #include <QCheckBox>
 #include <QDateTime>
@@ -1281,9 +1284,16 @@ MainWindow::MainWindow(QWidget *parent)
     applyMenuMode(!AppSettings::prefNativeMenu());
 
     if (AppSettings::prefRestoreWindowGeometry()) {
-        const QByteArray geometry = AppSettings::windowGeometry();
-        if (!geometry.isEmpty())
-            restoreGeometry(geometry);
+        const QByteArray ba = AppSettings::windowGeometry();
+        if (!ba.isEmpty()) {
+            QDataStream ds(ba);
+            QRect r;
+            ds >> r;
+            const QRect screen = QGuiApplication::primaryScreen()->availableGeometry();
+            if (ds.status() == QDataStream::Ok && r.width() >= 200 && r.height() >= 150
+                    && screen.intersects(r))
+                setGeometry(r);
+        }
     }
 
     // Edge-resize event filter: catches mouse events on any child widget
@@ -1373,8 +1383,13 @@ void MainWindow::closeEvent(QCloseEvent *e)
         e->ignore();
         return;
     }
-    if (AppSettings::prefRestoreWindowGeometry())
-        AppSettings::setWindowGeometry(saveGeometry());
+    if (AppSettings::prefRestoreWindowGeometry()) {
+        const QRect r = isMaximized() ? normalGeometry() : geometry();
+        QByteArray ba;
+        QDataStream ds(&ba, QIODevice::WriteOnly);
+        ds << r;
+        AppSettings::setWindowGeometry(ba);
+    }
     QMainWindow::closeEvent(e);
 }
 

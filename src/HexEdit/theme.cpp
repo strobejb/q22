@@ -686,12 +686,13 @@ static_assert(kPreferenceSbThumbWidth == 4);
 static_assert(kPreferenceSbOuter + kPreferenceSbMask == 4);
 
 enum class ScrollBarArrowPressEffect {
-    Shrink,
-    Invert
+    None,    // no size or colour change on press (thumb-style: colour only on hover)
+    Shrink,  // arrow shrinks on press with spring-back animation
+    Invert   // arrow background flashes to palette(mid) on press
 };
 
 static constexpr ScrollBarArrowPressEffect kScrollBarArrowPressEffect =
-    ScrollBarArrowPressEffect::Shrink;
+    ScrollBarArrowPressEffect::None;
 static constexpr qreal kSbArrowPressedScale = 0.70;
 static constexpr int kSbArrowReleaseAnimMs = 120;
 
@@ -715,6 +716,8 @@ static QString buildStylesheet(bool dark)
     const QColor  windowColor      = pal.window().color();
     const QString statusComboHover = (darkBtn ? windowColor.lighter(130) : windowColor.darker(107)).name();
     const QString statusComboOpen  = (darkBtn ? windowColor.lighter(155) : windowColor.darker(115)).name();
+    const QColor  mid              = pal.mid().color();
+    const QString sbHover          = (mid.lightness() < 128 ? mid.lighter(150) : pal.dark().color()).name();
     // min-height sets the *content area* minimum; padding (5px top+bottom) and
     // border (1px each) are added on top, giving total = font + 12 — matching
     // QLineEdit's sizeHint.  QAbstractSpinBox ignores QSS padding for its own
@@ -927,7 +930,9 @@ QScrollBar::handle:horizontal { background: palette(mid); border-radius: 3px; mi
 /* Normal hover (mouse over handle, no button held).  Gutter-click hover —
    when the thumb slides under a held cursor — is handled by ScrollBarArrowPainter. */
 QScrollBar::handle:vertical:hover,
-QScrollBar::handle:horizontal:hover { background: palette(dark); }
+QScrollBar::handle:horizontal:hover { background: {sbHover}; }
+QScrollBar::handle:vertical:pressed,
+QScrollBar::handle:horizontal:pressed { background: palette(mid); }
 QScrollBar[scrollHintOverlay=true]:vertical {
     margin: 2px 2px 12px 2px;
 }
@@ -942,7 +947,10 @@ QScrollBar[filePropertiesScrollBar=true]::handle:vertical {
     margin: 0 {panelSbOuter}px 0 {panelSbInner}px;
 }
 QScrollBar[filePropertiesScrollBar=true]::handle:vertical:hover {
-    background: palette(dark);
+    background: {sbHover};
+}
+QScrollBar[filePropertiesScrollBar=true]::handle:vertical:pressed {
+    background: palette(mid);
 }
 QScrollBar[filePropertiesScrollBar=true]:disabled,
 QScrollBar[filePropertiesScrollBar=true]::handle:vertical:disabled {
@@ -960,7 +968,10 @@ QScrollBar[preferenceScrollBar=true]::handle:vertical {
     margin: 0 {preferenceSbOuter}px 0 {preferenceSbInner}px;
 }
 QScrollBar[preferenceScrollBar=true]::handle:vertical:hover {
-    background: palette(dark);
+    background: {sbHover};
+}
+QScrollBar[preferenceScrollBar=true]::handle:vertical:pressed {
+    background: palette(mid);
 }
 {scrollbarArrowQss}
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical,
@@ -1039,6 +1050,7 @@ QFileDialog QTreeView::item {
     ss.replace("{menuSelFg}",        menuSelFg);
     ss.replace("{statusComboHover}", statusComboHover);
     ss.replace("{statusComboOpen}",  statusComboOpen);
+    ss.replace("{sbHover}",          sbHover);
 #ifdef Q_OS_WIN
     ss.replace("{menuMargin}",  QString());
     ss.replace("{tooltipPad}",  "1px 6px");
@@ -1093,7 +1105,8 @@ QFileDialog QTreeView::item {
             kScrollBarArrowPressEffect == ScrollBarArrowPressEffect::Invert
                 ? QStringLiteral("QScrollBar[hexViewScrollBar=true]::sub-line:pressed,\n"
                                  "QScrollBar[hexViewScrollBar=true]::add-line:pressed { background: palette(mid); }\n")
-                : QString();
+                : QStringLiteral("QScrollBar[hexViewScrollBar=true]::sub-line:pressed,\n"
+                                 "QScrollBar[hexViewScrollBar=true]::add-line:pressed { background: transparent; }\n");
         ss.replace("{scrollbarArrowQss}", QStringLiteral(
             "QScrollBar::add-line:vertical,   QScrollBar::sub-line:vertical   { height: 0; }\n"
             "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width:  0; }\n"
@@ -1625,14 +1638,18 @@ private:
         QRect subR, addR;
         buttonRects(sb, subR, addR);
 
-        const BtnState &s   = m_state[sb];
-        const bool      btn = QApplication::mouseButtons() & Qt::LeftButton;
+        const BtnState &s = m_state[sb];
 
+        auto sbHoverCol = [&]() -> QColor {
+            const QColor m = sb->palette().color(QPalette::Mid);
+            return m.lightness() < 128 ? m.lighter(150) : sb->palette().color(QPalette::Dark);
+        };
         auto arrowCol = [&](bool hov, bool pressed) -> QColor {
             if (kScrollBarArrowPressEffect == ScrollBarArrowPressEffect::Invert && hov && pressed)
                 return sb->palette().color(QPalette::Light);
-            if (hov)        return sb->palette().color(QPalette::Dark);
-            return                 sb->palette().color(QPalette::Mid);
+            if (hov && !pressed)
+                return sbHoverCol();
+            return sb->palette().color(QPalette::Mid);
         };
 
         // Centre the icon over the visual thumb track.
@@ -1656,20 +1673,6 @@ private:
         };
 
         QPainter p(sb);
-
-        // If the left button is held and the thumb has slid under the cursor,
-        // overpaint it in the hover colour.  Qt won't fire ::handle:hover while
-        // a button is down, so we handle it manually here on every repaint.
-        if (btn) {
-            const QPoint cur = sb->mapFromGlobal(QCursor::pos());
-            const QRect  hr  = handleSubRect(sb);
-            if (hr.contains(cur)) {
-                p.setPen(Qt::NoPen);
-                p.setBrush(sb->palette().color(QPalette::Dark));
-                p.setRenderHint(QPainter::Antialiasing);
-                p.drawRoundedRect(hr, 3, 3);
-            }
-        }
 
         auto draw = [&](const QRect &btnR, const QString &name, bool hov, bool pressed, qreal scale) {
             const QRect ir = iconRect(btnR, scale);
