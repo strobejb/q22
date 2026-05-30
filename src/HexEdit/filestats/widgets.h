@@ -16,6 +16,7 @@
 #include <QHideEvent>
 #include <QLabel>
 #include <QMouseEvent>
+#include <QLinearGradient>
 #include <QPainter>
 #include <QProgressBar>
 #include <QPropertyAnimation>
@@ -67,26 +68,11 @@ public:
         setCursor(Qt::PointingHandCursor);
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
-        auto *layout = new QHBoxLayout(this);
-        layout->setContentsMargins(kContentMargin, 0, kContentMargin, 0);
-        layout->setSpacing(6);
-
-        m_label = new QLabel(title, this);
-        QFont font = m_label->font();
-        font.setBold(true);
-        m_label->setFont(font);
-        m_label->setStyleSheet(QStringLiteral("color: %1;")
-                               .arg(cssColor(subduedTextColor(palette()))));
-
-        layout->addWidget(m_label, 1, Qt::AlignVCenter);
-        layout->addStretch();
-
         m_icon = new QLabel(this);
+        m_icon->setAttribute(Qt::WA_TransparentForMouseEvents);
         m_icon->setFixedSize(16, 16);
-        layout->addWidget(m_icon, 0, Qt::AlignVCenter);
 
         setCollapsed(false);
-        updatePalette();
     }
 
     QString title() const { return m_title; }
@@ -95,7 +81,7 @@ public:
     void setTitle(const QString &title)
     {
         m_title = title;
-        m_label->setText(title);
+        update();
     }
 
     void setCollapsed(bool collapsed)
@@ -112,7 +98,25 @@ public:
         m_clicked = std::move(callback);
     }
 
+    void setDragCallbacks(std::function<void(QPoint)> started,
+                          std::function<void(QPoint)> moved,
+                          std::function<void(QPoint)> ended)
+    {
+        m_dragStarted = std::move(started);
+        m_dragMoved = std::move(moved);
+        m_dragEnded = std::move(ended);
+    }
+
+    void setDragTarget(bool on) { m_isDragTarget = on; update(); }
+    void setDragSelf(bool on)   { m_isDragSelf = on;   update(); }
+
 protected:
+    void resizeEvent(QResizeEvent *event) override
+    {
+        QWidget::resizeEvent(event);
+        m_icon->move(width() - kContentMargin - 16, (height() - 16) / 2);
+    }
+
     void enterEvent(QEnterEvent *event) override
     {
         m_hover = true;
@@ -122,17 +126,64 @@ protected:
 
     void leaveEvent(QEvent *event) override
     {
-        m_hover = false;
+        if (!m_dragging)
+            m_hover = false;
         update();
         QWidget::leaveEvent(event);
     }
 
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton && m_dragStarted) {
+            m_pressing = true;
+            m_dragging = false;
+            m_pressGlobal = event->globalPosition().toPoint();
+            QApplication::setOverrideCursor(Qt::ClosedHandCursor);
+        }
+        QWidget::mousePressEvent(event);
+    }
+
+    void mouseMoveEvent(QMouseEvent *event) override
+    {
+        if (m_pressing && !m_dragging) {
+            const QPoint delta = event->globalPosition().toPoint() - m_pressGlobal;
+            if (delta.manhattanLength() > 6) {
+                m_dragging = true;
+                grabMouse();
+                if (m_dragStarted)
+                    m_dragStarted(event->globalPosition().toPoint());
+            }
+        }
+        if (m_dragging && m_dragMoved)
+            m_dragMoved(event->globalPosition().toPoint());
+        QWidget::mouseMoveEvent(event);
+    }
+
     void mouseReleaseEvent(QMouseEvent *event) override
     {
-        if (event->button() == Qt::LeftButton && rect().contains(event->pos()) && m_clicked) {
-            m_clicked();
-            event->accept();
-            return;
+        if (event->button() == Qt::LeftButton) {
+            if (m_pressing) {
+                QApplication::restoreOverrideCursor();
+                if (m_dragging) {
+                    releaseMouse();
+                    m_dragging = false;
+                    if (m_dragEnded)
+                        m_dragEnded(event->globalPosition().toPoint());
+                } else if (rect().contains(event->pos()) && m_clicked) {
+                    m_clicked();
+                }
+                m_pressing = false;
+                if (!rect().contains(event->pos()))
+                    m_hover = false;
+                update();
+                event->accept();
+                return;
+            }
+            if (rect().contains(event->pos()) && m_clicked) {
+                m_clicked();
+                event->accept();
+                return;
+            }
         }
         QWidget::mouseReleaseEvent(event);
     }
@@ -143,29 +194,70 @@ protected:
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing);
         painter.fillRect(rect(), palette().window());
-        if (!m_hover)
-            return;
 
-        const bool dark = qApp->palette().window().color().lightness() < 128;
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(QColor(dark ? 255 : 0, dark ? 255 : 0, dark ? 255 : 0,
-                                dark ? 28 : 18));
-        painter.drawRoundedRect(rect().adjusted(0, 2, 0, -2), 4, 4);
+        const bool dark = palette().window().color().lightness() < 128;
+        if (m_hover || m_pressing) {
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(QColor(dark ? 255 : 0, dark ? 255 : 0, dark ? 255 : 0,
+                                    dark ? 28 : 18));
+            painter.drawRoundedRect(rect().adjusted(0, 2, 0, -2), 4, 4);
+        }
+
+        // Title text — clip to avoid the collapse icon on the right
+        QFont boldFont = font();
+        boldFont.setBold(true);
+        painter.setFont(boldFont);
+        painter.setPen(subduedTextColor(palette()));
+        const int textRight = width() - kContentMargin - 16 - 4;
+        painter.drawText(QRect(kContentMargin, 0, textRight - kContentMargin, height()),
+                         Qt::AlignVCenter | Qt::AlignLeft, m_title);
+
+        // Hamburger: gradient fade over title text + icon, drawn on top
+        if ((m_hover || m_pressing) && m_dragStarted) {
+            const QColor base = palette().window().color();
+            const int c = dark ? 255 : 0;
+            const int blend = dark ? 28 : 18;
+            const QColor bg(
+                (base.red()   * (255 - blend) + c * blend) / 255,
+                (base.green() * (255 - blend) + c * blend) / 255,
+                (base.blue()  * (255 - blend) + c * blend) / 255);
+
+            const int iconLeft = (width() - 16) / 2;
+            const int fadeStart = iconLeft - 32;
+            QLinearGradient grad(fadeStart, 0, iconLeft, 0);
+            grad.setColorAt(0.0, QColor(bg.red(), bg.green(), bg.blue(), 0));
+            grad.setColorAt(1.0, bg);
+            painter.fillRect(fadeStart, 2, 32, height() - 4, grad);
+            painter.fillRect(iconLeft, 2, 16, height() - 4, bg);
+
+            const QPixmap icon = recoloredIcon(
+                QStringLiteral("actions/open-menu-symbolic"),
+                subduedTextColor(palette()), 16).pixmap(16, 16);
+            painter.drawPixmap(iconLeft, (height() - 16) / 2, icon);
+        }
+
+        if (m_isDragTarget) {
+            painter.setPen(QPen(QColor(dark ? 255 : 0, dark ? 255 : 0, dark ? 255 : 0,
+                                      dark ? 70 : 55), 2));
+            painter.setBrush(Qt::NoBrush);
+            painter.drawRoundedRect(rect().adjusted(1, 3, -1, -3), 4, 4);
+        }
     }
 
 private:
-    void updatePalette()
-    {
-        m_label->setStyleSheet(QStringLiteral("color: %1;")
-                               .arg(cssColor(subduedTextColor(palette()))));
-    }
-
     QString m_title;
     QLabel *m_icon = nullptr;
-    QLabel *m_label = nullptr;
     std::function<void()> m_clicked;
+    std::function<void(QPoint)> m_dragStarted;
+    std::function<void(QPoint)> m_dragMoved;
+    std::function<void(QPoint)> m_dragEnded;
     bool m_collapsed = false;
     bool m_hover = false;
+    bool m_pressing = false;
+    bool m_dragging = false;
+    bool m_isDragTarget = false;
+    bool m_isDragSelf = false;
+    QPoint m_pressGlobal;
 };
 
 inline QToolButton *createProgressToolButton(QWidget *parent,

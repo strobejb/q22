@@ -9,6 +9,7 @@
 #include <QStringList>
 #include <QVariantMap>
 #include <QVector>
+#include <array>
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
@@ -120,6 +121,7 @@ private:
     void setStringsProgressTitle(int value);
     void resetChecksumTitle();
     void resetStringsTitle();
+    void animateSectionBody(QWidget *body, bool collapse);
     void setFileSectionCollapsed(bool collapsed);
     void setChecksumSectionCollapsed(bool collapsed);
     void setStringsSectionCollapsed(bool collapsed);
@@ -127,6 +129,18 @@ private:
     void updateStickyHeader();
     void syncStickyHeader();
     bool shouldAutoStartOperations() const;
+    filestats::SectionHeader *headerFor(Section s) const;
+    QWidget *bodyFor(Section s) const;
+    QSpacerItem *headerGapFor(Section s) const;
+    filestats::SectionOperationStrip *operationFor(Section s) const;
+    bool isCollapsed(Section s) const;
+    void updateInterSectionGaps();
+    void rebuildSectionLayout();
+    void onDragStarted(Section s, QPoint globalPos);
+    void onDragMoved(QPoint globalPos);
+    void onDragEnded(Section s, QPoint globalPos);
+    void updateDropIndicator(QPoint globalPos);
+    int dropInsertionFor(QPoint globalPos) const;
 
     HexView *m_hexView = nullptr;
     QScrollArea *m_scrollArea = nullptr;
@@ -135,10 +149,9 @@ private:
     QWidget *m_checksumSectionBody = nullptr;
     QWidget *m_stringsSectionBody = nullptr;
     QSpacerItem *m_fileHeaderGap = nullptr;
-    QSpacerItem *m_betweenSectionsGap = nullptr;
     QSpacerItem *m_checksumHeaderGap = nullptr;
-    QSpacerItem *m_betweenChecksumStringsGap = nullptr;
     QSpacerItem *m_stringsHeaderGap = nullptr;
+    std::array<QSpacerItem *, 2> m_interSectionGaps {};
     QSpacerItem *m_stringsResizeSlack = nullptr;
     filestats::SectionHeader *m_fileHeader = nullptr;
     filestats::SectionHeader *m_checksumHeader = nullptr;
@@ -170,6 +183,7 @@ private:
     std::shared_ptr<filestats::OperationPause> m_stringPause;
     int m_checksumGeneration = 0;
     int m_stringGeneration = 0;
+    int m_checksumProgress = 0;
     int m_stringProgress = 0;
     bool m_checksumStarted = false;
     bool m_stringsStarted = false;
@@ -186,6 +200,13 @@ private:
     bool m_fileSectionCollapsed = false;
     bool m_checksumSectionCollapsed = false;
     bool m_stringsSectionCollapsed = false;
+    QVector<Section> m_sectionOrder;
+    Section m_draggedSection = Section::Properties;
+    QWidget *m_dropIndicator = nullptr;
+    bool m_preDragFileCollapsed = false;
+    bool m_preDragChecksumCollapsed = false;
+    bool m_preDragStringsCollapsed = false;
+    bool m_draggingSection = false;
     int m_stringsResizeSlackHeight = 0;
     qulonglong m_stringNextOffset = 0;
     qulonglong m_stringResultCount = 0;
