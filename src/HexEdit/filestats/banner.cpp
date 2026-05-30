@@ -6,6 +6,7 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QSizePolicy>
+#include <QToolButton>
 #include <QtMath>
 
 namespace {
@@ -21,25 +22,28 @@ namespace filestats {
 
 ActionBanner::ActionBanner(const QString &buttonText,
                            const std::function<void()> &onClicked,
-                           QWidget *parent)
+                           QWidget *parent,
+                           const std::function<void()> &onClose)
     : QFrame(parent)
 {
-    setObjectName(QStringLiteral("recalculateStrip"));
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
     const QColor accent = warningBannerAccent();
     const bool dark = parent && parent->palette().window().color().lightness() < 128;
     const QColor bg = warningBannerBackground(parent ? parent->palette() : palette());
-    const QColor hover = dark ? accent.lighter(118) : accent.lighter(108);
-    const QColor pressed = dark ? accent.lighter(130) : accent.darker(108);
-    const QColor text = accent.lightness() < 150 ? QColor(Qt::white) : QColor(Qt::black);
+    const QColor btnHover = dark ? accent.lighter(118) : accent.lighter(108);
+    const QColor btnPressed = dark ? accent.lighter(130) : accent.darker(108);
+    const QColor btnText = accent.lightness() < 150 ? QColor(Qt::white) : QColor(Qt::black);
+    const QColor fg = bg.lightness() >= 128 ? QColor(Qt::black) : QColor(Qt::white);
+    const QColor toolHover(fg.red(), fg.green(), fg.blue(), 40);
+    const QColor toolPressed(fg.red(), fg.green(), fg.blue(), 70);
 
     setStyleSheet(QStringLiteral(R"(
-        QFrame#recalculateStrip {
+        QFrame {
             background: %1;
             border-radius: 6px;
         }
-        QFrame#recalculateStrip QPushButton {
+        QFrame QPushButton {
             background: %2;
             color: %3;
             border: 1px solid %2;
@@ -47,23 +51,22 @@ ActionBanner::ActionBanner(const QString &buttonText,
             min-width: 0;
             padding: 4px 14px;
         }
-        QFrame#recalculateStrip QPushButton:hover {
-            background: %4;
-            border-color: %4;
+        QFrame QPushButton:hover { background: %4; border-color: %4; }
+        QFrame QPushButton:pressed { background: %5; border-color: %5; }
+        QFrame QToolButton {
+            border: none;
+            border-radius: 6px;
+            background: transparent;
         }
-        QFrame#recalculateStrip QPushButton:pressed {
-            background: %5;
-            border-color: %5;
-        }
-        QLabel {
-            color: %2;
-            font-weight: bold;
-        }
-    )").arg(cssColor(bg), cssColor(accent), cssColor(text),
-            cssColor(hover), cssColor(pressed)));
+        QFrame QToolButton:hover { background: %6; }
+        QFrame QToolButton:pressed { background: %7; }
+    )").arg(cssColor(bg), cssColor(accent), cssColor(btnText),
+            cssColor(btnHover), cssColor(btnPressed),
+            cssColor(toolHover), cssColor(toolPressed)));
 
+    const bool hasClose = static_cast<bool>(onClose);
     auto *layout = new QHBoxLayout(this);
-    layout->setContentsMargins(8, 6, 8, 6);
+    layout->setContentsMargins(8, 6, hasClose ? 4 : 8, 6);
     layout->setSpacing(8);
 
     m_button = new QPushButton(buttonText, this);
@@ -75,15 +78,28 @@ ActionBanner::ActionBanner(const QString &buttonText,
     icon->setFixedSize(iconSize + 8, iconSize);
     icon->setAlignment(Qt::AlignCenter);
     icon->setPixmap(recoloredIcon(QStringLiteral("actions/help-about-symbolic"),
-                                  warningBannerAccent(),
-                                  iconSize).pixmap(iconSize, iconSize));
+                                  fg, iconSize).pixmap(iconSize, iconSize));
     layout->addWidget(icon, 0, Qt::AlignVCenter);
 
     m_message = new QLabel(this);
-    m_message->setObjectName(QStringLiteral("recalculateMessage"));
     m_message->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    m_message->setStyleSheet(QStringLiteral("color: %1; font-weight: bold;").arg(cssColor(fg)));
     layout->addWidget(m_message, 1, Qt::AlignVCenter);
     layout->addWidget(m_button, 0, Qt::AlignVCenter);
+
+    if (onClose) {
+        auto *closeBtn = new QToolButton(this);
+        closeBtn->setAutoRaise(true);
+        closeBtn->setCursor(Qt::PointingHandCursor);
+        closeBtn->setFixedSize(30, 30);
+        closeBtn->setIconSize(QSize(16, 16));
+        closeBtn->setIcon(recoloredIcon(QStringLiteral("actions/window-close-symbolic"), fg, 16));
+        QObject::connect(closeBtn, &QToolButton::clicked, this, [this, onClose]() {
+            hide();
+            onClose();
+        });
+        layout->addWidget(closeBtn, 0, Qt::AlignVCenter);
+    }
 
     hide();
 }

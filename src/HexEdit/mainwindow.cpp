@@ -11,6 +11,7 @@
 #include "dialogs/dlgimport.h"
 #include "dialogs/dlgpastespecial.h"
 #include "fileproperties.h"
+#include "filestats/banner.h"
 #include "panels/dockpanelhost.h"
 #include "panels/findpanel.h"
 #include "panels/gotopanel.h"
@@ -71,64 +72,6 @@ static bool formatNeedsEndian(IMPEXP_FORMAT fmt)
     return fmt == FORMAT_CPP || fmt == FORMAT_ASM;
 }
 
-static constexpr qreal kFileChangedBannerIconScale = 0.75;
-
-static QFrame *createFileChangedBanner(QWidget *parent)
-{
-    auto *banner = new QFrame(parent);
-    banner->setObjectName(QStringLiteral("fileChangedBanner"));
-    banner->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-
-    const QColor accent = warningBannerAccent();
-    const bool dark = parent->palette().window().color().lightness() < 128;
-    const QColor bg = warningBannerBackground(parent->palette());
-    const QColor hover = dark ? accent.lighter(118) : accent.lighter(108);
-    const QColor pressed = dark ? accent.lighter(130) : accent.darker(108);
-    const QColor text = accent.lightness() < 150 ? QColor(Qt::white) : QColor(Qt::black);
-    const QColor toolHover(accent.red(), accent.green(), accent.blue(), dark ? 55 : 35);
-    const QColor toolPressed(accent.red(), accent.green(), accent.blue(), dark ? 80 : 55);
-    auto cssColor = [](const QColor &color) {
-        return color.name(QColor::HexArgb);
-    };
-
-    banner->setStyleSheet(QStringLiteral(R"(
-        QFrame#fileChangedBanner {
-            background: %1;
-            border: none;
-        }
-        QFrame#fileChangedBanner QLabel {
-            color: %2;
-            font-weight: bold;
-        }
-        QFrame#fileChangedBanner QPushButton {
-            background: %2;
-            color: %3;
-            border: 1px solid %2;
-            border-radius: 6px;
-            min-width: 0;
-            padding: 4px 14px;
-        }
-        QFrame#fileChangedBanner QPushButton:hover {
-            background: %4;
-            border-color: %4;
-        }
-        QFrame#fileChangedBanner QPushButton:pressed {
-            background: %5;
-            border-color: %5;
-        }
-        QFrame#fileChangedBanner QToolButton {
-            border: none;
-            border-radius: 6px;
-            background: transparent;
-        }
-        QFrame#fileChangedBanner QToolButton:hover { background: %6; }
-        QFrame#fileChangedBanner QToolButton:pressed { background: %7; }
-    )").arg(cssColor(bg), cssColor(accent), cssColor(text),
-            cssColor(hover), cssColor(pressed),
-            cssColor(toolHover), cssColor(toolPressed)));
-
-    return banner;
-}
 
 static QFileSystemWatcher *fileChangeWatcher(QObject *owner)
 {
@@ -609,36 +552,18 @@ MainWindow::MainWindow(QWidget *parent)
     hexColumnLay->setContentsMargins(0, 0, 0, 0);
     hexColumnLay->setSpacing(0);
 
-    auto *fileChanged = createFileChangedBanner(hexColumn);
-    auto *fileChangedLayout = new QHBoxLayout(fileChanged);
-    fileChangedLayout->setContentsMargins(10, 6, 4, 6);
-    fileChangedLayout->setSpacing(6);
-    auto *fileChangedLabel = new QLabel(tr("File has changed on disk"), fileChanged);
-    fileChangedLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    auto *fileChangedReload = new QPushButton(tr("Reload"), fileChanged);
-    fileChangedReload->setCursor(Qt::PointingHandCursor);
-    auto *fileChangedClose = new QToolButton(fileChanged);
-    fileChangedClose->setAutoRaise(true);
-    fileChangedClose->setCursor(Qt::PointingHandCursor);
-    fileChangedClose->setFixedSize(30, 30);
-    fileChangedClose->setIconSize(QSize(16, 16));
-    fileChangedClose->setProperty("iconThemeName", QStringLiteral("actions/window-close-symbolic"));
-    fileChangedClose->setProperty("iconColorRole", QStringLiteral("bannerAccent"));
-    fileChangedClose->setIcon(recoloredIcon(QStringLiteral("actions/window-close-symbolic"),
-                                            warningBannerAccent(), 16));
-    const int bannerIconSize = qRound(fileChangedReload->sizeHint().height()
-                                      * kFileChangedBannerIconScale);
-    auto *fileChangedIcon = new QLabel(fileChanged);
-    fileChangedIcon->setFixedSize(bannerIconSize + 8, bannerIconSize);
-    fileChangedIcon->setAlignment(Qt::AlignCenter);
-    fileChangedIcon->setPixmap(recoloredIcon(QStringLiteral("actions/help-about-symbolic"),
-                                             warningBannerAccent(),
-                                             bannerIconSize).pixmap(bannerIconSize, bannerIconSize));
-    fileChangedLayout->addWidget(fileChangedIcon, 0, Qt::AlignVCenter);
-    fileChangedLayout->addWidget(fileChangedLabel, 1, Qt::AlignVCenter);
-    fileChangedLayout->addWidget(fileChangedReload, 0, Qt::AlignVCenter);
-    fileChangedLayout->addWidget(fileChangedClose, 0, Qt::AlignVCenter);
-    fileChanged->hide();
+    auto *fileChanged = new filestats::ActionBanner(
+        tr("Reload"),
+        [this]() {
+            const QString path = property("watchedFilePath").toString();
+            if (!path.isEmpty() && maybeSave())
+                openFile(path);
+        },
+        hexColumn,
+        []{}
+    );
+    fileChanged->setObjectName(QStringLiteral("fileChangedBanner"));
+    fileChanged->setMessage(tr("File has changed on disk"));
     hexColumnLay->addWidget(fileChanged);
     hexColumnLay->addWidget(m_hv, 1);
     contentLay->addWidget(hexColumn, 1);
@@ -683,12 +608,6 @@ MainWindow::MainWindow(QWidget *parent)
     fileChangeTimer->setInterval(1000);
     connect(fileChangeTimer, &QTimer::timeout,
             this, [this]() { checkWatchedFileChanged(this); });
-    connect(fileChangedReload, &QPushButton::clicked, this, [this]() {
-        const QString path = property("watchedFilePath").toString();
-        if (!path.isEmpty() && maybeSave())
-            openFile(path);
-    });
-    connect(fileChangedClose, &QToolButton::clicked, fileChanged, &QWidget::hide);
     connect(ui->actionProperties, &QAction::triggered,
             this, [this]() { openFileInfoPanel(FilePropertiesPanel::Section::Properties); });
     ui->actionChecksum->setEnabled(true);

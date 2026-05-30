@@ -373,12 +373,14 @@ QColor errorColour()
 
 QColor warningBannerAccent()
 {
-    return QColor(QStringLiteral("#E39E0C"));
+    //return QColor(QStringLiteral("#E39E0C"));
+    return QColor(QStringLiteral("#F3DFB1")).darker(120);
 }
 
 QColor warningBannerBackground(const QPalette &palette)
 {
-    const QColor base(QStringLiteral("#F2E4CA"));
+    //const QColor base(QStringLiteral("#F2E4CA"));
+    const QColor base(QStringLiteral("#F3DFB1"));
     const bool dark = palette.window().color().lightness() < 128;
     return dark ? QColor(base.red(), base.green(), base.blue(), 70) : base;
 }

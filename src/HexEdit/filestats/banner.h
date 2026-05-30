@@ -14,7 +14,8 @@ class ActionBanner : public QFrame
 public:
     explicit ActionBanner(const QString &buttonText,
                           const std::function<void()> &onClicked,
-                          QWidget *parent = nullptr);
+                          QWidget *parent = nullptr,
+                          const std::function<void()> &onClose = {});
 
     void setMessage(const QString &message);
     void setButtonText(const QString &text);
