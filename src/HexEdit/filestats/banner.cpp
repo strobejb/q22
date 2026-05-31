@@ -35,6 +35,7 @@ ActionBanner::ActionBanner(const QString &buttonText,
     const QColor btnPressed = dark ? accent.lighter(130) : accent.darker(108);
     const QColor btnText = accent.lightness() < 150 ? QColor(Qt::white) : QColor(Qt::black);
     const QColor fg = bg.lightness() >= 128 ? QColor(Qt::black) : QColor(Qt::white);
+    const QColor subtleFg(fg.red(), fg.green(), fg.blue(), 178);
     const QColor toolHover(fg.red(), fg.green(), fg.blue(), 40);
     const QColor toolPressed(fg.red(), fg.green(), fg.blue(), 70);
 
@@ -44,14 +45,15 @@ ActionBanner::ActionBanner(const QString &buttonText,
             border-radius: 6px;
         }
         QFrame QPushButton {
-            background: %2;
+            background: %4;
             color: %3;
-            border: 1px solid %2;
+            border: 1px solid %4;
             border-radius: 6px;
             min-width: 0;
             padding: 4px 14px;
+            font-weight: bold;
         }
-        QFrame QPushButton:hover { background: %4; border-color: %4; }
+        QFrame QPushButton:hover { background: %2; border-color: %2; }
         QFrame QPushButton:pressed { background: %5; border-color: %5; }
         QFrame QToolButton {
             border: none;
@@ -78,12 +80,12 @@ ActionBanner::ActionBanner(const QString &buttonText,
     icon->setFixedSize(iconSize + 8, iconSize);
     icon->setAlignment(Qt::AlignCenter);
     icon->setPixmap(recoloredIcon(QStringLiteral("actions/help-about-symbolic"),
-                                  fg, iconSize).pixmap(iconSize, iconSize));
+                                  subtleFg, iconSize).pixmap(iconSize, iconSize));
     layout->addWidget(icon, 0, Qt::AlignVCenter);
 
     m_message = new QLabel(this);
     m_message->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    m_message->setStyleSheet(QStringLiteral("color: %1; font-weight: bold;").arg(cssColor(fg)));
+    m_message->setStyleSheet(QStringLiteral("color: %1;").arg(cssColor(subtleFg)));
     layout->addWidget(m_message, 1, Qt::AlignVCenter);
     layout->addWidget(m_button, 0, Qt::AlignVCenter);
 
