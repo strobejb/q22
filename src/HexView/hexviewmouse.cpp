@@ -283,9 +283,14 @@ HitTestRegion HexView::hitTest(int x, int y, int *bookmarkIdx)
                 // Full strip.
                 const NoteStripGeom geom = noteStripGeom(m_bookmarks[i]);
                 if (!geom.valid) continue;
-                if      (geom.closeRect.contains(x, y)) ht = HVHT_BOOKMARK_CLOSE;
-                else if (geom.editRect .contains(x, y)) ht = HVHT_BOOKMARK_EDIT;
-                else if (geom.rect     .contains(x, y)) ht = HVHT_BOOKMARK;
+                const QRect closeButtonRect = bookmarkButtonRect(geom, BookmarkButtonAction::Close);
+                const QRect settingsButtonRect = bookmarkButtonRect(geom, BookmarkButtonAction::Settings);
+                if (closeButtonRect.contains(x, y))
+                    ht = HVHT_BOOKMARK_CLOSE;
+                else if (settingsButtonRect.contains(x, y))
+                    ht = HVHT_BOOKMARK_EDIT;
+                else if (geom.rect.contains(x, y))
+                    ht = HVHT_BOOKMARK;
             }
             if (ht == HVHT_NONE) continue;
 
@@ -478,8 +483,9 @@ void HexView::mouseReleaseEvent(QMouseEvent *event)
                 // HVHT_BOOKMARK_EDIT — settings popup.
                 if (pressedIdx >= 0 && pressedIdx < m_bookmarks.size()) {
                     const NoteStripGeom geom = noteStripGeom(m_bookmarks[pressedIdx]);
+                    const QRect settingsButtonRect = bookmarkButtonRect(geom, BookmarkButtonAction::Settings);
                     const QRect btnGlobal = geom.valid
-                        ? QRect(viewport()->mapToGlobal(geom.editRect.topLeft()), geom.editRect.size())
+                        ? QRect(viewport()->mapToGlobal(settingsButtonRect.topLeft()), settingsButtonRect.size())
                         : QRect(event->globalPosition().toPoint(), QSize(0, 0));
                     emit bookmarkSettingsRequested(pressedIdx, btnGlobal);
                 }

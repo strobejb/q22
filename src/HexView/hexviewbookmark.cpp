@@ -189,6 +189,40 @@ int HexView::findBookmark(size_w startoff, size_w endoff) const
     return -1;
 }
 
+void HexView::setBookmarkButtonLayout(const BookmarkButtonLayout &layout)
+{
+    m_bookmarkButtonLayout = layout;
+    m_hoverOnClose = false;
+    m_hoverOnEdit = false;
+    m_pressedOnClose = false;
+    m_pressedOnEdit = false;
+    viewport()->update();
+}
+
+QRect HexView::bookmarkButtonRect(const NoteStripGeom &geom, BookmarkButtonAction action) const
+{
+    if (action == BookmarkButtonAction::None)
+        return QRect();
+    if (m_bookmarkButtonLayout.topRight == action)
+        return geom.topButtonRect;
+    if (m_bookmarkButtonLayout.bottomRight == action)
+        return geom.bottomButtonRect;
+    return QRect();
+}
+
+HitTestRegion HexView::hitTestForBookmarkButtonAction(BookmarkButtonAction action) const
+{
+    switch (action) {
+    case BookmarkButtonAction::Settings:
+        return HVHT_BOOKMARK_EDIT;
+    case BookmarkButtonAction::Close:
+        return HVHT_BOOKMARK_CLOSE;
+    case BookmarkButtonAction::None:
+        return HVHT_NONE;
+    }
+    return HVHT_NONE;
+}
+
 // ── Note strip geometry ───────────────────────────────────────────────────────
 //
 // Returns the bounding rect of the rounded rectangle (not including the
@@ -212,8 +246,10 @@ HexView::NoteStripGeom HexView::noteStripGeom(const Bookmark &bm) const
     const int ny    = (int)((qint64)startLine - (qint64)m_nVScrollPos) * m_nFontHeight;
 
     const int rectW = kNoteMaxW;
-    // Text width leaves room for the gear button on the right.
-    const int textW = rectW - 2 * kNotePadH - kNoteBtnSz - kNoteBtnGap;
+    // Text width leaves room for the optional button column on the right.
+    const bool hasButtons = m_bookmarkButtonLayout.topRight != BookmarkButtonAction::None
+                         || m_bookmarkButtonLayout.bottomRight != BookmarkButtonAction::None;
+    const int textW = rectW - 2 * kNotePadH - (hasButtons ? kNoteBtnSz + kNoteBtnGap : 0);
     if (textW <= 0) return g;
 
     const QString hexAddr = QStringLiteral("0x") +
@@ -287,8 +323,12 @@ HexView::NoteStripGeom HexView::noteStripGeom(const Bookmark &bm) const
     g.textRect  = QRect(rectX + kNotePadH, finalRectY + kNotePadV, textW, textH);
     g.rangeRect = QRect(rectX + kNotePadH, rangeY, textW, rangeH);
     g.rangeText = rangeText;
-    g.editRect  = QRect(btnX, finalRectY + kNotePadV,                    kNoteBtnSz, kNoteBtnSz);
-    g.closeRect = QRect(btnX, rangeY + (rangeH - kNoteBtnSz) / 2,        kNoteBtnSz, kNoteBtnSz);
+    g.topButtonRect = hasButtons
+        ? QRect(btnX, finalRectY + kNotePadV, kNoteBtnSz, kNoteBtnSz)
+        : QRect();
+    g.bottomButtonRect = hasButtons
+        ? QRect(btnX, rangeY + (rangeH - kNoteBtnSz) / 2, kNoteBtnSz, kNoteBtnSz)
+        : QRect();
     g.tipY      = tipY;
     g.valid     = true;
     return g;
@@ -944,23 +984,25 @@ void HexView::drawNoteStrip(QPainter &painter, const Bookmark &bm, const BmLayou
         }
     };
 
-    if (isHovered) {
+    const QRect settingsButtonRect = bookmarkButtonRect(geom, BookmarkButtonAction::Settings);
+    if (isHovered && settingsButtonRect.isValid()) {
         const bool eHov  = grabbed ? m_pressedOnEdit : (m_hoverOnEdit || popupHere);
         const bool ePres = m_pressedOnEdit || popupHere;
-        drawIconBtn(geom.editRect, eHov, ePres, QStringLiteral("document-edit-symbolic"));
+        drawIconBtn(settingsButtonRect, eHov, ePres, QStringLiteral("document-edit-symbolic"));
     }
 
     // Close button (shown on hover).
-    if (isHovered && geom.closeRect.isValid()) {
+    const QRect closeButtonRect = bookmarkButtonRect(geom, BookmarkButtonAction::Close);
+    if (isHovered && closeButtonRect.isValid()) {
         const bool cHov  = grabbed ? m_pressedOnClose : m_hoverOnClose;
         const bool cPres = m_pressedOnClose;
-        paintBtnBg(geom.closeRect, cHov, cPres);
+        paintBtnBg(closeButtonRect, cHov, cPres);
         // Draw an × using two short lines.
         painter.save();
         QColor xCol = fgCol;
         xCol.setAlphaF((cHov || cPres) ? 0.85 : 0.50);
         painter.setPen(QPen(xCol, 1.5));
-        const QRectF br = geom.closeRect;
+        const QRectF br = closeButtonRect;
         const qreal m = 3.5;
         painter.drawLine(QPointF(br.left()+m, br.top()+m),    QPointF(br.right()-m, br.bottom()-m));
         painter.drawLine(QPointF(br.right()-m, br.top()+m),   QPointF(br.left()+m,  br.bottom()-m));

@@ -498,6 +498,10 @@ MainWindow::MainWindow(QWidget *parent)
     m_hv = new HexView(this);
     m_hv->setObjectName("HexView");
     m_hv->setFrameShape(QFrame::NoFrame);
+    m_hv->setBookmarkButtonLayout({
+        HexView::BookmarkButtonAction::Close,
+        HexView::BookmarkButtonAction::None,
+    });
     {
         // Base flags (always applied)
         uint mask   = HVS_RESIZEBAR | HVS_SHOWMODS | HVS_INVERTSELECTION |

@@ -185,6 +185,17 @@ class HexView : public QAbstractScrollArea
     Q_OBJECT
 
 public:
+    enum class BookmarkButtonAction {
+        None,
+        Settings,
+        Close,
+    };
+
+    struct BookmarkButtonLayout {
+        BookmarkButtonAction topRight = BookmarkButtonAction::Settings;
+        BookmarkButtonAction bottomRight = BookmarkButtonAction::Close;
+    };
+
     explicit HexView(QWidget *parent = nullptr);
     ~HexView();
 
@@ -278,6 +289,8 @@ public:
     const QList<Bookmark> &bookmarks() const { return m_bookmarks; }
     void   openNoteEditor(int bmIdx, QPoint clickPos = {-1,-1});
     void   addBookmarkInline();   // add/open bookmark at cursor / selection
+    void   setBookmarkButtonLayout(const BookmarkButtonLayout &layout);
+    BookmarkButtonLayout bookmarkButtonLayout() const { return m_bookmarkButtonLayout; }
 
     // Provide an external menu to use instead of the built-in context menu.
     // Pass nullptr to restore the built-in behaviour.  Ownership stays with
@@ -291,8 +304,8 @@ public:
         QRect   rect;       // full rounded rect (background + border area)
         QRect   textRect;   // inset text area (editor should overlay this exactly)
         QRect   rangeRect;  // range label area below text (address + byte count)
-        QRect   closeRect;  // close button hit area (top-right of rect)
-        QRect   editRect;   // edit button hit area (below close)
+        QRect   topButtonRect;
+        QRect   bottomButtonRect;
         QString rangeText;  // e.g. "0x1A3F  (16 bytes)"
         int     tipY  = 0;  // screen Y of the triangle tip (arrow point into the hex area)
         bool    valid = false;
@@ -406,6 +419,8 @@ private:
     // ── Bookmarks ─────────────────────────────────────────────────────────────
     int           findBookmark(size_w startoff, size_w endoff) const;
     NoteStripGeom noteStripGeom(const Bookmark &bm) const;
+    QRect         bookmarkButtonRect(const NoteStripGeom &geom, BookmarkButtonAction action) const;
+    HitTestRegion hitTestForBookmarkButtonAction(BookmarkButtonAction action) const;
     QRect         noteCollapsedRect(const Bookmark &bm) const;
     void          drawNoteStrip(QPainter &painter, const Bookmark &bm, const BmLayout &bml);
     int           noteStripFullHeight(const Bookmark &bm) const;
@@ -529,6 +544,7 @@ private:
 
     // Bookmarks
     QList<Bookmark> m_bookmarks;
+    BookmarkButtonLayout m_bookmarkButtonLayout;
     int  m_pressedBookmarkIdx = -1;
 
     // Note strip inline editor
