@@ -49,15 +49,19 @@ void SidePanelResizeGrip::paintEvent(QPaintEvent *)
 {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing, false);
+    const qreal dpr = devicePixelRatioF();
+    const qreal linePhys = qRound(dpr);
+    p.scale(1.0 / dpr, 1.0 / dpr);
+    const QRectF physRect(0, 0, width() * dpr, height() * dpr);
 
     if (m_hovered || m_active) {
         QColor col = m_active ? palette().color(QPalette::Dark)
                               : palette().color(QPalette::Mid);
         col.setAlphaF(m_active ? 0.48 : 0.30);
-        p.fillRect(rect(), col);
+        p.fillRect(physRect, col);
     }
 
-    p.fillRect(QRect(0, 0, 1, height()), themeBorderColor());
+    p.fillRect(QRectF(0, 0, linePhys, height() * dpr), themeBorderColor());
 }
 
 } // namespace filestats
