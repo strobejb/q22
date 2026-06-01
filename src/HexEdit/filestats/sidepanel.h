@@ -126,6 +126,7 @@ private:
     void setStringsProgressTitle(int value);
     void resetChecksumTitle();
     void resetStringsTitle();
+    void updateStringsOffsetColumnWidth();
     void animateSectionBody(QWidget *body, bool collapse, bool animate = true);
     void setSectionCollapsed(SectionId section, bool collapsed, bool animate = true);
     void emitSectionReadyIfPossible(SectionId section);

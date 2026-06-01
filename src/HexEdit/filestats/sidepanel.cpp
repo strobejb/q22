@@ -26,6 +26,7 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFontMetrics>
 #include <QFrame>
 #include <QGraphicsOpacityEffect>
 #include <QGridLayout>
@@ -337,7 +338,8 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     m_stringsList->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_stringsList->header()->setStretchLastSection(false);
     m_stringsList->header()->setSectionResizeMode(0, QHeaderView::Stretch);
-    m_stringsList->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    m_stringsList->header()->setSectionResizeMode(1, QHeaderView::Fixed);
+    updateStringsOffsetColumnWidth();
     m_stringsList->setStyleSheet(QStringLiteral(R"(
         QTreeWidget {
             background: palette(base);
@@ -790,6 +792,20 @@ void FilePropertiesPanel::resetStringsTitle()
     if (m_stringsHeader)
         m_stringsHeader->setTitle(tr("Strings"));
     syncStickyHeader();
+}
+
+void FilePropertiesPanel::updateStringsOffsetColumnWidth()
+{
+    if (!m_stringsList)
+        return;
+
+    const qulonglong fileSize = m_hexView ? static_cast<qulonglong>(m_hexView->size()) : 0;
+    const qulonglong maxOffset = fileSize > 0 ? fileSize - 1 : 0;
+    const int digits = qMax(8, QString::number(maxOffset, 16).size());
+    const QString sample(digits, QLatin1Char('F'));
+    const int offsetColumnWidth = QFontMetrics(m_stringsList->font()).horizontalAdvance(sample) + 16;
+    if (m_stringsList->columnWidth(1) != offsetColumnWidth)
+        m_stringsList->setColumnWidth(1, offsetColumnWidth);
 }
 
 void FilePropertiesPanel::showSection(SectionId section)

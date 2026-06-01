@@ -39,6 +39,7 @@ void FilePropertiesPanel::refreshDocumentState(bool contentsChanged)
     m_nameValue->setText(path.isEmpty() ? tr("Untitled") : info.fileName());
     m_locationValue->setText(path.isEmpty() ? tr("Memory") : info.absolutePath());
     m_sizeValue->setText(formatSize(static_cast<qulonglong>(m_hexView->size())));
+    updateStringsOffsetColumnWidth();
 
     for (PanelSection &section : m_sections) {
         if (!contentsChanged && section.onResetForCurrentDocument)

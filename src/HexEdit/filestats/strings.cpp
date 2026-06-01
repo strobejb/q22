@@ -483,7 +483,6 @@ void FilePropertiesPanel::appendStringResults(int generation, const QVector<QVar
             item->setData(0, Qt::UserRole + 1, length);
         }
         m_stringsList->setUpdatesEnabled(true);
-        requestSectionLayoutRefresh(SectionId::Strings);
     }
 }
 
