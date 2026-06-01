@@ -117,11 +117,10 @@ void HexView::recalcPositions()
     //RECT rect;
     //GetClientRect(m_hWnd, &rect);
 
-    emit lengthChanged(m_pDataSeq->size());
-    //OnLengthChange(m_pDataSeq->size());
+    onLengthChanged(m_pDataSeq->size());
 
     m_nDataShift %= m_nBytesPerLine;
-    setGrouping(m_nBytesPerColumn);
+    setGrouping(m_nBytesPerColumn, false);
 
     const QRect &rect = viewport()->rect();
 
@@ -131,6 +130,8 @@ void HexView::recalcPositions()
 
     if(m_nVScrollPos > 0)
         pinToOffset(m_nVScrollPinned);
+
+    emit layoutChanged();
 }
 
 // ── scroll ────────────────────────────────────────────────────────────────────

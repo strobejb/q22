@@ -801,9 +801,11 @@ void FilePropertiesPanel::updateStringsOffsetColumnWidth()
 
     const qulonglong fileSize = m_hexView ? static_cast<qulonglong>(m_hexView->size()) : 0;
     const qulonglong maxOffset = fileSize > 0 ? fileSize - 1 : 0;
-    const int digits = qMax(8, QString::number(maxOffset, 16).size());
-    const QString sample(digits, QLatin1Char('F'));
-    const int offsetColumnWidth = QFontMetrics(m_stringsList->font()).horizontalAdvance(sample) + 16;
+    const QString sample = QStringLiteral("%1").arg(maxOffset, 8, 16, QLatin1Char('0')).toUpper();
+    const int textWidth = QFontMetrics(m_stringsList->font()).horizontalAdvance(sample);
+    constexpr int kItemHorizontalPadding = 12; // QTreeWidget::item padding: 3px 6px
+    constexpr int kStyleReserve = 12;          // delegate focus/text margins
+    const int offsetColumnWidth = textWidth + kItemHorizontalPadding + kStyleReserve;
     if (m_stringsList->columnWidth(1) != offsetColumnWidth)
         m_stringsList->setColumnWidth(1, offsetColumnWidth);
 }

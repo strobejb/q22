@@ -19,7 +19,7 @@ QString FilePropertiesPanel::formatSize(qulonglong bytes)
 
 void FilePropertiesPanel::refresh()
 {
-    refreshDocumentState(m_hasRefreshed);
+    refreshDocumentState(true);
 }
 
 void FilePropertiesPanel::resetForCurrentDocument()
@@ -32,7 +32,6 @@ void FilePropertiesPanel::refreshDocumentState(bool contentsChanged)
     if (!m_hexView)
         return;
 
-    m_hasRefreshed = true;
     const QString path = m_hexView->filePath();
     const QFileInfo info(path);
 

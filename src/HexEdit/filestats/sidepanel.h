@@ -247,7 +247,6 @@ private:
     ScanSectionState m_stringsState;
     bool m_panelFullyOpened = false;
     bool m_stringMoreAvailable = false;
-    bool m_hasRefreshed = false;
     bool m_sectionLayoutRefreshPending = false;
     QString m_stringsExportTempPath;
     QVector<PanelSection> m_sections;

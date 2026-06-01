@@ -789,7 +789,10 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_hv, &HexView::lengthChanged, this,
             [this](size_w) {
         m_statusBar->update();
-        refreshSidePanel();
+    });
+    connect(m_hv, &HexView::layoutChanged, this,
+            [this]() {
+        m_statusBar->update();
     });
 
     auto populateBookmarkDialog = [this]() {

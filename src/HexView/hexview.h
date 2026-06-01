@@ -328,6 +328,7 @@ signals:
     void editModeChanged(uint mode);
     void contentChanged(size_w offset, size_w length, uint method);
     void lengthChanged(size_w length);
+    void layoutChanged();
     void lineLengthChanged(uint bytesPerLine);
     void findProgress(size_w pos, size_w len, double mbPerSec);
     void paneFocusRequested();   // Ctrl+Tab: caller should focus Find/Goto panel
@@ -381,6 +382,7 @@ private:
     int    logToPhyXCoord(int x, int pane) const;
     void   updateResizeBarPos();
     void   updateMetrics();
+    uint   setGrouping(uint bytes, bool notifyLayoutChanged);
     void   recalcPositions();
     int    calcTotalWidth();
     int    noteStripExtraColumns() const; // extra h-scroll columns for bookmark note strips

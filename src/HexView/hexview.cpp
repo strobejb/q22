@@ -287,7 +287,7 @@ uint HexView::setStyle(uint mask, uint styles)
     uint old = m_nControlStyles;
     m_nControlStyles = (m_nControlStyles & ~mask) | (styles & mask);
 
-    setGrouping(m_nBytesPerColumn);
+    setGrouping(m_nBytesPerColumn, false);
 
     recalcPositions();
     updateMetrics();
@@ -349,6 +349,11 @@ int HexView::calcTotalWidth()
 }
 uint HexView::setGrouping(uint bytes)
 {
+    return setGrouping(bytes, true);
+}
+
+uint HexView::setGrouping(uint bytes, bool notifyLayoutChanged)
+{
     /*uint old = m_nBytesPerColumn;
     m_nBytesPerColumn = std::max(1u, bytes);*/
 
@@ -379,6 +384,8 @@ uint HexView::setGrouping(uint bytes)
 
     updateMetrics();
     viewport()->update();
+    if (notifyLayoutChanged)
+        emit layoutChanged();
     return 0;
 }
 
@@ -645,6 +652,8 @@ void HexView::resizeEvent(QResizeEvent *event)
             if (m_nVScrollPos > 0)
                 pinToOffset(m_nVScrollPinned);
             m_nHScrollPos = 0;
+            onLengthChanged(m_pDataSeq->size());
+            emit layoutChanged();
             emit lineLengthChanged(m_nBytesPerLine);
         }
     }
