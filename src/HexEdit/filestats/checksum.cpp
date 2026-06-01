@@ -17,6 +17,7 @@
 #include <QSet>
 #include <QStringList>
 #include <QThread>
+#include <QTimer>
 #include <QToolButton>
 
 #include <array>
@@ -367,6 +368,7 @@ void FilePropertiesPanel::applyChecksumResults(int generation, const QHash<QStri
     if (m_checksumOperation)
         m_checksumOperation->clear();
     resetChecksumTitle();
+    QTimer::singleShot(0, this, [this]() { repairExpandedSectionGeometry(Section::Checksums); });
 }
 
 void FilePropertiesPanel::cancelChecksumCalculation()

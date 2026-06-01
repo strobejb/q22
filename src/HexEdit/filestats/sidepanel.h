@@ -121,10 +121,10 @@ private:
     void setStringsProgressTitle(int value);
     void resetChecksumTitle();
     void resetStringsTitle();
-    void animateSectionBody(QWidget *body, bool collapse);
-    void setFileSectionCollapsed(bool collapsed);
-    void setChecksumSectionCollapsed(bool collapsed);
-    void setStringsSectionCollapsed(bool collapsed);
+    void animateSectionBody(QWidget *body, bool collapse, bool animate = true);
+    void setFileSectionCollapsed(bool collapsed, bool animate = true);
+    void setChecksumSectionCollapsed(bool collapsed, bool animate = true);
+    void setStringsSectionCollapsed(bool collapsed, bool animate = true);
     void emitSectionReadyIfPossible(Section section);
     void updateStickyHeader();
     void syncStickyHeader();
@@ -136,11 +136,13 @@ private:
     bool isCollapsed(Section s) const;
     void updateInterSectionGaps();
     void rebuildSectionLayout();
+    void repairExpandedSectionGeometry(Section section);
     void onDragStarted(Section s, QPoint globalPos);
     void onDragMoved(QPoint globalPos);
     void onDragEnded(Section s, QPoint globalPos);
+    void collapseSectionsForDrag();
     void updateDropIndicator(QPoint globalPos);
-    int dropInsertionFor(QPoint globalPos) const;
+    void syncSectionHeaderHover();
 
     HexView *m_hexView = nullptr;
     QScrollArea *m_scrollArea = nullptr;
@@ -170,6 +172,7 @@ private:
     StepSpinBox *m_minStringLength = nullptr;
     QComboBox *m_stringEncoding = nullptr;
     QTreeWidget *m_stringsList = nullptr;
+    QWidget *m_stringsListFrame = nullptr;
     QWidget *m_stringsStatusRow = nullptr;
     QLabel *m_stringsStatusLabel = nullptr;
     QLabel *m_stringsProgressLabel = nullptr;
@@ -207,6 +210,7 @@ private:
     bool m_preDragChecksumCollapsed = false;
     bool m_preDragStringsCollapsed = false;
     bool m_draggingSection = false;
+    bool m_dragSectionsCollapsed = false;
     int m_stringsResizeSlackHeight = 0;
     qulonglong m_stringNextOffset = 0;
     qulonglong m_stringResultCount = 0;

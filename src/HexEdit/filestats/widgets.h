@@ -107,8 +107,16 @@ public:
         m_dragEnded = std::move(ended);
     }
 
-    void setDragTarget(bool on) { m_isDragTarget = on; update(); }
-    void setDragSelf(bool on)   { m_isDragSelf = on;   update(); }
+    void setDragTarget(bool on)  { m_isDragTarget = on; update(); }
+
+    void syncHoverFromCursor()
+    {
+        const bool over = rect().contains(mapFromGlobal(QCursor::pos()));
+        if (m_hover == over)
+            return;
+        m_hover = over;
+        update();
+    }
 
 protected:
     void resizeEvent(QResizeEvent *event) override
@@ -119,7 +127,12 @@ protected:
 
     void enterEvent(QEnterEvent *event) override
     {
-        m_hover = true;
+        // Suppress hover while another widget holds the mouse grab (e.g. the
+        // header being dragged).  grabMouse() only captures button/move events
+        // so enterEvent still fires on bystander headers — without this guard
+        // they accumulate stale m_hover = true that persists after the drag.
+        if (!QWidget::mouseGrabber() || QWidget::mouseGrabber() == this)
+            m_hover = true;
         update();
         QWidget::enterEvent(event);
     }
@@ -134,11 +147,21 @@ protected:
 
     void mousePressEvent(QMouseEvent *event) override
     {
-        if (event->button() == Qt::LeftButton && m_dragStarted) {
+        if (event->button() == Qt::LeftButton && m_dragStarted && !chevronHitRect().contains(event->pos())) {
             m_pressing = true;
             m_dragging = false;
+            m_dragMovedAfterStart = false;
             m_pressGlobal = event->globalPosition().toPoint();
             QApplication::setOverrideCursor(Qt::ClosedHandCursor);
+            update();
+            QTimer::singleShot(750, this, [this]() {
+                if (!m_pressing || m_dragging)
+                    return;
+                m_dragging = true;
+                grabMouse();
+                if (m_dragStarted)
+                    m_dragStarted(QCursor::pos());
+            });
         }
         QWidget::mousePressEvent(event);
     }
@@ -154,8 +177,10 @@ protected:
                     m_dragStarted(event->globalPosition().toPoint());
             }
         }
-        if (m_dragging && m_dragMoved)
+        if (m_dragging && m_dragMoved) {
+            m_dragMovedAfterStart = true;
             m_dragMoved(event->globalPosition().toPoint());
+        }
         QWidget::mouseMoveEvent(event);
     }
 
@@ -164,16 +189,25 @@ protected:
         if (event->button() == Qt::LeftButton) {
             if (m_pressing) {
                 QApplication::restoreOverrideCursor();
+                const bool wasDragging = m_dragging;
                 if (m_dragging) {
                     releaseMouse();
                     m_dragging = false;
                     if (m_dragEnded)
                         m_dragEnded(event->globalPosition().toPoint());
+                    if (!m_dragMovedAfterStart && rect().contains(event->pos()) && m_clicked)
+                        m_clicked();
+                    // rebuildSectionLayout() may have moved this header to a new
+                    // position. layout->activate() is asynchronous, so the
+                    // geometry isn't current yet — defer one tick until it is.
+                    QTimer::singleShot(0, this, [this]() {
+                        syncHoverFromCursor();
+                    });
                 } else if (rect().contains(event->pos()) && m_clicked) {
                     m_clicked();
                 }
                 m_pressing = false;
-                if (!rect().contains(event->pos()))
+                if (!wasDragging && !rect().contains(event->pos()))
                     m_hover = false;
                 update();
                 event->accept();
@@ -230,9 +264,19 @@ protected:
             painter.fillRect(fadeStart, 2, 32, height() - 4, grad);
             painter.fillRect(iconLeft, 2, 16, height() - 4, bg);
 
+            QColor iconColor = subduedTextColor(palette());
+            if (!m_pressing) {
+                const QColor bg = palette().window().color();
+                constexpr qreal bgWeight = 0.35;
+                constexpr qreal iconWeight = 1.0 - bgWeight;
+                iconColor = QColor(qRound(iconColor.red() * iconWeight + bg.red() * bgWeight),
+                                   qRound(iconColor.green() * iconWeight + bg.green() * bgWeight),
+                                   qRound(iconColor.blue() * iconWeight + bg.blue() * bgWeight),
+                                   iconColor.alpha());
+            }
             const QPixmap icon = recoloredIcon(
                 QStringLiteral("actions/open-menu-symbolic"),
-                subduedTextColor(palette()), 16).pixmap(16, 16);
+                iconColor, 16).pixmap(16, 16);
             painter.drawPixmap(iconLeft, (height() - 16) / 2, icon);
         }
 
@@ -245,6 +289,14 @@ protected:
     }
 
 private:
+    QRect chevronHitRect() const
+    {
+        constexpr int kChevronSlop = 8;
+        const int iconLeft = width() - kContentMargin - 16;
+        return QRect(iconLeft - kChevronSlop, 0,
+                     width() - iconLeft + kChevronSlop, height());
+    }
+
     QString m_title;
     QLabel *m_icon = nullptr;
     std::function<void()> m_clicked;
@@ -255,8 +307,8 @@ private:
     bool m_hover = false;
     bool m_pressing = false;
     bool m_dragging = false;
+    bool m_dragMovedAfterStart = false;
     bool m_isDragTarget = false;
-    bool m_isDragSelf = false;
     QPoint m_pressGlobal;
 };
 
