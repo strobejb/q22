@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "settings/settings.h"
 #include "theme.h"
+#include "version.h"
 #include <QApplication>
 #include <QIcon>
 #include <QDir>
@@ -17,7 +18,7 @@ int main(int argc, char *argv[])
     a.setApplicationName("hexedit");
     a.setApplicationDisplayName("HexEdit");
     a.setDesktopFileName("hexedit");
-    a.setApplicationVersion("3.0.1");
+    a.setApplicationVersion(PRODUCT_VERSION_STRING);
 #ifndef Q_OS_WIN
     // On Windows the taskbar/titlebar icon comes from the Win32 ICON resource
     // embedded in the EXE (hexedit.rc).  Setting a QIcon here would make Qt

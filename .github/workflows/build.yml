@@ -12,6 +12,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Stamp version
+        shell: python
+        run: |
+          import os
+          import subprocess
+          import sys
+
+          subprocess.check_call([
+              sys.executable, "scripts/stamp_version.py",
+              "--build-count", os.environ["GITHUB_RUN_NUMBER"],
+              "--ref-name", os.environ["GITHUB_REF_NAME"],
+          ])
+
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
@@ -44,7 +57,7 @@ jobs:
           mkdir -p AppDir/usr/bin
           cp build/hexedit AppDir/usr/bin/
           QMAKE="$QT_ROOT_DIR/bin/qmake" \
-          LDAI_OUTPUT=hexedit-x86_64.AppImage \
+          LDAI_OUTPUT="hexedit-${HEXEDIT_FILE_VERSION}-linux-x86_64.AppImage" \
           ./linuxdeploy-x86_64.AppImage \
             --appdir AppDir \
             --plugin qt \
@@ -53,18 +66,31 @@ jobs:
             --icon-file src/HexEdit/resources/hexedit.png
           appimage="$(find . -maxdepth 1 -type f -name '*.AppImage' ! -name 'linuxdeploy*.AppImage' -print -quit)"
           echo "Created AppImage: ${appimage}"
-          mv "$appimage" hexedit-linux-x86_64.AppImage
+          mv "$appimage" "hexedit-${HEXEDIT_FILE_VERSION}-linux-x86_64.AppImage"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: hexedit-linux
-          path: hexedit-linux-x86_64.AppImage
+          path: hexedit-*-linux-x86_64.AppImage
 
   build-windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Stamp version
+        shell: python
+        run: |
+          import os
+          import subprocess
+          import sys
+
+          subprocess.check_call([
+              sys.executable, "scripts/stamp_version.py",
+              "--build-count", os.environ["GITHUB_RUN_NUMBER"],
+              "--ref-name", os.environ["GITHUB_REF_NAME"],
+          ])
 
       - name: Convert PNG to ICO
         shell: pwsh

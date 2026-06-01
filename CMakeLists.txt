@@ -1,6 +1,22 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(HexEdit VERSION 0.1 LANGUAGES CXX)
+set(HEXEDIT_VERSION_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/src/HexEdit/version.h")
+file(STRINGS "${HEXEDIT_VERSION_HEADER}" HEXEDIT_VERSION_LINES
+    REGEX "^#define VERSION_(MAJOR|MINOR|PATCH|BUILD_COUNT)[ \t]+[0-9]+")
+foreach(_version_line IN LISTS HEXEDIT_VERSION_LINES)
+    if(_version_line MATCHES "^#define VERSION_([A-Z_]+)[ \t]+([0-9]+)")
+        set(HEXEDIT_VERSION_${CMAKE_MATCH_1} "${CMAKE_MATCH_2}")
+    endif()
+endforeach()
+foreach(_version_part MAJOR MINOR PATCH BUILD_COUNT)
+    if(NOT DEFINED HEXEDIT_VERSION_${_version_part})
+        message(FATAL_ERROR "Missing VERSION_${_version_part} in ${HEXEDIT_VERSION_HEADER}")
+    endif()
+endforeach()
+
+project(HexEdit
+    VERSION ${HEXEDIT_VERSION_MAJOR}.${HEXEDIT_VERSION_MINOR}.${HEXEDIT_VERSION_PATCH}
+    LANGUAGES CXX)
 
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
