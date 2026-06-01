@@ -18,6 +18,12 @@ jobs:
       version: ${{ steps.release-info.outputs.version }}
       tag: ${{ steps.release-info.outputs.tag }}
     steps:
+      - name: Require main branch
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "Releases must be run from main. Current ref: ${GITHUB_REF}"
+          exit 1
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -31,10 +37,16 @@ jobs:
           import subprocess
 
           version = "${{ inputs.version }}"
-          if not re.fullmatch(r"\d+\.\d+\.\d+", version):
-              raise SystemExit("Version must use MAJOR.MINOR.PATCH format, for example 3.0.2")
+          semver_core = r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+          if not re.fullmatch(semver_core, version, flags=re.ASCII):
+              raise SystemExit(
+                  "Version must use MAJOR.MINOR.PATCH with ASCII digits and no leading zeroes, for example 3.0.2"
+              )
 
           tag = f"v{version}"
+          if not re.fullmatch(r"v" + semver_core, tag, flags=re.ASCII):
+              raise SystemExit(f"Invalid release tag: {tag}")
+
           existing = subprocess.run(
               ["git", "rev-parse", "-q", "--verify", f"refs/tags/{tag}"],
               stdout=subprocess.DEVNULL,

@@ -4,6 +4,9 @@ import re
 from pathlib import Path
 
 
+SEMVER_CORE_RE = r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+
+
 def replace_define(text: str, name: str, value: int) -> str:
     pattern = rf"(?m)^#define {re.escape(name)}\s+\d+"
     replacement = f"#define {name} {value}"
@@ -31,14 +34,16 @@ def main() -> None:
     header = Path(args.version_header).resolve()
     text = header.read_text(encoding="utf-8")
 
-    version_match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", args.version)
-    tag_match = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", args.ref_name)
+    version_match = re.fullmatch(SEMVER_CORE_RE, args.version, flags=re.ASCII)
+    tag_match = re.fullmatch(r"v" + SEMVER_CORE_RE, args.ref_name, flags=re.ASCII)
     if version_match:
         major, minor, patch = (int(part) for part in version_match.groups())
     elif tag_match:
         major, minor, patch = (int(part) for part in tag_match.groups())
     elif args.version:
-        raise RuntimeError("--version must use MAJOR.MINOR.PATCH format")
+        raise RuntimeError("--version must use MAJOR.MINOR.PATCH with no leading zeroes")
+    elif args.ref_name.startswith("v"):
+        raise RuntimeError("--ref-name must use vMAJOR.MINOR.PATCH with no leading zeroes")
     else:
         major = read_define(text, "VERSION_MAJOR")
         minor = read_define(text, "VERSION_MINOR")
