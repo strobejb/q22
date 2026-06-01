@@ -23,6 +23,7 @@ def read_define(text: str, name: str) -> int:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--build-count", type=int, required=True)
+    parser.add_argument("--version", default="")
     parser.add_argument("--ref-name", default="")
     parser.add_argument("--version-header", default="src/HexEdit/version.h")
     args = parser.parse_args()
@@ -30,9 +31,14 @@ def main() -> None:
     header = Path(args.version_header).resolve()
     text = header.read_text(encoding="utf-8")
 
+    version_match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", args.version)
     tag_match = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", args.ref_name)
-    if tag_match:
+    if version_match:
+        major, minor, patch = (int(part) for part in version_match.groups())
+    elif tag_match:
         major, minor, patch = (int(part) for part in tag_match.groups())
+    elif args.version:
+        raise RuntimeError("--version must use MAJOR.MINOR.PATCH format")
     else:
         major = read_define(text, "VERSION_MAJOR")
         minor = read_define(text, "VERSION_MINOR")
