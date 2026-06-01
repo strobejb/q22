@@ -19,10 +19,19 @@ QString FilePropertiesPanel::formatSize(qulonglong bytes)
 
 void FilePropertiesPanel::refresh()
 {
+    refreshDocumentState(m_hasRefreshed);
+}
+
+void FilePropertiesPanel::resetForCurrentDocument()
+{
+    refreshDocumentState(false);
+}
+
+void FilePropertiesPanel::refreshDocumentState(bool contentsChanged)
+{
     if (!m_hexView)
         return;
 
-    const bool contentsChanged = m_hasRefreshed;
     m_hasRefreshed = true;
     const QString path = m_hexView->filePath();
     const QFileInfo info(path);
@@ -31,20 +40,60 @@ void FilePropertiesPanel::refresh()
     m_locationValue->setText(path.isEmpty() ? tr("Memory") : info.absolutePath());
     m_sizeValue->setText(formatSize(static_cast<qulonglong>(m_hexView->size())));
 
-    m_checksumStarted = false;
-    ++m_checksumGeneration;
-    if (m_checksumCancel)
-        m_checksumCancel->store(true);
-    if (m_checksumPause)
-        m_checksumPause->wake();
+    for (PanelSection &section : m_sections) {
+        if (!contentsChanged && section.onResetForCurrentDocument)
+            section.onResetForCurrentDocument();
+        if (section.onRefreshDocumentState)
+            section.onRefreshDocumentState(contentsChanged);
+    }
+}
+
+void FilePropertiesPanel::markChecksumContentsChanged()
+{
+    m_checksumState.started = false;
+    ++m_checksumState.generation;
+    if (m_checksumState.cancel)
+        m_checksumState.cancel->store(true);
+    if (m_checksumState.pause)
+        m_checksumState.pause->wake();
     resetChecksumTitle();
 
-    m_stringsStarted = false;
-    ++m_stringGeneration;
-    if (m_stringCancel)
-        m_stringCancel->store(true);
-    if (m_stringPause)
-        m_stringPause->wake();
+    m_checksumState.rescanRequired = true;
+    m_checksumState.rescanMessage = tr("File contents changed");
+    if (m_checksumOperation)
+        m_checksumOperation->showRescan(m_checksumState.rescanMessage);
+    requestSectionLayoutRefresh(SectionId::Checksums);
+}
+
+void FilePropertiesPanel::resetChecksumForCurrentDocument()
+{
+    m_checksumState.started = false;
+    ++m_checksumState.generation;
+    if (m_checksumState.cancel)
+        m_checksumState.cancel->store(true);
+    if (m_checksumState.pause)
+        m_checksumState.pause->wake();
+    resetChecksumTitle();
+    m_checksumState.autoStartConsumed = false;
+    m_checksumState.rescanRequired = false;
+    m_checksumState.rescanMessage.clear();
+    if (m_checksumOperation)
+        m_checksumOperation->clear();
+    for (QLabel *label : m_checksumValues) {
+        if (label)
+            label->clear();
+    }
+    requestSectionLayoutRefresh(SectionId::Checksums);
+}
+
+void FilePropertiesPanel::markStringsContentsChanged()
+{
+    m_stringsState.started = false;
+    ++m_stringsState.generation;
+    if (m_stringsState.cancel)
+        m_stringsState.cancel->store(true);
+    if (m_stringsState.pause)
+        m_stringsState.pause->wake();
     m_stringMoreAvailable = false;
     m_stringNextOffset = 0;
     clearStringExportTemp();
@@ -52,26 +101,33 @@ void FilePropertiesPanel::refresh()
     if (m_stringsStatusRow)
         m_stringsStatusRow->hide();
 
-    if (!contentsChanged) {
-        m_checksumRescanRequired = false;
-        m_stringsRescanRequired = false;
-        m_checksumRescanMessage.clear();
-        m_stringsRescanMessage.clear();
-        if (m_checksumOperation)
-            m_checksumOperation->clear();
-        if (m_stringsOperation)
-            m_stringsOperation->clear();
-        if (m_stringsList)
-            m_stringsList->clear();
-        return;
-    }
-
-    m_checksumRescanRequired = true;
-    m_stringsRescanRequired = true;
-    m_checksumRescanMessage = tr("File contents changed");
-    m_stringsRescanMessage = tr("File contents changed");
-    if (m_checksumOperation)
-        m_checksumOperation->showRescan(m_checksumRescanMessage);
+    m_stringsState.rescanRequired = true;
+    m_stringsState.rescanMessage = tr("File contents changed");
     if (m_stringsOperation)
-        m_stringsOperation->showRescan(m_stringsRescanMessage);
+        m_stringsOperation->showRescan(m_stringsState.rescanMessage);
+    requestSectionLayoutRefresh(SectionId::Strings);
+}
+
+void FilePropertiesPanel::resetStringsForCurrentDocument()
+{
+    m_stringsState.started = false;
+    ++m_stringsState.generation;
+    if (m_stringsState.cancel)
+        m_stringsState.cancel->store(true);
+    if (m_stringsState.pause)
+        m_stringsState.pause->wake();
+    m_stringMoreAvailable = false;
+    m_stringNextOffset = 0;
+    clearStringExportTemp();
+    resetStringsTitle();
+    if (m_stringsStatusRow)
+        m_stringsStatusRow->hide();
+    m_stringsState.autoStartConsumed = false;
+    m_stringsState.rescanRequired = false;
+    m_stringsState.rescanMessage.clear();
+    if (m_stringsOperation)
+        m_stringsOperation->clear();
+    if (m_stringsList)
+        m_stringsList->clear();
+    requestSectionLayoutRefresh(SectionId::Strings);
 }

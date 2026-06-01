@@ -246,42 +246,44 @@ QStringList FilePropertiesPanel::selectedChecksumAlgorithms() const
 
 void FilePropertiesPanel::markChecksumAlgorithmsChanged()
 {
-    m_checksumStarted = false;
-    m_checksumRescanRequired = true;
-    m_checksumRescanMessage = tr("Algorithm changed");
-    ++m_checksumGeneration;
-    if (m_checksumCancel)
-        m_checksumCancel->store(true);
-    if (m_checksumPause)
-        m_checksumPause->wake();
+    m_checksumState.started = false;
+    m_checksumState.rescanRequired = true;
+    m_checksumState.rescanMessage = tr("Algorithm changed");
+    ++m_checksumState.generation;
+    if (m_checksumState.cancel)
+        m_checksumState.cancel->store(true);
+    if (m_checksumState.pause)
+        m_checksumState.pause->wake();
     resetChecksumTitle();
     if (m_checksumOperation)
-        m_checksumOperation->showRescan(m_checksumRescanMessage);
+        m_checksumOperation->showRescan(m_checksumState.rescanMessage);
+    requestSectionLayoutRefresh(SectionId::Checksums);
 }
 
 void FilePropertiesPanel::maybeStartChecksumCalculation()
 {
     if (!m_panelFullyOpened)
         return;
-    if (m_checksumSectionCollapsed)
+    if (isSectionCollapsed(SectionId::Checksums))
         return;
-    if (m_checksumStarted)
+    if (m_checksumState.started)
         return;
-    if (m_checksumRescanRequired) {
+    if (m_checksumState.rescanRequired) {
         if (m_checksumOperation)
-            m_checksumOperation->showRescan(m_checksumRescanMessage.isEmpty()
+            m_checksumOperation->showRescan(m_checksumState.rescanMessage.isEmpty()
                                             ? tr("File contents changed")
-                                            : m_checksumRescanMessage);
+                                            : m_checksumState.rescanMessage);
+        requestSectionLayoutRefresh(SectionId::Checksums);
         return;
     }
-    if (m_checksumAutoStartConsumed)
+    if (m_checksumState.autoStartConsumed)
         return;
     if (!shouldAutoStartOperations()) {
         if (m_checksumOperation && !m_checksumOperation->hasOperation())
             m_checksumOperation->showStart(tr("Begin scan"));
         return;
     }
-    m_checksumStarted = true;
+    m_checksumState.started = true;
     startChecksumCalculation();
 }
 
@@ -295,28 +297,29 @@ void FilePropertiesPanel::setChecksumRowsPending()
     setChecksumProgressTitle(0);
     if (m_checksumOperation)
         m_checksumOperation->showProgress();
+    requestSectionLayoutRefresh(SectionId::Checksums);
 }
 
 void FilePropertiesPanel::startChecksumCalculation()
 {
     if (!m_hexView) {
-        m_checksumStarted = false;
+        m_checksumState.started = false;
         return;
     }
 
-    m_checksumAutoStartConsumed = true;
-    m_checksumRescanRequired = false;
-    m_checksumRescanMessage.clear();
-    const int generation = ++m_checksumGeneration;
-    if (m_checksumCancel)
-        m_checksumCancel->store(true);
-    if (m_checksumPause)
-        m_checksumPause->wake();
+    m_checksumState.autoStartConsumed = true;
+    m_checksumState.rescanRequired = false;
+    m_checksumState.rescanMessage.clear();
+    const int generation = ++m_checksumState.generation;
+    if (m_checksumState.cancel)
+        m_checksumState.cancel->store(true);
+    if (m_checksumState.pause)
+        m_checksumState.pause->wake();
     auto cancelFlag = std::make_shared<std::atomic_bool>(false);
-    m_checksumCancel = cancelFlag;
+    m_checksumState.cancel = cancelFlag;
     auto pause = std::make_shared<filestats::OperationPause>();
-    pause->setPaused(m_checksumSectionCollapsed);
-    m_checksumPause = pause;
+    pause->setPaused(isSectionCollapsed(SectionId::Checksums));
+    m_checksumState.pause = pause;
     setChecksumRowsPending();
 
     const QString path = m_hexView->filePath();
@@ -342,7 +345,7 @@ void FilePropertiesPanel::startChecksumCalculation()
 
 void FilePropertiesPanel::updateChecksumProgress(int generation, int value)
 {
-    if (generation != m_checksumGeneration || !m_checksumOperation)
+    if (generation != m_checksumState.generation || !m_checksumOperation)
         return;
     const int progress = qBound(0, value, 1000);
     m_checksumOperation->progressBar()->setValue(progress);
@@ -351,10 +354,10 @@ void FilePropertiesPanel::updateChecksumProgress(int generation, int value)
 
 void FilePropertiesPanel::applyChecksumResults(int generation, const QHash<QString, QString> &results)
 {
-    if (generation != m_checksumGeneration)
+    if (generation != m_checksumState.generation)
         return;
 
-    m_checksumStarted = false;
+    m_checksumState.started = false;
     const QStringList algorithms = selectedChecksumAlgorithms();
     const QSet<QString> selected(algorithms.cbegin(), algorithms.cend());
     for (auto it = m_checksumValues.begin(); it != m_checksumValues.end(); ++it) {
@@ -368,20 +371,22 @@ void FilePropertiesPanel::applyChecksumResults(int generation, const QHash<QStri
     if (m_checksumOperation)
         m_checksumOperation->clear();
     resetChecksumTitle();
-    QTimer::singleShot(0, this, [this]() { repairExpandedSectionGeometry(Section::Checksums); });
+    requestSectionLayoutRefresh(SectionId::Checksums);
+    QTimer::singleShot(0, this, [this]() { repairExpandedSectionGeometry(SectionId::Checksums); });
 }
 
 void FilePropertiesPanel::cancelChecksumCalculation()
 {
-    ++m_checksumGeneration;
-    m_checksumStarted = false;
-    if (m_checksumCancel)
-        m_checksumCancel->store(true);
-    if (m_checksumPause)
-        m_checksumPause->wake();
+    ++m_checksumState.generation;
+    m_checksumState.started = false;
+    if (m_checksumState.cancel)
+        m_checksumState.cancel->store(true);
+    if (m_checksumState.pause)
+        m_checksumState.pause->wake();
     for (QLabel *label : std::as_const(m_checksumValues))
         label->setText(tr("Cancelled"));
     if (m_checksumOperation)
         m_checksumOperation->showRetry(tr("Operation cancelled"));
     resetChecksumTitle();
+    requestSectionLayoutRefresh(SectionId::Checksums);
 }

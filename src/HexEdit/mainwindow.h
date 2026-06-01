@@ -54,9 +54,10 @@ private:
     void reloadWatchedPalettes();
     void runFind(bool forward);
     void execFind(const QByteArray &pattern, uint flags);
-    void toggleFileInfoPanel();
-    void openFileInfoPanel(FilePropertiesPanel::Section section);
-    void refreshFileInfoPanel();
+    void toggleSidePanel();
+    void openSidePanelSection(FilePropertiesPanel::SectionId section);
+    void refreshSidePanel();
+    void resetSidePanel();
     void applyMenuMode(bool useCustomTitleBar);
 #ifdef Q_OS_WIN
     void updateWinChromeColors();
@@ -75,7 +76,7 @@ private:
     BookmarkDialog    *m_bookmarkDialog = nullptr;
     FindPanel         *m_findDialog     = nullptr;
     GotoPanel         *m_gotoDialog     = nullptr;
-    FilePropertiesPanelHost *m_fileInfoHost = nullptr;
+    SidePanelHost *m_sidePanelHost = nullptr;
     PreferencesDialog *m_prefsDialog    = nullptr;
     bool            m_useCustomTitleBar = true;
     bool            m_inResizeZone      = false;

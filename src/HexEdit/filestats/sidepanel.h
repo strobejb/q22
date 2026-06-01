@@ -9,9 +9,9 @@
 #include <QStringList>
 #include <QVariantMap>
 #include <QVector>
-#include <array>
 #include <atomic>
 #include <condition_variable>
+#include <functional>
 #include <mutex>
 #include <memory>
 
@@ -71,21 +71,22 @@ class FilePropertiesPanel : public QDialog
 {
     Q_OBJECT
 public:
-    enum class Section { Properties, Checksums, Strings };
-    Q_ENUM(Section)
+    enum class SectionId { Properties, Checksums, Strings };
+    Q_ENUM(SectionId)
 
     explicit FilePropertiesPanel(HexView *hexView, QWidget *parent = nullptr);
     ~FilePropertiesPanel() override;
-    void showSection(Section section);
+    void showSection(SectionId section);
     void setPanelFullyOpened(bool opened);
 
 signals:
     void closeRequested();
-    void sectionExpanded(Section section);
-    void sectionReady(Section section);
+    void sectionExpanded(SectionId section);
+    void sectionReady(SectionId section);
 
 public slots:
     void refresh();
+    void resetForCurrentDocument();
     void maybeStartChecksumCalculation();
 
 protected:
@@ -94,6 +95,11 @@ protected:
 
 private:
     static QString formatSize(qulonglong bytes);
+    void refreshDocumentState(bool contentsChanged);
+    void markChecksumContentsChanged();
+    void resetChecksumForCurrentDocument();
+    void markStringsContentsChanged();
+    void resetStringsForCurrentDocument();
     void startChecksumCalculation();
     void maybeStartStringScan();
     void startStringScan(qulonglong startOffset = 0, bool append = false, bool scanAll = false);
@@ -121,30 +127,67 @@ private:
     void resetChecksumTitle();
     void resetStringsTitle();
     void animateSectionBody(QWidget *body, bool collapse, bool animate = true);
-    void setFileSectionCollapsed(bool collapsed, bool animate = true);
-    void setChecksumSectionCollapsed(bool collapsed, bool animate = true);
-    void setStringsSectionCollapsed(bool collapsed, bool animate = true);
-    void emitSectionReadyIfPossible(Section section);
+    void setSectionCollapsed(SectionId section, bool collapsed, bool animate = true);
+    void emitSectionReadyIfPossible(SectionId section);
     void updateStickyHeader();
     void syncStickyHeader();
     bool shouldAutoStartOperations() const;
-    filestats::SectionHeader *headerFor(Section s) const;
-    QWidget *bodyFor(Section s) const;
-    QSpacerItem *headerGapFor(Section s) const;
-    filestats::SectionOperationStrip *operationFor(Section s) const;
-    bool isCollapsed(Section s) const;
+    bool isSectionCollapsed(SectionId section) const;
     void updateInterSectionGaps();
     void rebuildSectionLayout();
-    void repairExpandedSectionGeometry(Section section);
-    void registerResizableSection(Section section, QWidget *target, int minHeight);
-    void resizeSection(Section section, int dy);
-    bool applyResizableSectionHeight(Section section);
-    void onDragStarted(Section s, QPoint globalPos);
+    void repairExpandedSectionGeometry(SectionId section);
+    void registerResizableSection(SectionId section, QWidget *target, int minHeight);
+    void resizeSection(SectionId section, int dy);
+    bool applyResizableSectionHeight(SectionId section);
+    void scheduleResizableSectionRepair(SectionId section);
+    void onDragStarted(SectionId s, QPoint globalPos);
     void onDragMoved(QPoint globalPos);
-    void onDragEnded(Section s, QPoint globalPos);
+    void onDragEnded(SectionId s, QPoint globalPos);
     void collapseSectionsForDrag();
     void updateDropIndicator(QPoint globalPos);
     void syncSectionHeaderHover();
+    void scheduleSectionHeaderHoverSync();
+    void requestSectionLayoutRefresh(SectionId section);
+    void performSectionLayoutRefresh();
+    void settleContentLayout();
+    void registerPanelSection(SectionId id, const QString &title,
+                              filestats::SectionHeader *header, QWidget *body,
+                              QSpacerItem *headerGap,
+                              filestats::SectionOperationStrip *operation = nullptr);
+
+    struct SectionResizeState {
+        QWidget *target = nullptr;
+        int minHeight = 0;
+        int currentHeight = 0;
+    };
+    struct PanelSection {
+        SectionId id = SectionId::Properties;
+        QString title;
+        filestats::SectionHeader *header = nullptr;
+        QWidget *body = nullptr;
+        QSpacerItem *headerGap = nullptr;
+        filestats::SectionOperationStrip *operation = nullptr;
+        bool collapsed = false;
+        bool preDragCollapsed = false;
+        SectionResizeState resize;
+        std::function<void()> onExpanded;
+        std::function<void(bool)> onCollapsedChanged;
+        std::function<void(bool)> onRefreshDocumentState;
+        std::function<void()> onResetForCurrentDocument;
+    };
+    PanelSection *sectionFor(SectionId section);
+    const PanelSection *sectionFor(SectionId section) const;
+
+    struct ScanSectionState {
+        std::shared_ptr<std::atomic_bool> cancel;
+        std::shared_ptr<filestats::OperationPause> pause;
+        int generation = 0;
+        int progress = 0;
+        bool started = false;
+        bool autoStartConsumed = false;
+        bool rescanRequired = false;
+        QString rescanMessage;
+    };
 
     HexView *m_hexView = nullptr;
     QScrollArea *m_scrollArea = nullptr;
@@ -155,7 +198,7 @@ private:
     QSpacerItem *m_fileHeaderGap = nullptr;
     QSpacerItem *m_checksumHeaderGap = nullptr;
     QSpacerItem *m_stringsHeaderGap = nullptr;
-    std::array<QSpacerItem *, 2> m_interSectionGaps {};
+    QVector<QSpacerItem *> m_interSectionGaps;
     filestats::SectionHeader *m_fileHeader = nullptr;
     filestats::SectionHeader *m_checksumHeader = nullptr;
     filestats::SectionHeader *m_stringsHeader = nullptr;
@@ -180,60 +223,37 @@ private:
     QPushButton *m_stringsAllButton = nullptr;
     QPushButton *m_stringsExportButton = nullptr;
     QWidget *m_stringsResizeHandle = nullptr;
-    std::shared_ptr<std::atomic_bool> m_checksumCancel;
-    std::shared_ptr<std::atomic_bool> m_stringCancel;
-    std::shared_ptr<filestats::OperationPause> m_checksumPause;
-    std::shared_ptr<filestats::OperationPause> m_stringPause;
-    int m_checksumGeneration = 0;
-    int m_stringGeneration = 0;
-    int m_checksumProgress = 0;
-    int m_stringProgress = 0;
-    bool m_checksumStarted = false;
-    bool m_stringsStarted = false;
-    bool m_checksumAutoStartConsumed = false;
-    bool m_stringsAutoStartConsumed = false;
+    ScanSectionState m_checksumState;
+    ScanSectionState m_stringsState;
     bool m_panelFullyOpened = false;
     bool m_stringMoreAvailable = false;
     bool m_hasRefreshed = false;
-    bool m_checksumRescanRequired = false;
-    bool m_stringsRescanRequired = false;
-    QString m_checksumRescanMessage;
-    QString m_stringsRescanMessage;
+    bool m_sectionLayoutRefreshPending = false;
     QString m_stringsExportTempPath;
-    bool m_fileSectionCollapsed = false;
-    bool m_checksumSectionCollapsed = false;
-    bool m_stringsSectionCollapsed = false;
-    QVector<Section> m_sectionOrder;
-    Section m_draggedSection = Section::Properties;
+    QVector<PanelSection> m_sections;
+    QVector<SectionId> m_sectionOrder;
+    SectionId m_draggedSection = SectionId::Properties;
     QWidget *m_dropIndicator = nullptr;
-    bool m_preDragFileCollapsed = false;
-    bool m_preDragChecksumCollapsed = false;
-    bool m_preDragStringsCollapsed = false;
     bool m_draggingSection = false;
     bool m_dragSectionsCollapsed = false;
-    struct SectionResizeState {
-        QWidget *target = nullptr;
-        int minHeight = 0;
-        int currentHeight = 0;
-    };
-    std::array<SectionResizeState, 3> m_resizeStates {};
     qulonglong m_stringNextOffset = 0;
     qulonglong m_stringResultCount = 0;
     bool m_stringsExportTempComplete = false;
     QPoint m_stringOptionsMenuClosePos { -1, -1 };
 };
 
-class FilePropertiesPanelHost : public QWidget
+class SidePanelHost : public QWidget
 {
     Q_OBJECT
 public:
-    explicit FilePropertiesPanelHost(HexView *hexView, QWidget *parent = nullptr);
+    explicit SidePanelHost(HexView *hexView, QWidget *parent = nullptr);
 
     bool isOpen() const;
     void toggle();
-    void openSection(FilePropertiesPanel::Section section);
+    void openSection(FilePropertiesPanel::SectionId section);
     void closePanel();
     void refreshPanel();
+    void resetPanelForCurrentDocument();
 
 signals:
     void openChanged(bool open);

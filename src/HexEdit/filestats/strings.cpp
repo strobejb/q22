@@ -217,25 +217,26 @@ void FilePropertiesPanel::maybeStartStringScan()
 {
     if (!m_panelFullyOpened)
         return;
-    if (m_stringsSectionCollapsed)
+    if (isSectionCollapsed(SectionId::Strings))
         return;
-    if (m_stringsStarted)
+    if (m_stringsState.started)
         return;
-    if (m_stringsRescanRequired) {
+    if (m_stringsState.rescanRequired) {
         if (m_stringsOperation)
-            m_stringsOperation->showRescan(m_stringsRescanMessage.isEmpty()
+            m_stringsOperation->showRescan(m_stringsState.rescanMessage.isEmpty()
                                            ? tr("File contents changed")
-                                           : m_stringsRescanMessage);
+                                           : m_stringsState.rescanMessage);
+        requestSectionLayoutRefresh(SectionId::Strings);
         return;
     }
-    if (m_stringsAutoStartConsumed)
+    if (m_stringsState.autoStartConsumed)
         return;
     if (!shouldAutoStartOperations()) {
         if (m_stringsOperation && !m_stringsOperation->hasOperation())
             m_stringsOperation->showStart(tr("Begin scan"));
         return;
     }
-    m_stringsStarted = true;
+    m_stringsState.started = true;
     startStringScan();
 }
 
@@ -275,12 +276,12 @@ QString FilePropertiesPanel::createStringExportTemp()
 void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, bool scanAll)
 {
     if (!m_hexView || !m_minStringLength) {
-        m_stringsStarted = false;
+        m_stringsState.started = false;
         return;
     }
 
-    m_stringsAutoStartConsumed = true;
-    const int generation = ++m_stringGeneration;
+    m_stringsState.autoStartConsumed = true;
+    const int generation = ++m_stringsState.generation;
     const int minLength = m_minStringLength->value();
     const StringScanMode mode = stringScanModeFromIndex(m_stringEncoding ? m_stringEncoding->currentIndex() : 0);
     const bool includeWhitespace = !m_includeWhitespaceAction || m_includeWhitespaceAction->isChecked();
@@ -299,33 +300,35 @@ void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, b
         if (initialResultCount == 0)
             initialResultCount = static_cast<qulonglong>(visibleBaseCount);
     }
-    m_stringsRescanRequired = false;
-    m_stringsRescanMessage.clear();
+    m_stringsState.rescanRequired = false;
+    m_stringsState.rescanMessage.clear();
     m_stringMoreAvailable = false;
-    m_stringProgress = 0;
+    m_stringsState.progress = 0;
     if (!append)
         m_stringNextOffset = 0;
-    if (m_stringCancel)
-        m_stringCancel->store(true);
-    if (m_stringPause)
-        m_stringPause->wake();
+    if (m_stringsState.cancel)
+        m_stringsState.cancel->store(true);
+    if (m_stringsState.pause)
+        m_stringsState.pause->wake();
     auto cancelFlag = std::make_shared<std::atomic_bool>(false);
-    m_stringCancel = cancelFlag;
+    m_stringsState.cancel = cancelFlag;
     auto pause = std::make_shared<filestats::OperationPause>();
-    pause->setPaused(m_stringsSectionCollapsed);
-    m_stringPause = pause;
+    pause->setPaused(isSectionCollapsed(SectionId::Strings));
+    m_stringsState.pause = pause;
     if (m_stringsOperation)
         m_stringsOperation->showProgress();
+    requestSectionLayoutRefresh(SectionId::Strings);
     const qint64 fileSize = QFileInfo(path).size();
     const int initialProgress = fileSize > 0
                                     ? static_cast<int>((qMin<qint64>(static_cast<qint64>(startOffset), fileSize) * 1000) / fileSize)
                                     : 0;
-    m_stringProgress = qBound(0, initialProgress, 1000);
-    setStringsProgressTitle(m_stringProgress);
+    m_stringsState.progress = qBound(0, initialProgress, 1000);
+    setStringsProgressTitle(m_stringsState.progress);
     if (m_stringsStatusRow)
         m_stringsStatusRow->hide();
     if (m_stringsList && !append)
         m_stringsList->clear();
+    requestSectionLayoutRefresh(SectionId::Strings);
 
     QPointer<FilePropertiesPanel> guard(this);
     auto *thread = QThread::create([guard, generation, minLength, mode, includeWhitespace,
@@ -434,34 +437,35 @@ void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, b
 
 void FilePropertiesPanel::updateStringProgress(int generation, int value)
 {
-    if (generation != m_stringGeneration || !m_stringsOperation)
+    if (generation != m_stringsState.generation || !m_stringsOperation)
         return;
     const int progress = qBound(0, value, 1000);
-    m_stringProgress = progress;
+    m_stringsState.progress = progress;
     m_stringsOperation->progressBar()->setValue(progress);
     setStringsProgressTitle(progress);
 }
 
 void FilePropertiesPanel::cancelStringScan()
 {
-    ++m_stringGeneration;
-    m_stringsStarted = false;
+    ++m_stringsState.generation;
+    m_stringsState.started = false;
     m_stringMoreAvailable = false;
-    if (m_stringCancel)
-        m_stringCancel->store(true);
-    if (m_stringPause)
-        m_stringPause->wake();
+    if (m_stringsState.cancel)
+        m_stringsState.cancel->store(true);
+    if (m_stringsState.pause)
+        m_stringsState.pause->wake();
     clearStringExportTemp();
     if (m_stringsStatusRow)
         m_stringsStatusRow->hide();
     if (m_stringsOperation)
         m_stringsOperation->showRetry(tr("Operation cancelled"));
     resetStringsTitle();
+    requestSectionLayoutRefresh(SectionId::Strings);
 }
 
 void FilePropertiesPanel::appendStringResults(int generation, const QVector<QVariantMap> &results)
 {
-    if (generation != m_stringGeneration)
+    if (generation != m_stringsState.generation)
         return;
 
     if (m_stringsList && !results.isEmpty()) {
@@ -479,6 +483,7 @@ void FilePropertiesPanel::appendStringResults(int generation, const QVector<QVar
             item->setData(0, Qt::UserRole + 1, length);
         }
         m_stringsList->setUpdatesEnabled(true);
+        requestSectionLayoutRefresh(SectionId::Strings);
     }
 }
 
@@ -529,12 +534,12 @@ void FilePropertiesPanel::finishStringScan(int generation, const QVector<QVarian
                                            const QString &exportTempPath,
                                            bool exportTempComplete)
 {
-    if (generation != m_stringGeneration)
+    if (generation != m_stringsState.generation)
         return;
 
     appendStringResults(generation, results);
-    m_stringsStarted = false;
-    m_stringProgress = qBound(0, progress, 1000);
+    m_stringsState.started = false;
+    m_stringsState.progress = qBound(0, progress, 1000);
     m_stringMoreAvailable = capped;
     m_stringNextOffset = nextOffset;
     m_stringResultCount = totalResults;
@@ -548,7 +553,7 @@ void FilePropertiesPanel::finishStringScan(int generation, const QVector<QVarian
         if (capped) {
             m_stringsStatusLabel->setText(tr("Showing first %1 results")
                                               .arg(QLocale().toString(visibleCount)));
-            m_stringsProgressLabel->setText(tr("(%1% complete)").arg(m_stringProgress / 10));
+            m_stringsProgressLabel->setText(tr("(%1% complete)").arg(m_stringsState.progress / 10));
             m_stringsProgressLabel->show();
             if (m_stringsNextButton)
                 m_stringsNextButton->setVisible(true);
@@ -578,4 +583,5 @@ void FilePropertiesPanel::finishStringScan(int generation, const QVector<QVarian
     if (m_stringsOperation)
         m_stringsOperation->clear();
     resetStringsTitle();
+    requestSectionLayoutRefresh(SectionId::Strings);
 }

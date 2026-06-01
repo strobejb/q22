@@ -71,20 +71,10 @@ static constexpr int kFileInfoPaneMaxWidth = 720;
 static constexpr int kFileInfoPaneAnimMs = 220;
 static constexpr bool kAutoStartPanelOperations = true;
 
-static int sectionIndex(FilePropertiesPanel::Section section)
-{
-    switch (section) {
-    case FilePropertiesPanel::Section::Properties: return 0;
-    case FilePropertiesPanel::Section::Checksums:  return 1;
-    case FilePropertiesPanel::Section::Strings:    return 2;
-    }
-    return 0;
-}
-
 FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     : QDialog(parent), m_hexView(hexView)
 {
-    m_sectionOrder = { Section::Properties, Section::Checksums, Section::Strings };
+    m_sectionOrder = { SectionId::Properties, SectionId::Checksums, SectionId::Strings };
 
     setWindowTitle(tr("File Properties"));
     setSizeGripEnabled(false);
@@ -126,7 +116,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
 
     m_fileHeader = new SectionHeader(tr("File Properties"), m_content);
     m_fileHeader->setClickedCallback([this]() {
-        setFileSectionCollapsed(!m_fileSectionCollapsed);
+        setSectionCollapsed(SectionId::Properties, !isSectionCollapsed(SectionId::Properties));
     });
     contentLayout->addWidget(m_fileHeader);
     m_fileHeader->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
@@ -157,11 +147,11 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     fileBodyLayout->addWidget(card);
     contentLayout->addWidget(m_fileSectionBody);
 
-    m_interSectionGaps[0] = new QSpacerItem(0, kGroupTopGap, QSizePolicy::Minimum, QSizePolicy::Fixed);
+    m_interSectionGaps.append(new QSpacerItem(0, kGroupTopGap, QSizePolicy::Minimum, QSizePolicy::Fixed));
     contentLayout->addSpacerItem(m_interSectionGaps[0]);
     m_checksumHeader = new SectionHeader(tr("Checksums"), m_content);
     m_checksumHeader->setClickedCallback([this]() {
-        setChecksumSectionCollapsed(!m_checksumSectionCollapsed);
+        setSectionCollapsed(SectionId::Checksums, !isSectionCollapsed(SectionId::Checksums));
     });
     contentLayout->addWidget(m_checksumHeader);
     m_checksumHeader->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
@@ -176,9 +166,9 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     checksumBodyLayout->setSpacing(0);
 
     auto startChecksums = [this]() {
-        if (m_checksumStarted)
+        if (m_checksumState.started)
             return;
-        m_checksumStarted = true;
+        m_checksumState.started = true;
         startChecksumCalculation();
     };
     m_checksumOperation = new SectionOperationStrip(m_content,
@@ -215,11 +205,11 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     checksumBodyLayout->addWidget(checksumCard);
     contentLayout->addWidget(m_checksumSectionBody);
 
-    m_interSectionGaps[1] = new QSpacerItem(0, kGroupTopGap, QSizePolicy::Minimum, QSizePolicy::Fixed);
+    m_interSectionGaps.append(new QSpacerItem(0, kGroupTopGap, QSizePolicy::Minimum, QSizePolicy::Fixed));
     contentLayout->addSpacerItem(m_interSectionGaps[1]);
     m_stringsHeader = new SectionHeader(tr("Strings"), m_content);
     m_stringsHeader->setClickedCallback([this]() {
-        setStringsSectionCollapsed(!m_stringsSectionCollapsed);
+        setSectionCollapsed(SectionId::Strings, !isSectionCollapsed(SectionId::Strings));
     });
     contentLayout->addWidget(m_stringsHeader);
     m_stringsHeader->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
@@ -234,9 +224,9 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     stringsBodyLayout->setSpacing(0);
 
     auto startStrings = [this]() {
-        if (m_stringsStarted)
+        if (m_stringsState.started)
             return;
-        m_stringsStarted = true;
+        m_stringsState.started = true;
         startStringScan();
     };
     m_stringsOperation = new SectionOperationStrip(m_content,
@@ -327,7 +317,6 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     stringsListFrame->setObjectName(QStringLiteral("stringsListFrame"));
     stringsListFrame->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     stringsListFrame->setFixedHeight(kStringsListMinHeight);
-    registerResizableSection(Section::Strings, stringsListFrame, kStringsListMinHeight);
     stringsListFrame->setStyleSheet(QStringLiteral(R"(
         QFrame#stringsListFrame {
             background: palette(base);
@@ -463,7 +452,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     stringsResizeLayout->setContentsMargins(0, 0, 0, 0);
     stringsResizeLayout->setSpacing(0);
     m_stringsResizeHandle = new VerticalResizeHandle([this](int dy) {
-        resizeSection(Section::Strings, dy);
+        resizeSection(SectionId::Strings, dy);
     }, stringsResizeWrap);
     stringsResizeLayout->addWidget(m_stringsResizeHandle);
     stringsResizeLayout->setAlignment(m_stringsResizeHandle, Qt::AlignTop);
@@ -490,29 +479,61 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     }
     m_dropIndicator->hide();
 
-    for (Section s : { Section::Properties, Section::Checksums, Section::Strings }) {
-        headerFor(s)->setDragCallbacks(
+    registerPanelSection(SectionId::Properties, tr("File Properties"),
+                         m_fileHeader, m_fileSectionBody, m_fileHeaderGap);
+    registerPanelSection(SectionId::Checksums, tr("Checksums"),
+                         m_checksumHeader, m_checksumSectionBody, m_checksumHeaderGap,
+                         m_checksumOperation);
+    registerPanelSection(SectionId::Strings, tr("Strings"),
+                         m_stringsHeader, m_stringsSectionBody, m_stringsHeaderGap,
+                         m_stringsOperation);
+    registerResizableSection(SectionId::Strings, stringsListFrame, kStringsListMinHeight);
+
+    if (PanelSection *checksums = sectionFor(SectionId::Checksums)) {
+        checksums->onExpanded = [this]() { maybeStartChecksumCalculation(); };
+        checksums->onCollapsedChanged = [this](bool collapsed) {
+            if (m_checksumState.pause && m_checksumState.started)
+                m_checksumState.pause->setPaused(collapsed);
+            if (m_checksumState.started)
+                setChecksumProgressTitle(m_checksumState.progress);
+        };
+        checksums->onRefreshDocumentState = [this](bool contentsChanged) {
+            if (contentsChanged)
+                markChecksumContentsChanged();
+        };
+        checksums->onResetForCurrentDocument = [this]() { resetChecksumForCurrentDocument(); };
+    }
+    if (PanelSection *strings = sectionFor(SectionId::Strings)) {
+        strings->onExpanded = [this]() { maybeStartStringScan(); };
+        strings->onCollapsedChanged = [this](bool collapsed) {
+            if (m_stringsState.pause && m_stringsState.started)
+                m_stringsState.pause->setPaused(collapsed);
+            if (m_stringsState.started)
+                setStringsProgressTitle(m_stringsState.progress);
+        };
+        strings->onRefreshDocumentState = [this](bool contentsChanged) {
+            if (contentsChanged)
+                markStringsContentsChanged();
+        };
+        strings->onResetForCurrentDocument = [this]() { resetStringsForCurrentDocument(); };
+    }
+
+    for (SectionId s : m_sectionOrder) {
+        sectionFor(s)->header->setDragCallbacks(
             [this, s](QPoint p) { onDragStarted(s, p); },
             [this]   (QPoint p) { onDragMoved(p); },
             [this, s](QPoint p) { onDragEnded(s, p); });
     }
-    connect(this, &FilePropertiesPanel::sectionReady,
-            this, [this](Section section) {
-                if (section == Section::Checksums)
-                    maybeStartChecksumCalculation();
-                else if (section == Section::Strings)
-                    maybeStartStringScan();
-            });
     connect(m_minStringLength, &StepSpinBox::valueChanged, this, [this](int) {
-        m_stringsStarted = false;
-        ++m_stringGeneration;
-        if (m_stringCancel)
-            m_stringCancel->store(true);
-        if (m_stringPause)
-            m_stringPause->wake();
+        m_stringsState.started = false;
+        ++m_stringsState.generation;
+        if (m_stringsState.cancel)
+            m_stringsState.cancel->store(true);
+        if (m_stringsState.pause)
+            m_stringsState.pause->wake();
         m_stringMoreAvailable = false;
-        m_stringsRescanRequired = true;
-        m_stringsRescanMessage = tr("Options changed");
+        m_stringsState.rescanRequired = true;
+        m_stringsState.rescanMessage = tr("Options changed");
         m_stringNextOffset = 0;
         clearStringExportTemp();
         if (m_stringsList)
@@ -520,18 +541,19 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
         if (m_stringsStatusRow)
             m_stringsStatusRow->hide();
         if (m_stringsOperation)
-            m_stringsOperation->showRescan(m_stringsRescanMessage);
+            m_stringsOperation->showRescan(m_stringsState.rescanMessage);
+        requestSectionLayoutRefresh(SectionId::Strings);
     });
     connect(m_stringEncoding, &QComboBox::currentIndexChanged, this, [this](int) {
-        m_stringsStarted = false;
-        ++m_stringGeneration;
-        if (m_stringCancel)
-            m_stringCancel->store(true);
-        if (m_stringPause)
-            m_stringPause->wake();
+        m_stringsState.started = false;
+        ++m_stringsState.generation;
+        if (m_stringsState.cancel)
+            m_stringsState.cancel->store(true);
+        if (m_stringsState.pause)
+            m_stringsState.pause->wake();
         m_stringMoreAvailable = false;
-        m_stringsRescanRequired = true;
-        m_stringsRescanMessage = tr("Options changed");
+        m_stringsState.rescanRequired = true;
+        m_stringsState.rescanMessage = tr("Options changed");
         m_stringNextOffset = 0;
         clearStringExportTemp();
         if (m_stringsList)
@@ -539,18 +561,19 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
         if (m_stringsStatusRow)
             m_stringsStatusRow->hide();
         if (m_stringsOperation)
-            m_stringsOperation->showRescan(m_stringsRescanMessage);
+            m_stringsOperation->showRescan(m_stringsState.rescanMessage);
+        requestSectionLayoutRefresh(SectionId::Strings);
     });
     connect(m_includeWhitespaceAction, &QAction::toggled, this, [this](bool) {
-        m_stringsStarted = false;
-        ++m_stringGeneration;
-        if (m_stringCancel)
-            m_stringCancel->store(true);
-        if (m_stringPause)
-            m_stringPause->wake();
+        m_stringsState.started = false;
+        ++m_stringsState.generation;
+        if (m_stringsState.cancel)
+            m_stringsState.cancel->store(true);
+        if (m_stringsState.pause)
+            m_stringsState.pause->wake();
         m_stringMoreAvailable = false;
-        m_stringsRescanRequired = true;
-        m_stringsRescanMessage = tr("Options changed");
+        m_stringsState.rescanRequired = true;
+        m_stringsState.rescanMessage = tr("Options changed");
         m_stringNextOffset = 0;
         clearStringExportTemp();
         if (m_stringsList)
@@ -558,18 +581,19 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
         if (m_stringsStatusRow)
             m_stringsStatusRow->hide();
         if (m_stringsOperation)
-            m_stringsOperation->showRescan(m_stringsRescanMessage);
+            m_stringsOperation->showRescan(m_stringsState.rescanMessage);
+        requestSectionLayoutRefresh(SectionId::Strings);
     });
     connect(m_prefixHexOffsetAction, &QAction::toggled, this, [this](bool) {
-        m_stringsStarted = false;
-        ++m_stringGeneration;
-        if (m_stringCancel)
-            m_stringCancel->store(true);
-        if (m_stringPause)
-            m_stringPause->wake();
+        m_stringsState.started = false;
+        ++m_stringsState.generation;
+        if (m_stringsState.cancel)
+            m_stringsState.cancel->store(true);
+        if (m_stringsState.pause)
+            m_stringsState.pause->wake();
         m_stringMoreAvailable = false;
-        m_stringsRescanRequired = true;
-        m_stringsRescanMessage = tr("Options changed");
+        m_stringsState.rescanRequired = true;
+        m_stringsState.rescanMessage = tr("Options changed");
         m_stringNextOffset = 0;
         clearStringExportTemp();
         if (m_stringsList)
@@ -577,7 +601,8 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
         if (m_stringsStatusRow)
             m_stringsStatusRow->hide();
         if (m_stringsOperation)
-            m_stringsOperation->showRescan(m_stringsRescanMessage);
+            m_stringsOperation->showRescan(m_stringsState.rescanMessage);
+        requestSectionLayoutRefresh(SectionId::Strings);
     });
     connect(m_stringOptionsButton, &QToolButton::clicked, this, [this, stringsOptionsMenu]() {
         if (stringsOptionsMenu->isVisible()) {
@@ -595,15 +620,15 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
         stringsOptionsMenu->popup(smartMenuPos(m_stringOptionsButton, stringsOptionsMenu));
     });
     connect(m_stringsNextButton, &QPushButton::clicked, this, [this]() {
-        if (m_stringsStarted || !m_stringMoreAvailable)
+        if (m_stringsState.started || !m_stringMoreAvailable)
             return;
-        m_stringsStarted = true;
+        m_stringsState.started = true;
         startStringScan(m_stringNextOffset, true);
     });
     connect(m_stringsAllButton, &QPushButton::clicked, this, [this]() {
-        if (m_stringsStarted || !m_stringMoreAvailable)
+        if (m_stringsState.started || !m_stringMoreAvailable)
             return;
-        m_stringsStarted = true;
+        m_stringsState.started = true;
         startStringScan(m_stringNextOffset, true, true);
     });
     connect(m_stringsExportButton, &QPushButton::clicked,
@@ -628,27 +653,27 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     QTimer::singleShot(0, this, &FilePropertiesPanel::updateStickyHeader);
 
     setMinimumWidth(260);
-    refresh();
+    resetForCurrentDocument();
     // Collapse without animation: the panel hasn't been shown yet, so
     // animateSectionBody's isVisible() guard would bail out early and leave all
     // bodies visible when the panel first appears.
-    setFileSectionCollapsed(true, false);
-    setChecksumSectionCollapsed(true, false);
-    setStringsSectionCollapsed(true, false);
+    setSectionCollapsed(SectionId::Properties, true, false);
+    setSectionCollapsed(SectionId::Checksums, true, false);
+    setSectionCollapsed(SectionId::Strings, true, false);
 }
 
 FilePropertiesPanel::~FilePropertiesPanel()
 {
-    ++m_checksumGeneration;
-    ++m_stringGeneration;
-    if (m_checksumCancel)
-        m_checksumCancel->store(true);
-    if (m_checksumPause)
-        m_checksumPause->wake();
-    if (m_stringCancel)
-        m_stringCancel->store(true);
-    if (m_stringPause)
-        m_stringPause->wake();
+    ++m_checksumState.generation;
+    ++m_stringsState.generation;
+    if (m_checksumState.cancel)
+        m_checksumState.cancel->store(true);
+    if (m_checksumState.pause)
+        m_checksumState.pause->wake();
+    if (m_stringsState.cancel)
+        m_stringsState.cancel->store(true);
+    if (m_stringsState.pause)
+        m_stringsState.pause->wake();
     clearStringExportTemp();
 }
 
@@ -719,11 +744,11 @@ void FilePropertiesPanel::exportStringResults()
 
 void FilePropertiesPanel::setChecksumProgressTitle(int value)
 {
-    m_checksumProgress = value;
+    m_checksumState.progress = value;
     if (!m_checksumHeader)
         return;
     const int pct = qBound(0, value, 1000) / 10;
-    m_checksumHeader->setTitle(m_checksumSectionCollapsed
+    m_checksumHeader->setTitle(isSectionCollapsed(SectionId::Checksums)
         ? tr("Checksums (%1% - paused)").arg(pct)
         : tr("Checksums (%1%)").arg(pct));
     syncStickyHeader();
@@ -734,7 +759,7 @@ void FilePropertiesPanel::setStringsProgressTitle(int value)
     if (!m_stringsHeader)
         return;
     const int pct = qBound(0, value, 1000) / 10;
-    m_stringsHeader->setTitle(m_stringsSectionCollapsed
+    m_stringsHeader->setTitle(isSectionCollapsed(SectionId::Strings)
         ? tr("Strings (%1% - paused)").arg(pct)
         : tr("Strings (%1%)").arg(pct));
     syncStickyHeader();
@@ -754,27 +779,17 @@ void FilePropertiesPanel::resetStringsTitle()
     syncStickyHeader();
 }
 
-void FilePropertiesPanel::showSection(Section section)
+void FilePropertiesPanel::showSection(SectionId section)
 {
-    if (section == Section::Properties)
-        setFileSectionCollapsed(false);
-    else if (section == Section::Checksums)
-        setChecksumSectionCollapsed(false);
-    else
-        setStringsSectionCollapsed(false);
+    setSectionCollapsed(section, false);
 }
 
 void FilePropertiesPanel::setPanelFullyOpened(bool opened)
 {
     m_panelFullyOpened = opened;
-    if (opened) {
-        if (!m_fileSectionCollapsed)
-            emitSectionReadyIfPossible(Section::Properties);
-        if (!m_checksumSectionCollapsed)
-            emitSectionReadyIfPossible(Section::Checksums);
-        if (!m_stringsSectionCollapsed)
-            emitSectionReadyIfPossible(Section::Strings);
-    }
+    if (opened)
+        for (SectionId section : std::as_const(m_sectionOrder))
+            emitSectionReadyIfPossible(section);
 }
 
 void FilePropertiesPanel::changeEvent(QEvent *event)
@@ -836,92 +851,54 @@ void FilePropertiesPanel::animateSectionBody(QWidget *body, bool collapse, bool 
     }
 }
 
-void FilePropertiesPanel::setFileSectionCollapsed(bool collapsed, bool animate)
+void FilePropertiesPanel::setSectionCollapsed(SectionId sectionId, bool collapsed, bool animate)
 {
-    const bool wasCollapsed = m_fileSectionCollapsed;
-    m_fileSectionCollapsed = collapsed;
-    animateSectionBody(m_fileSectionBody, collapsed, animate);
-    if (m_fileHeaderGap)
-        m_fileHeaderGap->changeSize(0, collapsed ? 0 : kHeaderControlGap,
-                                    QSizePolicy::Minimum, QSizePolicy::Fixed);
-    if (m_fileHeader)
-        m_fileHeader->setCollapsed(collapsed);
-    updateInterSectionGaps();
-    if (wasCollapsed && !collapsed) {
-        emit sectionExpanded(Section::Properties);
-        emitSectionReadyIfPossible(Section::Properties);
-        QTimer::singleShot(170, this, [this]() { repairExpandedSectionGeometry(Section::Properties); });
-    }
-    updateStickyHeader();
-    QTimer::singleShot(0, this, &FilePropertiesPanel::updateStickyHeader);
-}
+    PanelSection *section = sectionFor(sectionId);
+    if (!section)
+        return;
 
-void FilePropertiesPanel::setChecksumSectionCollapsed(bool collapsed, bool animate)
-{
-    const bool wasCollapsed = m_checksumSectionCollapsed;
-    m_checksumSectionCollapsed = collapsed;
-    animateSectionBody(m_checksumSectionBody, collapsed, animate);
-    if (m_checksumOperation)
-        m_checksumOperation->setCollapsed(collapsed);
-    if (m_checksumHeaderGap)
-        m_checksumHeaderGap->changeSize(0, collapsed ? 0 : kHeaderControlGap,
-                                        QSizePolicy::Minimum, QSizePolicy::Fixed);
-    if (m_checksumHeader)
-        m_checksumHeader->setCollapsed(collapsed);
-    if (m_checksumPause && m_checksumStarted)
-        m_checksumPause->setPaused(collapsed);
-    if (m_checksumStarted)
-        setChecksumProgressTitle(m_checksumProgress);
-    updateInterSectionGaps();
-    if (wasCollapsed && !collapsed) {
-        emit sectionExpanded(Section::Checksums);
-        emitSectionReadyIfPossible(Section::Checksums);
-        QTimer::singleShot(170, this, [this]() { repairExpandedSectionGeometry(Section::Checksums); });
-    }
-    updateStickyHeader();
-    QTimer::singleShot(0, this, &FilePropertiesPanel::updateStickyHeader);
-}
-
-void FilePropertiesPanel::setStringsSectionCollapsed(bool collapsed, bool animate)
-{
-    const bool wasCollapsed = m_stringsSectionCollapsed;
-    m_stringsSectionCollapsed = collapsed;
-    animateSectionBody(m_stringsSectionBody, collapsed, animate);
-    if (m_stringsOperation)
-        m_stringsOperation->setCollapsed(collapsed);
-    if (m_stringsHeaderGap)
-        m_stringsHeaderGap->changeSize(0, collapsed ? 0 : kHeaderControlGap,
+    const bool wasCollapsed = section->collapsed;
+    section->collapsed = collapsed;
+    animateSectionBody(section->body, collapsed, animate);
+    if (section->operation)
+        section->operation->setCollapsed(collapsed);
+    if (section->headerGap)
+        section->headerGap->changeSize(0, collapsed ? 0 : kHeaderControlGap,
                                        QSizePolicy::Minimum, QSizePolicy::Fixed);
-    if (m_stringsHeader)
-        m_stringsHeader->setCollapsed(collapsed);
-    if (m_stringPause && m_stringsStarted)
-        m_stringPause->setPaused(collapsed);
-    if (m_stringsStarted)
-        setStringsProgressTitle(m_stringProgress);
+    if (section->header)
+        section->header->setCollapsed(collapsed);
+    if (section->onCollapsedChanged)
+        section->onCollapsedChanged(collapsed);
     updateInterSectionGaps();
+    if (!collapsed) {
+        repairExpandedSectionGeometry(sectionId);
+        settleContentLayout();
+        requestSectionLayoutRefresh(sectionId);
+    }
     if (wasCollapsed && !collapsed) {
-        emit sectionExpanded(Section::Strings);
-        emitSectionReadyIfPossible(Section::Strings);
-        QTimer::singleShot(170, this, [this]() { repairExpandedSectionGeometry(Section::Strings); });
+        emit sectionExpanded(sectionId);
+        emitSectionReadyIfPossible(sectionId);
+        scheduleResizableSectionRepair(sectionId);
+        QTimer::singleShot(170, this, [this, sectionId]() {
+            repairExpandedSectionGeometry(sectionId);
+            settleContentLayout();
+        });
     }
     updateStickyHeader();
     QTimer::singleShot(0, this, &FilePropertiesPanel::updateStickyHeader);
 }
 
-void FilePropertiesPanel::emitSectionReadyIfPossible(Section section)
+void FilePropertiesPanel::emitSectionReadyIfPossible(SectionId section)
 {
     if (!m_panelFullyOpened)
         return;
 
-    bool sectionExpanded = false;
-    if (section == Section::Properties)
-        sectionExpanded = !m_fileSectionCollapsed;
-    else if (section == Section::Checksums)
-        sectionExpanded = !m_checksumSectionCollapsed;
-    else
-        sectionExpanded = !m_stringsSectionCollapsed;
-    if (sectionExpanded)
+    if (!isSectionCollapsed(section)) {
         emit sectionReady(section);
+        if (PanelSection *panelSection = sectionFor(section))
+            if (panelSection->onExpanded)
+                panelSection->onExpanded();
+    }
 }
 
 void FilePropertiesPanel::syncStickyHeader()
@@ -933,38 +910,43 @@ void FilePropertiesPanel::syncStickyHeader()
                                        - 2 * kSectionHeaderOuterMargin);
 
     // Hide if the first header is still visible above the fold
-    SectionHeader *firstHeader = headerFor(m_sectionOrder.first());
-    const int firstY = firstHeader->mapTo(m_scrollArea->viewport(), QPoint(0, 0)).y();
+    const PanelSection *first = sectionFor(m_sectionOrder.first());
+    if (!first || !first->header)
+        return;
+    const int firstY = first->header->mapTo(m_scrollArea->viewport(), QPoint(0, 0)).y();
     if (firstY > 0) {
         m_stickyHeader->hide();
         return;
     }
 
     // Find the bottommost section that has scrolled above the viewport
-    Section activeSection = m_sectionOrder.first();
+    SectionId activeSection = m_sectionOrder.first();
     int nextHeaderY = kSectionHeaderHeight;
     for (int i = 0; i < m_sectionOrder.size(); ++i) {
-        SectionHeader *h = headerFor(m_sectionOrder[i]);
+        const PanelSection *section = sectionFor(m_sectionOrder[i]);
+        if (!section || !section->header)
+            continue;
+        SectionHeader *h = section->header;
         const int y = h->mapTo(m_scrollArea->viewport(), QPoint(0, 0)).y();
         if (y <= 0) {
             activeSection = m_sectionOrder[i];
             if (i + 1 < m_sectionOrder.size()) {
-                SectionHeader *next = headerFor(m_sectionOrder[i + 1]);
-                nextHeaderY = next->mapTo(m_scrollArea->viewport(), QPoint(0, 0)).y();
+                if (const PanelSection *next = sectionFor(m_sectionOrder[i + 1]))
+                    if (next->header)
+                        nextHeaderY = next->header->mapTo(m_scrollArea->viewport(), QPoint(0, 0)).y();
             } else {
                 nextHeaderY = kSectionHeaderHeight;
             }
         }
     }
 
-    m_stickyHeader->setTitle(headerFor(activeSection)->title());
-    m_stickyHeader->setCollapsed(isCollapsed(activeSection));
+    const PanelSection *active = sectionFor(activeSection);
+    if (!active || !active->header)
+        return;
+    m_stickyHeader->setTitle(active->header->title());
+    m_stickyHeader->setCollapsed(active->collapsed);
     m_stickyHeader->setClickedCallback([this, activeSection]() {
-        switch (activeSection) {
-        case Section::Properties: setFileSectionCollapsed(!m_fileSectionCollapsed); break;
-        case Section::Checksums:  setChecksumSectionCollapsed(!m_checksumSectionCollapsed); break;
-        case Section::Strings:    setStringsSectionCollapsed(!m_stringsSectionCollapsed); break;
-        }
+        setSectionCollapsed(activeSection, !isSectionCollapsed(activeSection));
     });
 
     const int y = qMin(0, nextHeaderY - kSectionHeaderHeight);
@@ -978,60 +960,48 @@ void FilePropertiesPanel::updateStickyHeader()
     syncStickyHeader();
 }
 
-filestats::SectionHeader *FilePropertiesPanel::headerFor(Section s) const
+void FilePropertiesPanel::registerPanelSection(SectionId id, const QString &title,
+                                               SectionHeader *header, QWidget *body,
+                                               QSpacerItem *headerGap,
+                                               SectionOperationStrip *operation)
 {
-    switch (s) {
-    case Section::Properties: return m_fileHeader;
-    case Section::Checksums:  return m_checksumHeader;
-    case Section::Strings:    return m_stringsHeader;
-    }
+    PanelSection section;
+    section.id = id;
+    section.title = title;
+    section.header = header;
+    section.body = body;
+    section.headerGap = headerGap;
+    section.operation = operation;
+    m_sections.append(section);
+}
+
+FilePropertiesPanel::PanelSection *FilePropertiesPanel::sectionFor(SectionId section)
+{
+    for (PanelSection &candidate : m_sections)
+        if (candidate.id == section)
+            return &candidate;
     return nullptr;
 }
 
-QWidget *FilePropertiesPanel::bodyFor(Section s) const
+const FilePropertiesPanel::PanelSection *FilePropertiesPanel::sectionFor(SectionId section) const
 {
-    switch (s) {
-    case Section::Properties: return m_fileSectionBody;
-    case Section::Checksums:  return m_checksumSectionBody;
-    case Section::Strings:    return m_stringsSectionBody;
-    }
+    for (const PanelSection &candidate : m_sections)
+        if (candidate.id == section)
+            return &candidate;
     return nullptr;
 }
 
-QSpacerItem *FilePropertiesPanel::headerGapFor(Section s) const
+bool FilePropertiesPanel::isSectionCollapsed(SectionId section) const
 {
-    switch (s) {
-    case Section::Properties: return m_fileHeaderGap;
-    case Section::Checksums:  return m_checksumHeaderGap;
-    case Section::Strings:    return m_stringsHeaderGap;
-    }
-    return nullptr;
-}
-
-filestats::SectionOperationStrip *FilePropertiesPanel::operationFor(Section s) const
-{
-    switch (s) {
-    case Section::Properties: return nullptr;
-    case Section::Checksums:  return m_checksumOperation;
-    case Section::Strings:    return m_stringsOperation;
-    }
-    return nullptr;
-}
-
-bool FilePropertiesPanel::isCollapsed(Section s) const
-{
-    switch (s) {
-    case Section::Properties: return m_fileSectionCollapsed;
-    case Section::Checksums:  return m_checksumSectionCollapsed;
-    case Section::Strings:    return m_stringsSectionCollapsed;
-    }
-    return false;
+    if (const PanelSection *panelSection = sectionFor(section))
+        return panelSection->collapsed;
+    return true;
 }
 
 void FilePropertiesPanel::updateInterSectionGaps()
 {
     for (int i = 0; i + 1 < m_sectionOrder.size(); ++i) {
-        const bool prevCollapsed = isCollapsed(m_sectionOrder[i]);
+        const bool prevCollapsed = isSectionCollapsed(m_sectionOrder[i]);
         m_interSectionGaps[i]->changeSize(
             0, prevCollapsed ? kHeaderControlGap : kGroupTopGap,
             QSizePolicy::Minimum, QSizePolicy::Fixed);
@@ -1046,14 +1016,14 @@ void FilePropertiesPanel::rebuildSectionLayout()
     // subsequent re-expand always starts from a known baseline (fixes missing
     // content after reorder and the related narrow-width disappearance bug).
     const QString animName = QStringLiteral("sectionBodyAnim");
-    for (Section s : { Section::Properties, Section::Checksums, Section::Strings }) {
-        if (QWidget *body = bodyFor(s)) {
+    for (PanelSection &section : m_sections) {
+        if (QWidget *body = section.body) {
             if (auto *anim = body->findChild<QPropertyAnimation *>(animName))
                 anim->stop();
             body->setMaximumHeight(QWIDGETSIZE_MAX);
-            body->setVisible(!isCollapsed(s));
-            if (!isCollapsed(s))
-                applyResizableSectionHeight(s);
+            body->setVisible(!section.collapsed);
+            if (!section.collapsed)
+                applyResizableSectionHeight(section.id);
             body->updateGeometry();
         }
     }
@@ -1063,23 +1033,29 @@ void FilePropertiesPanel::rebuildSectionLayout()
         layout->takeAt(0);
 
     for (int i = 0; i < m_sectionOrder.size(); ++i) {
-        const Section s = m_sectionOrder[i];
+        PanelSection *section = sectionFor(m_sectionOrder[i]);
+        if (!section)
+            continue;
         if (i > 0)
             layout->addSpacerItem(m_interSectionGaps[i - 1]);
-        layout->addWidget(headerFor(s));
-        layout->addSpacerItem(headerGapFor(s));
-        if (auto *op = operationFor(s))
+        layout->addWidget(section->header);
+        layout->addSpacerItem(section->headerGap);
+        if (auto *op = section->operation)
             layout->addWidget(op->widget());
-        layout->addWidget(bodyFor(s));
+        layout->addWidget(section->body);
     }
     layout->addStretch();
     updateInterSectionGaps();
     layout->activate(); // headers must be at final positions before releaseMouse() fires hover events
+    settleContentLayout();
 }
 
-void FilePropertiesPanel::registerResizableSection(Section section, QWidget *target, int minHeight)
+void FilePropertiesPanel::registerResizableSection(SectionId sectionId, QWidget *target, int minHeight)
 {
-    SectionResizeState &state = m_resizeStates[sectionIndex(section)];
+    PanelSection *section = sectionFor(sectionId);
+    if (!section)
+        return;
+    SectionResizeState &state = section->resize;
     state.target = target;
     state.minHeight = minHeight;
     state.currentHeight = minHeight;
@@ -1089,9 +1065,12 @@ void FilePropertiesPanel::registerResizableSection(Section section, QWidget *tar
     }
 }
 
-bool FilePropertiesPanel::applyResizableSectionHeight(Section section)
+bool FilePropertiesPanel::applyResizableSectionHeight(SectionId sectionId)
 {
-    SectionResizeState &state = m_resizeStates[sectionIndex(section)];
+    PanelSection *section = sectionFor(sectionId);
+    if (!section)
+        return false;
+    SectionResizeState &state = section->resize;
     if (!state.target)
         return false;
 
@@ -1108,11 +1087,13 @@ bool FilePropertiesPanel::applyResizableSectionHeight(Section section)
         }
     }
 
-    QWidget *body = bodyFor(section);
+    QWidget *body = section->body;
     if (!body)
         return true;
     body->updateGeometry();
     if (QLayout *layout = body->layout()) {
+        body->setMinimumHeight(0);
+        body->setMaximumHeight(QWIDGETSIZE_MAX);
         layout->invalidate();
         layout->activate();
         const int bodyHeight = layout->sizeHint().height();
@@ -1123,9 +1104,29 @@ bool FilePropertiesPanel::applyResizableSectionHeight(Section section)
     return true;
 }
 
-void FilePropertiesPanel::resizeSection(Section section, int dy)
+void FilePropertiesPanel::scheduleResizableSectionRepair(SectionId sectionId)
 {
-    SectionResizeState &state = m_resizeStates[sectionIndex(section)];
+    PanelSection *section = sectionFor(sectionId);
+    if (!section || !section->resize.target)
+        return;
+
+    auto repair = [this, sectionId]() {
+        if (isSectionCollapsed(sectionId))
+            return;
+        applyResizableSectionHeight(sectionId);
+        settleContentLayout();
+        updateStickyHeader();
+    };
+    QTimer::singleShot(0, this, repair);
+    QTimer::singleShot(16, this, repair);
+}
+
+void FilePropertiesPanel::resizeSection(SectionId sectionId, int dy)
+{
+    PanelSection *section = sectionFor(sectionId);
+    if (!section)
+        return;
+    SectionResizeState &state = section->resize;
     if (!state.target)
         return;
 
@@ -1136,31 +1137,20 @@ void FilePropertiesPanel::resizeSection(Section section, int dy)
         return;
 
     state.currentHeight = newHeight;
-    applyResizableSectionHeight(section);
+    applyResizableSectionHeight(sectionId);
     rebuildSectionLayout();
 
-    if (m_content && m_content->layout()) {
-        QLayout *contentLayout = m_content->layout();
-        m_content->setUpdatesEnabled(false);
-        contentLayout->invalidate();
-        contentLayout->activate();
-        m_content->resize(m_content->width(), qMax(m_scrollArea ? m_scrollArea->viewport()->height()
-                                                                : 0,
-                                                  contentLayout->sizeHint().height()));
-        contentLayout->setGeometry(m_content->rect());
-        m_content->setUpdatesEnabled(true);
-        m_content->updateGeometry();
-        m_content->update();
-    }
+    settleContentLayout();
     updateStickyHeader();
 }
 
-void FilePropertiesPanel::repairExpandedSectionGeometry(Section section)
+void FilePropertiesPanel::repairExpandedSectionGeometry(SectionId sectionId)
 {
-    if (isCollapsed(section))
+    if (isSectionCollapsed(sectionId))
         return;
 
-    QWidget *body = bodyFor(section);
+    PanelSection *section = sectionFor(sectionId);
+    QWidget *body = section ? section->body : nullptr;
     if (!body)
         return;
 
@@ -1170,7 +1160,7 @@ void FilePropertiesPanel::repairExpandedSectionGeometry(Section section)
             return;
 
     body->show();
-    if (!applyResizableSectionHeight(section)) {
+    if (!applyResizableSectionHeight(sectionId)) {
         body->setMaximumHeight(QWIDGETSIZE_MAX);
         body->updateGeometry();
     }
@@ -1182,13 +1172,18 @@ void FilePropertiesPanel::repairExpandedSectionGeometry(Section section)
         }
     }
 
+    settleContentLayout();
+
     if (body->height() == 0)
-        QTimer::singleShot(0, this, [this, section]() {
-            if (isCollapsed(section))
+        QTimer::singleShot(0, this, [this, sectionId]() {
+            if (isSectionCollapsed(sectionId))
                 return;
-            if (QWidget *body = bodyFor(section)) {
+            if (PanelSection *section = sectionFor(sectionId)) {
+                QWidget *body = section->body;
+                if (!body)
+                    return;
                 body->show();
-                if (!applyResizableSectionHeight(section)) {
+                if (!applyResizableSectionHeight(sectionId)) {
                     body->setMaximumHeight(QWIDGETSIZE_MAX);
                     body->updateGeometry();
                 }
@@ -1197,18 +1192,18 @@ void FilePropertiesPanel::repairExpandedSectionGeometry(Section section)
                         layout->invalidate();
                         layout->activate();
                     }
+                settleContentLayout();
             }
         });
 }
 
-void FilePropertiesPanel::onDragStarted(Section s, QPoint /*globalPos*/)
+void FilePropertiesPanel::onDragStarted(SectionId s, QPoint /*globalPos*/)
 {
     m_draggedSection = s;
     m_draggingSection = true;
 
-    m_preDragFileCollapsed = m_fileSectionCollapsed;
-    m_preDragChecksumCollapsed = m_checksumSectionCollapsed;
-    m_preDragStringsCollapsed = m_stringsSectionCollapsed;
+    for (PanelSection &section : m_sections)
+        section.preDragCollapsed = section.collapsed;
     m_dragSectionsCollapsed = false;
 
     updateDropIndicator(QCursor::pos());
@@ -1222,14 +1217,14 @@ void FilePropertiesPanel::onDragMoved(QPoint globalPos)
     }
 }
 
-void FilePropertiesPanel::onDragEnded(Section /*s*/, QPoint globalPos)
+void FilePropertiesPanel::onDragEnded(SectionId /*s*/, QPoint globalPos)
 {
     const bool sectionsWereCollapsedForDrag = m_dragSectionsCollapsed;
     m_draggingSection = false;
     m_dragSectionsCollapsed = false;
-    for (Section s : m_sectionOrder) {
-        headerFor(s)->setDragTarget(false);
-    }
+    for (SectionId s : m_sectionOrder)
+        if (PanelSection *section = sectionFor(s))
+            section->header->setDragTarget(false);
     if (m_dropIndicator)
         m_dropIndicator->hide();
 
@@ -1238,12 +1233,14 @@ void FilePropertiesPanel::onDragEnded(Section /*s*/, QPoint globalPos)
     // dragged panel lands exactly where the user pointed, with the displaced
     // panel filling the gap — simpler and more predictable than an insert-index
     // approach, which has a large no-op zone around the middle panel.
-    Section targetSection = m_sectionOrder.last();
+    SectionId targetSection = m_sectionOrder.last();
     if (m_content && !m_sectionOrder.isEmpty()) {
         const int contentY = m_content->mapFromGlobal(globalPos).y();
-        for (Section s : m_sectionOrder) {
-            const int bottom = headerFor(s)->mapTo(m_content, QPoint(0, 0)).y()
-                               + kSectionHeaderHeight;
+        for (SectionId s : m_sectionOrder) {
+            PanelSection *section = sectionFor(s);
+            if (!section || !section->header)
+                continue;
+            const int bottom = section->header->mapTo(m_content, QPoint(0, 0)).y() + kSectionHeaderHeight;
             if (contentY < bottom) { targetSection = s; break; }
         }
     }
@@ -1266,20 +1263,21 @@ void FilePropertiesPanel::onDragEnded(Section /*s*/, QPoint globalPos)
         // After a reorder: leave everything collapsed except the dragged panel,
         // and only re-expand that one if it was open before the drag started.
         // This avoids restoring animation state across a freshly-rebuilt layout.
-        setFileSectionCollapsed(m_draggedSection == Section::Properties ? m_preDragFileCollapsed : true, false);
-        setChecksumSectionCollapsed(m_draggedSection == Section::Checksums ? m_preDragChecksumCollapsed : true, false);
-        setStringsSectionCollapsed(m_draggedSection == Section::Strings ? m_preDragStringsCollapsed : true, false);
+        for (SectionId s : m_sectionOrder) {
+            PanelSection *section = sectionFor(s);
+            if (section)
+                setSectionCollapsed(s, s == m_draggedSection ? section->preDragCollapsed : true, false);
+        }
     } else if (sectionsWereCollapsedForDrag) {
         // No reorder: restore all panels to their pre-drag state with animation.
-        if (!m_preDragFileCollapsed)
-            setFileSectionCollapsed(false);
-        if (!m_preDragChecksumCollapsed)
-            setChecksumSectionCollapsed(false);
-        if (!m_preDragStringsCollapsed)
-            setStringsSectionCollapsed(false);
+        for (SectionId s : m_sectionOrder) {
+            if (PanelSection *section = sectionFor(s))
+                if (!section->preDragCollapsed)
+                    setSectionCollapsed(s, false);
+        }
     }
 
-    QTimer::singleShot(0, this, &FilePropertiesPanel::syncSectionHeaderHover);
+    scheduleSectionHeaderHoverSync();
     updateStickyHeader();
 }
 
@@ -1289,11 +1287,12 @@ void FilePropertiesPanel::collapseSectionsForDrag()
         return;
 
     m_dragSectionsCollapsed = true;
-    const bool anyWasExpanded = !m_preDragFileCollapsed || !m_preDragChecksumCollapsed || !m_preDragStringsCollapsed;
+    bool anyWasExpanded = false;
+    for (const PanelSection &section : m_sections)
+        anyWasExpanded = anyWasExpanded || !section.preDragCollapsed;
 
-    setFileSectionCollapsed(true);
-    setChecksumSectionCollapsed(true);
-    setStringsSectionCollapsed(true);
+    for (SectionId s : m_sectionOrder)
+        setSectionCollapsed(s, true);
 
     QTimer::singleShot(anyWasExpanded ? 130 : 0, this, [this]() {
         if (m_draggingSection)
@@ -1306,33 +1305,100 @@ void FilePropertiesPanel::updateDropIndicator(QPoint globalPos)
     if (!m_draggingSection)
         return;
 
-    for (Section s : m_sectionOrder)
-        headerFor(s)->setDragTarget(false);
+    for (SectionId s : m_sectionOrder)
+        if (PanelSection *section = sectionFor(s))
+            section->header->setDragTarget(false);
 
     if (!m_content || m_sectionOrder.isEmpty())
         return;
 
     const int contentY = m_content->mapFromGlobal(globalPos).y();
-    Section target = m_sectionOrder.last();
-    for (Section s : m_sectionOrder) {
-        SectionHeader *h = headerFor(s);
+    SectionId target = m_sectionOrder.last();
+    for (SectionId s : m_sectionOrder) {
+        PanelSection *section = sectionFor(s);
+        if (!section || !section->header)
+            continue;
+        SectionHeader *h = section->header;
         const int bottom = h->mapTo(m_content, QPoint(0, 0)).y() + kSectionHeaderHeight;
         if (contentY < bottom) {
             target = s;
             break;
         }
     }
-    headerFor(target)->setDragTarget(true);
+    if (PanelSection *section = sectionFor(target))
+        section->header->setDragTarget(true);
 }
 
 void FilePropertiesPanel::syncSectionHeaderHover()
 {
-    for (Section s : m_sectionOrder)
-        headerFor(s)->syncHoverFromCursor();
+    for (SectionId s : m_sectionOrder)
+        if (PanelSection *section = sectionFor(s))
+            section->header->syncHoverFromCursor();
+}
+
+void FilePropertiesPanel::scheduleSectionHeaderHoverSync()
+{
+    QTimer::singleShot(0, this, &FilePropertiesPanel::syncSectionHeaderHover);
+    QTimer::singleShot(16, this, &FilePropertiesPanel::syncSectionHeaderHover);
+    QTimer::singleShot(50, this, &FilePropertiesPanel::syncSectionHeaderHover);
+}
+
+void FilePropertiesPanel::requestSectionLayoutRefresh(SectionId sectionId)
+{
+    if (m_sectionLayoutRefreshPending || isSectionCollapsed(sectionId))
+        return;
+
+    m_sectionLayoutRefreshPending = true;
+    QTimer::singleShot(0, this, &FilePropertiesPanel::performSectionLayoutRefresh);
+    QTimer::singleShot(16, this, [this]() {
+        performSectionLayoutRefresh();
+        m_sectionLayoutRefreshPending = false;
+    });
+}
+
+void FilePropertiesPanel::performSectionLayoutRefresh()
+{
+    if (!m_content || !m_content->layout())
+        return;
+
+    for (SectionId sectionId : std::as_const(m_sectionOrder)) {
+        if (isSectionCollapsed(sectionId))
+            continue;
+        if (PanelSection *section = sectionFor(sectionId)) {
+            if (section->body) {
+                section->body->setMaximumHeight(QWIDGETSIZE_MAX);
+                section->body->updateGeometry();
+            }
+            if (section->resize.target)
+                applyResizableSectionHeight(sectionId);
+        }
+    }
+
+    rebuildSectionLayout();
+    settleContentLayout();
+    updateStickyHeader();
+}
+
+void FilePropertiesPanel::settleContentLayout()
+{
+    if (!m_content || !m_content->layout())
+        return;
+
+    QLayout *contentLayout = m_content->layout();
+    m_content->setUpdatesEnabled(false);
+    contentLayout->invalidate();
+    contentLayout->activate();
+    const int targetHeight = qMax(m_scrollArea ? m_scrollArea->viewport()->height() : 0,
+                                  contentLayout->sizeHint().height());
+    m_content->resize(m_content->width(), targetHeight);
+    contentLayout->setGeometry(m_content->rect());
+    m_content->setUpdatesEnabled(true);
+    m_content->updateGeometry();
+    m_content->update();
 }
 
 
-FilePropertiesPanelHost::FilePropertiesPanelHost(HexView *hexView, QWidget *parent)
+SidePanelHost::SidePanelHost(HexView *hexView, QWidget *parent)
     : QWidget(parent), m_hexView(hexView)
 {
     setAcceptDrops(true);
@@ -1353,22 +1419,22 @@ FilePropertiesPanelHost::FilePropertiesPanelHost(HexView *hexView, QWidget *pare
     m_widthAnim->setEasingCurve(QEasingCurve::OutCubic);
 }
 
-bool FilePropertiesPanelHost::isOpen() const
+bool SidePanelHost::isOpen() const
 {
     return m_panel != nullptr;
 }
 
-void FilePropertiesPanelHost::toggle()
+void SidePanelHost::toggle()
 {
     if (m_panel) {
         closePanel();
         return;
     }
 
-    openSection(FilePropertiesPanel::Section::Properties);
+    openSection(FilePropertiesPanel::SectionId::Properties);
 }
 
-void FilePropertiesPanelHost::openSection(FilePropertiesPanel::Section section)
+void SidePanelHost::openSection(FilePropertiesPanel::SectionId section)
 {
     if (m_panel) {
         m_panel->showSection(section);
@@ -1387,26 +1453,32 @@ void FilePropertiesPanelHost::openSection(FilePropertiesPanel::Section section)
     panel->show();
 
     connect(panel, &FilePropertiesPanel::closeRequested,
-            this, &FilePropertiesPanelHost::closePanel);
+            this, &SidePanelHost::closePanel);
 
     panel->showSection(section);
     emit openChanged(true);
     setExpanded(true);
 }
 
-void FilePropertiesPanelHost::closePanel()
+void SidePanelHost::closePanel()
 {
     emit openChanged(false);
     setExpanded(false);
 }
 
-void FilePropertiesPanelHost::refreshPanel()
+void SidePanelHost::refreshPanel()
 {
     if (m_panel)
         m_panel->refresh();
 }
 
-void FilePropertiesPanelHost::setExpanded(bool expanded)
+void SidePanelHost::resetPanelForCurrentDocument()
+{
+    if (m_panel)
+        m_panel->resetForCurrentDocument();
+}
+
+void SidePanelHost::setExpanded(bool expanded)
 {
     if (!m_widthAnim)
         return;
@@ -1449,14 +1521,14 @@ void FilePropertiesPanelHost::setExpanded(bool expanded)
     m_widthAnim->start();
 }
 
-void FilePropertiesPanelHost::setPaneWidth(int width)
+void SidePanelHost::setPaneWidth(int width)
 {
     m_paneWidth = qBound(kFileInfoPaneMinWidth, width, kFileInfoPaneMaxWidth);
     setMinimumWidth(m_paneWidth);
     setMaximumWidth(m_paneWidth);
 }
 
-bool FilePropertiesPanelHost::eventFilter(QObject *obj, QEvent *event)
+bool SidePanelHost::eventFilter(QObject *obj, QEvent *event)
 {
     if (obj != m_resizeHandle)
         return QWidget::eventFilter(obj, event);

@@ -568,8 +568,8 @@ MainWindow::MainWindow(QWidget *parent)
     hexColumnLay->addWidget(m_hv, 1);
     contentLay->addWidget(hexColumn, 1);
 
-    m_fileInfoHost = new FilePropertiesPanelHost(m_hv, contentRow);
-    contentLay->addWidget(m_fileInfoHost, 0);
+    m_sidePanelHost = new SidePanelHost(m_hv, contentRow);
+    contentLay->addWidget(m_sidePanelHost, 0);
 
     vlay->addWidget(contentRow, 1);
     m_bookmarkDialog = new BookmarkDialog(this);
@@ -596,8 +596,8 @@ MainWindow::MainWindow(QWidget *parent)
     setCentralWidget(central);
 
     connect(m_titleBar, &TitleBar::fileInfoToggled,
-            this, &MainWindow::toggleFileInfoPanel);
-    connect(m_fileInfoHost, &FilePropertiesPanelHost::openChanged,
+            this, &MainWindow::toggleSidePanel);
+    connect(m_sidePanelHost, &SidePanelHost::openChanged,
             m_titleBar, &TitleBar::setFileInfoPanelOpen);
     auto *fileWatcher = new QFileSystemWatcher(this);
     fileWatcher->setObjectName(QStringLiteral("fileChangedWatcher"));
@@ -609,13 +609,13 @@ MainWindow::MainWindow(QWidget *parent)
     connect(fileChangeTimer, &QTimer::timeout,
             this, [this]() { checkWatchedFileChanged(this); });
     connect(ui->actionProperties, &QAction::triggered,
-            this, [this]() { openFileInfoPanel(FilePropertiesPanel::Section::Properties); });
+            this, [this]() { openSidePanelSection(FilePropertiesPanel::SectionId::Properties); });
     ui->actionChecksum->setEnabled(true);
     connect(ui->actionChecksum, &QAction::triggered,
-            this, [this]() { openFileInfoPanel(FilePropertiesPanel::Section::Checksums); });
+            this, [this]() { openSidePanelSection(FilePropertiesPanel::SectionId::Checksums); });
     ui->actionStrings->setEnabled(true);
     connect(ui->actionStrings, &QAction::triggered,
-            this, [this]() { openFileInfoPanel(FilePropertiesPanel::Section::Strings); });
+            this, [this]() { openSidePanelSection(FilePropertiesPanel::SectionId::Strings); });
 
     // Build a standalone Edit menu for the HexView context menu, sharing the
     // same QActions so any connections added later apply automatically.
@@ -759,7 +759,7 @@ MainWindow::MainWindow(QWidget *parent)
     // Keep Edit action enabled-states in sync with HexView and clipboard state.
     connect(m_hv, &HexView::selectionChanged, this, [this](size_w, size_w) { updateEditActions(); });
     connect(m_hv, &HexView::contentChanged,   this, [this](size_w, size_w, uint) { updateEditActions(); });
-    connect(m_hv, &HexView::contentChanged,   this, [this](size_w, size_w, uint) { refreshFileInfoPanel(); });
+    connect(m_hv, &HexView::contentChanged,   this, [this](size_w, size_w, uint) { refreshSidePanel(); });
     connect(m_hv, &HexView::editModeChanged,  this, [this](uint) {
         m_statusBar->update();
         updateEditActions();
@@ -785,7 +785,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_hv, &HexView::lengthChanged, this,
             [this](size_w) {
         m_statusBar->update();
-        refreshFileInfoPanel();
+        refreshSidePanel();
     });
 
     auto populateBookmarkDialog = [this]() {
@@ -960,7 +960,7 @@ MainWindow::MainWindow(QWidget *parent)
         m_hv->clearFile();
         setWindowTitle(QApplication::applicationDisplayName());
         updateWatchedFile(this, QString());
-        refreshFileInfoPanel();
+        resetSidePanel();
     });
 
     connect(ui->actionOpen, &QAction::triggered, this, [this]() {
@@ -1319,25 +1319,31 @@ void MainWindow::openFile(const QString &path) {
     updateRecentMenu();
     setWindowTitle(QFileInfo(path).fileName() + " \u2013 " + QApplication::applicationDisplayName());
     updateWatchedFile(this, path);
-    refreshFileInfoPanel();
+    resetSidePanel();
 }
 
-void MainWindow::toggleFileInfoPanel()
+void MainWindow::toggleSidePanel()
 {
-    if (m_fileInfoHost)
-        m_fileInfoHost->toggle();
+    if (m_sidePanelHost)
+        m_sidePanelHost->toggle();
 }
 
-void MainWindow::openFileInfoPanel(FilePropertiesPanel::Section section)
+void MainWindow::openSidePanelSection(FilePropertiesPanel::SectionId section)
 {
-    if (m_fileInfoHost)
-        m_fileInfoHost->openSection(section);
+    if (m_sidePanelHost)
+        m_sidePanelHost->openSection(section);
 }
 
-void MainWindow::refreshFileInfoPanel()
+void MainWindow::refreshSidePanel()
 {
-    if (m_fileInfoHost)
-        m_fileInfoHost->refreshPanel();
+    if (m_sidePanelHost)
+        m_sidePanelHost->refreshPanel();
+}
+
+void MainWindow::resetSidePanel()
+{
+    if (m_sidePanelHost)
+        m_sidePanelHost->resetPanelForCurrentDocument();
 }
 
 void MainWindow::updateRecentMenu() {
