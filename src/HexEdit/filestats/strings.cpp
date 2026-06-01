@@ -13,13 +13,10 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QLabel>
-#include <QLayout>
 #include <QLocale>
 #include <QMetaObject>
 #include <QPointer>
 #include <QProgressBar>
-#include <QResizeEvent>
-#include <QScrollArea>
 #include <QThread>
 #include <QToolButton>
 #include <QTreeWidget>
@@ -460,61 +457,6 @@ void FilePropertiesPanel::cancelStringScan()
     if (m_stringsOperation)
         m_stringsOperation->showRetry(tr("Operation cancelled"));
     resetStringsTitle();
-}
-
-void FilePropertiesPanel::resizeStringsList(int dy)
-{
-    QWidget *frame = m_stringsListFrame;
-    if (!frame)
-        return;
-    const int maxHeight = qMax(kStringsListMinHeight, height() - kSectionHeaderHeight * 2);
-    const int newHeight = qBound(kStringsListMinHeight, frame->height() + dy, maxHeight);
-    if (newHeight == frame->height())
-        return;
-    frame->setFixedHeight(newHeight);
-    frame->resize(frame->width(), newHeight);
-    frame->updateGeometry();
-    if (QWidget *stack = frame->parentWidget()) {
-        stack->updateGeometry();
-        if (QLayout *layout = stack->layout()) {
-            layout->invalidate();
-            layout->activate();
-        }
-    }
-    if (QWidget *body = m_stringsSectionBody)
-    {
-        body->updateGeometry();
-        if (QLayout *layout = body->layout()) {
-            layout->invalidate();
-            layout->activate();
-            const int bodyHeight = layout->sizeHint().height();
-            body->setFixedHeight(bodyHeight);
-            body->resize(body->width(), bodyHeight);
-            body->updateGeometry();
-        }
-    }
-    rebuildSectionLayout();
-    if (m_content && m_content->layout())
-    {
-        QLayout *contentLayout = m_content->layout();
-        m_content->setUpdatesEnabled(false);
-        contentLayout->invalidate();
-        contentLayout->activate();
-        m_content->resize(m_content->width(), qMax(m_scrollArea ? m_scrollArea->viewport()->height()
-                                                                : 0,
-                                                  contentLayout->sizeHint().height()));
-        contentLayout->setGeometry(m_content->rect());
-        QResizeEvent resizeEvent(m_content->size(), m_content->size());
-        QApplication::sendEvent(m_content, &resizeEvent);
-        contentLayout->invalidate();
-        contentLayout->activate();
-        m_content->setUpdatesEnabled(true);
-        m_content->updateGeometry();
-        m_content->update();
-    }
-    if (m_scrollArea)
-        m_scrollArea->widget()->updateGeometry();
-    updateStickyHeader();
 }
 
 void FilePropertiesPanel::appendStringResults(int generation, const QVector<QVariantMap> &results)

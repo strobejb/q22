@@ -104,7 +104,6 @@ private:
     QString createStringExportTemp();
     QStringList selectedChecksumAlgorithms() const;
     void markChecksumAlgorithmsChanged();
-    void resizeStringsList(int dy);
     void setChecksumRowsPending();
     void updateChecksumProgress(int generation, int value);
     void applyChecksumResults(int generation, const QHash<QString, QString> &results);
@@ -137,6 +136,9 @@ private:
     void updateInterSectionGaps();
     void rebuildSectionLayout();
     void repairExpandedSectionGeometry(Section section);
+    void registerResizableSection(Section section, QWidget *target, int minHeight);
+    void resizeSection(Section section, int dy);
+    bool applyResizableSectionHeight(Section section);
     void onDragStarted(Section s, QPoint globalPos);
     void onDragMoved(QPoint globalPos);
     void onDragEnded(Section s, QPoint globalPos);
@@ -154,7 +156,6 @@ private:
     QSpacerItem *m_checksumHeaderGap = nullptr;
     QSpacerItem *m_stringsHeaderGap = nullptr;
     std::array<QSpacerItem *, 2> m_interSectionGaps {};
-    QSpacerItem *m_stringsResizeSlack = nullptr;
     filestats::SectionHeader *m_fileHeader = nullptr;
     filestats::SectionHeader *m_checksumHeader = nullptr;
     filestats::SectionHeader *m_stringsHeader = nullptr;
@@ -172,7 +173,6 @@ private:
     StepSpinBox *m_minStringLength = nullptr;
     QComboBox *m_stringEncoding = nullptr;
     QTreeWidget *m_stringsList = nullptr;
-    QWidget *m_stringsListFrame = nullptr;
     QWidget *m_stringsStatusRow = nullptr;
     QLabel *m_stringsStatusLabel = nullptr;
     QLabel *m_stringsProgressLabel = nullptr;
@@ -211,7 +211,12 @@ private:
     bool m_preDragStringsCollapsed = false;
     bool m_draggingSection = false;
     bool m_dragSectionsCollapsed = false;
-    int m_stringsResizeSlackHeight = 0;
+    struct SectionResizeState {
+        QWidget *target = nullptr;
+        int minHeight = 0;
+        int currentHeight = 0;
+    };
+    std::array<SectionResizeState, 3> m_resizeStates {};
     qulonglong m_stringNextOffset = 0;
     qulonglong m_stringResultCount = 0;
     bool m_stringsExportTempComplete = false;

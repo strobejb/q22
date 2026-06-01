@@ -71,6 +71,16 @@ static constexpr int kFileInfoPaneMaxWidth = 720;
 static constexpr int kFileInfoPaneAnimMs = 220;
 static constexpr bool kAutoStartPanelOperations = true;
 
+static int sectionIndex(FilePropertiesPanel::Section section)
+{
+    switch (section) {
+    case FilePropertiesPanel::Section::Properties: return 0;
+    case FilePropertiesPanel::Section::Checksums:  return 1;
+    case FilePropertiesPanel::Section::Strings:    return 2;
+    }
+    return 0;
+}
+
 FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     : QDialog(parent), m_hexView(hexView)
 {
@@ -314,10 +324,10 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     stringsControlsStackLayout->addSpacing(kHeaderControlGap + 4);
 
     auto *stringsListFrame = new StringListFrame(m_stringsSectionBody);
-    m_stringsListFrame = stringsListFrame;
     stringsListFrame->setObjectName(QStringLiteral("stringsListFrame"));
     stringsListFrame->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     stringsListFrame->setFixedHeight(kStringsListMinHeight);
+    registerResizableSection(Section::Strings, stringsListFrame, kStringsListMinHeight);
     stringsListFrame->setStyleSheet(QStringLiteral(R"(
         QFrame#stringsListFrame {
             background: palette(base);
@@ -453,7 +463,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     stringsResizeLayout->setContentsMargins(0, 0, 0, 0);
     stringsResizeLayout->setSpacing(0);
     m_stringsResizeHandle = new VerticalResizeHandle([this](int dy) {
-        resizeStringsList(dy);
+        resizeSection(Section::Strings, dy);
     }, stringsResizeWrap);
     stringsResizeLayout->addWidget(m_stringsResizeHandle);
     stringsResizeLayout->setAlignment(m_stringsResizeHandle, Qt::AlignTop);
@@ -461,8 +471,6 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     stringsControlsStackLayout->addWidget(m_stringsStatusRow);
     stringsBodyLayout->addWidget(stringsControlsStack);
     contentLayout->addWidget(m_stringsSectionBody);
-    m_stringsResizeSlack = new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Fixed);
-    contentLayout->addSpacerItem(m_stringsResizeSlack);
     contentLayout->addStretch();
 
     m_scrollArea->setWidget(m_content);
@@ -1044,6 +1052,8 @@ void FilePropertiesPanel::rebuildSectionLayout()
                 anim->stop();
             body->setMaximumHeight(QWIDGETSIZE_MAX);
             body->setVisible(!isCollapsed(s));
+            if (!isCollapsed(s))
+                applyResizableSectionHeight(s);
             body->updateGeometry();
         }
     }
@@ -1062,10 +1072,87 @@ void FilePropertiesPanel::rebuildSectionLayout()
             layout->addWidget(op->widget());
         layout->addWidget(bodyFor(s));
     }
-    layout->addSpacerItem(m_stringsResizeSlack);
     layout->addStretch();
     updateInterSectionGaps();
     layout->activate(); // headers must be at final positions before releaseMouse() fires hover events
+}
+
+void FilePropertiesPanel::registerResizableSection(Section section, QWidget *target, int minHeight)
+{
+    SectionResizeState &state = m_resizeStates[sectionIndex(section)];
+    state.target = target;
+    state.minHeight = minHeight;
+    state.currentHeight = minHeight;
+    if (target) {
+        target->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        target->setFixedHeight(minHeight);
+    }
+}
+
+bool FilePropertiesPanel::applyResizableSectionHeight(Section section)
+{
+    SectionResizeState &state = m_resizeStates[sectionIndex(section)];
+    if (!state.target)
+        return false;
+
+    const int height = state.currentHeight > 0 ? state.currentHeight : state.minHeight;
+    state.target->setFixedHeight(height);
+    state.target->resize(state.target->width(), height);
+    state.target->updateGeometry();
+
+    if (QWidget *stack = state.target->parentWidget()) {
+        stack->updateGeometry();
+        if (QLayout *layout = stack->layout()) {
+            layout->invalidate();
+            layout->activate();
+        }
+    }
+
+    QWidget *body = bodyFor(section);
+    if (!body)
+        return true;
+    body->updateGeometry();
+    if (QLayout *layout = body->layout()) {
+        layout->invalidate();
+        layout->activate();
+        const int bodyHeight = layout->sizeHint().height();
+        body->setFixedHeight(bodyHeight);
+        body->resize(body->width(), bodyHeight);
+        body->updateGeometry();
+    }
+    return true;
+}
+
+void FilePropertiesPanel::resizeSection(Section section, int dy)
+{
+    SectionResizeState &state = m_resizeStates[sectionIndex(section)];
+    if (!state.target)
+        return;
+
+    const int current = state.currentHeight > 0 ? state.currentHeight : state.target->height();
+    const int maxHeight = qMax(state.minHeight, height() - kSectionHeaderHeight * 2);
+    const int newHeight = qBound(state.minHeight, current + dy, maxHeight);
+    if (newHeight == current)
+        return;
+
+    state.currentHeight = newHeight;
+    applyResizableSectionHeight(section);
+    rebuildSectionLayout();
+
+    if (m_content && m_content->layout()) {
+        QLayout *contentLayout = m_content->layout();
+        m_content->setUpdatesEnabled(false);
+        contentLayout->invalidate();
+        contentLayout->activate();
+        m_content->resize(m_content->width(), qMax(m_scrollArea ? m_scrollArea->viewport()->height()
+                                                                : 0,
+                                                  contentLayout->sizeHint().height()));
+        contentLayout->setGeometry(m_content->rect());
+        m_content->setUpdatesEnabled(true);
+        m_content->updateGeometry();
+        m_content->update();
+    }
+    updateStickyHeader();
 }
 
 void FilePropertiesPanel::repairExpandedSectionGeometry(Section section)
@@ -1083,8 +1170,10 @@ void FilePropertiesPanel::repairExpandedSectionGeometry(Section section)
             return;
 
     body->show();
-    body->setMaximumHeight(QWIDGETSIZE_MAX);
-    body->updateGeometry();
+    if (!applyResizableSectionHeight(section)) {
+        body->setMaximumHeight(QWIDGETSIZE_MAX);
+        body->updateGeometry();
+    }
 
     if (QWidget *parent = body->parentWidget()) {
         if (QLayout *layout = parent->layout()) {
@@ -1099,8 +1188,10 @@ void FilePropertiesPanel::repairExpandedSectionGeometry(Section section)
                 return;
             if (QWidget *body = bodyFor(section)) {
                 body->show();
-                body->setMaximumHeight(QWIDGETSIZE_MAX);
-                body->updateGeometry();
+                if (!applyResizableSectionHeight(section)) {
+                    body->setMaximumHeight(QWIDGETSIZE_MAX);
+                    body->updateGeometry();
+                }
                 if (QWidget *parent = body->parentWidget())
                     if (QLayout *layout = parent->layout()) {
                         layout->invalidate();
