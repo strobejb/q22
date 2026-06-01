@@ -136,7 +136,6 @@ private:
     void updateInterSectionGaps();
     void rebuildSectionLayout();
     void repairExpandedSectionGeometry(SectionId section);
-    void registerResizableSection(SectionId section, QWidget *target, int minHeight);
     void resizeSection(SectionId section, int dy);
     bool applyResizableSectionHeight(SectionId section);
     void scheduleResizableSectionRepair(SectionId section);
@@ -150,15 +149,34 @@ private:
     void requestSectionLayoutRefresh(SectionId section);
     void performSectionLayoutRefresh();
     void settleContentLayout();
-    void registerPanelSection(SectionId id, const QString &title,
-                              filestats::SectionHeader *header, QWidget *body,
-                              QSpacerItem *headerGap,
-                              filestats::SectionOperationStrip *operation = nullptr);
 
     struct SectionResizeState {
         QWidget *target = nullptr;
         int minHeight = 0;
         int currentHeight = 0;
+    };
+
+    // Contract for hosted sections:
+    // - Register every section with its header/body/gap, and optional operation strip.
+    // - Provide a resizableTarget/minResizableHeight when the section has a vertical
+    //   resize grip; the sidepanel will preserve and reapply that height.
+    // - Call requestSectionLayoutRefresh(id) whenever section content intentionally
+    //   changes vertical size, e.g. status rows, operation strips, or dynamic results.
+    // - Use callbacks for section-owned lifecycle; the sidepanel stays responsible
+    //   only for hosting, ordering, collapse state, and geometry.
+    struct PanelSectionSpec {
+        SectionId id = SectionId::Properties;
+        QString title;
+        filestats::SectionHeader *header = nullptr;
+        QWidget *body = nullptr;
+        QSpacerItem *headerGap = nullptr;
+        filestats::SectionOperationStrip *operation = nullptr;
+        QWidget *resizableTarget = nullptr;
+        int minResizableHeight = 0;
+        std::function<void()> onExpanded;
+        std::function<void(bool)> onCollapsedChanged;
+        std::function<void(bool)> onRefreshDocumentState;
+        std::function<void()> onResetForCurrentDocument;
     };
     struct PanelSection {
         SectionId id = SectionId::Properties;
@@ -175,6 +193,7 @@ private:
         std::function<void(bool)> onRefreshDocumentState;
         std::function<void()> onResetForCurrentDocument;
     };
+    void registerPanelSection(const PanelSectionSpec &spec);
     PanelSection *sectionFor(SectionId section);
     const PanelSection *sectionFor(SectionId section) const;
 

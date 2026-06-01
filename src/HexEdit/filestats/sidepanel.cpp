@@ -479,44 +479,57 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     }
     m_dropIndicator->hide();
 
-    registerPanelSection(SectionId::Properties, tr("File Properties"),
-                         m_fileHeader, m_fileSectionBody, m_fileHeaderGap);
-    registerPanelSection(SectionId::Checksums, tr("Checksums"),
-                         m_checksumHeader, m_checksumSectionBody, m_checksumHeaderGap,
-                         m_checksumOperation);
-    registerPanelSection(SectionId::Strings, tr("Strings"),
-                         m_stringsHeader, m_stringsSectionBody, m_stringsHeaderGap,
-                         m_stringsOperation);
-    registerResizableSection(SectionId::Strings, stringsListFrame, kStringsListMinHeight);
-
-    if (PanelSection *checksums = sectionFor(SectionId::Checksums)) {
-        checksums->onExpanded = [this]() { maybeStartChecksumCalculation(); };
-        checksums->onCollapsedChanged = [this](bool collapsed) {
+    registerPanelSection({
+        SectionId::Properties,
+        tr("File Properties"),
+        m_fileHeader,
+        m_fileSectionBody,
+        m_fileHeaderGap,
+    });
+    registerPanelSection({
+        SectionId::Checksums,
+        tr("Checksums"),
+        m_checksumHeader,
+        m_checksumSectionBody,
+        m_checksumHeaderGap,
+        m_checksumOperation,
+        nullptr,
+        0,
+        [this]() { maybeStartChecksumCalculation(); },
+        [this](bool collapsed) {
             if (m_checksumState.pause && m_checksumState.started)
                 m_checksumState.pause->setPaused(collapsed);
             if (m_checksumState.started)
                 setChecksumProgressTitle(m_checksumState.progress);
-        };
-        checksums->onRefreshDocumentState = [this](bool contentsChanged) {
+        },
+        [this](bool contentsChanged) {
             if (contentsChanged)
                 markChecksumContentsChanged();
-        };
-        checksums->onResetForCurrentDocument = [this]() { resetChecksumForCurrentDocument(); };
-    }
-    if (PanelSection *strings = sectionFor(SectionId::Strings)) {
-        strings->onExpanded = [this]() { maybeStartStringScan(); };
-        strings->onCollapsedChanged = [this](bool collapsed) {
+        },
+        [this]() { resetChecksumForCurrentDocument(); },
+    });
+    registerPanelSection({
+        SectionId::Strings,
+        tr("Strings"),
+        m_stringsHeader,
+        m_stringsSectionBody,
+        m_stringsHeaderGap,
+        m_stringsOperation,
+        stringsListFrame,
+        kStringsListMinHeight,
+        [this]() { maybeStartStringScan(); },
+        [this](bool collapsed) {
             if (m_stringsState.pause && m_stringsState.started)
                 m_stringsState.pause->setPaused(collapsed);
             if (m_stringsState.started)
                 setStringsProgressTitle(m_stringsState.progress);
-        };
-        strings->onRefreshDocumentState = [this](bool contentsChanged) {
+        },
+        [this](bool contentsChanged) {
             if (contentsChanged)
                 markStringsContentsChanged();
-        };
-        strings->onResetForCurrentDocument = [this]() { resetStringsForCurrentDocument(); };
-    }
+        },
+        [this]() { resetStringsForCurrentDocument(); },
+    });
 
     for (SectionId s : m_sectionOrder) {
         sectionFor(s)->header->setDragCallbacks(
@@ -960,18 +973,26 @@ void FilePropertiesPanel::updateStickyHeader()
     syncStickyHeader();
 }
 
-void FilePropertiesPanel::registerPanelSection(SectionId id, const QString &title,
-                                               SectionHeader *header, QWidget *body,
-                                               QSpacerItem *headerGap,
-                                               SectionOperationStrip *operation)
+void FilePropertiesPanel::registerPanelSection(const PanelSectionSpec &spec)
 {
     PanelSection section;
-    section.id = id;
-    section.title = title;
-    section.header = header;
-    section.body = body;
-    section.headerGap = headerGap;
-    section.operation = operation;
+    section.id = spec.id;
+    section.title = spec.title;
+    section.header = spec.header;
+    section.body = spec.body;
+    section.headerGap = spec.headerGap;
+    section.operation = spec.operation;
+    section.onExpanded = spec.onExpanded;
+    section.onCollapsedChanged = spec.onCollapsedChanged;
+    section.onRefreshDocumentState = spec.onRefreshDocumentState;
+    section.onResetForCurrentDocument = spec.onResetForCurrentDocument;
+    if (spec.resizableTarget) {
+        section.resize.target = spec.resizableTarget;
+        section.resize.minHeight = spec.minResizableHeight;
+        section.resize.currentHeight = spec.minResizableHeight;
+        spec.resizableTarget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        spec.resizableTarget->setFixedHeight(spec.minResizableHeight);
+    }
     m_sections.append(section);
 }
 
@@ -1048,21 +1069,6 @@ void FilePropertiesPanel::rebuildSectionLayout()
     updateInterSectionGaps();
     layout->activate(); // headers must be at final positions before releaseMouse() fires hover events
     settleContentLayout();
-}
-
-void FilePropertiesPanel::registerResizableSection(SectionId sectionId, QWidget *target, int minHeight)
-{
-    PanelSection *section = sectionFor(sectionId);
-    if (!section)
-        return;
-    SectionResizeState &state = section->resize;
-    state.target = target;
-    state.minHeight = minHeight;
-    state.currentHeight = minHeight;
-    if (target) {
-        target->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        target->setFixedHeight(minHeight);
-    }
 }
 
 bool FilePropertiesPanel::applyResizableSectionHeight(SectionId sectionId)
