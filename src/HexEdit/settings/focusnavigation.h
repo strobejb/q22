@@ -2,6 +2,7 @@
 #define FOCUSNAVIGATION_H
 
 class QWidget;
+class QScrollArea;
 
 namespace FocusNavigation {
 
@@ -19,6 +20,10 @@ bool hasFocusableWidget(QWidget *scope, QWidget *current, Direction direction);
 // link because setTabOrder() mutates chain order rather than only closing it.
 void assignTabOrder(QWidget *scope);
 void ensureFocusedWidgetVisible(QWidget *widget);
+// QScrollArea::ensureWidgetVisible() can move the hidden horizontal scrollbar
+// even when ScrollBarAlwaysOff is set, visually shifting content sideways.
+// Use this on vertically-only scroll areas whose content must stay left-aligned.
+void lockHorizontalScroll(QScrollArea *scroll);
 
 } // namespace FocusNavigation
 

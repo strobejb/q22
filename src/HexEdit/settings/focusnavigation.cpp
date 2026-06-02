@@ -167,4 +167,23 @@ void ensureFocusedWidgetVisible(QWidget *widget)
     }
 }
 
+void lockHorizontalScroll(QScrollArea *scroll)
+{
+    if (!scroll)
+        return;
+
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    QScrollBar *bar = scroll->horizontalScrollBar();
+    if (!bar || bar->property("_qexedHorizontalScrollLocked").toBool())
+        return;
+
+    bar->setProperty("_qexedHorizontalScrollLocked", true);
+    QObject::connect(bar, &QScrollBar::valueChanged, scroll, [bar](int value) {
+        const int min = bar->minimum();
+        if (value != min)
+            bar->setValue(min);
+    });
+    bar->setValue(bar->minimum());
+}
+
 } // namespace FocusNavigation

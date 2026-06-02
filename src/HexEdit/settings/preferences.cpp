@@ -493,7 +493,7 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
 
     auto *scroll = new QScrollArea(this);
     scroll->setWidgetResizable(true);
-    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    FocusNavigation::lockHorizontalScroll(scroll);
     scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setFocusPolicy(Qt::NoFocus);
@@ -808,7 +808,7 @@ void PreferencesDialog::showPaletteListOverlay()
 
     auto *scroll = new QScrollArea(dlg);
     scroll->setWidgetResizable(true);
-    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    FocusNavigation::lockHorizontalScroll(scroll);
     scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setFocusPolicy(Qt::NoFocus);
