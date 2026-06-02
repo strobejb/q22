@@ -1716,6 +1716,7 @@ void themeMenu(QMenu *menu)
 #ifndef Q_OS_WIN
     // Self-drawn shadow: child overlay paints into the 8px transparent QSS margin.
     auto *overlay = new MenuShadowOverlay(menu);
+    overlay->setObjectName(QStringLiteral("qexedMenuShadowOverlay"));
     overlay->show();
     overlay->raise();
 #endif

@@ -297,6 +297,8 @@ public:
     // the caller; HexView only holds a non-owning pointer.
     void   setContextMenu(QMenu *menu) { m_contextMenu = menu; }
     void   setBookmarkContextMenuExternallyHandled(bool on) { m_bookmarkContextMenuExternallyHandled = on; }
+    void   setBookmarkContextCalloutEnabled(bool on) { m_bookmarkContextCalloutEnabled = on; }
+    bool   bookmarkContextCalloutEnabled() const { return m_bookmarkContextCalloutEnabled; }
 
 
     // Geometry of a bookmark note strip.
@@ -579,6 +581,7 @@ private:
     bool            m_pressedOnClose   = false;
     bool            m_pressedOnEdit    = false;
     bool            m_bookmarkContextMenuExternallyHandled = false;
+    bool            m_bookmarkContextCalloutEnabled = true;
 
     // Mouse / interaction
     bool    m_fResizeBar        = false;

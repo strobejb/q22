@@ -2,11 +2,11 @@
 
 #include "HexView/hexview.h"
 #include "bookmarkcolourwidget.h"
+#include "chrome/popupmenucallout.h"
 #include "theme.h"
 
 #include <QApplication>
 #include <QClipboard>
-#include <QEvent>
 #include <QHBoxLayout>
 #include <QMenu>
 #include <QPainter>
@@ -16,37 +16,12 @@
 #include <QVBoxLayout>
 #include <QWidgetAction>
 
-// ─── BookmarkMenuPositioner ───────────────────────────────────────────────────
-// Event filter installed on the popup QMenu; positions it right-aligned under
-// the gear button whose global rect is supplied at construction time.
-
-namespace {
-
-class BookmarkMenuPositioner : public QObject {
-    QRect m_btn;
-public:
-    BookmarkMenuPositioner(QRect btnGlobal, QObject *parent)
-        : QObject(parent), m_btn(btnGlobal) {}
-
-    bool eventFilter(QObject *obj, QEvent *e) override
-    {
-        if (e->type() == QEvent::Show) {
-            auto *w = static_cast<QWidget *>(obj);
-            // Identical to the titlebar formula:
-            // btn->mapToGlobal(QPoint(btn->width() - menu->width() + offset, btn->height()))
-            w->move(m_btn.left() + m_btn.width() - w->width() + themedMenuRightAlignOffset(),
-                    m_btn.top()  + m_btn.height());
-        }
-        return false;
-    }
-};
-
-} // namespace
-
 // ─── showBookmarkContextPopup ────────────────────────────────────────────────
 
 void showBookmarkContextPopup(HexView *hv, int idx, QRect btnGlobal)
 {
+    if (!hv) return;
+
     // Toggle: if this bookmark's popup is already open, the deferred clear
     // hasn't fired yet — the user clicked the gear button a second time to
     // close it.  Qt has already dismissed the popup; just return.
@@ -178,8 +153,10 @@ void showBookmarkContextPopup(HexView *hv, int idx, QRect btnGlobal)
         menu->addAction(act);
     }
 
-    // Right-align under the gear button — identical to the titlebar pattern.
-    menu->installEventFilter(new BookmarkMenuPositioner(btnGlobal, menu));
+    if (hv->bookmarkContextCalloutEnabled())
+        installPopupMenuCallout(menu, btnGlobal);
+    else
+        installPopupMenuRightAligned(menu, btnGlobal);
 
     // Keep the gear button visually pressed while the popup is open.
     // Defer the clear so that bookmarkPopupIdx() is still set when the

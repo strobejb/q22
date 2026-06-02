@@ -4,6 +4,8 @@ set(HEXEDIT_RESOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/resources)
 set(PROJECT_SOURCES
         main.cpp
         version.h
+        chrome/popupmenucallout.cpp
+        chrome/popupmenucallout.h
         fileproperties.h
         filestats/banner.cpp
         filestats/banner.h
