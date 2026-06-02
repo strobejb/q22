@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   prepare-release:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.release-info.outputs.version }}
       tag: ${{ steps.release-info.outputs.tag }}
@@ -103,7 +103,7 @@ jobs:
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.10.2'
+          version: '6.10.*'
           host: linux
           target: desktop
           arch: linux_gcc_64
@@ -154,7 +154,7 @@ jobs:
 
   build-windows:
     needs: prepare-release
-    runs-on: windows-2022
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -181,7 +181,7 @@ jobs:
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.10.2'
+          version: '6.10.*'
           host: windows
           target: desktop
           arch: win64_msvc2022_64

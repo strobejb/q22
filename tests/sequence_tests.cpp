@@ -70,10 +70,16 @@ bool replaceBytes(sequence &seq, size_w index, const QByteArray &bytes, size_w e
 QVector<sequence::span_desc> takeSnapshot(sequence &seq, size_w index, size_w length)
 {
     size_t count = 0;
-    Q_ASSERT(seq.takesnapshot(index, length, nullptr, &count));
+    const bool counted = seq.takesnapshot(index, length, nullptr, &count);
+    Q_ASSERT(counted);
+    if (!counted)
+        return {};
 
     QVector<sequence::span_desc> spans(static_cast<int>(count));
-    Q_ASSERT(seq.takesnapshot(index, length, spans.data(), &count));
+    const bool captured = seq.takesnapshot(index, length, spans.data(), &count);
+    Q_ASSERT(captured);
+    if (!captured)
+        return {};
     Q_ASSERT(count == static_cast<size_t>(spans.size()));
     return spans;
 }
@@ -84,11 +90,14 @@ QByteArray renderSnapshot(sequence &seq,
                           size_t length)
 {
     QByteArray actual(static_cast<int>(length), Qt::Uninitialized);
-    Q_ASSERT(seq.rendersnapshot(static_cast<size_t>(spans.size()),
-                                spans.data(),
-                                offset,
-                                reinterpret_cast<seqchar *>(actual.data()),
-                                length));
+    const bool rendered = seq.rendersnapshot(static_cast<size_t>(spans.size()),
+                                             spans.data(),
+                                             offset,
+                                             reinterpret_cast<seqchar *>(actual.data()),
+                                             length);
+    Q_ASSERT(rendered);
+    if (!rendered)
+        return {};
     return actual;
 }
 
