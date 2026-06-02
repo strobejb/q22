@@ -723,18 +723,84 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
         }
     }
 
-    // Second pass: hide collapsed tabs that visually overlap an active full
-    // strip from a *different* group.  The per-group hiding above only covers
-    // same-group members; cross-group tabs can intrude when a strip is clamped
-    // to y=0 (its visual footprint then extends above sy[winnerIdx]).
-    // noteStripGeom() returns the actual clamped rect, so this is exact.
+    // Final visual de-conflict: conflict grouping intentionally uses the
+    // natural, unclamped strip rectangles so bookmarks scrolled above the
+    // viewport do not pull unrelated visible bookmarks into their group.  Once
+    // a strip is actually painted, though, noteStripGeom() may clamp it to the
+    // top of the viewport.  That can make two otherwise-separate active full
+    // strips overlap.  Keep the current UI winner first (editor, explicit pin,
+    // surfaced/cursor bookmark), then demote lower-priority overlaps to
+    // collapsed tabs.
+    struct ActiveStrip {
+        int idx;
+        QRect rect;
+        int priority;
+    };
+    auto bookmarkContainsCursor = [&](int idx) {
+        if (idx < 0 || idx >= n)
+            return false;
+        const Bookmark &bm = m_bookmarks[idx];
+        return m_nCursorOffset >= bm.offset &&
+               m_nCursorOffset <  bm.offset + bm.length;
+    };
+    auto visualPriority = [&](int idx) {
+        if (idx == m_noteEditorIdx && m_noteEditor && m_noteEditor->isVisible())
+            return 4;
+        if (idx == m_expandedBookmarkIdx)
+            return 3;
+        if (idx == m_surfacedBookmarkIdx)
+            return 2;
+        if (bookmarkContainsCursor(idx))
+            return 1;
+        return 0;
+    };
+    QVector<ActiveStrip> activeStrips;
     for (int k = 0; k < n; ++k) {
         if (!layout[k].isActive) continue;
         const NoteStripGeom geom = noteStripGeom(m_bookmarks[k]);
         if (!geom.valid) continue;
+        activeStrips.append({k, geom.rect, visualPriority(k)});
+    }
+    std::stable_sort(activeStrips.begin(), activeStrips.end(),
+                     [](const ActiveStrip &a, const ActiveStrip &b) {
+                         if (a.priority != b.priority) return a.priority > b.priority;
+                         if (a.rect.top() != b.rect.top()) return a.rect.top() < b.rect.top();
+                         return a.idx < b.idx;
+                     });
+
+    QVector<ActiveStrip> keptActive;
+    auto overlapsKeptActive = [&](const QRect &rect) {
+        for (const ActiveStrip &kept : keptActive) {
+            if (rect.top() < kept.rect.bottom() && rect.bottom() > kept.rect.top())
+                return true;
+        }
+        return false;
+    };
+    auto collapsedTabOverlapsKept = [&](int idx) {
+        for (const ActiveStrip &kept : keptActive) {
+            if (tabTop[idx] < kept.rect.bottom() && tabBot[idx] > kept.rect.top())
+                return true;
+        }
+        return false;
+    };
+
+    for (const ActiveStrip &strip : activeStrips) {
+        if (!overlapsKeptActive(strip.rect)) {
+            keptActive.append(strip);
+            continue;
+        }
+
+        layout[strip.idx] = {true, false, collapsedTabOverlapsKept(strip.idx)};
+    }
+
+    // Hide collapsed tabs that visually overlap an active full strip.  The
+    // per-group hiding above only covers same-group members; cross-group tabs
+    // can intrude when a strip is clamped to y=0 (its visual footprint then
+    // extends beyond its natural conflict interval).
+    for (const ActiveStrip &kept : keptActive) {
         for (int j = 0; j < n; ++j) {
             if (layout[j].isActive || layout[j].hidden) continue;
-            if (tabTop[j] < geom.rect.bottom() && tabBot[j] > geom.rect.top())
+            if (tabTop[j] < kept.rect.bottom() && tabBot[j] > kept.rect.top())
                 layout[j].hidden = true;
         }
     }
