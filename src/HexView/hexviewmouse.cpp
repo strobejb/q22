@@ -783,7 +783,8 @@ void HexView::contextMenuEvent(QContextMenuEvent *event)
         const QPoint vp = viewport()->mapFromGlobal(event->globalPos());
         int bmIdx = -1;
         const HitTestRegion ht = hitTest(vp.x(), vp.y(), &bmIdx);
-        if (ht == HVHT_BOOKMARK || ht == HVHT_BOOKMARK_CLOSE || ht == HVHT_BOOKMARK_EDIT) {
+        if (ht == HVHT_BOOKMARK || ht == HVHT_BOOKMARK_CLOSE ||
+                ht == HVHT_BOOKMARK_EDIT || ht == HVHT_BOOKMARK_COLLAPSED) {
             if (m_bookmarkContextMenuExternallyHandled) {
                 emit bookmarkContextRequested(bmIdx, QRect(event->globalPos(), QSize(1, 1)));
                 return;
@@ -806,6 +807,20 @@ void HexView::contextMenuEvent(QContextMenuEvent *event)
                 emit bookmarkEditRequested(bmIdx);
             else if (act == deleteAct)
                 removeBookmark(bmIdx);
+            return;
+        }
+
+        if ((ht == HVHT_BOOKMARK_AREA || ht == HVHT_BOOKMARK_AREA_BUTTON) &&
+                m_bookmarkContextMenuExternallyHandled) {
+            const int asciiRight = logToPhyXCoord(m_nBytesPerLine, 1);
+            const int gutterMidX = asciiRight + m_nFontWidth * 2;
+            const QRect anchorGlobal(viewport()->mapToGlobal(QPoint(gutterMidX, event->pos().y())),
+                                     QSize(1, 1));
+            const int row = m_nFontHeight > 0 ? qMax(0, vp.y() / m_nFontHeight) : 0;
+            size_w referenceOffset = (size_w)(m_nVScrollPos + row) * (size_w)qMax(1, m_nBytesPerLine);
+            if (m_pDataSeq)
+                referenceOffset = qMin(referenceOffset, m_pDataSeq->size());
+            emit bookmarkAreaContextRequested(referenceOffset, anchorGlobal);
             return;
         }
 

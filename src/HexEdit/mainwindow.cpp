@@ -557,6 +557,7 @@ MainWindow::MainWindow(QWidget *parent)
         HexView::BookmarkButtonAction::Close,
         HexView::BookmarkButtonAction::None,
     });
+    m_hv->setBookmarkContextCalloutEnabled(false);
     {
         // Base flags (always applied)
         uint mask   = HVS_RESIZEBAR | HVS_SHOWMODS | HVS_INVERTSELECTION |

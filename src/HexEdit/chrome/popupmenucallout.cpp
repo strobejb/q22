@@ -165,8 +165,22 @@ public:
     {
         if (e->type() == QEvent::Show) {
             auto *w = static_cast<QWidget *>(obj);
-            w->move(m_anchor.left() + m_anchor.width() - w->width() + themedMenuRightAlignOffset(),
-                    m_anchor.top() + m_anchor.height());
+            const int margin = popupTransparentMargin();
+            const int bodyW = qMax(1, w->width() - margin * 2);
+            const QPoint tip = m_anchor.center();
+            int x = tip.x() - (bodyW * 2) / 3;
+            int y = tip.y() + 4;
+
+            const QRect avail = availableGeometryForPoint(tip);
+            if (avail.isValid()) {
+                const int maxX = avail.right() + 1 - bodyW;
+                x = (maxX >= avail.left()) ? qBound(avail.left(), x, maxX) : avail.left();
+                const int bodyH = qMax(1, w->height() - margin * 2);
+                const int maxY = avail.bottom() + 1 - bodyH;
+                y = (maxY >= avail.top()) ? qBound(avail.top(), y, maxY) : avail.top();
+            }
+
+            w->move(x, y);
         }
         return false;
     }
