@@ -23,7 +23,8 @@ namespace filestats {
 ActionBanner::ActionBanner(const QString &buttonText,
                            const std::function<void()> &onClicked,
                            QWidget *parent,
-                           const std::function<void()> &onClose)
+                           const std::function<void()> &onClose,
+                           const QString &actionIconResourceName)
     : QFrame(parent)
 {
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
@@ -79,7 +80,7 @@ ActionBanner::ActionBanner(const QString &buttonText,
     auto *icon = new QLabel(this);
     icon->setFixedSize(iconSize + 8, iconSize);
     icon->setAlignment(Qt::AlignCenter);
-    icon->setPixmap(recoloredIcon(QStringLiteral("actions/help-about-symbolic"),
+    icon->setPixmap(recoloredIcon(actionIconResourceName,
                                   subtleFg, iconSize).pixmap(iconSize, iconSize));
     layout->addWidget(icon, 0, Qt::AlignVCenter);
 

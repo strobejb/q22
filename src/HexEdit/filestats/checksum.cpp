@@ -247,6 +247,7 @@ QStringList FilePropertiesPanel::selectedChecksumAlgorithms() const
 void FilePropertiesPanel::markChecksumAlgorithmsChanged()
 {
     m_checksumState.started = false;
+    m_checksumState.pausedByCollapse = false;
     m_checksumState.rescanRequired = true;
     m_checksumState.rescanMessage = tr("Algorithm changed");
     ++m_checksumState.generation;
@@ -304,12 +305,14 @@ void FilePropertiesPanel::startChecksumCalculation()
 {
     if (!m_hexView) {
         m_checksumState.started = false;
+        m_checksumState.pausedByCollapse = false;
         return;
     }
 
     m_checksumState.autoStartConsumed = true;
     m_checksumState.rescanRequired = false;
     m_checksumState.rescanMessage.clear();
+    m_checksumState.pausedByCollapse = isSectionCollapsed(SectionId::Checksums);
     const int generation = ++m_checksumState.generation;
     if (m_checksumState.cancel)
         m_checksumState.cancel->store(true);
@@ -358,6 +361,7 @@ void FilePropertiesPanel::applyChecksumResults(int generation, const QHash<QStri
         return;
 
     m_checksumState.started = false;
+    m_checksumState.pausedByCollapse = false;
     const QStringList algorithms = selectedChecksumAlgorithms();
     const QSet<QString> selected(algorithms.cbegin(), algorithms.cend());
     for (auto it = m_checksumValues.begin(); it != m_checksumValues.end(); ++it) {
@@ -379,6 +383,7 @@ void FilePropertiesPanel::cancelChecksumCalculation()
 {
     ++m_checksumState.generation;
     m_checksumState.started = false;
+    m_checksumState.pausedByCollapse = false;
     if (m_checksumState.cancel)
         m_checksumState.cancel->store(true);
     if (m_checksumState.pause)
@@ -388,5 +393,18 @@ void FilePropertiesPanel::cancelChecksumCalculation()
     if (m_checksumOperation)
         m_checksumOperation->showRetry(tr("Operation cancelled"));
     resetChecksumTitle();
+    requestSectionLayoutRefresh(SectionId::Checksums);
+}
+
+void FilePropertiesPanel::resumeChecksumCalculation()
+{
+    if (!m_checksumState.started || !m_checksumState.pause)
+        return;
+
+    m_checksumState.pausedByCollapse = false;
+    m_checksumState.pause->wake();
+    if (m_checksumOperation)
+        m_checksumOperation->setProgressActionStop();
+    setChecksumProgressTitle(m_checksumState.progress);
     requestSectionLayoutRefresh(SectionId::Checksums);
 }

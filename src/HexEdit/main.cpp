@@ -15,8 +15,8 @@ int main(int argc, char *argv[])
     QApplication a(argc, argv);
     QApplication::setAttribute(Qt::AA_DontShowIconsInMenus, true);
     a.setOrganizationName("catch22");
-    a.setApplicationName("hexedit");
-    a.setApplicationDisplayName("HexEdit");
+    a.setApplicationName("q22");
+    a.setApplicationDisplayName("q22");
     a.setDesktopFileName("hexedit");
     a.setApplicationVersion(PRODUCT_VERSION_STRING);
 #ifndef Q_OS_WIN

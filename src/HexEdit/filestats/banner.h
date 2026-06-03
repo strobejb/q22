@@ -15,7 +15,8 @@ public:
     explicit ActionBanner(const QString &buttonText,
                           const std::function<void()> &onClicked,
                           QWidget *parent = nullptr,
-                          const std::function<void()> &onClose = {});
+                          const std::function<void()> &onClose = {},
+                          const QString &actionIconResourceName = "actions/help-about-symbolic");
 
     void setMessage(const QString &message);
     void setButtonText(const QString &text);

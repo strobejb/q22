@@ -347,14 +347,14 @@ inline QToolButton *createProgressToolButton(QWidget *parent,
 inline QToolButton *createProgressStopButton(QWidget *parent)
 {
     return createProgressToolButton(parent,
-                                    QStringLiteral("actions/stopcircle"),
+                                    QStringLiteral("actions/circle-stop-solid"),
                                     QObject::tr("Stop"));
 }
 
 inline QToolButton *createProgressStartButton(QWidget *parent)
 {
     return createProgressToolButton(parent,
-                                    QStringLiteral("actions/media-playback-start-symbolic"),
+                                    QStringLiteral("actions/circle-play-solid"),
                                     QObject::tr("Start"));
 }
 
@@ -372,7 +372,9 @@ public:
     SectionOperationStrip(QWidget *parent,
                           const std::function<void()> &onStart,
                           const std::function<void()> &onStop,
+                          const std::function<void()> &onResume,
                           const std::function<void()> &onRetry)
+        : m_onStop(onStop), m_onResume(onResume)
     {
         m_strip = new QWidget(parent);
         auto *outer = new QVBoxLayout(m_strip);
@@ -409,7 +411,7 @@ public:
         progressLayout->addWidget(m_progress, 1, Qt::AlignVCenter);
         inner->addWidget(m_progressRow);
 
-        m_retryStrip = new ActionBanner(QObject::tr("Restart"), onRetry, m_strip);
+        m_retryStrip = new ActionBanner(QObject::tr("Restart"), onRetry, m_strip);//, QString("actions/circle-info-solid"));
         auto *retryWrap = new QWidget(m_strip);
         auto *retryLayout = new QVBoxLayout(retryWrap);
         retryLayout->setContentsMargins(0, 0, 0, 0);
@@ -419,7 +421,14 @@ public:
         inner->addSpacing(kHeaderControlGap);
 
         QObject::connect(m_startButton, &QToolButton::clicked, m_strip, [onStart]() { onStart(); });
-        QObject::connect(m_stopButton, &QToolButton::clicked, m_strip, [onStop]() { onStop(); });
+        QObject::connect(m_stopButton, &QToolButton::clicked, m_strip, [this]() {
+            if (m_progressAction == ProgressAction::Resume) {
+                if (m_onResume)
+                    m_onResume();
+            } else if (m_onStop) {
+                m_onStop();
+            }
+        });
         clear();
     }
 
@@ -444,10 +453,21 @@ public:
         m_progress->setRange(0, 1000);
         m_progress->setValue(0);
         m_progress->show();
+        setProgressActionStop();
         m_stopButton->show();
         m_progressRow->show();
         m_retryStrip->hide();
         updateVisibility();
+    }
+
+    void setProgressActionStop()
+    {
+        setProgressAction(ProgressAction::Stop);
+    }
+
+    void setProgressActionResume()
+    {
+        setProgressAction(ProgressAction::Resume);
     }
 
     void showRetry(const QString &message)
@@ -497,6 +517,21 @@ public:
     }
 
 private:
+    enum class ProgressAction { Stop, Resume };
+
+    void setProgressAction(ProgressAction action)
+    {
+        m_progressAction = action;
+        const QString iconName = action == ProgressAction::Resume
+                                     ? QStringLiteral("actions/circle-play-solid")
+                                     : QStringLiteral("actions/circle-stop-solid");
+        m_stopButton->setToolTip(action == ProgressAction::Resume
+                                     ? QObject::tr("Resume")
+                                     : QObject::tr("Stop"));
+        m_stopButton->setProperty("iconThemeName", iconName);
+        m_stopButton->setIcon(recoloredIcon(iconName, m_strip->palette().buttonText().color(), 16));
+    }
+
     void updateVisibility()
     {
         m_strip->setVisible(!m_collapsed && hasOperation());
@@ -510,6 +545,9 @@ private:
     QProgressBar *m_progress = nullptr;
     QToolButton *m_stopButton = nullptr;
     ActionBanner *m_retryStrip = nullptr;
+    std::function<void()> m_onStop;
+    std::function<void()> m_onResume;
+    ProgressAction m_progressAction = ProgressAction::Stop;
     bool m_collapsed = false;
 };
 

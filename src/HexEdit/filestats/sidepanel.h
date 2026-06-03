@@ -104,7 +104,9 @@ private:
     void maybeStartStringScan();
     void startStringScan(qulonglong startOffset = 0, bool append = false, bool scanAll = false);
     void cancelChecksumCalculation();
+    void resumeChecksumCalculation();
     void cancelStringScan();
+    void resumeStringScan();
     void exportStringResults();
     void clearStringExportTemp();
     QString createStringExportTemp();
@@ -204,6 +206,7 @@ private:
         int generation = 0;
         int progress = 0;
         bool started = false;
+        bool pausedByCollapse = false;
         bool autoStartConsumed = false;
         bool rescanRequired = false;
         QString rescanMessage;

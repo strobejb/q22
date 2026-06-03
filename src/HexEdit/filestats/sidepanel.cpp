@@ -175,6 +175,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     m_checksumOperation = new SectionOperationStrip(m_content,
         startChecksums,
         [this]() { cancelChecksumCalculation(); },
+        [this]() { resumeChecksumCalculation(); },
         startChecksums);
     contentLayout->addWidget(m_checksumOperation->widget());
 
@@ -233,6 +234,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     m_stringsOperation = new SectionOperationStrip(m_content,
         startStrings,
         [this]() { cancelStringScan(); },
+        [this]() { resumeStringScan(); },
         [this, startStrings]() {
             if (m_stringsList)
                 m_stringsList->clear();
@@ -499,8 +501,14 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
         0,
         [this]() { maybeStartChecksumCalculation(); },
         [this](bool collapsed) {
-            if (m_checksumState.pause && m_checksumState.started)
-                m_checksumState.pause->setPaused(collapsed);
+            if (m_checksumState.pause && m_checksumState.started) {
+                if (collapsed) {
+                    m_checksumState.pausedByCollapse = true;
+                    m_checksumState.pause->setPaused(true);
+                } else if (m_checksumState.pausedByCollapse && m_checksumOperation) {
+                    m_checksumOperation->setProgressActionResume();
+                }
+            }
             if (m_checksumState.started)
                 setChecksumProgressTitle(m_checksumState.progress);
         },
@@ -521,8 +529,14 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
         kStringsListMinHeight,
         [this]() { maybeStartStringScan(); },
         [this](bool collapsed) {
-            if (m_stringsState.pause && m_stringsState.started)
-                m_stringsState.pause->setPaused(collapsed);
+            if (m_stringsState.pause && m_stringsState.started) {
+                if (collapsed) {
+                    m_stringsState.pausedByCollapse = true;
+                    m_stringsState.pause->setPaused(true);
+                } else if (m_stringsState.pausedByCollapse && m_stringsOperation) {
+                    m_stringsOperation->setProgressActionResume();
+                }
+            }
             if (m_stringsState.started)
                 setStringsProgressTitle(m_stringsState.progress);
         },
@@ -541,6 +555,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     }
     connect(m_minStringLength, &StepSpinBox::valueChanged, this, [this](int) {
         m_stringsState.started = false;
+        m_stringsState.pausedByCollapse = false;
         ++m_stringsState.generation;
         if (m_stringsState.cancel)
             m_stringsState.cancel->store(true);
@@ -561,6 +576,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     });
     connect(m_stringEncoding, &QComboBox::currentIndexChanged, this, [this](int) {
         m_stringsState.started = false;
+        m_stringsState.pausedByCollapse = false;
         ++m_stringsState.generation;
         if (m_stringsState.cancel)
             m_stringsState.cancel->store(true);
@@ -581,6 +597,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     });
     connect(m_includeWhitespaceAction, &QAction::toggled, this, [this](bool) {
         m_stringsState.started = false;
+        m_stringsState.pausedByCollapse = false;
         ++m_stringsState.generation;
         if (m_stringsState.cancel)
             m_stringsState.cancel->store(true);
@@ -601,6 +618,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     });
     connect(m_prefixHexOffsetAction, &QAction::toggled, this, [this](bool) {
         m_stringsState.started = false;
+        m_stringsState.pausedByCollapse = false;
         ++m_stringsState.generation;
         if (m_stringsState.cancel)
             m_stringsState.cancel->store(true);
@@ -763,7 +781,7 @@ void FilePropertiesPanel::setChecksumProgressTitle(int value)
     if (!m_checksumHeader)
         return;
     const int pct = qBound(0, value, 1000) / 10;
-    m_checksumHeader->setTitle(isSectionCollapsed(SectionId::Checksums)
+    m_checksumHeader->setTitle((isSectionCollapsed(SectionId::Checksums) || m_checksumState.pausedByCollapse)
         ? tr("Checksums (%1% - paused)").arg(pct)
         : tr("Checksums (%1%)").arg(pct));
     syncStickyHeader();
@@ -774,7 +792,7 @@ void FilePropertiesPanel::setStringsProgressTitle(int value)
     if (!m_stringsHeader)
         return;
     const int pct = qBound(0, value, 1000) / 10;
-    m_stringsHeader->setTitle(isSectionCollapsed(SectionId::Strings)
+    m_stringsHeader->setTitle((isSectionCollapsed(SectionId::Strings) || m_stringsState.pausedByCollapse)
         ? tr("Strings (%1% - paused)").arg(pct)
         : tr("Strings (%1%)").arg(pct));
     syncStickyHeader();

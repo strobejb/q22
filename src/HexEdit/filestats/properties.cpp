@@ -51,6 +51,7 @@ void FilePropertiesPanel::refreshDocumentState(bool contentsChanged)
 void FilePropertiesPanel::markChecksumContentsChanged()
 {
     m_checksumState.started = false;
+    m_checksumState.pausedByCollapse = false;
     ++m_checksumState.generation;
     if (m_checksumState.cancel)
         m_checksumState.cancel->store(true);
@@ -68,6 +69,7 @@ void FilePropertiesPanel::markChecksumContentsChanged()
 void FilePropertiesPanel::resetChecksumForCurrentDocument()
 {
     m_checksumState.started = false;
+    m_checksumState.pausedByCollapse = false;
     ++m_checksumState.generation;
     if (m_checksumState.cancel)
         m_checksumState.cancel->store(true);
@@ -89,6 +91,7 @@ void FilePropertiesPanel::resetChecksumForCurrentDocument()
 void FilePropertiesPanel::markStringsContentsChanged()
 {
     m_stringsState.started = false;
+    m_stringsState.pausedByCollapse = false;
     ++m_stringsState.generation;
     if (m_stringsState.cancel)
         m_stringsState.cancel->store(true);
@@ -111,6 +114,7 @@ void FilePropertiesPanel::markStringsContentsChanged()
 void FilePropertiesPanel::resetStringsForCurrentDocument()
 {
     m_stringsState.started = false;
+    m_stringsState.pausedByCollapse = false;
     ++m_stringsState.generation;
     if (m_stringsState.cancel)
         m_stringsState.cancel->store(true);

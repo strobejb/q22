@@ -277,6 +277,7 @@ void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, b
 {
     if (!m_hexView || !m_minStringLength) {
         m_stringsState.started = false;
+        m_stringsState.pausedByCollapse = false;
         return;
     }
 
@@ -300,6 +301,7 @@ void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, b
         if (initialResultCount == 0)
             initialResultCount = static_cast<qulonglong>(visibleBaseCount);
     }
+    m_stringsState.pausedByCollapse = isSectionCollapsed(SectionId::Strings);
     m_stringsState.rescanRequired = false;
     m_stringsState.rescanMessage.clear();
     m_stringMoreAvailable = false;
@@ -449,6 +451,7 @@ void FilePropertiesPanel::cancelStringScan()
 {
     ++m_stringsState.generation;
     m_stringsState.started = false;
+    m_stringsState.pausedByCollapse = false;
     m_stringMoreAvailable = false;
     if (m_stringsState.cancel)
         m_stringsState.cancel->store(true);
@@ -460,6 +463,19 @@ void FilePropertiesPanel::cancelStringScan()
     if (m_stringsOperation)
         m_stringsOperation->showRetry(tr("Operation cancelled"));
     resetStringsTitle();
+    requestSectionLayoutRefresh(SectionId::Strings);
+}
+
+void FilePropertiesPanel::resumeStringScan()
+{
+    if (!m_stringsState.started || !m_stringsState.pause)
+        return;
+
+    m_stringsState.pausedByCollapse = false;
+    m_stringsState.pause->wake();
+    if (m_stringsOperation)
+        m_stringsOperation->setProgressActionStop();
+    setStringsProgressTitle(m_stringsState.progress);
     requestSectionLayoutRefresh(SectionId::Strings);
 }
 
@@ -538,6 +554,7 @@ void FilePropertiesPanel::finishStringScan(int generation, const QVector<QVarian
 
     appendStringResults(generation, results);
     m_stringsState.started = false;
+    m_stringsState.pausedByCollapse = false;
     m_stringsState.progress = qBound(0, progress, 1000);
     m_stringMoreAvailable = capped;
     m_stringNextOffset = nextOffset;
