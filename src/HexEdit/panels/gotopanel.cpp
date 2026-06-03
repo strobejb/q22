@@ -1,6 +1,7 @@
 #include "gotopanel.h"
 #include "ui_gotopanel.h"
 #include "combos/datatypecombobox.h"
+#include "bookmarks/bookmarkcombo.h"
 #include "panels/dockpanelrow.h"
 #include "theme.h"
 #include "HexView/hexview.h"
@@ -16,8 +17,6 @@
 #include <QToolButton>
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
-#include <algorithm>
-#include <cstring>
 
 
 
@@ -260,60 +259,9 @@ void GotoPanel::activate(const QString &initialText)
 
 void GotoPanel::refreshBookmarks()
 {
-    const QList<Bookmark> &bms = m_hv->bookmarks();
-
-    m_comboBookmarks->clear();
-    const QString newBmLabel = tr("New Bookmark...\tCtrl+B");
-    m_comboBookmarks->addItem(newBmLabel);
-    if (!bms.isEmpty())
-        m_comboBookmarks->addItem(QString());   // separator
-
-    // Sort by offset ascending.
-    QList<int> sortedIdx;
-    sortedIdx.reserve(bms.size());
-    for (int i = 0; i < bms.size(); ++i)
-        sortedIdx.append(i);
-    std::sort(sortedIdx.begin(), sortedIdx.end(), [&bms](int a, int b) {
-        return bms[a].offset < bms[b].offset;
-    });
-
-    // Name truncated with ellipsis; hex after \t so QMenu places it in the
-    // shortcut column — right-aligned, rendered grey by TightMenuStyle.
-    const QFontMetrics fm(m_comboBookmarks->font());
-    constexpr int kMaxNamePx = 200;
-
-    // First bookmark sits at QComboBox item index 1 ("New Bookmark…") + 1
-    // (separator, if any bookmarks exist) = 2, otherwise 1.
-    int comboIdx = bms.isEmpty() ? 1 : 2;
-
-    QStringList labels;
-    for (int i : sortedIdx) {
-        const Bookmark &bm    = bms[i];
-        const QString rawText = bm.text.isEmpty() ? tr("(empty)") : bm.text;
-        const QString name    = fm.elidedText(rawText, Qt::ElideRight, kMaxNamePx);
-        const QString hex     = QStringLiteral("0x") + QString::number(bm.offset, 16).toUpper().rightJustified(8, QLatin1Char('0'));
-        const QString label   = name + QLatin1Char('\t') + hex;
-        m_comboBookmarks->addItem(label);
-
-        // Set the colour swatch icon on the item before buildMenu() reads it.
-        if (m_bookmarkSwatches) {
-            const QColor bgCol = bm.colourIndex >= 0
-                ? QColor(m_hv->getHexColour(HvColorSlot(HVC_BOOKMARK1 + bm.colourIndex)))
-                : (bm.bgColour ? QColor(bm.bgColour)
-                               : QColor(m_hv->getHexColour(HVC_BOOKMARK1)));
-            m_comboBookmarks->setItemData(comboIdx, bgCol, Qt::DecorationRole);
-        }
-        ++comboIdx;
-        labels.append(label);
-    }
-    m_comboBookmarks->buildMenu(/*checkable=*/false);
-    m_comboBookmarks->setDisplayText(tr("Bookmarks..."));
-
-    m_comboBookmarks->setActionData(newBmLabel, QVariant::fromValue<int>(-1));
-    for (int j = 0; j < sortedIdx.size(); ++j)
-        m_comboBookmarks->setActionData(labels[j], QVariant::fromValue<int>(sortedIdx[j]));
-
-    m_comboBookmarks->setEnabled(true);   // always enabled; "New Bookmark..." is always present
+    BookmarkCombo::populate(m_comboBookmarks, m_hv,
+                            BookmarkCombo::Mode::IncludeNewBookmark,
+                            m_bookmarkSwatches);
 }
 
 void GotoPanel::keyPressEvent(QKeyEvent *e)

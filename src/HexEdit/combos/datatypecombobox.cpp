@@ -3,9 +3,11 @@
 #include <QAction>
 #include <QActionGroup>
 #include <QApplication>
+#include <QGuiApplication>
 #include <QKeyEvent>
 #include <QMenu>
 #include <QPainter>
+#include <QScreen>
 #include <QStyleOptionComboBox>
 #include <QStylePainter>
 
@@ -286,5 +288,41 @@ void DataTypeComboBox::showPopup()
 
     const QPoint pos = smartMenuPos(this, m_menu, /*rightAlign=*/false);
     m_menu->popup(pos);
+    setPopupOpen(true);
+}
+
+void DataTypeComboBox::popupAbove(const QRect &anchorGlobal)
+{
+    if (m_menu->isVisible()) {
+        m_menu->hide();
+        return;
+    }
+
+    connect(m_menu, &QMenu::aboutToHide, this,
+            [this]() { recordMenuClose(); setPopupOpen(false); emit popupClosed(); },
+            Qt::SingleShotConnection);
+
+    const QSize popupSize = m_menu->sizeHint();
+    QScreen *screen = QGuiApplication::screenAt(anchorGlobal.center());
+    if (!screen)
+        screen = QGuiApplication::primaryScreen();
+    const QRect avail = screen ? screen->availableGeometry() : QRect();
+
+    constexpr int kGap = 6;
+#ifdef Q_OS_WIN
+    constexpr int kBorderOverlap = 2;
+#else
+    constexpr int kMenuShadowMargin = 8;
+    constexpr int kBorderOverlap = 2 * kMenuShadowMargin + 2;
+#endif
+    int x = anchorGlobal.left();
+    int y = anchorGlobal.top() - popupSize.height() + kBorderOverlap;
+    if (avail.isValid()) {
+        x = qBound(avail.left(), x, avail.right() - popupSize.width() + 1);
+        if (y < avail.top())
+            y = qMin(avail.bottom() - popupSize.height() + 1, anchorGlobal.bottom() + kGap);
+    }
+
+    m_menu->popup({x, y});
     setPopupOpen(true);
 }

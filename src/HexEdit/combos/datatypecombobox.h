@@ -2,6 +2,7 @@
 #define DATATYPECOMBOBOX_H
 
 #include "combos/valuecombobox.h"
+#include <QRect>
 
 class QAction;
 class QActionGroup;
@@ -29,6 +30,7 @@ public:
     // Programmatically select the action whose data matches |data|.
     // Emits selectionChanged if the selection changes.
     void     selectByData(const QVariant &data);
+    void     popupAbove(const QRect &anchorGlobal);
 
     // Append a pre-built action (e.g. QWidgetAction) directly to the menu and
     // m_actions list.  Call after buildMenu().  The caller is responsible for
@@ -41,6 +43,7 @@ public:
 
 signals:
     void selectionChanged(int index);
+    void popupClosed();
 
 protected:
     QSize sizeHint()        const                   override;

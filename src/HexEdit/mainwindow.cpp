@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "./ui_mainwindow.h"
 #include "bookmarks/bookmarkstore.h"
+#include "bookmarks/bookmarkcombo.h"
 #include "HexView/hexview.h"
 #include "HexView/seqbase.h"
 #include "bookmarks/dlgbookmark.h"
@@ -16,6 +17,7 @@
 #include "panels/findpanel.h"
 #include "panels/gotopanel.h"
 #include "combos/menucombobox.h"
+#include "combos/datatypecombobox.h"
 #include "palette/palettes.h"
 #include "settings/preferences.h"
 #include "settings/settings.h"
@@ -51,6 +53,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
+#include <QFontMetrics>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -62,10 +65,62 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QVBoxLayout>
-#include <QToolButton>
 #include <QWidgetAction>
 #include <QWindow>
 #include <QUrl>
+
+namespace {
+
+void jumpToBookmark(HexView *hv, int idx)
+{
+    if (!hv)
+        return;
+    const QList<Bookmark> &bms = hv->bookmarks();
+    if (idx < 0 || idx >= bms.size())
+        return;
+
+    const Bookmark &bm = bms[idx];
+    hv->expandBookmark(idx);
+    hv->scrollCenterIfOffScreen(bm.offset, bm.length);
+    hv->setCurSel(bm.offset + bm.length, bm.offset);
+    hv->scrollHEnd();
+    hv->setFocus();
+}
+
+int bookmarkAreaComboWidth(const DataTypeComboBox *combo)
+{
+    if (!combo)
+        return 150;
+    const int textW = QFontMetrics(combo->font()).horizontalAdvance(combo->displayText());
+    constexpr int kIconW = 16;
+    constexpr int kIconGap = 8;
+    constexpr int kArrowW = 22;
+    constexpr int kFrameAndSpare = 32;
+    return qBound(132, textW + kIconW + kIconGap + kArrowW + kFrameAndSpare, 180);
+}
+
+void showBookmarkAreaPopup(HexView *hv, size_w referenceOffset, const QRect &globalRect, QWidget *owner)
+{
+    Q_UNUSED(referenceOffset);
+    if (!hv || hv->bookmarks().isEmpty())
+        return;
+
+    auto *combo = new DataTypeComboBox(owner);
+    combo->hide();
+    BookmarkCombo::populate(combo, hv, BookmarkCombo::Mode::BookmarksOnly, /*swatches=*/true);
+    combo->setFixedWidth(bookmarkAreaComboWidth(combo));
+    QObject::connect(combo, &DataTypeComboBox::selectionChanged, combo, [hv, combo](int) {
+        const QVariant data = combo->selectionData();
+        if (data.isNull())
+            return;
+        jumpToBookmark(hv, data.toInt());
+        combo->deleteLater();
+    });
+    QObject::connect(combo, &DataTypeComboBox::popupClosed, combo, &QObject::deleteLater);
+    combo->popupAbove(globalRect);
+}
+
+} // namespace
 
 static bool formatNeedsEndian(IMPEXP_FORMAT fmt)
 {
@@ -831,6 +886,10 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_hv, &HexView::bookmarkContextRequested,
             this, [this](int idx, QRect btnGlobal) {
         showBookmarkContextPopup(m_hv, idx, btnGlobal);
+    });
+    connect(m_hv, &HexView::bookmarkAreaContextRequested,
+            this, [this](size_w referenceOffset, QRect globalRect) {
+        showBookmarkAreaPopup(m_hv, referenceOffset, globalRect, this);
     });
     m_hv->setBookmarkContextMenuExternallyHandled(true);
 

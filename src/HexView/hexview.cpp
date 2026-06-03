@@ -76,6 +76,9 @@ HexView::HexView(QWidget *parent)
 
     m_scrollTimer.setSingleShot(false);
     connect(&m_scrollTimer, &QTimer::timeout, this, &HexView::onScrollTimer);
+    m_bookmarkAreaButtonFadeTimer.setInterval(16);
+    connect(&m_bookmarkAreaButtonFadeTimer, &QTimer::timeout,
+            this, &HexView::advanceBookmarkAreaButtonFade);
 
     connect(this, &HexView::lengthChanged, this, &HexView::onLengthChanged);
 
@@ -103,8 +106,12 @@ bool HexView::eventFilter(QObject *obj, QEvent *ev)
         m_hoverBookmarkIdx = -1;
         m_hoverOnClose     = false;
         m_hoverOnEdit      = false;
+        m_hoverBookmarkArea = false;
+        m_hoverBookmarkAreaButton = false;
+        setBookmarkAreaButtonVisible(false);
         m_pressedOnClose   = false;
         m_pressedOnEdit    = false;
+        m_pressedBookmarkAreaButton = false;
         viewport()->update();
         return false;
     }
@@ -113,12 +120,18 @@ bool HexView::eventFilter(QObject *obj, QEvent *ev)
         // Ignore Leave while a bookmark button grab is active — mouse events keep
         // arriving via the grab so hover/press state updates continue normally.
         if (QWidget::mouseGrabber() == viewport()) return false;
-        if (m_hoverBookmarkIdx != -1 || m_hoverOnClose || m_hoverOnEdit || m_pressedOnClose || m_pressedOnEdit) {
+        if (m_hoverBookmarkIdx != -1 || m_hoverOnClose || m_hoverOnEdit ||
+                m_hoverBookmarkArea || m_hoverBookmarkAreaButton ||
+                m_pressedOnClose || m_pressedOnEdit || m_pressedBookmarkAreaButton) {
             m_hoverBookmarkIdx = -1;
             m_hoverOnClose     = false;
             m_hoverOnEdit      = false;
+            m_hoverBookmarkArea = false;
+            m_hoverBookmarkAreaButton = false;
+            setBookmarkAreaButtonVisible(false);
             m_pressedOnClose   = false;
             m_pressedOnEdit    = false;
+            m_pressedBookmarkAreaButton = false;
             viewport()->update();
         }
         viewport()->unsetCursor();

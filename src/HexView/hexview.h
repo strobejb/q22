@@ -140,7 +140,9 @@ enum HitTestRegion : uint {
     HVHT_BOOKMARK           = 0x100,  // full-strip body
     HVHT_BOOKMARK_CLOSE     = 0x200,
     HVHT_BOOKMARK_EDIT      = 0x400,
-    HVHT_BOOKMARK_COLLAPSED = 0x800   // collapsed single-line strip body
+    HVHT_BOOKMARK_COLLAPSED = 0x800,  // collapsed single-line strip body
+    HVHT_BOOKMARK_AREA      = 0x1000, // empty note-strip area
+    HVHT_BOOKMARK_AREA_BUTTON = 0x2000
 };
 
 // ── Data structures ───────────────────────────────────────────────────────────
@@ -337,6 +339,7 @@ signals:
     void bookmarksChanged();          // bookmark added, removed, or replaced
     void bookmarkEditRequested(int idx); // kept for compatibility — no longer emitted (dead)
     void bookmarkContextRequested(int idx, QRect globalRect); // right-click on bookmark/editor
+    void bookmarkAreaContextRequested(size_w referenceOffset, QRect globalRect); // bookmark-area popup button
     void bookmarkSettingsRequested(int idx, QRect btnGlobal); // bookmark tool button
 
 public:
@@ -424,11 +427,15 @@ private:
     int           findBookmark(size_w startoff, size_w endoff) const;
     NoteStripGeom noteStripGeom(const Bookmark &bm) const;
     QRect         bookmarkButtonRect(const NoteStripGeom &geom, BookmarkButtonAction action) const;
+    QRect         bookmarkAreaButtonRect() const;
     HitTestRegion hitTestForBookmarkButtonAction(BookmarkButtonAction action) const;
     QRect         noteCollapsedRect(const Bookmark &bm) const;
     void          drawNoteStrip(QPainter &painter, const Bookmark &bm, const BmLayout &bml);
+    void          drawBookmarkAreaButton(QPainter &painter);
     int           noteStripFullHeight(const Bookmark &bm) const;
     QVector<BmLayout> computeBookmarkLayout(bool treatMouseAsReleased = false);
+    void          setBookmarkAreaButtonVisible(bool visible);
+    void          advanceBookmarkAreaButtonFade();
     void          closeNoteEditor(bool save);
     QFont         noteFont() const;
 
@@ -578,8 +585,13 @@ private:
     int             m_hoverBookmarkIdx = -1;
     bool            m_hoverOnClose     = false;
     bool            m_hoverOnEdit      = false;
+    bool            m_hoverBookmarkArea = false;
+    bool            m_hoverBookmarkAreaButton = false;
+    qreal           m_bookmarkAreaButtonOpacity = 0.0;
+    bool            m_bookmarkAreaButtonVisible = false;
     bool            m_pressedOnClose   = false;
     bool            m_pressedOnEdit    = false;
+    bool            m_pressedBookmarkAreaButton = false;
     bool            m_bookmarkContextMenuExternallyHandled = false;
     bool            m_bookmarkContextCalloutEnabled = true;
 
@@ -594,6 +606,7 @@ private:
     QTimer  m_scrollTimer;
     int     m_nScrollCounter    = 0;
     int     m_nScrollMouseRemainder = 0;
+    QTimer  m_bookmarkAreaButtonFadeTimer;
 
     // Search
     uint8_t  m_pSearchPat[256]  = {};
