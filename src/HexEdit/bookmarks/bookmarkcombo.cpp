@@ -12,6 +12,16 @@
 
 namespace BookmarkCombo {
 
+static QString trimmedLeadingWhitespace(QString text)
+{
+    qsizetype firstNonSpace = 0;
+    while (firstNonSpace < text.size() && text.at(firstNonSpace).isSpace())
+        ++firstNonSpace;
+    if (firstNonSpace > 0)
+        text.remove(0, firstNonSpace);
+    return text;
+}
+
 void populate(DataTypeComboBox *combo, HexView *hv, Mode mode, bool swatches)
 {
     if (!combo || !hv)
@@ -43,7 +53,8 @@ void populate(DataTypeComboBox *combo, HexView *hv, Mode mode, bool swatches)
     labels.reserve(sortedIdx.size());
     for (int i : sortedIdx) {
         const Bookmark &bm = bms[i];
-        const QString rawText = bm.text.isEmpty() ? QObject::tr("(empty)") : bm.text;
+        const QString displayText = trimmedLeadingWhitespace(bm.text);
+        const QString rawText = displayText.isEmpty() ? QObject::tr("(empty)") : displayText;
         const QString name = fm.elidedText(rawText, Qt::ElideRight, kMaxNamePx);
         const QString hex = QStringLiteral("0x")
                             + QString::number(bm.offset, 16).toUpper().rightJustified(8, QLatin1Char('0'));
