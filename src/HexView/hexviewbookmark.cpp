@@ -354,6 +354,9 @@ HexView::NoteStripGeom HexView::noteStripGeom(const Bookmark &bm) const
                                    / (size_w)m_nBytesPerLine);
     const int numLines     = endLine_i - (int)startLine + 1;
     const int rangeSpanPx  = numLines * m_nFontHeight;
+    if (ny + rangeSpanPx <= 0 || ny >= viewH)
+        return g;
+
     const int idealTipY    = ny + rangeSpanPx / 2;   // centre of byte range, screen coords
     const int minMargin    = m_nFontHeight / 2 + kNoteRadius;
     const int defaultRectY = ny + kNotePadV;
@@ -371,9 +374,11 @@ HexView::NoteStripGeom HexView::noteStripGeom(const Bookmark &bm) const
         finalRectY = tipY - rectH / 2;
     }
 
-    // Never let the strip clip above the top of the viewport.  The tip stays at
-    // its computed position (tracking the hex selection); only the body moves down.
-    finalRectY = std::max(finalRectY, 0);
+    // Never let the strip render before the first document line.  When scrolled
+    // down, line 0 is above the viewport, so the strip is allowed to scroll away
+    // with the bookmarked bytes instead of sticking to viewport y=0.
+    const int documentTopY = -(int)m_nVScrollPos * m_nFontHeight;
+    finalRectY = std::max(finalRectY, documentTopY);
 
     if (finalRectY + rectH <= 0 || finalRectY >= viewH) return g;
 

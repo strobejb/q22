@@ -243,8 +243,11 @@ protected:
         painter.setFont(boldFont);
         painter.setPen(subduedTextColor(palette()));
         const int textRight = width() - kContentMargin - 16 - 4;
+        QString displayTitle = m_title;
+        if ((m_hover || m_pressing) && m_dragStarted)
+            displayTitle.replace(QStringLiteral(" - paused"), QString());
         painter.drawText(QRect(kContentMargin, 0, textRight - kContentMargin, height()),
-                         Qt::AlignVCenter | Qt::AlignLeft, m_title);
+                         Qt::AlignVCenter | Qt::AlignLeft, displayTitle);
 
         // Hamburger: gradient fade over title text + icon, drawn on top
         if ((m_hover || m_pressing) && m_dragStarted) {

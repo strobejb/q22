@@ -899,7 +899,6 @@ void HexView::paintEvent(QPaintEvent *event)
     }
 
     // ── Draw line by line ─────────────────────────────────────────────────────
-    const int asciiRight = logToPhyXCoord(m_nBytesPerLine, 1);
     // Compute conflict layout once for all bookmarks before the draw loop.
     const QVector<BmLayout> bmLayout = computeBookmarkLayout();
     for (size_w i = first; i <= last; i++) {
@@ -917,40 +916,48 @@ void HexView::paintEvent(QPaintEvent *event)
                   bufinfo + lineDataOff,
                   datashift,
                   matchHighlights);
+    }
 
-        // Bookmark note strips — drawn to the right of the ASCII column.
-        // Bookmarks are stored sorted by (offset ASC, length DESC), which already
-        // handles the same-offset case.  For bookmarks with *different* offsets
-        // that still land on the same display line we need an extra length-
-        // descending pass so the strip with the larger span is always painted
-        // first (i.e. underneath).  Collect matching bookmarks into a small
-        // stack buffer, sort by length descending, then draw in that order.
-        {
-            const size_w lineStart = i * (size_w)m_nBytesPerLine;
-            const size_w lineEnd   = lineStart + (size_w)m_nBytesPerLine;
-            const size_w fileSize  = m_pDataSeq->size();
+    // Bookmark note strips — drawn to the right of the ASCII column.
+    //
+    // Draw by visual visibility rather than only inside the bookmark's start
+    // line.  Expanded strips can be clamped to the viewport top while their
+    // start line has already scrolled away; tying drawing to the line loop makes
+    // those otherwise-visible strips vanish.
+    {
+        const size_w fileSize = m_pDataSeq->size();
+        QVector<int> visibleBms;
+        visibleBms.reserve(m_bookmarks.size());
 
-            // Stack-allocated for the typical case of 0-3 bookmarks per line.
-            QVarLengthArray<const Bookmark *, 8> lineBms;
-            for (const Bookmark &bm : m_bookmarks) {
-                if (bm.offset >= lineStart && bm.offset < lineEnd && bm.offset < fileSize)
-                    lineBms.append(&bm);
-            }
+        for (int bmIdx = 0; bmIdx < m_bookmarks.size(); ++bmIdx) {
+            const Bookmark &bm = m_bookmarks[bmIdx];
+            if (bm.offset >= fileSize)
+                continue;
 
-            if (lineBms.size() > 1) {
-                // Stable so bookmarks with identical length preserve their
-                // storage (offset-ascending) order.
-                std::stable_sort(lineBms.begin(), lineBms.end(),
-                                 [](const Bookmark *a, const Bookmark *b) {
-                                     return a->length > b->length;
-                                 });
-            }
+            const BmLayout bml = bmLayout.value(bmIdx);
+            if (bml.hidden)
+                continue;
 
-            for (const Bookmark *bm : lineBms) {
-                const int bmIdx = (int)(bm - m_bookmarks.constData());
-                drawNoteStrip(painter, *bm, bmLayout.value(bmIdx));
-            }
+            const bool showTab = bml.inConflict && !bml.isActive;
+            const QRect visualRect = showTab ? noteCollapsedRect(bm)
+                                             : noteStripGeom(bm).rect;
+            if (!visualRect.isNull())
+                visibleBms.append(bmIdx);
         }
+
+        std::stable_sort(visibleBms.begin(), visibleBms.end(),
+                         [this](int a, int b) {
+                             const Bookmark &ba = m_bookmarks[a];
+                             const Bookmark &bb = m_bookmarks[b];
+                             const size_w lineA = ba.offset / (size_w)m_nBytesPerLine;
+                             const size_w lineB = bb.offset / (size_w)m_nBytesPerLine;
+                             if (lineA != lineB)
+                                 return lineA < lineB;
+                             return ba.length > bb.length;
+                         });
+
+        for (int bmIdx : visibleBms)
+            drawNoteStrip(painter, m_bookmarks[bmIdx], bmLayout.value(bmIdx));
     }
 
     // ── Resize bar ────────────────────────────────────────────────────────────
