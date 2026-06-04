@@ -525,7 +525,7 @@ void HexView::mouseReleaseEvent(QMouseEvent *event)
                     const NoteStripGeom geom = noteStripGeom(m_bookmarks[pressedIdx]);
                     const QRect settingsButtonRect = bookmarkButtonRect(geom, BookmarkButtonAction::Settings);
                     const QRect btnGlobal = geom.valid
-                        ? QRect(viewport()->mapToGlobal(settingsButtonRect.topLeft()), settingsButtonRect.size())
+                        ? bookmarkAreaPopupAnchorRect(settingsButtonRect.top(), settingsButtonRect.height())
                         : QRect(event->globalPosition().toPoint(), QSize(0, 0));
                     emit bookmarkSettingsRequested(pressedIdx, btnGlobal);
                 }
@@ -558,13 +558,11 @@ void HexView::mouseReleaseEvent(QMouseEvent *event)
             }
 
             const QRect buttonRect = bookmarkAreaButtonRect(BOOKMARK_LIST);
-            const int asciiRight = logToPhyXCoord(m_nBytesPerLine, 1);
-            const int gutterMidX = asciiRight + m_nFontWidth * 2;
             const QRect popupAnchor = buttonRect.isValid()
-                ? QRect(gutterMidX, event->pos().y(), 1, 1)
+                ? bookmarkAreaPopupAnchorRect(event->pos().y())
                 : QRect(event->pos(), QSize(1, 1));
             const QRect anchorGlobal = popupAnchor.isValid()
-                ? QRect(viewport()->mapToGlobal(popupAnchor.topLeft()), popupAnchor.size())
+                ? popupAnchor
                 : QRect(event->globalPosition().toPoint(), QSize(1, 1));
             emit bookmarkAreaContextRequested(m_nCursorOffset, anchorGlobal);
         }
@@ -824,7 +822,7 @@ void HexView::contextMenuEvent(QContextMenuEvent *event)
         if (ht == HVHT_BOOKMARK || ht == HVHT_BOOKMARK_CLOSE ||
                 ht == HVHT_BOOKMARK_EDIT || ht == HVHT_BOOKMARK_COLLAPSED) {
             if (m_bookmarkContextMenuExternallyHandled) {
-                emit bookmarkContextRequested(bmIdx, QRect(event->globalPos(), QSize(1, 1)));
+                emit bookmarkContextRequested(bmIdx, bookmarkAreaPopupAnchorRect(event->pos().y()));
                 return;
             }
 
@@ -850,10 +848,7 @@ void HexView::contextMenuEvent(QContextMenuEvent *event)
 
         if ((ht == HVHT_BOOKMARK_AREA || ht == HVHT_BOOKMARK_LIST || ht == HVHT_BOOKMARK_ADD) &&
                 m_bookmarkContextMenuExternallyHandled) {
-            const int asciiRight = logToPhyXCoord(m_nBytesPerLine, 1);
-            const int gutterMidX = asciiRight + m_nFontWidth * 2;
-            const QRect anchorGlobal(viewport()->mapToGlobal(QPoint(gutterMidX, event->pos().y())),
-                                     QSize(1, 1));
+            const QRect anchorGlobal = bookmarkAreaPopupAnchorRect(event->pos().y());
             const int row = m_nFontHeight > 0 ? qMax(0, vp.y() / m_nFontHeight) : 0;
             size_w referenceOffset = (size_w)(m_nVScrollPos + row) * (size_w)qMax(1, m_nBytesPerLine);
             if (m_pDataSeq)

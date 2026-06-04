@@ -313,6 +313,19 @@ bool HexView::bookmarkRangeIntersectsViewport(size_w offset, size_w length) cons
     return bottom > 0 && top < viewport()->height();
 }
 
+QRect HexView::bookmarkAreaPopupAnchorRect(int y, int height) const
+{
+    height = qMax(1, height);
+
+    if (!m_pDataSeq || m_nBytesPerLine <= 0 || m_nFontWidth <= 0)
+        return QRect(viewport()->mapToGlobal(QPoint(0, y)), QSize(1, height));
+
+    const int asciiRight = logToPhyXCoord(m_nBytesPerLine, 1);
+    const int bookmarkLeft = asciiRight + m_nFontWidth * 4;
+    const int x = asciiRight + (bookmarkLeft - asciiRight) / 2;
+    return QRect(viewport()->mapToGlobal(QPoint(x, y)), QSize(1, height));
+}
+
 QRect HexView::bookmarkAreaButtonRect(BookmarkAreaButton button) const
 {
     if (button == BOOKMARK_LIST && m_bookmarks.isEmpty())

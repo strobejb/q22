@@ -152,7 +152,9 @@ bool HexView::eventFilter(QObject *obj, QEvent *ev)
             const auto *ce = static_cast<QContextMenuEvent *>(ev);
             const int bmIdx = m_noteEditorIdx;
             if (bmIdx >= 0 && bmIdx < m_bookmarks.size())
-                emit bookmarkContextRequested(bmIdx, QRect(ce->globalPos(), QSize(1, 1)));
+                emit bookmarkContextRequested(
+                    bmIdx,
+                    bookmarkAreaPopupAnchorRect(viewport()->mapFromGlobal(ce->globalPos()).y()));
             return true;   // always suppress the default QPlainTextEdit menu
         }
 

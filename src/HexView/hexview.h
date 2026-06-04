@@ -436,6 +436,7 @@ private:
     int           bookmarkAreaCenterX() const;
     int           bookmarkRangeMidpointY(size_w offset, size_w length) const;
     bool          bookmarkRangeIntersectsViewport(size_w offset, size_w length) const;
+    QRect         bookmarkAreaPopupAnchorRect(int y, int height = 1) const;
     NoteStripGeom noteStripGeom(const Bookmark &bm) const;
     QRect         bookmarkButtonRect(const NoteStripGeom &geom, BookmarkButtonAction action) const;
     QRect         bookmarkAreaButtonRect(BookmarkAreaButton button) const;

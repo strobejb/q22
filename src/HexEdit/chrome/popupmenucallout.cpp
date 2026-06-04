@@ -168,19 +168,19 @@ public:
             const int margin = popupTransparentMargin();
             const int bodyW = qMax(1, w->width() - margin * 2);
             const QPoint tip = m_anchor.center();
-            int x = tip.x() - (bodyW * 2) / 3;
+            int bodyLeft = m_anchor.left();
             int y = tip.y() + 4;
 
             const QRect avail = availableGeometryForPoint(tip);
             if (avail.isValid()) {
                 const int maxX = avail.right() + 1 - bodyW;
-                x = (maxX >= avail.left()) ? qBound(avail.left(), x, maxX) : avail.left();
+                bodyLeft = (maxX >= avail.left()) ? qBound(avail.left(), bodyLeft, maxX) : avail.left();
                 const int bodyH = qMax(1, w->height() - margin * 2);
                 const int maxY = avail.bottom() + 1 - bodyH;
                 y = (maxY >= avail.top()) ? qBound(avail.top(), y, maxY) : avail.top();
             }
 
-            w->move(x, y);
+            w->move(bodyLeft, y);
         }
         return false;
     }
@@ -205,7 +205,7 @@ public:
             const int bodyW = qMax(1, w->width() - margin * 2);
             const QPoint tip = m_anchor.center();
 
-            int bodyLeft = tip.x() - (bodyW * 2) / 3;
+            int bodyLeft = m_anchor.left();
             const QRect avail = availableGeometryForPoint(tip);
             if (avail.isValid()) {
                 const int maxLeft = avail.right() + 1 - bodyW;
