@@ -106,10 +106,16 @@ bool HexView::eventFilter(QObject *obj, QEvent *ev)
         m_hoverBookmarkIdx = -1;
         m_hoverOnClose     = false;
         m_hoverOnEdit      = false;
+        m_hoverOnOffset    = false;
+        m_hoverOnLength    = false;
         m_hoverBookmarkArea = false;
         clearBookmarkAreaButtonState();
         m_pressedOnClose   = false;
         m_pressedOnEdit    = false;
+        m_pressedOnOffset  = false;
+        m_pressedOnLength  = false;
+        m_hoverInlineRangeStep = HVHT_NONE;
+        m_pressedInlineRangeStep = HVHT_NONE;
         viewport()->update();
         return false;
     }
@@ -119,17 +125,25 @@ bool HexView::eventFilter(QObject *obj, QEvent *ev)
         // arriving via the grab so hover/press state updates continue normally.
         if (QWidget::mouseGrabber() == viewport()) return false;
         if (m_hoverBookmarkIdx != -1 || m_hoverOnClose || m_hoverOnEdit ||
+                m_hoverOnOffset || m_hoverOnLength ||
                 m_hoverBookmarkArea ||
                 m_hoverBookmarkAreaButton[BOOKMARK_LIST] || m_hoverBookmarkAreaButton[BOOKMARK_ADD] ||
-                m_pressedOnClose || m_pressedOnEdit ||
+                m_pressedOnClose || m_pressedOnEdit || m_pressedOnOffset || m_pressedOnLength ||
+                m_hoverInlineRangeStep != HVHT_NONE || m_pressedInlineRangeStep != HVHT_NONE ||
                 m_pressedBookmarkAreaButton[BOOKMARK_LIST] || m_pressedBookmarkAreaButton[BOOKMARK_ADD]) {
             m_hoverBookmarkIdx = -1;
             m_hoverOnClose     = false;
             m_hoverOnEdit      = false;
+            m_hoverOnOffset    = false;
+            m_hoverOnLength    = false;
             m_hoverBookmarkArea = false;
             clearBookmarkAreaButtonState();
             m_pressedOnClose   = false;
             m_pressedOnEdit    = false;
+            m_pressedOnOffset  = false;
+            m_pressedOnLength  = false;
+            m_hoverInlineRangeStep = HVHT_NONE;
+            m_pressedInlineRangeStep = HVHT_NONE;
             viewport()->update();
         }
         viewport()->unsetCursor();

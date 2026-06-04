@@ -144,7 +144,11 @@ enum HitTestRegion : uint {
     HVHT_BOOKMARK_COLLAPSED = 0x800,  // collapsed single-line strip body
     HVHT_BOOKMARK_AREA      = 0x1000, // empty note-strip area
     HVHT_BOOKMARK_LIST      = 0x2000,
-    HVHT_BOOKMARK_ADD       = 0x4000
+    HVHT_BOOKMARK_ADD       = 0x4000,
+    HVHT_BOOKMARK_OFFSET    = 0x8000,
+    HVHT_BOOKMARK_LENGTH    = 0x10000,
+    HVHT_BOOKMARK_RANGE_DEC = 0x20000,
+    HVHT_BOOKMARK_RANGE_INC = 0x40000
 };
 
 enum BookmarkAreaButton {
@@ -199,6 +203,17 @@ public:
         None,
         Settings,
         Close,
+    };
+
+    enum class BookmarkRangeField {
+        Offset,
+        Length,
+    };
+
+    enum class BookmarkRangeEditExperiment {
+        None,
+        Stepper,
+        DragAdjust,
     };
 
     struct BookmarkButtonLayout {
@@ -316,9 +331,13 @@ public:
         QRect   rect;       // full rounded rect (background + border area)
         QRect   textRect;   // inset text area (editor should overlay this exactly)
         QRect   rangeRect;  // range label area below text (address + byte count)
+        QRect   offsetRect; // clickable address value inside rangeRect
+        QRect   lengthRect; // clickable byte-count value inside rangeRect
         QRect   topButtonRect;
         QRect   bottomButtonRect;
         QString rangeText;  // e.g. "0x1A3F  (16 bytes)"
+        QString offsetText;
+        QString lengthText;
         int     tipY  = 0;  // screen Y of the triangle tip (arrow point into the hex area)
         bool    valid = false;
     };
@@ -439,13 +458,20 @@ private:
     QRect         bookmarkAreaPopupAnchorRect(int y, int height = 1) const;
     NoteStripGeom noteStripGeom(const Bookmark &bm) const;
     QRect         bookmarkButtonRect(const NoteStripGeom &geom, BookmarkButtonAction action) const;
+    QRect         bookmarkRangeStepperRect(const NoteStripGeom &geom, BookmarkRangeField field) const;
     QRect         bookmarkAreaButtonRect(BookmarkAreaButton button) const;
     HitTestRegion hitTestForBookmarkButtonAction(BookmarkButtonAction action) const;
+    HitTestRegion hitTestBookmarkRangeStepper(const NoteStripGeom &geom, int x, int y) const;
     QRect         noteCollapsedRect(const Bookmark &bm) const;
     void          drawNoteStrip(QPainter &painter, const Bookmark &bm, const BmLayout &bml);
     void          drawBookmarkAreaButtons(QPainter &painter);
     int           noteStripFullHeight(const Bookmark &bm) const;
     QVector<BmLayout> computeBookmarkLayout(bool treatMouseAsReleased = false);
+    void          activateBookmarkRangeStepper(int idx, BookmarkRangeField field);
+    void          clearBookmarkRangeStepper();
+    void          stepActiveBookmarkRange(int delta);
+    int           bookmarkRangeDragDelta(const QPoint &pos) const;
+    void          updateBookmarkRangeDrag(const QPoint &pos);
     void          setBookmarkAreaButtonVisible(BookmarkAreaButton button, bool visible);
     void          setBookmarkAreaButtonsVisible(bool visible);
     void          advanceBookmarkAreaButtonFade();
@@ -599,12 +625,26 @@ private:
     int             m_hoverBookmarkIdx = -1;
     bool            m_hoverOnClose     = false;
     bool            m_hoverOnEdit      = false;
+    bool            m_hoverOnOffset    = false;
+    bool            m_hoverOnLength    = false;
     bool            m_hoverBookmarkArea = false;
     std::array<bool, BOOKMARK_AREA_BUTTON_COUNT> m_hoverBookmarkAreaButton = {};
     std::array<qreal, BOOKMARK_AREA_BUTTON_COUNT> m_bookmarkAreaButtonOpacity = {};
     std::array<bool, BOOKMARK_AREA_BUTTON_COUNT> m_bookmarkAreaButtonVisible = {};
     bool            m_pressedOnClose   = false;
     bool            m_pressedOnEdit    = false;
+    bool            m_pressedOnOffset  = false;
+    bool            m_pressedOnLength  = false;
+    static constexpr BookmarkRangeEditExperiment kBookmarkRangeEditExperiment =
+        BookmarkRangeEditExperiment::DragAdjust;
+    int             m_inlineRangeBookmarkIdx = -1;
+    BookmarkRangeField m_inlineRangeField = BookmarkRangeField::Offset;
+    HitTestRegion   m_hoverInlineRangeStep = HVHT_NONE;
+    HitTestRegion   m_pressedInlineRangeStep = HVHT_NONE;
+    bool            m_inlineRangeDragActive = false;
+    QRect           m_inlineRangeDragValueRect;
+    Bookmark        m_inlineRangeDragOriginalBookmark;
+    int             m_inlineRangeDragLastDelta = 0;
     std::array<bool, BOOKMARK_AREA_BUTTON_COUNT> m_pressedBookmarkAreaButton = {};
     bool            m_bookmarkContextMenuExternallyHandled = false;
     bool            m_bookmarkContextCalloutEnabled = true;

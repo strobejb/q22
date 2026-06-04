@@ -304,10 +304,20 @@ HitTestRegion HexView::hitTest(int x, int y, int *bookmarkIdx)
                 if (!geom.valid) continue;
                 const QRect closeButtonRect = bookmarkButtonRect(geom, BookmarkButtonAction::Close);
                 const QRect settingsButtonRect = bookmarkButtonRect(geom, BookmarkButtonAction::Settings);
-                if (closeButtonRect.contains(x, y))
+                const HitTestRegion stepperHt = (kBookmarkRangeEditExperiment == BookmarkRangeEditExperiment::Stepper &&
+                                                  i == m_inlineRangeBookmarkIdx)
+                    ? hitTestBookmarkRangeStepper(geom, x, y)
+                    : HVHT_NONE;
+                if (stepperHt != HVHT_NONE)
+                    ht = stepperHt;
+                else if (closeButtonRect.contains(x, y))
                     ht = HVHT_BOOKMARK_CLOSE;
                 else if (settingsButtonRect.contains(x, y))
                     ht = HVHT_BOOKMARK_EDIT;
+                else if (geom.offsetRect.contains(x, y))
+                    ht = HVHT_BOOKMARK_OFFSET;
+                else if (geom.lengthRect.contains(x, y))
+                    ht = HVHT_BOOKMARK_LENGTH;
                 else if (geom.rect.contains(x, y))
                     ht = HVHT_BOOKMARK;
             }
@@ -368,6 +378,21 @@ void HexView::mousePressEvent(QMouseEvent *event)
 
     HitTestRegion ht = hitTest(x, y, &m_pressedBookmarkIdx);
     m_pressedHitTest = ht;
+
+    const bool clickedInlineRange =
+        ht == HVHT_BOOKMARK_OFFSET ||
+        ht == HVHT_BOOKMARK_LENGTH ||
+        ht == HVHT_BOOKMARK_RANGE_DEC ||
+        ht == HVHT_BOOKMARK_RANGE_INC;
+    const bool sameInlineBookmark = clickedInlineRange &&
+        m_pressedBookmarkIdx == m_inlineRangeBookmarkIdx;
+    if (m_inlineRangeBookmarkIdx >= 0 &&
+            (!clickedInlineRange || (!sameInlineBookmark &&
+                                     (ht == HVHT_BOOKMARK_RANGE_DEC ||
+                                      ht == HVHT_BOOKMARK_RANGE_INC)))) {
+        clearBookmarkRangeStepper();
+        viewport()->update();
+    }
 
     if (ht & HVHT_RESIZE) {
         if (ht == HVHT_RESIZE)
@@ -430,10 +455,38 @@ void HexView::mousePressEvent(QMouseEvent *event)
         return;
     }
 
-    if (ht == HVHT_BOOKMARK_CLOSE || ht == HVHT_BOOKMARK_EDIT) {
+    if (kBookmarkRangeEditExperiment == BookmarkRangeEditExperiment::DragAdjust &&
+            (ht == HVHT_BOOKMARK_OFFSET || ht == HVHT_BOOKMARK_LENGTH) &&
+            m_pressedBookmarkIdx >= 0 && m_pressedBookmarkIdx < m_bookmarks.size()) {
+        const BookmarkRangeField field = (ht == HVHT_BOOKMARK_OFFSET)
+            ? BookmarkRangeField::Offset
+            : BookmarkRangeField::Length;
+        activateBookmarkRangeStepper(m_pressedBookmarkIdx, field);
+        if (!m_inlineRangeDragActive) {
+            clearBookmarkRangeStepper();
+            viewport()->update();
+            return;
+        }
+        m_pressedHitTest = ht;
+        m_pressedOnOffset = (ht == HVHT_BOOKMARK_OFFSET);
+        m_pressedOnLength = (ht == HVHT_BOOKMARK_LENGTH);
+        viewport()->grabMouse(Qt::SplitVCursor);
+        viewport()->setCursor(Qt::SplitVCursor);
+        viewport()->update();
+        return;
+    }
+
+    if (ht == HVHT_BOOKMARK_CLOSE || ht == HVHT_BOOKMARK_EDIT ||
+            (kBookmarkRangeEditExperiment == BookmarkRangeEditExperiment::Stepper &&
+             (ht == HVHT_BOOKMARK_OFFSET || ht == HVHT_BOOKMARK_LENGTH)) ||
+            ht == HVHT_BOOKMARK_RANGE_DEC || ht == HVHT_BOOKMARK_RANGE_INC) {
         // Action fires on release, only if the mouse is still over the same button.
         m_pressedOnClose = (ht == HVHT_BOOKMARK_CLOSE);
         m_pressedOnEdit  = (ht == HVHT_BOOKMARK_EDIT);
+        m_pressedOnOffset = (ht == HVHT_BOOKMARK_OFFSET);
+        m_pressedOnLength = (ht == HVHT_BOOKMARK_LENGTH);
+        m_pressedInlineRangeStep = (ht == HVHT_BOOKMARK_RANGE_DEC ||
+                                    ht == HVHT_BOOKMARK_RANGE_INC) ? ht : HVHT_NONE;
         viewport()->grabMouse(Qt::PointingHandCursor);
         viewport()->update();
         return;
@@ -505,21 +558,40 @@ void HexView::mouseReleaseEvent(QMouseEvent *event)
         return;
     }
 
+    if (m_inlineRangeDragActive) {
+        m_pressedHitTest = HVHT_NONE;
+        m_pressedBookmarkIdx = -1;
+        m_pressedOnOffset = false;
+        m_pressedOnLength = false;
+        viewport()->releaseMouse();
+        clearBookmarkRangeStepper();
+        viewport()->update();
+        return;
+    }
+
     // Bookmark button: fire only if the mouse is released over the same button.
-    if (m_pressedHitTest == HVHT_BOOKMARK_CLOSE || m_pressedHitTest == HVHT_BOOKMARK_EDIT) {
+    if (m_pressedHitTest == HVHT_BOOKMARK_CLOSE || m_pressedHitTest == HVHT_BOOKMARK_EDIT ||
+            (kBookmarkRangeEditExperiment == BookmarkRangeEditExperiment::Stepper &&
+             (m_pressedHitTest == HVHT_BOOKMARK_OFFSET || m_pressedHitTest == HVHT_BOOKMARK_LENGTH)) ||
+            m_pressedHitTest == HVHT_BOOKMARK_RANGE_DEC || m_pressedHitTest == HVHT_BOOKMARK_RANGE_INC) {
         const HitTestRegion pressedHt = m_pressedHitTest;
         const int  pressedIdx = m_pressedBookmarkIdx;
         m_pressedHitTest      = HVHT_NONE;
         m_pressedBookmarkIdx = -1;
         m_pressedOnClose      = false;
         m_pressedOnEdit       = false;
+        m_pressedOnOffset     = false;
+        m_pressedOnLength     = false;
+        m_pressedInlineRangeStep = HVHT_NONE;
         viewport()->releaseMouse();
         int  releaseIdx = -1;
         HitTestRegion releaseHt = hitTest(event->pos().x(), event->pos().y(), &releaseIdx);
         if (releaseHt == pressedHt && releaseIdx == pressedIdx) {
             if (pressedHt == HVHT_BOOKMARK_CLOSE) {
+                clearBookmarkRangeStepper();
                 removeBookmark(pressedIdx);   // handles closeNoteEditor + index adjustment
-            } else {
+            } else if (pressedHt == HVHT_BOOKMARK_EDIT) {
+                clearBookmarkRangeStepper();
                 // HVHT_BOOKMARK_EDIT — settings popup.
                 if (pressedIdx >= 0 && pressedIdx < m_bookmarks.size()) {
                     const NoteStripGeom geom = noteStripGeom(m_bookmarks[pressedIdx]);
@@ -529,8 +601,17 @@ void HexView::mouseReleaseEvent(QMouseEvent *event)
                         : QRect(event->globalPosition().toPoint(), QSize(0, 0));
                     emit bookmarkSettingsRequested(pressedIdx, btnGlobal);
                 }
+            } else if (pressedHt == HVHT_BOOKMARK_RANGE_DEC ||
+                       pressedHt == HVHT_BOOKMARK_RANGE_INC) {
+                stepActiveBookmarkRange(pressedHt == HVHT_BOOKMARK_RANGE_DEC ? -1 : 1);
+            } else if (pressedIdx >= 0 && pressedIdx < m_bookmarks.size()) {
+                const BookmarkRangeField field = (pressedHt == HVHT_BOOKMARK_OFFSET)
+                    ? BookmarkRangeField::Offset
+                    : BookmarkRangeField::Length;
+                activateBookmarkRangeStepper(pressedIdx, field);
             }
         }
+        viewport()->update();
         return;
     }
 
@@ -604,6 +685,13 @@ void HexView::mouseMoveEvent(QMouseEvent *event)
     int pane;
 
     size_w offset = offsetFromPhysCoord(mx, my, &pane, &x, &y);
+
+    if (m_inlineRangeDragActive) {
+        updateBookmarkRangeDrag(event->pos());
+        viewport()->setCursor(Qt::SplitVCursor);
+        viewport()->update();
+        return;
+    }
 
     if (m_fStartDrag) {
         if ((event->pos() - m_dragStartPos).manhattanLength() <
@@ -698,12 +786,39 @@ void HexView::mouseMoveEvent(QMouseEvent *event)
         int  bmIdx = -1;
         HitTestRegion ht = hitTest(mx, my, &bmIdx);
 
-        if (m_pressedHitTest == HVHT_BOOKMARK_CLOSE || m_pressedHitTest == HVHT_BOOKMARK_EDIT) {
+        if (m_pressedHitTest == HVHT_BOOKMARK_CLOSE || m_pressedHitTest == HVHT_BOOKMARK_EDIT ||
+                (kBookmarkRangeEditExperiment == BookmarkRangeEditExperiment::Stepper &&
+                 (m_pressedHitTest == HVHT_BOOKMARK_OFFSET || m_pressedHitTest == HVHT_BOOKMARK_LENGTH)) ||
+                m_pressedHitTest == HVHT_BOOKMARK_RANGE_DEC || m_pressedHitTest == HVHT_BOOKMARK_RANGE_INC) {
             // Only track position for the originally-pressed button — never activate any other.
             const bool stillOver = (ht == m_pressedHitTest && bmIdx == m_pressedBookmarkIdx);
-            bool &pressedFlag = (m_pressedHitTest == HVHT_BOOKMARK_CLOSE) ? m_pressedOnClose : m_pressedOnEdit;
-            if (stillOver != pressedFlag) {
-                pressedFlag = stillOver;
+            if (m_pressedHitTest == HVHT_BOOKMARK_RANGE_DEC ||
+                    m_pressedHitTest == HVHT_BOOKMARK_RANGE_INC) {
+                const HitTestRegion newPressedStep = stillOver ? m_pressedHitTest : HVHT_NONE;
+                if (newPressedStep != m_pressedInlineRangeStep) {
+                    m_pressedInlineRangeStep = newPressedStep;
+                    viewport()->update();
+                }
+            } else {
+                bool *pressedFlag = &m_pressedOnEdit;
+                if (m_pressedHitTest == HVHT_BOOKMARK_CLOSE)
+                    pressedFlag = &m_pressedOnClose;
+                else if (m_pressedHitTest == HVHT_BOOKMARK_OFFSET)
+                    pressedFlag = &m_pressedOnOffset;
+                else if (m_pressedHitTest == HVHT_BOOKMARK_LENGTH)
+                    pressedFlag = &m_pressedOnLength;
+                if (stillOver != *pressedFlag) {
+                    *pressedFlag = stillOver;
+                    viewport()->update();
+                }
+            }
+        } else if (m_inlineRangeBookmarkIdx >= 0 &&
+                   (ht == HVHT_BOOKMARK_RANGE_DEC || ht == HVHT_BOOKMARK_RANGE_INC ||
+                    m_hoverInlineRangeStep != HVHT_NONE)) {
+            const HitTestRegion newHoverStep =
+                (ht == HVHT_BOOKMARK_RANGE_DEC || ht == HVHT_BOOKMARK_RANGE_INC) ? ht : HVHT_NONE;
+            if (newHoverStep != m_hoverInlineRangeStep) {
+                m_hoverInlineRangeStep = newHoverStep;
                 viewport()->update();
             }
         } else if (m_pressedHitTest == HVHT_BOOKMARK_LIST || m_pressedHitTest == HVHT_BOOKMARK_ADD) {
@@ -718,9 +833,17 @@ void HexView::mouseMoveEvent(QMouseEvent *event)
         } else {
             const int  newHoverBm    = (ht == HVHT_BOOKMARK           || ht == HVHT_BOOKMARK_CLOSE ||
                                         ht == HVHT_BOOKMARK_EDIT       ||
+                                        ht == HVHT_BOOKMARK_OFFSET     ||
+                                        ht == HVHT_BOOKMARK_LENGTH     ||
+                                        ht == HVHT_BOOKMARK_RANGE_DEC  ||
+                                        ht == HVHT_BOOKMARK_RANGE_INC  ||
                                         ht == HVHT_BOOKMARK_COLLAPSED) ? bmIdx : -1;
             const bool newHoverClose = (ht == HVHT_BOOKMARK_CLOSE);
             const bool newHoverEdit  = (ht == HVHT_BOOKMARK_EDIT);
+            const bool newHoverOffset = (ht == HVHT_BOOKMARK_OFFSET);
+            const bool newHoverLength = (ht == HVHT_BOOKMARK_LENGTH);
+            const HitTestRegion newHoverStep =
+                (ht == HVHT_BOOKMARK_RANGE_DEC || ht == HVHT_BOOKMARK_RANGE_INC) ? ht : HVHT_NONE;
             bool newHoverArea = (ht == HVHT_BOOKMARK_AREA ||
                                  ht == HVHT_BOOKMARK_LIST ||
                                  ht == HVHT_BOOKMARK_ADD ||
@@ -739,11 +862,18 @@ void HexView::mouseMoveEvent(QMouseEvent *event)
             newHoverAreaButton[BOOKMARK_LIST] = (ht == HVHT_BOOKMARK_LIST);
             newHoverAreaButton[BOOKMARK_ADD] = (ht == HVHT_BOOKMARK_ADD);
             if (newHoverBm != m_hoverBookmarkIdx || newHoverClose != m_hoverOnClose ||
-                    newHoverEdit != m_hoverOnEdit || newHoverArea != m_hoverBookmarkArea ||
+                    newHoverEdit != m_hoverOnEdit ||
+                    newHoverOffset != m_hoverOnOffset ||
+                    newHoverLength != m_hoverOnLength ||
+                    newHoverStep != m_hoverInlineRangeStep ||
+                    newHoverArea != m_hoverBookmarkArea ||
                     newHoverAreaButton != m_hoverBookmarkAreaButton) {
                 m_hoverBookmarkIdx = newHoverBm;
                 m_hoverOnClose     = newHoverClose;
                 m_hoverOnEdit      = newHoverEdit;
+                m_hoverOnOffset    = newHoverOffset;
+                m_hoverOnLength    = newHoverLength;
+                m_hoverInlineRangeStep = newHoverStep;
                 m_hoverBookmarkArea = newHoverArea;
                 m_hoverBookmarkAreaButton = newHoverAreaButton;
                 setBookmarkAreaButtonsVisible(newHoverArea);
@@ -759,9 +889,15 @@ void HexView::mouseMoveEvent(QMouseEvent *event)
         case HVHT_BOOKMARK_COLLAPSED:
         case HVHT_BOOKMARK_CLOSE:
         case HVHT_BOOKMARK_EDIT:
+        case HVHT_BOOKMARK_RANGE_DEC:
+        case HVHT_BOOKMARK_RANGE_INC:
         case HVHT_BOOKMARK_LIST:
         case HVHT_BOOKMARK_ADD:
             viewport()->setCursor(Qt::PointingHandCursor); break;
+        case HVHT_BOOKMARK_OFFSET:
+        case HVHT_BOOKMARK_LENGTH:
+            viewport()->setCursor(Qt::PointingHandCursor);
+            break;
         case HVHT_BOOKMARK_AREA:      viewport()->setCursor(Qt::ArrowCursor);        break;
         default:                  viewport()->setCursor(Qt::ArrowCursor);   break;
         }
@@ -814,13 +950,20 @@ void HexView::wheelEvent(QWheelEvent *event)
 
 void HexView::contextMenuEvent(QContextMenuEvent *event)
 {
+    if (m_inlineRangeBookmarkIdx >= 0) {
+        clearBookmarkRangeStepper();
+        viewport()->update();
+    }
+
     // Bookmark context menu — intercepts right-clicks on any note strip.
     {
         const QPoint vp = viewport()->mapFromGlobal(event->globalPos());
         int bmIdx = -1;
         const HitTestRegion ht = hitTest(vp.x(), vp.y(), &bmIdx);
         if (ht == HVHT_BOOKMARK || ht == HVHT_BOOKMARK_CLOSE ||
-                ht == HVHT_BOOKMARK_EDIT || ht == HVHT_BOOKMARK_COLLAPSED) {
+                ht == HVHT_BOOKMARK_EDIT || ht == HVHT_BOOKMARK_OFFSET ||
+                ht == HVHT_BOOKMARK_LENGTH || ht == HVHT_BOOKMARK_RANGE_DEC ||
+                ht == HVHT_BOOKMARK_RANGE_INC || ht == HVHT_BOOKMARK_COLLAPSED) {
             if (m_bookmarkContextMenuExternallyHandled) {
                 emit bookmarkContextRequested(bmIdx, bookmarkAreaPopupAnchorRect(event->pos().y()));
                 return;

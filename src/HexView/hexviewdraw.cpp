@@ -908,6 +908,9 @@ void HexView::paintEvent(QPaintEvent *event)
                 visibleBms.append(bmIdx);
         }
 
+        if (m_inlineRangeBookmarkIdx >= 0 && !visibleBms.contains(m_inlineRangeBookmarkIdx))
+            clearBookmarkRangeStepper();
+
         std::stable_sort(visibleBms.begin(), visibleBms.end(),
                          [this](int a, int b) {
                              const Bookmark &ba = m_bookmarks[a];
@@ -1005,6 +1008,9 @@ void HexView::paintDragOverlay(QPainter &painter)
 
 void HexView::paintCaret(QPainter &painter)
 {
+    if (m_inlineRangeBookmarkIdx >= 0)
+        return;
+
     if ((!m_caretVisible && m_nSelectionMode != SEL_DRAGDROP) ||
         (m_nSelectionMode != SEL_DRAGDROP && !hasFocus() && !viewport()->hasFocus()) ||
         QApplication::activeModalWidget()) return;

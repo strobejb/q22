@@ -183,6 +183,29 @@ void HexView::keyPressEvent(QKeyEvent *event)
     if (key == Qt::Key_Control || key == Qt::Key_Shift || key == Qt::Key_Alt)
         return;
 
+    if (m_inlineRangeBookmarkIdx >= 0) {
+        if (key == Qt::Key_Escape) {
+            clearBookmarkRangeStepper();
+            viewport()->update();
+            return;
+        }
+        if (kBookmarkRangeEditExperiment == BookmarkRangeEditExperiment::Stepper &&
+                key == Qt::Key_Up) {
+            stepActiveBookmarkRange(1);
+            viewport()->update();
+            return;
+        }
+        if (kBookmarkRangeEditExperiment == BookmarkRangeEditExperiment::Stepper &&
+                key == Qt::Key_Down) {
+            stepActiveBookmarkRange(-1);
+            viewport()->update();
+            return;
+        }
+
+        clearBookmarkRangeStepper();
+        viewport()->update();
+    }
+
     switch (key)
     {
     case Qt::Key_Escape:
