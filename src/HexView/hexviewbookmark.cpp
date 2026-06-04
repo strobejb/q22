@@ -607,6 +607,26 @@ bool HexView::bookmarkRangeIntersectsViewport(size_w offset, size_w length) cons
     return bottom > 0 && top < viewport()->height();
 }
 
+bool HexView::shouldShowBookmarkAddButton() const
+{
+    const size_w selSize = selectionSize();
+    if (selSize == 0 || m_nSelectionMode != SEL_NONE ||
+            !bookmarkRangeIntersectsViewport(selectionStart(), selSize))
+        return false;
+
+    if (checkStyle(HVS_BOOKMARK_NESTED))
+        return true;
+
+    const size_w offset = selectionStart();
+    const size_w end = offset + selSize;
+    for (const Bookmark &bm : m_bookmarks) {
+        if (offset < bm.offset + bm.length && end > bm.offset)
+            return false;
+    }
+
+    return true;
+}
+
 QRect HexView::bookmarkAreaPopupAnchorRect(int y, int height) const
 {
     height = qMax(1, height);
@@ -624,9 +644,7 @@ QRect HexView::bookmarkAreaButtonRect(BookmarkAreaButton button) const
 {
     if (button == BOOKMARK_LIST && m_bookmarks.isEmpty())
         return QRect();
-    if (button == BOOKMARK_ADD &&
-            (selectionSize() == 0 || m_nSelectionMode != SEL_NONE ||
-             !bookmarkRangeIntersectsViewport(selectionStart(), selectionSize())))
+    if (button == BOOKMARK_ADD && !shouldShowBookmarkAddButton())
         return QRect();
 
     const int viewH = viewport()->height();
@@ -677,8 +695,7 @@ void HexView::setBookmarkAreaButtonVisible(BookmarkAreaButton button, bool visib
 
 void HexView::setBookmarkAreaButtonsVisible(bool visible)
 {
-    const bool showAdd = visible && selectionSize() > 0 && m_nSelectionMode == SEL_NONE &&
-                         bookmarkRangeIntersectsViewport(selectionStart(), selectionSize());
+    const bool showAdd = visible && shouldShowBookmarkAddButton();
     bool showList = visible && !m_bookmarks.isEmpty();
     if (showAdd && showList) {
         const bool allowBothBookmarkAreaButtons = false;

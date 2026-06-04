@@ -228,6 +228,8 @@ void HexView::updateDropCaret(const QPoint &pos)
 
 void HexView::endDragDropMode()
 {
+    const bool wasDropTargeting = m_nSelectionMode == SEL_DRAGDROP;
+
     if (m_scrollTimer.isActive())
         m_scrollTimer.stop();
 
@@ -239,6 +241,9 @@ void HexView::endDragDropMode()
         m_dragOverlayAction = Qt::IgnoreAction;
         viewport()->update();
     }
+
+    if (wasDropTargeting)
+        emit selectionChanged(selectionStart(), selectionEnd());
 }
 
 bool HexView::dropMimeData(const QMimeData *mime, Qt::DropAction action)

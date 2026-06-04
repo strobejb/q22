@@ -295,6 +295,7 @@ public:
     size_w  cursorOffset() const { return m_nCursorOffset; }
     uint    editMode()     const { return m_nEditMode; }
     QString filePath()     const { return m_filePath; }
+    bool    isDropTargetingActive() const { return m_nSelectionMode == SEL_DRAGDROP; }
     void   setEditMode(uint mode) { m_nEditMode = mode; viewport()->update(); emit editModeChanged(mode); }
 
     // Clipboard
@@ -455,6 +456,7 @@ private:
     int           bookmarkAreaCenterX() const;
     int           bookmarkRangeMidpointY(size_w offset, size_w length) const;
     bool          bookmarkRangeIntersectsViewport(size_w offset, size_w length) const;
+    bool          shouldShowBookmarkAddButton() const;
     QRect         bookmarkAreaPopupAnchorRect(int y, int height = 1) const;
     NoteStripGeom noteStripGeom(const Bookmark &bm) const;
     QRect         bookmarkButtonRect(const NoteStripGeom &geom, BookmarkButtonAction action) const;

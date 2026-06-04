@@ -306,7 +306,8 @@ void StatusBar::showMessage(const QString &msg)
 
 void StatusBar::update()
 {
-    const bool hasSel = m_hv->selectionStart() != m_hv->selectionEnd();
+    const bool hasSel = m_hv->selectionStart() != m_hv->selectionEnd() &&
+                        !m_hv->isDropTargetingActive();
 
     // Reset the cursor panel's width floor when flipping between cursor and
     // selection mode; each mode tracks its own independent minimum width.
