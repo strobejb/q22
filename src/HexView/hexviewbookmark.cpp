@@ -42,6 +42,60 @@ static QTextDocument *makeNoteTextDoc(const QString &text, int width, const QFon
     return doc;
 }
 
+static int bookmarkAreaButtonIndex(BookmarkAreaButton button)
+{
+    return static_cast<int>(button);
+}
+
+static QString bookmarkAreaButtonIconName(BookmarkAreaButton button)
+{
+    switch (button) {
+    case BOOKMARK_ADD:
+        return QStringLiteral("bookmark-star-add");
+    case BOOKMARK_LIST:
+    case BOOKMARK_AREA_BUTTON_COUNT:
+        break;
+    }
+    return QStringLiteral("bookmark-star-on-tray");
+}
+
+static QString bookmarkAreaButtonFallbackText(BookmarkAreaButton button)
+{
+    return button == BOOKMARK_ADD ? QStringLiteral("+") : QStringLiteral("*");
+}
+
+static void drawTintedIconOrFallbackText(QPainter &painter,
+                                         const QRect &rect,
+                                         const QString &iconName,
+                                         const QColor &colour,
+                                         const QString &fallbackText)
+{
+    QIcon icon(QStringLiteral(":/icons/actions/") + iconName + QStringLiteral(".svg"));
+    if (icon.isNull())
+        icon = QIcon::fromTheme(iconName);
+
+    const QPixmap src = icon.pixmap(rect.size());
+    if (!src.isNull()) {
+        QPixmap tinted(src.size());
+        tinted.setDevicePixelRatio(src.devicePixelRatio());
+        tinted.fill(Qt::transparent);
+
+        QPainter iconPainter(&tinted);
+        iconPainter.drawPixmap(0, 0, src);
+        iconPainter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+        iconPainter.fillRect(tinted.rect(), colour);
+        iconPainter.end();
+
+        painter.drawPixmap(rect, tinted);
+        return;
+    }
+
+    painter.save();
+    painter.setPen(colour);
+    painter.drawText(rect, Qt::AlignCenter, fallbackText);
+    painter.restore();
+}
+
 // Returns the UI font scaled to the hex-view font size so bookmark note strips
 // grow and shrink consistently when the user changes the hex display font.
 QFont HexView::noteFont() const
@@ -211,43 +265,102 @@ QRect HexView::bookmarkButtonRect(const NoteStripGeom &geom, BookmarkButtonActio
     return QRect();
 }
 
-QRect HexView::bookmarkAreaButtonRect() const
+int HexView::bookmarkAreaCenterX() const
 {
-    if (m_bookmarks.isEmpty() || !m_pDataSeq || m_nBytesPerLine <= 0 ||
+    if (!m_pDataSeq || m_nBytesPerLine <= 0 ||
             m_nFontWidth <= 0 || m_nFontHeight <= 0)
-        return QRect();
+        return -1;
 
     const int viewW = viewport()->width();
-    const int viewH = viewport()->height();
-    if (viewW < kBookmarkAreaBtnSz || viewH < kBookmarkAreaBtnSz)
-        return QRect();
+    if (viewW < kBookmarkAreaBtnSz)
+        return -1;
 
     const int asciiRight = logToPhyXCoord(m_nBytesPerLine, 1);
     const int minX = asciiRight + qMax(6, m_nFontWidth);
     if (minX + kBookmarkAreaBtnSz > viewW)
-        return QRect();
+        return -1;
 
     constexpr int kMargin = 12;
-    constexpr int kBottomMargin = 20;
     const int noteLeft = asciiRight + m_nFontWidth * 4;
     const int noteRight = noteLeft + kNoteTriW + kNoteMaxW;
     const int preferredX = noteLeft + (noteRight - noteLeft - kBookmarkAreaBtnSz) / 2;
-    const int maxX = viewW - kBookmarkAreaBtnSz - kMargin;
-    const int x = qBound(minX, preferredX, maxX);
-    const int y = qMax(0, viewH - kBookmarkAreaBtnSz - kBottomMargin);
+    const int maxX = qMax(minX, viewW - kBookmarkAreaBtnSz - kMargin);
+    return qBound(minX, preferredX, maxX) + kBookmarkAreaBtnSz / 2;
+}
+
+int HexView::bookmarkRangeMidpointY(size_w offset, size_w length) const
+{
+    if (m_nBytesPerLine <= 0 || m_nFontHeight <= 0)
+        return 0;
+
+    const size_w startLine = offset / (size_w)m_nBytesPerLine;
+    const int startY = (int)((qint64)startLine - (qint64)m_nVScrollPos) * m_nFontHeight;
+    const size_w endOffset = offset + (length > 0 ? length - 1 : 0);
+    const int endLine = (int)(endOffset / (size_w)m_nBytesPerLine);
+    const int numLines = endLine - (int)startLine + 1;
+    return startY + (numLines * m_nFontHeight) / 2;
+}
+
+bool HexView::bookmarkRangeIntersectsViewport(size_w offset, size_w length) const
+{
+    if (length == 0 || m_nBytesPerLine <= 0 || m_nFontHeight <= 0)
+        return false;
+
+    const size_w startLine = offset / (size_w)m_nBytesPerLine;
+    const size_w endLine = (offset + length - 1) / (size_w)m_nBytesPerLine;
+    const int top = (int)((qint64)startLine - (qint64)m_nVScrollPos) * m_nFontHeight;
+    const int bottom = (int)((qint64)endLine - (qint64)m_nVScrollPos + 1) * m_nFontHeight;
+    return bottom > 0 && top < viewport()->height();
+}
+
+QRect HexView::bookmarkAreaButtonRect(BookmarkAreaButton button) const
+{
+    if (button == BOOKMARK_LIST && m_bookmarks.isEmpty())
+        return QRect();
+    if (button == BOOKMARK_ADD &&
+            (selectionSize() == 0 || m_nSelectionMode != SEL_NONE ||
+             !bookmarkRangeIntersectsViewport(selectionStart(), selectionSize())))
+        return QRect();
+
+    const int viewH = viewport()->height();
+    if (viewH < kBookmarkAreaBtnSz)
+        return QRect();
+
+    const int centerX = bookmarkAreaCenterX();
+    if (centerX < 0)
+        return QRect();
+
+    const int x = centerX - kBookmarkAreaBtnSz / 2;
+    int y = 0;
+    if (button == BOOKMARK_ADD) {
+        constexpr int kMargin = 8;
+        const int preferredY = bookmarkRangeMidpointY(selectionStart(), selectionSize())
+                             - kBookmarkAreaBtnSz / 2;
+        const int maxY = qMax(kMargin, viewH - kBookmarkAreaBtnSz - kMargin);
+        y = qBound(kMargin, preferredY, maxY);
+    } else {
+        constexpr int kBottomMargin = 20;
+        y = qMax(0, viewH - kBookmarkAreaBtnSz - kBottomMargin);
+    }
     return QRect(x, y, kBookmarkAreaBtnSz, kBookmarkAreaBtnSz);
 }
 
-void HexView::setBookmarkAreaButtonVisible(bool visible)
+void HexView::setBookmarkAreaButtonVisible(BookmarkAreaButton button, bool visible)
 {
-    if (m_bookmarkAreaButtonVisible == visible && m_bookmarkAreaButtonFadeTimer.isActive())
+    const int idx = bookmarkAreaButtonIndex(button);
+    if (idx < 0 || idx >= BOOKMARK_AREA_BUTTON_COUNT)
         return;
 
-    m_bookmarkAreaButtonVisible = visible;
+    if (m_bookmarkAreaButtonVisible[idx] == visible && m_bookmarkAreaButtonFadeTimer.isActive())
+        return;
+
+    m_bookmarkAreaButtonVisible[idx] = visible;
     const qreal target = visible ? 1.0 : 0.0;
-    if (qFuzzyCompare(m_bookmarkAreaButtonOpacity + 1.0, target + 1.0)) {
-        m_bookmarkAreaButtonOpacity = target;
-        m_bookmarkAreaButtonFadeTimer.stop();
+    if (qFuzzyCompare(m_bookmarkAreaButtonOpacity[idx] + 1.0, target + 1.0)) {
+        m_bookmarkAreaButtonOpacity[idx] = target;
+        if (m_bookmarkAreaButtonOpacity[BOOKMARK_LIST] == (m_bookmarkAreaButtonVisible[BOOKMARK_LIST] ? 1.0 : 0.0) &&
+                m_bookmarkAreaButtonOpacity[BOOKMARK_ADD] == (m_bookmarkAreaButtonVisible[BOOKMARK_ADD] ? 1.0 : 0.0))
+            m_bookmarkAreaButtonFadeTimer.stop();
         viewport()->update();
         return;
     }
@@ -255,19 +368,94 @@ void HexView::setBookmarkAreaButtonVisible(bool visible)
         m_bookmarkAreaButtonFadeTimer.start();
 }
 
+void HexView::setBookmarkAreaButtonsVisible(bool visible)
+{
+    const bool showAdd = visible && selectionSize() > 0 && m_nSelectionMode == SEL_NONE &&
+                         bookmarkRangeIntersectsViewport(selectionStart(), selectionSize());
+    bool showList = visible && !m_bookmarks.isEmpty();
+    if (showAdd && showList) {
+        const bool allowBothBookmarkAreaButtons = false;
+        const QRect addRect = bookmarkAreaButtonRect(BOOKMARK_ADD);
+        const QRect listRect = bookmarkAreaButtonRect(BOOKMARK_LIST);
+        if (!allowBothBookmarkAreaButtons ||
+                (!addRect.isNull() && !listRect.isNull() && addRect.intersects(listRect)))
+            showList = false;
+    }
+
+    setBookmarkAreaButtonVisible(BOOKMARK_ADD, showAdd);
+    setBookmarkAreaButtonVisible(BOOKMARK_LIST, showList);
+}
+
 void HexView::advanceBookmarkAreaButtonFade()
 {
-    const qreal target = m_bookmarkAreaButtonVisible ? 1.0 : 0.0;
     constexpr qreal kStep = 0.075;
+    bool allAtTarget = true;
 
-    if (m_bookmarkAreaButtonOpacity < target)
-        m_bookmarkAreaButtonOpacity = qMin(target, m_bookmarkAreaButtonOpacity + kStep);
-    else
-        m_bookmarkAreaButtonOpacity = qMax(target, m_bookmarkAreaButtonOpacity - kStep);
+    for (int idx = 0; idx < BOOKMARK_AREA_BUTTON_COUNT; ++idx) {
+        const qreal target = m_bookmarkAreaButtonVisible[idx] ? 1.0 : 0.0;
+        if (m_bookmarkAreaButtonOpacity[idx] < target)
+            m_bookmarkAreaButtonOpacity[idx] = qMin(target, m_bookmarkAreaButtonOpacity[idx] + kStep);
+        else
+            m_bookmarkAreaButtonOpacity[idx] = qMax(target, m_bookmarkAreaButtonOpacity[idx] - kStep);
+
+        if (!qFuzzyCompare(m_bookmarkAreaButtonOpacity[idx] + 1.0, target + 1.0))
+            allAtTarget = false;
+    }
 
     viewport()->update();
-    if (qFuzzyCompare(m_bookmarkAreaButtonOpacity + 1.0, target + 1.0))
+    if (allAtTarget)
         m_bookmarkAreaButtonFadeTimer.stop();
+}
+
+void HexView::clearBookmarkAreaButtonState()
+{
+    m_hoverBookmarkAreaButton.fill(false);
+    m_pressedBookmarkAreaButton.fill(false);
+    setBookmarkAreaButtonsVisible(false);
+}
+
+void HexView::drawBookmarkAreaButtons(QPainter &painter)
+{
+    auto drawButton = [this, &painter](BookmarkAreaButton button) {
+        const int idx = bookmarkAreaButtonIndex(button);
+        if (idx < 0 || idx >= BOOKMARK_AREA_BUTTON_COUNT ||
+                m_bookmarkAreaButtonOpacity[idx] <= 0.0)
+            return;
+
+        const QRect r = bookmarkAreaButtonRect(button);
+        if (r.isEmpty())
+            return;
+
+        const bool direct = m_hoverBookmarkAreaButton[idx] || m_pressedBookmarkAreaButton[idx];
+        QColor circleColor = palette().color(direct ? QPalette::Mid : QPalette::Window);
+        if (direct)
+            circleColor = circleColor.darker(125);
+        const QColor iconColor = direct ? QColor(Qt::white) : QColor(188, 188, 188);
+        const QRectF circle = QRectF(r).adjusted(2.5, 2.5, -2.5, -2.5);
+        QPainterPath clipPath;
+        clipPath.addEllipse(circle);
+
+        painter.save();
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setOpacity(m_bookmarkAreaButtonOpacity[idx]);
+        painter.setClipPath(clipPath);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(circleColor);
+        painter.drawEllipse(circle);
+
+        const int iconSz = 30;
+        const QRect iconRect(r.left() + (r.width() - iconSz) / 2,
+                             r.top() + (r.height() - iconSz) / 2,
+                             iconSz, iconSz);
+        drawTintedIconOrFallbackText(painter, iconRect,
+                                     bookmarkAreaButtonIconName(button),
+                                     iconColor,
+                                     bookmarkAreaButtonFallbackText(button));
+        painter.restore();
+    };
+
+    drawButton(BOOKMARK_LIST);
+    drawButton(BOOKMARK_ADD);
 }
 
 HitTestRegion HexView::hitTestForBookmarkButtonAction(BookmarkButtonAction action) const
@@ -357,7 +545,7 @@ HexView::NoteStripGeom HexView::noteStripGeom(const Bookmark &bm) const
     if (ny + rangeSpanPx <= 0 || ny >= viewH)
         return g;
 
-    const int idealTipY    = ny + rangeSpanPx / 2;   // centre of byte range, screen coords
+    const int idealTipY    = bookmarkRangeMidpointY(bm.offset, bm.length);
     const int minMargin    = m_nFontHeight / 2 + kNoteRadius;
     const int defaultRectY = ny + kNotePadV;
 

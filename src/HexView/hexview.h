@@ -9,6 +9,7 @@
 #include <QList>
 #include <QTimer>
 #include <QVector>
+#include <array>
 #include <cstdint>
 #include <QAbstractScrollArea>
 #include "sequence.h"
@@ -142,7 +143,14 @@ enum HitTestRegion : uint {
     HVHT_BOOKMARK_EDIT      = 0x400,
     HVHT_BOOKMARK_COLLAPSED = 0x800,  // collapsed single-line strip body
     HVHT_BOOKMARK_AREA      = 0x1000, // empty note-strip area
-    HVHT_BOOKMARK_AREA_BUTTON = 0x2000
+    HVHT_BOOKMARK_LIST      = 0x2000,
+    HVHT_BOOKMARK_ADD       = 0x4000
+};
+
+enum BookmarkAreaButton {
+    BOOKMARK_LIST = 0,
+    BOOKMARK_ADD,
+    BOOKMARK_AREA_BUTTON_COUNT
 };
 
 // ── Data structures ───────────────────────────────────────────────────────────
@@ -425,17 +433,22 @@ private:
 
     // ── Bookmarks ─────────────────────────────────────────────────────────────
     int           findBookmark(size_w startoff, size_w endoff) const;
+    int           bookmarkAreaCenterX() const;
+    int           bookmarkRangeMidpointY(size_w offset, size_w length) const;
+    bool          bookmarkRangeIntersectsViewport(size_w offset, size_w length) const;
     NoteStripGeom noteStripGeom(const Bookmark &bm) const;
     QRect         bookmarkButtonRect(const NoteStripGeom &geom, BookmarkButtonAction action) const;
-    QRect         bookmarkAreaButtonRect() const;
+    QRect         bookmarkAreaButtonRect(BookmarkAreaButton button) const;
     HitTestRegion hitTestForBookmarkButtonAction(BookmarkButtonAction action) const;
     QRect         noteCollapsedRect(const Bookmark &bm) const;
     void          drawNoteStrip(QPainter &painter, const Bookmark &bm, const BmLayout &bml);
-    void          drawBookmarkAreaButton(QPainter &painter);
+    void          drawBookmarkAreaButtons(QPainter &painter);
     int           noteStripFullHeight(const Bookmark &bm) const;
     QVector<BmLayout> computeBookmarkLayout(bool treatMouseAsReleased = false);
-    void          setBookmarkAreaButtonVisible(bool visible);
+    void          setBookmarkAreaButtonVisible(BookmarkAreaButton button, bool visible);
+    void          setBookmarkAreaButtonsVisible(bool visible);
     void          advanceBookmarkAreaButtonFade();
+    void          clearBookmarkAreaButtonState();
     void          closeNoteEditor(bool save);
     QFont         noteFont() const;
 
@@ -586,12 +599,12 @@ private:
     bool            m_hoverOnClose     = false;
     bool            m_hoverOnEdit      = false;
     bool            m_hoverBookmarkArea = false;
-    bool            m_hoverBookmarkAreaButton = false;
-    qreal           m_bookmarkAreaButtonOpacity = 0.0;
-    bool            m_bookmarkAreaButtonVisible = false;
+    std::array<bool, BOOKMARK_AREA_BUTTON_COUNT> m_hoverBookmarkAreaButton = {};
+    std::array<qreal, BOOKMARK_AREA_BUTTON_COUNT> m_bookmarkAreaButtonOpacity = {};
+    std::array<bool, BOOKMARK_AREA_BUTTON_COUNT> m_bookmarkAreaButtonVisible = {};
     bool            m_pressedOnClose   = false;
     bool            m_pressedOnEdit    = false;
-    bool            m_pressedBookmarkAreaButton = false;
+    std::array<bool, BOOKMARK_AREA_BUTTON_COUNT> m_pressedBookmarkAreaButton = {};
     bool            m_bookmarkContextMenuExternallyHandled = false;
     bool            m_bookmarkContextCalloutEnabled = true;
 

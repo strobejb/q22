@@ -252,8 +252,18 @@ HitTestRegion HexView::hitTest(int x, int y, int *bookmarkIdx)
             return HVHT_RESIZE0;
     }
 
-    if (!m_bookmarks.isEmpty() && bookmarkAreaButtonRect().contains(x, y))
-        return HVHT_BOOKMARK_AREA_BUTTON;
+    const QRect addButtonRect = bookmarkAreaButtonRect(BOOKMARK_ADD);
+    if (!addButtonRect.isNull() && addButtonRect.contains(x, y))
+        return HVHT_BOOKMARK_ADD;
+
+    QRect listButtonRect = bookmarkAreaButtonRect(BOOKMARK_LIST);
+    if (!listButtonRect.isNull() && !addButtonRect.isNull()) {
+        const bool allowBothBookmarkAreaButtons = false;
+        if (!allowBothBookmarkAreaButtons || listButtonRect.intersects(addButtonRect))
+            listButtonRect = QRect();
+    }
+    if (!listButtonRect.isNull() && listButtonRect.contains(x, y))
+        return HVHT_BOOKMARK_LIST;
 
     // Bookmark note strips (to the right of the ASCII column)?
     // Compute layout so we know which bookmarks are shown as full strips vs tabs.
@@ -318,10 +328,13 @@ HitTestRegion HexView::hitTest(int x, int y, int *bookmarkIdx)
 
     // Empty bookmark area to the right of the ASCII column.  This must run
     // before the main-area fallback because m_nTotalWidth includes note strips.
-    if (!m_bookmarks.isEmpty() && m_pDataSeq && m_nBytesPerLine > 0 &&
+    if ((!m_bookmarks.isEmpty() ||
+         (selectionSize() > 0 && m_nSelectionMode == SEL_NONE &&
+          bookmarkRangeIntersectsViewport(selectionStart(), selectionSize()))) &&
+            m_pDataSeq && m_nBytesPerLine > 0 &&
             m_nFontWidth > 0 && m_nFontHeight > 0) {
         const int asciiRight = logToPhyXCoord(m_nBytesPerLine, 1);
-        if (x >= asciiRight && x < m_nWindowColumns * m_nFontWidth && y >= 0) {
+        if (x >= asciiRight && x < viewport()->width() && y >= 0) {
             return HVHT_BOOKMARK_AREA;
         }
     }
@@ -426,8 +439,9 @@ void HexView::mousePressEvent(QMouseEvent *event)
         return;
     }
 
-    if (ht == HVHT_BOOKMARK_AREA_BUTTON) {
-        m_pressedBookmarkAreaButton = true;
+    if (ht == HVHT_BOOKMARK_LIST || ht == HVHT_BOOKMARK_ADD) {
+        const BookmarkAreaButton button = (ht == HVHT_BOOKMARK_ADD) ? BOOKMARK_ADD : BOOKMARK_LIST;
+        m_pressedBookmarkAreaButton[button] = true;
         viewport()->grabMouse(Qt::PointingHandCursor);
         viewport()->update();
         return;
@@ -520,19 +534,30 @@ void HexView::mouseReleaseEvent(QMouseEvent *event)
         return;
     }
 
-    if (m_pressedHitTest == HVHT_BOOKMARK_AREA_BUTTON) {
+    if (m_pressedHitTest == HVHT_BOOKMARK_LIST || m_pressedHitTest == HVHT_BOOKMARK_ADD) {
+        const HitTestRegion pressedHt = m_pressedHitTest;
+        const BookmarkAreaButton pressedButton = (pressedHt == HVHT_BOOKMARK_ADD) ? BOOKMARK_ADD : BOOKMARK_LIST;
         m_pressedHitTest = HVHT_NONE;
         m_pressedBookmarkIdx = -1;
-        m_pressedBookmarkAreaButton = false;
+        m_pressedBookmarkAreaButton[pressedButton] = false;
         viewport()->releaseMouse();
 
         int releaseIdx = -1;
         const HitTestRegion releaseHt = hitTest(event->pos().x(), event->pos().y(), &releaseIdx);
-        m_hoverBookmarkArea = (releaseHt == HVHT_BOOKMARK_AREA || releaseHt == HVHT_BOOKMARK_AREA_BUTTON);
-        m_hoverBookmarkAreaButton = (releaseHt == HVHT_BOOKMARK_AREA_BUTTON);
-        setBookmarkAreaButtonVisible(m_hoverBookmarkArea);
-        if (releaseHt == HVHT_BOOKMARK_AREA_BUTTON) {
-            const QRect buttonRect = bookmarkAreaButtonRect();
+        m_hoverBookmarkArea = (releaseHt == HVHT_BOOKMARK_AREA ||
+                               releaseHt == HVHT_BOOKMARK_LIST ||
+                               releaseHt == HVHT_BOOKMARK_ADD);
+        m_hoverBookmarkAreaButton[BOOKMARK_LIST] = (releaseHt == HVHT_BOOKMARK_LIST);
+        m_hoverBookmarkAreaButton[BOOKMARK_ADD] = (releaseHt == HVHT_BOOKMARK_ADD);
+        setBookmarkAreaButtonsVisible(m_hoverBookmarkArea);
+        if (releaseHt == pressedHt) {
+            if (pressedHt == HVHT_BOOKMARK_ADD) {
+                addBookmarkInline();
+                viewport()->update();
+                return;
+            }
+
+            const QRect buttonRect = bookmarkAreaButtonRect(BOOKMARK_LIST);
             const int asciiRight = logToPhyXCoord(m_nBytesPerLine, 1);
             const int gutterMidX = asciiRight + m_nFontWidth * 2;
             const QRect popupAnchor = buttonRect.isValid()
@@ -683,26 +708,38 @@ void HexView::mouseMoveEvent(QMouseEvent *event)
                 pressedFlag = stillOver;
                 viewport()->update();
             }
-        } else if (m_pressedHitTest == HVHT_BOOKMARK_AREA_BUTTON) {
-            const bool stillOver = (ht == HVHT_BOOKMARK_AREA_BUTTON);
-            if (stillOver != m_pressedBookmarkAreaButton) {
-                m_pressedBookmarkAreaButton = stillOver;
+        } else if (m_pressedHitTest == HVHT_BOOKMARK_LIST || m_pressedHitTest == HVHT_BOOKMARK_ADD) {
+            const BookmarkAreaButton pressedButton =
+                (m_pressedHitTest == HVHT_BOOKMARK_ADD) ? BOOKMARK_ADD : BOOKMARK_LIST;
+            const bool stillOver = (ht == m_pressedHitTest);
+            if (stillOver != m_pressedBookmarkAreaButton[pressedButton]) {
+                m_pressedBookmarkAreaButton[pressedButton] = stillOver;
                 viewport()->update();
             }
-            setBookmarkAreaButtonVisible(true);
+            setBookmarkAreaButtonsVisible(true);
         } else {
             const int  newHoverBm    = (ht == HVHT_BOOKMARK           || ht == HVHT_BOOKMARK_CLOSE ||
                                         ht == HVHT_BOOKMARK_EDIT       ||
                                         ht == HVHT_BOOKMARK_COLLAPSED) ? bmIdx : -1;
             const bool newHoverClose = (ht == HVHT_BOOKMARK_CLOSE);
             const bool newHoverEdit  = (ht == HVHT_BOOKMARK_EDIT);
-            bool newHoverArea = (ht == HVHT_BOOKMARK_AREA || ht == HVHT_BOOKMARK_AREA_BUTTON);
-            if (!newHoverArea && !m_bookmarks.isEmpty() && m_pDataSeq &&
+            bool newHoverArea = (ht == HVHT_BOOKMARK_AREA ||
+                                 ht == HVHT_BOOKMARK_LIST ||
+                                 ht == HVHT_BOOKMARK_ADD ||
+                                 (ht == HVHT_SELECTION &&
+                                  selectionSize() > 0 && m_nSelectionMode == SEL_NONE));
+            if (!newHoverArea &&
+                    (!m_bookmarks.isEmpty() ||
+                     (selectionSize() > 0 && m_nSelectionMode == SEL_NONE &&
+                      bookmarkRangeIntersectsViewport(selectionStart(), selectionSize()))) &&
+                    m_pDataSeq &&
                     m_nBytesPerLine > 0 && m_nFontWidth > 0 && m_nFontHeight > 0) {
                 const int asciiRight = logToPhyXCoord(m_nBytesPerLine, 1);
-                newHoverArea = (mx >= asciiRight && mx < m_nWindowColumns * m_nFontWidth && my >= 0);
+                newHoverArea = (mx >= asciiRight && mx < viewport()->width() && my >= 0);
             }
-            const bool newHoverAreaButton = (ht == HVHT_BOOKMARK_AREA_BUTTON);
+            std::array<bool, BOOKMARK_AREA_BUTTON_COUNT> newHoverAreaButton = {};
+            newHoverAreaButton[BOOKMARK_LIST] = (ht == HVHT_BOOKMARK_LIST);
+            newHoverAreaButton[BOOKMARK_ADD] = (ht == HVHT_BOOKMARK_ADD);
             if (newHoverBm != m_hoverBookmarkIdx || newHoverClose != m_hoverOnClose ||
                     newHoverEdit != m_hoverOnEdit || newHoverArea != m_hoverBookmarkArea ||
                     newHoverAreaButton != m_hoverBookmarkAreaButton) {
@@ -711,7 +748,7 @@ void HexView::mouseMoveEvent(QMouseEvent *event)
                 m_hoverOnEdit      = newHoverEdit;
                 m_hoverBookmarkArea = newHoverArea;
                 m_hoverBookmarkAreaButton = newHoverAreaButton;
-                setBookmarkAreaButtonVisible(newHoverArea);
+                setBookmarkAreaButtonsVisible(newHoverArea);
                 viewport()->update();
             }
         }
@@ -724,7 +761,8 @@ void HexView::mouseMoveEvent(QMouseEvent *event)
         case HVHT_BOOKMARK_COLLAPSED:
         case HVHT_BOOKMARK_CLOSE:
         case HVHT_BOOKMARK_EDIT:
-        case HVHT_BOOKMARK_AREA_BUTTON:
+        case HVHT_BOOKMARK_LIST:
+        case HVHT_BOOKMARK_ADD:
             viewport()->setCursor(Qt::PointingHandCursor); break;
         case HVHT_BOOKMARK_AREA:      viewport()->setCursor(Qt::ArrowCursor);        break;
         default:                  viewport()->setCursor(Qt::ArrowCursor);   break;
@@ -810,7 +848,7 @@ void HexView::contextMenuEvent(QContextMenuEvent *event)
             return;
         }
 
-        if ((ht == HVHT_BOOKMARK_AREA || ht == HVHT_BOOKMARK_AREA_BUTTON) &&
+        if ((ht == HVHT_BOOKMARK_AREA || ht == HVHT_BOOKMARK_LIST || ht == HVHT_BOOKMARK_ADD) &&
                 m_bookmarkContextMenuExternallyHandled) {
             const int asciiRight = logToPhyXCoord(m_nBytesPerLine, 1);
             const int gutterMidX = asciiRight + m_nFontWidth * 2;

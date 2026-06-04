@@ -76,43 +76,6 @@ static void drawTintedIconOrFallbackText(QPainter &painter,
     painter.restore();
 }
 
-void HexView::drawBookmarkAreaButton(QPainter &painter)
-{
-    if (m_bookmarkAreaButtonOpacity <= 0.0)
-        return;
-
-    const QRect r = bookmarkAreaButtonRect();
-    if (r.isEmpty())
-        return;
-
-    const bool direct = m_hoverBookmarkAreaButton || m_pressedBookmarkAreaButton;
-    QColor circleColor = palette().color(direct ? QPalette::Mid : QPalette::Window);
-    if (direct)
-        circleColor = circleColor.darker(125);
-    const QColor iconColor = direct ? QColor(Qt::white) : QColor(188, 188, 188);
-    const QRectF circle = QRectF(r).adjusted(2.5, 2.5, -2.5, -2.5);
-    QPainterPath clipPath;
-    clipPath.addEllipse(circle);
-
-    painter.save();
-    painter.setRenderHint(QPainter::Antialiasing);
-    painter.setOpacity(m_bookmarkAreaButtonOpacity);
-    painter.setClipPath(clipPath);
-    painter.setPen(Qt::NoPen);
-    painter.setBrush(circleColor);
-    painter.drawEllipse(circle);
-
-    const int iconSz = 30;
-    const QRect iconRect(r.left() + (r.width() - iconSz) / 2,
-                         r.top() + (r.height() - iconSz) / 2,
-                         iconSz, iconSz);
-    drawTintedIconOrFallbackText(painter, iconRect,
-                                 QStringLiteral("bookmark-star-on-tray"),
-                                 iconColor,
-                                 QStringLiteral("*"));
-    painter.restore();
-}
-
 // WCAG relative luminance. QColor::lightness() is HSL-based, which treats
 // bright saturated colours like yellow as mid-light and can pick white text.
 static double srgbChannelToLinear(int channel)
@@ -969,7 +932,7 @@ void HexView::paintEvent(QPaintEvent *event)
         drawVLine(painter, pr, getHexColour(HVC_RESIZEBAR), m_nResizeBarPos);
     }
 
-    drawBookmarkAreaButton(painter);
+    drawBookmarkAreaButtons(painter);
     paintCaret(painter);
     paintDragOverlay(painter);
 

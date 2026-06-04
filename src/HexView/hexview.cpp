@@ -107,11 +107,9 @@ bool HexView::eventFilter(QObject *obj, QEvent *ev)
         m_hoverOnClose     = false;
         m_hoverOnEdit      = false;
         m_hoverBookmarkArea = false;
-        m_hoverBookmarkAreaButton = false;
-        setBookmarkAreaButtonVisible(false);
+        clearBookmarkAreaButtonState();
         m_pressedOnClose   = false;
         m_pressedOnEdit    = false;
-        m_pressedBookmarkAreaButton = false;
         viewport()->update();
         return false;
     }
@@ -121,17 +119,17 @@ bool HexView::eventFilter(QObject *obj, QEvent *ev)
         // arriving via the grab so hover/press state updates continue normally.
         if (QWidget::mouseGrabber() == viewport()) return false;
         if (m_hoverBookmarkIdx != -1 || m_hoverOnClose || m_hoverOnEdit ||
-                m_hoverBookmarkArea || m_hoverBookmarkAreaButton ||
-                m_pressedOnClose || m_pressedOnEdit || m_pressedBookmarkAreaButton) {
+                m_hoverBookmarkArea ||
+                m_hoverBookmarkAreaButton[BOOKMARK_LIST] || m_hoverBookmarkAreaButton[BOOKMARK_ADD] ||
+                m_pressedOnClose || m_pressedOnEdit ||
+                m_pressedBookmarkAreaButton[BOOKMARK_LIST] || m_pressedBookmarkAreaButton[BOOKMARK_ADD]) {
             m_hoverBookmarkIdx = -1;
             m_hoverOnClose     = false;
             m_hoverOnEdit      = false;
             m_hoverBookmarkArea = false;
-            m_hoverBookmarkAreaButton = false;
-            setBookmarkAreaButtonVisible(false);
+            clearBookmarkAreaButtonState();
             m_pressedOnClose   = false;
             m_pressedOnEdit    = false;
-            m_pressedBookmarkAreaButton = false;
             viewport()->update();
         }
         viewport()->unsetCursor();
