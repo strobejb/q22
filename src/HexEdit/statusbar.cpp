@@ -122,6 +122,7 @@ bool PanelStrip::event(QEvent *e)
 
 static constexpr uint indexToMode[] = { HVMODE_OVERWRITE, HVMODE_INSERT, HVMODE_READONLY };
 static constexpr const char *indexToLabel[] = { "OVR", "INS", "READ" };
+static constexpr int kRightToggleMargin = 22;
 
 static int modeToIndex(uint mode)
 {
@@ -156,7 +157,7 @@ StatusBar::StatusBar(HexView *hv, QStatusBar *bar, bool showPanelToggles,
         btn->setCursor(Qt::ArrowCursor);
         btn->setFocusPolicy(Qt::StrongFocus);
         btn->setFixedSize(30, 30);
-        btn->setIconSize(QSize(18, 18));
+        btn->setIconSize(QSize(20, 20));
         const QIcon icon = QIcon::fromTheme(QString::fromLatin1(iconName).section('/', -1));
         if (!icon.isNull())
             btn->setIcon(icon);
@@ -168,14 +169,13 @@ StatusBar::StatusBar(HexView *hv, QStatusBar *bar, bool showPanelToggles,
     m_fileInfoBtn = makeToggleButton("statusFileInfoBtn", "actions/help-about-symbolic", "i");
     connect(m_fileInfoBtn, &QToolButton::clicked, this, &StatusBar::fileInfoToggled);
 
-    m_typesBtn = makeToggleButton("statusTypesBtn", "actions/hierarchy2", "T");
+    m_typesBtn = makeToggleButton("statusTypesBtn", "actions/binary2", "T");
     connect(m_typesBtn, &QToolButton::toggled, this, &StatusBar::typesToggled);
 
     m_toggleStrip = new QWidget(bar);
     m_toggleLayout = new QHBoxLayout(m_toggleStrip);
-    static constexpr int kRightToggleMargin = 16;
     m_toggleLayout->setContentsMargins(0, 0, kRightToggleMargin, 0);
-    m_toggleLayout->setSpacing(6);
+    m_toggleLayout->setSpacing(8);
     m_toggleStrip->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     m_toggleStrip->setVisible(showPanelToggles);
     bar->installEventFilter(this);
@@ -290,7 +290,6 @@ void StatusBar::rebuildLayout()
     m_bar->removeWidget(m_patternLabel);
     m_bar->removeWidget(m_patternSep);
 
-    static constexpr int kRightToggleMargin = 16;
     m_toggleLayout->removeWidget(m_fileInfoBtn);
     m_toggleLayout->removeWidget(m_typesBtn);
     m_toggleLayout->setContentsMargins(0, 0, m_toolsRight ? kRightToggleMargin : 0, 0);
