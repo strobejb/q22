@@ -1593,6 +1593,7 @@ void HexView::drawNoteStrip(QPainter &painter, const Bookmark &bm, const BmLayou
     const int bmIdx      = (int)(&bm - m_bookmarks.constData());
     const bool isHovered = (bmIdx == m_hoverBookmarkIdx);
     const bool grabbed   = (QWidget::mouseGrabber() == viewport());
+    const bool isPressedBookmark = grabbed && bmIdx == m_pressedBookmarkIdx;
     const bool popupHere = (bmIdx == m_bookmarkPopupIdx);
     const bool rangeActive = (bmIdx == m_inlineRangeBookmarkIdx);
     const bool stepperRangeActive = rangeActive &&
@@ -1625,10 +1626,12 @@ void HexView::drawNoteStrip(QPainter &painter, const Bookmark &bm, const BmLayou
         painter.restore();
     };
 
-    const bool offsetHov = isHovered && (grabbed ? m_pressedOnOffset : m_hoverOnOffset);
-    const bool lengthHov = isHovered && (grabbed ? m_pressedOnLength : m_hoverOnLength);
-    paintRangeBg(geom.offsetRect, offsetHov, m_pressedOnOffset);
-    paintRangeBg(geom.lengthRect, lengthHov, m_pressedOnLength);
+    const bool offsetPressed = isPressedBookmark && m_pressedOnOffset;
+    const bool lengthPressed = isPressedBookmark && m_pressedOnLength;
+    const bool offsetHov = isHovered && (grabbed ? offsetPressed : m_hoverOnOffset);
+    const bool lengthHov = isHovered && (grabbed ? lengthPressed : m_hoverOnLength);
+    paintRangeBg(geom.offsetRect, offsetHov, offsetPressed);
+    paintRangeBg(geom.lengthRect, lengthHov, lengthPressed);
 
     QRect activeValueRect;
     QRect activeStepperRect;
@@ -1747,16 +1750,18 @@ void HexView::drawNoteStrip(QPainter &painter, const Bookmark &bm, const BmLayou
 
     const QRect settingsButtonRect = bookmarkButtonRect(geom, BookmarkButtonAction::Settings);
     if (isHovered && settingsButtonRect.isValid()) {
-        const bool eHov  = grabbed ? m_pressedOnEdit : (m_hoverOnEdit || popupHere);
-        const bool ePres = m_pressedOnEdit || popupHere;
+        const bool editPressed = isPressedBookmark && m_pressedOnEdit;
+        const bool eHov  = grabbed ? editPressed : (m_hoverOnEdit || popupHere);
+        const bool ePres = editPressed || popupHere;
         drawIconBtn(settingsButtonRect, eHov, ePres, QStringLiteral("document-edit-symbolic"));
     }
 
     // Close button (shown on hover).
     const QRect closeButtonRect = bookmarkButtonRect(geom, BookmarkButtonAction::Close);
     if (isHovered && closeButtonRect.isValid()) {
-        const bool cHov  = grabbed ? m_pressedOnClose : m_hoverOnClose;
-        const bool cPres = m_pressedOnClose;
+        const bool closePressed = isPressedBookmark && m_pressedOnClose;
+        const bool cHov  = grabbed ? closePressed : m_hoverOnClose;
+        const bool cPres = closePressed;
         paintBtnBg(closeButtonRect, cHov, cPres);
         // Draw an × using two short lines.
         painter.save();
