@@ -363,6 +363,13 @@ QColor themeBorderColor()
     //return dark ? QColor("#4a4a4a") : QColor("#cdc7c2");
 }
 
+QColor menuSelectedTextColor(const QPalette &palette)
+{
+    return palette.color(AppSettings::prefMenuHighlight()
+                         ? QPalette::HighlightedText
+                         : QPalette::WindowText);
+}
+
 // Adwaita destructive / error red — tuned for legibility on both schemes.
 QColor errorColour()
 {
@@ -713,7 +720,7 @@ static QString buildStylesheet(bool dark)
     const bool    menuUseHighlight  = AppSettings::prefMenuHighlight();
     const bool    scrollbarArrows  = AppSettings::prefScrollbarArrows();
     const QString menuSelBg        = menuUseHighlight ? "palette(highlight)"  : btnHover;
-    const QString menuSelFg        = menuUseHighlight ? "palette(highlighted-text)" : "palette(window-text)";
+    const QString menuSelFg        = menuUseHighlight ? "palette(highlighted-text)" : menuSelectedTextColor(pal).name();
     const QColor  windowColor      = pal.window().color();
     const QString statusComboHover = (darkBtn ? windowColor.lighter(130) : windowColor.darker(107)).name();
     const QString statusComboOpen  = (darkBtn ? windowColor.lighter(155) : windowColor.darker(115)).name();
@@ -1642,8 +1649,8 @@ struct TightMenuStyle : public QProxyStyle
             // GNOME/Adwaita and looks pixelated at any non-native size.
             if (opt->state & State_On) {
                 const bool sel = opt->state & State_Selected;
-                const QColor color = opt->palette.color(
-                    sel ? QPalette::HighlightedText : QPalette::WindowText);
+                const QColor color = sel ? menuSelectedTextColor(opt->palette)
+                                         : opt->palette.color(QPalette::WindowText);
                 const QRect r = opt->rect.translated(kGlyphInset, 0);
                 recoloredIcon("actions/object-select-symbolic", color, r.height()).paint(p, r);
             }

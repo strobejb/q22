@@ -72,6 +72,9 @@ QPoint smartMenuPos(QRect anchorGlobal, QSize popupSize, bool rightAlign = false
 // Returns the border/separator colour used by the current theme.
 QColor themeBorderColor();
 
+// Returns the foreground colour used for selected QMenu items and menu tick glyphs.
+QColor menuSelectedTextColor(const QPalette &palette);
+
 // Returns the destructive-action / error red for the current scheme.
 // Matches Adwaita's @error_color: brighter in dark mode for contrast.
 QColor errorColour();

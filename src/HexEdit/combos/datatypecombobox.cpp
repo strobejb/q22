@@ -6,6 +6,7 @@
 #include <QGuiApplication>
 #include <QKeyEvent>
 #include <QMenu>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QScreen>
 #include <QStyleOptionComboBox>
@@ -16,9 +17,10 @@
 // suppresses QAction icon drawing, so we bypass the style system entirely
 // and paint directly in a raised child widget — exactly like MenuShadowOverlay.
 namespace {
-struct SwatchOverlay : public QWidget
+struct MenuActionOverlay : public QWidget
 {
-    explicit SwatchOverlay(QMenu *menu) : QWidget(menu)
+    explicit MenuActionOverlay(DataTypeComboBox *combo, QMenu *menu)
+        : QWidget(menu), m_combo(combo)
     {
         setAttribute(Qt::WA_TransparentForMouseEvents);
         setAttribute(Qt::WA_NoSystemBackground);
@@ -33,6 +35,36 @@ struct SwatchOverlay : public QWidget
                 setGeometry(parentWidget()->rect());
             if (e->type() == QEvent::Show)
                 update();
+            if (e->type() == QEvent::Leave || e->type() == QEvent::Hide) {
+                clearCloseHover();
+            } else if (m_combo && m_combo->actionCloseButtonsEnabled()) {
+                if (e->type() == QEvent::MouseMove) {
+                    auto *me = static_cast<QMouseEvent *>(e);
+                    updateCloseHover(me->pos());
+                    update();
+                } else if (e->type() == QEvent::MouseButtonPress) {
+                    auto *me = static_cast<QMouseEvent *>(e);
+                    if (me->button() == Qt::LeftButton && actionCloseRect(actionAt(me->pos())).contains(me->pos())) {
+                        m_pressedCloseAction = actionAt(me->pos());
+                        e->accept();
+                        return true;
+                    }
+                } else if (e->type() == QEvent::MouseButtonRelease) {
+                    auto *me = static_cast<QMouseEvent *>(e);
+                    QAction *action = actionAt(me->pos());
+                    if (m_pressedCloseAction && action == m_pressedCloseAction
+                            && actionCloseRect(action).contains(me->pos())) {
+                        QAction *pressed = m_pressedCloseAction;
+                        m_pressedCloseAction = nullptr;
+                        const int idx = actionIndex(pressed);
+                        if (idx >= 0)
+                            emit m_combo->actionCloseRequested(idx, pressed->data());
+                        e->accept();
+                        return true;
+                    }
+                    m_pressedCloseAction = nullptr;
+                }
+            }
         }
         return false;
     }
@@ -56,7 +88,115 @@ struct SwatchOverlay : public QWidget
             p.setPen(Qt::NoPen);
             p.drawEllipse(x, y, kSz, kSz);
         }
+
+        if (!m_combo || !m_combo->actionCloseButtonsEnabled())
+            return;
+
+        QAction *active = m_hoverCloseAction ? m_hoverCloseAction : menu->activeAction();
+        if (!active || active->isSeparator())
+            return;
+
+        const QRect iconRect = actionCloseIconRect(active);
+        if (iconRect.isNull())
+            return;
+
+        const QColor iconColor = menuSelectedTextColor(menu->palette());
+        recoloredIcon(QStringLiteral("actions/window-close-symbolic"), iconColor, iconRect.width())
+            .paint(&p, iconRect);
     }
+
+private:
+    QAction *actionAt(const QPoint &pos) const
+    {
+        auto *menu = qobject_cast<QMenu *>(parentWidget());
+        if (!menu)
+            return nullptr;
+        for (QAction *action : menu->actions()) {
+            if (!action || action->isSeparator())
+                continue;
+            if (menu->actionGeometry(action).contains(pos))
+                return action;
+        }
+        return nullptr;
+    }
+
+    int actionIndex(QAction *needle) const
+    {
+        auto *menu = qobject_cast<QMenu *>(parentWidget());
+        if (!menu || !needle)
+            return -1;
+        int idx = 0;
+        for (QAction *action : menu->actions()) {
+            if (!action || action->isSeparator())
+                continue;
+            if (action == needle)
+                return idx;
+            ++idx;
+        }
+        return -1;
+    }
+
+    QRect actionCloseIconRect(QAction *action) const
+    {
+        auto *menu = qobject_cast<QMenu *>(parentWidget());
+        if (!menu || !action || action->isSeparator())
+            return {};
+        const QRect r = menu->actionGeometry(action);
+        if (r.isNull())
+            return {};
+        constexpr int kIconSize = 14;
+        constexpr int kRightInset = 10;
+        return QRect(r.right() - kRightInset - kIconSize + 1,
+                     r.top() + (r.height() - kIconSize) / 2,
+                     kIconSize, kIconSize);
+    }
+
+    QRect actionCloseRect(QAction *action) const
+    {
+        const QRect iconRect = actionCloseIconRect(action);
+        if (iconRect.isNull())
+            return {};
+        return iconRect.adjusted(-4, -4, 4, 4);
+    }
+
+    void updateCloseHover(const QPoint &pos)
+    {
+        auto *menu = qobject_cast<QMenu *>(parentWidget());
+        if (!menu)
+            return;
+
+        QAction *action = actionAt(pos);
+        if (action && !actionCloseRect(action).contains(pos))
+            action = nullptr;
+
+        if (action) {
+            menu->setActiveAction(action);
+            menu->setCursor(Qt::PointingHandCursor);
+        } else {
+            menu->unsetCursor();
+        }
+
+        if (action != m_hoverCloseAction) {
+            m_hoverCloseAction = action;
+            update();
+        }
+    }
+
+    void clearCloseHover()
+    {
+        auto *menu = qobject_cast<QMenu *>(parentWidget());
+        if (menu)
+            menu->unsetCursor();
+        if (m_hoverCloseAction || m_pressedCloseAction) {
+            m_hoverCloseAction = nullptr;
+            m_pressedCloseAction = nullptr;
+            update();
+        }
+    }
+
+    DataTypeComboBox *m_combo = nullptr;
+    QAction *m_hoverCloseAction = nullptr;
+    QAction *m_pressedCloseAction = nullptr;
 };
 } // namespace
 
@@ -66,7 +206,7 @@ DataTypeComboBox::DataTypeComboBox(QWidget *parent)
     setFocusPolicy(Qt::StrongFocus);
     m_menu = new QMenu(this);
     themeMenu(m_menu);
-    m_swatchOverlay = new SwatchOverlay(m_menu);
+    m_swatchOverlay = new MenuActionOverlay(this, m_menu);
 }
 
 QAction *DataTypeComboBox::addIconAction(const QIcon &icon, IconActionPosition position)
@@ -165,6 +305,15 @@ QVariant DataTypeComboBox::selectionData() const
     if (m_selection >= 0 && m_selection < m_actions.size())
         return m_actions[m_selection]->data();
     return {};
+}
+
+void DataTypeComboBox::setActionCloseButtonsEnabled(bool enabled)
+{
+    if (m_actionCloseButtonsEnabled == enabled)
+        return;
+    m_actionCloseButtonsEnabled = enabled;
+    if (m_swatchOverlay)
+        m_swatchOverlay->update();
 }
 
 void DataTypeComboBox::appendAction(QAction *action)

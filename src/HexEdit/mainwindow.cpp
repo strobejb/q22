@@ -105,16 +105,34 @@ void showBookmarkAreaPopup(HexView *hv, size_w referenceOffset, const QRect &glo
     if (!hv || hv->bookmarks().isEmpty())
         return;
 
+    auto refreshCombo = [hv](DataTypeComboBox *combo) {
+        BookmarkCombo::populate(combo, hv, BookmarkCombo::Mode::BookmarksOnly, /*swatches=*/true);
+        combo->setActionCloseButtonsEnabled(true);
+        combo->setFixedWidth(bookmarkAreaComboWidth(combo));
+    };
+
     auto *combo = new DataTypeComboBox(owner);
     combo->hide();
-    BookmarkCombo::populate(combo, hv, BookmarkCombo::Mode::BookmarksOnly, /*swatches=*/true);
-    combo->setFixedWidth(bookmarkAreaComboWidth(combo));
+    refreshCombo(combo);
     QObject::connect(combo, &DataTypeComboBox::selectionChanged, combo, [hv, combo](int) {
         const QVariant data = combo->selectionData();
         if (data.isNull())
             return;
         jumpToBookmark(hv, data.toInt());
         combo->deleteLater();
+    });
+    QObject::connect(combo, &DataTypeComboBox::actionCloseRequested, combo,
+                     [hv, combo, refreshCombo](int, const QVariant &data) {
+        if (data.isNull())
+            return;
+
+        hv->removeBookmark(data.toInt());
+        if (hv->bookmarks().isEmpty()) {
+            combo->deleteLater();
+            return;
+        }
+
+        refreshCombo(combo);
     });
     QObject::connect(combo, &DataTypeComboBox::popupClosed, combo, &QObject::deleteLater);
     combo->popupAbove(globalRect);

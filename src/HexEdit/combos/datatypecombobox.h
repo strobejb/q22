@@ -31,6 +31,8 @@ public:
     // Emits selectionChanged if the selection changes.
     void     selectByData(const QVariant &data);
     void     popupAbove(const QRect &anchorGlobal);
+    void     setActionCloseButtonsEnabled(bool enabled);
+    bool     actionCloseButtonsEnabled() const { return m_actionCloseButtonsEnabled; }
 
     // Append a pre-built action (e.g. QWidgetAction) directly to the menu and
     // m_actions list.  Call after buildMenu().  The caller is responsible for
@@ -43,6 +45,7 @@ public:
 
 signals:
     void selectionChanged(int index);
+    void actionCloseRequested(int actionIndex, QVariant data);
     void popupClosed();
 
 protected:
@@ -59,6 +62,7 @@ private:
     QList<QAction*> m_actions;
     QAction        *m_leadingAction     = nullptr;
     int             m_selection         = 0;
+    bool            m_actionCloseButtonsEnabled = false;
 };
 
 #endif // DATATYPECOMBOBOX_H
