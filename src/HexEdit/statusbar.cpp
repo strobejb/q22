@@ -14,6 +14,7 @@
 #include <QRegularExpression>
 #include <QResizeEvent>
 #include <QSizePolicy>
+#include <QToolButton>
 
 PanelStrip::PanelStrip(QWidget *parent) : QWidget(parent)
 {
@@ -32,6 +33,14 @@ void PanelStrip::setOverlapGuard(QWidget *w)
     m_overlapGuard = w;
     if (w)
         w->installEventFilter(this);
+}
+
+void PanelStrip::setRightAligned(bool on)
+{
+    if (m_rightAligned == on)
+        return;
+    m_rightAligned = on;
+    layoutPanels();
 }
 
 bool PanelStrip::eventFilter(QObject *obj, QEvent *e)
@@ -73,17 +82,28 @@ QSize PanelStrip::minimumSizeHint() const
 
 void PanelStrip::layoutPanels()
 {
-    // Place panels right-to-left at their preferred widths. Panels that
-    // overflow the left edge are clipped at the widget boundary.
     static constexpr int kRightMargin = 12;
-    int x = width() - kRightMargin;
-    for (int i = m_panels.count() - 1; i >= 0; --i) {
-        QWidget *p = m_panels[i];
-        const int pw = p->sizeHint().width();
-        const int ph = p->sizeHint().height();
-        const int py = (height() - ph) / 2;
-        x -= pw;
-        p->setGeometry(x, py, pw, ph);
+    if (m_rightAligned) {
+        // Place panels right-to-left at their preferred widths. Panels that
+        // overflow the left edge are clipped at the widget boundary.
+        int x = width() - kRightMargin;
+        for (int i = m_panels.count() - 1; i >= 0; --i) {
+            QWidget *p = m_panels[i];
+            const int pw = p->sizeHint().width();
+            const int ph = p->sizeHint().height();
+            const int py = (height() - ph) / 2;
+            x -= pw;
+            p->setGeometry(x, py, pw, ph);
+        }
+    } else {
+        int x = 0;
+        for (QWidget *p : m_panels) {
+            const int pw = p->sizeHint().width();
+            const int ph = p->sizeHint().height();
+            const int py = (height() - ph) / 2;
+            p->setGeometry(x, py, pw, ph);
+            x += pw;
+        }
     }
     checkOverlap();
 }
@@ -117,9 +137,50 @@ static QString fmtHex(quint64 v, int width)
     return QString::number(v, 16).toUpper().rightJustified(width, '0');
 }
 
-StatusBar::StatusBar(HexView *hv, QStatusBar *bar, QObject *parent)
-    : QObject(parent), m_hv(hv)
+StatusBar::StatusBar(HexView *hv, QStatusBar *bar, bool showPanelToggles,
+                     bool toolsRight, bool infoRight, QObject *parent)
+    : QObject(parent),
+      m_hv(hv),
+      m_bar(bar),
+      m_showPanelToggles(showPanelToggles),
+      m_toolsRight(toolsRight),
+      m_infoRight(infoRight)
 {
+    auto makeToggleButton = [&](const char *objectName, const char *iconName,
+                                const QString &fallbackText) {
+        auto *btn = new QToolButton(bar);
+        btn->setObjectName(QString::fromLatin1(objectName));
+        btn->setProperty("iconThemeName", QString::fromLatin1(iconName));
+        btn->setAutoRaise(true);
+        btn->setCheckable(true);
+        btn->setCursor(Qt::ArrowCursor);
+        btn->setFocusPolicy(Qt::StrongFocus);
+        btn->setFixedSize(30, 30);
+        btn->setIconSize(QSize(18, 18));
+        const QIcon icon = QIcon::fromTheme(QString::fromLatin1(iconName).section('/', -1));
+        if (!icon.isNull())
+            btn->setIcon(icon);
+        else
+            btn->setText(fallbackText);
+        return btn;
+    };
+
+    m_fileInfoBtn = makeToggleButton("statusFileInfoBtn", "actions/help-about-symbolic", "i");
+    connect(m_fileInfoBtn, &QToolButton::clicked, this, &StatusBar::fileInfoToggled);
+
+    m_typesBtn = makeToggleButton("statusTypesBtn", "actions/hierarchy2", "T");
+    connect(m_typesBtn, &QToolButton::toggled, this, &StatusBar::typesToggled);
+
+    m_toggleStrip = new QWidget(bar);
+    m_toggleLayout = new QHBoxLayout(m_toggleStrip);
+    static constexpr int kRightToggleMargin = 16;
+    m_toggleLayout->setContentsMargins(0, 0, kRightToggleMargin, 0);
+    m_toggleLayout->setSpacing(6);
+    m_toggleStrip->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_toggleStrip->setVisible(showPanelToggles);
+    bar->installEventFilter(this);
+    refreshToggleIcons();
+
     m_comboCursor = new RadioComboBox({ "Hexadecimal", "Decimal" }, bar);
     connect(m_comboCursor, &RadioComboBox::selectionChanged, this, [this] { update(); });
 
@@ -136,11 +197,11 @@ StatusBar::StatusBar(HexView *hv, QStatusBar *bar, QObject *parent)
         update();
     });
 
-    auto *strip = new PanelStrip(bar);
-    strip->addPanel(m_comboCursor);
-    strip->addPanel(m_comboLength);
-    strip->addPanel(m_comboValue);
-    strip->addPanel(m_comboMode);
+    m_comboStrip = new PanelStrip(bar);
+    m_comboStrip->addPanel(m_comboCursor);
+    m_comboStrip->addPanel(m_comboLength);
+    m_comboStrip->addPanel(m_comboValue);
+    m_comboStrip->addPanel(m_comboMode);
 
     const QColor borderColor = themeBorderColor();
 
@@ -177,11 +238,105 @@ StatusBar::StatusBar(HexView *hv, QStatusBar *bar, QObject *parent)
     m_patternSep = makeSep();
     bar->addWidget(m_patternSep);
 
-    bar->addPermanentWidget(strip, 1);
     bar->setMinimumWidth(0);
-    strip->setOverlapGuard(m_patternLabel);
+    m_comboStrip->setOverlapGuard(m_patternLabel);
 
+    rebuildLayout();
     update();
+}
+
+bool StatusBar::eventFilter(QObject *obj, QEvent *event)
+{
+    if (obj == m_bar) {
+        const auto type = event->type();
+        if (type == QEvent::PaletteChange ||
+            type == QEvent::ApplicationPaletteChange ||
+            type == QEvent::StyleChange) {
+            refreshToggleIcons();
+        }
+    }
+    return QObject::eventFilter(obj, event);
+}
+
+void StatusBar::refreshToggleIcons()
+{
+    if (m_toggleStrip)
+        recolorToolButtons(m_toggleStrip);
+}
+
+void StatusBar::setAlignment(bool toolsRight, bool infoRight)
+{
+    if (m_toolsRight == toolsRight && m_infoRight == infoRight)
+        return;
+    m_toolsRight = toolsRight;
+    m_infoRight = infoRight;
+    rebuildLayout();
+}
+
+void StatusBar::rebuildLayout()
+{
+    if (!m_bar || !m_comboStrip || !m_toggleStrip)
+        return;
+
+    const bool searchVisible = m_searchWidget && m_searchWidget->isVisible();
+    const bool searchSepVisible = m_searchSep && m_searchSep->isVisible();
+    const bool patternVisible = m_patternLabel && m_patternLabel->isVisible();
+    const bool patternSepVisible = m_patternSep && m_patternSep->isVisible();
+
+    m_bar->removeWidget(m_toggleStrip);
+    m_bar->removeWidget(m_comboStrip);
+    m_bar->removeWidget(m_searchWidget);
+    m_bar->removeWidget(m_searchSep);
+    m_bar->removeWidget(m_patternLabel);
+    m_bar->removeWidget(m_patternSep);
+
+    static constexpr int kRightToggleMargin = 16;
+    m_toggleLayout->removeWidget(m_fileInfoBtn);
+    m_toggleLayout->removeWidget(m_typesBtn);
+    m_toggleLayout->setContentsMargins(0, 0, m_toolsRight ? kRightToggleMargin : 0, 0);
+    if (m_toolsRight) {
+        m_toggleLayout->addWidget(m_typesBtn);
+        m_toggleLayout->addWidget(m_fileInfoBtn);
+    } else {
+        m_toggleLayout->addWidget(m_fileInfoBtn);
+        m_toggleLayout->addWidget(m_typesBtn);
+    }
+
+    m_comboStrip->setRightAligned(m_infoRight);
+
+    if (m_showPanelToggles && !m_toolsRight)
+        m_bar->addWidget(m_toggleStrip);
+    if (!m_infoRight)
+        m_bar->addWidget(m_comboStrip);
+
+    m_bar->addWidget(m_searchWidget);
+    m_bar->addWidget(m_searchSep);
+    m_bar->addWidget(m_patternLabel);
+    m_bar->addWidget(m_patternSep);
+
+    if (m_infoRight)
+        m_bar->addPermanentWidget(m_comboStrip, 1);
+    if (m_showPanelToggles && m_toolsRight)
+        m_bar->addPermanentWidget(m_toggleStrip);
+
+    m_comboStrip->show();
+    m_toggleStrip->setVisible(m_showPanelToggles);
+    m_searchWidget->setVisible(searchVisible);
+    m_searchSep->setVisible(searchSepVisible);
+    m_patternLabel->setVisible(patternVisible);
+    m_patternSep->setVisible(patternSepVisible);
+}
+
+void StatusBar::setFileInfoPanelOpen(bool open)
+{
+    if (m_fileInfoBtn)
+        m_fileInfoBtn->setChecked(open);
+}
+
+void StatusBar::setTypesPanelOpen(bool open)
+{
+    if (m_typesBtn)
+        m_typesBtn->setChecked(open);
 }
 
 QString StatusBar::computeValueText() const

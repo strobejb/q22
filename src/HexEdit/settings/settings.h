@@ -65,6 +65,10 @@ QStringList prefRecentPalettes();   // CSV-backed, most recent first
 void        addRecentPalette(const QString &name);
 bool    prefRecentPaletteOrdering(); // true = compact palette picker uses recent-first order
 void    setPrefRecentPaletteOrdering(bool on);
+bool    prefStatusbarToolsRight();
+void    setPrefStatusbarToolsRight(bool on);
+bool    prefStatusbarInfoRight();
+void    setPrefStatusbarInfoRight(bool on);
 
 // Hex display format
 int     prefBytesPerLine();

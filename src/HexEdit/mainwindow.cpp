@@ -71,6 +71,10 @@
 
 namespace {
 
+enum class PanelToggleHost { TitleBar, StatusBar };
+
+static constexpr PanelToggleHost kPanelToggleHost = PanelToggleHost::StatusBar;
+
 void jumpToBookmark(HexView *hv, int idx)
 {
     if (!hv)
@@ -438,6 +442,11 @@ void MainWindow::createPreferencesDialog()
     });
     connect(m_prefsDialog, &PreferencesDialog::menuHighlightChanged,
             this, [this](bool) { applyAdwaitaTheme(static_cast<ColorScheme>(AppSettings::prefColorScheme())); });
+    connect(m_prefsDialog, &PreferencesDialog::statusbarAlignmentChanged,
+            this, [this](bool toolsRight, bool infoRight) {
+        if (m_statusBar)
+            m_statusBar->setAlignment(toolsRight, infoRight);
+    });
     connect(m_prefsDialog, &PreferencesDialog::paletteSelected,
             this, [this](const PaletteInfo &info) {
         m_currentPalette = info;
@@ -479,7 +488,9 @@ MainWindow::MainWindow(QWidget *parent)
     setWindowTitle(QApplication::applicationDisplayName());
 
     // Custom title bar
-    m_titleBar = new TitleBar(this);
+    TitleBarOptions titleBarOptions;
+    titleBarOptions.showFileInfoButton = kPanelToggleHost == PanelToggleHost::TitleBar;
+    m_titleBar = new TitleBar(this, titleBarOptions);
 
     // Recent files submenu — attached to actionRecent before the hamburger
     // menu is built so the shared QAction already carries its submenu.
@@ -673,10 +684,12 @@ MainWindow::MainWindow(QWidget *parent)
     vlay->addWidget(statusHairline);  // separator between content and status bar
     setCentralWidget(central);
 
-    connect(m_titleBar, &TitleBar::fileInfoToggled,
-            this, &MainWindow::toggleSidePanel);
-    connect(m_sidePanelHost, &SidePanelHost::openChanged,
-            m_titleBar, &TitleBar::setFileInfoPanelOpen);
+    if constexpr (kPanelToggleHost == PanelToggleHost::TitleBar) {
+        connect(m_titleBar, &TitleBar::fileInfoToggled,
+                this, &MainWindow::toggleSidePanel);
+        connect(m_sidePanelHost, &SidePanelHost::openChanged,
+                m_titleBar, &TitleBar::setFileInfoPanelOpen);
+    }
     auto *fileWatcher = new QFileSystemWatcher(this);
     fileWatcher->setObjectName(QStringLiteral("fileChangedWatcher"));
     connect(fileWatcher, &QFileSystemWatcher::fileChanged,
@@ -804,11 +817,21 @@ MainWindow::MainWindow(QWidget *parent)
         AppSettings::setPrefBytesPerLine((int)bytesPerLine);
     });
 
-    m_statusBar = new StatusBar(m_hv, ui->statusbar, this);
+    m_statusBar = new StatusBar(m_hv, ui->statusbar,
+                                kPanelToggleHost == PanelToggleHost::StatusBar,
+                                AppSettings::prefStatusbarToolsRight(),
+                                AppSettings::prefStatusbarInfoRight(),
+                                this);
     ui->statusbar->setCursor(Qt::ArrowCursor);
     ui->statusbar->setAcceptDrops(true);
     ui->statusbar->setContentsMargins(0, 0, 0, 2);
     ui->statusbar->setSizeGripEnabled(false);
+    if constexpr (kPanelToggleHost == PanelToggleHost::StatusBar) {
+        connect(m_statusBar, &StatusBar::fileInfoToggled,
+                this, &MainWindow::toggleSidePanel);
+        connect(m_sidePanelHost, &SidePanelHost::openChanged,
+                m_statusBar, &StatusBar::setFileInfoPanelOpen);
+    }
 
     // ── Edit menu ─────────────────────────────────────────────────────────────
     // Shortcuts not set in the .ui file are assigned here so they are also

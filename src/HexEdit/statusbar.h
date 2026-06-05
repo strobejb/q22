@@ -12,6 +12,9 @@
 #include <QWidget>
 
 class HexView;
+class QEvent;
+class QHBoxLayout;
+class QToolButton;
 
 // Right-anchored container for the status bar panels. Panels are positioned
 // right-to-left at their preferred widths; when the strip is narrower than the
@@ -24,6 +27,7 @@ public:
     explicit PanelStrip(QWidget *parent = nullptr);
     void addPanel(QWidget *w);
     void setOverlapGuard(QWidget *w);
+    void setRightAligned(bool on);
 
     QSize sizeHint()        const override;
     QSize minimumSizeHint() const override;
@@ -39,6 +43,7 @@ private:
 
     QList<QWidget *> m_panels;
     QWidget         *m_overlapGuard = nullptr;
+    bool             m_rightAligned = true;
 };
 
 // Owns the status bar panels and all update logic. Construct with a HexView and
@@ -47,7 +52,16 @@ class StatusBar : public QObject
 {
     Q_OBJECT
 public:
-    StatusBar(HexView *hv, QStatusBar *bar, QObject *parent = nullptr);
+    StatusBar(HexView *hv, QStatusBar *bar, bool showPanelToggles,
+              bool toolsRight, bool infoRight, QObject *parent = nullptr);
+
+    void setFileInfoPanelOpen(bool open);
+    void setTypesPanelOpen(bool open);
+    void setAlignment(bool toolsRight, bool infoRight);
+
+signals:
+    void fileInfoToggled();
+    void typesToggled(bool checked);
 
 public slots:
     void update();
@@ -56,15 +70,29 @@ public slots:
     void showSearchHex(const QString &hex);
     void showMessage(const QString &msg);
 
+protected:
+    bool eventFilter(QObject *obj, QEvent *event) override;
+
 private:
     QString computeValueText() const;
+    void rebuildLayout();
+    void refreshToggleIcons();
 
     HexView              *m_hv;
+    QStatusBar           *m_bar         = nullptr;
+    bool                  m_showPanelToggles = false;
+    bool                  m_toolsRight  = true;
+    bool                  m_infoRight   = true;
     bool                  m_hasSel      = false;
     RadioComboBox        *m_comboCursor = nullptr;
     RadioComboBox        *m_comboLength = nullptr;
     ValueOptionsComboBox *m_comboValue  = nullptr;
     RadioComboBox        *m_comboMode   = nullptr;
+    QToolButton          *m_fileInfoBtn = nullptr;
+    QToolButton          *m_typesBtn    = nullptr;
+    QWidget              *m_toggleStrip = nullptr;
+    QHBoxLayout          *m_toggleLayout = nullptr;
+    PanelStrip           *m_comboStrip  = nullptr;
 
     QWidget      *m_searchWidget = nullptr;
     QLabel       *m_searchLabel  = nullptr;

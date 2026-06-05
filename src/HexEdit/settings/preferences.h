@@ -41,6 +41,7 @@ signals:
     void nativeMenuChanged(bool on);
     void nativeDialogsChanged(bool on);
     void menuHighlightChanged(bool on);
+    void statusbarAlignmentChanged(bool toolsRight, bool infoRight);
     void paletteSelected(const PaletteInfo &info);
     // Emitted when a bookmark HVS_ flag changes; use setStyle(mask, styles).
     void bookmarkStyleChanged(uint mask, uint styles);
@@ -77,6 +78,8 @@ private:
     SettingsToggle *m_nativeDialogs     = nullptr;
     SettingsToggle *m_nativeFileDialogs = nullptr;
     SettingsToggle *m_menuHighlight     = nullptr;
+    SettingsToggle *m_statusbarToolsRight = nullptr;
+    SettingsToggle *m_statusbarInfoRight  = nullptr;
     SettingsToggle *m_bmAutoExpand      = nullptr;
     SettingsToggle *m_bmNested          = nullptr;
     SettingsToggle *m_bmSelHighlights   = nullptr;

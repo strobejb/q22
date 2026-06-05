@@ -1013,6 +1013,19 @@ QStatusBar QComboBox[popupOpen="true"],
 QStatusBar QComboBox[popupOpen="true"]:hover,
 QStatusBar QComboBox[popupOpen="true"]:focus,
 QStatusBar QComboBox[popupOpen="true"]:hover:focus { background: {statusComboOpen}; border: 1px solid palette(mid); margin: 0px; }
+QStatusBar QToolButton {
+    background: palette(window);
+    border: 1px solid transparent;
+    border-radius: 4px;
+    margin: 0px;
+    padding: 0px;
+}
+QStatusBar QToolButton:hover { background: {statusComboHover}; border: 1px solid transparent; margin: 0px; }
+QStatusBar QToolButton:focus { background: palette(window); border: 1px solid transparent; margin: 0px; }
+QStatusBar QToolButton:checked,
+QStatusBar QToolButton:checked:hover,
+QStatusBar QToolButton:checked:focus,
+QStatusBar QToolButton:checked:hover:focus { background: {statusComboOpen}; border: 1px solid palette(mid); margin: 0px; }
 
 /* ── Misc ────────────────────────────────────────────────────── */
 QAbstractScrollArea { border: none; }

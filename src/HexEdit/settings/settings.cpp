@@ -267,6 +267,30 @@ void AppSettings::setPrefRecentPaletteOrdering(bool on)
     s.setValue("theme/recentPaletteOrdering", on);
 }
 
+bool AppSettings::prefStatusbarToolsRight()
+{
+    OPEN_SETTINGS;
+    return s.value("statusbar/toolsRight", true).toBool();
+}
+
+void AppSettings::setPrefStatusbarToolsRight(bool on)
+{
+    OPEN_SETTINGS;
+    s.setValue("statusbar/toolsRight", on);
+}
+
+bool AppSettings::prefStatusbarInfoRight()
+{
+    OPEN_SETTINGS;
+    return s.value("statusbar/infoRight", true).toBool();
+}
+
+void AppSettings::setPrefStatusbarInfoRight(bool on)
+{
+    OPEN_SETTINGS;
+    s.setValue("statusbar/infoRight", on);
+}
+
 int AppSettings::prefBytesPerLine()
 {
     OPEN_SETTINGS;

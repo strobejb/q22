@@ -318,6 +318,13 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     m_menuHighlight = new SettingsToggle(tr("Menus use highlight colour"), this);
     m_menuHighlight->setChecked(AppSettings::prefMenuHighlight());
 
+    // ── Statusbar toggles ────────────────────────────────────────────────────
+    m_statusbarToolsRight = new SettingsToggle(tr("Right align tools"), this);
+    m_statusbarToolsRight->setChecked(AppSettings::prefStatusbarToolsRight());
+
+    m_statusbarInfoRight = new SettingsToggle(tr("Right align status info"), this);
+    m_statusbarInfoRight->setChecked(AppSettings::prefStatusbarInfoRight());
+
     // ── Bookmark behaviour toggles ────────────────────────────────────────────
     m_bmAutoExpand = new SettingsToggle(tr("Expand automatically"), this);
     m_bmAutoExpand->setToolTip(tr("Automatically expand bookmarks when space allows or when navigating to them"));
@@ -370,6 +377,20 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
         AppSettings::setPrefMenuHighlight(on);
         emit menuHighlightChanged(on);
     });
+    auto emitStatusbarAlignmentChanged = [this] {
+        emit statusbarAlignmentChanged(m_statusbarToolsRight->isChecked(),
+                                       m_statusbarInfoRight->isChecked());
+    };
+    connect(m_statusbarToolsRight, &SettingsToggle::toggled,
+            this, [this, emitStatusbarAlignmentChanged](bool on) {
+        AppSettings::setPrefStatusbarToolsRight(on);
+        emitStatusbarAlignmentChanged();
+    });
+    connect(m_statusbarInfoRight, &SettingsToggle::toggled,
+            this, [this, emitStatusbarAlignmentChanged](bool on) {
+        AppSettings::setPrefStatusbarInfoRight(on);
+        emitStatusbarAlignmentChanged();
+    });
     connect(m_bmAutoExpand, &SettingsToggle::toggled,
             this, [this](bool on) {
         AppSettings::setPrefBookmarkAutoExpand(on);
@@ -400,6 +421,9 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
         SettingsCard::Style::Spaced, this);
     auto *appearGroup = new SettingsCard(
         {m_nativeMenu, m_menuHighlight},
+        SettingsCard::Style::Spaced, this);
+    auto *statusbarGroup = new SettingsCard(
+        {m_statusbarToolsRight, m_statusbarInfoRight},
         SettingsCard::Style::Spaced, this);
     auto *bmGroup = new SettingsCard(
         {m_bmAutoExpand, m_bmNested, m_bmSelHighlights},
@@ -483,6 +507,10 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     vlay->addWidget(makeSectionLabel(tr("Appearance")));
     vlay->addSpacing(kHeaderBottomGap);
     vlay->addWidget(appearGroup);
+    vlay->addSpacing(kGroupTopGap);
+    vlay->addWidget(makeSectionLabel(tr("Statusbar")));
+    vlay->addSpacing(kHeaderBottomGap);
+    vlay->addWidget(statusbarGroup);
     vlay->addSpacing(kGroupTopGap);
     vlay->addWidget(makeSectionLabel(tr("Bookmarks")));
     vlay->addSpacing(kHeaderBottomGap);
