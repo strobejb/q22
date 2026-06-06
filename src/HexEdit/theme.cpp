@@ -1020,8 +1020,13 @@ QStatusBar QToolButton {
     margin: 0px;
     padding: 0px;
 }
-QStatusBar QToolButton:hover { background: {statusComboHover}; border: 1px solid transparent; margin: 0px; }
 QStatusBar QToolButton:focus { background: palette(window); border: 1px solid transparent; margin: 0px; }
+QStatusBar QToolButton:hover,
+QStatusBar QToolButton:hover:focus { background: {statusComboHover}; border: 1px solid transparent; margin: 0px; }
+QStatusBar QToolButton:pressed,
+QStatusBar QToolButton:pressed:hover,
+QStatusBar QToolButton:pressed:focus,
+QStatusBar QToolButton:pressed:hover:focus,
 QStatusBar QToolButton:checked,
 QStatusBar QToolButton:checked:hover,
 QStatusBar QToolButton:checked:focus,

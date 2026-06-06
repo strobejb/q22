@@ -16,6 +16,8 @@
 #include <QSizePolicy>
 #include <QToolButton>
 
+static constexpr int kPanelStripEdgeMargin = 12;
+
 PanelStrip::PanelStrip(QWidget *parent) : QWidget(parent)
 {
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
@@ -72,6 +74,7 @@ QSize PanelStrip::sizeHint() const
         w += p->sizeHint().width();
         h = qMax(h, p->sizeHint().height());
     }
+    w += kPanelStripEdgeMargin;
     return { w, h };
 }
 
@@ -82,11 +85,10 @@ QSize PanelStrip::minimumSizeHint() const
 
 void PanelStrip::layoutPanels()
 {
-    static constexpr int kRightMargin = 12;
     if (m_rightAligned) {
         // Place panels right-to-left at their preferred widths. Panels that
         // overflow the left edge are clipped at the widget boundary.
-        int x = width() - kRightMargin;
+        int x = width() - kPanelStripEdgeMargin;
         for (int i = m_panels.count() - 1; i >= 0; --i) {
             QWidget *p = m_panels[i];
             const int pw = p->sizeHint().width();
@@ -96,7 +98,7 @@ void PanelStrip::layoutPanels()
             p->setGeometry(x, py, pw, ph);
         }
     } else {
-        int x = 0;
+        int x = kPanelStripEdgeMargin;
         for (QWidget *p : m_panels) {
             const int pw = p->sizeHint().width();
             const int ph = p->sizeHint().height();
@@ -156,6 +158,7 @@ StatusBar::StatusBar(HexView *hv, QStatusBar *bar, bool showPanelToggles,
         btn->setCheckable(true);
         btn->setCursor(Qt::ArrowCursor);
         btn->setFocusPolicy(Qt::StrongFocus);
+        btn->setMouseTracking(true);
         btn->setFixedSize(30, 30);
         btn->setIconSize(QSize(20, 20));
         const QIcon icon = QIcon::fromTheme(QString::fromLatin1(iconName).section('/', -1));
@@ -169,12 +172,16 @@ StatusBar::StatusBar(HexView *hv, QStatusBar *bar, bool showPanelToggles,
     m_fileInfoBtn = makeToggleButton("statusFileInfoBtn", "actions/help-about-symbolic", "i");
     connect(m_fileInfoBtn, &QToolButton::clicked, this, &StatusBar::fileInfoToggled);
 
-    m_typesBtn = makeToggleButton("statusTypesBtn", "actions/binary2", "T");
+    //m_typesBtn = makeToggleButton("statusTypesBtn", "actions/binstruct0101", "T");
+    m_typesBtn = makeToggleButton("statusTypesBtn", "actions/cube", "T");
     connect(m_typesBtn, &QToolButton::toggled, this, &StatusBar::typesToggled);
+
+    m_codeBtn = makeToggleButton("statusCodeBtn", "actions/chip", "D");
 
     m_toggleStrip = new QWidget(bar);
     m_toggleLayout = new QHBoxLayout(m_toggleStrip);
-    m_toggleLayout->setContentsMargins(0, 0, kRightToggleMargin, 0);
+    m_toggleLayout->setContentsMargins(m_toolsRight ? 0 : kRightToggleMargin, 0,
+                                       m_toolsRight ? kRightToggleMargin : 0, 0);
     m_toggleLayout->setSpacing(8);
     m_toggleStrip->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     m_toggleStrip->setVisible(showPanelToggles);
@@ -292,13 +299,17 @@ void StatusBar::rebuildLayout()
 
     m_toggleLayout->removeWidget(m_fileInfoBtn);
     m_toggleLayout->removeWidget(m_typesBtn);
-    m_toggleLayout->setContentsMargins(0, 0, m_toolsRight ? kRightToggleMargin : 0, 0);
+    m_toggleLayout->removeWidget(m_codeBtn);
+    m_toggleLayout->setContentsMargins(m_toolsRight ? 0 : kRightToggleMargin, 0,
+                                       m_toolsRight ? kRightToggleMargin : 0, 0);
     if (m_toolsRight) {
         m_toggleLayout->addWidget(m_typesBtn);
+        m_toggleLayout->addWidget(m_codeBtn);
         m_toggleLayout->addWidget(m_fileInfoBtn);
     } else {
         m_toggleLayout->addWidget(m_fileInfoBtn);
         m_toggleLayout->addWidget(m_typesBtn);
+        m_toggleLayout->addWidget(m_codeBtn);
     }
 
     m_comboStrip->setRightAligned(m_infoRight);

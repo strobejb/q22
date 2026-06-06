@@ -90,6 +90,7 @@ private:
     RadioComboBox        *m_comboMode   = nullptr;
     QToolButton          *m_fileInfoBtn = nullptr;
     QToolButton          *m_typesBtn    = nullptr;
+    QToolButton          *m_codeBtn      = nullptr;
     QWidget              *m_toggleStrip = nullptr;
     QHBoxLayout          *m_toggleLayout = nullptr;
     PanelStrip           *m_comboStrip  = nullptr;

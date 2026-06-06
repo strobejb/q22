@@ -133,6 +133,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         resources/icons/actions/help-about-symbolic.svg
         resources/icons/actions/hierarchy1.svg
         resources/icons/actions/hierarchy2.svg
+        resources/icons/actions/bug.svg
         resources/icons/actions/media-playback-stop-symbolic.svg resources/icons/actions/media-playlist-repeat-symbolic.svg resources/icons/actions/stopcircle.svg
         resources/icons/actions/media-playback-start-symbolic.svg
         resources/icons/actions/go-last-symbolic.svg
