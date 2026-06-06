@@ -159,8 +159,7 @@ StatusBar::StatusBar(HexView *hv, QStatusBar *bar, bool showPanelToggles,
         btn->setCursor(Qt::ArrowCursor);
         btn->setFocusPolicy(Qt::StrongFocus);
         btn->setMouseTracking(true);
-        btn->setFixedSize(30, 30);
-        btn->setIconSize(QSize(20, 20));
+        btn->setIconSize(QSize(16, 16));
         const QIcon icon = QIcon::fromTheme(QString::fromLatin1(iconName).section('/', -1));
         if (!icon.isNull())
             btn->setIcon(icon);
@@ -203,6 +202,7 @@ StatusBar::StatusBar(HexView *hv, QStatusBar *bar, bool showPanelToggles,
         m_hv->setEditMode(indexToMode[idx]);
         update();
     });
+    syncToggleButtonMetrics();
 
     m_comboStrip = new PanelStrip(bar);
     m_comboStrip->addPanel(m_comboCursor);
@@ -258,11 +258,35 @@ bool StatusBar::eventFilter(QObject *obj, QEvent *event)
         const auto type = event->type();
         if (type == QEvent::PaletteChange ||
             type == QEvent::ApplicationPaletteChange ||
-            type == QEvent::StyleChange) {
+            type == QEvent::StyleChange ||
+            type == QEvent::FontChange ||
+            type == QEvent::ApplicationFontChange) {
+            syncToggleButtonMetrics();
             refreshToggleIcons();
         }
     }
     return QObject::eventFilter(obj, event);
+}
+
+void StatusBar::syncToggleButtonMetrics()
+{
+    const int h = std::max({ m_comboCursor ? m_comboCursor->sizeHint().height() : 0,
+                             m_comboLength ? m_comboLength->sizeHint().height() : 0,
+                             m_comboValue  ? m_comboValue->sizeHint().height()  : 0,
+                             m_comboMode   ? m_comboMode->sizeHint().height()   : 0 });
+    if (h <= 0)
+        return;
+
+    for (QToolButton *btn : { m_fileInfoBtn, m_typesBtn, m_codeBtn }) {
+        if (!btn)
+            continue;
+        btn->setFixedSize(h, h);
+    }
+
+    if (m_toggleLayout)
+        m_toggleLayout->invalidate();
+    if (m_toggleStrip)
+        m_toggleStrip->updateGeometry();
 }
 
 void StatusBar::refreshToggleIcons()

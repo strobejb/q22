@@ -77,6 +77,7 @@ private:
     QString computeValueText() const;
     void rebuildLayout();
     void refreshToggleIcons();
+    void syncToggleButtonMetrics();
 
     HexView              *m_hv;
     QStatusBar           *m_bar         = nullptr;
