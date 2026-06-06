@@ -473,6 +473,7 @@ private:
     void          clearBookmarkRangeStepper();
     void          stepActiveBookmarkRange(int delta);
     int           bookmarkRangeDragDelta(const QPoint &pos) const;
+    void          clampBookmarkRangeToNonNestedGap(int idx, Bookmark &updated) const;
     void          updateBookmarkRangeDrag(const QPoint &pos);
     void          setBookmarkAreaButtonVisible(BookmarkAreaButton button, bool visible);
     void          setBookmarkAreaButtonsVisible(bool visible);

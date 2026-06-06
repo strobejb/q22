@@ -60,19 +60,15 @@ static QString bookmarkLengthText(size_w length)
            QStringLiteral(")");
 }
 
-static bool sameBookmarkIdentity(const Bookmark &a, const Bookmark &b)
-{
-    return a.offset == b.offset &&
-           a.length == b.length &&
-           a.text == b.text &&
-           a.fgColour == b.fgColour &&
-           a.bgColour == b.bgColour &&
-           a.colourIndex == b.colourIndex;
-}
-
 static int bookmarkAreaButtonIndex(BookmarkAreaButton button)
 {
     return static_cast<int>(button);
+}
+
+static size_w bookmarkEndExclusive(const Bookmark &bm)
+{
+    const size_w length = qMax<size_w>(1, bm.length);
+    return bm.offset > (size_w)-1 - length ? (size_w)-1 : bm.offset + length;
 }
 
 static QString bookmarkAreaButtonIconName(BookmarkAreaButton button)
@@ -258,8 +254,16 @@ void HexView::replaceBookmark(int idx, const Bookmark &bm)
     if (idx < 0 || idx >= m_bookmarks.size()) return;
     closeNoteEditor(false);  // sets m_noteEditorIdx = -1 before we re-sort
     const bool keepInline = (m_inlineRangeBookmarkIdx == idx);
-    const Bookmark updated = bm;
     m_bookmarks[idx] = bm;
+    if (keepInline) {
+        // Offset/length dragging replaces the bookmark on every mouse move.
+        // Because changing offset can re-sort m_bookmarks, tag the Bookmark
+        // object itself before sorting and rediscover its new index below.
+        // This cannot use _active: layout clears that bit as a scratch value.
+        for (Bookmark &bookmark : m_bookmarks)
+            bookmark._rangeEditing = false;
+        m_bookmarks[idx]._rangeEditing = true;
+    }
     // Re-sort in case the replacement bookmark has a different offset.
     // This invalidates all index-based pin state, so clear both pins.
     m_expandedBookmarkIdx   = -1;
@@ -268,7 +272,7 @@ void HexView::replaceBookmark(int idx, const Bookmark &bm)
     if (keepInline) {
         m_inlineRangeBookmarkIdx = -1;
         for (int i = 0; i < m_bookmarks.size(); ++i) {
-            if (sameBookmarkIdentity(m_bookmarks[i], updated)) {
+            if (m_bookmarks[i]._rangeEditing) {
                 m_inlineRangeBookmarkIdx = i;
                 break;
             }
@@ -289,6 +293,11 @@ void HexView::activateBookmarkRangeStepper(int idx, BookmarkRangeField field)
     }
 
     closeNoteEditor(true);
+    // The drag owner has to survive replaceBookmark() re-sorting while the
+    // mouse is held, so keep a dedicated transient marker on the Bookmark.
+    for (Bookmark &bm : m_bookmarks)
+        bm._rangeEditing = false;
+    m_bookmarks[idx]._rangeEditing = true;
     m_inlineRangeBookmarkIdx = idx;
     m_inlineRangeField = field;
     m_hoverInlineRangeStep = HVHT_NONE;
@@ -313,6 +322,8 @@ void HexView::activateBookmarkRangeStepper(int idx, BookmarkRangeField field)
 void HexView::clearBookmarkRangeStepper()
 {
     const bool wasActive = (m_inlineRangeBookmarkIdx >= 0);
+    for (Bookmark &bm : m_bookmarks)
+        bm._rangeEditing = false;
     m_inlineRangeBookmarkIdx = -1;
     m_hoverInlineRangeStep = HVHT_NONE;
     m_pressedInlineRangeStep = HVHT_NONE;
@@ -324,6 +335,63 @@ void HexView::clearBookmarkRangeStepper()
         m_caretVisible = true;
         m_caretTimer.start(QApplication::cursorFlashTime() / 2);
     }
+}
+
+void HexView::clampBookmarkRangeToNonNestedGap(int idx, Bookmark &updated) const
+{
+    if (checkStyle(HVS_BOOKMARK_NESTED))
+        return;
+
+    // With nested bookmarks disabled, offset/length adjustment must preserve
+    // the same invariant as addBookmarkInline(): user bookmarks are not allowed
+    // to overlap.  Clamp the proposed edit into the current gap around this
+    // bookmark, excluding the bookmark being edited.
+    //
+    // Offset edit: the right edge is anchored, so only the start can move.  It
+    // may move left until it touches the previous/overlapping neighbour's end,
+    // and may move right until at least one byte remains before the anchored end.
+    //
+    // Length edit: the start is anchored, so only the right edge can move.  It
+    // may extend right until it touches the next/overlapping neighbour's start.
+    // Shrinking is always safe.
+    const size_w fileSize = size();
+    const size_w updatedEnd = bookmarkEndExclusive(updated);
+    size_w minOffset = 0;
+    size_w maxEnd = fileSize > 0 ? fileSize : (size_w)-1;
+
+    for (int i = 0; i < m_bookmarks.size(); ++i) {
+        if (i == idx)
+            continue;
+
+        const Bookmark &other = m_bookmarks[i];
+        const size_w otherEnd = bookmarkEndExclusive(other);
+
+        if (m_inlineRangeField == BookmarkRangeField::Offset) {
+            if (other.offset < updatedEnd)
+                minOffset = qMax(minOffset, otherEnd);
+        } else {
+            if (otherEnd > updated.offset && other.offset >= updated.offset)
+                maxEnd = qMin(maxEnd, other.offset);
+        }
+    }
+
+    if (m_inlineRangeField == BookmarkRangeField::Offset) {
+        const size_w maxOffset = updatedEnd > 0 ? updatedEnd - 1 : 0;
+        updated.offset = minOffset <= maxOffset
+            ? qBound<size_w>(minOffset, updated.offset, maxOffset)
+            : maxOffset;
+        updated.length = qMax<size_w>(1, updatedEnd > updated.offset ? updatedEnd - updated.offset : 1);
+    } else {
+        const size_w desiredEnd = bookmarkEndExclusive(updated);
+        const size_w minEnd = updated.offset == (size_w)-1 ? (size_w)-1 : updated.offset + 1;
+        const size_w clampedEnd = minEnd <= maxEnd
+            ? qBound<size_w>(minEnd, desiredEnd, maxEnd)
+            : minEnd;
+        updated.length = qMax<size_w>(1, clampedEnd - updated.offset);
+    }
+
+    if (fileSize > 0 && updated.offset < fileSize)
+        updated.length = qMax<size_w>(1, qMin(updated.length, fileSize - updated.offset));
 }
 
 void HexView::stepActiveBookmarkRange(int delta)
@@ -376,6 +444,8 @@ void HexView::stepActiveBookmarkRange(int delta)
         }
     }
 
+    clampBookmarkRangeToNonNestedGap(idx, updated);
+
     replaceBookmark(idx, updated);
     if (m_inlineRangeBookmarkIdx < 0)
         clearBookmarkRangeStepper();
@@ -388,34 +458,51 @@ int HexView::bookmarkRangeDragDelta(const QPoint &pos) const
     if (!m_inlineRangeDragValueRect.isValid())
         return 0;
 
-    int distance = 0;
-    int sign = 0;
-    if (pos.y() < m_inlineRangeDragValueRect.top()) {
-        distance = m_inlineRangeDragValueRect.top() - pos.y();
-        sign = -1;
-    } else if (pos.y() > m_inlineRangeDragValueRect.bottom()) {
-        distance = pos.y() - m_inlineRangeDragValueRect.bottom();
-        sign = 1;
-    } else {
-        return 0;
+    const auto horizontalMagnitudeForDistance = [](int distance) {
+        if (distance < 2)
+            return 0;
+        return (distance + 2) / 4;
+    };
+
+    const auto verticalMagnitudeForDistance = [](int distance) {
+        if (distance < 4)
+            return 0;
+        return (distance + 11) / 12;
+    };
+
+    const int lineLength = qMax(1, static_cast<int>(m_nBytesPerLine));
+
+    int horizontalDelta = 0;
+    const int horizontalDistance = pos.x() - m_dragStartPos.x();
+    if (horizontalDistance < 0) {
+        horizontalDelta = -horizontalMagnitudeForDistance(-horizontalDistance);
+    } else if (horizontalDistance > 0) {
+        horizontalDelta = horizontalMagnitudeForDistance(horizontalDistance);
     }
 
-    int magnitude = 0;
-    if (distance < 4)
-        magnitude = 0;
-    else if (distance < 32)
-        magnitude = (distance + 7) / 8;
-    else if (distance < 96)
-        magnitude = 4 + (distance - 32 + 3) / 4;
-    else
-        magnitude = 20 + (distance - 96 + 1) / 2;
+    int verticalDelta = 0;
+    if (pos.y() < m_inlineRangeDragValueRect.top()) {
+        verticalDelta = -verticalMagnitudeForDistance(m_inlineRangeDragValueRect.top() - pos.y()) * lineLength;
+    } else if (pos.y() > m_inlineRangeDragValueRect.bottom()) {
+        verticalDelta = verticalMagnitudeForDistance(pos.y() - m_inlineRangeDragValueRect.bottom()) * lineLength;
+    }
 
-    return sign * magnitude;
+    return horizontalDelta + verticalDelta;
 }
 
 void HexView::updateBookmarkRangeDrag(const QPoint &pos)
 {
-    const int idx = m_inlineRangeBookmarkIdx;
+    int idx = m_inlineRangeBookmarkIdx;
+    if (idx < 0 || idx >= m_bookmarks.size() || !m_bookmarks[idx]._rangeEditing) {
+        idx = -1;
+        for (int i = 0; i < m_bookmarks.size(); ++i) {
+            if (m_bookmarks[i]._rangeEditing) {
+                idx = i;
+                m_inlineRangeBookmarkIdx = i;
+                break;
+            }
+        }
+    }
     if (idx < 0 || idx >= m_bookmarks.size() || !m_inlineRangeDragActive) {
         clearBookmarkRangeStepper();
         viewport()->update();
@@ -433,26 +520,40 @@ void HexView::updateBookmarkRangeDrag(const QPoint &pos)
     if (m_inlineRangeField == BookmarkRangeField::Offset) {
         const size_w originalOffset = updated.offset;
         const size_w originalLength = qMax<size_w>(1, updated.length);
-        const size_w originalEnd = originalOffset == (size_w)-1 || originalLength > (size_w)-1 - originalOffset
-            ? (size_w)-1
-            : originalOffset + originalLength;
-        const size_w maxEnd = fileSize > 0 ? qMin(originalEnd, fileSize) : originalEnd;
-        const size_w maxOffset = maxEnd > 0 ? maxEnd - 1 : 0;
+        const size_w maxOffset = fileSize > 0 ? fileSize - 1 : (size_w)-1;
+        const size_w boundedOriginalOffset = qMin(originalOffset, maxOffset);
+        size_w newOffset = boundedOriginalOffset;
 
         if (delta < 0) {
             const size_w amount = (size_w)(-delta);
-            updated.offset = amount > originalOffset ? 0 : originalOffset - amount;
+            newOffset = amount > boundedOriginalOffset ? 0 : boundedOriginalOffset - amount;
         } else {
             const size_w amount = (size_w)delta;
-            if (originalOffset >= maxOffset)
-                updated.offset = maxOffset;
-            else
-                updated.offset = amount > maxOffset - originalOffset
-                    ? maxOffset
-                    : originalOffset + amount;
+            const size_w maxOffsetForLength = originalLength - 1 > maxOffset - boundedOriginalOffset
+                ? maxOffset
+                : boundedOriginalOffset + originalLength - 1;
+            newOffset = amount > maxOffsetForLength - boundedOriginalOffset
+                ? maxOffsetForLength
+                : boundedOriginalOffset + amount;
         }
 
-        updated.length = qMax<size_w>(1, maxEnd > updated.offset ? maxEnd - updated.offset : 1);
+        updated.offset = newOffset;
+        if (newOffset < boundedOriginalOffset) {
+            const size_w moved = boundedOriginalOffset - newOffset;
+            updated.length = moved > (size_w)-1 - originalLength
+                ? (size_w)-1
+                : originalLength + moved;
+        } else {
+            const size_w moved = newOffset - boundedOriginalOffset;
+            updated.length = moved >= originalLength ? 1 : originalLength - moved;
+        }
+
+        if (fileSize > 0) {
+            if (updated.offset >= fileSize)
+                updated.length = 1;
+            else
+                updated.length = qMax<size_w>(1, qMin(updated.length, fileSize - updated.offset));
+        }
     } else {
         const size_w originalLength = qMax<size_w>(1, updated.length);
         if (delta < 0) {
@@ -472,6 +573,8 @@ void HexView::updateBookmarkRangeDrag(const QPoint &pos)
                 updated.length = qMax<size_w>(1, qMin(updated.length, fileSize - updated.offset));
         }
     }
+
+    clampBookmarkRangeToNonNestedGap(idx, updated);
 
     replaceBookmark(idx, updated);
     if (m_inlineRangeBookmarkIdx < 0)
@@ -1116,6 +1219,21 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
     const bool mouseHeld = treatMouseAsReleased
                            ? false
                            : (QApplication::mouseButtons() != Qt::NoButton);
+    // Inline range drag is a stronger claim than cursor expansion, explicit
+    // pinning, or "always expand": while the user is adjusting offset/length,
+    // that strip must remain full-size and above neighbours even if the edit
+    // creates a new visual conflict.
+    int activeRangeIdx = -1;
+    for (int i = 0; i < n; ++i) {
+        if (m_bookmarks[i]._rangeEditing) {
+            activeRangeIdx = i;
+            break;
+        }
+    }
+    if (activeRangeIdx < 0 && m_inlineRangeBookmarkIdx >= 0 && m_inlineRangeBookmarkIdx < n)
+        activeRangeIdx = m_inlineRangeBookmarkIdx;
+    else if (!treatMouseAsReleased && activeRangeIdx >= 0)
+        m_inlineRangeBookmarkIdx = activeRangeIdx;
 
     // Keep sticky bookmark state in sync with the final cursor position before the sweep.
     // Updating it lazily inside the sweep can leave an earlier lone bookmark
@@ -1174,6 +1292,7 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
             //   Never expands mid-drag (!mouseHeld guard on the pin block).
             // An explicit pin (set by clicking the bookmark strip) always wins.
             const Bookmark &bm = m_bookmarks[i];
+            const bool rangeActive = (activeRangeIdx == i);
             const bool pinned  = (m_expandedBookmarkIdx == i);
             const bool inRange = m_nCursorOffset >= bm.offset &&
                                  m_nCursorOffset <  bm.offset + bm.length;
@@ -1184,7 +1303,7 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
             // starts with no existing pin.  hitTest calls suppress side-effects.
             if (cursorExpand && !treatMouseAsReleased)
                 m_expandedBookmarkIdx = i;
-            const bool active = pinned || loneExpand || cursorExpand;
+            const bool active = rangeActive || pinned || loneExpand || cursorExpand;
             // active=true  → {false,true,false}  showTab=false → full strip
             // active=false → {true,false,false}  showTab=true  → collapsed tab
             layout[i] = { !active, active, false };
@@ -1202,6 +1321,16 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
                     m_expandedBookmarkIdx = m_noteEditorIdx;
                     setActiveInGroup(group, winnerIdx);
                 }
+            }
+
+            // Range-edit owner wins before the ordinary pinned/cursor logic.
+            // Otherwise dragging bookmark 3 upward into bookmark 2 can cause
+            // bookmark 2's existing expansion state to bury the value being
+            // adjusted as soon as the two strips enter the same conflict group.
+            if (winnerIdx < 0 && groupContains(group, activeRangeIdx)) {
+                winnerIdx = activeRangeIdx;
+                if (!treatMouseAsReleased)
+                    setActiveInGroup(group, winnerIdx);
             }
 
             // While dragging, keep the existing display stable.
@@ -1323,6 +1452,8 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
                m_nCursorOffset <  bm.offset + bm.length;
     };
     auto visualPriority = [&](int idx) {
+        if (idx == activeRangeIdx)
+            return 5;
         if (idx == m_noteEditorIdx && m_noteEditor && m_noteEditor->isVisible())
             return 4;
         if (idx == m_expandedBookmarkIdx)
@@ -1474,7 +1605,12 @@ void HexView::drawNoteStrip(QPainter &painter, const Bookmark &bm, const BmLayou
         // Down-chevron icon in the button slot, shown on hover.
         const int bmIdx    = (int)(&bm - m_bookmarks.constData());
         const bool isHov   = (bmIdx == m_hoverBookmarkIdx);
-        if (bmIdx == m_inlineRangeBookmarkIdx)
+        // A collapsed draw during live range-drag is exactly the failure mode
+        // we guard against: clearing here drops _rangeEditing, then an
+        // overlapping bookmark's byte highlight can paint over the edited range.
+        // Only cancel stale inline state when no button is held.
+        if (bmIdx == m_inlineRangeBookmarkIdx &&
+                QApplication::mouseButtons() == Qt::NoButton)
             clearBookmarkRangeStepper();
         if (isHov) {
             const int btnX   = r.right() - kNotePadV - kNoteBtnSz;

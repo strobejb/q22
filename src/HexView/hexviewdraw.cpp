@@ -425,10 +425,14 @@ bool HexView::getHighlightCol(size_w offset, int pane,
     //   gap==true  : only entries already active at pos-1 (prevents start-of-range bleed).
     //   gap==false : normal per-byte scan.
     // Returns the resolved HEXCOL:
-    //   - shortest non-selection entry that covers pos supplies the highlight colour.
-    //     "Shortest wins" mirrors the note-strip logic and gives nested bookmarks the
-    //     correct visual layering: a small inner bookmark renders on top of a large
-    //     outer one rather than being shadowed by it.
+    //   - the bookmark whose offset/length value is currently being dragged wins
+    //     among bookmark highlights.  This mirrors the note-strip rule: while the
+    //     user is editing a range, that range must stay visually on top even when
+    //     it overlaps a shorter/previously-active neighbour.
+    //   - otherwise, shortest non-selection entry that covers pos supplies the
+    //     highlight colour.  "Shortest wins" gives nested bookmarks the correct
+    //     visual layering: a small inner bookmark renders on top of a large outer
+    //     one rather than being shadowed by it.
     //     bgColour==0 means FG-only (modified): contributes fgColour but not bgColour.
     //   - if selection also covers pos, the two-mode logic is applied.
     auto resolve = [&](size_w pos, bool gap) -> HEXCOL {
@@ -440,7 +444,11 @@ bool HexView::getHighlightCol(size_w offset, int pane,
             if (pos >= bm.offset + bm.length)                  continue;
             if      (bm.colourIndex == -2)                    inSel = true;
             else if (bm.colourIndex < 0 && bm.bgColour == 0)  inMod = true;   // FG-only (modified)
-            else if (!hl || bm.length < hl->length)           hl = &bm;       // shortest wins
+            else if (!hl ||
+                     (bm._rangeEditing && !hl->_rangeEditing) ||
+                     (bm._rangeEditing == hl->_rangeEditing && bm.length < hl->length)) {
+                hl = &bm;
+            }
         }
 
         HEXCOL c;
@@ -908,11 +916,26 @@ void HexView::paintEvent(QPaintEvent *event)
                 visibleBms.append(bmIdx);
         }
 
-        if (m_inlineRangeBookmarkIdx >= 0 && !visibleBms.contains(m_inlineRangeBookmarkIdx))
+        if (m_inlineRangeBookmarkIdx >= 0 &&
+                QApplication::mouseButtons() == Qt::NoButton &&
+                !visibleBms.contains(m_inlineRangeBookmarkIdx))
             clearBookmarkRangeStepper();
 
         std::stable_sort(visibleBms.begin(), visibleBms.end(),
-                         [this](int a, int b) {
+                         [this, &bmLayout](int a, int b) {
+                             // Draw the live range-edit strip last.  Layout
+                             // already marks it active, but paint order is a
+                             // separate concern: an older overlapping strip can
+                             // still cover pixels if it is drawn afterwards.
+                             const bool rangeA = (a == m_inlineRangeBookmarkIdx) || m_bookmarks[a]._rangeEditing;
+                             const bool rangeB = (b == m_inlineRangeBookmarkIdx) || m_bookmarks[b]._rangeEditing;
+                             const int priorityA = rangeA ? 2
+                                 : (bmLayout.value(a).isActive ? 1 : 0);
+                             const int priorityB = rangeB ? 2
+                                 : (bmLayout.value(b).isActive ? 1 : 0);
+                             if (priorityA != priorityB)
+                                 return priorityA < priorityB;
+
                              const Bookmark &ba = m_bookmarks[a];
                              const Bookmark &bb = m_bookmarks[b];
                              const size_w lineA = ba.offset / (size_w)m_nBytesPerLine;

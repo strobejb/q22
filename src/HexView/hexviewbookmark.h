@@ -26,6 +26,10 @@ struct Bookmark {
     // Transient HexView display state.  This is deliberately not persisted by
     // BookmarkStore.
     bool    _active = false;
+    // True only while the offset/length value is being mouse-dragged.  This is
+    // separate from _active because layout recomputes and clears _active often;
+    // the drag owner must survive replaceBookmark() re-sorting every mouse move.
+    bool    _rangeEditing = false;
 };
 
 #endif // HEXVIEWBOOKMARK_H

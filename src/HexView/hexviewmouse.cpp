@@ -283,21 +283,23 @@ HitTestRegion HexView::hitTest(int x, int y, int *bookmarkIdx)
 
         for (int i = 0; i < m_bookmarks.size(); ++i) {
             const Bookmark &bm = m_bookmarks[i];
-            const size_w startLine = bm.offset / (size_w)m_nBytesPerLine;
-            const int screenY = (int)((qint64)startLine - (qint64)m_nVScrollPos) * m_nFontHeight;
-            if (screenY + m_nFontHeight <= 0 || screenY >= viewport()->height())
-                continue;
-
             const BmLayout &bml = layout.value(i);
             if (bml.hidden) continue;   // not drawn, not hittable
 
             const bool isTab = bml.inConflict && !bml.isActive;
+            // Hit-test the same visual rectangle that paintEvent draws.  A full
+            // strip can be clamped into view even when its start line is above
+            // the viewport; filtering by start line lets a neighbour steal the
+            // click/drag from the visible strip.
+            const QRect visualRect = isTab ? noteCollapsedRect(bm)
+                                           : noteStripGeom(bm).rect;
+            if (visualRect.isNull() || !visualRect.contains(x, y))
+                continue;
 
             HitTestRegion ht = HVHT_NONE;
             if (isTab) {
                 // Collapsed single-line strip — entire area navigates to bm.offset.
-                const QRect tab = noteCollapsedRect(bm);
-                if (tab.contains(x, y)) ht = HVHT_BOOKMARK_COLLAPSED;
+                ht = HVHT_BOOKMARK_COLLAPSED;
             } else {
                 // Full strip.
                 const NoteStripGeom geom = noteStripGeom(bm);
@@ -461,6 +463,7 @@ void HexView::mousePressEvent(QMouseEvent *event)
         const BookmarkRangeField field = (ht == HVHT_BOOKMARK_OFFSET)
             ? BookmarkRangeField::Offset
             : BookmarkRangeField::Length;
+        m_dragStartPos = event->pos();
         activateBookmarkRangeStepper(m_pressedBookmarkIdx, field);
         if (!m_inlineRangeDragActive) {
             clearBookmarkRangeStepper();
@@ -470,8 +473,8 @@ void HexView::mousePressEvent(QMouseEvent *event)
         m_pressedHitTest = ht;
         m_pressedOnOffset = (ht == HVHT_BOOKMARK_OFFSET);
         m_pressedOnLength = (ht == HVHT_BOOKMARK_LENGTH);
-        viewport()->grabMouse(Qt::SplitVCursor);
-        viewport()->setCursor(Qt::SplitVCursor);
+        viewport()->grabMouse(Qt::SizeAllCursor);
+        viewport()->setCursor(Qt::SizeAllCursor);
         viewport()->update();
         return;
     }
@@ -688,7 +691,7 @@ void HexView::mouseMoveEvent(QMouseEvent *event)
 
     if (m_inlineRangeDragActive) {
         updateBookmarkRangeDrag(event->pos());
-        viewport()->setCursor(Qt::SplitVCursor);
+        viewport()->setCursor(Qt::SizeAllCursor);
         viewport()->update();
         return;
     }
