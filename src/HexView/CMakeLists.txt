@@ -4,6 +4,8 @@ qt_add_library(HexView STATIC
     hexview.h
     hexview.cpp
     hexviewbookmark.h
+    hexviewbookmarklogic.h
+    hexviewbookmarklogic.cpp
     hexviewbookmark.cpp
     hexviewdraw.cpp
     hexviewscroll.cpp

@@ -7,6 +7,7 @@
 //
 
 #include "hexview.h"
+#include "hexviewbookmarklogic.h"
 
 #include <QApplication>
 #include <QFontMetrics>
@@ -436,20 +437,10 @@ bool HexView::getHighlightCol(size_w offset, int pane,
     //     bgColour==0 means FG-only (modified): contributes fgColour but not bgColour.
     //   - if selection also covers pos, the two-mode logic is applied.
     auto resolve = [&](size_w pos, bool gap) -> HEXCOL {
-        const Bookmark *hl = nullptr;
-        bool inSel = false;
-        bool inMod = false;
-        for (const Bookmark &bm : highlights) {
-            if (gap ? (bm.offset >= pos) : (pos < bm.offset)) continue;
-            if (pos >= bm.offset + bm.length)                  continue;
-            if      (bm.colourIndex == -2)                    inSel = true;
-            else if (bm.colourIndex < 0 && bm.bgColour == 0)  inMod = true;   // FG-only (modified)
-            else if (!hl ||
-                     (bm._rangeEditing && !hl->_rangeEditing) ||
-                     (bm._rangeEditing == hl->_rangeEditing && bm.length < hl->length)) {
-                hl = &bm;
-            }
-        }
+        const BookmarkLogic::HighlightChoice choice = BookmarkLogic::chooseHighlight(highlights, pos, gap);
+        const Bookmark *hl = choice.bookmarkIndex >= 0 ? &highlights[choice.bookmarkIndex] : nullptr;
+        const bool inSel = choice.hasSelection;
+        const bool inMod = choice.hasModified;
 
         HEXCOL c;
         if ((hl || inMod) && inSel) {
@@ -921,18 +912,20 @@ void HexView::paintEvent(QPaintEvent *event)
                 !visibleBms.contains(m_inlineRangeBookmarkIdx))
             clearBookmarkRangeStepper();
 
+        const int rangeEditDrawIdx = BookmarkLogic::rangeEditingIndex(m_bookmarks,
+                                                                      m_inlineRangeBookmarkIdx);
         std::stable_sort(visibleBms.begin(), visibleBms.end(),
-                         [this, &bmLayout](int a, int b) {
+                         [this, &bmLayout, rangeEditDrawIdx](int a, int b) {
                              // Draw the live range-edit strip last.  Layout
                              // already marks it active, but paint order is a
                              // separate concern: an older overlapping strip can
                              // still cover pixels if it is drawn afterwards.
-                             const bool rangeA = (a == m_inlineRangeBookmarkIdx) || m_bookmarks[a]._rangeEditing;
-                             const bool rangeB = (b == m_inlineRangeBookmarkIdx) || m_bookmarks[b]._rangeEditing;
-                             const int priorityA = rangeA ? 2
-                                 : (bmLayout.value(a).isActive ? 1 : 0);
-                             const int priorityB = rangeB ? 2
-                                 : (bmLayout.value(b).isActive ? 1 : 0);
+                             const int priorityA = BookmarkLogic::visualPriority(
+                                 a, rangeEditDrawIdx, -1, false, bmLayout.value(a).isActive ? a : -1,
+                                 -1, false);
+                             const int priorityB = BookmarkLogic::visualPriority(
+                                 b, rangeEditDrawIdx, -1, false, bmLayout.value(b).isActive ? b : -1,
+                                 -1, false);
                              if (priorityA != priorityB)
                                  return priorityA < priorityB;
 
