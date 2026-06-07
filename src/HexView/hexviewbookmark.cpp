@@ -1060,385 +1060,73 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
     if (n == 0 || m_nBytesPerLine <= 0 || m_nFontHeight <= 0)
         return layout;
 
-    // Height of a single-line collapsed strip — used for overlap detection below.
-    // kNotePadV + one text line + kNotePadV.
+    // HexView still owns widget-specific geometry: note height depends on fonts,
+    // live editor text, scroll position, and viewport clamping.  BookmarkLogic
+    // owns the state-machine answer once these measurements are supplied.
     const int collapsedH = kNotePadV + QFontMetrics(QApplication::font()).height() + kNotePadV;
-
-    // Precompute display start-Y, full visual height, and natural full-strip
-    // top/bottom for each bookmark.  Conflict grouping must use the unclamped
-    // rectangle, not just the byte range's start line: tall notes are centered
-    // around their range midpoint and can overlap earlier bookmarks.  Do not use
-    // the viewport-clamped y=0 drawing position here; offscreen bookmarks would
-    // otherwise manufacture conflicts with visible bookmarks farther down.
-    QVarLengthArray<int, 32> sy(n), fh(n), fullTop(n), fullBot(n), tabTop(n), tabBot(n);
+    QVector<BookmarkLogic::BookmarkLayoutGeometry> geometry(n);
     for (int i = 0; i < n; ++i) {
         const Bookmark &bm = m_bookmarks[i];
+        BookmarkLogic::BookmarkLayoutGeometry &g = geometry[i];
+
         const int line = (int)(bm.offset / (size_w)m_nBytesPerLine);
-        sy[i] = (line - (int)m_nVScrollPos) * m_nFontHeight;
-        fh[i] = noteStripFullHeight(bm);
+        g.sy = (line - (int)m_nVScrollPos) * m_nFontHeight;
+        const int fullHeight = noteStripFullHeight(bm);
 
         const int endLine = (int)((bm.offset + (bm.length > 0 ? bm.length - 1 : 0))
                                   / (size_w)m_nBytesPerLine);
         const int numLines = endLine - line + 1;
-        const int idealTipY = sy[i] + (numLines * m_nFontHeight) / 2;
+        const int idealTipY = g.sy + (numLines * m_nFontHeight) / 2;
         const int minMargin = m_nFontHeight / 2 + kNoteRadius;
-        const int defaultRectY = sy[i] + kNotePadV;
+        const int defaultRectY = g.sy + kNotePadV;
         int rectY;
-        if (idealTipY > defaultRectY + fh[i] - minMargin)
+        if (idealTipY > defaultRectY + fullHeight - minMargin)
             rectY = defaultRectY;
         else
-            rectY = idealTipY - fh[i] / 2;
-        fullTop[i] = rectY;
-        fullBot[i] = rectY + fh[i];
+            rectY = idealTipY - fullHeight / 2;
+        g.fullTop = rectY;
+        g.fullBot = rectY + fullHeight;
 
-        tabTop[i] = sy[i] + (m_nFontHeight - collapsedH) / 2;
-        tabBot[i] = tabTop[i] + collapsedH;
+        g.tabTop = g.sy + (m_nFontHeight - collapsedH) / 2;
+        g.tabBot = g.tabTop + collapsedH;
+
+        const NoteStripGeom painted = noteStripGeom(bm);
+        g.paintedFullRect = painted.rect;
+        g.paintedFullRectValid = painted.valid;
     }
 
-    QVector<int> visualOrder(n);
-    for (int i = 0; i < n; ++i)
-        visualOrder[i] = i;
-    std::stable_sort(visualOrder.begin(), visualOrder.end(),
-                     [&](int a, int b) {
-                         if (fullTop[a] != fullTop[b]) return fullTop[a] < fullTop[b];
-                         return a < b;
-                     });
+    BookmarkLogic::BookmarkLayoutRequest request;
+    request.cursorOffset = m_nCursorOffset;
+    request.expandedBookmarkIdx = m_expandedBookmarkIdx;
+    request.surfacedBookmarkIdx = m_surfacedBookmarkIdx;
+    request.inlineRangeBookmarkIdx = m_inlineRangeBookmarkIdx;
+    request.noteEditorIdx = m_noteEditorIdx;
+    request.noteEditorVisible = m_noteEditor && m_noteEditor->isVisible();
+    request.mouseHeld = treatMouseAsReleased ? false : (QApplication::mouseButtons() != Qt::NoButton);
+    request.allowStateUpdates = !treatMouseAsReleased;
+    request.expandLone = checkStyle(HVS_BOOKMARK_EXPAND_LONE);
+    request.expandCursor = checkStyle(HVS_BOOKMARK_EXPAND_CURSOR);
+    request.expandAlways = checkStyle(HVS_BOOKMARK_EXPAND_ALWAYS);
 
-    QVector<QVector<int>> groups;
-    for (int p = 0; p < n;) {
-        QVector<int> group;
-        group.append(visualOrder[p]);
-        int groupBot = fullBot[visualOrder[p]];
-        ++p;
-        while (p < n && fullTop[visualOrder[p]] < groupBot) {
-            const int idx = visualOrder[p];
-            group.append(idx);
-            groupBot = std::max(groupBot, fullBot[idx]);
-            ++p;
-        }
-        std::sort(group.begin(), group.end());
-        groups.append(group);
+    const BookmarkLogic::BookmarkLayoutResult result =
+        BookmarkLogic::computeLayout(m_bookmarks, geometry, request);
+
+    for (int i = 0; i < n && i < result.layout.size(); ++i) {
+        const BookmarkLogic::BookmarkLayoutEntry &entry = result.layout[i];
+        layout[i] = {entry.inConflict, entry.isActive, entry.hidden};
     }
 
-    auto isInConflictGroup = [&](int idx) {
-        if (idx < 0 || idx >= n)
-            return false;
-        for (const QVector<int> &group : groups) {
-            if (group.size() > 1 && group.contains(idx))
-                return true;
-        }
-        return false;
-    };
-    auto clearActiveInGroup = [&](const QVector<int> &group) {
-        for (int j : group)
-            m_bookmarks[j]._active = false;
-    };
-    auto activeInGroup = [&](const QVector<int> &group) {
-        for (int j : group) {
-            if (m_bookmarks[j]._active)
-                return j;
-        }
-        return -1;
-    };
-    auto groupContains = [](const QVector<int> &group, int idx) {
-        return std::binary_search(group.begin(), group.end(), idx);
-    };
-    auto setActiveInGroup = [&](const QVector<int> &group, int idx) {
-        clearActiveInGroup(group);
-        if (groupContains(group, idx))
-            m_bookmarks[idx]._active = true;
-    };
-
-    const bool mouseHeld = treatMouseAsReleased
-                           ? false
-                           : (QApplication::mouseButtons() != Qt::NoButton);
-    // Inline range drag is a stronger claim than cursor expansion, explicit
-    // pinning, or "always expand": while the user is adjusting offset/length,
-    // that strip must remain full-size and above neighbours even if the edit
-    // creates a new visual conflict.
-    const int activeRangeIdx = BookmarkLogic::rangeEditingIndex(m_bookmarks,
-                                                                m_inlineRangeBookmarkIdx);
-    if (!treatMouseAsReleased && activeRangeIdx >= 0)
-        m_inlineRangeBookmarkIdx = activeRangeIdx;
-
-    // Keep sticky bookmark state in sync with the final cursor position before the sweep.
-    // Updating it lazily inside the sweep can leave an earlier lone bookmark
-    // expanded for the same frame that navigates to a later bookmark.
-    if (!treatMouseAsReleased && !mouseHeld) {
-        int cursorIdx = -1;
-        size_w cursorLen = (size_w)-1;
-        for (int j = 0; j < n; ++j) {
-            const Bookmark &bm = m_bookmarks[j];
-            if (m_nCursorOffset >= bm.offset &&
-                m_nCursorOffset <  bm.offset + bm.length &&
-                bm.length < cursorLen) {
-                cursorIdx = j;
-                cursorLen = bm.length;
-            }
-        }
-
-        bool cursorInPinned = false;
-        if (m_expandedBookmarkIdx >= 0 && m_expandedBookmarkIdx < n) {
-            const Bookmark &pinned = m_bookmarks[m_expandedBookmarkIdx];
-            cursorInPinned = m_nCursorOffset >= pinned.offset &&
-                             m_nCursorOffset <  pinned.offset + pinned.length;
-        }
-
-        // Blank space deliberately leaves the surfaced tab alone.  When always
-        // expand is enabled, a grouped expanded bookmark stays open too;
-        // otherwise expansion-on-navigation collapses when the cursor leaves
-        // bookmark ranges.
-        if (cursorIdx >= 0) {
-            m_surfacedBookmarkIdx = cursorIdx;
-            if (checkStyle(HVS_BOOKMARK_EXPAND_CURSOR)) {
-                m_expandedBookmarkIdx = cursorIdx;
-            } else if (m_expandedBookmarkIdx >= 0 && m_expandedBookmarkIdx != cursorIdx) {
-                // Navigation expansion is off: entering another bookmark collapses
-                // any previous expanded winner, but the surfaced tab still switches.
-                m_expandedBookmarkIdx = -1;
-            }
-        } else if (m_expandedBookmarkIdx >= 0 && !cursorInPinned) {
-            const bool keepGroupedExpansion = checkStyle(HVS_BOOKMARK_EXPAND_ALWAYS) &&
-                                              isInConflictGroup(m_expandedBookmarkIdx);
-            if (!keepGroupedExpansion)
-                m_expandedBookmarkIdx = -1;
-        }
-    }
-
-    // Sweep visual conflict groups using full heights for all members.
-    for (const QVector<int> &group : groups) {
-        if (group.size() == 1) {
-            const int i = group.first();
-            // Lone bookmark (no strip overlap with neighbours).
-            //
-            // HVS_BOOKMARK_EXPAND_LONE: show as a full strip unconditionally
-            //   (the "always visible" behaviour) — nothing to do with cursor.
-            // HVS_BOOKMARK_EXPAND_CURSOR: the pre-sweep block above pins this
-            //   bookmark when the cursor is in range.
-            //   Never expands mid-drag (!mouseHeld guard on the pin block).
-            // An explicit pin (set by clicking the bookmark strip) always wins.
-            const Bookmark &bm = m_bookmarks[i];
-            const bool rangeActive = (activeRangeIdx == i);
-            const bool pinned  = (m_expandedBookmarkIdx == i);
-            const bool inRange = m_nCursorOffset >= bm.offset &&
-                                 m_nCursorOffset <  bm.offset + bm.length;
-            const bool loneExpand   = checkStyle(HVS_BOOKMARK_EXPAND_LONE);
-            const bool cursorExpand = checkStyle(HVS_BOOKMARK_EXPAND_CURSOR) &&
-                                      !mouseHeld && inRange;
-            // Redundant with the pre-sweep update, but harmless when a repaint
-            // starts with no existing pin.  hitTest calls suppress side-effects.
-            if (cursorExpand && !treatMouseAsReleased)
-                m_expandedBookmarkIdx = i;
-            const bool active = rangeActive || pinned || loneExpand || cursorExpand;
-            // active=true  → {false,true,false}  showTab=false → full strip
-            // active=false → {true,false,false}  showTab=true  → collapsed tab
-            layout[i] = { !active, active, false };
-        } else {
-            // Conflict group.
-            int    winnerIdx = -1;
-            size_w winnerLen = (size_w)-1;
-
-            // Step 1: inline editor takes priority — cannot collapse a strip that
-            // holds a live text editor regardless of where the cursor is.
-            if (groupContains(group, m_noteEditorIdx) &&
-                m_noteEditor && m_noteEditor->isVisible()) {
-                winnerIdx = m_noteEditorIdx;
-                if (!treatMouseAsReleased) {
-                    m_expandedBookmarkIdx = m_noteEditorIdx;
-                    setActiveInGroup(group, winnerIdx);
-                }
-            }
-
-            // Range-edit owner wins before the ordinary pinned/cursor logic.
-            // Otherwise dragging bookmark 3 upward into bookmark 2 can cause
-            // bookmark 2's existing expansion state to bury the value being
-            // adjusted as soon as the two strips enter the same conflict group.
-            if (winnerIdx < 0 && groupContains(group, activeRangeIdx)) {
-                winnerIdx = activeRangeIdx;
-                if (!treatMouseAsReleased)
-                    setActiveInGroup(group, winnerIdx);
-            }
-
-            // While dragging, keep the existing display stable.
-            if (winnerIdx < 0 && mouseHeld &&
-                groupContains(group, m_expandedBookmarkIdx)) {
-                winnerIdx = m_expandedBookmarkIdx;
-            }
-
-            // Step 2: explicit pin — direct bookmark-tab/body activation should
-            // still open the selected bookmark even when cursor navigation
-            // expansion is disabled.
-            if (winnerIdx < 0 &&
-                groupContains(group, m_expandedBookmarkIdx)) {
-                winnerIdx = m_expandedBookmarkIdx;
-                if (!treatMouseAsReleased)
-                    setActiveInGroup(group, winnerIdx);
-            }
-
-            // Step 3: cursor-based expansion.  The preference gates full-strip
-            // expansion; the pre-sweep state update above still records the
-            // matching collapsed tab for surfacing even when expansion is off.
-            if (winnerIdx < 0 && checkStyle(HVS_BOOKMARK_EXPAND_CURSOR) && !mouseHeld) {
-                for (int j : group) {
-                    const Bookmark &bm = m_bookmarks[j];
-                    if (m_nCursorOffset >= bm.offset &&
-                        m_nCursorOffset <  bm.offset + bm.length &&
-                        bm.length < winnerLen) {
-                        winnerIdx = j;
-                        winnerLen = bm.length;
-                    }
-                }
-                if (winnerIdx >= 0 && !treatMouseAsReleased) {
-                    m_expandedBookmarkIdx = winnerIdx;
-                    setActiveInGroup(group, winnerIdx);
-                }
-            }
-
-            // When no bookmark is fully active, surface the group member whose
-            // byte range contains the cursor — it becomes the front collapsed tab.
-            // Runs regardless of HVS_BOOKMARK_EXPAND_CURSOR so cursor navigation
-            // always reveals the relevant bookmark even when expansion is off.
-            //
-            // Sticky surface: when the cursor leaves all group members, the last
-            // surfaced member stays at the front (m_surfacedBookmarkIdx).  This is
-            // completely independent of m_pinnedBookmarkIdx so it never triggers
-            // full-strip expansion.
-            int    surfacedIdx = -1;
-            size_w surfacedLen = (size_w)-1;
-            if (winnerIdx < 0 && !mouseHeld) {
-                for (int j : group) {
-                    const Bookmark &bm = m_bookmarks[j];
-                    if (m_nCursorOffset >= bm.offset &&
-                        m_nCursorOffset <  bm.offset + bm.length &&
-                        bm.length < surfacedLen) {
-                        surfacedIdx = j;
-                        surfacedLen = bm.length;
-                    }
-                }
-                // Pre-sweep state already updates the sticky surface when the
-                // cursor enters a bookmark range.
-            }
-            // Sticky fallback: cursor has left all group members, or the mouse is
-            // held and live cursor updates are frozen.  Keep the last-surfaced tab
-            // at the front so navigation sticks without changing state mid-drag.
-            if (surfacedIdx < 0 &&
-                groupContains(group, m_surfacedBookmarkIdx))
-                surfacedIdx = m_surfacedBookmarkIdx;
-
-            if (winnerIdx < 0 && checkStyle(HVS_BOOKMARK_EXPAND_ALWAYS)) {
-                const int activeIdx = activeInGroup(group);
-                winnerIdx = activeIdx >= 0 ? activeIdx : (surfacedIdx >= 0 ? surfacedIdx : group.first());
-                if (!treatMouseAsReleased)
-                    setActiveInGroup(group, winnerIdx);
-            }
-
-            // For non-active members: hide collapsed tabs that overlap the
-            // active full strip.  If no member is active (only possible when
-            // HVS_BOOKMARK_EXPAND_ALWAYS is disabled), stacked collapsed tabs on
-            // the same line are hidden behind the surfaced one.
-            const int activeTop = (winnerIdx >= 0) ? fullTop[winnerIdx] : INT_MIN;
-            const int activeBot = (winnerIdx >= 0) ? fullBot[winnerIdx] : INT_MIN;
-
-            for (int j : group) {
-                const bool active = (winnerIdx != -1 && j == winnerIdx);
-                bool hidden = false;
-                if (!active && winnerIdx >= 0) {
-                    // Hide collapsed tab if it intersects the active full strip.
-                    hidden = (tabTop[j] < activeBot) && (tabBot[j] > activeTop);
-                }
-                if (!active && !hidden && surfacedIdx >= 0 && j != surfacedIdx) {
-                    // Hide collapsed tabs stacked on the same line behind the
-                    // surfaced (cursor-matching) one.
-                    if (sy[j] == sy[surfacedIdx])
-                        hidden = true;
-                }
-                layout[j] = {true, active, hidden};
-            }
-        }
-    }
-
-    // Final visual de-conflict: conflict grouping intentionally uses the
-    // natural, unclamped strip rectangles so bookmarks scrolled above the
-    // viewport do not pull unrelated visible bookmarks into their group.  Once
-    // a strip is actually painted, though, noteStripGeom() may clamp it to the
-    // top of the viewport.  That can make two otherwise-separate active full
-    // strips overlap.  Keep the current UI winner first (editor, explicit pin,
-    // surfaced/cursor bookmark), then demote lower-priority overlaps to
-    // collapsed tabs.
-    struct ActiveStrip {
-        int idx;
-        QRect rect;
-        int priority;
-    };
-    auto bookmarkContainsCursor = [&](int idx) {
-        if (idx < 0 || idx >= n)
-            return false;
-        const Bookmark &bm = m_bookmarks[idx];
-        return m_nCursorOffset >= bm.offset &&
-               m_nCursorOffset <  bm.offset + bm.length;
-    };
-    auto visualPriority = [&](int idx) {
-        return BookmarkLogic::visualPriority(idx,
-                                             activeRangeIdx,
-                                             m_noteEditorIdx,
-                                             m_noteEditor && m_noteEditor->isVisible(),
-                                             m_expandedBookmarkIdx,
-                                             m_surfacedBookmarkIdx,
-                                             bookmarkContainsCursor(idx));
-    };
-    QVector<ActiveStrip> activeStrips;
-    for (int k = 0; k < n; ++k) {
-        if (!layout[k].isActive) continue;
-        const NoteStripGeom geom = noteStripGeom(m_bookmarks[k]);
-        if (!geom.valid) continue;
-        activeStrips.append({k, geom.rect, visualPriority(k)});
-    }
-    std::stable_sort(activeStrips.begin(), activeStrips.end(),
-                     [](const ActiveStrip &a, const ActiveStrip &b) {
-                         if (a.priority != b.priority) return a.priority > b.priority;
-                         if (a.rect.top() != b.rect.top()) return a.rect.top() < b.rect.top();
-                         return a.idx < b.idx;
-                     });
-
-    QVector<ActiveStrip> keptActive;
-    auto overlapsKeptActive = [&](const QRect &rect) {
-        for (const ActiveStrip &kept : keptActive) {
-            if (rect.top() < kept.rect.bottom() && rect.bottom() > kept.rect.top())
-                return true;
-        }
-        return false;
-    };
-    auto collapsedTabOverlapsKept = [&](int idx) {
-        for (const ActiveStrip &kept : keptActive) {
-            if (tabTop[idx] < kept.rect.bottom() && tabBot[idx] > kept.rect.top())
-                return true;
-        }
-        return false;
-    };
-
-    for (const ActiveStrip &strip : activeStrips) {
-        if (!overlapsKeptActive(strip.rect)) {
-            keptActive.append(strip);
-            continue;
-        }
-
-        layout[strip.idx] = {true, false, collapsedTabOverlapsKept(strip.idx)};
-    }
-
-    // Hide collapsed tabs that visually overlap an active full strip.  The
-    // per-group hiding above only covers same-group members; cross-group tabs
-    // can intrude when a strip is clamped to y=0 (its visual footprint then
-    // extends beyond its natural conflict interval).
-    for (const ActiveStrip &kept : keptActive) {
-        for (int j = 0; j < n; ++j) {
-            if (layout[j].isActive || layout[j].hidden) continue;
-            if (tabTop[j] < kept.rect.bottom() && tabBot[j] > kept.rect.top())
-                layout[j].hidden = true;
-        }
+    if (!treatMouseAsReleased) {
+        m_expandedBookmarkIdx = result.expandedBookmarkIdx;
+        m_surfacedBookmarkIdx = result.surfacedBookmarkIdx;
+        m_inlineRangeBookmarkIdx = result.inlineRangeBookmarkIdx;
+        for (int i = 0; i < n && i < result.activeFlags.size(); ++i)
+            m_bookmarks[i]._active = result.activeFlags[i];
     }
 
     return layout;
 }
+
 
 // ── drawNoteStrip ─────────────────────────────────────────────────────────────
 

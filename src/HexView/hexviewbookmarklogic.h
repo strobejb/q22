@@ -6,6 +6,7 @@
 #include <QList>
 #include <QPoint>
 #include <QRect>
+#include <QVector>
 
 namespace BookmarkLogic {
 
@@ -18,6 +19,44 @@ struct HighlightChoice {
     int  bookmarkIndex = -1;
     bool hasSelection  = false;
     bool hasModified   = false;
+};
+
+struct BookmarkLayoutEntry {
+    bool inConflict = false;
+    bool isActive   = true;
+    bool hidden     = false;
+};
+
+struct BookmarkLayoutGeometry {
+    int sy      = 0;
+    int fullTop = 0;
+    int fullBot = 0;
+    int tabTop  = 0;
+    int tabBot  = 0;
+    QRect paintedFullRect;
+    bool paintedFullRectValid = false;
+};
+
+struct BookmarkLayoutRequest {
+    size_w cursorOffset = 0;
+    int expandedBookmarkIdx = -1;
+    int surfacedBookmarkIdx = -1;
+    int inlineRangeBookmarkIdx = -1;
+    int noteEditorIdx = -1;
+    bool noteEditorVisible = false;
+    bool mouseHeld = false;
+    bool allowStateUpdates = true;
+    bool expandLone = false;
+    bool expandCursor = false;
+    bool expandAlways = false;
+};
+
+struct BookmarkLayoutResult {
+    QVector<BookmarkLayoutEntry> layout;
+    QVector<bool> activeFlags;
+    int expandedBookmarkIdx = -1;
+    int surfacedBookmarkIdx = -1;
+    int inlineRangeBookmarkIdx = -1;
 };
 
 size_w endExclusive(const Bookmark &bm);
@@ -52,6 +91,10 @@ int visualPriority(int bookmarkIndex,
                    int expandedIndex,
                    int surfacedIndex,
                    bool containsCursor);
+
+BookmarkLayoutResult computeLayout(const QList<Bookmark> &bookmarks,
+                                   const QVector<BookmarkLayoutGeometry> &geometry,
+                                   const BookmarkLayoutRequest &request);
 
 } // namespace BookmarkLogic
 

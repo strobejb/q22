@@ -25,11 +25,6 @@ struct PrivateAccess
     }
 };
 
-struct ComputeBookmarkLayoutTag {
-    using type = QVector<HexView::BmLayout> (HexView::*)(bool);
-    friend type get(ComputeBookmarkLayoutTag);
-};
-
 struct GetHighlightColTag {
     using type = bool (HexView::*)(size_w, int, const QList<Bookmark> &, HEXCOL *, HEXCOL *);
     friend type get(GetHighlightColTag);
@@ -45,21 +40,9 @@ struct HitTestTag {
     friend type get(HitTestTag);
 };
 
-struct InlineRangeBookmarkIdxTag {
-    using type = int HexView::*;
-    friend type get(InlineRangeBookmarkIdxTag);
-};
-
-template struct PrivateAccess<ComputeBookmarkLayoutTag, &HexView::computeBookmarkLayout>;
 template struct PrivateAccess<GetHighlightColTag, &HexView::getHighlightCol>;
 template struct PrivateAccess<NoteStripGeomTag, &HexView::noteStripGeom>;
 template struct PrivateAccess<HitTestTag, &HexView::hitTest>;
-template struct PrivateAccess<InlineRangeBookmarkIdxTag, &HexView::m_inlineRangeBookmarkIdx>;
-
-QVector<HexView::BmLayout> computeBookmarkLayoutForTest(HexView &hv)
-{
-    return (hv.*get(ComputeBookmarkLayoutTag{}))(false);
-}
 
 bool getHighlightColForTest(HexView &hv, size_w offset, int pane,
                             const QList<Bookmark> &highlights,
@@ -76,11 +59,6 @@ HexView::NoteStripGeom noteStripGeomForTest(const HexView &hv, const Bookmark &b
 HitTestRegion hitTestForTest(HexView &hv, const QPoint &pos, int *bookmarkIdx)
 {
     return (hv.*get(HitTestTag{}))(pos.x(), pos.y(), bookmarkIdx);
-}
-
-void setInlineRangeBookmarkIdxForTest(HexView &hv, int idx)
-{
-    hv.*get(InlineRangeBookmarkIdxTag{}) = idx;
 }
 
 Bookmark bm(size_w offset, size_w length, int colour = 0)
@@ -131,7 +109,7 @@ private slots:
     void selectionAndModifiedFlagsSurviveHighlightChoice();
     void collapsedDrawDoesNotClearLiveRangeEdit();
     void visualPriorityKeepsRangeEditAbovePinnedAndActive();
-    void widgetLayoutKeepsRangeEditActiveInConflictGroup();
+    void layoutKeepsRangeEditActiveInConflictGroup();
     void widgetHighlightUsesRangeEditingBookmarkColour();
     void widgetHitTestUsesRenderedBookmarkGeometry();
 };
@@ -313,26 +291,34 @@ void BookmarkTests::visualPriorityKeepsRangeEditAbovePinnedAndActive()
     QCOMPARE(BookmarkLogic::visualPriority(1, 2, -1, false, 1, -1, false), 3);
 }
 
-void BookmarkTests::widgetLayoutKeepsRangeEditActiveInConflictGroup()
+void BookmarkTests::layoutKeepsRangeEditActiveInConflictGroup()
 {
     // Scenario: the Zorin-style second and third bookmarks overlap visually while
     // the third bookmark is being adjusted.
-    // Expected: HexView's layout marks the range-edit owner active in its conflict
-    // group, even if another bookmark was previously expanded.
-    // Regression guard: helper rules must actually be consumed by the widget
-    // layout path, not only pass isolated unit tests.
-    HexView hv;
-    initHexView(hv);
+    // Expected: the extracted layout rule marks the range-edit owner active in
+    // its conflict group, even if another bookmark was previously expanded.
+    // Regression guard: bookmark layout used to let the neighbour's existing
+    // expansion state bury the value being adjusted.
     QList<Bookmark> bookmarks{bm(16, 1), bm(64, 160, 1), bm(181, 114, 0)};
     bookmarks[2]._rangeEditing = true;
-    hv.setBookmarks(bookmarks);
-    setInlineRangeBookmarkIdxForTest(hv, 2);
-    hv.expandBookmark(1);
 
-    const QVector<HexView::BmLayout> layout = computeBookmarkLayoutForTest(hv);
+    QVector<BookmarkLogic::BookmarkLayoutGeometry> geometry(3);
+    geometry[0] = {0, 0, 24, 2, 18, QRect(300, 0, 180, 24), true};
+    geometry[1] = {96, 90, 190, 104, 120, QRect(300, 90, 180, 100), true};
+    geometry[2] = {132, 150, 250, 140, 156, QRect(300, 150, 180, 100), true};
 
-    QVERIFY(layout.value(2).isActive);
-    QVERIFY(!layout.value(2).hidden);
+    BookmarkLogic::BookmarkLayoutRequest request;
+    request.cursorOffset = 181;
+    request.expandedBookmarkIdx = 1;
+    request.inlineRangeBookmarkIdx = 2;
+    request.allowStateUpdates = true;
+
+    const BookmarkLogic::BookmarkLayoutResult result =
+        BookmarkLogic::computeLayout(bookmarks, geometry, request);
+
+    QVERIFY(result.layout.value(2).isActive);
+    QVERIFY(!result.layout.value(2).hidden);
+    QCOMPARE(result.inlineRangeBookmarkIdx, 2);
 }
 
 void BookmarkTests::widgetHighlightUsesRangeEditingBookmarkColour()
