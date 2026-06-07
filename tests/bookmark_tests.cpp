@@ -1,29 +1,6 @@
 #include <QtTest/QtTest>
 
-// These widget-level smoke tests need to inspect HexView's bookmark layout and
-// hit-test internals.  Keep the access hack local to this test file, and include
-// Qt/STL-facing headers first so MSVC's standard library never sees keyword
-// macros while processing its own headers.
-#include <QAbstractScrollArea>
-#include <QColor>
-#include <QFont>
-#include <QList>
-#include <QRawFont>
-#include <QTimer>
-#include <QVector>
-#include <QWidget>
-
-#include <array>
-#include <cstdint>
-
-#include "sequence.h"
-#include "hexviewbookmark.h"
-
-#define private public
-#define protected public
 #include "hexview.h"
-#undef protected
-#undef private
 
 #include "hexviewbookmarklogic.h"
 
@@ -31,6 +8,80 @@ class QMenu;
 void themeMenu(QMenu *) {}
 
 namespace {
+
+// The widget smoke tests intentionally reach a few private HexView bookmark
+// integration points, but they must not rewrite `private`/`protected` with
+// macros.  MSVC both rejects keyword macros in the standard library and mangles
+// access level into member-function symbols, which makes macro-opened private
+// methods fail to link against the real HexView library.  This friend-injection
+// shim takes normal private member pointers without altering HexView's
+// declaration, so the test calls the same symbols production code compiled.
+template <typename Tag, typename Tag::type Member>
+struct PrivateAccess
+{
+    friend typename Tag::type get(Tag)
+    {
+        return Member;
+    }
+};
+
+struct ComputeBookmarkLayoutTag {
+    using type = QVector<HexView::BmLayout> (HexView::*)(bool);
+    friend type get(ComputeBookmarkLayoutTag);
+};
+
+struct GetHighlightColTag {
+    using type = bool (HexView::*)(size_w, int, const QList<Bookmark> &, HEXCOL *, HEXCOL *);
+    friend type get(GetHighlightColTag);
+};
+
+struct NoteStripGeomTag {
+    using type = HexView::NoteStripGeom (HexView::*)(const Bookmark &) const;
+    friend type get(NoteStripGeomTag);
+};
+
+struct HitTestTag {
+    using type = HitTestRegion (HexView::*)(int, int, int *);
+    friend type get(HitTestTag);
+};
+
+struct InlineRangeBookmarkIdxTag {
+    using type = int HexView::*;
+    friend type get(InlineRangeBookmarkIdxTag);
+};
+
+template struct PrivateAccess<ComputeBookmarkLayoutTag, &HexView::computeBookmarkLayout>;
+template struct PrivateAccess<GetHighlightColTag, &HexView::getHighlightCol>;
+template struct PrivateAccess<NoteStripGeomTag, &HexView::noteStripGeom>;
+template struct PrivateAccess<HitTestTag, &HexView::hitTest>;
+template struct PrivateAccess<InlineRangeBookmarkIdxTag, &HexView::m_inlineRangeBookmarkIdx>;
+
+QVector<HexView::BmLayout> computeBookmarkLayoutForTest(HexView &hv)
+{
+    return (hv.*get(ComputeBookmarkLayoutTag{}))(false);
+}
+
+bool getHighlightColForTest(HexView &hv, size_w offset, int pane,
+                            const QList<Bookmark> &highlights,
+                            HEXCOL *col1, HEXCOL *col2)
+{
+    return (hv.*get(GetHighlightColTag{}))(offset, pane, highlights, col1, col2);
+}
+
+HexView::NoteStripGeom noteStripGeomForTest(const HexView &hv, const Bookmark &bm)
+{
+    return (hv.*get(NoteStripGeomTag{}))(bm);
+}
+
+HitTestRegion hitTestForTest(HexView &hv, const QPoint &pos, int *bookmarkIdx)
+{
+    return (hv.*get(HitTestTag{}))(pos.x(), pos.y(), bookmarkIdx);
+}
+
+void setInlineRangeBookmarkIdxForTest(HexView &hv, int idx)
+{
+    hv.*get(InlineRangeBookmarkIdxTag{}) = idx;
+}
 
 Bookmark bm(size_w offset, size_w length, int colour = 0)
 {
@@ -275,10 +326,10 @@ void BookmarkTests::widgetLayoutKeepsRangeEditActiveInConflictGroup()
     QList<Bookmark> bookmarks{bm(16, 1), bm(64, 160, 1), bm(181, 114, 0)};
     bookmarks[2]._rangeEditing = true;
     hv.setBookmarks(bookmarks);
-    hv.m_inlineRangeBookmarkIdx = 2;
+    setInlineRangeBookmarkIdxForTest(hv, 2);
     hv.expandBookmark(1);
 
-    const QVector<HexView::BmLayout> layout = hv.computeBookmarkLayout();
+    const QVector<HexView::BmLayout> layout = computeBookmarkLayoutForTest(hv);
 
     QVERIFY(layout.value(2).isActive);
     QVERIFY(!layout.value(2).hidden);
@@ -300,7 +351,7 @@ void BookmarkTests::widgetHighlightUsesRangeEditingBookmarkColour()
     highlights[1]._rangeEditing = true;
 
     HEXCOL col1, col2;
-    QVERIFY(hv.getHighlightCol(190, 0, highlights, &col1, &col2));
+    QVERIFY(getHighlightColForTest(hv, 190, 0, highlights, &col1, &col2));
 
     QCOMPARE(QColor(col1.colBG), QColor(255, 255, 0));
 }
@@ -317,12 +368,12 @@ void BookmarkTests::widgetHitTestUsesRenderedBookmarkGeometry()
     hv.setBookmarks({bm(64, 160, 0)});
     hv.expandBookmark(0);
     hv.scrollHEnd();
-    const HexView::NoteStripGeom geom = hv.noteStripGeom(hv.bookmarks().first());
+    const HexView::NoteStripGeom geom = noteStripGeomForTest(hv, hv.bookmarks().first());
     QVERIFY(geom.valid);
 
     int idx = -1;
     const QPoint hitPoint(geom.rect.left() + 5, geom.rect.center().y());
-    const HitTestRegion hit = hv.hitTest(hitPoint.x(), hitPoint.y(), &idx);
+    const HitTestRegion hit = hitTestForTest(hv, hitPoint, &idx);
 
     QCOMPARE(idx, 0);
     QVERIFY(hit == HVHT_BOOKMARK_OFFSET || hit == HVHT_BOOKMARK || hit == HVHT_BOOKMARK_LENGTH);
