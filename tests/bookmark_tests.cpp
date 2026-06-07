@@ -109,6 +109,12 @@ private slots:
     void selectionAndModifiedFlagsSurviveHighlightChoice();
     void collapsedDrawDoesNotClearLiveRangeEdit();
     void visualPriorityKeepsRangeEditAbovePinnedAndActive();
+    void autoExpandOffLeavesLoneBookmarkCollapsed();
+    void autoExpandOnExpandsLoneBookmark();
+    void autoExpandCursorChoosesShortestContainingBookmark();
+    void autoExpandOffClearsStalePinnedBookmarkWhenCursorLeaves();
+    void autoExpandAlwaysKeepsOneConflictMemberExpanded();
+    void autoExpandOffAllowsConflictGroupToRemainCollapsed();
     void layoutKeepsRangeEditActiveInConflictGroup();
     void widgetHighlightUsesRangeEditingBookmarkColour();
     void widgetHitTestUsesRenderedBookmarkGeometry();
@@ -289,6 +295,141 @@ void BookmarkTests::visualPriorityKeepsRangeEditAbovePinnedAndActive()
     // or its byte range.
     QCOMPARE(BookmarkLogic::visualPriority(2, 2, -1, false, 1, -1, false), 5);
     QCOMPARE(BookmarkLogic::visualPriority(1, 2, -1, false, 1, -1, false), 3);
+}
+
+void BookmarkTests::autoExpandOffLeavesLoneBookmarkCollapsed()
+{
+    // Scenario: automatic bookmark expansion is disabled and a single bookmark
+    // is visible without being pinned, edited, or under the cursor.
+    // Expected: the bookmark remains a collapsed note tab.
+    // Regression guard: extracting layout logic must not accidentally make lone
+    // bookmarks expand when the user has turned automatic expansion off.
+    QList<Bookmark> bookmarks{bm(64, 32)};
+    QVector<BookmarkLogic::BookmarkLayoutGeometry> geometry(1);
+    geometry[0] = {64, 60, 120, 72, 90, QRect(300, 60, 180, 60), true};
+
+    BookmarkLogic::BookmarkLayoutRequest request;
+    request.cursorOffset = 0;
+
+    const BookmarkLogic::BookmarkLayoutResult result =
+        BookmarkLogic::computeLayout(bookmarks, geometry, request);
+
+    QVERIFY(!result.layout.value(0).isActive);
+    QCOMPARE(result.expandedBookmarkIdx, -1);
+}
+
+void BookmarkTests::autoExpandOnExpandsLoneBookmark()
+{
+    // Scenario: automatic bookmark expansion is enabled and a lone bookmark has
+    // enough room to show as a full note strip.
+    // Expected: the lone bookmark expands without needing an explicit click.
+    // Regression guard: the public "Expand automatically" preference maps to
+    // expand-lone behavior, not only cursor-based expansion.
+    QList<Bookmark> bookmarks{bm(64, 32)};
+    QVector<BookmarkLogic::BookmarkLayoutGeometry> geometry(1);
+    geometry[0] = {64, 60, 120, 72, 90, QRect(300, 60, 180, 60), true};
+
+    BookmarkLogic::BookmarkLayoutRequest request;
+    request.expandLone = true;
+
+    const BookmarkLogic::BookmarkLayoutResult result =
+        BookmarkLogic::computeLayout(bookmarks, geometry, request);
+
+    QVERIFY(result.layout.value(0).isActive);
+    QVERIFY(!result.layout.value(0).hidden);
+}
+
+void BookmarkTests::autoExpandCursorChoosesShortestContainingBookmark()
+{
+    // Scenario: automatic expansion is enabled and the caret enters two nested
+    // bookmark ranges at the same byte.
+    // Expected: the shortest containing bookmark becomes the expanded owner.
+    // Regression guard: cursor-driven expansion should follow the same visible
+    // nested-bookmark priority users see in the byte highlight.
+    QList<Bookmark> bookmarks{bm(64, 160), bm(96, 32)};
+    QVector<BookmarkLogic::BookmarkLayoutGeometry> geometry(2);
+    geometry[0] = {64, 60, 150, 72, 90, QRect(300, 60, 180, 90), true};
+    geometry[1] = {96, 80, 170, 92, 110, QRect(300, 80, 180, 90), true};
+
+    BookmarkLogic::BookmarkLayoutRequest request;
+    request.cursorOffset = 100;
+    request.expandCursor = true;
+
+    const BookmarkLogic::BookmarkLayoutResult result =
+        BookmarkLogic::computeLayout(bookmarks, geometry, request);
+
+    QCOMPARE(result.expandedBookmarkIdx, 1);
+    QVERIFY(result.layout.value(1).isActive);
+    QVERIFY(!result.layout.value(1).hidden);
+}
+
+void BookmarkTests::autoExpandOffClearsStalePinnedBookmarkWhenCursorLeaves()
+{
+    // Scenario: a bookmark was previously expanded, automatic expansion is off,
+    // and the caret moves outside that bookmark's byte range.
+    // Expected: the stale expanded index is cleared so the note collapses again.
+    // Regression guard: pinned state must not become permanent after the cursor
+    // leaves when no automatic conflict-group expansion is enabled.
+    QList<Bookmark> bookmarks{bm(64, 32)};
+    QVector<BookmarkLogic::BookmarkLayoutGeometry> geometry(1);
+    geometry[0] = {64, 60, 120, 72, 90, QRect(300, 60, 180, 60), true};
+
+    BookmarkLogic::BookmarkLayoutRequest request;
+    request.cursorOffset = 200;
+    request.expandedBookmarkIdx = 0;
+
+    const BookmarkLogic::BookmarkLayoutResult result =
+        BookmarkLogic::computeLayout(bookmarks, geometry, request);
+
+    QCOMPARE(result.expandedBookmarkIdx, -1);
+    QVERIFY(!result.layout.value(0).isActive);
+}
+
+void BookmarkTests::autoExpandAlwaysKeepsOneConflictMemberExpanded()
+{
+    // Scenario: automatic expansion is enabled and two bookmark notes physically
+    // conflict in the bookmark area while the caret is elsewhere.
+    // Expected: one member of the conflict group remains expanded for access.
+    // Regression guard: the "Expand automatically" setting includes the rule
+    // that conflicted bookmarks should not all collapse into unreachable tabs.
+    QList<Bookmark> bookmarks{bm(64, 80), bm(96, 80)};
+    QVector<BookmarkLogic::BookmarkLayoutGeometry> geometry(2);
+    geometry[0] = {64, 60, 150, 72, 90, QRect(300, 60, 180, 90), true};
+    geometry[1] = {96, 80, 170, 92, 110, QRect(300, 80, 180, 90), true};
+
+    BookmarkLogic::BookmarkLayoutRequest request;
+    request.cursorOffset = 0;
+    request.expandAlways = true;
+
+    const BookmarkLogic::BookmarkLayoutResult result =
+        BookmarkLogic::computeLayout(bookmarks, geometry, request);
+
+    QCOMPARE(result.layout.value(0).isActive + result.layout.value(1).isActive, 1);
+    QCOMPARE(result.expandedBookmarkIdx, -1);
+}
+
+void BookmarkTests::autoExpandOffAllowsConflictGroupToRemainCollapsed()
+{
+    // Scenario: automatic expansion is disabled and two bookmark notes overlap
+    // visually, but neither is pinned, edited, or under the cursor.
+    // Expected: the conflict group is allowed to stay collapsed.
+    // Regression guard: conflict detection alone must not behave as if the
+    // "Expand automatically" preference were enabled.
+    QList<Bookmark> bookmarks{bm(64, 80), bm(96, 80)};
+    QVector<BookmarkLogic::BookmarkLayoutGeometry> geometry(2);
+    geometry[0] = {64, 60, 150, 72, 90, QRect(300, 60, 180, 90), true};
+    geometry[1] = {96, 80, 170, 92, 110, QRect(300, 80, 180, 90), true};
+
+    BookmarkLogic::BookmarkLayoutRequest request;
+    request.cursorOffset = 0;
+
+    const BookmarkLogic::BookmarkLayoutResult result =
+        BookmarkLogic::computeLayout(bookmarks, geometry, request);
+
+    QVERIFY(!result.layout.value(0).isActive);
+    QVERIFY(!result.layout.value(1).isActive);
+    QVERIFY(result.layout.value(0).inConflict);
+    QVERIFY(result.layout.value(1).inConflict);
 }
 
 void BookmarkTests::layoutKeepsRangeEditActiveInConflictGroup()
