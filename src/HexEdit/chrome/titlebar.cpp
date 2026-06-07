@@ -103,6 +103,14 @@ TitleBar::TitleBar(QWidget *parent, const TitleBarOptions &options)
     // 16 px symbolic icons are the standard for header-bar buttons on GNOME/KDE.
     const int btnSz        = barH - (m_options.compact ? 8 : 12);
     const int btnIconSz    = 16;           // window-control glyphs / standard icons
+#ifdef Q_OS_WIN
+    const bool roundedAppButtons = m_options.roundedAppButtonsOnWindows;
+    const QSize appButtonSize(roundedAppButtons ? btnSz : 40,
+                              roundedAppButtons ? btnSz : barH);
+#else
+    const bool roundedAppButtons = true;
+    const QSize appButtonSize(btnSz, btnSz);
+#endif
     // On the compact Windows bar (40 px) the menu-button icons are one step
     // smaller than the window-control glyphs.  On Linux the bar is taller
     // (46 px) so both sets of icons use the same size.
@@ -157,11 +165,7 @@ TitleBar::TitleBar(QWidget *parent, const TitleBarOptions &options)
 #endif
     m_hamburger->setFocusPolicy(Qt::NoFocus);
     m_hamburger->setAutoRaise(true);
-#ifdef Q_OS_WIN
-    m_hamburger->setFixedSize(40, barH);
-#else
-    m_hamburger->setFixedSize(btnSz, btnSz);
-#endif
+    m_hamburger->setFixedSize(appButtonSize);
     m_hamburger->setIconSize(QSize(menuBtnIconSz, menuBtnIconSz));
     m_hamburger->setMenu(m_menu);
     m_hamburger->setPopupMode(QToolButton::InstantPopup);
@@ -184,11 +188,7 @@ TitleBar::TitleBar(QWidget *parent, const TitleBarOptions &options)
         m_searchBtn->setText("🔍");
     m_searchBtn->setFocusPolicy(Qt::NoFocus);
     m_searchBtn->setAutoRaise(true);
-#ifdef Q_OS_WIN
-    m_searchBtn->setFixedSize(40, barH);
-#else
-    m_searchBtn->setFixedSize(btnSz, btnSz);
-#endif
+    m_searchBtn->setFixedSize(appButtonSize);
     m_searchBtn->setIconSize(QSize(menuBtnIconSz, menuBtnIconSz));
     m_searchBtn->setMenu(m_searchMenu);
     m_searchBtn->setPopupMode(QToolButton::InstantPopup);
@@ -205,11 +205,7 @@ TitleBar::TitleBar(QWidget *parent, const TitleBarOptions &options)
     m_fileInfoBtn->setFocusPolicy(Qt::NoFocus);
     m_fileInfoBtn->setAutoRaise(true);
     m_fileInfoBtn->setCheckable(true);
-#ifdef Q_OS_WIN
-    m_fileInfoBtn->setFixedSize(40, barH);
-#else
-    m_fileInfoBtn->setFixedSize(btnSz, btnSz);
-#endif
+    m_fileInfoBtn->setFixedSize(appButtonSize);
     m_fileInfoBtn->setIconSize(QSize(menuBtnIconSz, menuBtnIconSz));
     m_fileInfoBtn->setVisible(m_options.showFileInfoButton);
     connect(m_fileInfoBtn, &QToolButton::clicked, this, &TitleBar::fileInfoToggled);
@@ -262,11 +258,7 @@ TitleBar::TitleBar(QWidget *parent, const TitleBarOptions &options)
 #endif
     m_viewBtn->setFocusPolicy(Qt::NoFocus);
     m_viewBtn->setAutoRaise(true);
-#ifdef Q_OS_WIN
-    m_viewBtn->setFixedSize(40, barH);
-#else
-    m_viewBtn->setFixedSize(btnSz, btnSz);
-#endif
+    m_viewBtn->setFixedSize(appButtonSize);
     m_viewBtn->setIconSize(QSize(menuBtnIconSz, menuBtnIconSz));
     m_viewBtn->setMenu(m_viewMenu);
     m_viewBtn->setPopupMode(QToolButton::InstantPopup);
@@ -277,22 +269,22 @@ TitleBar::TitleBar(QWidget *parent, const TitleBarOptions &options)
     // ── Main layout ───────────────────────────────────────────────────────
     auto *layout = new QHBoxLayout(this);
 #ifdef Q_OS_WIN
-    // Flush to the window frame edges so the leftmost and rightmost button hover
-    // backgrounds extend all the way to the frame border with no gap.
-    layout->setContentsMargins(0, 0, 0, 0);
+    // Caption buttons stay flush to the right edge.  Rounded app buttons get
+    // the same left breathing room as Linux header-bar buttons.
+    layout->setContentsMargins(roundedAppButtons ? 6 : 0, 0, 0, 0);
 #else
     layout->setContentsMargins(6, 0, 6, 0);
 #endif
     layout->setSpacing(4);
-    layout->addWidget(m_hamburger);
+    layout->addWidget(m_hamburger, 0, Qt::AlignVCenter);
     layout->addWidget(leftGroup);
     if (!m_options.leftAlignTitle)
         layout->addStretch();
     layout->addWidget(m_title);
     layout->addStretch();
-    layout->addWidget(m_searchBtn);
-    layout->addWidget(m_fileInfoBtn);
-    layout->addWidget(m_viewBtn);
+    layout->addWidget(m_searchBtn, 0, Qt::AlignVCenter);
+    layout->addWidget(m_fileInfoBtn, 0, Qt::AlignVCenter);
+    layout->addWidget(m_viewBtn, 0, Qt::AlignVCenter);
     layout->addWidget(rightGroup);
 
     // WindowTitleChange is delivered to the top-level window, not to child
@@ -449,6 +441,8 @@ void TitleBar::refreshStylesheet()
             background: transparent;
             color: %2;
             font-size: 13px;
+            margin: 0px;
+            padding: 0px;
         }
         #TitleBar QToolButton:hover   { background: %3; }
         #TitleBar QToolButton:pressed { background: %4; }
@@ -463,12 +457,16 @@ void TitleBar::refreshStylesheet()
             QString::number(m_btnRadius)));
 
 #ifdef Q_OS_WIN
-    setStyleSheet(styleSheet() + R"(
-        #TitleBar QToolButton#hamburger,
-        #TitleBar QToolButton#searchBtn,
-        #TitleBar QToolButton#fileInfoBtn,
-        #TitleBar QToolButton#viewMenu  { border-radius: 0; }
+    if (!m_options.roundedAppButtonsOnWindows) {
+        setStyleSheet(styleSheet() + R"(
+            #TitleBar QToolButton#hamburger,
+            #TitleBar QToolButton#searchBtn,
+            #TitleBar QToolButton#fileInfoBtn,
+            #TitleBar QToolButton#viewMenu  { border-radius: 0; }
+        )");
+    }
 
+    setStyleSheet(styleSheet() + R"(
         #TitleBar QToolButton#close,
         #TitleBar QToolButton#minimize,
         #TitleBar QToolButton#maximize  {

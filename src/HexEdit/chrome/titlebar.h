@@ -29,6 +29,7 @@ struct TitleBarOptions
     bool allowMaximizeOnDoubleClick = true;
     bool compact = false;
     bool leftAlignTitle = false;
+    bool roundedAppButtonsOnWindows = true;
 };
 
 class TitleBar : public QWidget
