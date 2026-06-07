@@ -13,8 +13,7 @@ size_w endExclusive(const Bookmark &bm)
     return bm.offset > (size_w)-1 - length ? (size_w)-1 : bm.offset + length;
 }
 
-int rangeDragDelta(const QRect &valueRect, const QPoint &dragStart, const QPoint &pos,
-                   int bytesPerLine)
+int rangeDragDelta(const QRect &valueRect, const QPoint &dragStart, const QPoint &pos, int bytesPerLine)
 {
     if (!valueRect.isValid())
         return 0;
@@ -35,7 +34,7 @@ int rangeDragDelta(const QRect &valueRect, const QPoint &dragStart, const QPoint
 
     const int lineLength = qMax(1, bytesPerLine);
 
-    int horizontalDelta = 0;
+    int       horizontalDelta    = 0;
     const int horizontalDistance = pos.x() - dragStart.x();
     if (horizontalDistance < 0)
     {
@@ -59,23 +58,23 @@ int rangeDragDelta(const QRect &valueRect, const QPoint &dragStart, const QPoint
     return horizontalDelta + verticalDelta;
 }
 
-void clampToNonNestedGap(const QList<Bookmark> &bookmarks, int editedIndex, RangeField field,
-                         Bookmark &updated, size_w fileSize, bool nestedAllowed)
+void clampToNonNestedGap(const QList<Bookmark> &bookmarks, int editedIndex, RangeField field, Bookmark &updated,
+                         size_w fileSize, bool nestedAllowed)
 {
     if (nestedAllowed)
         return;
 
     const size_w updatedEnd = endExclusive(updated);
-    size_w minOffset = 0;
-    size_w maxEnd = fileSize > 0 ? fileSize : (size_w)-1;
+    size_w       minOffset  = 0;
+    size_w       maxEnd     = fileSize > 0 ? fileSize : (size_w)-1;
 
     for (int i = 0; i < bookmarks.size(); ++i)
     {
         if (i == editedIndex)
             continue;
 
-        const Bookmark &other = bookmarks[i];
-        const size_w otherEnd = endExclusive(other);
+        const Bookmark &other    = bookmarks[i];
+        const size_w    otherEnd = endExclusive(other);
 
         if (field == RangeField::Offset)
         {
@@ -92,19 +91,15 @@ void clampToNonNestedGap(const QList<Bookmark> &bookmarks, int editedIndex, Rang
     if (field == RangeField::Offset)
     {
         const size_w maxOffset = updatedEnd > 0 ? updatedEnd - 1 : 0;
-        updated.offset = minOffset <= maxOffset
-                             ? qBound<size_w>(minOffset, updated.offset, maxOffset)
-                             : maxOffset;
-        updated.length =
-            qMax<size_w>(1, updatedEnd > updated.offset ? updatedEnd - updated.offset : 1);
+        updated.offset = minOffset <= maxOffset ? qBound<size_w>(minOffset, updated.offset, maxOffset) : maxOffset;
+        updated.length = qMax<size_w>(1, updatedEnd > updated.offset ? updatedEnd - updated.offset : 1);
     }
     else
     {
         const size_w desiredEnd = endExclusive(updated);
-        const size_w minEnd = updated.offset == (size_w)-1 ? (size_w)-1 : updated.offset + 1;
-        const size_w clampedEnd =
-            minEnd <= maxEnd ? qBound<size_w>(minEnd, desiredEnd, maxEnd) : minEnd;
-        updated.length = qMax<size_w>(1, clampedEnd - updated.offset);
+        const size_w minEnd     = updated.offset == (size_w)-1 ? (size_w)-1 : updated.offset + 1;
+        const size_w clampedEnd = minEnd <= maxEnd ? qBound<size_w>(minEnd, desiredEnd, maxEnd) : minEnd;
+        updated.length          = qMax<size_w>(1, clampedEnd - updated.offset);
     }
 
     if (fileSize > 0 && updated.offset < fileSize)
@@ -146,8 +141,7 @@ HighlightChoice chooseHighlight(const QList<Bookmark> &highlights, size_w pos, b
         {
             choice.hasModified = true;
         }
-        else if (choice.bookmarkIndex < 0 ||
-                 (bm._rangeEditing && !highlights[choice.bookmarkIndex]._rangeEditing) ||
+        else if (choice.bookmarkIndex < 0 || (bm._rangeEditing && !highlights[choice.bookmarkIndex]._rangeEditing) ||
                  (bm._rangeEditing == highlights[choice.bookmarkIndex]._rangeEditing &&
                   bm.length < highlights[choice.bookmarkIndex].length))
         {
@@ -162,9 +156,8 @@ bool shouldClearRangeEditFromCollapsedDraw(int bookmarkIndex, int inlineRangeInd
     return bookmarkIndex == inlineRangeIndex && !mouseHeld;
 }
 
-int visualPriority(int bookmarkIndex, int rangeEditingIndex, int noteEditorIndex,
-                   bool noteEditorVisible, int expandedIndex, int surfacedIndex,
-                   bool containsCursor)
+int visualPriority(int bookmarkIndex, int rangeEditingIndex, int noteEditorIndex, bool noteEditorVisible,
+                   int expandedIndex, int surfacedIndex, bool containsCursor)
 {
     if (bookmarkIndex == rangeEditingIndex)
         return 5;
@@ -179,16 +172,15 @@ int visualPriority(int bookmarkIndex, int rangeEditingIndex, int noteEditorIndex
     return 0;
 }
 
-BookmarkLayoutResult computeLayout(const QList<Bookmark> &bookmarks,
-                                   const QVector<BookmarkLayoutGeometry> &geometry,
+BookmarkLayoutResult computeLayout(const QList<Bookmark> &bookmarks, const QVector<BookmarkLayoutGeometry> &geometry,
                                    const BookmarkLayoutRequest &request)
 {
-    const int n = bookmarks.size();
+    const int            n = bookmarks.size();
     BookmarkLayoutResult result;
     result.layout.resize(n);
     result.activeFlags.resize(n);
-    result.expandedBookmarkIdx = request.expandedBookmarkIdx;
-    result.surfacedBookmarkIdx = request.surfacedBookmarkIdx;
+    result.expandedBookmarkIdx    = request.expandedBookmarkIdx;
+    result.surfacedBookmarkIdx    = request.surfacedBookmarkIdx;
     result.inlineRangeBookmarkIdx = request.inlineRangeBookmarkIdx;
     for (int i = 0; i < n; ++i)
         result.activeFlags[i] = bookmarks[i]._active;
@@ -226,7 +218,9 @@ BookmarkLayoutResult computeLayout(const QList<Bookmark> &bookmarks,
     }
 
     auto groupContains = [](const QVector<int> &group, int idx)
-    { return std::binary_search(group.begin(), group.end(), idx); };
+    {
+        return std::binary_search(group.begin(), group.end(), idx);
+    };
     auto isInConflictGroup = [&](int idx)
     {
         if (idx < 0 || idx >= n)
@@ -275,13 +269,12 @@ BookmarkLayoutResult computeLayout(const QList<Bookmark> &bookmarks,
     // side-effect-free answer while normal painting can apply the returned state.
     if (request.allowStateUpdates && !request.mouseHeld)
     {
-        int cursorIdx = -1;
+        int    cursorIdx = -1;
         size_w cursorLen = (size_w)-1;
         for (int j = 0; j < n; ++j)
         {
             const Bookmark &bm = bookmarks[j];
-            if (request.cursorOffset >= bm.offset && request.cursorOffset < endExclusive(bm) &&
-                bm.length < cursorLen)
+            if (request.cursorOffset >= bm.offset && request.cursorOffset < endExclusive(bm) && bm.length < cursorLen)
             {
                 cursorIdx = j;
                 cursorLen = bm.length;
@@ -303,8 +296,7 @@ BookmarkLayoutResult computeLayout(const QList<Bookmark> &bookmarks,
         }
         else if (result.expandedBookmarkIdx >= 0 && !cursorInPinned)
         {
-            const bool keepGroupedExpansion =
-                request.expandAlways && isInConflictGroup(result.expandedBookmarkIdx);
+            const bool keepGroupedExpansion = request.expandAlways && isInConflictGroup(result.expandedBookmarkIdx);
             if (!keepGroupedExpansion)
                 result.expandedBookmarkIdx = -1;
         }
@@ -314,12 +306,12 @@ BookmarkLayoutResult computeLayout(const QList<Bookmark> &bookmarks,
     {
         if (group.size() == 1)
         {
-            const int i = group.first();
-            const Bookmark &bm = bookmarks[i];
-            const bool rangeActive = (activeRangeIdx == i);
-            const bool pinned = (result.expandedBookmarkIdx == i);
-            const bool inRange = bookmarkContainsCursor(i);
-            const bool cursorExpand = request.expandCursor && !request.mouseHeld && inRange;
+            const int       i            = group.first();
+            const Bookmark &bm           = bookmarks[i];
+            const bool      rangeActive  = (activeRangeIdx == i);
+            const bool      pinned       = (result.expandedBookmarkIdx == i);
+            const bool      inRange      = bookmarkContainsCursor(i);
+            const bool      cursorExpand = request.expandCursor && !request.mouseHeld && inRange;
             if (cursorExpand && request.allowStateUpdates)
                 result.expandedBookmarkIdx = i;
             const bool active = rangeActive || pinned || request.expandLone || cursorExpand;
@@ -328,7 +320,7 @@ BookmarkLayoutResult computeLayout(const QList<Bookmark> &bookmarks,
             continue;
         }
 
-        int winnerIdx = -1;
+        int    winnerIdx = -1;
         size_w winnerLen = (size_w)-1;
 
         if (groupContains(group, request.noteEditorIdx) && request.noteEditorVisible)
@@ -382,7 +374,7 @@ BookmarkLayoutResult computeLayout(const QList<Bookmark> &bookmarks,
             }
         }
 
-        int surfacedIdx = -1;
+        int    surfacedIdx = -1;
         size_w surfacedLen = (size_w)-1;
         if (winnerIdx < 0 && !request.mouseHeld)
         {
@@ -403,8 +395,7 @@ BookmarkLayoutResult computeLayout(const QList<Bookmark> &bookmarks,
         if (winnerIdx < 0 && request.expandAlways)
         {
             const int activeIdx = activeInGroup(group);
-            winnerIdx =
-                activeIdx >= 0 ? activeIdx : (surfacedIdx >= 0 ? surfacedIdx : group.first());
+            winnerIdx           = activeIdx >= 0 ? activeIdx : (surfacedIdx >= 0 ? surfacedIdx : group.first());
             if (request.allowStateUpdates)
                 setActiveInGroup(group, winnerIdx);
         }
@@ -414,7 +405,7 @@ BookmarkLayoutResult computeLayout(const QList<Bookmark> &bookmarks,
         for (int j : group)
         {
             const bool active = (winnerIdx != -1 && j == winnerIdx);
-            bool hidden = false;
+            bool       hidden = false;
             if (!active && winnerIdx >= 0)
             {
                 hidden = (geometry[j].tabTop < activeBot) && (geometry[j].tabBot > activeTop);
@@ -430,9 +421,9 @@ BookmarkLayoutResult computeLayout(const QList<Bookmark> &bookmarks,
 
     struct ActiveStrip
     {
-        int idx;
+        int   idx;
         QRect rect;
-        int priority;
+        int   priority;
     };
 
     QVector<ActiveStrip> activeStrips;
@@ -443,8 +434,7 @@ BookmarkLayoutResult computeLayout(const QList<Bookmark> &bookmarks,
         activeStrips.append(
             {k, geometry[k].paintedFullRect,
              visualPriority(k, activeRangeIdx, request.noteEditorIdx, request.noteEditorVisible,
-                            result.expandedBookmarkIdx, result.surfacedBookmarkIdx,
-                            bookmarkContainsCursor(k))});
+                            result.expandedBookmarkIdx, result.surfacedBookmarkIdx, bookmarkContainsCursor(k))});
     }
     std::stable_sort(activeStrips.begin(), activeStrips.end(),
                      [](const ActiveStrip &a, const ActiveStrip &b)
@@ -457,7 +447,7 @@ BookmarkLayoutResult computeLayout(const QList<Bookmark> &bookmarks,
                      });
 
     QVector<ActiveStrip> keptActive;
-    auto overlapsKeptActive = [&](const QRect &rect)
+    auto                 overlapsKeptActive = [&](const QRect &rect)
     {
         for (const ActiveStrip &kept : keptActive)
         {

@@ -20,19 +20,19 @@
 #include <algorithm>
 
 // Geometry constants — shared by noteStripGeom, drawNoteStrip, and the editor.
-static constexpr int kNoteTriW = 12;    // triangle depth (px)
-static constexpr int kNotePadH = 8;     // horizontal text padding (px)
-static constexpr int kNotePadV = 4;     // vertical padding (px)
-static constexpr int kNoteRadius = 6;   // rounded corner radius
-static constexpr int kNoteMaxW = 220;   // max strip width (px)
-static constexpr int kNoteBtnSz = 16;   // button icon size (px)
-static constexpr int kNoteBtnGap = 4;   // gap between text and close button (px)
-static constexpr int kNoteRangePad = 5; // gap between note text and range label (px)
-static constexpr int kBookmarkAreaBtnSz = 64;
-static constexpr int kRangeStepperGap = 2;
+static constexpr int kNoteTriW            = 12;  // triangle depth (px)
+static constexpr int kNotePadH            = 8;   // horizontal text padding (px)
+static constexpr int kNotePadV            = 4;   // vertical padding (px)
+static constexpr int kNoteRadius          = 6;   // rounded corner radius
+static constexpr int kNoteMaxW            = 220; // max strip width (px)
+static constexpr int kNoteBtnSz           = 16;  // button icon size (px)
+static constexpr int kNoteBtnGap          = 4;   // gap between text and close button (px)
+static constexpr int kNoteRangePad        = 5;   // gap between note text and range label (px)
+static constexpr int kBookmarkAreaBtnSz   = 64;
+static constexpr int kRangeStepperGap     = 2;
 static constexpr int kRangeStepperButtonW = 26;
-static constexpr int kRangeStepperH = 22;
-static constexpr int kRangeStepperW = kRangeStepperButtonW * 2 + 1;
+static constexpr int kRangeStepperH       = 22;
+static constexpr int kRangeStepperW       = kRangeStepperButtonW * 2 + 1;
 
 static QTextDocument *makeNoteTextDoc(const QString &text, int width, const QFont &font)
 {
@@ -49,16 +49,14 @@ static QTextDocument *makeNoteTextDoc(const QString &text, int width, const QFon
 
 static QString bookmarkOffsetText(size_w offset)
 {
-    return QStringLiteral("0x") +
-           QString::number(offset, 16).toUpper().rightJustified(8, QLatin1Char('0'));
+    return QStringLiteral("0x") + QString::number(offset, 16).toUpper().rightJustified(8, QLatin1Char('0'));
 }
 
 static QString bookmarkLengthText(size_w length)
 {
     const size_w shownLength = qMax<size_w>(1, length);
-    return QStringLiteral("(") + QString::number(shownLength) +
-           QStringLiteral(" ") + (shownLength == 1 ? QStringLiteral("byte") : QStringLiteral("bytes")) +
-           QStringLiteral(")");
+    return QStringLiteral("(") + QString::number(shownLength) + QStringLiteral(" ") +
+           (shownLength == 1 ? QStringLiteral("byte") : QStringLiteral("bytes")) + QStringLiteral(")");
 }
 
 static int bookmarkAreaButtonIndex(BookmarkAreaButton button)
@@ -84,11 +82,8 @@ static QString bookmarkAreaButtonFallbackText(BookmarkAreaButton button)
     return button == BOOKMARK_ADD ? QStringLiteral("+") : QStringLiteral("*");
 }
 
-static void drawTintedIconOrFallbackText(QPainter &painter,
-                                         const QRect &rect,
-                                         const QString &iconName,
-                                         const QColor &colour,
-                                         const QString &fallbackText)
+static void drawTintedIconOrFallbackText(QPainter &painter, const QRect &rect, const QString &iconName,
+                                         const QColor &colour, const QString &fallbackText)
 {
     QIcon icon(QStringLiteral(":/icons/actions/") + iconName + QStringLiteral(".svg"));
     if (icon.isNull())
@@ -121,7 +116,7 @@ static void drawTintedIconOrFallbackText(QPainter &painter,
 // grow and shrink consistently when the user changes the hex display font.
 QFont HexView::noteFont() const
 {
-    QFont f = QApplication::font();
+    QFont     f  = QApplication::font();
     const int px = m_font.pixelSize();
     if (px > 0)
     {
@@ -190,9 +185,8 @@ void HexView::setBookmarks(const QList<Bookmark> &bookmarks)
 void HexView::addBookmark(const Bookmark &bm)
 {
     // Sorted insert so the list stays in offset order without a full sort pass.
-    const auto pos = std::lower_bound(m_bookmarks.begin(), m_bookmarks.end(),
-                                      bm, bmOffsetLess);
-    const int insertIdx = (int)(pos - m_bookmarks.begin());
+    const auto pos       = std::lower_bound(m_bookmarks.begin(), m_bookmarks.end(), bm, bmOffsetLess);
+    const int  insertIdx = (int)(pos - m_bookmarks.begin());
     m_bookmarks.insert(pos, bm);
 
     // Adjust pin-state indices for the insertion, exactly as removeBookmark
@@ -215,9 +209,8 @@ void HexView::addBookmark(const Bookmark &bm)
     if (m_expandedBookmarkIdx >= 0 && m_expandedBookmarkIdx < m_bookmarks.size() && m_expandedBookmarkIdx != insertIdx)
     {
         const Bookmark &pinned = m_bookmarks[m_expandedBookmarkIdx];
-        const Bookmark &added = m_bookmarks[insertIdx];
-        if (added.offset < pinned.offset + pinned.length &&
-            added.offset + added.length > pinned.offset)
+        const Bookmark &added  = m_bookmarks[insertIdx];
+        if (added.offset < pinned.offset + pinned.length && added.offset + added.length > pinned.offset)
         {
             m_expandedBookmarkIdx = -1;
             m_surfacedBookmarkIdx = -1;
@@ -260,7 +253,7 @@ void HexView::replaceBookmark(int idx, const Bookmark &bm)
         return;
     closeNoteEditor(false); // sets m_noteEditorIdx = -1 before we re-sort
     const bool keepInline = (m_inlineRangeBookmarkIdx == idx);
-    m_bookmarks[idx] = bm;
+    m_bookmarks[idx]      = bm;
     if (keepInline)
     {
         // Offset/length dragging replaces the bookmark on every mouse move.
@@ -296,8 +289,7 @@ void HexView::replaceBookmark(int idx, const Bookmark &bm)
 
 void HexView::activateBookmarkRangeStepper(int idx, BookmarkRangeField field)
 {
-    if (kBookmarkRangeEditExperiment == BookmarkRangeEditExperiment::None ||
-        idx < 0 || idx >= m_bookmarks.size())
+    if (kBookmarkRangeEditExperiment == BookmarkRangeEditExperiment::None || idx < 0 || idx >= m_bookmarks.size())
     {
         clearBookmarkRangeStepper();
         return;
@@ -308,22 +300,20 @@ void HexView::activateBookmarkRangeStepper(int idx, BookmarkRangeField field)
     // mouse is held, so keep a dedicated transient marker on the Bookmark.
     for (Bookmark &bm : m_bookmarks)
         bm._rangeEditing = false;
-    m_bookmarks[idx]._rangeEditing = true;
-    m_inlineRangeBookmarkIdx = idx;
-    m_inlineRangeField = field;
-    m_hoverInlineRangeStep = HVHT_NONE;
-    m_pressedInlineRangeStep = HVHT_NONE;
-    m_inlineRangeDragActive = false;
-    m_inlineRangeDragValueRect = QRect();
+    m_bookmarks[idx]._rangeEditing    = true;
+    m_inlineRangeBookmarkIdx          = idx;
+    m_inlineRangeField                = field;
+    m_hoverInlineRangeStep            = HVHT_NONE;
+    m_pressedInlineRangeStep          = HVHT_NONE;
+    m_inlineRangeDragActive           = false;
+    m_inlineRangeDragValueRect        = QRect();
     m_inlineRangeDragOriginalBookmark = m_bookmarks[idx];
-    m_inlineRangeDragLastDelta = 0;
+    m_inlineRangeDragLastDelta        = 0;
     if (kBookmarkRangeEditExperiment == BookmarkRangeEditExperiment::DragAdjust)
     {
-        const NoteStripGeom geom = noteStripGeom(m_bookmarks[idx]);
-        m_inlineRangeDragValueRect = (field == BookmarkRangeField::Offset)
-                                         ? geom.offsetRect
-                                         : geom.lengthRect;
-        m_inlineRangeDragActive = m_inlineRangeDragValueRect.isValid();
+        const NoteStripGeom geom   = noteStripGeom(m_bookmarks[idx]);
+        m_inlineRangeDragValueRect = (field == BookmarkRangeField::Offset) ? geom.offsetRect : geom.lengthRect;
+        m_inlineRangeDragActive    = m_inlineRangeDragValueRect.isValid();
     }
     m_caretTimer.stop();
     m_caretVisible = false;
@@ -336,13 +326,13 @@ void HexView::clearBookmarkRangeStepper()
     const bool wasActive = (m_inlineRangeBookmarkIdx >= 0);
     for (Bookmark &bm : m_bookmarks)
         bm._rangeEditing = false;
-    m_inlineRangeBookmarkIdx = -1;
-    m_hoverInlineRangeStep = HVHT_NONE;
-    m_pressedInlineRangeStep = HVHT_NONE;
-    m_inlineRangeDragActive = false;
-    m_inlineRangeDragValueRect = QRect();
+    m_inlineRangeBookmarkIdx          = -1;
+    m_hoverInlineRangeStep            = HVHT_NONE;
+    m_pressedInlineRangeStep          = HVHT_NONE;
+    m_inlineRangeDragActive           = false;
+    m_inlineRangeDragValueRect        = QRect();
     m_inlineRangeDragOriginalBookmark = Bookmark();
-    m_inlineRangeDragLastDelta = 0;
+    m_inlineRangeDragLastDelta        = 0;
     if (wasActive && (hasFocus() || viewport()->hasFocus()))
     {
         m_caretVisible = true;
@@ -367,11 +357,9 @@ void HexView::clampBookmarkRangeToNonNestedGap(int idx, Bookmark &updated) const
     // Length edit: the start is anchored, so only the right edge can move.  It
     // may extend right until it touches the next/overlapping neighbour's start.
     // Shrinking is always safe.
-    const auto field = m_inlineRangeField == BookmarkRangeField::Offset
-                           ? BookmarkLogic::RangeField::Offset
-                           : BookmarkLogic::RangeField::Length;
-    BookmarkLogic::clampToNonNestedGap(m_bookmarks, idx, field, updated, size(),
-                                       checkStyle(HVS_BOOKMARK_NESTED));
+    const auto field = m_inlineRangeField == BookmarkRangeField::Offset ? BookmarkLogic::RangeField::Offset
+                                                                        : BookmarkLogic::RangeField::Length;
+    BookmarkLogic::clampToNonNestedGap(m_bookmarks, idx, field, updated, size(), checkStyle(HVS_BOOKMARK_NESTED));
 }
 
 void HexView::stepActiveBookmarkRange(int delta)
@@ -384,16 +372,15 @@ void HexView::stepActiveBookmarkRange(int delta)
         return;
     }
 
-    Bookmark updated = m_bookmarks[idx];
+    Bookmark     updated  = m_bookmarks[idx];
     const size_w fileSize = size();
 
     if (m_inlineRangeField == BookmarkRangeField::Offset)
     {
         const size_w oldOffset = updated.offset;
         const size_w oldLength = qMax<size_w>(1, updated.length);
-        const size_w oldEnd = oldOffset == (size_w)-1 || oldLength > (size_w)-1 - oldOffset
-                                  ? (size_w)-1
-                                  : oldOffset + oldLength;
+        const size_w oldEnd =
+            oldOffset == (size_w)-1 || oldLength > (size_w)-1 - oldOffset ? (size_w)-1 : oldOffset + oldLength;
 
         if (delta < 0)
         {
@@ -402,7 +389,7 @@ void HexView::stepActiveBookmarkRange(int delta)
         else
         {
             const size_w maxOffset = fileSize > 0 ? qMin(fileSize - 1, oldEnd - 1) : fileSize;
-            updated.offset = qMin(oldOffset + 1, maxOffset);
+            updated.offset         = qMin(oldOffset + 1, maxOffset);
         }
 
         if (fileSize > 0)
@@ -410,8 +397,7 @@ void HexView::stepActiveBookmarkRange(int delta)
             if (updated.offset >= fileSize)
                 updated.length = 1;
             else
-                updated.length = qMax<size_w>(1, qMin(oldEnd - updated.offset,
-                                                      fileSize - updated.offset));
+                updated.length = qMax<size_w>(1, qMin(oldEnd - updated.offset, fileSize - updated.offset));
         }
         else
         {
@@ -446,10 +432,7 @@ void HexView::stepActiveBookmarkRange(int delta)
 
 int HexView::bookmarkRangeDragDelta(const QPoint &pos) const
 {
-    return BookmarkLogic::rangeDragDelta(m_inlineRangeDragValueRect,
-                                         m_dragStartPos,
-                                         pos,
-                                         m_nBytesPerLine);
+    return BookmarkLogic::rangeDragDelta(m_inlineRangeDragValueRect, m_dragStartPos, pos, m_nBytesPerLine);
 }
 
 void HexView::updateBookmarkRangeDrag(const QPoint &pos)
@@ -462,7 +445,7 @@ void HexView::updateBookmarkRangeDrag(const QPoint &pos)
         {
             if (m_bookmarks[i]._rangeEditing)
             {
-                idx = i;
+                idx                      = i;
                 m_inlineRangeBookmarkIdx = i;
                 break;
             }
@@ -480,45 +463,42 @@ void HexView::updateBookmarkRangeDrag(const QPoint &pos)
         return;
     m_inlineRangeDragLastDelta = delta;
 
-    Bookmark updated = m_inlineRangeDragOriginalBookmark;
+    Bookmark     updated  = m_inlineRangeDragOriginalBookmark;
     const size_w fileSize = size();
 
     if (m_inlineRangeField == BookmarkRangeField::Offset)
     {
-        const size_w originalOffset = updated.offset;
-        const size_w originalLength = qMax<size_w>(1, updated.length);
-        const size_w maxOffset = fileSize > 0 ? fileSize - 1 : (size_w)-1;
+        const size_w originalOffset        = updated.offset;
+        const size_w originalLength        = qMax<size_w>(1, updated.length);
+        const size_w maxOffset             = fileSize > 0 ? fileSize - 1 : (size_w)-1;
         const size_w boundedOriginalOffset = qMin(originalOffset, maxOffset);
-        size_w newOffset = boundedOriginalOffset;
+        size_w       newOffset             = boundedOriginalOffset;
 
         if (delta < 0)
         {
             const size_w amount = (size_w)(-delta);
-            newOffset = amount > boundedOriginalOffset ? 0 : boundedOriginalOffset - amount;
+            newOffset           = amount > boundedOriginalOffset ? 0 : boundedOriginalOffset - amount;
         }
         else
         {
-            const size_w amount = (size_w)delta;
+            const size_w amount             = (size_w)delta;
             const size_w maxOffsetForLength = originalLength - 1 > maxOffset - boundedOriginalOffset
                                                   ? maxOffset
                                                   : boundedOriginalOffset + originalLength - 1;
-            newOffset = amount > maxOffsetForLength - boundedOriginalOffset
-                            ? maxOffsetForLength
-                            : boundedOriginalOffset + amount;
+            newOffset                       = amount > maxOffsetForLength - boundedOriginalOffset ? maxOffsetForLength
+                                                                                                  : boundedOriginalOffset + amount;
         }
 
         updated.offset = newOffset;
         if (newOffset < boundedOriginalOffset)
         {
             const size_w moved = boundedOriginalOffset - newOffset;
-            updated.length = moved > (size_w)-1 - originalLength
-                                 ? (size_w)-1
-                                 : originalLength + moved;
+            updated.length     = moved > (size_w)-1 - originalLength ? (size_w)-1 : originalLength + moved;
         }
         else
         {
             const size_w moved = newOffset - boundedOriginalOffset;
-            updated.length = moved >= originalLength ? 1 : originalLength - moved;
+            updated.length     = moved >= originalLength ? 1 : originalLength - moved;
         }
 
         if (fileSize > 0)
@@ -535,14 +515,12 @@ void HexView::updateBookmarkRangeDrag(const QPoint &pos)
         if (delta < 0)
         {
             const size_w amount = (size_w)(-delta);
-            updated.length = amount >= originalLength ? 1 : originalLength - amount;
+            updated.length      = amount >= originalLength ? 1 : originalLength - amount;
         }
         else
         {
             const size_w amount = (size_w)delta;
-            updated.length = amount > (size_w)-1 - originalLength
-                                 ? (size_w)-1
-                                 : originalLength + amount;
+            updated.length      = amount > (size_w)-1 - originalLength ? (size_w)-1 : originalLength + amount;
         }
 
         if (fileSize > 0)
@@ -576,16 +554,16 @@ int HexView::findBookmark(size_w startoff, size_w endoff) const
 
 void HexView::setBookmarkButtonLayout(const BookmarkButtonLayout &layout)
 {
-    m_bookmarkButtonLayout = layout;
-    m_hoverOnClose = false;
-    m_hoverOnEdit = false;
-    m_hoverOnOffset = false;
-    m_hoverOnLength = false;
-    m_pressedOnClose = false;
-    m_pressedOnEdit = false;
-    m_pressedOnOffset = false;
-    m_pressedOnLength = false;
-    m_hoverInlineRangeStep = HVHT_NONE;
+    m_bookmarkButtonLayout   = layout;
+    m_hoverOnClose           = false;
+    m_hoverOnEdit            = false;
+    m_hoverOnOffset          = false;
+    m_hoverOnLength          = false;
+    m_pressedOnClose         = false;
+    m_pressedOnEdit          = false;
+    m_pressedOnOffset        = false;
+    m_pressedOnLength        = false;
+    m_hoverInlineRangeStep   = HVHT_NONE;
     m_pressedInlineRangeStep = HVHT_NONE;
     viewport()->update();
 }
@@ -606,9 +584,7 @@ QRect HexView::bookmarkRangeStepperRect(const NoteStripGeom &geom, BookmarkRange
     if (!geom.valid)
         return QRect();
 
-    const QRect valueRect = field == BookmarkRangeField::Offset
-                                ? geom.offsetRect
-                                : geom.lengthRect;
+    const QRect valueRect = field == BookmarkRangeField::Offset ? geom.offsetRect : geom.lengthRect;
     if (!valueRect.isValid())
         return QRect();
 
@@ -618,8 +594,8 @@ QRect HexView::bookmarkRangeStepperRect(const NoteStripGeom &geom, BookmarkRange
         return QRect();
 
     const int preferredX = valueRect.right() + 1 - kRangeStepperW;
-    const int x = qBound(minX, preferredX, maxX);
-    const int y = valueRect.bottom() + 1 + kRangeStepperGap;
+    const int x          = qBound(minX, preferredX, maxX);
+    const int y          = valueRect.bottom() + 1 + kRangeStepperGap;
 
     return QRect(x, y, kRangeStepperW, kRangeStepperH);
 }
@@ -634,8 +610,8 @@ HitTestRegion HexView::hitTestBookmarkRangeStepper(const NoteStripGeom &geom, in
         return HVHT_NONE;
 
     const QRect decRect(stepper.left(), stepper.top(), kRangeStepperButtonW, stepper.height());
-    const QRect incRect(stepper.left() + kRangeStepperButtonW + 1, stepper.top(),
-                        kRangeStepperButtonW, stepper.height());
+    const QRect incRect(stepper.left() + kRangeStepperButtonW + 1, stepper.top(), kRangeStepperButtonW,
+                        stepper.height());
     if (decRect.contains(x, y))
         return HVHT_BOOKMARK_RANGE_DEC;
     if (incRect.contains(x, y))
@@ -645,8 +621,7 @@ HitTestRegion HexView::hitTestBookmarkRangeStepper(const NoteStripGeom &geom, in
 
 int HexView::bookmarkAreaCenterX() const
 {
-    if (!m_pDataSeq || m_nBytesPerLine <= 0 ||
-        m_nFontWidth <= 0 || m_nFontHeight <= 0)
+    if (!m_pDataSeq || m_nBytesPerLine <= 0 || m_nFontWidth <= 0 || m_nFontHeight <= 0)
         return -1;
 
     const int viewW = viewport()->width();
@@ -654,15 +629,15 @@ int HexView::bookmarkAreaCenterX() const
         return -1;
 
     const int asciiRight = logToPhyXCoord(m_nBytesPerLine, 1);
-    const int minX = asciiRight + qMax(6, m_nFontWidth);
+    const int minX       = asciiRight + qMax(6, m_nFontWidth);
     if (minX + kBookmarkAreaBtnSz > viewW)
         return -1;
 
-    constexpr int kMargin = 12;
-    const int noteLeft = asciiRight + m_nFontWidth * 4;
-    const int noteRight = noteLeft + kNoteTriW + kNoteMaxW;
-    const int preferredX = noteLeft + (noteRight - noteLeft - kBookmarkAreaBtnSz) / 2;
-    const int maxX = qMax(minX, viewW - kBookmarkAreaBtnSz - kMargin);
+    constexpr int kMargin    = 12;
+    const int     noteLeft   = asciiRight + m_nFontWidth * 4;
+    const int     noteRight  = noteLeft + kNoteTriW + kNoteMaxW;
+    const int     preferredX = noteLeft + (noteRight - noteLeft - kBookmarkAreaBtnSz) / 2;
+    const int     maxX       = qMax(minX, viewW - kBookmarkAreaBtnSz - kMargin);
     return qBound(minX, preferredX, maxX) + kBookmarkAreaBtnSz / 2;
 }
 
@@ -672,10 +647,10 @@ int HexView::bookmarkRangeMidpointY(size_w offset, size_w length) const
         return 0;
 
     const size_w startLine = offset / (size_w)m_nBytesPerLine;
-    const int startY = (int)((qint64)startLine - (qint64)m_nVScrollPos) * m_nFontHeight;
+    const int    startY    = (int)((qint64)startLine - (qint64)m_nVScrollPos) * m_nFontHeight;
     const size_w endOffset = offset + (length > 0 ? length - 1 : 0);
-    const int endLine = (int)(endOffset / (size_w)m_nBytesPerLine);
-    const int numLines = endLine - (int)startLine + 1;
+    const int    endLine   = (int)(endOffset / (size_w)m_nBytesPerLine);
+    const int    numLines  = endLine - (int)startLine + 1;
     return startY + (numLines * m_nFontHeight) / 2;
 }
 
@@ -685,24 +660,23 @@ bool HexView::bookmarkRangeIntersectsViewport(size_w offset, size_w length) cons
         return false;
 
     const size_w startLine = offset / (size_w)m_nBytesPerLine;
-    const size_w endLine = (offset + length - 1) / (size_w)m_nBytesPerLine;
-    const int top = (int)((qint64)startLine - (qint64)m_nVScrollPos) * m_nFontHeight;
-    const int bottom = (int)((qint64)endLine - (qint64)m_nVScrollPos + 1) * m_nFontHeight;
+    const size_w endLine   = (offset + length - 1) / (size_w)m_nBytesPerLine;
+    const int    top       = (int)((qint64)startLine - (qint64)m_nVScrollPos) * m_nFontHeight;
+    const int    bottom    = (int)((qint64)endLine - (qint64)m_nVScrollPos + 1) * m_nFontHeight;
     return bottom > 0 && top < viewport()->height();
 }
 
 bool HexView::shouldShowBookmarkAddButton() const
 {
     const size_w selSize = selectionSize();
-    if (selSize == 0 || m_nSelectionMode != SEL_NONE ||
-        !bookmarkRangeIntersectsViewport(selectionStart(), selSize))
+    if (selSize == 0 || m_nSelectionMode != SEL_NONE || !bookmarkRangeIntersectsViewport(selectionStart(), selSize))
         return false;
 
     if (checkStyle(HVS_BOOKMARK_NESTED))
         return true;
 
     const size_w offset = selectionStart();
-    const size_w end = offset + selSize;
+    const size_w end    = offset + selSize;
     for (const Bookmark &bm : m_bookmarks)
     {
         if (offset < bm.offset + bm.length && end > bm.offset)
@@ -719,9 +693,9 @@ QRect HexView::bookmarkAreaPopupAnchorRect(int y, int height) const
     if (!m_pDataSeq || m_nBytesPerLine <= 0 || m_nFontWidth <= 0)
         return QRect(viewport()->mapToGlobal(QPoint(0, y)), QSize(1, height));
 
-    const int asciiRight = logToPhyXCoord(m_nBytesPerLine, 1);
+    const int asciiRight   = logToPhyXCoord(m_nBytesPerLine, 1);
     const int bookmarkLeft = asciiRight + m_nFontWidth * 4;
-    const int x = asciiRight + (bookmarkLeft - asciiRight) / 2;
+    const int x            = asciiRight + (bookmarkLeft - asciiRight) / 2;
     return QRect(viewport()->mapToGlobal(QPoint(x, y)), QSize(1, height));
 }
 
@@ -741,18 +715,18 @@ QRect HexView::bookmarkAreaButtonRect(BookmarkAreaButton button) const
         return QRect();
 
     const int x = centerX - kBookmarkAreaBtnSz / 2;
-    int y = 0;
+    int       y = 0;
     if (button == BOOKMARK_ADD)
     {
-        constexpr int kMargin = 8;
-        const int preferredY = bookmarkRangeMidpointY(selectionStart(), selectionSize()) - kBookmarkAreaBtnSz / 2;
-        const int maxY = qMax(kMargin, viewH - kBookmarkAreaBtnSz - kMargin);
-        y = qBound(kMargin, preferredY, maxY);
+        constexpr int kMargin    = 8;
+        const int     preferredY = bookmarkRangeMidpointY(selectionStart(), selectionSize()) - kBookmarkAreaBtnSz / 2;
+        const int     maxY       = qMax(kMargin, viewH - kBookmarkAreaBtnSz - kMargin);
+        y                        = qBound(kMargin, preferredY, maxY);
     }
     else
     {
         constexpr int kBottomMargin = 20;
-        y = qMax(0, viewH - kBookmarkAreaBtnSz - kBottomMargin);
+        y                           = qMax(0, viewH - kBookmarkAreaBtnSz - kBottomMargin);
     }
     return QRect(x, y, kBookmarkAreaBtnSz, kBookmarkAreaBtnSz);
 }
@@ -767,7 +741,7 @@ void HexView::setBookmarkAreaButtonVisible(BookmarkAreaButton button, bool visib
         return;
 
     m_bookmarkAreaButtonVisible[idx] = visible;
-    const qreal target = visible ? 1.0 : 0.0;
+    const qreal target               = visible ? 1.0 : 0.0;
     if (qFuzzyCompare(m_bookmarkAreaButtonOpacity[idx] + 1.0, target + 1.0))
     {
         m_bookmarkAreaButtonOpacity[idx] = target;
@@ -783,15 +757,14 @@ void HexView::setBookmarkAreaButtonVisible(BookmarkAreaButton button, bool visib
 
 void HexView::setBookmarkAreaButtonsVisible(bool visible)
 {
-    const bool showAdd = visible && shouldShowBookmarkAddButton();
-    bool showList = visible && !m_bookmarks.isEmpty();
+    const bool showAdd  = visible && shouldShowBookmarkAddButton();
+    bool       showList = visible && !m_bookmarks.isEmpty();
     if (showAdd && showList)
     {
-        const bool allowBothBookmarkAreaButtons = false;
-        const QRect addRect = bookmarkAreaButtonRect(BOOKMARK_ADD);
-        const QRect listRect = bookmarkAreaButtonRect(BOOKMARK_LIST);
-        if (!allowBothBookmarkAreaButtons ||
-            (!addRect.isNull() && !listRect.isNull() && addRect.intersects(listRect)))
+        const bool  allowBothBookmarkAreaButtons = false;
+        const QRect addRect                      = bookmarkAreaButtonRect(BOOKMARK_ADD);
+        const QRect listRect                     = bookmarkAreaButtonRect(BOOKMARK_LIST);
+        if (!allowBothBookmarkAreaButtons || (!addRect.isNull() && !listRect.isNull() && addRect.intersects(listRect)))
             showList = false;
     }
 
@@ -801,8 +774,8 @@ void HexView::setBookmarkAreaButtonsVisible(bool visible)
 
 void HexView::advanceBookmarkAreaButtonFade()
 {
-    constexpr qreal kStep = 0.075;
-    bool allAtTarget = true;
+    constexpr qreal kStep       = 0.075;
+    bool            allAtTarget = true;
 
     for (int idx = 0; idx < BOOKMARK_AREA_BUTTON_COUNT; ++idx)
     {
@@ -833,20 +806,19 @@ void HexView::drawBookmarkAreaButtons(QPainter &painter)
     auto drawButton = [this, &painter](BookmarkAreaButton button)
     {
         const int idx = bookmarkAreaButtonIndex(button);
-        if (idx < 0 || idx >= BOOKMARK_AREA_BUTTON_COUNT ||
-            m_bookmarkAreaButtonOpacity[idx] <= 0.0)
+        if (idx < 0 || idx >= BOOKMARK_AREA_BUTTON_COUNT || m_bookmarkAreaButtonOpacity[idx] <= 0.0)
             return;
 
         const QRect r = bookmarkAreaButtonRect(button);
         if (r.isEmpty())
             return;
 
-        const bool direct = m_hoverBookmarkAreaButton[idx] || m_pressedBookmarkAreaButton[idx];
-        QColor circleColor = palette().color(direct ? QPalette::Mid : QPalette::Window);
+        const bool direct      = m_hoverBookmarkAreaButton[idx] || m_pressedBookmarkAreaButton[idx];
+        QColor     circleColor = palette().color(direct ? QPalette::Mid : QPalette::Window);
         if (direct)
             circleColor = circleColor.darker(125);
         const QColor iconColor = direct ? QColor(Qt::white) : QColor(188, 188, 188);
-        const QRectF circle = QRectF(r).adjusted(2.5, 2.5, -2.5, -2.5);
+        const QRectF circle    = QRectF(r).adjusted(2.5, 2.5, -2.5, -2.5);
         QPainterPath clipPath;
         clipPath.addEllipse(circle);
 
@@ -858,13 +830,9 @@ void HexView::drawBookmarkAreaButtons(QPainter &painter)
         painter.setBrush(circleColor);
         painter.drawEllipse(circle);
 
-        const int iconSz = 30;
-        const QRect iconRect(r.left() + (r.width() - iconSz) / 2,
-                             r.top() + (r.height() - iconSz) / 2,
-                             iconSz, iconSz);
-        drawTintedIconOrFallbackText(painter, iconRect,
-                                     bookmarkAreaButtonIconName(button),
-                                     iconColor,
+        const int   iconSz = 30;
+        const QRect iconRect(r.left() + (r.width() - iconSz) / 2, r.top() + (r.height() - iconSz) / 2, iconSz, iconSz);
+        drawTintedIconOrFallbackText(painter, iconRect, bookmarkAreaButtonIconName(button), iconColor,
                                      bookmarkAreaButtonFallbackText(button));
         painter.restore();
     };
@@ -902,40 +870,40 @@ HexView::NoteStripGeom HexView::noteStripGeom(const Bookmark &bm) const
     const int viewH = viewport()->height();
 
     const int asciiRight = logToPhyXCoord(m_nBytesPerLine, 1);
-    const int kGap = m_nFontWidth * 4;
-    const int rectX = asciiRight + kGap + kNoteTriW;
+    const int kGap       = m_nFontWidth * 4;
+    const int rectX      = asciiRight + kGap + kNoteTriW;
     if (rectX >= viewW)
         return g;
 
     const size_w startLine = bm.offset / (size_w)m_nBytesPerLine;
-    const int ny = (int)((qint64)startLine - (qint64)m_nVScrollPos) * m_nFontHeight;
+    const int    ny        = (int)((qint64)startLine - (qint64)m_nVScrollPos) * m_nFontHeight;
 
-    const int rectW = kNoteMaxW;
+    const int  rectW      = kNoteMaxW;
     // Text width leaves room for the optional button column on the right.
-    const bool hasButtons = m_bookmarkButtonLayout.topRight != BookmarkButtonAction::None || m_bookmarkButtonLayout.bottomRight != BookmarkButtonAction::None;
+    const bool hasButtons = m_bookmarkButtonLayout.topRight != BookmarkButtonAction::None ||
+                            m_bookmarkButtonLayout.bottomRight != BookmarkButtonAction::None;
     const int textW = rectW - 2 * kNotePadH - (hasButtons ? kNoteBtnSz + kNoteBtnGap : 0);
     if (textW <= 0)
         return g;
 
-    const QString hexAddr = bookmarkOffsetText(bm.offset);
-    const QString lengthText = bookmarkLengthText(bm.length);
-    const QString rangeText = hexAddr + QStringLiteral("  ") + lengthText;
+    const QString      hexAddr    = bookmarkOffsetText(bm.offset);
+    const QString      lengthText = bookmarkLengthText(bm.length);
+    const QString      rangeText  = hexAddr + QStringLiteral("  ") + lengthText;
     const QFontMetrics rangeFm(QApplication::font());
-    const QRect rangeBounds = rangeFm.boundingRect(QRect(0, 0, textW, 10000),
-                                                   Qt::AlignLeft | Qt::AlignTop, rangeText);
-    const int rangeH = rangeBounds.height();
-    const int btnX = rectX + rectW - kNotePadV - kNoteBtnSz;
+    const QRect rangeBounds = rangeFm.boundingRect(QRect(0, 0, textW, 10000), Qt::AlignLeft | Qt::AlignTop, rangeText);
+    const int   rangeH      = rangeBounds.height();
+    const int   btnX        = rectX + rectW - kNotePadV - kNoteBtnSz;
 
-    const QFont nf = noteFont();
+    const QFont    nf        = noteFont();
     // While this bookmark is being edited use the live editor text so the
     // strip and editor resize together as the user adds/removes lines.
-    const int bmIdx_ = (int)(&bm - m_bookmarks.constData());
-    const bool isEditing = (bmIdx_ == m_noteEditorIdx && m_noteEditor && m_noteEditor->isVisible());
-    const QString rawText = isEditing ? m_noteEditor->toPlainText() : bm.text;
+    const int      bmIdx_    = (int)(&bm - m_bookmarks.constData());
+    const bool     isEditing = (bmIdx_ == m_noteEditorIdx && m_noteEditor && m_noteEditor->isVisible());
+    const QString  rawText   = isEditing ? m_noteEditor->toPlainText() : bm.text;
     // Use a space as stand-in for empty text so height is never zero.
-    const QString text = rawText.isEmpty() ? QStringLiteral(" ") : rawText;
-    QTextDocument *textDoc = makeNoteTextDoc(text, textW, nf);
-    const int textH = qRound(textDoc->size().height());
+    const QString  text      = rawText.isEmpty() ? QStringLiteral(" ") : rawText;
+    QTextDocument *textDoc   = makeNoteTextDoc(text, textW, nf);
+    const int      textH     = qRound(textDoc->size().height());
     delete textDoc;
 
     const int rectH = kNotePadV + textH + kNoteRangePad + rangeH + kNotePadV;
@@ -953,14 +921,14 @@ HexView::NoteStripGeom HexView::noteStripGeom(const Bookmark &bm) const
     //            regardless of whether the range is short (1–2 lines) or medium.
     //   (a) Byte range is large enough that the midpoint falls below the strip's
     //       safe bottom zone — anchor strip at start line, tip at strip centre.
-    const int endLine_i = (int)((bm.offset + (bm.length > 0 ? bm.length - 1 : 0)) / (size_w)m_nBytesPerLine);
-    const int numLines = endLine_i - (int)startLine + 1;
+    const int endLine_i   = (int)((bm.offset + (bm.length > 0 ? bm.length - 1 : 0)) / (size_w)m_nBytesPerLine);
+    const int numLines    = endLine_i - (int)startLine + 1;
     const int rangeSpanPx = numLines * m_nFontHeight;
     if (ny + rangeSpanPx <= 0 || ny >= viewH)
         return g;
 
-    const int idealTipY = bookmarkRangeMidpointY(bm.offset, bm.length);
-    const int minMargin = m_nFontHeight / 2 + kNoteRadius;
+    const int idealTipY    = bookmarkRangeMidpointY(bm.offset, bm.length);
+    const int minMargin    = m_nFontHeight / 2 + kNoteRadius;
     const int defaultRectY = ny + kNotePadV;
 
     int finalRectY, tipY;
@@ -968,14 +936,14 @@ HexView::NoteStripGeom HexView::noteStripGeom(const Bookmark &bm) const
     {
         // (a) Byte range much larger than strip — anchor at start line, tip at centre.
         finalRectY = defaultRectY;
-        tipY = finalRectY + rectH / 2;
+        tipY       = finalRectY + rectH / 2;
     }
     else
     {
         // (normal) Centre the strip on the byte-range midpoint so the arrow always
         // has equal breathing room above and below, whether the range is 1 line or
         // several lines shorter than the strip.
-        tipY = idealTipY;
+        tipY       = idealTipY;
         finalRectY = tipY - rectH / 2;
     }
 
@@ -983,32 +951,27 @@ HexView::NoteStripGeom HexView::noteStripGeom(const Bookmark &bm) const
     // down, line 0 is above the viewport, so the strip is allowed to scroll away
     // with the bookmarked bytes instead of sticking to viewport y=0.
     const int documentTopY = -(int)m_nVScrollPos * m_nFontHeight;
-    finalRectY = std::max(finalRectY, documentTopY);
+    finalRectY             = std::max(finalRectY, documentTopY);
 
     if (finalRectY + rectH <= 0 || finalRectY >= viewH)
         return g;
 
     const int rangeY = finalRectY + kNotePadV + textH + kNoteRangePad;
 
-    g.rect = QRect(rectX, finalRectY, rectW, rectH);
-    g.textRect = QRect(rectX + kNotePadH, finalRectY + kNotePadV, textW, textH);
-    g.rangeRect = QRect(rectX + kNotePadH, rangeY, textW, rangeH);
-    g.rangeText = rangeText;
+    g.rect       = QRect(rectX, finalRectY, rectW, rectH);
+    g.textRect   = QRect(rectX + kNotePadH, finalRectY + kNotePadV, textW, textH);
+    g.rangeRect  = QRect(rectX + kNotePadH, rangeY, textW, rangeH);
+    g.rangeText  = rangeText;
     g.offsetText = hexAddr;
     g.lengthText = lengthText;
-    g.offsetRect = QRect(g.rangeRect.left(), g.rangeRect.top(),
-                         rangeFm.horizontalAdvance(hexAddr), g.rangeRect.height());
-    const int lengthX = g.offsetRect.right() + 1 + rangeFm.horizontalAdvance(QStringLiteral("  "));
-    g.lengthRect = QRect(lengthX, g.rangeRect.top(),
-                         rangeFm.horizontalAdvance(lengthText), g.rangeRect.height());
-    g.topButtonRect = hasButtons
-                          ? QRect(btnX, finalRectY + kNotePadV, kNoteBtnSz, kNoteBtnSz)
-                          : QRect();
-    g.bottomButtonRect = hasButtons
-                             ? QRect(btnX, rangeY + (rangeH - kNoteBtnSz) / 2, kNoteBtnSz, kNoteBtnSz)
-                             : QRect();
-    g.tipY = tipY;
-    g.valid = true;
+    g.offsetRect =
+        QRect(g.rangeRect.left(), g.rangeRect.top(), rangeFm.horizontalAdvance(hexAddr), g.rangeRect.height());
+    const int lengthX  = g.offsetRect.right() + 1 + rangeFm.horizontalAdvance(QStringLiteral("  "));
+    g.lengthRect       = QRect(lengthX, g.rangeRect.top(), rangeFm.horizontalAdvance(lengthText), g.rangeRect.height());
+    g.topButtonRect    = hasButtons ? QRect(btnX, finalRectY + kNotePadV, kNoteBtnSz, kNoteBtnSz) : QRect();
+    g.bottomButtonRect = hasButtons ? QRect(btnX, rangeY + (rangeH - kNoteBtnSz) / 2, kNoteBtnSz, kNoteBtnSz) : QRect();
+    g.tipY             = tipY;
+    g.valid            = true;
     return g;
 }
 
@@ -1025,7 +988,7 @@ QRect HexView::noteCollapsedRect(const Bookmark &bm) const
     const int viewH = viewport()->height();
 
     const int asciiRight = logToPhyXCoord(m_nBytesPerLine, 1);
-    const int rectX = asciiRight + m_nFontWidth * 4 + kNoteTriW;
+    const int rectX      = asciiRight + m_nFontWidth * 4 + kNoteTriW;
     if (rectX >= viewW)
         return QRect();
 
@@ -1035,11 +998,11 @@ QRect HexView::noteCollapsedRect(const Bookmark &bm) const
         return QRect();
 
     const size_w startLine = bm.offset / (size_w)m_nBytesPerLine;
-    const int ny = (int)((qint64)startLine - (qint64)m_nVScrollPos) * m_nFontHeight;
+    const int    ny        = (int)((qint64)startLine - (qint64)m_nVScrollPos) * m_nFontHeight;
 
     const QFontMetrics fm(QApplication::font());
-    const int rangeH = fm.height();
-    const int rectH = kNotePadV + rangeH + kNotePadV;
+    const int          rangeH = fm.height();
+    const int          rectH  = kNotePadV + rangeH + kNotePadV;
 
     // Centre the collapsed strip on the bookmark's start line so the arrow tip
     // (which sits at the strip's vertical midpoint) aligns with the line centre.
@@ -1058,9 +1021,9 @@ int HexView::noteStripFullHeight(const Bookmark &bm) const
     if (m_nBytesPerLine <= 0 || m_nFontWidth <= 0)
         return m_nFontHeight;
 
-    const int viewW = viewport()->width();
+    const int viewW      = viewport()->width();
     const int asciiRight = logToPhyXCoord(m_nBytesPerLine, 1);
-    const int rectX = asciiRight + m_nFontWidth * 4 + kNoteTriW;
+    const int rectX      = asciiRight + m_nFontWidth * 4 + kNoteTriW;
     if (rectX >= viewW)
         return m_nFontHeight;
 
@@ -1069,19 +1032,17 @@ int HexView::noteStripFullHeight(const Bookmark &bm) const
     if (textW <= 0)
         return m_nFontHeight;
 
-    const QString rangeText = bookmarkOffsetText(bm.offset) + QStringLiteral("  ") +
-                              bookmarkLengthText(bm.length);
+    const QString      rangeText = bookmarkOffsetText(bm.offset) + QStringLiteral("  ") + bookmarkLengthText(bm.length);
     const QFontMetrics rangeFm(QApplication::font());
-    const QRect rangeBounds = rangeFm.boundingRect(QRect(0, 0, textW, 10000),
-                                                   Qt::AlignLeft | Qt::AlignTop, rangeText);
-    const int rangeH = rangeBounds.height();
+    const QRect rangeBounds = rangeFm.boundingRect(QRect(0, 0, textW, 10000), Qt::AlignLeft | Qt::AlignTop, rangeText);
+    const int   rangeH      = rangeBounds.height();
 
     // Use live editor text while this bookmark is being edited so that
     // computeBookmarkLayout() sees the current height, not the last-saved height.
-    const int bmIdx_ = (int)(&bm - m_bookmarks.constData());
-    const bool isEditing = (bmIdx_ == m_noteEditorIdx && m_noteEditor && m_noteEditor->isVisible());
-    const QString rawText = isEditing ? m_noteEditor->toPlainText() : bm.text;
-    const QString text = rawText.isEmpty() ? QStringLiteral(" ") : rawText;
+    const int     bmIdx_    = (int)(&bm - m_bookmarks.constData());
+    const bool    isEditing = (bmIdx_ == m_noteEditorIdx && m_noteEditor && m_noteEditor->isVisible());
+    const QString rawText   = isEditing ? m_noteEditor->toPlainText() : bm.text;
+    const QString text      = rawText.isEmpty() ? QStringLiteral(" ") : rawText;
     QTextDocument doc;
     doc.setDefaultFont(noteFont());
     doc.setDocumentMargin(0);
@@ -1121,7 +1082,7 @@ int HexView::noteStripFullHeight(const Bookmark &bm) const
 // which suppresses pin updates so hit-testing never disturbs layout state.
 QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsReleased)
 {
-    const int n = m_bookmarks.size();
+    const int         n = m_bookmarks.size();
     QVector<BmLayout> layout(n); // default: inConflict=false, isActive=true
     if (n == 0 || m_nBytesPerLine <= 0 || m_nFontHeight <= 0)
         return layout;
@@ -1133,19 +1094,19 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
     QVector<BookmarkLogic::BookmarkLayoutGeometry> geometry(n);
     for (int i = 0; i < n; ++i)
     {
-        const Bookmark &bm = m_bookmarks[i];
-        BookmarkLogic::BookmarkLayoutGeometry &g = geometry[i];
+        const Bookmark                        &bm = m_bookmarks[i];
+        BookmarkLogic::BookmarkLayoutGeometry &g  = geometry[i];
 
-        const int line = (int)(bm.offset / (size_w)m_nBytesPerLine);
-        g.sy = (line - (int)m_nVScrollPos) * m_nFontHeight;
+        const int line       = (int)(bm.offset / (size_w)m_nBytesPerLine);
+        g.sy                 = (line - (int)m_nVScrollPos) * m_nFontHeight;
         const int fullHeight = noteStripFullHeight(bm);
 
-        const int endLine = (int)((bm.offset + (bm.length > 0 ? bm.length - 1 : 0)) / (size_w)m_nBytesPerLine);
-        const int numLines = endLine - line + 1;
-        const int idealTipY = g.sy + (numLines * m_nFontHeight) / 2;
-        const int minMargin = m_nFontHeight / 2 + kNoteRadius;
+        const int endLine      = (int)((bm.offset + (bm.length > 0 ? bm.length - 1 : 0)) / (size_w)m_nBytesPerLine);
+        const int numLines     = endLine - line + 1;
+        const int idealTipY    = g.sy + (numLines * m_nFontHeight) / 2;
+        const int minMargin    = m_nFontHeight / 2 + kNoteRadius;
         const int defaultRectY = g.sy + kNotePadV;
-        int rectY;
+        int       rectY;
         if (idealTipY > defaultRectY + fullHeight - minMargin)
             rectY = defaultRectY;
         else
@@ -1157,36 +1118,35 @@ QVector<HexView::BmLayout> HexView::computeBookmarkLayout(bool treatMouseAsRelea
         g.tabBot = g.tabTop + collapsedH;
 
         const NoteStripGeom painted = noteStripGeom(bm);
-        g.paintedFullRect = painted.rect;
-        g.paintedFullRectValid = painted.valid;
+        g.paintedFullRect           = painted.rect;
+        g.paintedFullRectValid      = painted.valid;
     }
 
     BookmarkLogic::BookmarkLayoutRequest request;
-    request.cursorOffset = m_nCursorOffset;
-    request.expandedBookmarkIdx = m_expandedBookmarkIdx;
-    request.surfacedBookmarkIdx = m_surfacedBookmarkIdx;
+    request.cursorOffset           = m_nCursorOffset;
+    request.expandedBookmarkIdx    = m_expandedBookmarkIdx;
+    request.surfacedBookmarkIdx    = m_surfacedBookmarkIdx;
     request.inlineRangeBookmarkIdx = m_inlineRangeBookmarkIdx;
-    request.noteEditorIdx = m_noteEditorIdx;
-    request.noteEditorVisible = m_noteEditor && m_noteEditor->isVisible();
-    request.mouseHeld = treatMouseAsReleased ? false : (QApplication::mouseButtons() != Qt::NoButton);
-    request.allowStateUpdates = !treatMouseAsReleased;
-    request.expandLone = checkStyle(HVS_BOOKMARK_EXPAND_LONE);
-    request.expandCursor = checkStyle(HVS_BOOKMARK_EXPAND_CURSOR);
-    request.expandAlways = checkStyle(HVS_BOOKMARK_EXPAND_ALWAYS);
+    request.noteEditorIdx          = m_noteEditorIdx;
+    request.noteEditorVisible      = m_noteEditor && m_noteEditor->isVisible();
+    request.mouseHeld              = treatMouseAsReleased ? false : (QApplication::mouseButtons() != Qt::NoButton);
+    request.allowStateUpdates      = !treatMouseAsReleased;
+    request.expandLone             = checkStyle(HVS_BOOKMARK_EXPAND_LONE);
+    request.expandCursor           = checkStyle(HVS_BOOKMARK_EXPAND_CURSOR);
+    request.expandAlways           = checkStyle(HVS_BOOKMARK_EXPAND_ALWAYS);
 
-    const BookmarkLogic::BookmarkLayoutResult result =
-        BookmarkLogic::computeLayout(m_bookmarks, geometry, request);
+    const BookmarkLogic::BookmarkLayoutResult result = BookmarkLogic::computeLayout(m_bookmarks, geometry, request);
 
     for (int i = 0; i < n && i < result.layout.size(); ++i)
     {
         const BookmarkLogic::BookmarkLayoutEntry &entry = result.layout[i];
-        layout[i] = {entry.inConflict, entry.isActive, entry.hidden};
+        layout[i]                                       = {entry.inConflict, entry.isActive, entry.hidden};
     }
 
     if (!treatMouseAsReleased)
     {
-        m_expandedBookmarkIdx = result.expandedBookmarkIdx;
-        m_surfacedBookmarkIdx = result.surfacedBookmarkIdx;
+        m_expandedBookmarkIdx    = result.expandedBookmarkIdx;
+        m_surfacedBookmarkIdx    = result.surfacedBookmarkIdx;
         m_inlineRangeBookmarkIdx = result.inlineRangeBookmarkIdx;
         for (int i = 0; i < n && i < result.activeFlags.size(); ++i)
             m_bookmarks[i]._active = result.activeFlags[i];
@@ -1216,7 +1176,7 @@ void HexView::drawNoteStrip(QPainter &painter, const Bookmark &bm, const BmLayou
         const QColor bgCol = bm.colourIndex >= 0
                                  ? QColor(getHexColour(HvColorSlot(HVC_BOOKMARK1 + bm.colourIndex)))
                                  : (bm.bgColour ? QColor(bm.bgColour) : QColor(getHexColour(HVC_BOOKMARK1)));
-        QColor fgCol;
+        QColor       fgCol;
         if (bm.colourIndex >= 0)
         {
             fgCol = realiseColour(HvColorSlot(HVC_BOOKMARK1_FG + bm.colourIndex));
@@ -1243,12 +1203,12 @@ void HexView::drawNoteStrip(QPainter &painter, const Bookmark &bm, const BmLayou
             const qreal x0 = r.left(), y0 = r.top(), x1 = r.right(), y1 = r.bottom();
             const qreal mid = (y0 + y1) * 0.5;
             const qreal rad = kNoteRadius;
-            const qreal h2 = (y1 - y0) * 0.5; // half strip height
+            const qreal h2  = (y1 - y0) * 0.5; // half strip height
 
             // Unit vector along triangle side (from tip toward each base corner).
             const qreal triLen = qSqrt((qreal)kNoteTriW * kNoteTriW + h2 * h2);
-            const qreal ux = kNoteTriW / triLen; // > 0 (rightward component)
-            const qreal uy = h2 / triLen;        // > 0 (upward→top, downward→bottom)
+            const qreal ux     = kNoteTriW / triLen; // > 0 (rightward component)
+            const qreal uy     = h2 / triLen;        // > 0 (upward→top, downward→bottom)
 
             // Fillet distance: how far from each corner the curve starts/ends.
             // Sized to half the half-height so it's proportional but never huge.
@@ -1277,34 +1237,31 @@ void HexView::drawNoteStrip(QPainter &painter, const Bookmark &bm, const BmLayou
         }
 
         // Range label.
-        const QString rangeText = bookmarkOffsetText(bm.offset) + QStringLiteral("  ") +
-                                  bookmarkLengthText(bm.length);
-        const int textW = r.width() - 2 * kNotePadH - kNoteBtnSz - kNoteBtnGap;
-        const QRect rangeRect(r.left() + kNotePadH, r.top() + kNotePadV, textW, r.height() - 2 * kNotePadV);
-        QColor rangeFg = fgCol;
+        const QString rangeText = bookmarkOffsetText(bm.offset) + QStringLiteral("  ") + bookmarkLengthText(bm.length);
+        const int     textW     = r.width() - 2 * kNotePadH - kNoteBtnSz - kNoteBtnGap;
+        const QRect   rangeRect(r.left() + kNotePadH, r.top() + kNotePadV, textW, r.height() - 2 * kNotePadV);
+        QColor        rangeFg = fgCol;
         rangeFg.setAlphaF(0.70);
         painter.setFont(QApplication::font());
         painter.setPen(rangeFg);
         painter.drawText(rangeRect, Qt::AlignLeft | Qt::AlignVCenter, rangeText);
 
         // Down-chevron icon in the button slot, shown on hover.
-        const int bmIdx = (int)(&bm - m_bookmarks.constData());
+        const int  bmIdx = (int)(&bm - m_bookmarks.constData());
         const bool isHov = (bmIdx == m_hoverBookmarkIdx);
         // A collapsed draw during live range-drag is exactly the failure mode
         // we guard against: clearing here drops _rangeEditing, then an
         // overlapping bookmark's byte highlight can paint over the edited range.
         // Only cancel stale inline state when no button is held.
-        if (BookmarkLogic::shouldClearRangeEditFromCollapsedDraw(
-                bmIdx,
-                m_inlineRangeBookmarkIdx,
-                QApplication::mouseButtons() != Qt::NoButton))
+        if (BookmarkLogic::shouldClearRangeEditFromCollapsedDraw(bmIdx, m_inlineRangeBookmarkIdx,
+                                                                 QApplication::mouseButtons() != Qt::NoButton))
             clearBookmarkRangeStepper();
         if (isHov)
         {
-            const int btnX = r.right() - kNotePadV - kNoteBtnSz;
-            const int btnY = r.top() + (r.height() - kNoteBtnSz) / 2;
+            const int   btnX = r.right() - kNotePadV - kNoteBtnSz;
+            const int   btnY = r.top() + (r.height() - kNoteBtnSz) / 2;
             const QRect btnRect(btnX, btnY, kNoteBtnSz, kNoteBtnSz);
-            QIcon icon = QIcon(QStringLiteral(":/icons/ui/go-down-symbolic.svg"));
+            QIcon       icon = QIcon(QStringLiteral(":/icons/ui/go-down-symbolic.svg"));
             if (icon.isNull())
                 icon = QIcon::fromTheme(QStringLiteral("go-down-symbolic"));
             if (!icon.isNull())
@@ -1334,7 +1291,7 @@ void HexView::drawNoteStrip(QPainter &painter, const Bookmark &bm, const BmLayou
     const QColor bgCol = bm.colourIndex >= 0
                              ? QColor(getHexColour(HvColorSlot(HVC_BOOKMARK1 + bm.colourIndex)))
                              : (bm.bgColour ? QColor(bm.bgColour) : QColor(getHexColour(HVC_BOOKMARK1)));
-    QColor fgCol;
+    QColor       fgCol;
     if (bm.colourIndex >= 0)
     {
         fgCol = realiseColour(HvColorSlot(HVC_BOOKMARK1_FG + bm.colourIndex));
@@ -1345,9 +1302,9 @@ void HexView::drawNoteStrip(QPainter &painter, const Bookmark &bm, const BmLayou
     }
     else
     {
-        const QColor bg = realiseColour(HVC_BACKGROUND);
+        const QColor bg  = realiseColour(HVC_BACKGROUND);
         const QColor asc = realiseColour(HVC_ASCII);
-        fgCol = contrastColourFor(bgCol, bg, asc);
+        fgCol            = contrastColourFor(bgCol, bg, asc);
     }
 
     painter.save();
@@ -1360,13 +1317,13 @@ void HexView::drawNoteStrip(QPainter &painter, const Bookmark &bm, const BmLayou
     // strip centre.  The triangle base spans one font-height; minMargin inside
     // noteStripGeom() guarantees the base clears the rounded corners.
     QPainterPath path;
-    const qreal mid = geom.tipY;
-    const qreal triH = m_nFontHeight;
+    const qreal  mid  = geom.tipY;
+    const qreal  triH = m_nFontHeight;
 
     // Square off a left corner only when the strip is clamped to that viewport
     // edge AND the triangle base sits inside the arc zone.  All other positions
     // keep fully rounded corners (TL rounds just like TR, BR, BL by default).
-    const int viewH_ = viewport()->height();
+    const int  viewH_   = viewport()->height();
     const bool squareTL = (r.top() == 0) && (mid - triH / 2.0 <= (qreal)kNoteRadius);
     const bool squareBL = (r.bottom() >= viewH_ - 1) && (mid + triH / 2.0 >= r.bottom() - (qreal)kNoteRadius);
     {
@@ -1399,8 +1356,7 @@ void HexView::drawNoteStrip(QPainter &painter, const Bookmark &bm, const BmLayou
     }
 
     QPolygonF tri;
-    tri << QPointF(r.left() - kNoteTriW, mid)
-        << QPointF(r.left(), mid - triH / 2.0)
+    tri << QPointF(r.left() - kNoteTriW, mid) << QPointF(r.left(), mid - triH / 2.0)
         << QPointF(r.left(), mid + triH / 2.0);
     path.addPolygon(tri);
     painter.fillPath(path, bgCol);
@@ -1426,18 +1382,16 @@ void HexView::drawNoteStrip(QPainter &painter, const Bookmark &bm, const BmLayou
     painter.setPen(rangeFg);
 
     // ── Gear button (shown on hover) ──────────────────────────────────────────
-    const int bmIdx = (int)(&bm - m_bookmarks.constData());
-    const bool isHovered = (bmIdx == m_hoverBookmarkIdx);
-    const bool grabbed = (QWidget::mouseGrabber() == viewport());
-    const bool isPressedBookmark = grabbed && bmIdx == m_pressedBookmarkIdx;
-    const bool popupHere = (bmIdx == m_bookmarkPopupIdx);
-    const bool rangeActive = (bmIdx == m_inlineRangeBookmarkIdx);
-    const bool stepperRangeActive = rangeActive &&
-                                    kBookmarkRangeEditExperiment == BookmarkRangeEditExperiment::Stepper;
-    const bool dragRangeActive = rangeActive &&
-                                 kBookmarkRangeEditExperiment == BookmarkRangeEditExperiment::DragAdjust;
+    const int  bmIdx              = (int)(&bm - m_bookmarks.constData());
+    const bool isHovered          = (bmIdx == m_hoverBookmarkIdx);
+    const bool grabbed            = (QWidget::mouseGrabber() == viewport());
+    const bool isPressedBookmark  = grabbed && bmIdx == m_pressedBookmarkIdx;
+    const bool popupHere          = (bmIdx == m_bookmarkPopupIdx);
+    const bool rangeActive        = (bmIdx == m_inlineRangeBookmarkIdx);
+    const bool stepperRangeActive = rangeActive && kBookmarkRangeEditExperiment == BookmarkRangeEditExperiment::Stepper;
+    const bool dragRangeActive = rangeActive && kBookmarkRangeEditExperiment == BookmarkRangeEditExperiment::DragAdjust;
 
-    const bool darkBg = bgCol.lightness() < 128;
+    const bool   darkBg = bgCol.lightness() < 128;
     const QColor hoverFill(darkBg ? QColor(255, 255, 255, 50) : QColor(0, 0, 0, 35));
     const QColor pressedFill(darkBg ? QColor(255, 255, 255, 90) : QColor(0, 0, 0, 65));
 
@@ -1468,27 +1422,23 @@ void HexView::drawNoteStrip(QPainter &painter, const Bookmark &bm, const BmLayou
 
     const bool offsetPressed = isPressedBookmark && m_pressedOnOffset;
     const bool lengthPressed = isPressedBookmark && m_pressedOnLength;
-    const bool offsetHov = isHovered && (grabbed ? offsetPressed : m_hoverOnOffset);
-    const bool lengthHov = isHovered && (grabbed ? lengthPressed : m_hoverOnLength);
+    const bool offsetHov     = isHovered && (grabbed ? offsetPressed : m_hoverOnOffset);
+    const bool lengthHov     = isHovered && (grabbed ? lengthPressed : m_hoverOnLength);
     paintRangeBg(geom.offsetRect, offsetHov, offsetPressed);
     paintRangeBg(geom.lengthRect, lengthHov, lengthPressed);
 
-    QRect activeValueRect;
-    QRect activeStepperRect;
+    QRect        activeValueRect;
+    QRect        activeStepperRect;
     QPainterPath activeFramePath;
-    QColor activeFill;
+    QColor       activeFill;
     if (rangeActive)
     {
-        activeValueRect = (m_inlineRangeField == BookmarkRangeField::Offset)
-                              ? geom.offsetRect
-                              : geom.lengthRect;
-        activeStepperRect = stepperRangeActive ? bookmarkRangeStepperRect(geom, m_inlineRangeField) : QRect();
-        const QRect valueFrame = stepperRangeActive
-                                     ? activeValueRect.adjusted(-4, -2, 2, kRangeStepperGap + 2)
-                                     : activeValueRect.adjusted(-4, -2, 2, 2);
-        const QRect stepperFrame = stepperRangeActive && activeStepperRect.isValid()
-                                       ? activeStepperRect.adjusted(-2, -2, 2, 2)
-                                       : QRect();
+        activeValueRect        = (m_inlineRangeField == BookmarkRangeField::Offset) ? geom.offsetRect : geom.lengthRect;
+        activeStepperRect      = stepperRangeActive ? bookmarkRangeStepperRect(geom, m_inlineRangeField) : QRect();
+        const QRect valueFrame = stepperRangeActive ? activeValueRect.adjusted(-4, -2, 2, kRangeStepperGap + 2)
+                                                    : activeValueRect.adjusted(-4, -2, 2, 2);
+        const QRect stepperFrame =
+            stepperRangeActive && activeStepperRect.isValid() ? activeStepperRect.adjusted(-2, -2, 2, 2) : QRect();
 
         QPainterPath valuePath;
         valuePath.addRoundedRect(QRectF(valueFrame).adjusted(0.5, 0.5, -0.5, -0.5), 5, 5);
@@ -1503,9 +1453,7 @@ void HexView::drawNoteStrip(QPainter &painter, const Bookmark &bm, const BmLayou
             activeFramePath = valuePath;
         }
 
-        activeFill = QColor((bgCol.red() + 255) / 2,
-                            (bgCol.green() + 255) / 2,
-                            (bgCol.blue() + 255) / 2);
+        activeFill = QColor((bgCol.red() + 255) / 2, (bgCol.green() + 255) / 2, (bgCol.blue() + 255) / 2);
 
         painter.save();
         painter.setRenderHint(QPainter::Antialiasing, true);
@@ -1541,14 +1489,14 @@ void HexView::drawNoteStrip(QPainter &painter, const Bookmark &bm, const BmLayou
         {
             painter.save();
             painter.setRenderHint(QPainter::Antialiasing, true);
-            const QPalette &pal = palette();
-            const QColor btnBorder = pal.color(QPalette::Mid);
+            const QPalette &pal       = palette();
+            const QColor    btnBorder = pal.color(QPalette::Mid);
 
             const QColor hoverCol(0, 0, 0, 22);
             const QColor pressCol(0, 0, 0, 45);
-            const QRect decRect(stepper.left(), stepper.top(), kRangeStepperButtonW, stepper.height());
-            const QRect incRect(stepper.left() + kRangeStepperButtonW + 1, stepper.top(),
-                                kRangeStepperButtonW, stepper.height());
+            const QRect  decRect(stepper.left(), stepper.top(), kRangeStepperButtonW, stepper.height());
+            const QRect  incRect(stepper.left() + kRangeStepperButtonW + 1, stepper.top(), kRangeStepperButtonW,
+                                 stepper.height());
 
             auto drawStepOverlay = [&](HitTestRegion ht, const QRect &br)
             {
@@ -1602,8 +1550,8 @@ void HexView::drawNoteStrip(QPainter &painter, const Bookmark &bm, const BmLayou
     if (isHovered && settingsButtonRect.isValid())
     {
         const bool editPressed = isPressedBookmark && m_pressedOnEdit;
-        const bool eHov = grabbed ? editPressed : (m_hoverOnEdit || popupHere);
-        const bool ePres = editPressed || popupHere;
+        const bool eHov        = grabbed ? editPressed : (m_hoverOnEdit || popupHere);
+        const bool ePres       = editPressed || popupHere;
         drawIconBtn(settingsButtonRect, eHov, ePres, QStringLiteral("document-edit-symbolic"));
     }
 
@@ -1612,8 +1560,8 @@ void HexView::drawNoteStrip(QPainter &painter, const Bookmark &bm, const BmLayou
     if (isHovered && closeButtonRect.isValid())
     {
         const bool closePressed = isPressedBookmark && m_pressedOnClose;
-        const bool cHov = grabbed ? closePressed : m_hoverOnClose;
-        const bool cPres = closePressed;
+        const bool cHov         = grabbed ? closePressed : m_hoverOnClose;
+        const bool cPres        = closePressed;
         paintBtnBg(closeButtonRect, cHov, cPres);
         // Draw an × using two short lines.
         painter.save();
@@ -1621,7 +1569,7 @@ void HexView::drawNoteStrip(QPainter &painter, const Bookmark &bm, const BmLayou
         xCol.setAlphaF((cHov || cPres) ? 0.85 : 0.50);
         painter.setPen(QPen(xCol, 1.5));
         const QRectF br = closeButtonRect;
-        const qreal m = 3.5;
+        const qreal  m  = 3.5;
         painter.drawLine(QPointF(br.left() + m, br.top() + m), QPointF(br.right() - m, br.bottom() - m));
         painter.drawLine(QPointF(br.right() - m, br.top() + m), QPointF(br.left() + m, br.bottom() - m));
         painter.restore();
@@ -1650,9 +1598,9 @@ void HexView::openNoteEditor(int bmIdx, QPoint clickPos)
     // Navigate there now so the full strip appears on the first paint.
     if (m_nCursorOffset < bm.offset || m_nCursorOffset >= bm.offset + bm.length)
     {
-        m_nCursorOffset = bm.offset;
-        m_nSelectionEnd = bm.offset;
-        m_nSelectionMode = SEL_NONE;
+        m_nCursorOffset     = bm.offset;
+        m_nSelectionEnd     = bm.offset;
+        m_nSelectionMode    = SEL_NONE;
         m_fCursorAdjustment = false;
         scrollCenterIfOffScreen(bm.offset, bm.length);
         int cx, cy;
@@ -1664,7 +1612,7 @@ void HexView::openNoteEditor(int bmIdx, QPoint clickPos)
     if (!geom.valid)
         return;
 
-    m_noteEditorIdx = bmIdx;
+    m_noteEditorIdx   = bmIdx;
     m_noteEditorIsNew = bm.text.isEmpty(); // flag for Escape-cancels-new-bookmark logic
 
     if (!m_noteEditor)
@@ -1680,8 +1628,8 @@ void HexView::openNoteEditor(int bmIdx, QPoint clickPos)
         m_noteEditor->viewport()->installEventFilter(this);
 
         // Resize the strip and editor together whenever lines are added/removed.
-        connect(m_noteEditor->document(), &QTextDocument::contentsChanged,
-                this, [this]()
+        connect(m_noteEditor->document(), &QTextDocument::contentsChanged, this,
+                [this]()
                 {
                     if (m_noteEditorIdx < 0 || m_noteEditorIdx >= m_bookmarks.size())
                         return;
@@ -1706,17 +1654,17 @@ void HexView::openNoteEditor(int bmIdx, QPoint clickPos)
         // viewport even though the scrollbars are hidden.  Since the editor is
         // always sized to fit the full text there is never anything to scroll —
         // snap both axes back to zero on each cursor change.
-        connect(m_noteEditor, &QPlainTextEdit::cursorPositionChanged,
-                m_noteEditor, [this]()
+        connect(m_noteEditor, &QPlainTextEdit::cursorPositionChanged, m_noteEditor,
+                [this]()
                 {
-            m_noteEditor->verticalScrollBar()->setValue(0);
-            m_noteEditor->horizontalScrollBar()->setValue(0); });
+                    m_noteEditor->verticalScrollBar()->setValue(0);
+                    m_noteEditor->horizontalScrollBar()->setValue(0);
+                });
     }
 
-    const QColor bg = bm.colourIndex >= 0
-                          ? QColor(getHexColour(HvColorSlot(HVC_BOOKMARK1 + bm.colourIndex)))
-                          : (bm.bgColour ? QColor(bm.bgColour) : QColor(getHexColour(HVC_BOOKMARK1)));
-    QColor fg;
+    const QColor bg = bm.colourIndex >= 0 ? QColor(getHexColour(HvColorSlot(HVC_BOOKMARK1 + bm.colourIndex)))
+                                          : (bm.bgColour ? QColor(bm.bgColour) : QColor(getHexColour(HVC_BOOKMARK1)));
+    QColor       fg;
     if (bm.colourIndex >= 0)
     {
         fg = realiseColour(HvColorSlot(HVC_BOOKMARK1_FG + bm.colourIndex));
@@ -1727,17 +1675,16 @@ void HexView::openNoteEditor(int bmIdx, QPoint clickPos)
     }
     else
     {
-        const QColor hvBG = realiseColour(HVC_BACKGROUND);
+        const QColor hvBG  = realiseColour(HVC_BACKGROUND);
         const QColor hvAsc = realiseColour(HVC_ASCII);
-        fg = contrastColourFor(bg, hvBG, hvAsc);
+        fg                 = contrastColourFor(bg, hvBG, hvAsc);
     }
 
-    m_noteEditor->setStyleSheet(QString(
-                                    "QPlainTextEdit {"
-                                    "  border: none; border-radius: 0; padding: 0; margin: 0;"
-                                    "  background: %1; color: %2;"
-                                    "}"
-                                    "QPlainTextEdit:focus { border: none; padding: 0; }")
+    m_noteEditor->setStyleSheet(QString("QPlainTextEdit {"
+                                        "  border: none; border-radius: 0; padding: 0; margin: 0;"
+                                        "  background: %1; color: %2;"
+                                        "}"
+                                        "QPlainTextEdit:focus { border: none; padding: 0; }")
                                     .arg(bg.name())
                                     .arg(fg.name()));
 
@@ -1753,7 +1700,7 @@ void HexView::openNoteEditor(int bmIdx, QPoint clickPos)
     {
         // clickPos is in viewport coordinates; map to editor-viewport coordinates.
         const QPoint localPos = clickPos - geom.textRect.topLeft();
-        QTextCursor cur = m_noteEditor->cursorForPosition(localPos);
+        QTextCursor  cur      = m_noteEditor->cursorForPosition(localPos);
         m_noteEditor->setTextCursor(cur);
     }
     else
@@ -1771,8 +1718,8 @@ void HexView::openNoteEditor(int bmIdx, QPoint clickPos)
 void HexView::addBookmarkInline()
 {
     const size_w selSize = selectionSize();
-    const size_w offset = selSize > 0 ? selectionStart() : cursorOffset();
-    const size_w length = selSize > 0 ? selSize : 1;
+    const size_w offset  = selSize > 0 ? selectionStart() : cursorOffset();
+    const size_w length  = selSize > 0 ? selSize : 1;
 
     const QList<Bookmark> &existing = bookmarks();
 
@@ -1781,13 +1728,12 @@ void HexView::addBookmarkInline()
         // Nesting disabled: if the new range overlaps any existing bookmark,
         // open the best-matching one (smallest range, same shortest-wins logic
         // as cursor-based selection) instead of creating a duplicate/nested one.
-        int bestIdx = -1;
+        int    bestIdx = -1;
         size_w bestLen = (size_w)-1;
         for (int i = 0; i < existing.size(); ++i)
         {
-            const Bookmark &bm = existing[i];
-            const bool overlaps = offset < bm.offset + bm.length &&
-                                  offset + length > bm.offset;
+            const Bookmark &bm       = existing[i];
+            const bool      overlaps = offset < bm.offset + bm.length && offset + length > bm.offset;
             if (overlaps && bm.length < bestLen)
             {
                 bestIdx = i;
@@ -1819,10 +1765,10 @@ void HexView::addBookmarkInline()
     }
 
     Bookmark bm;
-    bm.offset = offset;
-    bm.length = length;
-    bm.text = QString();
-    bm.fgColour = 0;
+    bm.offset      = offset;
+    bm.length      = length;
+    bm.text        = QString();
+    bm.fgColour    = 0;
     bm.colourIndex = 0;
     addBookmark(bm);
 
@@ -1830,7 +1776,7 @@ void HexView::addBookmarkInline()
     // the end.  Find it by offset (safe: we verified above that no bookmark
     // existed at this offset before the insert).
     const QList<Bookmark> &updated = bookmarks();
-    int newIdx = updated.size() - 1; // fallback — should never be needed
+    int                    newIdx  = updated.size() - 1; // fallback — should never be needed
     for (int i = 0; i < updated.size(); ++i)
     {
         if (updated[i].offset == offset)
@@ -1862,15 +1808,14 @@ void HexView::closeNoteEditor(bool save)
         // the new text makes the strip taller.  The editor is already hidden
         // so noteStripFullHeight() now reads bm.text (the old text) rather
         // than the live editor content — exactly the pre-save height.
-        const int oldH = (m_expandedBookmarkIdx == idx && m_nBytesPerLine > 0)
-                             ? noteStripFullHeight(m_bookmarks[idx])
-                             : 0;
+        const int oldH =
+            (m_expandedBookmarkIdx == idx && m_nBytesPerLine > 0) ? noteStripFullHeight(m_bookmarks[idx]) : 0;
 
         const QString newText = m_noteEditor->toPlainText();
         if (m_bookmarks[idx].text != newText)
         {
             m_bookmarks[idx].text = newText;
-            changed = true;
+            changed               = true;
         }
 
         // If saving grew the strip AND the pinned bookmark is the one just
@@ -1883,10 +1828,10 @@ void HexView::closeNoteEditor(bool save)
             const int newH = noteStripFullHeight(m_bookmarks[idx]);
             if (newH > oldH && idx + 1 < m_bookmarks.size())
             {
-                const int line = (int)(m_bookmarks[idx].offset / (size_w)m_nBytesPerLine);
-                const int sy_self = (line - (int)m_nVScrollPos) * m_nFontHeight;
+                const int line     = (int)(m_bookmarks[idx].offset / (size_w)m_nBytesPerLine);
+                const int sy_self  = (line - (int)m_nVScrollPos) * m_nFontHeight;
                 const int nextLine = (int)(m_bookmarks[idx + 1].offset / (size_w)m_nBytesPerLine);
-                const int sy_next = (nextLine - (int)m_nVScrollPos) * m_nFontHeight;
+                const int sy_next  = (nextLine - (int)m_nVScrollPos) * m_nFontHeight;
                 // Newly captured = was outside the old footprint, now inside.
                 if (sy_next >= sy_self + oldH && sy_next < sy_self + newH)
                 {
