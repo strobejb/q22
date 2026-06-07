@@ -1,0 +1,23 @@
+# Keep source text stable across Linux, Windows, and CI.
+* text=auto eol=lf
+
+# Windows command scripts are the main text exception.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary/resource formats must never be line-ending normalized.
+*.a binary
+*.bmp binary
+*.dll binary
+*.exe binary
+*.icns binary
+*.ico binary
+*.jpg binary
+*.jpeg binary
+*.lib binary
+*.obj binary
+*.pdf binary
+*.png binary
+*.svgz binary
+*.zip binary
+
