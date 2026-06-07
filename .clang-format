@@ -18,6 +18,7 @@ AllowShortLambdasOnASingleLine: None
 AllowShortLoopsOnASingleLine: false
 
 ColumnLimit: 120
+LineEnding: LF
 
 # Keep intentional constant/member assignment blocks readable.
 AlignConsecutiveAssignments:
