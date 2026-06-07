@@ -1,3 +1,24 @@
+#include <QtTest/QtTest>
+
+// These widget-level smoke tests need to inspect HexView's bookmark layout and
+// hit-test internals.  Keep the access hack local to this test file, and include
+// Qt/STL-facing headers first so MSVC's standard library never sees keyword
+// macros while processing its own headers.
+#include <QAbstractScrollArea>
+#include <QColor>
+#include <QFont>
+#include <QList>
+#include <QRawFont>
+#include <QTimer>
+#include <QVector>
+#include <QWidget>
+
+#include <array>
+#include <cstdint>
+
+#include "sequence.h"
+#include "hexviewbookmark.h"
+
 #define private public
 #define protected public
 #include "hexview.h"
@@ -5,8 +26,6 @@
 #undef private
 
 #include "hexviewbookmarklogic.h"
-
-#include <QtTest/QtTest>
 
 class QMenu;
 void themeMenu(QMenu *) {}
