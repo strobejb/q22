@@ -20,7 +20,7 @@
      <x>0</x>
      <y>0</y>
      <width>800</width>
-     <height>18</height>
+     <height>21</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuFile">
@@ -119,11 +119,9 @@
     <addaction name="actionStrings"/>
     <addaction name="separator"/>
     <addaction name="actionFill"/>
-    <addaction name="separator"/>
     <addaction name="actionPreferences"/>
     <addaction name="separator"/>
     <addaction name="actionAbout"/>
-    <addaction name="separator"/>
    </widget>
    <addaction name="menuFile"/>
    <addaction name="menuEdit"/>
@@ -467,6 +465,16 @@
   <action name="actionStrings">
    <property name="text">
     <string>Strings...</string>
+   </property>
+  </action>
+  <action name="action_Fill">
+   <property name="text">
+    <string> Fill...</string>
+   </property>
+  </action>
+  <action name="actionReverse">
+   <property name="text">
+    <string>Reverse...</string>
    </property>
   </action>
  </widget>

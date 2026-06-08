@@ -52,6 +52,8 @@ set(PROJECT_SOURCES
         panels/gotopanel.ui
         panels/findpanel.cpp
         panels/findpanel.h
+        panels/findpattern.cpp
+        panels/findpattern.h
         panels/findpanel.ui
         settings/focusnavigation.cpp
         settings/focusnavigation.h

@@ -1,6 +1,8 @@
 #ifndef FINDPANEL_H
 #define FINDPANEL_H
 
+#include "panels/findpattern.h"
+
 #include <QByteArray>
 #include <QPoint>
 #include <QWidget>
@@ -9,16 +11,6 @@ class DataTypeComboBox;
 class DockPanelRow;
 class QAction;
 namespace Ui { class FindPanel; }
-
-enum SearchDataType {
-    SearchHex,
-    SearchUTF8,
-    SearchUTF16,
-    SearchUTF32,
-    SearchByte,
-    SearchWord,
-    SearchDword,
-};
 
 class FindPanel : public QWidget
 {
@@ -38,6 +30,12 @@ public:
     bool    isWrapAround() const;
     bool    highlightAllOccurrences() const;
     QString dataType()    const;
+    bool    searchTextBigEndian() const;
+    bool    searchIntegerBigEndian() const;
+    bool    searchSigned() const;
+    void    setSearchTextBigEndian(bool checked);
+    void    setSearchIntegerBigEndian(bool checked);
+    void    setSearchSigned(bool checked);
 
 signals:
     void findPrevious();
@@ -58,6 +56,7 @@ public:
 private:
     void       refreshStylesheet();
     void       refreshSearchIcon();
+    void       refreshDataTypeDisplayText();
     void       triggerSearch(uint flags);
     void       updateSearchHexPreview();
 

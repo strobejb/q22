@@ -13,89 +13,7 @@
 #include <QStyle>
 #include <QToolButton>
 #include <QRegularExpression>
-#include <algorithm>
-#include <cstring>
 
-// ── Search-pattern helpers (ported from HexEdit/HexFind.c) ───────────────────
-
-// Parse a hex string (spaces/tabs ignored) into bytes.
-// Each pair of hex digits forms one byte; an odd trailing nibble is treated as
-// the low nibble of a byte (e.g. "F" → 0x0F).  Returns empty on bad input.
-static QByteArray hex2Binary(const QString &text)
-{
-    const QString hex = QString(text).remove(u' ').remove(u'\t');
-    if (hex.isEmpty()) return {};
-    QByteArray result;
-    result.reserve((hex.size() + 1) / 2);
-    for (int i = 0; i < hex.size(); i += 2) {
-        bool ok;
-        uint v = hex.mid(i, qMin(2, hex.size() - i)).toUInt(&ok, 16);
-        if (!ok) return {};
-        result.append((char)(uint8_t)v);
-    }
-    return result;
-}
-
-// Encode a Unicode string as UTF-8, UTF-16LE, or UTF-32LE.
-// bigEndian reverses each code unit for UTF-16/32.
-static QByteArray text2Binary(const QString &text, SearchDataType type, bool bigEndian)
-{
-    switch (type) {
-    case SearchUTF8:
-        return text.toUtf8();
-    case SearchUTF16: {
-        QByteArray ba(text.size() * 2, '\0');
-        memcpy(ba.data(), text.constData(), text.size() * 2);
-        if (bigEndian)
-            for (int i = 0; i < ba.size(); i += 2)
-                std::reverse(ba.data() + i, ba.data() + i + 2);
-        return ba;
-    }
-    case SearchUTF32: {
-        const std::u32string u32 = text.toStdU32String();
-        QByteArray ba((int)u32.size() * 4, '\0');
-        memcpy(ba.data(), u32.data(), u32.size() * 4);
-        if (bigEndian)
-            for (int i = 0; i < ba.size(); i += 4)
-                std::reverse(ba.data() + i, ba.data() + i + 4);
-        return ba;
-    }
-    default:
-        return {};
-    }
-}
-
-// Parse a comma- or space-separated list of integer or floating-point values
-// into a packed byte array.  width is 1, 2, 4, or 8; isInt selects integer vs
-// float parsing; bigEndian byte-swaps each element.
-static QByteArray num2Binary(const QString &text, int width, bool isInt, bool bigEndian)
-{
-    if (text.trimmed().isEmpty()) return {};
-    const QStringList tokens =
-        text.split(QRegularExpression(QString("[,\\s]+")), Qt::SkipEmptyParts);
-    QByteArray result;
-    result.reserve(tokens.size() * width);
-    for (const QString &tok : tokens) {
-        char buf[8] = {};
-        if (isInt) {
-            bool ok;
-            quint64 v = tok.toULongLong(&ok, 0);
-            if (!ok) return {};
-            memcpy(buf, &v, width);
-        } else {
-            bool ok;
-            double d = tok.toDouble(&ok);
-            if (!ok) return {};
-            if (width == 4) { float f = (float)d; memcpy(buf, &f, 4); }
-            else             {                      memcpy(buf, &d, 8); }
-        }
-        if (bigEndian) std::reverse(buf, buf + width);
-        result.append(buf, width);
-    }
-    return result;
-}
-
-// Format a byte array as space-separated uppercase hex pairs ("41 42 43").
 static QString dumpHex(const QByteArray &ba)
 {
     if (ba.isEmpty()) return {};
@@ -107,8 +25,6 @@ static QString dumpHex(const QByteArray &ba)
     }
     return s;
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
 
 FindPanel::FindPanel(QWidget *parent)
     : QWidget(parent)
@@ -183,7 +99,7 @@ FindPanel::FindPanel(QWidget *parent)
         }
     }
 
-    // Trailing clear button — visible only when the field has content.
+    // Trailing clear button â€” visible only when the field has content.
     {
         const auto existingBtns = ui->editFind->findChildren<QToolButton *>();
         QAction *clearAct = ui->editFind->addAction(QIcon(), QLineEdit::TrailingPosition);
@@ -207,7 +123,8 @@ FindPanel::FindPanel(QWidget *parent)
     for (int i = 0; i < ui->comboDataType->count(); ++i)
         m_comboDataType->addItem(ui->comboDataType->itemText(i));
     m_row->replaceWidget(ui->comboDataType, m_comboDataType);
-    m_comboDataType->setFixedWidth(ui->comboDataType->minimumWidth() + 20);
+    m_comboDataType->setFixedWidth(qMax(ui->comboDataType->minimumWidth() + 20,
+                                        m_comboDataType->fontMetrics().horizontalAdvance(tr("Dword (Signed, Big endian)")) + 66));
     m_comboDataType->setFixedHeight(controlHeight);
     ui->comboDataType->hide();
 
@@ -219,25 +136,49 @@ FindPanel::FindPanel(QWidget *parent)
     m_comboDataType->setActionData("Byte",   SearchByte);
     m_comboDataType->setActionData("Word",   SearchWord);
     m_comboDataType->setActionData("Dword",  SearchDword);
-    m_comboDataType->setDisplayText(m_comboDataType->selectionText());
+    const QList<DataTypeComboBox::InlineModifier> endianMods = {
+        { QStringLiteral("textBigEndian"), tr("Big endian") }
+    };
+    const QList<DataTypeComboBox::InlineModifier> endianPlaceholderMods = {
+        { QStringLiteral("textBigEndian"), tr("Big endian"), false }
+    };
+    const QList<DataTypeComboBox::InlineModifier> signedMods = {
+        { QStringLiteral("integerBigEndian"), tr("Big endian"), false },
+        { QStringLiteral("signed"), tr("Signed") }
+    };
+    const QList<DataTypeComboBox::InlineModifier> integerMods = {
+        { QStringLiteral("integerBigEndian"), tr("Big endian") },
+        { QStringLiteral("signed"), tr("Signed") }
+    };
+    m_comboDataType->setActionInlineModifiers("UTF-8", endianPlaceholderMods);
+    m_comboDataType->setActionInlineModifiers("UTF-16", endianMods);
+    m_comboDataType->setActionInlineModifiers("UTF-32", endianMods);
+    m_comboDataType->setActionInlineModifiers("Byte", signedMods);
+    m_comboDataType->setActionInlineModifiers("Word", integerMods);
+    m_comboDataType->setActionInlineModifiers("Dword", integerMods);
+    refreshDataTypeDisplayText();
     m_comboDataType->addIconAction(QStringLiteral("type100-001"));
 
     // Keep the search field's font in sync with the Type combo so both
     // controls render text at the same size.
     ui->editFind->setFont(m_comboDataType->font());
     connect(m_comboDataType, &DataTypeComboBox::selectionChanged, this, [this](int) {
-        m_comboDataType->setDisplayText(m_comboDataType->selectionText());
+        refreshDataTypeDisplayText();
         // Remember the last text-encoding choice so pane-1 activations restore it.
         const auto dt = m_comboDataType->selectionData().value<SearchDataType>();
         if (dt == SearchUTF8 || dt == SearchUTF16 || dt == SearchUTF32)
             m_lastTextType = dt;
         updateSearchHexPreview();
     });
+    connect(m_comboDataType, &DataTypeComboBox::inlineModifierToggled, this, [this](const QString &, bool) {
+        refreshDataTypeDisplayText();
+        updateSearchHexPreview();
+    });
     connect(ui->editFind, &QLineEdit::textChanged, this, [this] { updateSearchHexPreview(); });
 
     connect(ui->btnClose, &QToolButton::clicked, this, &QWidget::hide);
 
-    // // Navigation popup menu (Find Previous / Find Next) — kept for reference
+    // // Navigation popup menu (Find Previous / Find Next) â€” kept for reference
     // auto *navMenu = new QMenu(this);
     // themeMenu(navMenu);
     // auto *actPrev = navMenu->addAction(tr("Find Previous\tShift+F3"));
@@ -268,7 +209,7 @@ FindPanel::FindPanel(QWidget *parent)
         QApplication::palette().buttonText().color(), 14));
     // No great SP_ for a find-options menu button; show a text indicator instead.
     ui->btnOptions->setIcon(QIcon());
-    ui->btnOptions->setText("☰");
+    ui->btnOptions->setText("â˜°");
     ui->btnNavigate->setIconSize(QSize(16, 16));
     ui->btnClose->setIconSize(QSize(16, 16));
 #else
@@ -378,28 +319,47 @@ bool    FindPanel::isWholeWord() const { return m_actWholeWord->isChecked(); }
 bool    FindPanel::isWrapAround() const { return m_actWrap->isChecked(); }
 bool    FindPanel::highlightAllOccurrences() const { return m_actHighlightAll->isChecked(); }
 QString FindPanel::dataType()    const { return m_comboDataType->selectionText(); }
+bool    FindPanel::searchTextBigEndian() const { return m_comboDataType->inlineModifierChecked(QStringLiteral("textBigEndian")); }
+bool    FindPanel::searchIntegerBigEndian() const { return m_comboDataType->inlineModifierChecked(QStringLiteral("integerBigEndian")); }
+bool    FindPanel::searchSigned() const { return m_comboDataType->inlineModifierChecked(QStringLiteral("signed")); }
+
+void FindPanel::setSearchTextBigEndian(bool checked)
+{
+    m_comboDataType->setInlineModifierChecked(QStringLiteral("textBigEndian"), checked);
+}
+
+void FindPanel::setSearchIntegerBigEndian(bool checked)
+{
+    m_comboDataType->setInlineModifierChecked(QStringLiteral("integerBigEndian"), checked);
+}
+
+void FindPanel::setSearchSigned(bool checked)
+{
+    m_comboDataType->setInlineModifierChecked(QStringLiteral("signed"), checked);
+}
+
+void FindPanel::refreshDataTypeDisplayText()
+{
+    QString text = m_comboDataType->selectionText();
+    const SearchDataType type = m_comboDataType->selectionData().value<SearchDataType>();
+    QStringList modifiers;
+    if (searchSigned() && (type == SearchByte || type == SearchWord || type == SearchDword))
+        modifiers.append(tr("Signed"));
+    if (((type == SearchUTF16 || type == SearchUTF32) && searchTextBigEndian())
+            || ((type == SearchWord || type == SearchDword) && searchIntegerBigEndian()))
+        modifiers.append(tr("Big endian"));
+    if (!modifiers.isEmpty())
+        text += tr(" (%1)").arg(modifiers.join(tr(", ")));
+    m_comboDataType->setDisplayText(text);
+}
 
 QByteArray FindPanel::buildPattern() const
 {
-    const QString text = ui->editFind->text();
-    if (text.isEmpty())
-        return {};
-
-    switch (m_comboDataType->selectionData().value<SearchDataType>()) {
-    case SearchHex:
-        return hex2Binary(text);
-    case SearchUTF8:
-    case SearchUTF16:
-    case SearchUTF32:
-        return text2Binary(text, m_comboDataType->selectionData().value<SearchDataType>(), /*bigEndian=*/false);
-    case SearchByte:
-        return num2Binary(text, 1, /*isInt=*/true, /*bigEndian=*/false);
-    case SearchWord:
-        return num2Binary(text, 2, /*isInt=*/true, /*bigEndian=*/false);
-    case SearchDword:
-        return num2Binary(text, 4, /*isInt=*/true, /*bigEndian=*/false);
-    }
-    return {};
+    return buildFindPattern(ui->editFind->text(),
+                            m_comboDataType->selectionData().value<SearchDataType>(),
+                            searchTextBigEndian(),
+                            searchIntegerBigEndian(),
+                            searchSigned());
 }
 
 void FindPanel::triggerSearch(uint flags)

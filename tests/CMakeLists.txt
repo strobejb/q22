@@ -34,3 +34,22 @@ set_tests_properties(bookmark_tests PROPERTIES
     ENVIRONMENT_MODIFICATION
         "PATH=path_list_prepend:${QT_RUNTIME_BIN_DIR};QT_QPA_PLATFORM=set:offscreen"
 )
+
+add_executable(findpanel_tests
+    findpanel_tests.cpp
+    ../src/HexEdit/panels/findpattern.cpp
+)
+
+target_include_directories(findpanel_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/src/HexEdit
+)
+target_link_libraries(findpanel_tests PRIVATE
+    Qt${QT_VERSION_MAJOR}::Test
+)
+
+add_test(NAME findpanel_tests COMMAND findpanel_tests)
+set_tests_properties(findpanel_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION
+        "PATH=path_list_prepend:${QT_RUNTIME_BIN_DIR}"
+)
