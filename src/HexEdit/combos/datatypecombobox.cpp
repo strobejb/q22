@@ -11,6 +11,7 @@
 #include <QScreen>
 #include <QSet>
 #include <QStyleOptionComboBox>
+#include <QStyleOptionMenuItem>
 #include <QStylePainter>
 
 // Transparent overlay that paints swatch circles on top of the QMenu's own
@@ -122,6 +123,10 @@ struct MenuActionOverlay : public QWidget
                     }
                 } else if (e->type() == QEvent::MouseButtonRelease) {
                     auto *me = static_cast<QMouseEvent *>(e);
+                    if (me->button() == Qt::LeftButton && m_combo->consumeOpeningMouseRelease()) {
+                        e->accept();
+                        return true;
+                    }
                     const auto hit = modifierAt(me->pos());
                     if (!hit.first.isEmpty() && !m_combo->inlineModifierSelectable(hit.second, hit.first)) {
                         e->accept();
@@ -595,6 +600,68 @@ bool DataTypeComboBox::hasInlineModifiers(QAction *action) const
     return action && m_actionModifiers.contains(action) && !m_actionModifiers.value(action).isEmpty();
 }
 
+bool DataTypeComboBox::consumeOpeningMouseRelease()
+{
+    if (!m_ignoreOpeningMouseRelease)
+        return false;
+    m_ignoreOpeningMouseRelease = false;
+    return true;
+}
+
+void DataTypeComboBox::updateMenuMinimumWidth()
+{
+    if (!m_menu)
+        return;
+
+    constexpr int kTextLeftPadding = 28;
+    constexpr int kTextRightPadding = 28;
+    constexpr int kModifierRightInset = 10;
+    constexpr int kModifierHPad = 8;
+    constexpr int kModifierGap = 6;
+    constexpr int kSafetyGap = 14;
+
+    int maxTextWidth = 0;
+    for (QAction *action : std::as_const(m_actions)) {
+        if (!action || action->isSeparator())
+            continue;
+        maxTextWidth = qMax(maxTextWidth, fontMetrics().horizontalAdvance(action->text()));
+    }
+
+    int modifierLaneWidth = 0;
+    QSet<QString> reservedLabels;
+    for (const QString &id : std::as_const(m_modifierOrder)) {
+        const QString text = m_modifierLabels.value(id);
+        if (text.isEmpty() || reservedLabels.contains(text))
+            continue;
+        reservedLabels.insert(text);
+        if (modifierLaneWidth > 0)
+            modifierLaneWidth += kModifierGap;
+        modifierLaneWidth += fontMetrics().horizontalAdvance(text) + 2 * kModifierHPad;
+    }
+    if (modifierLaneWidth > 0)
+        modifierLaneWidth += kModifierRightInset;
+
+    QStyleOptionMenuItem opt;
+    opt.initFrom(m_menu);
+    opt.menuItemType = QStyleOptionMenuItem::Normal;
+    opt.text = QStringLiteral("M");
+    opt.maxIconWidth = 0;
+
+    QSize content(maxTextWidth + kTextLeftPadding + kTextRightPadding
+                  + (modifierLaneWidth > 0 ? modifierLaneWidth + kSafetyGap : 0),
+                  fontMetrics().height());
+    QSize menuSize = m_menu->style()->sizeFromContents(QStyle::CT_MenuItem, &opt, content, m_menu);
+
+#ifndef Q_OS_WIN
+    // Linux QMenus have an 8 px transparent shadow margin on each side.
+    // minimumWidth applies to the whole popup widget, so include the margin
+    // explicitly to keep the visible item body wide enough for the pill lane.
+    menuSize.rwidth() += 16;
+#endif
+
+    m_menu->setMinimumWidth(qMax(m_menu->minimumWidth(), menuSize.width()));
+}
+
 QAction *DataTypeComboBox::visibleInlineModifierAction() const
 {
     const QList<QAction*> actions = visibleInlineModifierActions();
@@ -814,11 +881,22 @@ void DataTypeComboBox::showPopup()
     if (m_menu->isVisible()) { m_menu->hide(); return; }
     if (isSameClickReopen()) return;
 
+    updateMenuMinimumWidth();
+
     connect(m_menu, &QMenu::aboutToHide, this,
             [this]() { recordMenuClose(); setPopupOpen(false); },
             Qt::SingleShotConnection);
 
-    const QPoint pos = smartMenuPos(this, m_menu, /*rightAlign=*/false);
+    QPoint pos = smartMenuPos(this, m_menu, /*rightAlign=*/false);
+#ifndef Q_OS_WIN
+    constexpr int kMenuShadowMargin = 8;
+    const QRect anchorGlobal(mapToGlobal(QPoint(0, 0)), size());
+    if (pos.y() >= anchorGlobal.bottom())
+        pos.ry() += kMenuShadowMargin;
+    else
+        pos.ry() -= kMenuShadowMargin;
+    m_ignoreOpeningMouseRelease = true;
+#endif
     m_menu->popup(pos);
     setPopupOpen(true);
 }
@@ -834,6 +912,7 @@ void DataTypeComboBox::popupAbove(const QRect &anchorGlobal)
             [this]() { recordMenuClose(); setPopupOpen(false); emit popupClosed(); },
             Qt::SingleShotConnection);
 
+    updateMenuMinimumWidth();
     const QSize popupSize = m_menu->sizeHint();
     QScreen *screen = QGuiApplication::screenAt(anchorGlobal.center());
     if (!screen)

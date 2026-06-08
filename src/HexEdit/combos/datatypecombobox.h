@@ -61,6 +61,7 @@ public:
     bool     inlineModifierDrawnChecked(QAction *action, const QString &id, bool highlighted) const;
     bool     inlineModifierSelectable(QAction *action, const QString &id) const;
     bool     hasInlineModifiers(QAction *action) const;
+    bool     consumeOpeningMouseRelease();
 
 signals:
     void selectionChanged(int index);
@@ -77,6 +78,8 @@ protected:
     void  setPopupOpen(bool open);
 
 private:
+    void updateMenuMinimumWidth();
+
     QMenu          *m_menu              = nullptr;
     QWidget        *m_swatchOverlay     = nullptr;
     QList<QAction*> m_actions;
@@ -87,6 +90,7 @@ private:
     QList<QString> m_modifierOrder;
     int             m_selection         = 0;
     bool            m_actionCloseButtonsEnabled = false;
+    bool            m_ignoreOpeningMouseRelease = false;
 };
 
 #endif // DATATYPECOMBOBOX_H
