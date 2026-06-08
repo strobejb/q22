@@ -156,6 +156,7 @@ FindPanel::FindPanel(QWidget *parent)
     m_comboDataType->setActionInlineModifiers("Byte", signedMods);
     m_comboDataType->setActionInlineModifiers("Word", integerMods);
     m_comboDataType->setActionInlineModifiers("Dword", integerMods);
+    m_comboDataType->setInlineModifierChecked(QStringLiteral("textBigEndian"), true);
     refreshDataTypeDisplayText();
     m_comboDataType->addIconAction(QStringLiteral("type100-001"));
 
