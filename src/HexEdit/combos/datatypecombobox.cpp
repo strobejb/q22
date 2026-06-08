@@ -19,6 +19,7 @@
 // and paint directly in a raised child widget, exactly like MenuShadowOverlay.
 namespace {
 constexpr bool kToggleModifierWhenSelectingDifferentRow = false;
+constexpr bool kRevealInlineModifiersOnlyForSelectedRows = true;
 
 QColor blendTowards(const QColor &from, const QColor &to, qreal keepFrom)
 {
@@ -86,6 +87,32 @@ struct MenuActionOverlay : public QWidget
                             e->accept();
                             return true;
                         }
+                        QAction *rowAction = actionAt(me->pos());
+                        if (rowAction
+                                && kRevealInlineModifiersOnlyForSelectedRows
+                                && m_combo->hasInlineModifiers(rowAction)
+                                && modifierLaneAt(me->pos()) == rowAction
+                                && rowAction->isCheckable()
+                                && !rowAction->isChecked()) {
+                            m_pressedSelectAction = rowAction;
+                            if (auto *menu = qobject_cast<QMenu *>(parentWidget()))
+                                menu->setActiveAction(rowAction);
+                            rowAction->setChecked(true);
+                            updateModifierHover(me->pos());
+                            e->accept();
+                            return true;
+                        }
+                        if (rowAction
+                                && kRevealInlineModifiersOnlyForSelectedRows
+                                && m_combo->hasInlineModifiers(rowAction)
+                                && modifierLaneAt(me->pos()) == rowAction) {
+                            m_pressedSelectAction = rowAction;
+                            if (auto *menu = qobject_cast<QMenu *>(parentWidget()))
+                                menu->setActiveAction(rowAction);
+                            updateModifierHover(me->pos());
+                            e->accept();
+                            return true;
+                        }
                         if (m_combo->actionCloseButtonsEnabled()
                                 && actionCloseRect(actionAt(me->pos())).contains(me->pos())) {
                             m_pressedCloseAction = actionAt(me->pos());
@@ -112,6 +139,11 @@ struct MenuActionOverlay : public QWidget
                     }
 
                     QAction *action = actionAt(me->pos());
+                    if (m_pressedSelectAction) {
+                        m_pressedSelectAction = nullptr;
+                        e->accept();
+                        return true;
+                    }
                     if (m_combo->actionCloseButtonsEnabled()
                             && m_pressedCloseAction && action == m_pressedCloseAction
                             && actionCloseRect(action).contains(me->pos())) {
@@ -182,6 +214,27 @@ private:
             }
         }
         return {};
+    }
+
+    QAction *modifierLaneAt(const QPoint &pos) const
+    {
+        if (!m_combo)
+            return nullptr;
+        for (QAction *action : m_combo->visibleInlineModifierActions()) {
+            QRect lane;
+            for (const auto &entry : m_combo->inlineModifierRects(action)) {
+                lane = lane.isNull() ? entry.second : lane.united(entry.second);
+            }
+            if (lane.isNull())
+                continue;
+            const QRect row = qobject_cast<QMenu *>(parentWidget())->actionGeometry(action);
+            lane.setTop(row.top());
+            lane.setBottom(row.bottom());
+            lane.setRight(row.right());
+            if (lane.contains(pos))
+                return action;
+        }
+        return nullptr;
     }
 
     void updateModifierHover(const QPoint &pos)
@@ -356,9 +409,10 @@ private:
         auto *menu = qobject_cast<QMenu *>(parentWidget());
         if (menu)
             menu->unsetCursor();
-        if (m_hoverCloseAction || m_pressedCloseAction || !m_hoverModifierId.isEmpty() || m_pressedModifierAction) {
+        if (m_hoverCloseAction || m_pressedCloseAction || m_pressedSelectAction || !m_hoverModifierId.isEmpty() || m_pressedModifierAction) {
             m_hoverCloseAction = nullptr;
             m_pressedCloseAction = nullptr;
+            m_pressedSelectAction = nullptr;
             m_hoverModifierId.clear();
             m_hoverModifierAction = nullptr;
             m_pressedModifierId.clear();
@@ -370,6 +424,7 @@ private:
     DataTypeComboBox *m_combo = nullptr;
     QAction *m_hoverCloseAction = nullptr;
     QAction *m_pressedCloseAction = nullptr;
+    QAction *m_pressedSelectAction = nullptr;
     QString m_hoverModifierId;
     QString m_pressedModifierId;
     QAction *m_hoverModifierAction = nullptr;
@@ -565,7 +620,7 @@ bool DataTypeComboBox::inlineModifierVisible(QAction *action, const QString &id)
 
     const bool highlighted = m_menu && action == m_menu->activeAction();
     if (highlighted)
-        return true;
+        return !kRevealInlineModifiersOnlyForSelectedRows || action->isChecked();
     if (action->isChecked())
         return inlineModifierSelectable(action, id);
     return false;
