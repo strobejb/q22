@@ -12,6 +12,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QHeaderView>
 #include <QLabel>
 #include <QLocale>
 #include <QMetaObject>
@@ -38,6 +39,27 @@ static constexpr int kMaxStringResultBatchLimit = 100000;
 static constexpr qint64 kMinimumStringScanMs = 10000;
 static constexpr int kMaxBufferedStringLength = 4096;
 static constexpr int kStringTruncationRole = Qt::UserRole + 2;
+
+class StringResultItem : public QTreeWidgetItem
+{
+public:
+    using QTreeWidgetItem::QTreeWidgetItem;
+
+    bool operator<(const QTreeWidgetItem &other) const override
+    {
+        const bool thisTruncation = data(0, kStringTruncationRole).toBool();
+        const bool otherTruncation = other.data(0, kStringTruncationRole).toBool();
+        if (thisTruncation != otherTruncation)
+            return !thisTruncation;
+
+        const int column = treeWidget() ? treeWidget()->sortColumn() : 0;
+        if (column == 1)
+            return data(0, Qt::UserRole).toULongLong()
+                   < other.data(0, Qt::UserRole).toULongLong();
+
+        return QString::localeAwareCompare(text(column), other.text(column)) < 0;
+    }
+};
 
 enum class StringScanMode {
     PrintableAscii = 0,
@@ -485,13 +507,17 @@ void FilePropertiesPanel::appendStringResults(int generation, const QVector<QVar
         return;
 
     if (m_stringsList && !results.isEmpty()) {
-        removeStringTruncationItem();
+        const bool sortingEnabled = m_stringsList->isSortingEnabled();
+        const int sortColumn = m_stringsList->sortColumn();
+        const Qt::SortOrder sortOrder = m_stringsList->header()->sortIndicatorOrder();
+        if (sortingEnabled)
+            m_stringsList->setSortingEnabled(false);
         m_stringsList->setUpdatesEnabled(false);
         const QColor offsetColor = subduedTextColor(palette());
         for (const QVariantMap &row : results) {
             const qulonglong offset = row.value(QStringLiteral("offset")).toULongLong();
             const qulonglong length = row.value(QStringLiteral("length")).toULongLong();
-            auto *item = new QTreeWidgetItem(m_stringsList);
+            auto *item = new StringResultItem(m_stringsList);
             item->setText(0, row.value(QStringLiteral("text")).toString());
             item->setText(1, hexOffsetString(offset));
             item->setForeground(1, QBrush(offsetColor));
@@ -499,34 +525,26 @@ void FilePropertiesPanel::appendStringResults(int generation, const QVector<QVar
             item->setData(0, Qt::UserRole + 1, length);
         }
         m_stringsList->setUpdatesEnabled(true);
+        if (sortingEnabled) {
+            m_stringsList->setSortingEnabled(true);
+            m_stringsList->sortItems(sortColumn, sortOrder);
+        }
     }
 }
 
 void FilePropertiesPanel::removeStringTruncationItem()
 {
-    if (!m_stringsList)
+    if (!m_stringsListFrame)
         return;
-
-    for (int i = m_stringsList->topLevelItemCount() - 1; i >= 0; --i) {
-        QTreeWidgetItem *item = m_stringsList->topLevelItem(i);
-        if (item && item->data(0, kStringTruncationRole).toBool())
-            delete m_stringsList->takeTopLevelItem(i);
-    }
+    m_stringsListFrame->clearFooter();
 }
 
 void FilePropertiesPanel::addStringTruncationItem(const QString &message)
 {
-    if (!m_stringsList)
+    if (!m_stringsListFrame)
         return;
 
-    removeStringTruncationItem();
-    auto *item = new QTreeWidgetItem(m_stringsList);
-    item->setText(0, message);
-    item->setFirstColumnSpanned(true);
-    item->setTextAlignment(0, Qt::AlignCenter);
-    item->setForeground(0, QBrush(subduedTextColor(palette())));
-    item->setData(0, kStringTruncationRole, true);
-    item->setFlags(Qt::NoItemFlags);
+    m_stringsListFrame->setFooterText(message);
 }
 
 int FilePropertiesPanel::visibleStringResultCount() const

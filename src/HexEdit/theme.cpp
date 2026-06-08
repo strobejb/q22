@@ -919,7 +919,41 @@ QComboBox QAbstractItemView {
 /* ── Item views ──────────────────────────────────────────────── */
 QAbstractItemView::item:hover    { background: palette(window); }
 QAbstractItemView::item:selected { background: palette(highlight); color: palette(highlighted-text); }
-
+QTreeWidget[filePropertiesStringsList="true"] {
+    background: palette(base);
+    border: none;
+    border-radius: 5px;
+    padding: 0px;
+    outline: none;
+}
+QTreeWidget[filePropertiesStringsList="true"]::viewport {
+    background: palette(base);
+    border-radius: 5px;
+}
+QTreeWidget[filePropertiesStringsList="true"] QHeaderView::section {
+    background: palette(base);
+    border: none;
+    padding: 4px 6px;
+}
+QTreeWidget[filePropertiesStringsList="true"] QHeaderView::section:first {
+    border-top-left-radius: 5px;
+}
+QTreeWidget[filePropertiesStringsList="true"] QHeaderView::section:last {
+    border-top-right-radius: 5px;
+}
+QTreeWidget[filePropertiesStringsList="true"] QHeaderView::section:hover {
+    background: palette(button);
+}
+QTreeWidget[filePropertiesStringsList="true"]::item {
+    padding: 3px 6px;
+}
+QTreeWidget[filePropertiesStringsList="true"]::item:hover {
+    background: palette(button);
+}
+QTreeWidget[filePropertiesStringsList="true"]::item:selected {
+    background: palette(highlight);
+    color: palette(highlighted-text);
+}
 /* ── Scroll bars ─────────────────────────────────────────────── */
 /* Geometry tokens are substituted at runtime from the kSb* constants:        */
 /*   {sbWidth}  = kSbWidth  (widget width / PM_ScrollBarExtent)                */
@@ -945,6 +979,10 @@ QScrollBar[scrollHintOverlay=true]:vertical {
 }
 QScrollBar[filePropertiesScrollBar=true]:vertical {
     margin: 8px 0px 8px 0px;
+}
+QScrollBar[filePropertiesStringsListScrollBar=true]:vertical {
+    margin: 40px 0px 4px 0px;
+    padding-top: 1px;
 }
 QScrollBar[filePropertiesScrollBar=true]::handle:vertical {
     background: palette(mid);

@@ -58,6 +58,38 @@ inline QColor subduedTextColor(const QPalette &palette)
                   qRound(text.alpha() * textWeight + mid.alpha() * midWeight));
 }
 
+inline QColor stringsHeaderTextColor(const QPalette &palette)
+{
+    const QColor mid = palette.color(QPalette::Mid);
+    const QColor dark = palette.color(QPalette::Dark);
+    constexpr qreal midWeight = 0.45;
+    constexpr qreal darkWeight = 1.0 - midWeight;
+    return QColor(qRound(mid.red() * midWeight + dark.red() * darkWeight),
+                  qRound(mid.green() * midWeight + dark.green() * darkWeight),
+                  qRound(mid.blue() * midWeight + dark.blue() * darkWeight),
+                  qRound(mid.alpha() * midWeight + dark.alpha() * darkWeight));
+}
+
+class StringsFooterLabel : public QLabel
+{
+public:
+    explicit StringsFooterLabel(QWidget *parent = nullptr) : QLabel(parent)
+    {
+        setAlignment(Qt::AlignCenter);
+        setContentsMargins(0, 0, 0, 4);
+    }
+
+protected:
+    void paintEvent(QPaintEvent *event) override
+    {
+        Q_UNUSED(event)
+        QPainter painter(this);
+        painter.setPen(stringsHeaderTextColor(palette()));
+        painter.setFont(font());
+        painter.drawText(contentsRect(), alignment() | Qt::TextSingleLine, text());
+    }
+};
+
 class SectionHeader : public QWidget
 {
 public:
@@ -619,12 +651,33 @@ public:
     explicit StringListFrame(QWidget *parent = nullptr)
         : QFrame(parent)
     {
+        m_footer = new StringsFooterLabel(this);
+        m_footer->setObjectName(QStringLiteral("stringsFooter"));
+        QFont footerFont = m_footer->font();
+        if (footerFont.pointSizeF() > 0)
+            footerFont.setPointSizeF(qMax(1.0, footerFont.pointSizeF() - 1.0));
+        else if (footerFont.pixelSize() > 0)
+            footerFont.setPixelSize(qMax(1, footerFont.pixelSize() - 1));
+        m_footer->setFont(footerFont);
+        m_footer->setVisible(false);
     }
 
     void setListWidget(QWidget *list)
     {
         m_list = list;
         positionList();
+    }
+
+    void setFooterText(const QString &text)
+    {
+        m_footer->setText(text);
+        m_footer->setVisible(!text.isEmpty());
+        positionList();
+    }
+
+    void clearFooter()
+    {
+        setFooterText({});
     }
 
 protected:
@@ -634,16 +687,37 @@ protected:
         positionList();
     }
 
+    void changeEvent(QEvent *event) override
+    {
+        QFrame::changeEvent(event);
+        if (m_footer)
+            m_footer->update();
+    }
+
 private:
     void positionList()
     {
         if (!m_list)
             return;
-        m_list->setGeometry(rect().adjusted(kInset, kInset, -kInset, -kInset));
+
+        const QRect inner = rect().adjusted(kInset, kInset, -kInset, -kInset);
+        const bool showFooter = m_footer && m_footer->isVisible();
+        const int footerH = showFooter ? m_footer->sizeHint().height() : 0;
+        const int footerGap = showFooter ? 8 : 0;
+        const int listBottom = showFooter ? inner.bottom() - footerH - footerGap : inner.bottom();
+        m_list->setGeometry(inner.left(), inner.top(), inner.width(),
+                            qMax(0, listBottom - inner.top() + 1));
+
+        if (showFooter) {
+            m_footer->setGeometry(inner.left(), inner.bottom() - footerH + 1,
+                                  inner.width(), footerH);
+            m_footer->raise();
+        }
     }
 
     static constexpr int kInset = 4;
     QWidget *m_list = nullptr;
+    StringsFooterLabel *m_footer = nullptr;
 };
 
 class PropertyRow : public QWidget

@@ -35,6 +35,7 @@ class QWidget;
 namespace filestats {
 class SectionOperationStrip;
 class SectionHeader;
+class StringListFrame;
 
 struct OperationPause {
     void setPaused(bool value)
@@ -245,6 +246,7 @@ private:
     QPushButton *m_stringsNextButton = nullptr;
     QPushButton *m_stringsAllButton = nullptr;
     QPushButton *m_stringsExportButton = nullptr;
+    filestats::StringListFrame *m_stringsListFrame = nullptr;
     QWidget *m_stringsResizeHandle = nullptr;
     ScanSectionState m_checksumState;
     ScanSectionState m_stringsState;
