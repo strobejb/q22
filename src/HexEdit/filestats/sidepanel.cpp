@@ -374,8 +374,8 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
         [this]() { cancelStringScan(); },
         [this]() { resumeStringScan(); },
         [this, startStrings]() {
-            if (m_stringsList)
-                m_stringsList->clear();
+            if (m_stringsListFrame)
+                m_stringsListFrame->clearList();
             startStrings();
         });
     contentLayout->addWidget(m_stringsOperation->widget());
@@ -481,7 +481,6 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     m_stringsList->setSelectionMode(QAbstractItemView::SingleSelection);
     m_stringsList->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_stringsList->header()->setStretchLastSection(false);
-    m_stringsList->header()->setSectionsClickable(true);
     m_stringsList->header()->setSortIndicatorShown(true);
     QFont headerFont = m_stringsList->header()->font();
     if (headerFont.pointSizeF() > 0)
@@ -500,7 +499,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     ).arg(stringsItemLeftPad));
     m_stringsList->header()->setSectionResizeMode(0, QHeaderView::Stretch);
     m_stringsList->header()->setSectionResizeMode(1, QHeaderView::Fixed);
-    m_stringsList->setSortingEnabled(false);
+    m_stringsList->setSortingEnabled(true);
     m_stringsList->header()->setSortIndicator(1, Qt::AscendingOrder);
     new StringsHeaderCorner(m_stringsList);
     updateStringsOffsetColumnWidth();
@@ -508,20 +507,6 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
         "QScrollBar[filePropertiesStringsListScrollBar=true]:vertical { margin: %1px 0px 4px 0px; padding-top: 1px; }"
     ).arg(headerHeight));
     m_stringsListFrame->setListWidget(m_stringsList);
-    connect(m_stringsList->header(), &QHeaderView::sectionClicked, this,
-            [this](int column) {
-                if (!m_stringsList)
-                    return;
-                QHeaderView *header = m_stringsList->header();
-                const Qt::SortOrder order =
-                    header->sortIndicatorSection() == column
-                        && header->sortIndicatorOrder() == Qt::AscendingOrder
-                            ? Qt::DescendingOrder
-                            : Qt::AscendingOrder;
-                header->setSortIndicator(column, order);
-                sortStringResults(column, order);
-            });
-    sortStringResults(1, Qt::AscendingOrder);
     stringsControlsStackLayout->addWidget(m_stringsListFrame);
 
     m_stringsStatusRow = new QWidget(m_stringsSectionBody);
@@ -740,8 +725,8 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
         m_stringsState.rescanMessage = tr("Options changed");
         m_stringNextOffset = 0;
         clearStringExportTemp();
-        if (m_stringsList)
-            m_stringsList->clear();
+        if (m_stringsListFrame)
+            m_stringsListFrame->clearList();
         if (m_stringsStatusRow)
             m_stringsStatusRow->hide();
         if (m_stringsOperation)
@@ -761,8 +746,8 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
         m_stringsState.rescanMessage = tr("Options changed");
         m_stringNextOffset = 0;
         clearStringExportTemp();
-        if (m_stringsList)
-            m_stringsList->clear();
+        if (m_stringsListFrame)
+            m_stringsListFrame->clearList();
         if (m_stringsStatusRow)
             m_stringsStatusRow->hide();
         if (m_stringsOperation)
@@ -782,8 +767,8 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
         m_stringsState.rescanMessage = tr("Options changed");
         m_stringNextOffset = 0;
         clearStringExportTemp();
-        if (m_stringsList)
-            m_stringsList->clear();
+        if (m_stringsListFrame)
+            m_stringsListFrame->clearList();
         if (m_stringsStatusRow)
             m_stringsStatusRow->hide();
         if (m_stringsOperation)
@@ -803,8 +788,8 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
         m_stringsState.rescanMessage = tr("Options changed");
         m_stringNextOffset = 0;
         clearStringExportTemp();
-        if (m_stringsList)
-            m_stringsList->clear();
+        if (m_stringsListFrame)
+            m_stringsListFrame->clearList();
         if (m_stringsStatusRow)
             m_stringsStatusRow->hide();
         if (m_stringsOperation)

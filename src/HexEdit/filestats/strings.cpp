@@ -48,8 +48,11 @@ public:
     {
         const bool thisTruncation = data(0, kStringFooterRole).toBool();
         const bool otherTruncation = other.data(0, kStringFooterRole).toBool();
-        if (thisTruncation != otherTruncation)
-            return !thisTruncation;
+        if (thisTruncation != otherTruncation) {
+            const bool asc = !treeWidget() ||
+                treeWidget()->header()->sortIndicatorOrder() == Qt::AscendingOrder;
+            return asc ? !thisTruncation : thisTruncation;
+        }
 
         const int column = treeWidget() ? treeWidget()->sortColumn() : 0;
         if (column == 1)
@@ -349,8 +352,12 @@ void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, b
     setStringsProgressTitle(m_stringsState.progress);
     if (m_stringsStatusRow)
         m_stringsStatusRow->hide();
-    if (m_stringsList && !append)
-        m_stringsList->clear();
+    if (!append) {
+        if (m_stringsListFrame)
+            m_stringsListFrame->clearList();
+        else if (m_stringsList)
+            m_stringsList->clear();
+    }
     requestSectionLayoutRefresh(SectionId::Strings);
 
     QPointer<FilePropertiesPanel> guard(this);
@@ -506,8 +513,6 @@ void FilePropertiesPanel::appendStringResults(int generation, const QVector<QVar
         return;
 
     if (m_stringsList && !results.isEmpty()) {
-        const int sortColumn = m_stringsList->sortColumn();
-        const Qt::SortOrder sortOrder = m_stringsList->header()->sortIndicatorOrder();
         m_stringsList->setUpdatesEnabled(false);
         const QColor offsetColor = subduedTextColor(palette());
         for (const QVariantMap &row : results) {
@@ -521,7 +526,6 @@ void FilePropertiesPanel::appendStringResults(int generation, const QVector<QVar
             item->setData(0, Qt::UserRole + 1, length);
         }
         m_stringsList->setUpdatesEnabled(true);
-        sortStringResults(sortColumn, sortOrder);
     }
 }
 
@@ -579,6 +583,10 @@ void FilePropertiesPanel::finishStringScan(int generation, const QVector<QVarian
         return;
 
     appendStringResults(generation, results);
+    if (m_stringsList) {
+        sortStringResults(m_stringsList->header()->sortIndicatorSection(),
+                          m_stringsList->header()->sortIndicatorOrder());
+    }
     m_stringsState.started = false;
     m_stringsState.pausedByCollapse = false;
     m_stringsState.progress = qBound(0, progress, 1000);

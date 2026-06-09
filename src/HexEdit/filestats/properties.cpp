@@ -131,7 +131,9 @@ void FilePropertiesPanel::resetStringsForCurrentDocument()
     m_stringsState.rescanMessage.clear();
     if (m_stringsOperation)
         m_stringsOperation->clear();
-    if (m_stringsList)
+    if (m_stringsListFrame)
+        m_stringsListFrame->clearList();
+    else if (m_stringsList)
         m_stringsList->clear();
     requestSectionLayoutRefresh(SectionId::Strings);
 }

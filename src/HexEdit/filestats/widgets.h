@@ -28,6 +28,7 @@
 #include <QToolButton>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
+#include <QHeaderView>
 #include <QVBoxLayout>
 
 #include <functional>
@@ -681,6 +682,20 @@ public:
         setFooterText({});
     }
 
+    void clearList()
+    {
+        // FooterItem is owned by the tree and will be deleted by clear();
+        // null our pointers before that happens so we don't hold dangling refs.
+        // m_footerWidget is parented to the viewport and survives clear(), but
+        // it's orphaned — let it be cleaned up with the tree widget.
+        m_footerItem = nullptr;
+        m_footerWidget = nullptr;
+        m_footerLabel = nullptr;
+        m_footerText.clear();
+        if (m_list)
+            m_list->clear();
+    }
+
     void refreshFooterPlacement()
     {
         if (!m_list || !m_footerItem || m_footerText.isEmpty())
@@ -714,11 +729,23 @@ protected:
     }
 
 private:
+    struct FooterItem : public QTreeWidgetItem {
+        using QTreeWidgetItem::QTreeWidgetItem;
+        bool operator<(const QTreeWidgetItem &other) const override
+        {
+            if (other.data(0, kStringFooterRole).toBool())
+                return false;
+            if (!treeWidget())
+                return false;
+            return treeWidget()->header()->sortIndicatorOrder() == Qt::DescendingOrder;
+        }
+    };
+
     void ensureFooterItem()
     {
         if (m_footerItem)
             return;
-        m_footerItem = new QTreeWidgetItem;
+        m_footerItem = new FooterItem;
         m_footerWidget = new QWidget(m_list);
         auto *layout = new QHBoxLayout(m_footerWidget);
         layout->setContentsMargins(0, 4, 0, 0);
