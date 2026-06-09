@@ -437,7 +437,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     m_stringEncoding->setFixedHeight(qMax(24, m_stringEncoding->sizeHint().height() - 4));
 
     m_minStringLength = new StepSpinBox(tr("Min:"), 3, 128, 1, m_stringsSectionBody);
-    m_minStringLength->setValue(3);
+    m_minStringLength->setValue(5);
     m_minStringLength->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     m_minStringLength->setLabelAlignment(Qt::AlignRight);
     m_minStringLength->setLabelValueSpacing(4);
@@ -469,7 +469,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     m_stringsList = new QTreeWidget(m_stringsListFrame);
     m_stringsList->setHeader(new InlineSortHeader(Qt::Horizontal, m_stringsList));
     m_stringsList->setProperty("filePropertiesStringsList", true);
-    m_stringsList->verticalScrollBar()->setProperty("filePropertiesStringsListScrollBar", true);
+
     m_stringsList->setMinimumSize(0, 0);
     m_stringsList->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
     m_stringsList->setColumnCount(2);
@@ -503,9 +503,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent)
     m_stringsList->header()->setSortIndicator(1, Qt::AscendingOrder);
     new StringsHeaderCorner(m_stringsList);
     updateStringsOffsetColumnWidth();
-    m_stringsList->verticalScrollBar()->setStyleSheet(QStringLiteral(
-        "QScrollBar[filePropertiesStringsListScrollBar=true]:vertical { margin: %1px 0px 4px 0px; padding-top: 1px; }"
-    ).arg(headerHeight));
+
     m_stringsListFrame->setListWidget(m_stringsList);
     stringsControlsStackLayout->addWidget(m_stringsListFrame);
 
