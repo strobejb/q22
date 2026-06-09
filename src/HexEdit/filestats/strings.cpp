@@ -35,7 +35,7 @@ using namespace filestats;
 namespace {
 
 static constexpr int kInitialStringResultBatchLimit = 1000;
-static constexpr int kMaxStringResultBatchLimit = 100000;
+static constexpr int kMaxStringResultBatchLimit = 5000;
 static constexpr qint64 kMinimumStringScanMs = 10000;
 static constexpr int kMaxBufferedStringLength = 4096;
 
@@ -358,6 +358,14 @@ void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, b
         else if (m_stringsList)
             m_stringsList->clear();
     }
+    // Disable auto-sort for the duration of the scan: setSortingEnabled(true) causes Qt
+    // to re-sort the entire list after every item insertion (O(n²) total). We disable it
+    // once here and re-enable once in sortStringResults when the scan completes.
+    if (m_stringsList && m_stringsList->isSortingEnabled()) {
+        m_stringsList->setSortingEnabled(false);
+        m_stringsList->header()->setSortIndicatorShown(true);
+        m_stringsList->header()->setSectionsClickable(true);
+    }
     requestSectionLayoutRefresh(SectionId::Strings);
 
     QPointer<FilePropertiesPanel> guard(this);
@@ -515,16 +523,20 @@ void FilePropertiesPanel::appendStringResults(int generation, const QVector<QVar
     if (m_stringsList && !results.isEmpty()) {
         m_stringsList->setUpdatesEnabled(false);
         const QColor offsetColor = subduedTextColor(palette());
+        QList<QTreeWidgetItem *> items;
+        items.reserve(results.size());
         for (const QVariantMap &row : results) {
             const qulonglong offset = row.value(QStringLiteral("offset")).toULongLong();
             const qulonglong length = row.value(QStringLiteral("length")).toULongLong();
-            auto *item = new StringResultItem(m_stringsList);
+            auto *item = new StringResultItem;
             item->setText(0, row.value(QStringLiteral("text")).toString());
             item->setText(1, hexOffsetString(offset));
             item->setForeground(1, QBrush(offsetColor));
             item->setData(0, Qt::UserRole, offset);
             item->setData(0, Qt::UserRole + 1, length);
+            items.append(item);
         }
+        m_stringsList->addTopLevelItems(items);
         m_stringsList->setUpdatesEnabled(true);
     }
 }
@@ -537,6 +549,10 @@ void FilePropertiesPanel::sortStringResults(int column, Qt::SortOrder order)
     const bool wasUpdatesEnabled = m_stringsList->updatesEnabled();
     if (wasUpdatesEnabled)
         m_stringsList->setUpdatesEnabled(false);
+    // Re-establish setSortingEnabled(true) if batch inserts left it disabled.
+    // This restores the sectionClicked→sortByColumn connection for header toggle.
+    if (!m_stringsList->isSortingEnabled())
+        m_stringsList->setSortingEnabled(true);
     m_stringsList->sortItems(column, order);
     if (m_stringsListFrame)
         m_stringsListFrame->refreshFooterPlacement();
