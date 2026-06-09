@@ -74,3 +74,24 @@ set_tests_properties(stringscan_tests PROPERTIES
     ENVIRONMENT_MODIFICATION
         "PATH=path_list_prepend:${QT_RUNTIME_BIN_DIR}"
 )
+
+add_executable(exportformat_tests
+    exportformat_tests.cpp
+    ../src/HexEdit/dialogs/exportformat.cpp
+)
+
+target_include_directories(exportformat_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/src/HexEdit
+)
+
+target_link_libraries(exportformat_tests PRIVATE
+    Qt${QT_VERSION_MAJOR}::Core
+    Qt${QT_VERSION_MAJOR}::Test
+)
+
+add_test(NAME exportformat_tests COMMAND exportformat_tests)
+set_tests_properties(exportformat_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION
+        "PATH=path_list_prepend:${QT_RUNTIME_BIN_DIR}"
+)

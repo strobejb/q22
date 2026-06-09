@@ -92,6 +92,8 @@ set(PROJECT_SOURCES
         theme.h
         dialogs/dlgexport.h
         dialogs/dlgexport.cpp
+        dialogs/exportformat.h
+        dialogs/exportformat.cpp
         dialogs/dlgcopyas.h
         dialogs/dlgcopyas.cpp
         dialogs/copyas.ui

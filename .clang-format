@@ -36,3 +36,6 @@ AlignConsecutiveDeclarations:
 AlignTrailingComments:
   Kind: Always
   OverEmptyLines: 0
+
+
+SeparateDefinitionBlocks: Always
