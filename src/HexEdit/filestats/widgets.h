@@ -10,11 +10,13 @@
 #include <QCursor>
 #include <QEnterEvent>
 #include <QEvent>
+#include <QBrush>
 #include <QFrame>
 #include <QGraphicsOpacityEffect>
 #include <QHBoxLayout>
 #include <QHideEvent>
 #include <QLabel>
+#include <QFontMetrics>
 #include <QMouseEvent>
 #include <QLinearGradient>
 #include <QPainter>
@@ -24,6 +26,8 @@
 #include <QSizePolicy>
 #include <QTimer>
 #include <QToolButton>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
 #include <QVBoxLayout>
 
 #include <functional>
@@ -70,25 +74,17 @@ inline QColor stringsHeaderTextColor(const QPalette &palette)
                   qRound(mid.alpha() * midWeight + dark.alpha() * darkWeight));
 }
 
-class StringsFooterLabel : public QLabel
+inline int stringsHeaderPadding(const QFontMetrics &fm)
 {
-public:
-    explicit StringsFooterLabel(QWidget *parent = nullptr) : QLabel(parent)
-    {
-        setAlignment(Qt::AlignCenter);
-        setContentsMargins(0, 0, 0, 4);
-    }
+    return qMax(4, qRound(fm.height() * 0.6));
+}
 
-protected:
-    void paintEvent(QPaintEvent *event) override
-    {
-        Q_UNUSED(event)
-        QPainter painter(this);
-        painter.setPen(stringsHeaderTextColor(palette()));
-        painter.setFont(font());
-        painter.drawText(contentsRect(), alignment() | Qt::TextSingleLine, text());
-    }
-};
+inline int stringsHeaderGap(const QFontMetrics &fm)
+{
+    return qMax(4, fm.height() / 4);
+}
+
+static constexpr int kStringFooterRole = Qt::UserRole + 2;
 
 class SectionHeader : public QWidget
 {
@@ -651,33 +647,56 @@ public:
     explicit StringListFrame(QWidget *parent = nullptr)
         : QFrame(parent)
     {
-        m_footer = new StringsFooterLabel(this);
-        m_footer->setObjectName(QStringLiteral("stringsFooter"));
-        QFont footerFont = m_footer->font();
-        if (footerFont.pointSizeF() > 0)
-            footerFont.setPointSizeF(qMax(1.0, footerFont.pointSizeF() - 1.0));
-        else if (footerFont.pixelSize() > 0)
-            footerFont.setPixelSize(qMax(1, footerFont.pixelSize() - 1));
-        m_footer->setFont(footerFont);
-        m_footer->setVisible(false);
     }
 
-    void setListWidget(QWidget *list)
+    void setListWidget(QTreeWidget *list)
     {
         m_list = list;
+        if (!m_footerText.isEmpty())
+            ensureFooterItem();
+        refreshFooterAppearance();
+        refreshFooterPlacement();
         positionList();
     }
 
     void setFooterText(const QString &text)
     {
-        m_footer->setText(text);
-        m_footer->setVisible(!text.isEmpty());
+        m_footerText = text;
+        if (!m_list)
+            return;
+
+        if (text.isEmpty()) {
+            removeFooterItem();
+        } else {
+            ensureFooterItem();
+            if (m_footerLabel)
+                m_footerLabel->setText(text);
+            refreshFooterPlacement();
+        }
         positionList();
     }
 
     void clearFooter()
     {
         setFooterText({});
+    }
+
+    void refreshFooterPlacement()
+    {
+        if (!m_list || !m_footerItem || m_footerText.isEmpty())
+            return;
+
+        const int index = m_list->indexOfTopLevelItem(m_footerItem);
+        if (index >= 0) {
+            if (index == m_list->topLevelItemCount() - 1)
+                return;
+            m_list->takeTopLevelItem(index);
+        }
+        m_list->addTopLevelItem(m_footerItem);
+        m_list->setFirstColumnSpanned(m_list->indexOfTopLevelItem(m_footerItem), QModelIndex(), true);
+        if (m_footerWidget)
+            m_list->setItemWidget(m_footerItem, 0, m_footerWidget);
+        m_footerItem->setHidden(false);
     }
 
 protected:
@@ -690,34 +709,80 @@ protected:
     void changeEvent(QEvent *event) override
     {
         QFrame::changeEvent(event);
-        if (m_footer)
-            m_footer->update();
+        if (event->type() == QEvent::FontChange || event->type() == QEvent::PaletteChange)
+            refreshFooterAppearance();
     }
 
 private:
+    void ensureFooterItem()
+    {
+        if (m_footerItem)
+            return;
+        m_footerItem = new QTreeWidgetItem;
+        m_footerWidget = new QWidget(m_list);
+        auto *layout = new QHBoxLayout(m_footerWidget);
+        layout->setContentsMargins(0, 4, 0, 0);
+        layout->setSpacing(0);
+        layout->addStretch(1);
+        m_footerLabel = new QLabel(m_footerWidget);
+        m_footerLabel->setAlignment(Qt::AlignCenter);
+        layout->addWidget(m_footerLabel, 0, Qt::AlignCenter);
+        layout->addStretch(1);
+        refreshFooterAppearance();
+    }
+
+    void refreshFooterAppearance()
+    {
+        if (!m_footerItem)
+            return;
+
+        QFont footerFont = font();
+        if (footerFont.pointSizeF() > 0)
+            footerFont.setPointSizeF(qMax(1.0, footerFont.pointSizeF() - 1.0));
+        else if (footerFont.pixelSize() > 0)
+            footerFont.setPixelSize(qMax(1, footerFont.pixelSize() - 1));
+
+        if (m_footerLabel) {
+            m_footerLabel->setFont(footerFont);
+            m_footerLabel->setStyleSheet(QStringLiteral("background: transparent; color: %1;")
+                                         .arg(cssColor(stringsHeaderTextColor(palette()))));
+        }
+        m_footerItem->setData(0, kStringFooterRole, true);
+        m_footerItem->setFirstColumnSpanned(true);
+        m_footerItem->setFlags(Qt::NoItemFlags);
+    }
+
+    void removeFooterItem()
+    {
+        if (!m_footerItem)
+            return;
+        if (m_list) {
+            const int index = m_list->indexOfTopLevelItem(m_footerItem);
+            if (index >= 0)
+                delete m_list->takeTopLevelItem(index);
+        }
+        delete m_footerWidget;
+        m_footerWidget = nullptr;
+        m_footerLabel = nullptr;
+        delete m_footerItem;
+        m_footerItem = nullptr;
+    }
+
     void positionList()
     {
         if (!m_list)
             return;
 
         const QRect inner = rect().adjusted(kInset, kInset, -kInset, -kInset);
-        const bool showFooter = m_footer && m_footer->isVisible();
-        const int footerH = showFooter ? m_footer->sizeHint().height() : 0;
-        const int footerGap = showFooter ? 8 : 0;
-        const int listBottom = showFooter ? inner.bottom() - footerH - footerGap : inner.bottom();
-        m_list->setGeometry(inner.left(), inner.top(), inner.width(),
-                            qMax(0, listBottom - inner.top() + 1));
-
-        if (showFooter) {
-            m_footer->setGeometry(inner.left(), inner.bottom() - footerH + 1,
-                                  inner.width(), footerH);
-            m_footer->raise();
-        }
+        m_list->setGeometry(inner.left(), inner.top(), inner.width(), inner.height());
     }
 
     static constexpr int kInset = 4;
-    QWidget *m_list = nullptr;
-    StringsFooterLabel *m_footer = nullptr;
+    QTreeWidget *m_list = nullptr;
+    QTreeWidgetItem *m_footerItem = nullptr;
+    QWidget *m_footerWidget = nullptr;
+    QLabel *m_footerLabel = nullptr;
+    QString m_footerText;
 };
 
 class PropertyRow : public QWidget

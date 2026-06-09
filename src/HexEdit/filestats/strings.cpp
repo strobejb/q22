@@ -38,7 +38,6 @@ static constexpr int kInitialStringResultBatchLimit = 1000;
 static constexpr int kMaxStringResultBatchLimit = 100000;
 static constexpr qint64 kMinimumStringScanMs = 10000;
 static constexpr int kMaxBufferedStringLength = 4096;
-static constexpr int kStringTruncationRole = Qt::UserRole + 2;
 
 class StringResultItem : public QTreeWidgetItem
 {
@@ -47,8 +46,8 @@ public:
 
     bool operator<(const QTreeWidgetItem &other) const override
     {
-        const bool thisTruncation = data(0, kStringTruncationRole).toBool();
-        const bool otherTruncation = other.data(0, kStringTruncationRole).toBool();
+        const bool thisTruncation = data(0, kStringFooterRole).toBool();
+        const bool otherTruncation = other.data(0, kStringFooterRole).toBool();
         if (thisTruncation != otherTruncation)
             return !thisTruncation;
 
@@ -283,7 +282,7 @@ QString FilePropertiesPanel::createStringExportTemp()
     if (m_stringsList) {
         for (int i = 0; i < m_stringsList->topLevelItemCount(); ++i) {
             if (QTreeWidgetItem *item = m_stringsList->topLevelItem(i)) {
-                if (item->data(0, kStringTruncationRole).toBool())
+                if (item->data(0, kStringFooterRole).toBool())
                     continue;
                 const qulonglong offset = item->data(0, Qt::UserRole).toULongLong();
                 out << exportStringLine(item->text(0), offset, prefixHexOffset) << '\n';
@@ -507,11 +506,8 @@ void FilePropertiesPanel::appendStringResults(int generation, const QVector<QVar
         return;
 
     if (m_stringsList && !results.isEmpty()) {
-        const bool sortingEnabled = m_stringsList->isSortingEnabled();
         const int sortColumn = m_stringsList->sortColumn();
         const Qt::SortOrder sortOrder = m_stringsList->header()->sortIndicatorOrder();
-        if (sortingEnabled)
-            m_stringsList->setSortingEnabled(false);
         m_stringsList->setUpdatesEnabled(false);
         const QColor offsetColor = subduedTextColor(palette());
         for (const QVariantMap &row : results) {
@@ -525,11 +521,23 @@ void FilePropertiesPanel::appendStringResults(int generation, const QVector<QVar
             item->setData(0, Qt::UserRole + 1, length);
         }
         m_stringsList->setUpdatesEnabled(true);
-        if (sortingEnabled) {
-            m_stringsList->setSortingEnabled(true);
-            m_stringsList->sortItems(sortColumn, sortOrder);
-        }
+        sortStringResults(sortColumn, sortOrder);
     }
+}
+
+void FilePropertiesPanel::sortStringResults(int column, Qt::SortOrder order)
+{
+    if (!m_stringsList)
+        return;
+
+    const bool wasUpdatesEnabled = m_stringsList->updatesEnabled();
+    if (wasUpdatesEnabled)
+        m_stringsList->setUpdatesEnabled(false);
+    m_stringsList->sortItems(column, order);
+    if (m_stringsListFrame)
+        m_stringsListFrame->refreshFooterPlacement();
+    if (wasUpdatesEnabled)
+        m_stringsList->setUpdatesEnabled(true);
 }
 
 void FilePropertiesPanel::removeStringTruncationItem()
@@ -555,7 +563,7 @@ int FilePropertiesPanel::visibleStringResultCount() const
     int count = 0;
     for (int i = 0; i < m_stringsList->topLevelItemCount(); ++i) {
         QTreeWidgetItem *item = m_stringsList->topLevelItem(i);
-        if (item && !item->data(0, kStringTruncationRole).toBool())
+        if (item && !item->data(0, kStringFooterRole).toBool())
             ++count;
     }
     return count;

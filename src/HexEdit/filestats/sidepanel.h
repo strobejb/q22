@@ -118,6 +118,7 @@ private:
     void applyChecksumResults(int generation, const QHash<QString, QString> &results);
     void updateStringProgress(int generation, int value);
     void appendStringResults(int generation, const QVector<QVariantMap> &results);
+    void sortStringResults(int column, Qt::SortOrder order);
     void removeStringTruncationItem();
     void addStringTruncationItem(const QString &message);
     int visibleStringResultCount() const;
