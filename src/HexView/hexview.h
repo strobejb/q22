@@ -281,7 +281,7 @@ public:
     size_t setData(size_w offset, uint8_t *buf, size_t len);
 
     // Import helpers: write at current cursor and advance, and zero-pad up to an address
-    size_w setDataAdv(const uint8_t *buf, size_t len);
+    size_w writeAtCursor(const uint8_t *buf, size_t len);
     void   padToAddress(size_w addr);
 
     // Find

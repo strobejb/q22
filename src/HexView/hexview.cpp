@@ -794,7 +794,7 @@ size_t HexView::setData(size_w offset, uint8_t *buf, size_t len)
     return m_pDataSeq->replace(offset, buf, len);
 }
 
-size_w HexView::setDataAdv(const uint8_t *buf, size_t len)
+size_w HexView::writeAtCursor(const uint8_t *buf, size_t len)
 {
     return enterData(const_cast<uint8_t *>(buf), (size_w)len,
                      /*fAdvanceCaret=*/true,

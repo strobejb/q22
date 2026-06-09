@@ -1,36 +1,72 @@
 #include "dialogs/exportformat.h"
 #include "dialogs/importformat.h"
 
+#include <QBuffer>
 #include <QByteArray>
 #include <QTest>
+
+// ── Test helpers ──────────────────────────────────────────────────────────────
+
+// DataSink that collects everything written into a QByteArray.
+struct ByteArraySink : DataSink
+{
+    QByteArray data;
+
+    void write(const uint8_t *buf, size_t len) override
+    {
+        data.append(reinterpret_cast<const char *>(buf), (int)len);
+    }
+
+    // padToAddress has a default no-op — format tests don't exercise addressing
+};
+
+// Run one import format function against a text input, return collected bytes.
+static QByteArray runImport(size_w (*fn)(ImportReader &, DataSink &, size_w, size_w, IMPEXP_OPTIONS *),
+                            const QByteArray &input, IMPEXP_OPTIONS opts = {})
+{
+    QByteArray buf = input;
+    QBuffer    dev(&buf);
+    dev.open(QIODevice::ReadOnly);
+    ImportReader  reader(&dev);
+    ByteArraySink sink;
+    fn(reader, sink, 0, 0, &opts);
+    return sink.data;
+}
 
 class ImportFormatTests : public QObject
 {
     Q_OBJECT
 
   private slots:
+    // Codec decode primitives
     void base64_decodeRfcVectors();
     void base64_roundTrip();
-
     void uuDecode_knownInput();
     void uuDecode_emptyLine();
     void uu_roundTrip();
-
     void intelToBin_eofRecord();
     void intelToBin_dataRecord();
     void intelToBin_extendedLinearAddress();
     void intelToBin_rejectsInvalid();
     void intel_roundTrip();
-
     void motorolaToBin_s9Terminator();
     void motorolaToBin_s1DataRecord();
     void motorolaToBin_s3DataRecord();
     void motorolaToBin_rejectsInvalid();
     void motorola_roundTrip();
+
+    // Format parsers
+    void importRawHex_basicBytes();
+    void importRawHex_withSpaces();
+    void importBase64_knownInput();
+    void importUUEncode_knownInput();
+    void importIntelHex_singleByte();
+    void importMotorola_singleByte();
+    void importASM_byteMode();
+    void importCPP_byteArray();
 };
 
 // ── base64_decode ─────────────────────────────────────────────────────────────
-// RFC 4648 §10 test vectors (inverse of the encode tests).
 
 void ImportFormatTests::base64_decodeRfcVectors()
 {
@@ -51,7 +87,6 @@ void ImportFormatTests::base64_decodeRfcVectors()
 
 void ImportFormatTests::base64_roundTrip()
 {
-    // Encode then decode — result must equal the original for all byte values.
     QByteArray original;
     original.resize(256);
     for (int i = 0; i < 256; i++)
@@ -72,7 +107,6 @@ void ImportFormatTests::base64_roundTrip()
 
 void ImportFormatTests::uuDecode_knownInput()
 {
-    // "#0V%T" is the UU encoding of "Cat" — length char '#' (=3) + encoded data.
     uint8_t buf[8];
     size_t  n = uu_decode("#0V%T", 5, buf);
     QCOMPARE((int)n, 3);
@@ -81,9 +115,6 @@ void ImportFormatTests::uuDecode_knownInput()
 
 void ImportFormatTests::uuDecode_emptyLine()
 {
-    // The UU end-of-data marker is a line containing only '`' (uuetable[0]=space,
-    // but the encoder uses space for length-0; the decoder accepts either).
-    // A single space character encodes zero bytes.
     uint8_t buf[8];
     size_t  n = uu_decode(" ", 1, buf);
     QCOMPARE((int)n, 0);
@@ -91,7 +122,6 @@ void ImportFormatTests::uuDecode_emptyLine()
 
 void ImportFormatTests::uu_roundTrip()
 {
-    // Encode then decode for a block of bytes (45 bytes = one full UU line).
     QByteArray original;
     original.resize(45);
     for (int i = 0; i < 45; i++)
@@ -109,11 +139,9 @@ void ImportFormatTests::uu_roundTrip()
 }
 
 // ── intel_to_bin ─────────────────────────────────────────────────────────────
-// Parse the same records built by intel_frame in exportformat_tests.
 
 void ImportFormatTests::intelToBin_eofRecord()
 {
-    // :00000001FF → type=1, count=0, addr=0
     int           type = -1, count = -1;
     unsigned long addr = 0xdeadbeef;
     uint8_t       data[256];
@@ -125,7 +153,6 @@ void ImportFormatTests::intelToBin_eofRecord()
 
 void ImportFormatTests::intelToBin_dataRecord()
 {
-    // :01000000AA55 → type=0, count=1, addr=0, data=[0xAA]
     int           type = -1, count = -1;
     unsigned long addr = 0xdeadbeef;
     uint8_t       data[256];
@@ -138,7 +165,6 @@ void ImportFormatTests::intelToBin_dataRecord()
 
 void ImportFormatTests::intelToBin_extendedLinearAddress()
 {
-    // :020000040001F9 → type=4, count=2, addr=0, data=[0x00, 0x01]
     int           type = -1, count = -1;
     unsigned long addr = 0xdeadbeef;
     uint8_t       data[256];
@@ -155,14 +181,13 @@ void ImportFormatTests::intelToBin_rejectsInvalid()
     int           type, count;
     unsigned long addr;
     uint8_t       data[256];
-    QVERIFY(!intel_to_bin("", &type, &count, &addr, data));            // empty
-    QVERIFY(!intel_to_bin("00000001FF", &type, &count, &addr, data));  // missing ':'
-    QVERIFY(!intel_to_bin(":0000GG01FF", &type, &count, &addr, data)); // bad hex
+    QVERIFY(!intel_to_bin("", &type, &count, &addr, data));
+    QVERIFY(!intel_to_bin("00000001FF", &type, &count, &addr, data));
+    QVERIFY(!intel_to_bin(":0000GG01FF", &type, &count, &addr, data));
 }
 
 void ImportFormatTests::intel_roundTrip()
 {
-    // Build a data record with intel_frame, parse it back, check round-trip.
     const uint8_t orig[] = {0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF};
     char          rec[64];
     size_t        recLen = intel_frame(rec, 0, sizeof(orig), 0x1234, orig);
@@ -183,7 +208,6 @@ void ImportFormatTests::intel_roundTrip()
 
 void ImportFormatTests::motorolaToBin_s9Terminator()
 {
-    // S9030000FC → type=9, count=0, addr=0
     int           type = -1, count = -1;
     unsigned long addr = 0xdeadbeef;
     uint8_t       data[256];
@@ -195,7 +219,6 @@ void ImportFormatTests::motorolaToBin_s9Terminator()
 
 void ImportFormatTests::motorolaToBin_s1DataRecord()
 {
-    // S1040000AA51 → type=1, count=1, addr=0, data=[0xAA]
     int           type = -1, count = -1;
     unsigned long addr = 0xdeadbeef;
     uint8_t       data[256];
@@ -208,7 +231,6 @@ void ImportFormatTests::motorolaToBin_s1DataRecord()
 
 void ImportFormatTests::motorolaToBin_s3DataRecord()
 {
-    // S30712345678ABCD6C → type=3, count=2, addr=0x12345678, data=[0xAB, 0xCD]
     int           type = -1, count = -1;
     unsigned long addr = 0xdeadbeef;
     uint8_t       data[256];
@@ -225,14 +247,13 @@ void ImportFormatTests::motorolaToBin_rejectsInvalid()
     int           type, count;
     unsigned long addr;
     uint8_t       data[256];
-    QVERIFY(!motorola_to_bin("", &type, &count, &addr, data));           // empty
-    QVERIFY(!motorola_to_bin("S4030000FC", &type, &count, &addr, data)); // type 4 unsupported
-    QVERIFY(!motorola_to_bin("X9030000FC", &type, &count, &addr, data)); // wrong leader
+    QVERIFY(!motorola_to_bin("", &type, &count, &addr, data));
+    QVERIFY(!motorola_to_bin("S4030000FC", &type, &count, &addr, data));
+    QVERIFY(!motorola_to_bin("X9030000FC", &type, &count, &addr, data));
 }
 
 void ImportFormatTests::motorola_roundTrip()
 {
-    // Build an S3 record with motorola_frame, parse it back, check round-trip.
     const uint8_t orig[] = {0xDE, 0xAD, 0xBE, 0xEF};
     char          rec[64];
     size_t        recLen = motorola_frame(rec, 3, sizeof(orig), 0xCAFEBABEUL, orig);
@@ -247,6 +268,87 @@ void ImportFormatTests::motorola_roundTrip()
     QCOMPARE(addr, 0xCAFEBABEUL);
     QCOMPARE(QByteArray(reinterpret_cast<const char *>(data), count),
              QByteArray(reinterpret_cast<const char *>(orig), sizeof(orig)));
+}
+
+// ── ImportRawHex ─────────────────────────────────────────────────────────────
+
+void ImportFormatTests::importRawHex_basicBytes()
+{
+    // Contiguous hex digits → raw bytes
+    QByteArray out = runImport(ImportRawHex, "414243");
+    QCOMPARE(out, QByteArray("ABC"));
+}
+
+void ImportFormatTests::importRawHex_withSpaces()
+{
+    // Spaces between pairs are accepted; partial nibble at space is flushed
+    QByteArray out = runImport(ImportRawHex, "41 42 43");
+    QCOMPARE(out, QByteArray("ABC"));
+}
+
+// ── ImportBase64 ─────────────────────────────────────────────────────────────
+
+void ImportFormatTests::importBase64_knownInput()
+{
+    // One base64 line (with trailing newline as ImportBase64 uses gets())
+    QByteArray out = runImport(ImportBase64, "Zm9vYmFy\n");
+    QCOMPARE(out, QByteArray("foobar"));
+}
+
+// ── ImportUUEncode ────────────────────────────────────────────────────────────
+
+void ImportFormatTests::importUUEncode_knownInput()
+{
+    QByteArray input = "begin 666 test.bin\n#0V%T\n`\nend\n";
+    QByteArray out   = runImport(ImportUUEncode, input);
+    QCOMPARE(out, QByteArray("Cat"));
+}
+
+// ── ImportIntelHex ────────────────────────────────────────────────────────────
+
+void ImportFormatTests::importIntelHex_singleByte()
+{
+    // Extended-address record (ignored for offset 0), one data byte, EOF.
+    QByteArray     input = ":020000040000FA\n:01000000AA55\n:00000001FF\n";
+    IMPEXP_OPTIONS opts;
+    opts.fUseAddress = false; // no padToAddress in ByteArraySink
+    QByteArray out   = runImport(ImportIntelHex, input, opts);
+    QCOMPARE(out, QByteArray("\xAA", 1));
+}
+
+// ── ImportMotorola ────────────────────────────────────────────────────────────
+
+void ImportFormatTests::importMotorola_singleByte()
+{
+    // S0 header (ignored), S1 data record, S9 terminator.
+    QByteArray     input = "S00600004844521B\nS1040000AA51\nS9030000FC\n";
+    IMPEXP_OPTIONS opts;
+    opts.fUseAddress = false;
+    QByteArray out   = runImport(ImportMotorola, input, opts);
+    QCOMPARE(out, QByteArray("\xAA", 1));
+}
+
+// ── ImportASM ────────────────────────────────────────────────────────────────
+
+void ImportFormatTests::importASM_byteMode()
+{
+    // Two-byte db line in hex suffix notation
+    QByteArray     input = "db 041h 042h \n";
+    IMPEXP_OPTIONS opts;
+    opts.fBigEndian = false;
+    QByteArray out  = runImport(ImportASM, input, opts);
+    QCOMPARE(out, QByteArray("\x41\x42", 2));
+}
+
+// ── ImportCPP ────────────────────────────────────────────────────────────────
+
+void ImportFormatTests::importCPP_byteArray()
+{
+    QByteArray     input = "uint8_t data[] = { 0x41, 0x42, 0x43, };";
+    IMPEXP_OPTIONS opts;
+    opts.fBigEndian = false;
+    QByteArray out  = runImport(ImportCPP, input, opts);
+    QCOMPARE(out, QByteArray("ABC"));
 }
 
 QTEST_APPLESS_MAIN(ImportFormatTests)
