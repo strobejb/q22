@@ -1,4 +1,4 @@
-#include "filestats/sidepanel.h"
+﻿#include "filestats/sidepanel.h"
 #include "filestats/stringscan.h"
 
 #include "HexView/hexview.h"
@@ -16,9 +16,11 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QLocale>
+#include <QPushButton>
 #include <QMetaObject>
 #include <QPointer>
 #include <QProgressBar>
+#include <QPushButton>
 #include <QThread>
 #include <QToolButton>
 #include <QTreeWidget>
@@ -184,7 +186,7 @@ void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, b
             m_stringsList->clear();
     }
     // Disable auto-sort for the duration of the scan: setSortingEnabled(true) causes Qt
-    // to re-sort the entire list after every item insertion (O(n²) total). We disable it
+    // to re-sort the entire list after every item insertion (O(nÂ²) total). We disable it
     // once here and re-enable once in sortStringResults when the scan completes.
     if (m_stringsList && m_stringsList->isSortingEnabled()) {
         m_stringsList->setSortingEnabled(false);
@@ -375,7 +377,7 @@ void FilePropertiesPanel::sortStringResults(int column, Qt::SortOrder order)
     if (wasUpdatesEnabled)
         m_stringsList->setUpdatesEnabled(false);
     // Re-establish setSortingEnabled(true) if batch inserts left it disabled.
-    // This restores the sectionClicked→sortByColumn connection for header toggle.
+    // This restores the sectionClickedâ†’sortByColumn connection for header toggle.
     if (!m_stringsList->isSortingEnabled())
         m_stringsList->setSortingEnabled(true);
     m_stringsList->sortItems(column, order);
