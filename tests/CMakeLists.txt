@@ -53,3 +53,24 @@ set_tests_properties(findpanel_tests PROPERTIES
     ENVIRONMENT_MODIFICATION
         "PATH=path_list_prepend:${QT_RUNTIME_BIN_DIR}"
 )
+
+add_executable(stringscan_tests
+    stringscan_tests.cpp
+    ../src/HexEdit/filestats/stringscan.cpp
+)
+
+target_include_directories(stringscan_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/src/HexEdit
+)
+
+target_link_libraries(stringscan_tests PRIVATE
+    Qt${QT_VERSION_MAJOR}::Core
+    Qt${QT_VERSION_MAJOR}::Test
+)
+
+add_test(NAME stringscan_tests COMMAND stringscan_tests)
+set_tests_properties(stringscan_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION
+        "PATH=path_list_prepend:${QT_RUNTIME_BIN_DIR}"
+)

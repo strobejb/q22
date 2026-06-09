@@ -16,6 +16,8 @@ set(PROJECT_SOURCES
         filestats/sidepanel.cpp
         filestats/sidepanel.h
         filestats/strings.cpp
+        filestats/stringscan.cpp
+        filestats/stringscan.h
         filestats/widgets.h
         mainwindow.cpp
         mainwindow.h
