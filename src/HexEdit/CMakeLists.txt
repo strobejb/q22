@@ -94,6 +94,8 @@ set(PROJECT_SOURCES
         dialogs/dlgexport.cpp
         dialogs/exportformat.h
         dialogs/exportformat.cpp
+        dialogs/importformat.h
+        dialogs/importformat.cpp
         dialogs/dlgcopyas.h
         dialogs/dlgcopyas.cpp
         dialogs/copyas.ui
