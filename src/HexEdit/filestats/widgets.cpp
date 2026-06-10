@@ -107,12 +107,17 @@ void SectionHeader::updateChevronIcon()
     QColor       iconColor;
     if (m_expandable && m_hover)
     {
+        // 3) looks too
+        // iconName  = m_sectionExpanded ? QStringLiteral("ui/collapse-panel") : QStringLiteral("ui/expand-panel");
+
+        // 2) visually cohesive
         //iconName  = m_collapsed ? QStringLiteral("ui/double-down") : QStringLiteral("ui/double-up");
+
+        // 3)
         if(m_sectionExpanded)
             iconName  = m_collapsed ? QStringLiteral("ui/collapse-down") : QStringLiteral("ui/collapse-up");
         else
             iconName  = m_collapsed ? QStringLiteral("ui/expand-down") : QStringLiteral("ui/expand-up");
-
 
 
         iconColor = m_chevronPressed ? palette().windowText().color() : subduedTextColor(palette());

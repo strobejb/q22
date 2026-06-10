@@ -1189,6 +1189,40 @@ void FilePropertiesPanel::setSectionCollapsed(SectionId sectionId, bool collapse
                                repairExpandedSectionGeometry(sectionId);
                                settleContentLayout();
                            });
+        QTimer::singleShot(0, this,
+                           [this, sectionId]()
+                           {
+                               // Skip when a full-expand is in progress — it owns scrolling.
+                               if (m_hasExpandedSection || !m_scrollArea || !m_content)
+                                   return;
+                               PanelSection *s = sectionFor(sectionId);
+                               if (!s || !s->header || !s->body || s->collapsed)
+                                   return;
+
+                               const int vpH       = m_scrollArea->viewport()->height();
+                               const int curScroll = m_scrollArea->verticalScrollBar()->value();
+
+                               // Use content coords — reliable after settleContentLayout.
+                               const int headerCY    = s->header->mapTo(m_content, QPoint(0, 0)).y();
+                               const int headerVpY   = headerCY - curScroll;
+
+                               // Only act when the header is in the lower half of the viewport.
+                               if (headerVpY <= vpH / 2)
+                                   return;
+
+                               const int bodyBottomCY  = s->body->mapTo(m_content,
+                                                                          QPoint(0, s->body->height())).y();
+                               // Only scroll if the expanded body extends below the viewport.
+                               if (bodyBottomCY - curScroll <= vpH)
+                                   return;
+
+                               // Scroll so the section header sits just below the top,
+                               // leaving exactly one header-height of room for the
+                               // section above to remain visible.
+                               const int targetScroll = qMax(0, headerCY - kSectionHeaderHeight);
+                               if (targetScroll > curScroll)
+                                   m_scrollArea->verticalScrollBar()->setValue(targetScroll);
+                           });
     }
     updateStickyHeader();
     QTimer::singleShot(0, this, &FilePropertiesPanel::updateStickyHeader);
