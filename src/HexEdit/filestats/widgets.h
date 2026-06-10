@@ -93,8 +93,8 @@ class SectionHeader : public QWidget
 
     void setTitle(const QString &title) { m_title = title; update(); }
     void setCollapsed(bool collapsed);
-    void setExpandable(bool expandable) { m_expandable = expandable; update(); }
-    void setSectionExpanded(bool expanded) { m_sectionExpanded = expanded; update(); }
+    void setExpandable(bool expandable) { m_expandable = expandable; updateChevronIcon(); update(); }
+    void setSectionExpanded(bool expanded) { m_sectionExpanded = expanded; updateChevronIcon(); update(); }
     void setExpandCallback(std::function<void()> callback) { m_expandCallback = std::move(callback); }
     void setClickedCallback(std::function<void()> callback) { m_clicked = std::move(callback); }
     void setDragCallbacks(std::function<void(QPoint)> started, std::function<void(QPoint)> moved,
@@ -118,7 +118,7 @@ class SectionHeader : public QWidget
 
   private:
     QRect chevronHitRect() const;
-    QRect expandHitRect() const;
+    void  updateChevronIcon();
 
 
 
@@ -132,8 +132,6 @@ class SectionHeader : public QWidget
     bool                        m_collapsed           = false;
     bool                        m_expandable          = false;
     bool                        m_sectionExpanded     = false;
-    bool                        m_expandIconHovered   = false;
-    bool                        m_expandIconPressed   = false;
     bool                        m_chevronHovered      = false;
     bool                        m_chevronPressed      = false;
     bool                        m_hover               = false;

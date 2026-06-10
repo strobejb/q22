@@ -81,7 +81,6 @@ static QHBoxLayout *createProgressRowLayout(QWidget *row)
 }
 
 // â”€â”€ SectionHeader â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-static constexpr int kExpandGap = 16;
 SectionHeader::SectionHeader(const QString &title, QWidget *parent) : QWidget(parent), m_title(title)
 {
     setFixedHeight(kSectionHeaderHeight);
@@ -98,9 +97,25 @@ SectionHeader::SectionHeader(const QString &title, QWidget *parent) : QWidget(pa
 
 void SectionHeader::setCollapsed(bool collapsed)
 {
-    m_collapsed           = collapsed;
-    const QString iconName = collapsed ? QStringLiteral("ui/go-down-symbolic") : QStringLiteral("ui/go-up-symbolic");
-    m_icon->setPixmap(recoloredIcon(iconName, palette().windowText().color(), 16).pixmap(16, 16));
+    m_collapsed = collapsed;
+    updateChevronIcon();
+}
+
+void SectionHeader::updateChevronIcon()
+{
+    QString      iconName;
+    QColor       iconColor;
+    if (m_expandable && m_hover)
+    {
+        iconName  = m_collapsed ? QStringLiteral("ui/double-down") : QStringLiteral("ui/double-up");
+        iconColor = m_chevronPressed ? palette().windowText().color() : subduedTextColor(palette());
+    }
+    else
+    {
+        iconName  = m_collapsed ? QStringLiteral("ui/go-down-symbolic") : QStringLiteral("ui/go-up-symbolic");
+        iconColor = palette().windowText().color();
+    }
+    m_icon->setPixmap(recoloredIcon(iconName, iconColor, 16).pixmap(16, 16));
 }
 
 void SectionHeader::syncHoverFromCursor()
@@ -109,6 +124,7 @@ void SectionHeader::syncHoverFromCursor()
     if (m_hover == over)
         return;
     m_hover = over;
+    updateChevronIcon();
     update();
 }
 
@@ -125,7 +141,10 @@ void SectionHeader::enterEvent(QEnterEvent *event)
     // so enterEvent still fires on bystander headers â€” without this guard
     // they accumulate stale m_hover = true that persists after the drag.
     if (!QWidget::mouseGrabber() || QWidget::mouseGrabber() == this)
+    {
         m_hover = true;
+        updateChevronIcon();
+    }
     update();
     QWidget::enterEvent(event);
 }
@@ -134,28 +153,22 @@ void SectionHeader::leaveEvent(QEvent *event)
 {
     if (!m_dragging)
         m_hover = false;
-    m_expandIconPressed = false;
-    m_expandIconHovered = false;
-    m_chevronPressed    = false;
-    m_chevronHovered    = false;
+    m_chevronPressed = false;
+    m_chevronHovered = false;
+    updateChevronIcon();
     update();
     QWidget::leaveEvent(event);
 }
 
 void SectionHeader::mousePressEvent(QMouseEvent *event)
 {
-    if (event->button() == Qt::LeftButton && m_expandable && expandHitRect().contains(event->pos()))
-    {
-        m_expandIconPressed = true;
-        update();
-    }
     if (event->button() == Qt::LeftButton && chevronHitRect().contains(event->pos()))
     {
         m_chevronPressed = true;
+        updateChevronIcon();
         update();
     }
-    if (event->button() == Qt::LeftButton && m_dragStarted && !chevronHitRect().contains(event->pos()) &&
-        !(m_expandable && expandHitRect().contains(event->pos())))
+    if (event->button() == Qt::LeftButton && m_dragStarted && !chevronHitRect().contains(event->pos()))
     {
         m_pressing            = true;
         m_dragging            = false;
@@ -195,20 +208,12 @@ void SectionHeader::mouseMoveEvent(QMouseEvent *event)
         m_dragMovedAfterStart = true;
         m_dragMoved(event->globalPosition().toPoint());
     }
-    if (m_expandable)
-    {
-        const bool overIcon = expandHitRect().contains(event->pos());
-        if (overIcon != m_expandIconHovered)
-        {
-            m_expandIconHovered = overIcon;
-            update();
-        }
-    }
     {
         const bool overChevron = chevronHitRect().contains(event->pos());
         if (overChevron != m_chevronHovered)
         {
             m_chevronHovered = overChevron;
+            updateChevronIcon();
             update();
         }
     }
@@ -251,15 +256,15 @@ void SectionHeader::mouseReleaseEvent(QMouseEvent *event)
             event->accept();
             return;
         }
-        if (m_expandIconPressed || m_chevronPressed)
+        if (m_chevronPressed)
         {
-            m_expandIconPressed = false;
-            m_chevronPressed    = false;
+            m_chevronPressed = false;
+            updateChevronIcon();
             update();
         }
         if (rect().contains(event->pos()))
         {
-            if (m_expandable && expandHitRect().contains(event->pos()) && m_expandCallback)
+            if (m_expandable && chevronHitRect().contains(event->pos()) && m_expandCallback)
                 m_expandCallback();
             else if (m_clicked)
                 m_clicked();
@@ -290,7 +295,7 @@ void SectionHeader::paintEvent(QPaintEvent *event)
     boldFont.setBold(true);
     painter.setFont(boldFont);
     painter.setPen(subduedTextColor(palette()));
-    const int rightIconsWidth = 16 + (m_expandable ? kExpandGap + 16 : 0);
+    const int rightIconsWidth = 16;
     const int textRight       = width() - kContentMargin - rightIconsWidth - 4;
     QString   displayTitle    = m_title;
     if ((m_hover || m_pressing) && m_dragStarted)
@@ -332,21 +337,6 @@ void SectionHeader::paintEvent(QPaintEvent *event)
         painter.drawPixmap(iconLeft, (height() - 16) / 2, icon);
     }
 
-    // Expand-to-full button: visible only on hover (same as hamburger).
-    // Subdued colour normally; full window-text colour when the button is pressed.
-    // Icon switches to the restore variant when the section is in full-height mode.
-    if (m_expandable && (m_hover || m_pressing))
-    {
-        const int     chevronLeft = width() - kContentMargin - 16;
-        const int     expandLeft  = chevronLeft - kExpandGap - 16;
-        const QString iconName    = m_sectionExpanded ? QStringLiteral("actions/restore3")
-                                                      : QStringLiteral("actions/expand3");
-        const QColor  iconColor   = m_expandIconPressed ? palette().windowText().color()
-                                                        : subduedTextColor(palette());
-        const QPixmap expandPx    = recoloredIcon(iconName, iconColor, 16).pixmap(16, 16);
-        painter.drawPixmap(expandLeft, (height() - 16) / 2, expandPx);
-    }
-
     if (m_isDragTarget)
     {
         painter.setPen(QPen(QColor(dark ? 255 : 0, dark ? 255 : 0, dark ? 255 : 0, dark ? 70 : 55), 2));
@@ -362,12 +352,6 @@ QRect SectionHeader::chevronHitRect() const
     return QRect(iconLeft - kChevronSlop, 0, width() - iconLeft + kChevronSlop, height());
 }
 
-QRect SectionHeader::expandHitRect() const
-{
-    const int     chevronLeft = width() - kContentMargin - 16;
-    const int     expandLeft  = chevronLeft - kExpandGap - 16;
-    return QRect(expandLeft - 4, 0, 20, height());
-}
 
 // â”€â”€ SectionOperationStrip â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
