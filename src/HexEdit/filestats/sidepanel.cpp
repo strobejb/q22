@@ -249,8 +249,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     m_content->setMinimumWidth(0);
     m_content->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     auto *contentLayout = new QVBoxLayout(m_content);
-    contentLayout->setContentsMargins(kSectionHeaderOuterMargin, kContentMargin, kSectionHeaderOuterMargin,
-                                      kContentMargin);
+    contentLayout->setContentsMargins(kSectionHeaderOuterMargin, kContentMargin, kSectionHeaderOuterMargin, 0);
     contentLayout->setSpacing(0);
 
     m_fileHeader = new SectionHeader(tr("File Properties"), m_content);
@@ -640,6 +639,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     stringsResizeLayout->setAlignment(m_stringsResizeHandle, Qt::AlignTop);
     stringsControlsStackLayout->addWidget(stringsResizeWrap);
     stringsControlsStackLayout->addWidget(m_stringsStatusRow);
+    stringsControlsStackLayout->addSpacing(2 * kStringsFooterButtonSize / 3);
     stringsBodyLayout->addWidget(stringsControlsStack);
     contentLayout->addWidget(m_stringsSectionBody);
     contentLayout->addStretch();
@@ -1387,14 +1387,8 @@ void FilePropertiesPanel::updateInterSectionGaps()
 {
     for (int i = 0; i + 1 < m_sectionOrder.size(); ++i)
     {
-        const bool nextIsExpanded =
-            m_hasExpandedSection && i + 1 < m_sectionOrder.size() && m_expandedSectionId == m_sectionOrder[i + 1];
         const bool prevCollapsed = isSectionCollapsed(m_sectionOrder[i]);
-        int        gapSize;
-        if (nextIsExpanded)
-            gapSize = kContentMargin;
-        else
-            gapSize = prevCollapsed ? kHeaderControlGap : kGroupTopGap;
+        const int  gapSize       = prevCollapsed ? kHeaderControlGap : kGroupTopGap;
         m_interSectionGaps[i]->changeSize(0, gapSize, QSizePolicy::Minimum, QSizePolicy::Fixed);
     }
     if (m_content && m_content->layout())
@@ -1790,6 +1784,21 @@ void FilePropertiesPanel::performSectionLayoutRefresh()
     rebuildSectionLayout();
     settleContentLayout();
     updateStickyHeader();
+
+    // If a section is pinned to full-expand, re-apply the scroll after every
+    // layout refresh so transient churn (e.g. progress bar show/hide on first
+    // open) cannot leave the panel at the wrong scroll position.
+    if (m_hasExpandedSection && m_scrollArea && m_content)
+    {
+        if (PanelSection *s = sectionFor(m_expandedSectionId))
+        {
+            if (s->header)
+            {
+                const int y = s->header->mapTo(m_content, QPoint(0, 0)).y();
+                m_scrollArea->verticalScrollBar()->setValue(qMax(0, y - kContentMargin));
+            }
+        }
+    }
 }
 
 void FilePropertiesPanel::settleContentLayout()
@@ -1873,12 +1882,8 @@ void FilePropertiesPanel::toggleSectionFullExpand(SectionId sectionId)
                                          ? section->operation->widget()->sizeHint().height()
                                          : 0;
         const int sectionOverheadH = kSectionHeaderHeight + kHeaderControlGap + opH;
-        // bodyNonListH = the fixed overhead in the body (controls, spacing, resize
-        // handle) that doesn't scale with the list.  Derived from minimum size hints
-        // so it's layout-structure-based and reliable even before the layout settles.
         const int bodyNonListH     = (section->body && section->resize.target)
-                                         ? qMax(0, section->body->minimumSizeHint().height()
-                                                       - section->resize.minHeight)
+                                         ? qMax(0, section->body->height() - section->resize.target->height())
                                          : 0;
         const int availH           = viewportHeight - kContentMargin - sectionOverheadH - bodyNonListH;
         section->resize.currentHeight = qMax(section->resize.minHeight, availH);
