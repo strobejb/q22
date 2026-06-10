@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg height="16px" viewBox="0 0 16 16" width="16px" xmlns="http://www.w3.org/2000/svg" xmlns:bx="https://boxy-svg.com">
+  <defs>
+    <bx:guide x="-0.119" y="7.871" angle="90"/>
+    <bx:guide x="4.035" y="12.144" angle="90"/>
+  </defs>
+  <path d="M 1 7.448 C 1 7.713 1.105 7.967 1.293 8.155 L 7.293 14.155 C 7.683 14.545 8.316 14.545 8.707 14.155 L 14.707 8.155 C 14.894 7.967 15 7.713 15 7.448 C 15 7.182 14.894 6.928 14.707 6.741 C 14.316 6.35 13.683 6.35 13.293 6.741 L 8 12.033 L 2.707 6.741 C 2.316 6.35 1.683 6.35 1.293 6.741 C 1.105 6.928 1 7.182 1 7.448 Z M 1 7.448" style="stroke-width: 1px; fill: rgb(53, 53, 53);"/>
+  <path style="fill: none; stroke-linecap: round; stroke-width: 1.7px; stroke: rgb(53, 53, 53);" d="M 1.764 2.252 L 14.236 2.249"/>
+</svg>

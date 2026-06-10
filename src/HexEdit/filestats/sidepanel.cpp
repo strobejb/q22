@@ -1226,13 +1226,17 @@ void FilePropertiesPanel::syncStickyHeader()
         return;
     }
 
-    // Find the bottommost section that has scrolled above the viewport
+    // Find the bottommost section that has scrolled above the viewport.
+    // When a section is fully expanded, skip collapsed sections above it —
+    // they are navigation headers only and must not appear as sticky headers.
     SectionId activeSection = m_sectionOrder.first();
     int       nextHeaderY   = kSectionHeaderHeight;
     for (int i = 0; i < m_sectionOrder.size(); ++i)
     {
         const PanelSection *section = sectionFor(m_sectionOrder[i]);
         if (!section || !section->header)
+            continue;
+        if (m_hasExpandedSection && m_sectionOrder[i] != m_expandedSectionId && section->collapsed)
             continue;
         SectionHeader *h = section->header;
         const int      y = h->mapTo(m_scrollArea->viewport(), QPoint(0, 0)).y();
@@ -1250,6 +1254,13 @@ void FilePropertiesPanel::syncStickyHeader()
                 nextHeaderY = kSectionHeaderHeight;
             }
         }
+    }
+    // If only the expanded section is relevant but it hasn't scrolled off the
+    // top yet, there is nothing to show as a sticky header.
+    if (m_hasExpandedSection && activeSection != m_expandedSectionId)
+    {
+        m_stickyHeader->hide();
+        return;
     }
 
     const PanelSection *active = sectionFor(activeSection);
@@ -1342,9 +1353,15 @@ void FilePropertiesPanel::updateInterSectionGaps()
 {
     for (int i = 0; i + 1 < m_sectionOrder.size(); ++i)
     {
+        const bool nextIsExpanded =
+            m_hasExpandedSection && i + 1 < m_sectionOrder.size() && m_expandedSectionId == m_sectionOrder[i + 1];
         const bool prevCollapsed = isSectionCollapsed(m_sectionOrder[i]);
-        m_interSectionGaps[i]->changeSize(0, prevCollapsed ? kHeaderControlGap : kGroupTopGap, QSizePolicy::Minimum,
-                                          QSizePolicy::Fixed);
+        int        gapSize;
+        if (nextIsExpanded)
+            gapSize = kContentMargin;
+        else
+            gapSize = prevCollapsed ? kHeaderControlGap : kGroupTopGap;
+        m_interSectionGaps[i]->changeSize(0, gapSize, QSizePolicy::Minimum, QSizePolicy::Fixed);
     }
     if (m_content && m_content->layout())
         m_content->layout()->invalidate();
@@ -1815,10 +1832,22 @@ void FilePropertiesPanel::toggleSectionFullExpand(SectionId sectionId)
                 setSectionCollapsed(s, true, false);
         }
 
-        // Fill the viewport — the list height is deliberately generous; the scroll
-        // area will absorb any excess height from the other items in the section body.
-        const int viewportHeight      = m_scrollArea ? m_scrollArea->viewport()->height() : 400;
-        section->resize.currentHeight = qMax(section->resize.minHeight, height());
+        // Size the list so the whole section fits within the viewport, with
+        // kContentMargin of breathing room at the top.
+        const int viewportHeight   = m_scrollArea ? m_scrollArea->viewport()->height() : 400;
+        const int opH              = (section->operation && section->operation->widget()->isVisible())
+                                         ? section->operation->widget()->sizeHint().height()
+                                         : 0;
+        const int sectionOverheadH = kSectionHeaderHeight + kHeaderControlGap + opH;
+        // bodyNonListH = the fixed overhead in the body (controls, spacing, resize
+        // handle) that doesn't scale with the list.  Derived from minimum size hints
+        // so it's layout-structure-based and reliable even before the layout settles.
+        const int bodyNonListH     = (section->body && section->resize.target)
+                                         ? qMax(0, section->body->minimumSizeHint().height()
+                                                       - section->resize.minHeight)
+                                         : 0;
+        const int availH           = viewportHeight - kContentMargin - sectionOverheadH - bodyNonListH;
+        section->resize.currentHeight = qMax(section->resize.minHeight, availH);
         applyResizableSectionHeight(sectionId);
         rebuildSectionLayout();
         settleContentLayout();
@@ -1826,7 +1855,7 @@ void FilePropertiesPanel::toggleSectionFullExpand(SectionId sectionId)
         if (section->header)
             section->header->setSectionExpanded(true);
 
-        // Scroll so the section header sits at the top of the viewport.
+        // Scroll so the section header sits kContentMargin below the viewport top.
         if (m_scrollArea && section->header)
         {
             QTimer::singleShot(0, this,
@@ -1836,7 +1865,7 @@ void FilePropertiesPanel::toggleSectionFullExpand(SectionId sectionId)
                                    if (!s || !s->header || !m_scrollArea)
                                        return;
                                    const int y = s->header->mapTo(m_content, QPoint(0, 0)).y();
-                                   m_scrollArea->verticalScrollBar()->setValue(qMax(0, y));
+                                   m_scrollArea->verticalScrollBar()->setValue(qMax(0, y - kContentMargin));
                                });
         }
     }

@@ -107,7 +107,14 @@ void SectionHeader::updateChevronIcon()
     QColor       iconColor;
     if (m_expandable && m_hover)
     {
-        iconName  = m_collapsed ? QStringLiteral("ui/double-down") : QStringLiteral("ui/double-up");
+        //iconName  = m_collapsed ? QStringLiteral("ui/double-down") : QStringLiteral("ui/double-up");
+        if(m_sectionExpanded)
+            iconName  = m_collapsed ? QStringLiteral("ui/collapse-down") : QStringLiteral("ui/collapse-up");
+        else
+            iconName  = m_collapsed ? QStringLiteral("ui/expand-down") : QStringLiteral("ui/expand-up");
+
+
+
         iconColor = m_chevronPressed ? palette().windowText().color() : subduedTextColor(palette());
     }
     else
