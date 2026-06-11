@@ -169,6 +169,34 @@ void EntropyView::paintEvent(QPaintEvent *)
     }
 }
 
+void EntropyView::mousePressEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton)
+    {
+        m_dragging = true;
+        if (!m_data.isEmpty() && m_fileSize > 0)
+        {
+            const QPoint pos     = event->position().toPoint();
+            const int    coord   = m_rotated ? pos.y() : pos.x();
+            const int    axisLen = m_rotated ? height() : width();
+            if (axisLen > 1)
+            {
+                const float      t      = qBound(0.0f, float(coord) / (axisLen - 1), 1.0f);
+                const qulonglong offset = static_cast<qulonglong>(t * m_fileSize);
+                emit positionClicked(offset);
+            }
+        }
+    }
+    QWidget::mousePressEvent(event);
+}
+
+void EntropyView::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton)
+        m_dragging = false;
+    QWidget::mouseReleaseEvent(event);
+}
+
 void EntropyView::mouseMoveEvent(QMouseEvent *event)
 {
     const QPoint pos = event->position().toPoint();
@@ -183,6 +211,8 @@ void EntropyView::mouseMoveEvent(QMouseEvent *event)
             const float      t      = qBound(0.0f, float(m_hoverX) / (axisLen - 1), 1.0f);
             const qulonglong offset = static_cast<qulonglong>(t * m_fileSize);
             emit positionHovered(offset, sampleAt(m_hoverX, axisLen));
+            if (m_dragging)
+                emit positionClicked(offset);
         }
     }
     QWidget::mouseMoveEvent(event);

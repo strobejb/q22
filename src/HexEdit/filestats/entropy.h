@@ -31,11 +31,14 @@ public:
 
 signals:
     void positionHovered(qulonglong byteOffset, float entropy);
+    void positionClicked(qulonglong byteOffset);
     void hoverCleared();
 
 protected:
     void paintEvent(QPaintEvent *) override;
+    void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
     void leaveEvent(QEvent *event) override;
 
 private:
@@ -47,6 +50,7 @@ private:
     int            m_windowSize = 256;
     int            m_hoverX     = -1;
     bool           m_rotated    = false;
+    bool           m_dragging   = false;
 };
 
 } // namespace filestats

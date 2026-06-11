@@ -725,7 +725,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     connect(entropyRotateButton, &QToolButton::toggled, this,
             [this](bool on) { if (m_entropyView) m_entropyView->setRotated(on); });
     entropyControlsLayout->addStretch();
-    auto *windowLabel = new QLabel(tr("Window:"), entropyControls);
+    auto *windowLabel = new QLabel(tr("Sample:"), entropyControls);
     windowLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     entropyControlsLayout->addWidget(windowLabel);
     m_entropyWindowCombo = new MenuComboBox(entropyControls);
@@ -1079,6 +1079,15 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
             });
     connect(m_entropyView, &filestats::EntropyView::hoverCleared, this,
             [this]() { updateEntropyStatsLabel(); });
+    connect(m_entropyView, &filestats::EntropyView::positionClicked, this,
+            [this](qulonglong offset)
+            {
+                if (m_hexView)
+                {
+                    m_hexView->scrollCenter(static_cast<size_w>(offset));
+                    m_hexView->setFocus();
+                }
+            });
     connect(m_stringOptionsButton, &QToolButton::clicked, this,
             [this, stringsOptionsMenu]()
             {
