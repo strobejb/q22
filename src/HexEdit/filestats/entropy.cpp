@@ -173,10 +173,10 @@ QColor EntropyView::colorForEntropy(float e)
     struct Stop { float pos; int r, g, b; };
     static constexpr Stop stops[] = {
         {0.00f,   0,  10,  80},
-        {0.30f,   0, 100, 200},
-        {0.55f,  50, 180,  70},
-        {0.75f, 220, 150,   0},
-        {1.00f, 210,  30,  30},
+        {0.30f,   0, 100, 255},
+        {0.65f, 130,   0, 200},
+        {0.85f, 220,  20,  20},
+        {1.00f, 255,  80, 120},
     };
     static constexpr int N = int(sizeof(stops) / sizeof(stops[0]));
     e = qBound(0.0f, e, 1.0f);
