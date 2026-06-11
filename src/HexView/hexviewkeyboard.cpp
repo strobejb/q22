@@ -401,6 +401,7 @@ void HexView::keyPressEvent(QKeyEvent *event)
     m_nSubItem = 0;
 
     if (m_nCursorOffset != oldoffset || fForceUpdate) {
+        const bool hadSelection = selectionStart() != selectionEnd();
         if (fShiftDown) {
             m_nSelectionEnd = m_nCursorOffset;
             invalidateRange(oldoffset, m_nSelectionEnd);
@@ -413,7 +414,7 @@ void HexView::keyPressEvent(QKeyEvent *event)
 
         scrollToCaret();
         emit cursorChanged(m_nCursorOffset);
-        if (selectionStart() != selectionEnd())
+        if (hadSelection || selectionStart() != selectionEnd())
             emit selectionChanged(selectionStart(), selectionEnd());
 
         if (key == Qt::Key_PageUp || key == Qt::Key_PageDown)

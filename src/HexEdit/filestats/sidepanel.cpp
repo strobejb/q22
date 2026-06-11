@@ -403,7 +403,6 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
                 m_stringsListFrame->clearList();
             startStrings();
         });
-    contentLayout->addWidget(m_stringsOperation->widget());
 
     auto *stringsControlsStack       = new QWidget(m_stringsSectionBody);
     auto *stringsControlsStackLayout = new QVBoxLayout(stringsControlsStack);
@@ -475,6 +474,8 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     stringsControlsLayout->addStretch(1);
     stringsControlsLayout->addWidget(m_minStringLength, 0);
     stringsControlsStackLayout->addWidget(stringsControls);
+    stringsControlsStackLayout->addSpacing(kHeaderControlGap + 4);
+    stringsControlsStackLayout->addWidget(m_stringsOperation->widget());
     stringsControlsStackLayout->addSpacing(kHeaderControlGap + 4);
 
     m_stringsListFrame = new StringListFrame(m_stringsSectionBody);
@@ -679,7 +680,6 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
         [this]() { cancelEntropyAnalysis(); },
         [this]() { resumeEntropyAnalysis(); },
         startEntropy);
-    contentLayout->addWidget(m_entropyOperation->widget());
 
     // Controls stack — same pattern as stringsControlsStack
     auto *entropyControlsStack       = new QWidget(m_entropySectionBody);
@@ -698,16 +698,12 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     entropyRotateButton->setFocusPolicy(Qt::TabFocus);
     entropyRotateButton->setToolTip(tr("Rotate view"));
     entropyRotateButton->setAutoRaise(true);
-    entropyRotateButton->setCheckable(true);
-    entropyRotateButton->setProperty("iconThemeName", QStringLiteral("actions/rotate-23"));
     entropyRotateButton->setProperty("iconSize", 14);
     entropyRotateButton->setIconSize(QSize(14, 14));
-    entropyRotateButton->setIcon(recoloredIcon(QStringLiteral("actions/rotate-23"), palette().buttonText().color(), 14));
     {
         const bool    dark    = palette().window().color().lightness() < 128;
         const QString hover   = dark ? QStringLiteral("rgba(255,255,255,0.15)") : QStringLiteral("rgba(0,0,0,0.10)");
         const QString pressed = dark ? QStringLiteral("rgba(255,255,255,0.25)") : QStringLiteral("rgba(0,0,0,0.18)");
-        const QString checked = dark ? QStringLiteral("rgba(255,255,255,0.20)") : QStringLiteral("rgba(0,0,0,0.13)");
         entropyRotateButton->setStyleSheet(QStringLiteral(R"(
             QToolButton {
                 border: none;
@@ -717,14 +713,26 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
             QToolButton:hover { background: %1; }
             QToolButton:focus { border: 2px solid palette(highlight); }
             QToolButton:pressed { background: %2; }
-            QToolButton:checked { background: %3; }
             QToolButton::menu-indicator { image: none; width: 0; }
-        )").arg(hover, pressed, checked));
+        )").arg(hover, pressed));
     }
+    // EntropyView defaults to rotated=true (vertical), so start with rotate-horz
+    entropyRotateButton->setProperty("iconThemeName", QStringLiteral("actions/rotate-horz"));
+    entropyRotateButton->setIcon(recoloredIcon(QStringLiteral("actions/rotate-horz"), palette().buttonText().color(), 14));
     entropyControlsLayout->addWidget(entropyRotateButton);
     entropyControlsLayout->addSpacing(4);
-    connect(entropyRotateButton, &QToolButton::toggled, this,
-            [this](bool on) { if (m_entropyView) m_entropyView->setRotated(on); });
+    connect(entropyRotateButton, &QToolButton::clicked, this,
+            [this]()
+            {
+                if (!m_entropyView)
+                    return;
+                const bool nowRotated = !m_entropyView->isRotated();
+                m_entropyView->setRotated(nowRotated);
+                const QString iconName = nowRotated ? QStringLiteral("actions/rotate-horz")
+                                                    : QStringLiteral("actions/rotate-vert");
+                m_entropyRotateButton->setProperty("iconThemeName", iconName);
+                m_entropyRotateButton->setIcon(recoloredIcon(iconName, palette().buttonText().color(), 14));
+            });
     m_entropyModeCombo = new MenuComboBox(entropyControls);
     m_entropyModeCombo->addItem(tr("Shannon"), QVariant::fromValue(int(EntropyMode::Shannon)));
     m_entropyModeCombo->addItem(tr("Bigram"),  QVariant::fromValue(int(EntropyMode::Bigram)));
@@ -777,6 +785,8 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     entropyControlsLayout->addWidget(m_entropyWindowCombo);
     entropyControlsStackLayout->addWidget(entropyControls);
     entropyControlsStackLayout->addSpacing(kHeaderControlGap + 4);
+    entropyControlsStackLayout->addWidget(m_entropyOperation->widget());
+    entropyControlsStackLayout->addSpacing(kHeaderControlGap + 4);
 
     // Graph in bordered frame — same styling as stringsListFrame
     auto *entropyViewFrame = new QFrame(entropyControlsStack);
@@ -798,8 +808,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     m_entropyView->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
     entropyViewFrameLayout->addWidget(m_entropyView);
     entropyControlsStackLayout->addWidget(entropyViewFrame);
-    // Sync button visual with EntropyView's default rotated state
-    m_entropyRotateButton->setChecked(true);
+    // EntropyView defaults to rotated=true; the icon was already set above.
 
     m_bigramRescanTimer = new QTimer(this);
     m_bigramRescanTimer->setSingleShot(true);
@@ -910,7 +919,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
         m_stringsHeader,
         m_stringsSectionBody,
         m_stringsHeaderGap,
-        m_stringsOperation,
+        nullptr,
         m_stringsListFrame,
         kStringsListMinHeight,
         [this]()
@@ -950,7 +959,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
         m_entropyHeader,
         m_entropySectionBody,
         m_entropyHeaderGap,
-        m_entropyOperation,
+        nullptr,
         entropyViewFrame,
         kEntropyViewMinHeight,
         [this]()

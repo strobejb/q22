@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg t="1569683455503" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="10463" width="200" height="200">
+  <defs>
+    <style type="text/css"/>
+  </defs>
+  <path d="M 585.232 332.272 C 587.424 257.545 584.519 182.408 585.121 107.687 C 585.162 102.504 575.422 98.012 571.126 100.912 C 521.091 134.684 474.157 173.082 428.955 213.093 C 425.545 216.111 425.546 223.736 428.955 226.754 C 474.195 266.803 521.164 305.238 571.237 339.046 C 575.532 341.947 585.081 337.453 585.232 332.272 Z" p-id="10465"/>
+  <rect x="199.67" y="344.66" width="388.532" height="614.305" rx="20" ry="20" style="stroke: rgb(0, 0, 0); fill: none; stroke-linejoin: round; stroke-width: 100px;" transform="matrix(0, -1, -1, 0, 1026.391, 1068.550)"/>
+  <path style="fill: none; stroke: rgb(0, 0, 0); stroke-linecap: round; stroke-width: 100px;" d="M 947.191 616.513 C 947.191 352.915 768.702 218.746 590.219 218.746"/>
+</svg>

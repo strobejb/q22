@@ -532,6 +532,7 @@ void HexView::mousePressEvent(QMouseEvent *event)
         }
     }
 
+    const bool hadSelection = selectionStart() != selectionEnd();
     if (inrange(m_nCursorOffset, m_nSelectionStart, m_nSelectionEnd)) {
         // Click inside selection — potential drag-drop start
         m_fStartDrag   = true;
@@ -551,7 +552,7 @@ void HexView::mousePressEvent(QMouseEvent *event)
 
     positionCaret(x, y, m_nWhichPane);
     emit cursorChanged(m_nCursorOffset);
-    if (selectionStart() != selectionEnd())
+    if (hadSelection || selectionStart() != selectionEnd())
         emit selectionChanged(selectionStart(), selectionEnd());
     viewport()->update();
 }
