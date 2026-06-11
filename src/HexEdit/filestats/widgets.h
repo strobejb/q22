@@ -41,6 +41,8 @@ static constexpr int kCardLeftInset            = 5;
 static constexpr int kCardScrollbarInset       = 6;
 static constexpr int kSettingsCardShadowInset  = 4;
 static constexpr int kStringsListMinHeight     = 160;
+static constexpr int kEntropyViewMinHeight     = 80;
+static constexpr int kEntropyViewDefaultHeight = 120;
 
 inline QString cssColor(const QColor &color)
 {

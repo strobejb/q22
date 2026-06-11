@@ -17,6 +17,7 @@
 
 class HexView;
 class QAction;
+namespace filestats { class EntropyView; }
 class QEvent;
 class QProgressBar;
 class QResizeEvent;
@@ -80,7 +81,8 @@ class FilePropertiesPanel : public QDialog
     {
         Properties,
         Checksums,
-        Strings
+        Strings,
+        Entropy
     };
     Q_ENUM(SectionId)
 
@@ -110,6 +112,17 @@ class FilePropertiesPanel : public QDialog
     void           resetChecksumForCurrentDocument();
     void           markStringsContentsChanged();
     void           resetStringsForCurrentDocument();
+    void           markEntropyContentsChanged();
+    void           resetEntropyForCurrentDocument();
+    void           maybeStartEntropyAnalysis();
+    void           startEntropyAnalysis();
+    void           cancelEntropyAnalysis();
+    void           resumeEntropyAnalysis();
+    void           updateEntropyProgress(int generation, int value);
+    void           applyEntropyResults(int generation, QVector<float> data, qulonglong fileSize, int windowSize);
+    void           setEntropyProgressTitle(int value);
+    void           resetEntropyTitle();
+    void           updateEntropyStatsLabel();
     void           startChecksumCalculation();
     void           maybeStartStringScan();
     void           startStringScan(qulonglong startOffset = 0, bool append = false, bool scanAll = false);
@@ -267,6 +280,15 @@ class FilePropertiesPanel : public QDialog
     QWidget                          *m_stringsResizeHandle     = nullptr;
     ScanSectionState                  m_checksumState;
     ScanSectionState                  m_stringsState;
+    ScanSectionState                  m_entropyState;
+    QWidget                          *m_entropySectionBody  = nullptr;
+    QSpacerItem                      *m_entropyHeaderGap    = nullptr;
+    filestats::SectionHeader         *m_entropyHeader       = nullptr;
+    filestats::SectionOperationStrip *m_entropyOperation    = nullptr;
+    filestats::EntropyView           *m_entropyView         = nullptr;
+    QLabel                           *m_entropyStatsLabel   = nullptr;
+    QComboBox                        *m_entropyWindowCombo  = nullptr;
+    int                               m_entropyWindowSize   = 256;
     bool                              m_panelFullyOpened   = false;
     bool                              m_hasExpandedSection      = false;
     SectionId                         m_expandedSectionId       = SectionId::Properties;

@@ -3,6 +3,7 @@
 #include "HexView/hexview.h"
 #include "chrome/dialog-chrome.h"
 #include "combos/menucombobox.h"
+#include "filestats/entropy.h"
 #include "filestats/resizegrip.h"
 #include "filestats/widgets.h"
 #include "settings/scrollhintoverlay.h"
@@ -213,7 +214,7 @@ class InlineSortHeader : public QHeaderView
 
 FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QDialog(parent), m_hexView(hexView)
 {
-    m_sectionOrder = {SectionId::Properties, SectionId::Checksums, SectionId::Strings};
+    m_sectionOrder = {SectionId::Properties, SectionId::Checksums, SectionId::Strings, SectionId::Entropy};
 
     setWindowTitle(tr("File Information"));
     setSizeGripEnabled(false);
@@ -643,6 +644,146 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     stringsControlsStackLayout->addSpacing(2 * kStringsFooterButtonSize / 3);
     stringsBodyLayout->addWidget(stringsControlsStack);
     contentLayout->addWidget(m_stringsSectionBody);
+
+    // ---- Entropy section ----
+    m_interSectionGaps.append(new QSpacerItem(0, kGroupTopGap, QSizePolicy::Minimum, QSizePolicy::Fixed));
+    contentLayout->addSpacerItem(m_interSectionGaps.last());
+
+    m_entropyHeader = new SectionHeader(tr("Entropy"), m_content);
+    m_entropyHeader->setClickedCallback(
+        [this]()
+        {
+            setSectionCollapsed(SectionId::Entropy, !isSectionCollapsed(SectionId::Entropy));
+        });
+    contentLayout->addWidget(m_entropyHeader);
+    m_entropyHeader->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_entropyHeaderGap = new QSpacerItem(0, kHeaderControlGap, QSizePolicy::Minimum, QSizePolicy::Fixed);
+    contentLayout->addSpacerItem(m_entropyHeaderGap);
+
+    m_entropySectionBody = new QWidget(m_content);
+    m_entropySectionBody->setMinimumWidth(0);
+    auto *entropyBodyLayout = new QVBoxLayout(m_entropySectionBody);
+    entropyBodyLayout->setContentsMargins(kSectionHeaderOuterMargin + kCardLeftInset, 0,
+                                          kSectionHeaderOuterMargin + kCardScrollbarInset, 0);
+    entropyBodyLayout->setSpacing(0);
+
+    auto startEntropy = [this]()
+    {
+        if (m_entropyState.started)
+            return;
+        m_entropyState.started = true;
+        startEntropyAnalysis();
+    };
+    m_entropyOperation = new SectionOperationStrip(
+        m_content, startEntropy,
+        [this]() { cancelEntropyAnalysis(); },
+        [this]() { resumeEntropyAnalysis(); },
+        startEntropy);
+    contentLayout->addWidget(m_entropyOperation->widget());
+
+    // Controls stack — same pattern as stringsControlsStack
+    auto *entropyControlsStack       = new QWidget(m_entropySectionBody);
+    auto *entropyControlsStackLayout = new QVBoxLayout(entropyControlsStack);
+    entropyControlsStackLayout->setContentsMargins(kSettingsCardShadowInset, 0, kSettingsCardShadowInset, 0);
+    entropyControlsStackLayout->setSpacing(0);
+
+    // Controls row: rotate toggle | Window combo
+    auto *entropyControls       = new QWidget(entropyControlsStack);
+    auto *entropyControlsLayout = new QHBoxLayout(entropyControls);
+    entropyControlsLayout->setContentsMargins(0, 4, 0, 4);
+    entropyControlsLayout->setSpacing(6);
+    auto *entropyRotateButton = new QToolButton(entropyControls);
+    entropyRotateButton->setFixedSize(24, 24);
+    entropyRotateButton->setFocusPolicy(Qt::TabFocus);
+    entropyRotateButton->setToolTip(tr("Rotate view"));
+    entropyRotateButton->setAutoRaise(true);
+    entropyRotateButton->setCheckable(true);
+    entropyRotateButton->setProperty("iconThemeName", QStringLiteral("actions/rotate-23"));
+    entropyRotateButton->setProperty("iconSize", 14);
+    entropyRotateButton->setIconSize(QSize(14, 14));
+    entropyRotateButton->setIcon(recoloredIcon(QStringLiteral("actions/rotate-23"), palette().buttonText().color(), 14));
+    {
+        const bool    dark    = palette().window().color().lightness() < 128;
+        const QString hover   = dark ? QStringLiteral("rgba(255,255,255,0.15)") : QStringLiteral("rgba(0,0,0,0.10)");
+        const QString pressed = dark ? QStringLiteral("rgba(255,255,255,0.25)") : QStringLiteral("rgba(0,0,0,0.18)");
+        const QString checked = dark ? QStringLiteral("rgba(255,255,255,0.20)") : QStringLiteral("rgba(0,0,0,0.13)");
+        entropyRotateButton->setStyleSheet(QStringLiteral(R"(
+            QToolButton {
+                border: none;
+                border-radius: 6px;
+                background: transparent;
+            }
+            QToolButton:hover { background: %1; }
+            QToolButton:focus { border: 2px solid palette(highlight); }
+            QToolButton:pressed { background: %2; }
+            QToolButton:checked { background: %3; }
+            QToolButton::menu-indicator { image: none; width: 0; }
+        )").arg(hover, pressed, checked));
+    }
+    entropyControlsLayout->addWidget(entropyRotateButton);
+    entropyControlsLayout->addSpacing(4);
+    connect(entropyRotateButton, &QToolButton::toggled, this,
+            [this](bool on) { if (m_entropyView) m_entropyView->setRotated(on); });
+    entropyControlsLayout->addStretch();
+    auto *windowLabel = new QLabel(tr("Window:"), entropyControls);
+    windowLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    entropyControlsLayout->addWidget(windowLabel);
+    m_entropyWindowCombo = new MenuComboBox(entropyControls);
+    m_entropyWindowCombo->addItem(tr("128 bytes"),  QVariant::fromValue(128));
+    m_entropyWindowCombo->addItem(tr("256 bytes"),  QVariant::fromValue(256));
+    m_entropyWindowCombo->addItem(tr("512 bytes"),  QVariant::fromValue(512));
+    m_entropyWindowCombo->addItem(tr("1024 bytes"), QVariant::fromValue(1024));
+    m_entropyWindowCombo->setCurrentIndex(1);
+    m_entropyWindowCombo->setFocusPolicy(Qt::StrongFocus);
+    m_entropyWindowCombo->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_entropyWindowCombo->setFixedHeight(qMax(24, m_entropyWindowCombo->sizeHint().height() - 4));
+    m_entropyWindowCombo->setToolTip(tr("Entropy window size (bytes per sample)"));
+    entropyControlsLayout->addWidget(m_entropyWindowCombo);
+    entropyControlsStackLayout->addWidget(entropyControls);
+    entropyControlsStackLayout->addSpacing(kHeaderControlGap + 4);
+
+    // Graph in bordered frame — same styling as stringsListFrame
+    auto *entropyViewFrame = new QFrame(entropyControlsStack);
+    entropyViewFrame->setObjectName(QStringLiteral("entropyViewFrame"));
+    entropyViewFrame->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    entropyViewFrame->setStyleSheet(QStringLiteral(R"(
+        QFrame#entropyViewFrame {
+            background: palette(base);
+            border: 1px solid palette(mid);
+            border-radius: 6px;
+        }
+    )"));
+    auto *entropyViewFrameLayout = new QVBoxLayout(entropyViewFrame);
+    entropyViewFrameLayout->setContentsMargins(1, 1, 1, 1);
+    entropyViewFrameLayout->setSpacing(0);
+
+    m_entropyView = new filestats::EntropyView(entropyViewFrame);
+    m_entropyView->setMinimumSize(0, 0);
+    m_entropyView->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
+    entropyViewFrameLayout->addWidget(m_entropyView);
+    entropyControlsStackLayout->addWidget(entropyViewFrame);
+
+    // Resize handle
+    auto *entropyResizeWrap   = new QWidget(entropyControlsStack);
+    auto *entropyResizeLayout = new QVBoxLayout(entropyResizeWrap);
+    entropyResizeLayout->setContentsMargins(0, 0, 0, 0);
+    entropyResizeLayout->setSpacing(0);
+    auto *entropyResizeHandle = new VerticalResizeHandle(
+        [this](int dy) { resizeSection(SectionId::Entropy, dy); }, entropyResizeWrap);
+    entropyResizeLayout->addWidget(entropyResizeHandle);
+    entropyResizeLayout->setAlignment(entropyResizeHandle, Qt::AlignTop);
+    entropyControlsStackLayout->addWidget(entropyResizeWrap);
+
+    // Stats / hover label
+    m_entropyStatsLabel = new QLabel(entropyControlsStack);
+    m_entropyStatsLabel->setAlignment(Qt::AlignCenter);
+    m_entropyStatsLabel->setContentsMargins(0, 4, 0, 4);
+    entropyControlsStackLayout->addWidget(m_entropyStatsLabel);
+    entropyControlsStackLayout->addSpacing(kContentMargin);
+
+    entropyBodyLayout->addWidget(entropyControlsStack);
+
+    contentLayout->addWidget(m_entropySectionBody);
     contentLayout->addStretch();
 
     m_scrollArea->setWidget(m_content);
@@ -754,6 +895,46 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
             resetStringsForCurrentDocument();
         },
     });
+    registerPanelSection({
+        SectionId::Entropy,
+        tr("Entropy"),
+        m_entropyHeader,
+        m_entropySectionBody,
+        m_entropyHeaderGap,
+        m_entropyOperation,
+        entropyViewFrame,
+        kEntropyViewMinHeight,
+        [this]()
+        {
+            maybeStartEntropyAnalysis();
+        },
+        [this](bool collapsed)
+        {
+            if (m_entropyState.pause && m_entropyState.started)
+            {
+                if (collapsed)
+                {
+                    m_entropyState.pausedByCollapse = true;
+                    m_entropyState.pause->setPaused(true);
+                }
+                else if (m_entropyState.pausedByCollapse && m_entropyOperation)
+                {
+                    m_entropyOperation->setProgressActionResume();
+                }
+            }
+            if (m_entropyState.started)
+                setEntropyProgressTitle(m_entropyState.progress);
+        },
+        [this](bool contentsChanged)
+        {
+            if (contentsChanged)
+                markEntropyContentsChanged();
+        },
+        [this]()
+        {
+            resetEntropyForCurrentDocument();
+        },
+    });
 
     for (SectionId s : m_sectionOrder)
     {
@@ -863,6 +1044,41 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
                     m_stringsOperation->showRescan(m_stringsState.rescanMessage);
                 requestSectionLayoutRefresh(SectionId::Strings);
             });
+    connect(m_entropyWindowCombo, &QComboBox::currentIndexChanged, this,
+            [this](int index)
+            {
+                const int ws = m_entropyWindowCombo->itemData(index).toInt();
+                if (ws <= 0 || ws == m_entropyWindowSize)
+                    return;
+                m_entropyWindowSize             = ws;
+                m_entropyState.started          = false;
+                m_entropyState.pausedByCollapse = false;
+                ++m_entropyState.generation;
+                if (m_entropyState.cancel)
+                    m_entropyState.cancel->store(true);
+                if (m_entropyState.pause)
+                    m_entropyState.pause->wake();
+                if (m_entropyView)
+                    m_entropyView->clear();
+                if (m_entropyStatsLabel)
+                    m_entropyStatsLabel->clear();
+                m_entropyState.rescanRequired = true;
+                m_entropyState.rescanMessage  = tr("Window size changed");
+                if (m_entropyOperation)
+                    m_entropyOperation->showRescan(m_entropyState.rescanMessage);
+                requestSectionLayoutRefresh(SectionId::Entropy);
+            });
+    connect(m_entropyView, &filestats::EntropyView::positionHovered, this,
+            [this](qulonglong offset, float entropy)
+            {
+                if (m_entropyStatsLabel)
+                    m_entropyStatsLabel->setText(
+                        tr("0x%1  —  %2 bits/byte")
+                            .arg(offset, 8, 16, QLatin1Char('0'))
+                            .arg(double(entropy * 8.0), 0, 'f', 2));
+            });
+    connect(m_entropyView, &filestats::EntropyView::hoverCleared, this,
+            [this]() { updateEntropyStatsLabel(); });
     connect(m_stringOptionsButton, &QToolButton::clicked, this,
             [this, stringsOptionsMenu]()
             {

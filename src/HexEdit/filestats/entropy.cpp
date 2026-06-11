@@ -1,0 +1,460 @@
+#include "filestats/entropy.h"
+#include "filestats/sidepanel.h"
+#include "filestats/widgets.h"
+#include "HexView/hexview.h"
+
+#include <QApplication>
+#include <QFile>
+#include <QLabel>
+#include <QMetaObject>
+#include <QMouseEvent>
+#include <QPainter>
+#include <QPointer>
+#include <QProgressBar>
+#include <QThread>
+#include <QTimer>
+
+#include <algorithm>
+#include <atomic>
+#include <cmath>
+#include <memory>
+#include <numeric>
+
+using namespace filestats;
+
+// -----------------------------------------------------------------------
+// EntropyView
+// -----------------------------------------------------------------------
+
+EntropyView::EntropyView(QWidget *parent) : QWidget(parent)
+{
+    setMouseTracking(true);
+}
+
+void EntropyView::setData(const QVector<float> &data, qulonglong fileSize, int windowSize)
+{
+    m_data       = data;
+    m_fileSize   = fileSize;
+    m_windowSize = windowSize;
+    m_hoverX     = -1;
+    update();
+}
+
+void EntropyView::clear()
+{
+    m_data.clear();
+    m_fileSize   = 0;
+    m_windowSize = 256;
+    m_hoverX     = -1;
+    update();
+}
+
+float EntropyView::minEntropy() const
+{
+    if (m_data.isEmpty()) return 0.0f;
+    return *std::min_element(m_data.cbegin(), m_data.cend());
+}
+
+float EntropyView::avgEntropy() const
+{
+    if (m_data.isEmpty()) return 0.0f;
+    const double sum = std::accumulate(m_data.cbegin(), m_data.cend(), 0.0);
+    return static_cast<float>(sum / m_data.size());
+}
+
+float EntropyView::maxEntropy() const
+{
+    if (m_data.isEmpty()) return 0.0f;
+    return *std::max_element(m_data.cbegin(), m_data.cend());
+}
+
+QSize EntropyView::sizeHint() const        { return {200, 120}; }
+QSize EntropyView::minimumSizeHint() const { return {40,  80};  }
+
+void EntropyView::setRotated(bool rotated)
+{
+    if (m_rotated == rotated)
+        return;
+    m_rotated = rotated;
+    m_hoverX  = -1;
+    update();
+}
+
+float EntropyView::sampleAt(int pos, int axisLen) const
+{
+    if (m_data.isEmpty() || axisLen <= 1)
+        return 0.0f;
+    const float t    = static_cast<float>(pos) / (axisLen - 1);
+    const float idx  = t * (m_data.size() - 1);
+    const int   lo   = qBound(0, int(idx), m_data.size() - 1);
+    const int   hi   = qMin(lo + 1, m_data.size() - 1);
+    const float frac = idx - float(lo);
+    return m_data[lo] * (1.0f - frac) + m_data[hi] * frac;
+}
+
+QColor EntropyView::colorForEntropy(float e)
+{
+    struct Stop { float pos; int r, g, b; };
+    static constexpr Stop stops[] = {
+        {0.00f,   0,  10,  80},
+        {0.30f,   0, 100, 200},
+        {0.55f,  50, 180,  70},
+        {0.75f, 220, 150,   0},
+        {1.00f, 210,  30,  30},
+    };
+    static constexpr int N = int(sizeof(stops) / sizeof(stops[0]));
+    e = qBound(0.0f, e, 1.0f);
+    int i = 0;
+    while (i < N - 2 && stops[i + 1].pos <= e)
+        ++i;
+    const float span = stops[i + 1].pos - stops[i].pos;
+    const float frac = (span > 0.0f) ? (e - stops[i].pos) / span : 0.0f;
+    return QColor(
+        qRound(stops[i].r + frac * (stops[i + 1].r - stops[i].r)),
+        qRound(stops[i].g + frac * (stops[i + 1].g - stops[i].g)),
+        qRound(stops[i].b + frac * (stops[i + 1].b - stops[i].b)));
+}
+
+void EntropyView::paintEvent(QPaintEvent *)
+{
+    QPainter p(this);
+    const int w = width();
+    const int h = height();
+
+    p.fillRect(rect(), palette().base());
+
+    if (m_data.isEmpty())
+    {
+        p.setPen(palette().mid().color());
+        p.drawText(rect(), Qt::AlignCenter, tr("No data"));
+        return;
+    }
+
+    if (!m_rotated)
+    {
+        for (int x = 0; x < w; ++x)
+        {
+            const float e    = sampleAt(x, w);
+            const int   barH = qRound(e * h);
+            if (barH > 0)
+                p.fillRect(x, h - barH, 1, barH, colorForEntropy(e));
+        }
+        // Threshold at ~7.6 bits/byte — typical lower bound for compressed/encrypted data
+        const int threshY = h - qRound(0.95f * h);
+        p.setPen(QPen(QColor(200, 60, 60, 120), 1, Qt::DashLine));
+        p.drawLine(0, threshY, w, threshY);
+        if (m_hoverX >= 0 && m_hoverX < w)
+        {
+            p.setPen(QColor(255, 255, 255, 180));
+            p.drawLine(m_hoverX, 0, m_hoverX, h);
+        }
+    }
+    else
+    {
+        for (int y = 0; y < h; ++y)
+        {
+            const float e    = sampleAt(y, h);
+            const int   barW = qRound(e * w);
+            if (barW > 0)
+                p.fillRect(0, y, barW, 1, colorForEntropy(e));
+        }
+        const int threshX = qRound(0.95f * w);
+        p.setPen(QPen(QColor(200, 60, 60, 120), 1, Qt::DashLine));
+        p.drawLine(threshX, 0, threshX, h);
+        if (m_hoverX >= 0 && m_hoverX < h)
+        {
+            p.setPen(QColor(255, 255, 255, 180));
+            p.drawLine(0, m_hoverX, w, m_hoverX);
+        }
+    }
+}
+
+void EntropyView::mouseMoveEvent(QMouseEvent *event)
+{
+    const QPoint pos = event->position().toPoint();
+    m_hoverX = m_rotated ? pos.y() : pos.x();
+    update();
+
+    if (!m_data.isEmpty() && m_fileSize > 0)
+    {
+        const int axisLen = m_rotated ? height() : width();
+        if (axisLen > 1)
+        {
+            const float      t      = qBound(0.0f, float(m_hoverX) / (axisLen - 1), 1.0f);
+            const qulonglong offset = static_cast<qulonglong>(t * m_fileSize);
+            emit positionHovered(offset, sampleAt(m_hoverX, axisLen));
+        }
+    }
+    QWidget::mouseMoveEvent(event);
+}
+
+void EntropyView::leaveEvent(QEvent *event)
+{
+    m_hoverX = -1;
+    update();
+    emit hoverCleared();
+    QWidget::leaveEvent(event);
+}
+
+// -----------------------------------------------------------------------
+// Background calculation
+// -----------------------------------------------------------------------
+
+static QVector<float> calculateEntropy(
+    const QString &path,
+    int windowSize,
+    qulonglong &outFileSize,
+    const std::shared_ptr<std::atomic_bool> &cancelFlag,
+    const std::shared_ptr<filestats::OperationPause> &pause,
+    const std::function<void(int)> &progressCallback)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+    {
+        outFileSize = 0;
+        return {};
+    }
+
+    const qint64   total    = file.size();
+    outFileSize             = static_cast<qulonglong>(total);
+    qint64         scanned  = 0;
+    int            lastProg = -1;
+    QVector<float> results;
+    if (total > 0 && windowSize > 0)
+        results.reserve(static_cast<int>(qMin((total + windowSize - 1) / windowSize, qint64(1 << 20))));
+
+    while (!cancelFlag->load() && !file.atEnd())
+    {
+        if (pause && !pause->waitIfPaused(cancelFlag))
+            return {};
+
+        const QByteArray chunk = file.read(windowSize);
+        if (chunk.isEmpty())
+            break;
+
+        int freq[256] = {};
+        for (unsigned char b : chunk)
+            ++freq[b];
+
+        const int n = chunk.size();
+        double entropy = 0.0;
+        for (int f : freq)
+        {
+            if (f > 0)
+            {
+                const double p = double(f) / n;
+                entropy -= p * std::log2(p);
+            }
+        }
+        results.append(static_cast<float>(entropy / 8.0));
+
+        scanned += chunk.size();
+        const int prog = (total > 0) ? int(1000LL * scanned / total) : 1000;
+        if (prog != lastProg)
+        {
+            lastProg = prog;
+            progressCallback(prog);
+        }
+    }
+
+    return cancelFlag->load() ? QVector<float>() : results;
+}
+
+// -----------------------------------------------------------------------
+// FilePropertiesPanel — entropy methods
+// -----------------------------------------------------------------------
+
+void FilePropertiesPanel::maybeStartEntropyAnalysis()
+{
+    if (!m_panelFullyOpened)
+        return;
+    if (isSectionCollapsed(SectionId::Entropy))
+        return;
+    if (m_entropyState.started)
+        return;
+    if (m_entropyState.rescanRequired)
+    {
+        if (m_entropyOperation)
+            m_entropyOperation->showRescan(m_entropyState.rescanMessage.isEmpty()
+                                               ? tr("File contents changed")
+                                               : m_entropyState.rescanMessage);
+        requestSectionLayoutRefresh(SectionId::Entropy);
+        return;
+    }
+    if (m_entropyState.autoStartConsumed)
+        return;
+    if (!shouldAutoStartOperations())
+    {
+        if (m_entropyOperation && !m_entropyOperation->hasOperation())
+            m_entropyOperation->showStart(tr("Calculate entropy"));
+        return;
+    }
+    m_entropyState.started = true;
+    startEntropyAnalysis();
+}
+
+void FilePropertiesPanel::startEntropyAnalysis()
+{
+    if (!m_hexView)
+    {
+        m_entropyState.started          = false;
+        m_entropyState.pausedByCollapse = false;
+        return;
+    }
+
+    m_entropyState.autoStartConsumed = true;
+    m_entropyState.rescanRequired    = false;
+    m_entropyState.rescanMessage.clear();
+    m_entropyState.pausedByCollapse = isSectionCollapsed(SectionId::Entropy);
+    const int generation = ++m_entropyState.generation;
+
+    if (m_entropyState.cancel) m_entropyState.cancel->store(true);
+    if (m_entropyState.pause)  m_entropyState.pause->wake();
+
+    auto cancelFlag = std::make_shared<std::atomic_bool>(false);
+    m_entropyState.cancel = cancelFlag;
+    auto pause = std::make_shared<filestats::OperationPause>();
+    pause->setPaused(isSectionCollapsed(SectionId::Entropy));
+    m_entropyState.pause = pause;
+
+    if (m_entropyView)       m_entropyView->clear();
+    if (m_entropyStatsLabel) m_entropyStatsLabel->clear();
+    setEntropyProgressTitle(0);
+    if (m_entropyOperation)  m_entropyOperation->showProgress();
+    requestSectionLayoutRefresh(SectionId::Entropy);
+
+    const QString path       = m_hexView->filePath();
+    const int     windowSize = m_entropyWindowSize;
+    QPointer<FilePropertiesPanel> guard(this);
+
+    auto *thread = QThread::create([guard, generation, path, windowSize, cancelFlag, pause]() {
+        qulonglong fileSize = 0;
+        const QVector<float> results = calculateEntropy(
+            path, windowSize, fileSize, cancelFlag, pause,
+            [guard, generation](int prog) {
+                QMetaObject::invokeMethod(qApp, [guard, generation, prog]() {
+                    if (guard) guard->updateEntropyProgress(generation, prog);
+                }, Qt::QueuedConnection);
+            });
+        if (cancelFlag->load())
+            return;
+        QMetaObject::invokeMethod(qApp, [guard, generation, results, fileSize, windowSize]() {
+            if (guard) guard->applyEntropyResults(generation, results, fileSize, windowSize);
+        }, Qt::QueuedConnection);
+    });
+    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+    thread->start();
+}
+
+void FilePropertiesPanel::cancelEntropyAnalysis()
+{
+    ++m_entropyState.generation;
+    m_entropyState.started          = false;
+    m_entropyState.pausedByCollapse = false;
+    if (m_entropyState.cancel) m_entropyState.cancel->store(true);
+    if (m_entropyState.pause)  m_entropyState.pause->wake();
+    if (m_entropyOperation)
+        m_entropyOperation->showRetry(tr("Operation cancelled"));
+    resetEntropyTitle();
+    requestSectionLayoutRefresh(SectionId::Entropy);
+}
+
+void FilePropertiesPanel::resumeEntropyAnalysis()
+{
+    if (!m_entropyState.pause)
+        return;
+    m_entropyState.pause->setPaused(false);
+    m_entropyState.pausedByCollapse = false;
+    if (m_entropyOperation)
+        m_entropyOperation->setProgressActionStop();
+    setEntropyProgressTitle(m_entropyState.progress);
+}
+
+void FilePropertiesPanel::updateEntropyProgress(int generation, int value)
+{
+    if (generation != m_entropyState.generation)
+        return;
+    m_entropyState.progress = value;
+    setEntropyProgressTitle(value);
+    if (m_entropyOperation && m_entropyOperation->progressBar())
+        m_entropyOperation->progressBar()->setValue(value);
+}
+
+void FilePropertiesPanel::applyEntropyResults(int generation, QVector<float> data,
+                                              qulonglong fileSize, int windowSize)
+{
+    if (generation != m_entropyState.generation)
+        return;
+    if (m_entropyView)
+        m_entropyView->setData(data, fileSize, windowSize);
+    updateEntropyStatsLabel();
+    if (m_entropyOperation) m_entropyOperation->clear();
+    resetEntropyTitle();
+    requestSectionLayoutRefresh(SectionId::Entropy);
+    QTimer::singleShot(0, this, [this]() { repairExpandedSectionGeometry(SectionId::Entropy); });
+}
+
+void FilePropertiesPanel::markEntropyContentsChanged()
+{
+    m_entropyState.started          = false;
+    m_entropyState.pausedByCollapse = false;
+    ++m_entropyState.generation;
+    if (m_entropyState.cancel) m_entropyState.cancel->store(true);
+    if (m_entropyState.pause)  m_entropyState.pause->wake();
+    if (m_entropyView)         m_entropyView->clear();
+    if (m_entropyStatsLabel)   m_entropyStatsLabel->clear();
+    m_entropyState.rescanRequired = true;
+    m_entropyState.rescanMessage  = tr("File contents changed");
+    if (m_entropyOperation)
+        m_entropyOperation->showRescan(m_entropyState.rescanMessage);
+    resetEntropyTitle();
+    requestSectionLayoutRefresh(SectionId::Entropy);
+}
+
+void FilePropertiesPanel::resetEntropyForCurrentDocument()
+{
+    m_entropyState.started           = false;
+    m_entropyState.pausedByCollapse  = false;
+    m_entropyState.autoStartConsumed = false;
+    ++m_entropyState.generation;
+    if (m_entropyState.cancel) m_entropyState.cancel->store(true);
+    if (m_entropyState.pause)  m_entropyState.pause->wake();
+    if (m_entropyView)         m_entropyView->clear();
+    if (m_entropyStatsLabel)   m_entropyStatsLabel->clear();
+    m_entropyState.rescanRequired = false;
+    m_entropyState.rescanMessage.clear();
+    if (m_entropyOperation)    m_entropyOperation->clear();
+    resetEntropyTitle();
+    requestSectionLayoutRefresh(SectionId::Entropy);
+}
+
+void FilePropertiesPanel::setEntropyProgressTitle(int value)
+{
+    if (PanelSection *s = sectionFor(SectionId::Entropy))
+        if (s->header)
+            s->header->setTitle(tr("Entropy (%1%)").arg(value / 10));
+}
+
+void FilePropertiesPanel::resetEntropyTitle()
+{
+    if (PanelSection *s = sectionFor(SectionId::Entropy))
+        if (s->header)
+            s->header->setTitle(tr("Entropy"));
+}
+
+void FilePropertiesPanel::updateEntropyStatsLabel()
+{
+    if (!m_entropyStatsLabel || !m_entropyView || m_entropyView->data().isEmpty())
+    {
+        if (m_entropyStatsLabel) m_entropyStatsLabel->clear();
+        return;
+    }
+    const auto fmt = [](float e) {
+        return QStringLiteral("%1").arg(double(e * 8.0), 0, 'f', 2);
+    };
+    m_entropyStatsLabel->setText(
+        tr("Min %1   Avg %2   Max %3  bits/byte")
+            .arg(fmt(m_entropyView->minEntropy()))
+            .arg(fmt(m_entropyView->avgEntropy()))
+            .arg(fmt(m_entropyView->maxEntropy())));
+}

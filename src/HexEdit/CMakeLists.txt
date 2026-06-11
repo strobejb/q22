@@ -10,6 +10,8 @@ set(PROJECT_SOURCES
         filestats/banner.cpp
         filestats/banner.h
         filestats/checksum.cpp
+        filestats/entropy.h
+        filestats/entropy.cpp
         filestats/properties.cpp
         filestats/resizegrip.cpp
         filestats/resizegrip.h
