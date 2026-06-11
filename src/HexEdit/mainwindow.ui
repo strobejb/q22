@@ -165,7 +165,10 @@
   </action>
   <action name="actionProperties">
    <property name="text">
-    <string>Properties...</string>
+    <string>Information...</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+I</string>
    </property>
   </action>
   <action name="actionImport">

@@ -215,7 +215,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
 {
     m_sectionOrder = {SectionId::Properties, SectionId::Checksums, SectionId::Strings};
 
-    setWindowTitle(tr("File Properties"));
+    setWindowTitle(tr("File Information"));
     setSizeGripEnabled(false);
     setAutoFillBackground(true);
     QPalette pal = palette();
@@ -252,7 +252,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     contentLayout->setContentsMargins(kSectionHeaderOuterMargin, kContentMargin, kSectionHeaderOuterMargin, 0);
     contentLayout->setSpacing(0);
 
-    m_fileHeader = new SectionHeader(tr("File Properties"), m_content);
+    m_fileHeader = new SectionHeader(tr("File Information"), m_content);
     m_fileHeader->setClickedCallback(
         [this]()
         {
@@ -346,13 +346,13 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
 
     auto *checksumCard = new SettingsCard(
         {
-            checksumRow(QStringLiteral("CRC32"), true),
-            checksumRow(QStringLiteral("CRC16"), false),
-            checksumRow(QStringLiteral("SHA256"), true),
-            checksumRow(QStringLiteral("SHA1"), false),
-            checksumRow(QStringLiteral("MD5"), false),
-            checksumRow(QStringLiteral("MD4"), false),
-            checksumRow(QStringLiteral("MD2"), false),
+            checksumRow(QStringLiteral("SHA512"),  false),
+            checksumRow(QStringLiteral("SHA256"),  true),
+            checksumRow(QStringLiteral("SHA1"),    false),
+            checksumRow(QStringLiteral("MD5"),     true),
+            checksumRow(QStringLiteral("CRC32"),   false),
+            checksumRow(QStringLiteral("CRC32C"),  false),
+            checksumRow(QStringLiteral("CRC16"),   false),
         },
         SettingsCard::Style::Spaced, m_checksumSectionBody);
     checksumCard->setMinimumWidth(0);
@@ -663,7 +663,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
 
     registerPanelSection({
         SectionId::Properties,
-        tr("File Properties"),
+        tr("File Information"),
         m_fileHeader,
         m_fileSectionBody,
         m_fileHeaderGap,
@@ -689,6 +689,11 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
                 {
                     m_checksumState.pausedByCollapse = true;
                     m_checksumState.pause->setPaused(true);
+                    const QStringList algorithms = selectedChecksumAlgorithms();
+                    const QSet<QString> selected(algorithms.cbegin(), algorithms.cend());
+                    for (auto it = m_checksumValues.begin(); it != m_checksumValues.end(); ++it)
+                        if (selected.contains(it.key()))
+                            it.value()->setText(tr("Paused"));
                 }
                 else if (m_checksumState.pausedByCollapse && m_checksumOperation)
                 {
@@ -911,7 +916,17 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     connect(m_stringsList, &QTreeWidget::itemClicked, this, navigateToStringItem);
     connect(m_stringsList, &QTreeWidget::itemActivated, this, navigateToStringItem);
     connect(m_scrollArea->verticalScrollBar(), &QScrollBar::valueChanged, this,
-            &FilePropertiesPanel::updateStickyHeader);
+            [this]()
+            {
+                updateStickyHeader();
+                if (!m_programmaticScrollDepth && m_hasExpandedSection)
+                {
+                    m_hasExpandedSection = false;
+                    if (PanelSection *s = sectionFor(m_expandedSectionId))
+                        if (s->header)
+                            s->header->setSectionExpanded(false);
+                }
+            });
     connect(m_scrollArea->verticalScrollBar(), &QScrollBar::rangeChanged, this,
             [this]()
             {
@@ -1514,6 +1529,14 @@ void FilePropertiesPanel::resizeSection(SectionId sectionId, int dy)
         return;
 
     state.currentHeight = newHeight;
+
+    if (m_hasExpandedSection && m_expandedSectionId == sectionId)
+    {
+        m_hasExpandedSection = false;
+        if (section->header)
+            section->header->setSectionExpanded(false);
+    }
+
     applyResizableSectionHeight(sectionId);
     rebuildSectionLayout();
 
@@ -1795,7 +1818,9 @@ void FilePropertiesPanel::performSectionLayoutRefresh()
             if (s->header)
             {
                 const int y = s->header->mapTo(m_content, QPoint(0, 0)).y();
+                ++m_programmaticScrollDepth;
                 m_scrollArea->verticalScrollBar()->setValue(qMax(0, y - kContentMargin));
+                QTimer::singleShot(0, this, [this] { --m_programmaticScrollDepth; });
             }
         }
     }
@@ -1904,7 +1929,9 @@ void FilePropertiesPanel::toggleSectionFullExpand(SectionId sectionId)
                                    if (!s || !s->header || !m_scrollArea)
                                        return;
                                    const int y = s->header->mapTo(m_content, QPoint(0, 0)).y();
+                                   ++m_programmaticScrollDepth;
                                    m_scrollArea->verticalScrollBar()->setValue(qMax(0, y - kContentMargin));
+                                   QTimer::singleShot(0, this, [this] { --m_programmaticScrollDepth; });
                                });
         }
     }

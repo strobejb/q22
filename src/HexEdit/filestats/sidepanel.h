@@ -268,9 +268,10 @@ class FilePropertiesPanel : public QDialog
     ScanSectionState                  m_checksumState;
     ScanSectionState                  m_stringsState;
     bool                              m_panelFullyOpened   = false;
-    bool                              m_hasExpandedSection = false;
-    SectionId                         m_expandedSectionId  = SectionId::Properties;
-    int                               m_preExpandHeight    = 0;
+    bool                              m_hasExpandedSection      = false;
+    SectionId                         m_expandedSectionId       = SectionId::Properties;
+    int                               m_preExpandHeight         = 0;
+    int                               m_programmaticScrollDepth = 0;
     QVector<QPair<SectionId, bool>>   m_preExpandCollapsedStates;
     bool                              m_stringMoreAvailable         = false;
     bool                              m_sectionLayoutRefreshPending = false;

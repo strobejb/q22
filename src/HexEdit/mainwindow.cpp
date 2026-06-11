@@ -699,8 +699,7 @@ MainWindow::MainWindow(QWidget *parent)
     fileChangeTimer->setInterval(1000);
     connect(fileChangeTimer, &QTimer::timeout,
             this, [this]() { checkWatchedFileChanged(this); });
-    connect(ui->actionProperties, &QAction::triggered,
-            this, [this]() { openSidePanelSection(FilePropertiesPanel::SectionId::Properties); });
+    connect(ui->actionProperties, &QAction::triggered, this, &MainWindow::toggleSidePanel);
     ui->actionChecksum->setEnabled(true);
     connect(ui->actionChecksum, &QAction::triggered,
             this, [this]() { openSidePanelSection(FilePropertiesPanel::SectionId::Checksums); });

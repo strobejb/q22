@@ -29,13 +29,13 @@
 static QStringList checksumAlgorithmNames()
 {
     return {
-        QStringLiteral("CRC32"),
-        QStringLiteral("CRC16"),
+        QStringLiteral("SHA512"),
         QStringLiteral("SHA256"),
         QStringLiteral("SHA1"),
         QStringLiteral("MD5"),
-        QStringLiteral("MD4"),
-        QStringLiteral("MD2"),
+        QStringLiteral("CRC32"),
+        QStringLiteral("CRC32C"),
+        QStringLiteral("CRC16"),
     };
 }
 
@@ -65,6 +65,16 @@ static quint32 updateCrc32Iso(quint32 crc, const QByteArray &data)
         crc ^= byte;
         for (int i = 0; i < 8; ++i)
             crc = (crc & 1u) ? (crc >> 1) ^ 0xEDB88320u : crc >> 1;
+    }
+    return crc;
+}
+
+static quint32 updateCrc32Castagnoli(quint32 crc, const QByteArray &data)
+{
+    for (unsigned char byte : data) {
+        crc ^= byte;
+        for (int i = 0; i < 8; ++i)
+            crc = (crc & 1u) ? (crc >> 1) ^ 0x82F63B78u : crc >> 1;
     }
     return crc;
 }
@@ -169,13 +179,13 @@ static QHash<QString, QString> calculateChecksums(
                                     ? FilePropertiesPanel::tr("Unable to read")
                                     : FilePropertiesPanel::tr("No file"));
 
-    Md2Hasher md2;
-    QCryptographicHash md4(QCryptographicHash::Md4);
     QCryptographicHash md5(QCryptographicHash::Md5);
     QCryptographicHash sha1(QCryptographicHash::Sha1);
     QCryptographicHash sha256(QCryptographicHash::Sha256);
-    quint16 crc16 = 0xFFFF;
-    quint32 crc32 = 0xFFFFFFFFu;
+    QCryptographicHash sha512(QCryptographicHash::Sha512);
+    quint16 crc16  = 0xFFFF;
+    quint32 crc32  = 0xFFFFFFFFu;
+    quint32 crc32c = 0xFFFFFFFFu;
     const qint64 total = file.size();
     qint64 scanned = 0;
     int lastProgress = -1;
@@ -187,20 +197,20 @@ static QHash<QString, QString> calculateChecksums(
         if (chunk.isEmpty() && file.error() != QFileDevice::NoError)
             return unavailableChecksums(algorithms, FilePropertiesPanel::tr("Read failed"));
 
-        if (selected.contains(QStringLiteral("MD2")))
-            md2.addData(chunk);
-        if (selected.contains(QStringLiteral("MD4")))
-            md4.addData(QByteArrayView(chunk.constData(), chunk.size()));
         if (selected.contains(QStringLiteral("MD5")))
             md5.addData(QByteArrayView(chunk.constData(), chunk.size()));
         if (selected.contains(QStringLiteral("SHA1")))
             sha1.addData(QByteArrayView(chunk.constData(), chunk.size()));
         if (selected.contains(QStringLiteral("SHA256")))
             sha256.addData(QByteArrayView(chunk.constData(), chunk.size()));
+        if (selected.contains(QStringLiteral("SHA512")))
+            sha512.addData(QByteArrayView(chunk.constData(), chunk.size()));
         if (selected.contains(QStringLiteral("CRC16")))
             crc16 = updateCrc16Ccitt(crc16, chunk);
         if (selected.contains(QStringLiteral("CRC32")))
             crc32 = updateCrc32Iso(crc32, chunk);
+        if (selected.contains(QStringLiteral("CRC32C")))
+            crc32c = updateCrc32Castagnoli(crc32c, chunk);
 
         scanned += chunk.size();
         const int progress = total > 0
@@ -215,20 +225,20 @@ static QHash<QString, QString> calculateChecksums(
         return {};
 
     QHash<QString, QString> results;
-    if (selected.contains(QStringLiteral("MD2")))
-        results.insert(QStringLiteral("MD2"), hexDigest(md2.result()));
-    if (selected.contains(QStringLiteral("MD4")))
-        results.insert(QStringLiteral("MD4"), hexDigest(md4.result()));
     if (selected.contains(QStringLiteral("MD5")))
         results.insert(QStringLiteral("MD5"), hexDigest(md5.result()));
     if (selected.contains(QStringLiteral("SHA1")))
         results.insert(QStringLiteral("SHA1"), hexDigest(sha1.result()));
     if (selected.contains(QStringLiteral("SHA256")))
         results.insert(QStringLiteral("SHA256"), hexDigest(sha256.result()));
+    if (selected.contains(QStringLiteral("SHA512")))
+        results.insert(QStringLiteral("SHA512"), hexDigest(sha512.result()));
     if (selected.contains(QStringLiteral("CRC16")))
         results.insert(QStringLiteral("CRC16"), hexNumber(crc16, 4));
     if (selected.contains(QStringLiteral("CRC32")))
         results.insert(QStringLiteral("CRC32"), hexNumber(crc32 ^ 0xFFFFFFFFu, 8));
+    if (selected.contains(QStringLiteral("CRC32C")))
+        results.insert(QStringLiteral("CRC32C"), hexNumber(crc32c ^ 0xFFFFFFFFu, 8));
     return results;
 }
 
@@ -405,6 +415,11 @@ void FilePropertiesPanel::resumeChecksumCalculation()
     m_checksumState.pause->wake();
     if (m_checksumOperation)
         m_checksumOperation->setProgressActionStop();
+    const QStringList algorithms = selectedChecksumAlgorithms();
+    const QSet<QString> selected(algorithms.cbegin(), algorithms.cend());
+    for (auto it = m_checksumValues.begin(); it != m_checksumValues.end(); ++it)
+        if (selected.contains(it.key()) && it.value()->text() == tr("Paused"))
+            it.value()->setText(tr("Calculating..."));
     setChecksumProgressTitle(m_checksumState.progress);
     requestSectionLayoutRefresh(SectionId::Checksums);
 }
