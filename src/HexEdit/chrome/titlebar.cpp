@@ -10,6 +10,7 @@
 #include <QPalette>
 #include <QStyle>
 #include <QToolButton>
+#include <QToolTip>
 #include <QTimer>
 #include <QWindow>
 
@@ -169,6 +170,7 @@ TitleBar::TitleBar(QWidget *parent, const TitleBarOptions &options)
     m_hamburger->setIconSize(QSize(menuBtnIconSz, menuBtnIconSz));
     m_hamburger->setMenu(m_menu);
     m_hamburger->setPopupMode(QToolButton::InstantPopup);
+    m_hamburger->setToolTip(tr("Open File"));
     m_hamburger->setVisible(m_options.showFileMenu);
 
     // ── Search button (left side, next to hamburger) ──────────────────────
@@ -192,6 +194,7 @@ TitleBar::TitleBar(QWidget *parent, const TitleBarOptions &options)
     m_searchBtn->setIconSize(QSize(menuBtnIconSz, menuBtnIconSz));
     m_searchBtn->setMenu(m_searchMenu);
     m_searchBtn->setPopupMode(QToolButton::InstantPopup);
+    m_searchBtn->setToolTip(tr("Search"));
     m_searchBtn->setVisible(m_options.showSearchMenu);
 
     // ── File information button (between Search and Tools) ─────────────────
@@ -207,6 +210,7 @@ TitleBar::TitleBar(QWidget *parent, const TitleBarOptions &options)
     m_fileInfoBtn->setCheckable(true);
     m_fileInfoBtn->setFixedSize(appButtonSize);
     m_fileInfoBtn->setIconSize(QSize(menuBtnIconSz, menuBtnIconSz));
+    m_fileInfoBtn->setToolTip(tr("File Information"));
     m_fileInfoBtn->setVisible(m_options.showFileInfoButton);
     connect(m_fileInfoBtn, &QToolButton::clicked, this, &TitleBar::fileInfoToggled);
 
@@ -262,6 +266,7 @@ TitleBar::TitleBar(QWidget *parent, const TitleBarOptions &options)
     m_viewBtn->setIconSize(QSize(menuBtnIconSz, menuBtnIconSz));
     m_viewBtn->setMenu(m_viewMenu);
     m_viewBtn->setPopupMode(QToolButton::InstantPopup);
+    m_viewBtn->setToolTip(tr("Tools"));
     m_viewBtn->setVisible(m_options.showViewMenu);
     // Reposition to right-align when the menu is shown.
     m_viewMenu->installEventFilter(this);
@@ -579,6 +584,8 @@ void TitleBar::updateMaxButton()
 
 void TitleBar::clearStaleButtonHover()
 {
+    if (QToolTip::isVisible())
+        return;
     const QPoint global = QCursor::pos();
     for (QToolButton *btn : findChildren<QToolButton *>()) {
         if (!btn || !btn->isVisible())
@@ -588,8 +595,10 @@ void TitleBar::clearStaleButtonHover()
             btn->rect().contains(btn->mapFromGlobal(global));
         if (!actuallyUnderMouse && btn->testAttribute(Qt::WA_UnderMouse)) {
             btn->setAttribute(Qt::WA_UnderMouse, false);
-            QEvent leave(QEvent::Leave);
-            QApplication::sendEvent(btn, &leave);
+            if (btn->toolTip().isEmpty()) {
+                QEvent leave(QEvent::Leave);
+                QApplication::sendEvent(btn, &leave);
+            }
             btn->style()->unpolish(btn);
             btn->style()->polish(btn);
             btn->update();

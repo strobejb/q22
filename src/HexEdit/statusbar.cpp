@@ -169,13 +169,16 @@ StatusBar::StatusBar(HexView *hv, QStatusBar *bar, bool showPanelToggles,
     };
 
     m_fileInfoBtn = makeToggleButton("statusFileInfoBtn", "actions/help-about-symbolic", "i");
+    m_fileInfoBtn->setToolTip(tr("File Information"));
     connect(m_fileInfoBtn, &QToolButton::clicked, this, &StatusBar::fileInfoToggled);
 
     //m_typesBtn = makeToggleButton("statusTypesBtn", "actions/binstruct0101", "T");
     m_typesBtn = makeToggleButton("statusTypesBtn", "actions/cube", "T");
+    m_typesBtn->setToolTip(tr("Structure View"));
     connect(m_typesBtn, &QToolButton::toggled, this, &StatusBar::typesToggled);
 
     m_codeBtn = makeToggleButton("statusCodeBtn", "actions/chip", "D");
+    m_codeBtn->setToolTip(tr("Disassemble"));
 
     m_toggleStrip = new QWidget(bar);
     m_toggleLayout = new QHBoxLayout(m_toggleStrip);
