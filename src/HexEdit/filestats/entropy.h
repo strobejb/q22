@@ -19,6 +19,8 @@ public:
     void setData(const QVector<float> &data, qulonglong fileSize, int windowSize);
     void clear();
     void setRotated(bool rotated);
+    void setSelection(qulonglong start, qulonglong end);
+    void clearSelection();
 
     const QVector<float> &data() const { return m_data; }
     bool  isRotated() const { return m_rotated; }
@@ -51,6 +53,9 @@ private:
     int            m_hoverX     = -1;
     bool           m_rotated    = false;
     bool           m_dragging   = false;
+    bool           m_hasSelection = false;
+    qulonglong     m_selStart   = 0;
+    qulonglong     m_selEnd     = 0;
 };
 
 } // namespace filestats

@@ -43,9 +43,24 @@ void EntropyView::setData(const QVector<float> &data, qulonglong fileSize, int w
 void EntropyView::clear()
 {
     m_data.clear();
-    m_fileSize   = 0;
-    m_windowSize = 256;
-    m_hoverX     = -1;
+    m_fileSize    = 0;
+    m_windowSize  = 256;
+    m_hoverX      = -1;
+    m_hasSelection = false;
+    update();
+}
+
+void EntropyView::setSelection(qulonglong start, qulonglong end)
+{
+    m_hasSelection = (end > start);
+    m_selStart     = start;
+    m_selEnd       = end;
+    update();
+}
+
+void EntropyView::clearSelection()
+{
+    m_hasSelection = false;
     update();
 }
 
@@ -139,14 +154,28 @@ void EntropyView::paintEvent(QPaintEvent *)
             if (barH > 0)
                 p.fillRect(x, h - barH, 1, barH, colorForEntropy(e));
         }
+        if (m_hasSelection && m_fileSize > 0)
+        {
+            const double fs = double(m_fileSize);
+            const int x1 = qBound(0, qRound(double(m_selStart) / fs * (w - 1)), w - 1);
+            const int x2 = qBound(x1 + 3, qRound(double(m_selEnd) / fs * (w - 1)) + 1, w);
+            p.fillRect(x1, 0, x2 - x1, h, QColor(255, 255, 255, 80));
+            p.setCompositionMode(QPainter::RasterOp_SourceXorDestination);
+            p.setPen(QPen(Qt::white, 1));
+            p.drawLine(x1, 0, x1, h - 1);
+            if (x2 - 1 > x1) p.drawLine(x2 - 1, 0, x2 - 1, h - 1);
+            p.setCompositionMode(QPainter::CompositionMode_SourceOver);
+        }
         // Threshold at ~7.6 bits/byte — typical lower bound for compressed/encrypted data
         const int threshY = h - qRound(0.95f * h);
         p.setPen(QPen(QColor(200, 60, 60, 120), 1, Qt::DashLine));
         p.drawLine(0, threshY, w, threshY);
         if (m_hoverX >= 0 && m_hoverX < w)
         {
-            p.setPen(QColor(255, 255, 255, 180));
+            p.setCompositionMode(QPainter::RasterOp_SourceXorDestination);
+            p.setPen(QPen(Qt::white, 3));
             p.drawLine(m_hoverX, 0, m_hoverX, h);
+            p.setCompositionMode(QPainter::CompositionMode_SourceOver);
         }
     }
     else
@@ -158,13 +187,27 @@ void EntropyView::paintEvent(QPaintEvent *)
             if (barW > 0)
                 p.fillRect(0, y, barW, 1, colorForEntropy(e));
         }
+        if (m_hasSelection && m_fileSize > 0)
+        {
+            const double fs = double(m_fileSize);
+            const int y1 = qBound(0, qRound(double(m_selStart) / fs * (h - 1)), h - 1);
+            const int y2 = qBound(y1 + 3, qRound(double(m_selEnd) / fs * (h - 1)) + 1, h);
+            p.fillRect(0, y1, w, y2 - y1, QColor(255, 255, 255, 80));
+            p.setCompositionMode(QPainter::RasterOp_SourceXorDestination);
+            p.setPen(QPen(Qt::white, 1));
+            p.drawLine(0, y1, w - 1, y1);
+            if (y2 - 1 > y1) p.drawLine(0, y2 - 1, w - 1, y2 - 1);
+            p.setCompositionMode(QPainter::CompositionMode_SourceOver);
+        }
         const int threshX = qRound(0.95f * w);
         p.setPen(QPen(QColor(200, 60, 60, 120), 1, Qt::DashLine));
         p.drawLine(threshX, 0, threshX, h);
         if (m_hoverX >= 0 && m_hoverX < h)
         {
-            p.setPen(QColor(255, 255, 255, 180));
+            p.setCompositionMode(QPainter::RasterOp_SourceXorDestination);
+            p.setPen(QPen(Qt::white, 3));
             p.drawLine(0, m_hoverX, w, m_hoverX);
+            p.setCompositionMode(QPainter::CompositionMode_SourceOver);
         }
     }
 }

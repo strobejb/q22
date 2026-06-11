@@ -1088,6 +1088,14 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
                     m_hexView->setFocus();
                 }
             });
+    if (m_hexView)
+        connect(m_hexView, &HexView::selectionChanged, this,
+                [this](size_w start, size_w end)
+                {
+                    if (m_entropyView)
+                        m_entropyView->setSelection(static_cast<qulonglong>(start),
+                                                    static_cast<qulonglong>(end));
+                });
     connect(m_stringOptionsButton, &QToolButton::clicked, this,
             [this, stringsOptionsMenu]()
             {
