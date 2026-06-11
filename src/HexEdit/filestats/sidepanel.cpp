@@ -692,7 +692,8 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     auto *entropyControlsLayout = new QHBoxLayout(entropyControls);
     entropyControlsLayout->setContentsMargins(0, 4, 0, 4);
     entropyControlsLayout->setSpacing(6);
-    auto *entropyRotateButton = new QToolButton(entropyControls);
+    m_entropyRotateButton = new QToolButton(entropyControls);
+    auto *entropyRotateButton = m_entropyRotateButton;
     entropyRotateButton->setFixedSize(24, 24);
     entropyRotateButton->setFocusPolicy(Qt::TabFocus);
     entropyRotateButton->setToolTip(tr("Rotate view"));
@@ -724,10 +725,45 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     entropyControlsLayout->addSpacing(4);
     connect(entropyRotateButton, &QToolButton::toggled, this,
             [this](bool on) { if (m_entropyView) m_entropyView->setRotated(on); });
+    m_entropyModeCombo = new MenuComboBox(entropyControls);
+    m_entropyModeCombo->addItem(tr("Shannon"), QVariant::fromValue(int(EntropyMode::Shannon)));
+    m_entropyModeCombo->addItem(tr("Bigram"),  QVariant::fromValue(int(EntropyMode::Bigram)));
+    m_entropyModeCombo->setCurrentIndex(0);
+    m_entropyModeCombo->setFocusPolicy(Qt::StrongFocus);
+    m_entropyModeCombo->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_entropyModeCombo->setFixedHeight(qMax(24, m_entropyModeCombo->sizeHint().height() - 4));
+    m_entropyModeCombo->setToolTip(tr("Visualisation mode: byte entropy over sliding windows, or consecutive byte-pair frequency heatmap"));
+    entropyControlsLayout->addWidget(m_entropyModeCombo);
+
+    m_bigramScaleCombo = new MenuComboBox(entropyControls);
+    m_bigramScaleCombo->addItem(tr("Log"),    QVariant::fromValue(int(filestats::BigramScale::Log)));
+    m_bigramScaleCombo->addItem(tr("Sqrt"),   QVariant::fromValue(int(filestats::BigramScale::Sqrt)));
+    m_bigramScaleCombo->addItem(tr("Linear"), QVariant::fromValue(int(filestats::BigramScale::Linear)));
+    m_bigramScaleCombo->setCurrentIndex(0);
+    m_bigramScaleCombo->setFocusPolicy(Qt::StrongFocus);
+    m_bigramScaleCombo->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_bigramScaleCombo->setFixedHeight(qMax(24, m_bigramScaleCombo->sizeHint().height() - 4));
+    m_bigramScaleCombo->setToolTip(tr("Frequency scale: Log compresses bright peaks to reveal rare pairs; Sqrt is a gentler middle ground; Linear shows raw counts"));
+    m_bigramScaleCombo->setVisible(false);
+    entropyControlsLayout->addWidget(m_bigramScaleCombo);
+
+    m_bigramStrideCombo = new MenuComboBox(entropyControls);
+    m_bigramStrideCombo->addItem(tr("Stride 1"), QVariant::fromValue(1));
+    m_bigramStrideCombo->addItem(tr("Stride 2"), QVariant::fromValue(2));
+    m_bigramStrideCombo->addItem(tr("Stride 4"), QVariant::fromValue(4));
+    m_bigramStrideCombo->addItem(tr("Stride 8"), QVariant::fromValue(8));
+    m_bigramStrideCombo->setCurrentIndex(0);
+    m_bigramStrideCombo->setFocusPolicy(Qt::StrongFocus);
+    m_bigramStrideCombo->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_bigramStrideCombo->setFixedHeight(qMax(24, m_bigramStrideCombo->sizeHint().height() - 4));
+    m_bigramStrideCombo->setToolTip(tr("Byte pair distance: 1 = consecutive, 2 = every other byte (16-bit), 4 = 32-bit words, 8 = 64-bit words"));
+    m_bigramStrideCombo->setVisible(false);
+    entropyControlsLayout->addWidget(m_bigramStrideCombo);
+
     entropyControlsLayout->addStretch();
-    auto *windowLabel = new QLabel(tr("Sample:"), entropyControls);
-    windowLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-    entropyControlsLayout->addWidget(windowLabel);
+    m_entropyWindowLabel = new QLabel(tr("Sample:"), entropyControls);
+    m_entropyWindowLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    entropyControlsLayout->addWidget(m_entropyWindowLabel);
     m_entropyWindowCombo = new MenuComboBox(entropyControls);
     m_entropyWindowCombo->addItem(tr("128 bytes"),  QVariant::fromValue(128));
     m_entropyWindowCombo->addItem(tr("256 bytes"),  QVariant::fromValue(256));
@@ -762,6 +798,19 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     m_entropyView->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
     entropyViewFrameLayout->addWidget(m_entropyView);
     entropyControlsStackLayout->addWidget(entropyViewFrame);
+    // Sync button visual with EntropyView's default rotated state
+    m_entropyRotateButton->setChecked(true);
+
+    m_bigramRescanTimer = new QTimer(this);
+    m_bigramRescanTimer->setSingleShot(true);
+    m_bigramRescanTimer->setInterval(300);
+    connect(m_bigramRescanTimer, &QTimer::timeout, this,
+            [this]()
+            {
+                if (m_entropyMode == EntropyMode::Bigram && m_entropyState.started
+                    && !m_entropyState.rescanRequired)
+                    startEntropyAnalysis();
+            });
 
     // Resize handle
     auto *entropyResizeWrap   = new QWidget(entropyControlsStack);
@@ -1044,6 +1093,63 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
                     m_stringsOperation->showRescan(m_stringsState.rescanMessage);
                 requestSectionLayoutRefresh(SectionId::Strings);
             });
+    connect(m_entropyModeCombo, &QComboBox::currentIndexChanged, this,
+            [this](int index)
+            {
+                const auto mode     = static_cast<EntropyMode>(m_entropyModeCombo->itemData(index).toInt());
+                if (mode == m_entropyMode)
+                    return;
+                m_entropyMode                   = mode;
+                m_entropyState.started          = false;
+                m_entropyState.pausedByCollapse = false;
+                ++m_entropyState.generation;
+                if (m_entropyState.cancel)
+                    m_entropyState.cancel->store(true);
+                if (m_entropyView)
+                    m_entropyView->clear();
+                if (m_entropyStatsLabel)
+                    m_entropyStatsLabel->clear();
+                const bool isBigram = (mode == EntropyMode::Bigram);
+                if (m_entropyRotateButton) m_entropyRotateButton->setEnabled(!isBigram);
+                if (m_entropyWindowLabel)  m_entropyWindowLabel->setVisible(!isBigram);
+                if (m_entropyWindowCombo)  m_entropyWindowCombo->setVisible(!isBigram);
+                if (m_bigramScaleCombo)    m_bigramScaleCombo->setVisible(isBigram);
+                if (m_bigramStrideCombo)   m_bigramStrideCombo->setVisible(isBigram);
+                m_entropyState.rescanRequired = true;
+                m_entropyState.rescanMessage  = tr("View changed");
+                if (m_entropyOperation)
+                    m_entropyOperation->showRescan(m_entropyState.rescanMessage);
+                requestSectionLayoutRefresh(SectionId::Entropy);
+            });
+    connect(m_bigramScaleCombo, &QComboBox::currentIndexChanged, this,
+            [this](int index)
+            {
+                const auto scale = static_cast<filestats::BigramScale>(m_bigramScaleCombo->itemData(index).toInt());
+                if (m_entropyView)
+                    m_entropyView->setBigramScale(scale);
+            });
+    connect(m_bigramStrideCombo, &QComboBox::currentIndexChanged, this,
+            [this](int index)
+            {
+                const int stride = m_bigramStrideCombo->itemData(index).toInt();
+                if (stride <= 0 || stride == m_bigramStride)
+                    return;
+                m_bigramStride                  = stride;
+                m_entropyState.started          = false;
+                m_entropyState.pausedByCollapse = false;
+                ++m_entropyState.generation;
+                if (m_entropyState.cancel)
+                    m_entropyState.cancel->store(true);
+                if (m_entropyView)
+                    m_entropyView->clear();
+                if (m_entropyStatsLabel)
+                    m_entropyStatsLabel->clear();
+                m_entropyState.rescanRequired = true;
+                m_entropyState.rescanMessage  = tr("Stride changed");
+                if (m_entropyOperation)
+                    m_entropyOperation->showRescan(m_entropyState.rescanMessage);
+                requestSectionLayoutRefresh(SectionId::Entropy);
+            });
     connect(m_entropyWindowCombo, &QComboBox::currentIndexChanged, this,
             [this](int index)
             {
@@ -1095,6 +1201,9 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
                     if (m_entropyView)
                         m_entropyView->setSelection(static_cast<qulonglong>(start),
                                                     static_cast<qulonglong>(end));
+                    if (m_entropyMode == EntropyMode::Bigram && m_entropyState.started
+                        && !m_entropyState.rescanRequired && m_bigramRescanTimer)
+                        m_bigramRescanTimer->start(); // restart on each change; fires 300ms after last
                 });
     connect(m_stringOptionsButton, &QToolButton::clicked, this,
             [this, stringsOptionsMenu]()

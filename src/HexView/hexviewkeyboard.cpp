@@ -413,6 +413,8 @@ void HexView::keyPressEvent(QKeyEvent *event)
 
         scrollToCaret();
         emit cursorChanged(m_nCursorOffset);
+        if (selectionStart() != selectionEnd())
+            emit selectionChanged(selectionStart(), selectionEnd());
 
         if (key == Qt::Key_PageUp || key == Qt::Key_PageDown)
             refreshWindow();

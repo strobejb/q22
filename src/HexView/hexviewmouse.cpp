@@ -551,6 +551,8 @@ void HexView::mousePressEvent(QMouseEvent *event)
 
     positionCaret(x, y, m_nWhichPane);
     emit cursorChanged(m_nCursorOffset);
+    if (selectionStart() != selectionEnd())
+        emit selectionChanged(selectionStart(), selectionEnd());
     viewport()->update();
 }
 

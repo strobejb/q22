@@ -29,6 +29,7 @@ class QLabel;
 class QPropertyAnimation;
 class QPushButton;
 class QToolButton;
+class QTimer;
 class QTreeWidget;
 class StepSpinBox;
 class QWidget;
@@ -86,6 +87,8 @@ class FilePropertiesPanel : public QDialog
     };
     Q_ENUM(SectionId)
 
+    enum class EntropyMode  { Shannon, Bigram };
+
     explicit FilePropertiesPanel(HexView *hexView, QWidget *parent = nullptr);
     ~FilePropertiesPanel() override;
     void showSection(SectionId section);
@@ -120,6 +123,7 @@ class FilePropertiesPanel : public QDialog
     void           resumeEntropyAnalysis();
     void           updateEntropyProgress(int generation, int value);
     void           applyEntropyResults(int generation, QVector<float> data, qulonglong fileSize, int windowSize);
+    void           applyBigramResults(int generation, QVector<quint64> counts, qulonglong fileSize);
     void           setEntropyProgressTitle(int value);
     void           resetEntropyTitle();
     void           updateEntropyStatsLabel();
@@ -285,10 +289,18 @@ class FilePropertiesPanel : public QDialog
     QSpacerItem                      *m_entropyHeaderGap    = nullptr;
     filestats::SectionHeader         *m_entropyHeader       = nullptr;
     filestats::SectionOperationStrip *m_entropyOperation    = nullptr;
-    filestats::EntropyView           *m_entropyView         = nullptr;
+    filestats::EntropyView           *m_entropyView          = nullptr;
     QLabel                           *m_entropyStatsLabel   = nullptr;
     QComboBox                        *m_entropyWindowCombo  = nullptr;
+    QComboBox                        *m_entropyModeCombo    = nullptr;
+    QComboBox                        *m_bigramScaleCombo    = nullptr;
+    QComboBox                        *m_bigramStrideCombo   = nullptr;
+    QLabel                           *m_entropyWindowLabel  = nullptr;
+    QToolButton                      *m_entropyRotateButton = nullptr;
     int                               m_entropyWindowSize   = 256;
+    EntropyMode                       m_entropyMode         = EntropyMode::Shannon;
+    int                               m_bigramStride        = 1;
+    QTimer                           *m_bigramRescanTimer   = nullptr;
     bool                              m_panelFullyOpened   = false;
     bool                              m_hasExpandedSection      = false;
     SectionId                         m_expandedSectionId       = SectionId::Properties;
