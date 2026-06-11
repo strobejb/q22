@@ -120,6 +120,7 @@ FindPanel::FindPanel(QWidget *parent)
     // Replace the plain QComboBox placeholder (items defined in .ui) with a
     // DataTypeComboBox, copying the item model across before swapping.
     m_comboDataType = new DataTypeComboBox(this);
+    m_comboDataType->setToolTip(tr("Search data type"));
     for (int i = 0; i < ui->comboDataType->count(); ++i)
         m_comboDataType->addItem(ui->comboDataType->itemText(i));
     m_row->replaceWidget(ui->comboDataType, m_comboDataType);

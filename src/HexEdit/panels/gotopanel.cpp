@@ -103,6 +103,7 @@ GotoPanel::GotoPanel(HexView *hv, QWidget *parent)
     // Replace the plain QComboBox placeholder (items defined in .ui) with a
     // DataTypeComboBox, copying the item model across before swapping.
     m_comboBookmarks = new DataTypeComboBox(this);
+    m_comboBookmarks->setToolTip(tr("Jump to bookmark"));
     for (int i = 0; i < ui->comboBookmarks->count(); ++i)
         m_comboBookmarks->addItem(ui->comboBookmarks->itemText(i));
     m_row->replaceWidget(ui->comboBookmarks, m_comboBookmarks);

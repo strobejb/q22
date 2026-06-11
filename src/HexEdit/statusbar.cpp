@@ -191,16 +191,20 @@ StatusBar::StatusBar(HexView *hv, QStatusBar *bar, bool showPanelToggles,
     refreshToggleIcons();
 
     m_comboCursor = new RadioComboBox({ "Hexadecimal", "Decimal" }, bar);
+    m_comboCursor->setToolTip(tr("Cursor position format"));
     connect(m_comboCursor, &RadioComboBox::selectionChanged, this, [this] { update(); });
 
     m_comboLength = new RadioComboBox({ "Hexadecimal", "Decimal" }, bar);
     m_comboLength->setSelection(1);
+    m_comboLength->setToolTip(tr("File / selection length format"));
     connect(m_comboLength, &RadioComboBox::selectionChanged, this, [this] { update(); });
 
     m_comboValue = new ValueOptionsComboBox(bar);
+    m_comboValue->setToolTip(tr("Value at cursor"));
     connect(m_comboValue, &ValueOptionsComboBox::optionsChanged, this, [this] { update(); });
 
     m_comboMode = new RadioComboBox({ "Overwrite", "Insert", "Readonly" }, bar);
+    m_comboMode->setToolTip(tr("Edit mode"));
     connect(m_comboMode, &RadioComboBox::selectionChanged, this, [this](int idx) {
         m_hv->setEditMode(indexToMode[idx]);
         update();

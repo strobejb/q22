@@ -456,6 +456,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     m_stringEncoding->setFocusPolicy(Qt::StrongFocus);
     m_stringEncoding->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     m_stringEncoding->setFixedHeight(qMax(24, m_stringEncoding->sizeHint().height() - 4));
+    m_stringEncoding->setToolTip(tr("Character filter"));
 
     m_minStringLength = new StepSpinBox(tr("Min:"), 3, 128, 1, m_stringsSectionBody);
     m_minStringLength->setValue(5);
