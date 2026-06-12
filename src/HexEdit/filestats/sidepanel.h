@@ -87,7 +87,7 @@ class FilePropertiesPanel : public QDialog
     };
     Q_ENUM(SectionId)
 
-    enum class EntropyMode  { Shannon, Bigram, ByteClass };
+    enum class EntropyMode  { Shannon, Bigram, ByteClass, Hilbert, Gilbert };
 
     explicit FilePropertiesPanel(HexView *hexView, QWidget *parent = nullptr);
     ~FilePropertiesPanel() override;
@@ -125,6 +125,8 @@ class FilePropertiesPanel : public QDialog
     void           applyEntropyResults(int generation, QVector<float> data, qulonglong fileSize, int windowSize);
     void           applyBigramResults(int generation, QVector<quint64> counts, qulonglong fileSize);
     void           applyByteClassResults(int generation, QVector<float> data, qulonglong fileSize, int windowSize);
+    void           applyHilbertResults(int generation, QVector<quint8> classes, qulonglong fileSize, int sampleCount, int gridSide);
+    void           applyGilbertResults(int generation, QVector<quint8> classes, qulonglong fileSize, int sampleCount);
     void           setEntropyProgressTitle(int value);
     void           resetEntropyTitle();
     void           updateEntropyStatsLabel();
@@ -297,8 +299,16 @@ class FilePropertiesPanel : public QDialog
     QComboBox                        *m_bigramScaleCombo    = nullptr;
     StepSpinBox                      *m_bigramStrideSpinner = nullptr;
     QLabel                           *m_entropyWindowLabel  = nullptr;
+    QLabel                           *m_hilbertGridLabel    = nullptr;
+    QComboBox                        *m_hilbertGridCombo    = nullptr;
+    QToolButton                      *m_hilbertColorButton  = nullptr;
+    QAction                          *m_colorByteClassAction = nullptr;
+    QAction                          *m_colorMagnitudeAction = nullptr;
+    QAction                          *m_colorEntropyAction   = nullptr;
+    QAction                          *m_colorDetailAction    = nullptr;
     QToolButton                      *m_entropyRotateButton = nullptr;
     int                               m_entropyWindowSize   = 256;
+    int                               m_hilbertGridSide     = 256;
     EntropyMode                       m_entropyMode         = EntropyMode::Shannon;
     int                               m_bigramStride        = 1;
     QTimer                           *m_bigramRescanTimer   = nullptr;

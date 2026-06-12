@@ -38,6 +38,8 @@ void EntropyView::setData(const QVector<float> &data, qulonglong fileSize, int w
     m_windowSize  = windowSize;
     m_isBigram    = false;
     m_isByteClass = false;
+    m_isHilbert   = false;
+    m_isGilbert   = false;
     m_hoverX      = -1;
     update();
 }
@@ -47,12 +49,19 @@ void EntropyView::clear()
     m_data.clear();
     m_bigramCounts.clear();
     m_byteClassData.clear();
-    m_bigramImage  = QImage();
-    m_isBigram     = false;
-    m_isByteClass  = false;
-    m_fileSize     = 0;
-    m_windowSize   = 256;
-    m_hoverX       = -1;
+    m_hilbertRawData.clear();
+    m_gilbertInverse.clear();
+    m_bigramImage        = QImage();
+    m_hilbertCachedImage = QImage();
+    m_isBigram           = false;
+    m_isByteClass        = false;
+    m_isHilbert          = false;
+    m_isGilbert          = false;
+    m_hilbertSampleCount = 0;
+    m_fileSize           = 0;
+    m_windowSize         = 256;
+    m_hoverX             = -1;
+    m_hoverY             = -1;
     update();
 }
 
@@ -61,6 +70,9 @@ void EntropyView::setBigramData(const QVector<quint64> &counts, qulonglong fileS
     m_bigramCounts = counts;
     m_fileSize     = fileSize;
     m_isBigram     = true;
+    m_isByteClass  = false;
+    m_isHilbert    = false;
+    m_isGilbert    = false;
     m_hoverX       = -1;
     buildBigramImage();
     update();
@@ -122,8 +134,296 @@ void EntropyView::setByteClassData(const QVector<float> &data, qulonglong fileSi
     m_windowSize    = windowSize;
     m_isByteClass   = true;
     m_isBigram      = false;
+    m_isHilbert     = false;
+    m_isGilbert     = false;
     m_hoverX        = -1;
     update();
+}
+
+void EntropyView::setHilbertData(const QVector<quint8> &classes, qulonglong fileSize, int sampleCount, int gridSide)
+{
+    m_hilbertRawData     = classes;
+    m_hilbertSampleCount = sampleCount;
+    m_hilbertGridSide    = qMax(1, gridSide);
+    m_fileSize           = fileSize;
+    m_isHilbert          = true;
+    m_isGilbert          = false;
+    m_isBigram           = false;
+    m_isByteClass        = false;
+    m_hilbertCachedImage = QImage();
+    m_gilbertInverse.clear();
+    m_hoverX             = -1;
+    m_hoverY             = -1;
+    update();
+}
+
+void EntropyView::setGilbertData(const QVector<quint8> &classes, qulonglong fileSize, int sampleCount)
+{
+    m_hilbertRawData     = classes;
+    m_hilbertSampleCount = sampleCount;
+    m_fileSize           = fileSize;
+    m_isGilbert          = true;
+    m_isHilbert          = false;
+    m_isBigram           = false;
+    m_isByteClass        = false;
+    m_hilbertCachedImage = QImage();
+    m_gilbertInverse.clear();
+    m_hoverX             = -1;
+    m_hoverY             = -1;
+    update();
+}
+
+void EntropyView::setHilbertColorMode(HilbertColorMode mode)
+{
+    if (m_hilbertColorMode == mode)
+        return;
+    m_hilbertColorMode   = mode;
+    m_hilbertCachedImage = QImage(); // invalidate — rebuilt on next paint
+    update();
+}
+
+// Gilbert curve: generalized space-filling curve for arbitrary W×H rectangles.
+// Fills `out` with (x,y) positions in traversal order so out[i] is the pixel
+// that belongs to file-order position i.
+static void gilbertGenerate(int x, int y, int ax, int ay, int bx, int by,
+                             QVector<QPoint> &out)
+{
+    const int w   = std::abs(ax + ay);
+    const int h   = std::abs(bx + by);
+    const int dax = (ax > 0) - (ax < 0);
+    const int day = (ay > 0) - (ay < 0);
+    const int dbx = (bx > 0) - (bx < 0);
+    const int dby = (by > 0) - (by < 0);
+
+    if (h == 1)
+    {
+        for (int i = 0; i < w; ++i) { out.append({x, y}); x += dax; y += day; }
+        return;
+    }
+    if (w == 1)
+    {
+        for (int i = 0; i < h; ++i) { out.append({x, y}); x += dbx; y += dby; }
+        return;
+    }
+
+    int ax2 = ax / 2, ay2 = ay / 2;
+    int bx2 = bx / 2, by2 = by / 2;
+    const int w2 = std::abs(ax2 + ay2);
+    const int h2 = std::abs(bx2 + by2);
+
+    if (2 * w > 3 * h)
+    {
+        if ((w2 % 2) && (w > 2)) { ax2 += dax; ay2 += day; }
+        gilbertGenerate(x,       y,       ax2,      ay2,      bx,       by,       out);
+        gilbertGenerate(x + ax2, y + ay2, ax - ax2, ay - ay2, bx,       by,       out);
+    }
+    else
+    {
+        if ((h2 % 2) && (h > 2)) { bx2 += dbx; by2 += dby; }
+        gilbertGenerate(x,                          y,                          bx2,      by2,      ax2,       ay2,       out);
+        gilbertGenerate(x + bx2,                    y + by2,                    ax,       ay,       bx - bx2,  by - by2,  out);
+        gilbertGenerate(x + (ax - dax) + (bx2 - dbx), y + (ay - day) + (by2 - dby),
+                        -bx2, -by2, -(ax - ax2), -(ay - ay2), out);
+    }
+}
+
+// Interpolate between evenly-spaced color stops (t in [0,1]).
+static QRgb gradientColor(float t, const QRgb *stops, int n)
+{
+    t = qBound(0.0f, t, 1.0f);
+    const float fi  = t * (n - 1);
+    const int   lo  = qMin(static_cast<int>(fi), n - 2);
+    const float f   = fi - lo;
+    return qRgb(qRound(qRed(stops[lo])   + f * (qRed(stops[lo+1])   - qRed(stops[lo]))),
+                qRound(qGreen(stops[lo]) + f * (qGreen(stops[lo+1]) - qGreen(stops[lo]))),
+                qRound(qBlue(stops[lo])  + f * (qBlue(stops[lo+1])  - qBlue(stops[lo]))));
+}
+
+void EntropyView::rebuildHilbertImage()
+{
+    if (m_hilbertRawData.isEmpty())
+    {
+        m_hilbertCachedImage = QImage();
+        m_gilbertInverse.clear();
+        return;
+    }
+
+    // Hilbert: square image (gridSide × gridSide), letterboxed in widget.
+    // Gilbert: image at widget size, filling the widget.
+    int iw, ih;
+    if (m_isHilbert)
+        iw = ih = m_hilbertGridSide;
+    else
+        { iw = width(); ih = height(); }
+
+    if (iw <= 0 || ih <= 0)
+    {
+        m_hilbertCachedImage = QImage();
+        m_gilbertInverse.clear();
+        return;
+    }
+
+    const int sampleCount = m_hilbertSampleCount;
+    const quint8 *rawData = m_hilbertRawData.constData();
+
+    // ------------------------------------------------------------------
+    // Build a per-sample colour array based on the current colour mode.
+    // ------------------------------------------------------------------
+    QVector<QRgb> sampleColors(sampleCount, 0xFF000000u);
+
+    switch (m_hilbertColorMode)
+    {
+    case HilbertColorMode::ByteClass:
+    {
+        static const QRgb kCls[4] = {
+            qRgb(0x00, 0x00, 0x00),   // null       — black
+            qRgb(0x88, 0xFF, 0xFF),   // whitespace — cyan
+            qRgb(0x00, 0x50, 0xEE),   // printable  — blue
+            qRgb(0xCC, 0x00, 0x30),   // other      — red/purple
+        };
+        for (int i = 0; i < sampleCount; ++i)
+        {
+            const quint8 b = rawData[i];
+            int cls;
+            if      (b == 0x00) cls = 0;
+            else if (b == 0x09 || b == 0x0A || b == 0x0B || b == 0x0C || b == 0x0D || b == 0x20) cls = 1;
+            else if (b >= 0x21 && b <= 0x7E) cls = 2;
+            else    cls = 3;
+            sampleColors[i] = kCls[cls];
+        }
+        break;
+    }
+    case HilbertColorMode::Magnitude:
+    {
+        // black → purple → cyan
+        static const QRgb kStops[3] = {
+            qRgb(  0,   0,   0),
+            qRgb(110,   0, 160),
+            qRgb(  0, 210, 220),
+        };
+        QRgb lut[256];
+        for (int v = 0; v < 256; ++v)
+            lut[v] = gradientColor(v / 255.0f, kStops, 3);
+        for (int i = 0; i < sampleCount; ++i)
+            sampleColors[i] = lut[rawData[i]];
+        break;
+    }
+    case HilbertColorMode::Entropy:
+    {
+        // Local variability (sliding-window std dev) → dark navy → hot pink.
+        // Sliding window: maintain running sum and sum-of-squares for O(n) total.
+        static const QRgb kStops[3] = {
+            qRgb(  0,   0,  70),   // dark navy
+            qRgb( 90,   0, 170),   // deep purple
+            qRgb(255,  20, 147),   // hot pink
+        };
+        // Max std dev of a uniform [0,255] distribution ≈ 73.6; use 80 as scale.
+        constexpr double kMaxStdDev = 80.0;
+        constexpr int    kHalf      = 16; // half-window radius
+
+        double wSum = 0.0, wSumSq = 0.0;
+        int    wN   = 0;
+
+        // Seed forward half of initial window.
+        for (int j = 0; j < qMin(kHalf, sampleCount); ++j)
+        {
+            double v = rawData[j];
+            wSum += v; wSumSq += v * v; ++wN;
+        }
+
+        for (int i = 0; i < sampleCount; ++i)
+        {
+            // Expand right edge.
+            const int rEdge = i + kHalf;
+            if (rEdge < sampleCount)
+            {
+                double v = rawData[rEdge];
+                wSum += v; wSumSq += v * v; ++wN;
+            }
+            // Compute std dev.
+            const double mean  = wSum / wN;
+            const double var   = wSumSq / wN - mean * mean;
+            const float  norm  = float(std::sqrt(qMax(0.0, var)) / kMaxStdDev);
+            sampleColors[i]    = gradientColor(norm, kStops, 3);
+            // Contract left edge.
+            const int lEdge = i - kHalf;
+            if (lEdge >= 0)
+            {
+                double v = rawData[lEdge];
+                wSum -= v; wSumSq -= v * v; --wN;
+            }
+        }
+        break;
+    }
+    case HilbertColorMode::Detail:
+    {
+        // Absolute byte-to-byte delta → black → yellow.
+        static const QRgb kStops[3] = {
+            qRgb(  0,   0,   0),   // no change   — black
+            qRgb(200,  80,   0),   // mid change  — amber
+            qRgb(255, 240,  20),   // max change  — yellow
+        };
+        QRgb lut[256];
+        for (int v = 0; v < 256; ++v)
+            lut[v] = gradientColor(v / 255.0f, kStops, 3);
+        sampleColors[0] = lut[0];
+        for (int i = 1; i < sampleCount; ++i)
+            sampleColors[i] = lut[std::abs(int(rawData[i]) - int(rawData[i - 1]))];
+        break;
+    }
+    }
+
+    // ------------------------------------------------------------------
+    // Generate the Gilbert/Hilbert curve and paint pixels.
+    // ------------------------------------------------------------------
+    QVector<QPoint> curve;
+    curve.reserve(iw * ih);
+    if (iw >= ih)
+        gilbertGenerate(0, 0, iw, 0, 0, ih, curve);
+    else
+        gilbertGenerate(0, 0, 0, ih, iw, 0, curve);
+
+    const int  totalCells = iw * ih;
+    const QRgb bgColor    = palette().base().color().rgb();
+
+    m_hilbertCachedImage = QImage(iw, ih, QImage::Format_RGB32);
+    m_hilbertCachedImage.fill(bgColor);
+    QRgb *raw = reinterpret_cast<QRgb *>(m_hilbertCachedImage.bits());
+
+    m_gilbertInverse.resize(totalCells);
+
+    for (int i = 0; i < curve.size(); ++i)
+    {
+        const QPoint &pt     = curve[i];
+        const int     pixIdx = pt.y() * iw + pt.x();
+        m_gilbertInverse[pixIdx] = i;
+        const int sampleIdx = (totalCells <= sampleCount)
+            ? i
+            : int(qint64(i) * sampleCount / totalCells);
+        if (sampleIdx < sampleCount)
+            raw[pixIdx] = sampleColors[sampleIdx];
+    }
+}
+
+// Forward declaration — defined after gilbertOffsetForPixel below.
+static qulonglong gilbertOffsetForPixel(int px, int py, int w, int h,
+                                        const QVector<int> &inverse,
+                                        int sampleCount, qulonglong fileSize);
+
+qulonglong EntropyView::offsetForWidgetPos(int wx, int wy) const
+{
+    if (m_isHilbert)
+    {
+        const int gs   = m_hilbertGridSide;
+        const int side = qMin(width(), height());
+        if (side <= 0) return 0;
+        const int ox = (width()  - side) / 2;
+        const int oy = (height() - side) / 2;
+        const int ix = qBound(0, int(float(wx - ox) / side * gs), gs - 1);
+        const int iy = qBound(0, int(float(wy - oy) / side * gs), gs - 1);
+        return gilbertOffsetForPixel(ix, iy, gs, gs, m_gilbertInverse, m_hilbertSampleCount, m_fileSize);
+    }
+    return gilbertOffsetForPixel(wx, wy, width(), height(), m_gilbertInverse, m_hilbertSampleCount, m_fileSize);
 }
 
 float EntropyView::byteClassAvg(int classIdx) const
@@ -239,6 +539,45 @@ void EntropyView::paintEvent(QPaintEvent *)
                              (height() - side) / 2,
                              side, side);
             p.drawImage(dest, m_bigramImage);
+        }
+        return;
+    }
+
+    if (m_isHilbert || m_isGilbert)
+    {
+        if (m_hilbertRawData.isEmpty())
+        {
+            p.setPen(palette().mid().color());
+            p.drawText(rect(), Qt::AlignCenter, tr("No data"));
+        }
+        else
+        {
+            if (m_isHilbert)
+            {
+                const QSize needed(m_hilbertGridSide, m_hilbertGridSide);
+                if (m_hilbertCachedImage.size() != needed)
+                    rebuildHilbertImage();
+                if (!m_hilbertCachedImage.isNull())
+                {
+                    const int side = qMin(w, h);
+                    const QRect dest((w - side) / 2, (h - side) / 2, side, side);
+                    p.drawImage(dest, m_hilbertCachedImage);
+                }
+            }
+            else // Gilbert
+            {
+                if (m_hilbertCachedImage.size() != size())
+                    rebuildHilbertImage();
+                if (!m_hilbertCachedImage.isNull())
+                    p.drawImage(0, 0, m_hilbertCachedImage);
+            }
+
+            if (m_hoverX >= 0 && m_hoverY >= 0)
+            {
+                p.setCompositionMode(QPainter::RasterOp_SourceXorDestination);
+                p.fillRect(m_hoverX - 1, m_hoverY - 1, 3, 3, Qt::white);
+                p.setCompositionMode(QPainter::CompositionMode_SourceOver);
+            }
         }
         return;
     }
@@ -422,26 +761,51 @@ void EntropyView::paintEvent(QPaintEvent *)
     }
 }
 
+static qulonglong gilbertOffsetForPixel(int px, int py, int w, int h,
+                                        const QVector<int> &inverse,
+                                        int sampleCount, qulonglong fileSize)
+{
+    if (inverse.isEmpty() || inverse.size() != w * h || sampleCount <= 0)
+        return 0;
+    const int curveIdx  = inverse[qBound(0, py, h-1) * w + qBound(0, px, w-1)];
+    const int totalCells = w * h;
+    const int sampleIdx = (totalCells <= sampleCount)
+        ? curveIdx
+        : int(qint64(curveIdx) * sampleCount / totalCells);
+    if (fileSize <= qulonglong(sampleCount))
+        return qMin(qulonglong(sampleIdx), fileSize - 1);
+    return qMin(qulonglong(qint64(sampleIdx) * qint64(fileSize) / sampleCount), fileSize - 1);
+}
+
 void EntropyView::mousePressEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton)
     {
         m_dragging = true;
-        if (m_fileSize > 0 && (!m_data.isEmpty() || !m_byteClassData.isEmpty()))
+        if (m_fileSize > 0 && (!m_data.isEmpty() || !m_byteClassData.isEmpty() || m_isHilbert || m_isGilbert))
         {
-            const QPoint pos     = event->position().toPoint();
-            const int    coord   = m_rotated ? pos.y() : pos.x();
-            const int    axisLen = m_rotated ? height() : width();
-            if (axisLen > 1)
+            const QPoint pos = event->position().toPoint();
+
+            if (m_isHilbert || m_isGilbert)
             {
-                const float      t      = qBound(0.0f, float(coord) / (axisLen - 1), 1.0f);
-                const qulonglong offset = static_cast<qulonglong>(t * m_fileSize);
-                if (event->modifiers() & Qt::ShiftModifier)
-                    emit rangeSelected(m_dragAnchor, offset);
-                else
+                if (width() > 0 && height() > 0)
+                    emit positionClicked(offsetForWidgetPos(pos.x(), pos.y()));
+            }
+            else
+            {
+                const int    coord   = m_rotated ? pos.y() : pos.x();
+                const int    axisLen = m_rotated ? height() : width();
+                if (axisLen > 1)
                 {
-                    m_dragAnchor = offset;
-                    emit positionClicked(offset);
+                    const float      t      = qBound(0.0f, float(coord) / (axisLen - 1), 1.0f);
+                    const qulonglong offset = static_cast<qulonglong>(t * m_fileSize);
+                    if (event->modifiers() & Qt::ShiftModifier)
+                        emit rangeSelected(m_dragAnchor, offset);
+                    else
+                    {
+                        m_dragAnchor = offset;
+                        emit positionClicked(offset);
+                    }
                 }
             }
         }
@@ -459,19 +823,31 @@ void EntropyView::mouseReleaseEvent(QMouseEvent *event)
 void EntropyView::mouseMoveEvent(QMouseEvent *event)
 {
     const QPoint pos = event->position().toPoint();
-    m_hoverX = m_rotated ? pos.y() : pos.x();
-    update();
 
-    if (m_fileSize > 0 && (!m_data.isEmpty() || !m_byteClassData.isEmpty()))
+    if (m_isHilbert || m_isGilbert)
     {
-        const int axisLen = m_rotated ? height() : width();
-        if (axisLen > 1)
+        m_hoverX = qBound(0, pos.x(), width()  - 1);
+        m_hoverY = qBound(0, pos.y(), height() - 1);
+        update();
+        if (m_fileSize > 0 && width() > 0 && height() > 0)
+            emit positionHovered(offsetForWidgetPos(m_hoverX, m_hoverY), 0.0f);
+    }
+    else
+    {
+        m_hoverX = m_rotated ? pos.y() : pos.x();
+        update();
+
+        if (m_fileSize > 0 && (!m_data.isEmpty() || !m_byteClassData.isEmpty()))
         {
-            const float      t      = qBound(0.0f, float(m_hoverX) / (axisLen - 1), 1.0f);
-            const qulonglong offset = static_cast<qulonglong>(t * m_fileSize);
-            emit positionHovered(offset, sampleAt(m_hoverX, axisLen));
-            if (m_dragging)
-                emit rangeSelected(m_dragAnchor, offset);
+            const int axisLen = m_rotated ? height() : width();
+            if (axisLen > 1)
+            {
+                const float      t      = qBound(0.0f, float(m_hoverX) / (axisLen - 1), 1.0f);
+                const qulonglong offset = static_cast<qulonglong>(t * m_fileSize);
+                emit positionHovered(offset, sampleAt(m_hoverX, axisLen));
+                if (m_dragging)
+                    emit rangeSelected(m_dragAnchor, offset);
+            }
         }
     }
     QWidget::mouseMoveEvent(event);
@@ -480,6 +856,7 @@ void EntropyView::mouseMoveEvent(QMouseEvent *event)
 void EntropyView::leaveEvent(QEvent *event)
 {
     m_hoverX = -1;
+    m_hoverY = -1;
     update();
     emit hoverCleared();
     QWidget::leaveEvent(event);
@@ -710,6 +1087,76 @@ static QVector<float> calculateByteClass(
     return results;
 }
 
+static QVector<quint8> calculateHilbert(
+    const QString &path,
+    qulonglong &outFileSize,
+    int &outSampleCount,
+    int maxSamples,
+    const std::shared_ptr<std::atomic_bool> &cancelFlag,
+    const std::shared_ptr<filestats::OperationPause> &pause,
+    const std::function<void(int)> &progressCallback)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+    {
+        outFileSize    = 0;
+        outSampleCount = 0;
+        return {};
+    }
+
+    const qint64 total = file.size();
+    outFileSize        = static_cast<qulonglong>(total);
+
+    const int sampleCount = static_cast<int>(qMin(qint64(maxSamples), total));
+    outSampleCount = sampleCount;
+
+    if (total == 0)
+        return {};
+
+    QVector<quint8> result(sampleCount, 0);
+
+    constexpr int bufSize  = 65536;
+    qint64        scanned  = 0;
+    int           lastProg = -1;
+
+    while (!cancelFlag->load() && scanned < total)
+    {
+        if (pause && !pause->waitIfPaused(cancelFlag))
+            return {};
+
+        const qint64     toRead = qMin(qint64(bufSize), total - scanned);
+        const QByteArray chunk  = file.read(toRead);
+        if (chunk.isEmpty())
+            break;
+
+        const auto *data = reinterpret_cast<const unsigned char *>(chunk.constData());
+        const int   n    = chunk.size();
+
+        for (int i = 0; i < n; ++i)
+        {
+            const qint64 fileOffset = scanned + i;
+            const int sampleIdx = (total <= qint64(maxSamples))
+                ? int(fileOffset)
+                : int(double(fileOffset) / double(total) * sampleCount);
+
+            if (sampleIdx >= sampleCount)
+                continue;
+
+            result[sampleIdx] = data[i]; // store raw byte value
+        }
+
+        scanned += n;
+        const int prog = int(1000LL * scanned / total);
+        if (prog != lastProg)
+        {
+            lastProg = prog;
+            progressCallback(prog);
+        }
+    }
+
+    return cancelFlag->load() ? QVector<quint8>() : result;
+}
+
 // -----------------------------------------------------------------------
 // FilePropertiesPanel — entropy methods
 // -----------------------------------------------------------------------
@@ -777,6 +1224,7 @@ void FilePropertiesPanel::startEntropyAnalysis()
     const int         windowSize = m_entropyWindowSize;
     const EntropyMode mode       = m_entropyMode;
     const int         stride     = m_bigramStride;
+    const int         gridSide   = m_hilbertGridSide;
 
     qulonglong scopeStart  = 0;
     qulonglong scopeLength = 0; // 0 = whole file
@@ -790,7 +1238,8 @@ void FilePropertiesPanel::startEntropyAnalysis()
     QPointer<FilePropertiesPanel> guard(this);
 
     auto *thread = QThread::create([guard, generation, path, windowSize, mode,
-                                    scopeStart, scopeLength, stride, cancelFlag, pause]()
+                                    scopeStart, scopeLength, stride, gridSide,
+                                    cancelFlag, pause]()
     {
         auto progressCb = [guard, generation](int prog) {
             QMetaObject::invokeMethod(qApp, [guard, generation, prog]() {
@@ -816,6 +1265,30 @@ void FilePropertiesPanel::startEntropyAnalysis()
                 return;
             QMetaObject::invokeMethod(qApp, [guard, generation, results, fileSize, windowSize]() {
                 if (guard) guard->applyByteClassResults(generation, results, fileSize, windowSize);
+            }, Qt::QueuedConnection);
+        }
+        else if (mode == EntropyMode::Hilbert)
+        {
+            int sampleCount = 0;
+            const QVector<quint8> classes = calculateHilbert(path, fileSize, sampleCount,
+                                                             gridSide * gridSide,
+                                                             cancelFlag, pause, progressCb);
+            if (cancelFlag->load())
+                return;
+            QMetaObject::invokeMethod(qApp, [guard, generation, classes, fileSize, sampleCount, gridSide]() {
+                if (guard) guard->applyHilbertResults(generation, classes, fileSize, sampleCount, gridSide);
+            }, Qt::QueuedConnection);
+        }
+        else if (mode == EntropyMode::Gilbert)
+        {
+            int sampleCount = 0;
+            const QVector<quint8> classes = calculateHilbert(path, fileSize, sampleCount,
+                                                             gridSide * gridSide,
+                                                             cancelFlag, pause, progressCb);
+            if (cancelFlag->load())
+                return;
+            QMetaObject::invokeMethod(qApp, [guard, generation, classes, fileSize, sampleCount]() {
+                if (guard) guard->applyGilbertResults(generation, classes, fileSize, sampleCount);
             }, Qt::QueuedConnection);
         }
         else
@@ -907,6 +1380,34 @@ void FilePropertiesPanel::applyByteClassResults(int generation, QVector<float> d
     QTimer::singleShot(0, this, [this]() { repairExpandedSectionGeometry(SectionId::Entropy); });
 }
 
+void FilePropertiesPanel::applyHilbertResults(int generation, QVector<quint8> classes,
+                                              qulonglong fileSize, int sampleCount, int gridSide)
+{
+    if (generation != m_entropyState.generation)
+        return;
+    if (m_entropyView)
+        m_entropyView->setHilbertData(classes, fileSize, sampleCount, gridSide);
+    updateEntropyStatsLabel();
+    if (m_entropyOperation) m_entropyOperation->clear();
+    resetEntropyTitle();
+    requestSectionLayoutRefresh(SectionId::Entropy);
+    QTimer::singleShot(0, this, [this]() { repairExpandedSectionGeometry(SectionId::Entropy); });
+}
+
+void FilePropertiesPanel::applyGilbertResults(int generation, QVector<quint8> classes,
+                                              qulonglong fileSize, int sampleCount)
+{
+    if (generation != m_entropyState.generation)
+        return;
+    if (m_entropyView)
+        m_entropyView->setGilbertData(classes, fileSize, sampleCount);
+    updateEntropyStatsLabel();
+    if (m_entropyOperation) m_entropyOperation->clear();
+    resetEntropyTitle();
+    requestSectionLayoutRefresh(SectionId::Entropy);
+    QTimer::singleShot(0, this, [this]() { repairExpandedSectionGeometry(SectionId::Entropy); });
+}
+
 void FilePropertiesPanel::markEntropyContentsChanged()
 {
     m_entropyState.started          = false;
@@ -962,7 +1463,7 @@ void FilePropertiesPanel::updateEntropyStatsLabel()
         if (m_entropyStatsLabel) m_entropyStatsLabel->clear();
         return;
     }
-    if (m_entropyView->isBigram())
+    if (m_entropyView->isBigram() || m_entropyView->isHilbert() || m_entropyView->isGilbert())
     {
         m_entropyStatsLabel->clear();
         return;

@@ -13,6 +13,7 @@
 
 #include <QAbstractItemView>
 #include <QAction>
+#include <QActionGroup>
 #include <QApplication>
 #include <QBrush>
 #include <QByteArray>
@@ -737,11 +738,13 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     m_entropyModeCombo->addItem(tr("Shannon"),    QVariant::fromValue(int(EntropyMode::Shannon)));
     m_entropyModeCombo->addItem(tr("Bigram"),     QVariant::fromValue(int(EntropyMode::Bigram)));
     m_entropyModeCombo->addItem(tr("Byte Class"), QVariant::fromValue(int(EntropyMode::ByteClass)));
+    m_entropyModeCombo->addItem(tr("Hilbert"),    QVariant::fromValue(int(EntropyMode::Hilbert)));
+    m_entropyModeCombo->addItem(tr("Gilbert"),    QVariant::fromValue(int(EntropyMode::Gilbert)));
     m_entropyModeCombo->setCurrentIndex(0);
     m_entropyModeCombo->setFocusPolicy(Qt::StrongFocus);
     m_entropyModeCombo->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     m_entropyModeCombo->setFixedHeight(qMax(24, m_entropyModeCombo->sizeHint().height() - 4));
-    m_entropyModeCombo->setToolTip(tr("Visualisation mode: byte entropy per window, byte-pair frequency heatmap, or byte class distribution (printable / null / control / high)"));
+    m_entropyModeCombo->setToolTip(tr("Visualisation mode: byte entropy per window, byte-pair frequency heatmap, byte class stacked bars, square Hilbert curve map, or adaptive Gilbert curve map"));
     entropyControlsLayout->addWidget(m_entropyModeCombo);
 
     m_bigramScaleCombo = new MenuComboBox(entropyControls);
@@ -783,6 +786,68 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     m_entropyWindowCombo->setFixedHeight(qMax(24, m_entropyWindowCombo->sizeHint().height() - 4));
     m_entropyWindowCombo->setToolTip(tr("Entropy window size (bytes per sample)"));
     entropyControlsLayout->addWidget(m_entropyWindowCombo);
+    m_hilbertGridLabel = new QLabel(tr("Grid:"), entropyControls);
+    m_hilbertGridLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_hilbertGridLabel->hide();
+    entropyControlsLayout->addWidget(m_hilbertGridLabel);
+    m_hilbertGridCombo = new MenuComboBox(entropyControls);
+    m_hilbertGridCombo->addItem(tr("64×64"),   QVariant::fromValue(64));
+    m_hilbertGridCombo->addItem(tr("128×128"), QVariant::fromValue(128));
+    m_hilbertGridCombo->addItem(tr("256×256"), QVariant::fromValue(256));
+    m_hilbertGridCombo->addItem(tr("512×512"), QVariant::fromValue(512));
+    m_hilbertGridCombo->setCurrentIndex(2); // 256 default
+    m_hilbertGridCombo->setFocusPolicy(Qt::StrongFocus);
+    m_hilbertGridCombo->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_hilbertGridCombo->setFixedHeight(qMax(24, m_hilbertGridCombo->sizeHint().height() - 4));
+    m_hilbertGridCombo->setToolTip(tr("Curve grid resolution (samples)"));
+    m_hilbertGridCombo->hide();
+    entropyControlsLayout->addWidget(m_hilbertGridCombo);
+
+    auto *hilbertColorMenu = new QMenu(this);
+    themeMenu(hilbertColorMenu);
+    auto *colorGroup = new QActionGroup(hilbertColorMenu);
+    colorGroup->setExclusive(true);
+    m_colorByteClassAction = hilbertColorMenu->addAction(tr("Byte Class"));
+    m_colorByteClassAction->setCheckable(true);
+    m_colorByteClassAction->setChecked(true);
+    m_colorByteClassAction->setActionGroup(colorGroup);
+    m_colorMagnitudeAction = hilbertColorMenu->addAction(tr("Magnitude"));
+    m_colorMagnitudeAction->setCheckable(true);
+    m_colorMagnitudeAction->setActionGroup(colorGroup);
+    m_colorEntropyAction   = hilbertColorMenu->addAction(tr("Entropy"));
+    m_colorEntropyAction->setCheckable(true);
+    m_colorEntropyAction->setActionGroup(colorGroup);
+    m_colorDetailAction    = hilbertColorMenu->addAction(tr("Detail"));
+    m_colorDetailAction->setCheckable(true);
+    m_colorDetailAction->setActionGroup(colorGroup);
+
+    m_hilbertColorButton = new QToolButton(entropyControls);
+    m_hilbertColorButton->setFixedSize(28, 28);
+    m_hilbertColorButton->setFocusPolicy(Qt::TabFocus);
+    m_hilbertColorButton->setToolTip(tr("Colorisation mode"));
+    m_hilbertColorButton->setAutoRaise(true);
+    m_hilbertColorButton->setPopupMode(QToolButton::InstantPopup);
+    m_hilbertColorButton->setProperty("iconThemeName", QStringLiteral("actions/color-picker"));
+    m_hilbertColorButton->setProperty("iconSize", 16);
+    m_hilbertColorButton->setIconSize(QSize(16, 16));
+    m_hilbertColorButton->setIcon(recoloredIcon(QStringLiteral("actions/color-picker"), palette().buttonText().color(), 16));
+    {
+        const bool    dark    = QApplication::palette().window().color().lightness() < 128;
+        const QString hover   = dark ? QStringLiteral("rgba(255,255,255,0.15)") : QStringLiteral("rgba(0,0,0,0.10)");
+        const QString pressed = dark ? QStringLiteral("rgba(255,255,255,0.25)") : QStringLiteral("rgba(0,0,0,0.18)");
+        m_hilbertColorButton->setStyleSheet(QStringLiteral(R"(
+            QToolButton {
+                border: none;
+                border-radius: 6px;
+                background: transparent;
+            }
+            QToolButton:hover  { background: %1; }
+            QToolButton:pressed { background: %2; }
+        )").arg(hover, pressed));
+    }
+    m_hilbertColorButton->setMenu(hilbertColorMenu);
+    m_hilbertColorButton->hide();
+    entropyControlsLayout->addWidget(m_hilbertColorButton);
     entropyControlsStackLayout->addWidget(entropyControls);
     entropyControlsStackLayout->addSpacing(kHeaderControlGap + 4);
     entropyControlsStackLayout->addWidget(m_entropyOperation->widget());
@@ -1118,10 +1183,15 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
                     m_entropyView->clear();
                 if (m_entropyStatsLabel)
                     m_entropyStatsLabel->clear();
-                const bool isBigram = (mode == EntropyMode::Bigram);
-                if (m_entropyRotateButton) m_entropyRotateButton->setEnabled(!isBigram);
-                if (m_entropyWindowLabel)  m_entropyWindowLabel->setVisible(!isBigram);
-                if (m_entropyWindowCombo)  m_entropyWindowCombo->setVisible(!isBigram);
+                const bool isBigram     = (mode == EntropyMode::Bigram);
+                const bool isImageMode  = (mode == EntropyMode::Bigram || mode == EntropyMode::Hilbert || mode == EntropyMode::Gilbert);
+                const bool isGridMode   = (mode == EntropyMode::Hilbert || mode == EntropyMode::Gilbert);
+                if (m_entropyRotateButton) m_entropyRotateButton->setEnabled(!isImageMode);
+                if (m_entropyWindowLabel)  m_entropyWindowLabel->setVisible(!isImageMode);
+                if (m_entropyWindowCombo)  m_entropyWindowCombo->setVisible(!isImageMode);
+                if (m_hilbertGridLabel)    m_hilbertGridLabel->setVisible(isGridMode);
+                if (m_hilbertGridCombo)    m_hilbertGridCombo->setVisible(isGridMode);
+                if (m_hilbertColorButton)  m_hilbertColorButton->setVisible(isGridMode);
                 if (m_bigramScaleCombo)    m_bigramScaleCombo->setVisible(isBigram);
                 if (m_bigramStrideSpinner) m_bigramStrideSpinner->setVisible(isBigram);
                 m_entropyState.rescanRequired = true;
@@ -1182,12 +1252,46 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
                     m_entropyOperation->showRescan(m_entropyState.rescanMessage);
                 requestSectionLayoutRefresh(SectionId::Entropy);
             });
+    auto connectColorAction = [this](QAction *action, filestats::HilbertColorMode mode) {
+        connect(action, &QAction::triggered, this, [this, mode]() {
+            if (m_entropyView) m_entropyView->setHilbertColorMode(mode);
+        });
+    };
+    connectColorAction(m_colorByteClassAction, filestats::HilbertColorMode::ByteClass);
+    connectColorAction(m_colorMagnitudeAction,  filestats::HilbertColorMode::Magnitude);
+    connectColorAction(m_colorEntropyAction,    filestats::HilbertColorMode::Entropy);
+    connectColorAction(m_colorDetailAction,     filestats::HilbertColorMode::Detail);
+
+    connect(m_hilbertGridCombo, &QComboBox::currentIndexChanged, this,
+            [this](int index)
+            {
+                const int gs = m_hilbertGridCombo->itemData(index).toInt();
+                if (gs <= 0 || gs == m_hilbertGridSide)
+                    return;
+                m_hilbertGridSide               = gs;
+                m_entropyState.started          = false;
+                m_entropyState.pausedByCollapse = false;
+                ++m_entropyState.generation;
+                if (m_entropyState.cancel)
+                    m_entropyState.cancel->store(true);
+                if (m_entropyState.pause)
+                    m_entropyState.pause->wake();
+                if (m_entropyView)
+                    m_entropyView->clear();
+                if (m_entropyStatsLabel)
+                    m_entropyStatsLabel->clear();
+                m_entropyState.rescanRequired = true;
+                m_entropyState.rescanMessage  = tr("Grid size changed");
+                if (m_entropyOperation)
+                    m_entropyOperation->showRescan(m_entropyState.rescanMessage);
+                requestSectionLayoutRefresh(SectionId::Entropy);
+            });
     connect(m_entropyView, &filestats::EntropyView::positionHovered, this,
             [this](qulonglong offset, float entropy)
             {
                 if (!m_entropyStatsLabel)
                     return;
-                if (m_entropyMode == EntropyMode::ByteClass)
+                if (m_entropyMode == EntropyMode::ByteClass || m_entropyMode == EntropyMode::Hilbert || m_entropyMode == EntropyMode::Gilbert)
                     m_entropyStatsLabel->setText(
                         tr("0x%1").arg(offset, 8, 16, QLatin1Char('0')));
                 else

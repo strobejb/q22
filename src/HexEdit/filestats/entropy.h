@@ -11,7 +11,8 @@ class QPaintEvent;
 namespace filestats
 {
 
-enum class BigramScale { Log, Linear, Sqrt };
+enum class BigramScale     { Log, Linear, Sqrt };
+enum class HilbertColorMode { ByteClass, Magnitude, Entropy, Detail };
 
 class EntropyView : public QWidget
 {
@@ -23,6 +24,9 @@ public:
     void setBigramData(const QVector<quint64> &counts, qulonglong fileSize);
     void setBigramScale(BigramScale scale);
     void setByteClassData(const QVector<float> &data, qulonglong fileSize, int windowSize);
+    void setHilbertData(const QVector<quint8> &classes, qulonglong fileSize, int sampleCount, int gridSide);
+    void setGilbertData(const QVector<quint8> &classes, qulonglong fileSize, int sampleCount);
+    void setHilbertColorMode(HilbertColorMode mode);
     void clear();
     void setRotated(bool rotated);
     void setSelection(qulonglong start, qulonglong end);
@@ -34,6 +38,9 @@ public:
     bool  isRotated()   const { return m_rotated; }
     bool  isBigram()    const { return m_isBigram; }
     bool  isByteClass() const { return m_isByteClass; }
+    bool             isHilbert()       const { return m_isHilbert; }
+    bool             isGilbert()       const { return m_isGilbert; }
+    HilbertColorMode hilbertColorMode() const { return m_hilbertColorMode; }
     float minEntropy()    const;
     float avgEntropy()    const;
     float maxEntropy()    const;
@@ -59,23 +66,34 @@ private:
     float         sampleAt(int pos, int axisLen) const;
     static QColor colorForEntropy(float e);
     void          buildBigramImage();
+    void          rebuildHilbertImage();
+    qulonglong    offsetForWidgetPos(int wx, int wy) const;
 
     QVector<float>   m_data;
     QVector<quint64> m_bigramCounts;
     QVector<float>   m_byteClassData;
+    QVector<quint8>  m_hilbertRawData;
+    QVector<int>     m_gilbertInverse;
     QImage           m_bigramImage;
-    qulonglong       m_fileSize     = 0;
-    int              m_windowSize   = 256;
-    qulonglong       m_dragAnchor   = 0;
-    int              m_hoverX       = -1;
-    bool             m_rotated      = true;
-    bool             m_dragging     = false;
-    bool             m_hasSelection = false;
-    bool             m_isBigram     = false;
-    bool             m_isByteClass  = false;
-    BigramScale      m_bigramScale  = BigramScale::Log;
-    qulonglong       m_selStart     = 0;
-    qulonglong       m_selEnd       = 0;
+    QImage           m_hilbertCachedImage;
+    qulonglong       m_fileSize           = 0;
+    int              m_windowSize         = 256;
+    int              m_hilbertSampleCount = 0;
+    int              m_hilbertGridSide    = 256;
+    qulonglong       m_dragAnchor         = 0;
+    int              m_hoverX             = -1;
+    int              m_hoverY             = -1;
+    bool             m_rotated            = true;
+    bool             m_dragging           = false;
+    bool             m_hasSelection       = false;
+    bool             m_isBigram           = false;
+    bool             m_isByteClass        = false;
+    bool             m_isHilbert          = false;
+    bool             m_isGilbert          = false;
+    HilbertColorMode m_hilbertColorMode   = HilbertColorMode::ByteClass;
+    BigramScale      m_bigramScale        = BigramScale::Log;
+    qulonglong       m_selStart           = 0;
+    qulonglong       m_selEnd             = 0;
 };
 
 } // namespace filestats
