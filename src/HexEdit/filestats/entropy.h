@@ -24,8 +24,8 @@ public:
     void setBigramData(const QVector<quint64> &counts, qulonglong fileSize);
     void setBigramScale(BigramScale scale);
     void setByteClassData(const QVector<float> &data, qulonglong fileSize, int windowSize);
-    void setHilbertData(const QVector<quint8> &classes, qulonglong fileSize, int sampleCount, int gridSide);
-    void setGilbertData(const QVector<quint8> &classes, qulonglong fileSize, int sampleCount);
+    void setHilbertData(const QVector<quint8> &bytes, qulonglong scopeSize, int sampleCount, int gridSide, qulonglong scopeStart = 0);
+    void setGilbertData(const QVector<quint8> &bytes, qulonglong scopeSize, int sampleCount, qulonglong scopeStart = 0);
     void setHilbertColorMode(HilbertColorMode mode);
     void clear();
     void setRotated(bool rotated);
@@ -80,7 +80,8 @@ private:
     int              m_windowSize         = 256;
     int              m_hilbertSampleCount = 0;
     int              m_hilbertGridSide    = 256;
-    qulonglong       m_dragAnchor         = 0;
+    qulonglong       m_hilbertScopeStart = 0;
+    qulonglong       m_dragAnchor        = 0;
     int              m_hoverX             = -1;
     int              m_hoverY             = -1;
     bool             m_rotated            = true;

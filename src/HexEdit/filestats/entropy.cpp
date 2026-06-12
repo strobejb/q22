@@ -2,6 +2,7 @@
 #include "filestats/sidepanel.h"
 #include "filestats/widgets.h"
 #include "HexView/hexview.h"
+#include "theme.h"
 
 #include <QApplication>
 #include <QFile>
@@ -9,6 +10,8 @@
 #include <QMetaObject>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPushButton>
+#include <QToolButton>
 #include <QPointer>
 #include <QProgressBar>
 #include <QThread>
@@ -58,6 +61,7 @@ void EntropyView::clear()
     m_isHilbert          = false;
     m_isGilbert          = false;
     m_hilbertSampleCount = 0;
+    m_hilbertScopeStart  = 0;
     m_fileSize           = 0;
     m_windowSize         = 256;
     m_hoverX             = -1;
@@ -140,12 +144,13 @@ void EntropyView::setByteClassData(const QVector<float> &data, qulonglong fileSi
     update();
 }
 
-void EntropyView::setHilbertData(const QVector<quint8> &classes, qulonglong fileSize, int sampleCount, int gridSide)
+void EntropyView::setHilbertData(const QVector<quint8> &bytes, qulonglong scopeSize, int sampleCount, int gridSide, qulonglong scopeStart)
 {
-    m_hilbertRawData     = classes;
+    m_hilbertRawData     = bytes;
     m_hilbertSampleCount = sampleCount;
     m_hilbertGridSide    = qMax(1, gridSide);
-    m_fileSize           = fileSize;
+    m_hilbertScopeStart  = scopeStart;
+    m_fileSize           = scopeSize;
     m_isHilbert          = true;
     m_isGilbert          = false;
     m_isBigram           = false;
@@ -157,11 +162,12 @@ void EntropyView::setHilbertData(const QVector<quint8> &classes, qulonglong file
     update();
 }
 
-void EntropyView::setGilbertData(const QVector<quint8> &classes, qulonglong fileSize, int sampleCount)
+void EntropyView::setGilbertData(const QVector<quint8> &bytes, qulonglong scopeSize, int sampleCount, qulonglong scopeStart)
 {
-    m_hilbertRawData     = classes;
+    m_hilbertRawData     = bytes;
     m_hilbertSampleCount = sampleCount;
-    m_fileSize           = fileSize;
+    m_hilbertScopeStart  = scopeStart;
+    m_fileSize           = scopeSize;
     m_isGilbert          = true;
     m_isHilbert          = false;
     m_isBigram           = false;
@@ -412,18 +418,23 @@ static qulonglong gilbertOffsetForPixel(int px, int py, int w, int h,
 
 qulonglong EntropyView::offsetForWidgetPos(int wx, int wy) const
 {
+    qulonglong withinScope;
     if (m_isHilbert)
     {
         const int gs   = m_hilbertGridSide;
         const int side = qMin(width(), height());
-        if (side <= 0) return 0;
+        if (side <= 0) return m_hilbertScopeStart;
         const int ox = (width()  - side) / 2;
         const int oy = (height() - side) / 2;
         const int ix = qBound(0, int(float(wx - ox) / side * gs), gs - 1);
         const int iy = qBound(0, int(float(wy - oy) / side * gs), gs - 1);
-        return gilbertOffsetForPixel(ix, iy, gs, gs, m_gilbertInverse, m_hilbertSampleCount, m_fileSize);
+        withinScope = gilbertOffsetForPixel(ix, iy, gs, gs, m_gilbertInverse, m_hilbertSampleCount, m_fileSize);
     }
-    return gilbertOffsetForPixel(wx, wy, width(), height(), m_gilbertInverse, m_hilbertSampleCount, m_fileSize);
+    else
+    {
+        withinScope = gilbertOffsetForPixel(wx, wy, width(), height(), m_gilbertInverse, m_hilbertSampleCount, m_fileSize);
+    }
+    return m_hilbertScopeStart + withinScope;
 }
 
 float EntropyView::byteClassAvg(int classIdx) const
@@ -1089,7 +1100,9 @@ static QVector<float> calculateByteClass(
 
 static QVector<quint8> calculateHilbert(
     const QString &path,
-    qulonglong &outFileSize,
+    qulonglong startOffset,
+    qulonglong byteCount,       // 0 = whole file from startOffset
+    qulonglong &outScopeSize,   // bytes actually scanned
     int &outSampleCount,
     int maxSamples,
     const std::shared_ptr<std::atomic_bool> &cancelFlag,
@@ -1099,19 +1112,30 @@ static QVector<quint8> calculateHilbert(
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly))
     {
-        outFileSize    = 0;
+        outScopeSize   = 0;
         outSampleCount = 0;
         return {};
     }
 
-    const qint64 total = file.size();
-    outFileSize        = static_cast<qulonglong>(total);
+    const qulonglong fileTotal = static_cast<qulonglong>(file.size());
+    startOffset = qMin(startOffset, fileTotal);
+    if (byteCount == 0 || startOffset + byteCount > fileTotal)
+        byteCount = fileTotal - startOffset;
 
-    const int sampleCount = static_cast<int>(qMin(qint64(maxSamples), total));
-    outSampleCount = sampleCount;
+    outScopeSize = byteCount;
 
-    if (total == 0)
+    if (byteCount == 0)
+    {
+        outSampleCount = 0;
         return {};
+    }
+
+    if (startOffset > 0)
+        file.seek(static_cast<qint64>(startOffset));
+
+    const qint64 total        = static_cast<qint64>(byteCount);
+    const int    sampleCount  = static_cast<int>(qMin(qint64(maxSamples), total));
+    outSampleCount            = sampleCount;
 
     QVector<quint8> result(sampleCount, 0);
 
@@ -1134,15 +1158,13 @@ static QVector<quint8> calculateHilbert(
 
         for (int i = 0; i < n; ++i)
         {
-            const qint64 fileOffset = scanned + i;
+            const qint64 pos = scanned + i;
             const int sampleIdx = (total <= qint64(maxSamples))
-                ? int(fileOffset)
-                : int(double(fileOffset) / double(total) * sampleCount);
-
+                ? int(pos)
+                : int(double(pos) / double(total) * sampleCount);
             if (sampleIdx >= sampleCount)
                 continue;
-
-            result[sampleIdx] = data[i]; // store raw byte value
+            result[sampleIdx] = data[i];
         }
 
         scanned += n;
@@ -1160,6 +1182,35 @@ static QVector<quint8> calculateHilbert(
 // -----------------------------------------------------------------------
 // FilePropertiesPanel — entropy methods
 // -----------------------------------------------------------------------
+
+void FilePropertiesPanel::updateHilbertZoomButton()
+{
+    if (!m_hilbertZoomButton)
+        return;
+    const bool hasSel  = m_hexView && (m_hexView->selectionEnd() > m_hexView->selectionStart());
+    const bool isZoomed = m_hilbertScopeLength > 0;
+    if (hasSel)
+    {
+        m_hilbertZoomButton->setIcon(recoloredIcon(QStringLiteral("actions/zoom-in"),
+                                                   palette().buttonText().color(), 16));
+        m_hilbertZoomButton->setToolTip(tr("Re-scan selected range at full grid resolution"));
+        m_hilbertZoomButton->setEnabled(true);
+    }
+    else if (isZoomed)
+    {
+        m_hilbertZoomButton->setIcon(recoloredIcon(QStringLiteral("actions/zoom-restore"),
+                                                   palette().buttonText().color(), 16));
+        m_hilbertZoomButton->setToolTip(tr("Re-scan entire file"));
+        m_hilbertZoomButton->setEnabled(true);
+    }
+    else
+    {
+        m_hilbertZoomButton->setIcon(recoloredIcon(QStringLiteral("actions/zoom-in"),
+                                                   palette().buttonText().color(), 16));
+        m_hilbertZoomButton->setToolTip(tr("Re-scan selected range at full grid resolution"));
+        m_hilbertZoomButton->setEnabled(false);
+    }
+}
 
 void FilePropertiesPanel::maybeStartEntropyAnalysis()
 {
@@ -1220,11 +1271,13 @@ void FilePropertiesPanel::startEntropyAnalysis()
     if (m_entropyOperation)  m_entropyOperation->showProgress();
     requestSectionLayoutRefresh(SectionId::Entropy);
 
-    const QString     path       = m_hexView->filePath();
-    const int         windowSize = m_entropyWindowSize;
-    const EntropyMode mode       = m_entropyMode;
-    const int         stride     = m_bigramStride;
-    const int         gridSide   = m_hilbertGridSide;
+    const QString     path              = m_hexView->filePath();
+    const int         windowSize        = m_entropyWindowSize;
+    const EntropyMode mode              = m_entropyMode;
+    const int         stride            = m_bigramStride;
+    const int         gridSide          = m_hilbertGridSide;
+    const qulonglong  hilbertScopeStart = m_hilbertScopeStart;
+    const qulonglong  hilbertScopeLen   = m_hilbertScopeLength;
 
     qulonglong scopeStart  = 0;
     qulonglong scopeLength = 0; // 0 = whole file
@@ -1239,6 +1292,7 @@ void FilePropertiesPanel::startEntropyAnalysis()
 
     auto *thread = QThread::create([guard, generation, path, windowSize, mode,
                                     scopeStart, scopeLength, stride, gridSide,
+                                    hilbertScopeStart, hilbertScopeLen,
                                     cancelFlag, pause]()
     {
         auto progressCb = [guard, generation](int prog) {
@@ -1269,27 +1323,31 @@ void FilePropertiesPanel::startEntropyAnalysis()
         }
         else if (mode == EntropyMode::Hilbert)
         {
-            int sampleCount = 0;
-            const QVector<quint8> classes = calculateHilbert(path, fileSize, sampleCount,
-                                                             gridSide * gridSide,
-                                                             cancelFlag, pause, progressCb);
-            if (cancelFlag->load())
-                return;
-            QMetaObject::invokeMethod(qApp, [guard, generation, classes, fileSize, sampleCount, gridSide]() {
-                if (guard) guard->applyHilbertResults(generation, classes, fileSize, sampleCount, gridSide);
-            }, Qt::QueuedConnection);
+            int        sampleCount = 0;
+            qulonglong scopeSize   = 0;
+            const QVector<quint8> bytes = calculateHilbert(path,
+                hilbertScopeStart, hilbertScopeLen, scopeSize, sampleCount,
+                gridSide * gridSide, cancelFlag, pause, progressCb);
+            if (cancelFlag->load()) return;
+            QMetaObject::invokeMethod(qApp,
+                [guard, generation, bytes, scopeSize, sampleCount, gridSide, hilbertScopeStart]() {
+                    if (guard) guard->applyHilbertResults(generation, bytes, scopeSize, sampleCount,
+                                                          gridSide, hilbertScopeStart);
+                }, Qt::QueuedConnection);
         }
         else if (mode == EntropyMode::Gilbert)
         {
-            int sampleCount = 0;
-            const QVector<quint8> classes = calculateHilbert(path, fileSize, sampleCount,
-                                                             gridSide * gridSide,
-                                                             cancelFlag, pause, progressCb);
-            if (cancelFlag->load())
-                return;
-            QMetaObject::invokeMethod(qApp, [guard, generation, classes, fileSize, sampleCount]() {
-                if (guard) guard->applyGilbertResults(generation, classes, fileSize, sampleCount);
-            }, Qt::QueuedConnection);
+            int        sampleCount = 0;
+            qulonglong scopeSize   = 0;
+            const QVector<quint8> bytes = calculateHilbert(path,
+                hilbertScopeStart, hilbertScopeLen, scopeSize, sampleCount,
+                gridSide * gridSide, cancelFlag, pause, progressCb);
+            if (cancelFlag->load()) return;
+            QMetaObject::invokeMethod(qApp,
+                [guard, generation, bytes, scopeSize, sampleCount, hilbertScopeStart]() {
+                    if (guard) guard->applyGilbertResults(generation, bytes, scopeSize, sampleCount,
+                                                          hilbertScopeStart);
+                }, Qt::QueuedConnection);
         }
         else
         {
@@ -1380,13 +1438,14 @@ void FilePropertiesPanel::applyByteClassResults(int generation, QVector<float> d
     QTimer::singleShot(0, this, [this]() { repairExpandedSectionGeometry(SectionId::Entropy); });
 }
 
-void FilePropertiesPanel::applyHilbertResults(int generation, QVector<quint8> classes,
-                                              qulonglong fileSize, int sampleCount, int gridSide)
+void FilePropertiesPanel::applyHilbertResults(int generation, QVector<quint8> bytes,
+                                              qulonglong scopeSize, int sampleCount, int gridSide,
+                                              qulonglong scopeStart)
 {
     if (generation != m_entropyState.generation)
         return;
     if (m_entropyView)
-        m_entropyView->setHilbertData(classes, fileSize, sampleCount, gridSide);
+        m_entropyView->setHilbertData(bytes, scopeSize, sampleCount, gridSide, scopeStart);
     updateEntropyStatsLabel();
     if (m_entropyOperation) m_entropyOperation->clear();
     resetEntropyTitle();
@@ -1394,13 +1453,14 @@ void FilePropertiesPanel::applyHilbertResults(int generation, QVector<quint8> cl
     QTimer::singleShot(0, this, [this]() { repairExpandedSectionGeometry(SectionId::Entropy); });
 }
 
-void FilePropertiesPanel::applyGilbertResults(int generation, QVector<quint8> classes,
-                                              qulonglong fileSize, int sampleCount)
+void FilePropertiesPanel::applyGilbertResults(int generation, QVector<quint8> bytes,
+                                              qulonglong scopeSize, int sampleCount,
+                                              qulonglong scopeStart)
 {
     if (generation != m_entropyState.generation)
         return;
     if (m_entropyView)
-        m_entropyView->setGilbertData(classes, fileSize, sampleCount);
+        m_entropyView->setGilbertData(bytes, scopeSize, sampleCount, scopeStart);
     updateEntropyStatsLabel();
     if (m_entropyOperation) m_entropyOperation->clear();
     resetEntropyTitle();
@@ -1438,6 +1498,9 @@ void FilePropertiesPanel::resetEntropyForCurrentDocument()
     m_entropyState.rescanRequired = false;
     m_entropyState.rescanMessage.clear();
     if (m_entropyOperation)    m_entropyOperation->clear();
+    m_hilbertScopeStart  = 0;
+    m_hilbertScopeLength = 0;
+    updateHilbertZoomButton();
     resetEntropyTitle();
     requestSectionLayoutRefresh(SectionId::Entropy);
 }
@@ -1463,9 +1526,20 @@ void FilePropertiesPanel::updateEntropyStatsLabel()
         if (m_entropyStatsLabel) m_entropyStatsLabel->clear();
         return;
     }
-    if (m_entropyView->isBigram() || m_entropyView->isHilbert() || m_entropyView->isGilbert())
+    if (m_entropyView->isBigram())
     {
         m_entropyStatsLabel->clear();
+        return;
+    }
+    if (m_entropyView->isHilbert() || m_entropyView->isGilbert())
+    {
+        if (m_hilbertScopeLength > 0)
+            m_entropyStatsLabel->setText(
+                tr("Zoomed: 0x%1 – 0x%2")
+                    .arg(m_hilbertScopeStart, 0, 16)
+                    .arg(m_hilbertScopeStart + m_hilbertScopeLength - 1, 0, 16));
+        else
+            m_entropyStatsLabel->clear();
         return;
     }
     if (m_entropyView->isByteClass())

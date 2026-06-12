@@ -125,8 +125,9 @@ class FilePropertiesPanel : public QDialog
     void           applyEntropyResults(int generation, QVector<float> data, qulonglong fileSize, int windowSize);
     void           applyBigramResults(int generation, QVector<quint64> counts, qulonglong fileSize);
     void           applyByteClassResults(int generation, QVector<float> data, qulonglong fileSize, int windowSize);
-    void           applyHilbertResults(int generation, QVector<quint8> classes, qulonglong fileSize, int sampleCount, int gridSide);
-    void           applyGilbertResults(int generation, QVector<quint8> classes, qulonglong fileSize, int sampleCount);
+    void           updateHilbertZoomButton();
+    void           applyHilbertResults(int generation, QVector<quint8> bytes, qulonglong scopeSize, int sampleCount, int gridSide, qulonglong scopeStart);
+    void           applyGilbertResults(int generation, QVector<quint8> bytes, qulonglong scopeSize, int sampleCount, qulonglong scopeStart);
     void           setEntropyProgressTitle(int value);
     void           resetEntropyTitle();
     void           updateEntropyStatsLabel();
@@ -302,6 +303,7 @@ class FilePropertiesPanel : public QDialog
     QLabel                           *m_hilbertGridLabel    = nullptr;
     QComboBox                        *m_hilbertGridCombo    = nullptr;
     QToolButton                      *m_hilbertColorButton  = nullptr;
+    QToolButton                      *m_hilbertZoomButton   = nullptr;
     QAction                          *m_colorByteClassAction = nullptr;
     QAction                          *m_colorMagnitudeAction = nullptr;
     QAction                          *m_colorEntropyAction   = nullptr;
@@ -309,6 +311,8 @@ class FilePropertiesPanel : public QDialog
     QToolButton                      *m_entropyRotateButton = nullptr;
     int                               m_entropyWindowSize   = 256;
     int                               m_hilbertGridSide     = 256;
+    qulonglong                        m_hilbertScopeStart   = 0;
+    qulonglong                        m_hilbertScopeLength  = 0;
     EntropyMode                       m_entropyMode         = EntropyMode::Shannon;
     int                               m_bigramStride        = 1;
     QTimer                           *m_bigramRescanTimer   = nullptr;
