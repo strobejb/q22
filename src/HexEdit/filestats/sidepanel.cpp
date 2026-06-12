@@ -747,6 +747,73 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     m_entropyModeCombo->setToolTip(tr("Visualisation mode: byte entropy per window, byte-pair frequency heatmap, byte class stacked bars, square Hilbert curve map, or adaptive Gilbert curve map"));
     entropyControlsLayout->addWidget(m_entropyModeCombo);
 
+    // Color-picker button (Hilbert/Gilbert only) — immediately after the mode combo
+    auto *hilbertColorMenu = new QMenu(this);
+    themeMenu(hilbertColorMenu);
+    auto *colorGroup = new QActionGroup(hilbertColorMenu);
+    colorGroup->setExclusive(true);
+    m_colorByteClassAction = hilbertColorMenu->addAction(tr("Byte Class"));
+    m_colorByteClassAction->setCheckable(true);
+    m_colorByteClassAction->setChecked(true);
+    m_colorByteClassAction->setActionGroup(colorGroup);
+    m_colorMagnitudeAction = hilbertColorMenu->addAction(tr("Magnitude"));
+    m_colorMagnitudeAction->setCheckable(true);
+    m_colorMagnitudeAction->setActionGroup(colorGroup);
+    m_colorEntropyAction   = hilbertColorMenu->addAction(tr("Entropy"));
+    m_colorEntropyAction->setCheckable(true);
+    m_colorEntropyAction->setActionGroup(colorGroup);
+    m_colorDetailAction    = hilbertColorMenu->addAction(tr("Detail"));
+    m_colorDetailAction->setCheckable(true);
+    m_colorDetailAction->setActionGroup(colorGroup);
+
+    m_hilbertColorButton = new QToolButton(entropyControls);
+    m_hilbertColorButton->setFixedSize(28, 28);
+    m_hilbertColorButton->setFocusPolicy(Qt::TabFocus);
+    m_hilbertColorButton->setToolTip(tr("Colorisation mode"));
+    m_hilbertColorButton->setAutoRaise(true);
+    m_hilbertColorButton->setPopupMode(QToolButton::InstantPopup);
+    m_hilbertColorButton->setProperty("iconThemeName", QStringLiteral("actions/color-picker"));
+    m_hilbertColorButton->setProperty("iconSize", 16);
+    m_hilbertColorButton->setIconSize(QSize(16, 16));
+    m_hilbertColorButton->setIcon(recoloredIcon(QStringLiteral("actions/color-picker"), palette().buttonText().color(), 16));
+    {
+        const bool    dark    = QApplication::palette().window().color().lightness() < 128;
+        const QString hover   = dark ? QStringLiteral("rgba(255,255,255,0.15)") : QStringLiteral("rgba(0,0,0,0.10)");
+        const QString pressed = dark ? QStringLiteral("rgba(255,255,255,0.25)") : QStringLiteral("rgba(0,0,0,0.18)");
+        m_hilbertColorButton->setStyleSheet(QStringLiteral(R"(
+            QToolButton {
+                border: none;
+                border-radius: 6px;
+                background: transparent;
+            }
+            QToolButton:hover  { background: %1; }
+            QToolButton:pressed { background: %2; }
+        )").arg(hover, pressed));
+    }
+    m_hilbertColorButton->setMenu(hilbertColorMenu);
+    m_hilbertColorButton->hide(); // hidden until Hilbert/Gilbert mode
+    entropyControlsLayout->addWidget(m_hilbertColorButton);
+
+    // Zoom button (all modes except Bigram) — immediately after the color button
+    m_hilbertZoomButton = new QToolButton(entropyControls);
+    m_hilbertZoomButton->setFixedSize(28, 28);
+    m_hilbertZoomButton->setFocusPolicy(Qt::TabFocus);
+    m_hilbertZoomButton->setAutoRaise(true);
+    m_hilbertZoomButton->setIconSize(QSize(16, 16));
+    m_hilbertZoomButton->setIcon(recoloredIcon(QStringLiteral("actions/zoom-in"), palette().buttonText().color(), 16));
+    m_hilbertZoomButton->setToolTip(tr("Re-scan selected range at full resolution"));
+    {
+        const bool    dark    = QApplication::palette().window().color().lightness() < 128;
+        const QString hover   = dark ? QStringLiteral("rgba(255,255,255,0.15)") : QStringLiteral("rgba(0,0,0,0.10)");
+        const QString pressed = dark ? QStringLiteral("rgba(255,255,255,0.25)") : QStringLiteral("rgba(0,0,0,0.18)");
+        m_hilbertZoomButton->setStyleSheet(QStringLiteral(R"(
+            QToolButton { border: none; border-radius: 6px; background: transparent; }
+            QToolButton:hover   { background: %1; }
+            QToolButton:pressed { background: %2; }
+        )").arg(hover, pressed));
+    }
+    entropyControlsLayout->addWidget(m_hilbertZoomButton); // visible by default (Shannon is default mode)
+
     m_bigramScaleCombo = new MenuComboBox(entropyControls);
     m_bigramScaleCombo->addItem(tr("Log"),    QVariant::fromValue(int(filestats::BigramScale::Log)));
     m_bigramScaleCombo->addItem(tr("Sqrt"),   QVariant::fromValue(int(filestats::BigramScale::Sqrt)));
@@ -802,73 +869,6 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     m_hilbertGridCombo->setToolTip(tr("Curve grid resolution (samples)"));
     m_hilbertGridCombo->hide();
     entropyControlsLayout->addWidget(m_hilbertGridCombo);
-
-    auto *hilbertColorMenu = new QMenu(this);
-    themeMenu(hilbertColorMenu);
-    auto *colorGroup = new QActionGroup(hilbertColorMenu);
-    colorGroup->setExclusive(true);
-    m_colorByteClassAction = hilbertColorMenu->addAction(tr("Byte Class"));
-    m_colorByteClassAction->setCheckable(true);
-    m_colorByteClassAction->setChecked(true);
-    m_colorByteClassAction->setActionGroup(colorGroup);
-    m_colorMagnitudeAction = hilbertColorMenu->addAction(tr("Magnitude"));
-    m_colorMagnitudeAction->setCheckable(true);
-    m_colorMagnitudeAction->setActionGroup(colorGroup);
-    m_colorEntropyAction   = hilbertColorMenu->addAction(tr("Entropy"));
-    m_colorEntropyAction->setCheckable(true);
-    m_colorEntropyAction->setActionGroup(colorGroup);
-    m_colorDetailAction    = hilbertColorMenu->addAction(tr("Detail"));
-    m_colorDetailAction->setCheckable(true);
-    m_colorDetailAction->setActionGroup(colorGroup);
-
-    m_hilbertColorButton = new QToolButton(entropyControls);
-    m_hilbertColorButton->setFixedSize(28, 28);
-    m_hilbertColorButton->setFocusPolicy(Qt::TabFocus);
-    m_hilbertColorButton->setToolTip(tr("Colorisation mode"));
-    m_hilbertColorButton->setAutoRaise(true);
-    m_hilbertColorButton->setPopupMode(QToolButton::InstantPopup);
-    m_hilbertColorButton->setProperty("iconThemeName", QStringLiteral("actions/color-picker"));
-    m_hilbertColorButton->setProperty("iconSize", 16);
-    m_hilbertColorButton->setIconSize(QSize(16, 16));
-    m_hilbertColorButton->setIcon(recoloredIcon(QStringLiteral("actions/color-picker"), palette().buttonText().color(), 16));
-    {
-        const bool    dark    = QApplication::palette().window().color().lightness() < 128;
-        const QString hover   = dark ? QStringLiteral("rgba(255,255,255,0.15)") : QStringLiteral("rgba(0,0,0,0.10)");
-        const QString pressed = dark ? QStringLiteral("rgba(255,255,255,0.25)") : QStringLiteral("rgba(0,0,0,0.18)");
-        m_hilbertColorButton->setStyleSheet(QStringLiteral(R"(
-            QToolButton {
-                border: none;
-                border-radius: 6px;
-                background: transparent;
-            }
-            QToolButton:hover  { background: %1; }
-            QToolButton:pressed { background: %2; }
-        )").arg(hover, pressed));
-    }
-    m_hilbertColorButton->setMenu(hilbertColorMenu);
-    m_hilbertColorButton->hide();
-    entropyControlsLayout->addWidget(m_hilbertColorButton);
-
-    m_hilbertZoomButton = new QToolButton(entropyControls);
-    m_hilbertZoomButton->setFixedSize(28, 28);
-    m_hilbertZoomButton->setFocusPolicy(Qt::TabFocus);
-    m_hilbertZoomButton->setAutoRaise(true);
-    m_hilbertZoomButton->setIconSize(QSize(16, 16));
-    m_hilbertZoomButton->setEnabled(false);
-    m_hilbertZoomButton->setIcon(recoloredIcon(QStringLiteral("actions/zoom-in"), palette().buttonText().color(), 16));
-    m_hilbertZoomButton->setToolTip(tr("Re-scan selected range at full grid resolution"));
-    {
-        const bool    dark    = QApplication::palette().window().color().lightness() < 128;
-        const QString hover   = dark ? QStringLiteral("rgba(255,255,255,0.15)") : QStringLiteral("rgba(0,0,0,0.10)");
-        const QString pressed = dark ? QStringLiteral("rgba(255,255,255,0.25)") : QStringLiteral("rgba(0,0,0,0.18)");
-        m_hilbertZoomButton->setStyleSheet(QStringLiteral(R"(
-            QToolButton { border: none; border-radius: 6px; background: transparent; }
-            QToolButton:hover   { background: %1; }
-            QToolButton:pressed { background: %2; }
-        )").arg(hover, pressed));
-    }
-    m_hilbertZoomButton->hide();
-    entropyControlsLayout->addWidget(m_hilbertZoomButton);
     entropyControlsStackLayout->addWidget(entropyControls);
     entropyControlsStackLayout->addSpacing(kHeaderControlGap + 4);
     entropyControlsStackLayout->addWidget(m_entropyOperation->widget());
@@ -922,6 +922,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     m_entropyStatsLabel = new QLabel(entropyControlsStack);
     m_entropyStatsLabel->setAlignment(Qt::AlignCenter);
     m_entropyStatsLabel->setContentsMargins(0, 4, 0, 4);
+    m_entropyStatsLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     entropyControlsStackLayout->addWidget(m_entropyStatsLabel);
     entropyControlsStackLayout->addSpacing(kContentMargin);
 
@@ -1207,6 +1208,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
                 const bool isBigram     = (mode == EntropyMode::Bigram);
                 const bool isImageMode  = (mode == EntropyMode::Bigram || mode == EntropyMode::Hilbert || mode == EntropyMode::Gilbert);
                 const bool isGridMode   = (mode == EntropyMode::Hilbert || mode == EntropyMode::Gilbert);
+                const bool isZoomMode   = !isBigram;
                 if (m_entropyRotateButton) m_entropyRotateButton->setEnabled(!isImageMode);
                 if (m_entropyWindowLabel)  m_entropyWindowLabel->setVisible(!isImageMode);
                 if (m_entropyWindowCombo)  m_entropyWindowCombo->setVisible(!isImageMode);
@@ -1214,8 +1216,10 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
                 if (m_hilbertGridCombo)    m_hilbertGridCombo->setVisible(isGridMode);
                 if (m_hilbertColorButton) m_hilbertColorButton->setVisible(isGridMode);
                 if (m_hilbertZoomButton)  {
-                    m_hilbertZoomButton->setVisible(isGridMode);
-                    if (isGridMode) updateHilbertZoomButton();
+                    if (!isZoomMode)
+                        m_hilbertZoomButton->hide(); // Bigram: always hide
+                    else
+                        updateZoomButton();          // lets updateZoomButton own show/hide
                 }
                 if (m_bigramScaleCombo)    m_bigramScaleCombo->setVisible(isBigram);
                 if (m_bigramStrideSpinner) m_bigramStrideSpinner->setVisible(isBigram);
@@ -1314,16 +1318,18 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     connect(m_hilbertZoomButton, &QToolButton::clicked, this, [this]() {
         if (m_hexView && m_hexView->selectionEnd() > m_hexView->selectionStart())
         {
-            m_hilbertScopeStart  = static_cast<qulonglong>(m_hexView->selectionStart());
-            m_hilbertScopeLength = static_cast<qulonglong>(m_hexView->selectionEnd())
-                                 - m_hilbertScopeStart;
+            // Selection active — zoom into it (whether already zoomed or not)
+            m_entropyScopeStart  = static_cast<qulonglong>(m_hexView->selectionStart());
+            m_entropyScopeLength = static_cast<qulonglong>(m_hexView->selectionEnd())
+                                 - m_entropyScopeStart;
         }
         else
         {
-            m_hilbertScopeStart  = 0;
-            m_hilbertScopeLength = 0;
+            // No selection — restore to full file
+            m_entropyScopeStart  = 0;
+            m_entropyScopeLength = 0;
         }
-        updateHilbertZoomButton();
+        updateZoomButton();
         m_entropyState.started           = false;
         m_entropyState.pausedByCollapse  = false;
         m_entropyState.autoStartConsumed = false;
@@ -1347,14 +1353,19 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
             });
     connect(m_entropyView, &filestats::EntropyView::hoverCleared, this,
             [this]() { updateEntropyStatsLabel(); });
+    connect(m_entropyView, &filestats::EntropyView::selectionCleared, this,
+            [this]() { updateZoomButton(); });
     connect(m_entropyView, &filestats::EntropyView::positionClicked, this,
             [this](qulonglong offset)
             {
                 if (m_hexView)
                 {
-                    m_hexView->scrollCenter(static_cast<size_w>(offset));
+                    const auto pos = static_cast<size_w>(offset);
+                    m_hexView->setCurSel(pos, pos);
+                    m_hexView->scrollCenter(pos);
                     m_hexView->setFocus();
                 }
+                updateZoomButton();
             });
     connect(m_entropyView, &filestats::EntropyView::rangeSelected, this,
             [this](qulonglong anchor, qulonglong cursor)
@@ -1366,18 +1377,24 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
                 m_hexView->setCurSel(lo, hi);
                 m_hexView->scrollCenterIfOffScreen(static_cast<size_w>(cursor));
                 m_hexView->setFocus();
+                updateZoomButton();
             });
     if (m_hexView)
         connect(m_hexView, &HexView::selectionChanged, this,
                 [this](size_w start, size_w end)
                 {
                     if (m_entropyView)
-                        m_entropyView->setSelection(static_cast<qulonglong>(start),
-                                                    static_cast<qulonglong>(end));
+                    {
+                        if (end > start)
+                            m_entropyView->setSelection(static_cast<qulonglong>(start),
+                                                        static_cast<qulonglong>(end));
+                        else
+                            m_entropyView->clearSelection();
+                    }
                     if (m_entropyMode == EntropyMode::Bigram && m_entropyState.started
                         && !m_entropyState.rescanRequired && m_bigramRescanTimer)
                         m_bigramRescanTimer->start();
-                    updateHilbertZoomButton();
+                    updateZoomButton();
                 });
     connect(m_stringOptionsButton, &QToolButton::clicked, this,
             [this, stringsOptionsMenu]()

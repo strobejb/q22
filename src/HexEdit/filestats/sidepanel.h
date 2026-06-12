@@ -122,10 +122,10 @@ class FilePropertiesPanel : public QDialog
     void           cancelEntropyAnalysis();
     void           resumeEntropyAnalysis();
     void           updateEntropyProgress(int generation, int value);
-    void           applyEntropyResults(int generation, QVector<float> data, qulonglong fileSize, int windowSize);
+    void           applyEntropyResults(int generation, QVector<float> data, qulonglong scopeSize, int windowSize, qulonglong scopeStart);
     void           applyBigramResults(int generation, QVector<quint64> counts, qulonglong fileSize);
-    void           applyByteClassResults(int generation, QVector<float> data, qulonglong fileSize, int windowSize);
-    void           updateHilbertZoomButton();
+    void           applyByteClassResults(int generation, QVector<float> data, qulonglong scopeSize, int windowSize, qulonglong scopeStart);
+    void           updateZoomButton();
     void           applyHilbertResults(int generation, QVector<quint8> bytes, qulonglong scopeSize, int sampleCount, int gridSide, qulonglong scopeStart);
     void           applyGilbertResults(int generation, QVector<quint8> bytes, qulonglong scopeSize, int sampleCount, qulonglong scopeStart);
     void           setEntropyProgressTitle(int value);
@@ -311,8 +311,8 @@ class FilePropertiesPanel : public QDialog
     QToolButton                      *m_entropyRotateButton = nullptr;
     int                               m_entropyWindowSize   = 256;
     int                               m_hilbertGridSide     = 256;
-    qulonglong                        m_hilbertScopeStart   = 0;
-    qulonglong                        m_hilbertScopeLength  = 0;
+    qulonglong                        m_entropyScopeStart   = 0;
+    qulonglong                        m_entropyScopeLength  = 0;
     EntropyMode                       m_entropyMode         = EntropyMode::Shannon;
     int                               m_bigramStride        = 1;
     QTimer                           *m_bigramRescanTimer   = nullptr;

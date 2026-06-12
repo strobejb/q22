@@ -661,6 +661,7 @@ void HexView::mouseReleaseEvent(QMouseEvent *event)
     if (m_fStartDrag) {
         m_nSelectionStart = m_nSelectionEnd;
         m_fStartDrag      = false;
+        emit selectionChanged(selectionStart(), selectionEnd());
         viewport()->update();
     }
 

@@ -20,10 +20,10 @@ class EntropyView : public QWidget
 public:
     explicit EntropyView(QWidget *parent = nullptr);
 
-    void setData(const QVector<float> &data, qulonglong fileSize, int windowSize);
+    void setData(const QVector<float> &data, qulonglong scopeSize, int windowSize, qulonglong scopeStart = 0);
     void setBigramData(const QVector<quint64> &counts, qulonglong fileSize);
     void setBigramScale(BigramScale scale);
-    void setByteClassData(const QVector<float> &data, qulonglong fileSize, int windowSize);
+    void setByteClassData(const QVector<float> &data, qulonglong scopeSize, int windowSize, qulonglong scopeStart = 0);
     void setHilbertData(const QVector<quint8> &bytes, qulonglong scopeSize, int sampleCount, int gridSide, qulonglong scopeStart = 0);
     void setGilbertData(const QVector<quint8> &bytes, qulonglong scopeSize, int sampleCount, qulonglong scopeStart = 0);
     void setHilbertColorMode(HilbertColorMode mode);
@@ -35,7 +35,8 @@ public:
     const QVector<float>   &data()          const { return m_data; }
     const QVector<quint64> &bigramCounts()  const { return m_bigramCounts; }
     const QVector<float>   &byteClassData() const { return m_byteClassData; }
-    bool  isRotated()   const { return m_rotated; }
+    bool  isRotated()     const { return m_rotated; }
+    bool  hasSelection()  const { return m_hasSelection; }
     bool  isBigram()    const { return m_isBigram; }
     bool  isByteClass() const { return m_isByteClass; }
     bool             isHilbert()       const { return m_isHilbert; }
@@ -53,6 +54,7 @@ signals:
     void positionHovered(qulonglong byteOffset, float entropy);
     void positionClicked(qulonglong byteOffset);
     void rangeSelected(qulonglong anchor, qulonglong cursor);
+    void selectionCleared();
     void hoverCleared();
 
 protected:
@@ -80,7 +82,7 @@ private:
     int              m_windowSize         = 256;
     int              m_hilbertSampleCount = 0;
     int              m_hilbertGridSide    = 256;
-    qulonglong       m_hilbertScopeStart = 0;
+    qulonglong       m_scopeStart        = 0;
     qulonglong       m_dragAnchor        = 0;
     int              m_hoverX             = -1;
     int              m_hoverY             = -1;
