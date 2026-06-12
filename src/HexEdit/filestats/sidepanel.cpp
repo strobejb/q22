@@ -734,13 +734,14 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
                 m_entropyRotateButton->setIcon(recoloredIcon(iconName, palette().buttonText().color(), 14));
             });
     m_entropyModeCombo = new MenuComboBox(entropyControls);
-    m_entropyModeCombo->addItem(tr("Shannon"), QVariant::fromValue(int(EntropyMode::Shannon)));
-    m_entropyModeCombo->addItem(tr("Bigram"),  QVariant::fromValue(int(EntropyMode::Bigram)));
+    m_entropyModeCombo->addItem(tr("Shannon"),    QVariant::fromValue(int(EntropyMode::Shannon)));
+    m_entropyModeCombo->addItem(tr("Bigram"),     QVariant::fromValue(int(EntropyMode::Bigram)));
+    m_entropyModeCombo->addItem(tr("Byte Class"), QVariant::fromValue(int(EntropyMode::ByteClass)));
     m_entropyModeCombo->setCurrentIndex(0);
     m_entropyModeCombo->setFocusPolicy(Qt::StrongFocus);
     m_entropyModeCombo->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     m_entropyModeCombo->setFixedHeight(qMax(24, m_entropyModeCombo->sizeHint().height() - 4));
-    m_entropyModeCombo->setToolTip(tr("Visualisation mode: byte entropy over sliding windows, or consecutive byte-pair frequency heatmap"));
+    m_entropyModeCombo->setToolTip(tr("Visualisation mode: byte entropy per window, byte-pair frequency heatmap, or byte class distribution (printable / null / control / high)"));
     entropyControlsLayout->addWidget(m_entropyModeCombo);
 
     m_bigramScaleCombo = new MenuComboBox(entropyControls);
@@ -1184,7 +1185,12 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     connect(m_entropyView, &filestats::EntropyView::positionHovered, this,
             [this](qulonglong offset, float entropy)
             {
-                if (m_entropyStatsLabel)
+                if (!m_entropyStatsLabel)
+                    return;
+                if (m_entropyMode == EntropyMode::ByteClass)
+                    m_entropyStatsLabel->setText(
+                        tr("0x%1").arg(offset, 8, 16, QLatin1Char('0')));
+                else
                     m_entropyStatsLabel->setText(
                         tr("0x%1  —  %2 bits/byte")
                             .arg(offset, 8, 16, QLatin1Char('0'))
@@ -1200,6 +1206,17 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
                     m_hexView->scrollCenter(static_cast<size_w>(offset));
                     m_hexView->setFocus();
                 }
+            });
+    connect(m_entropyView, &filestats::EntropyView::rangeSelected, this,
+            [this](qulonglong anchor, qulonglong cursor)
+            {
+                if (!m_hexView) return;
+                const auto lo = static_cast<size_w>(qMin(anchor, cursor));
+                const auto hi = static_cast<size_w>(qMax(anchor, cursor));
+                if (m_entropyView) m_entropyView->setSelection(lo, hi);
+                m_hexView->setCurSel(lo, hi);
+                m_hexView->scrollCenterIfOffScreen(static_cast<size_w>(cursor));
+                m_hexView->setFocus();
             });
     if (m_hexView)
         connect(m_hexView, &HexView::selectionChanged, this,

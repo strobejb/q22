@@ -33,10 +33,12 @@ EntropyView::EntropyView(QWidget *parent) : QWidget(parent)
 
 void EntropyView::setData(const QVector<float> &data, qulonglong fileSize, int windowSize)
 {
-    m_data       = data;
-    m_fileSize   = fileSize;
-    m_windowSize = windowSize;
-    m_hoverX     = -1;
+    m_data        = data;
+    m_fileSize    = fileSize;
+    m_windowSize  = windowSize;
+    m_isBigram    = false;
+    m_isByteClass = false;
+    m_hoverX      = -1;
     update();
 }
 
@@ -44,8 +46,10 @@ void EntropyView::clear()
 {
     m_data.clear();
     m_bigramCounts.clear();
+    m_byteClassData.clear();
     m_bigramImage  = QImage();
     m_isBigram     = false;
+    m_isByteClass  = false;
     m_fileSize     = 0;
     m_windowSize   = 256;
     m_hoverX       = -1;
@@ -109,6 +113,27 @@ void EntropyView::setBigramScale(BigramScale scale)
         buildBigramImage();
         update();
     }
+}
+
+void EntropyView::setByteClassData(const QVector<float> &data, qulonglong fileSize, int windowSize)
+{
+    m_byteClassData = data;
+    m_fileSize      = fileSize;
+    m_windowSize    = windowSize;
+    m_isByteClass   = true;
+    m_isBigram      = false;
+    m_hoverX        = -1;
+    update();
+}
+
+float EntropyView::byteClassAvg(int classIdx) const
+{
+    const int n = m_byteClassData.size() / 4;
+    if (n == 0 || classIdx < 0 || classIdx > 3) return 0.0f;
+    double sum = 0.0;
+    for (int i = 0; i < n; ++i)
+        sum += double(m_byteClassData[i * 4 + classIdx]);
+    return float(sum / n);
 }
 
 void EntropyView::setSelection(qulonglong start, qulonglong end)
@@ -218,6 +243,111 @@ void EntropyView::paintEvent(QPaintEvent *)
         return;
     }
 
+    if (m_isByteClass)
+    {
+        if (m_byteClassData.isEmpty())
+        {
+            p.setPen(palette().mid().color());
+            p.drawText(rect(), Qt::AlignCenter, tr("No data"));
+            return;
+        }
+
+        // Display order: printable → whitespace → null → other/binary
+        // Data layout per window: [0]=null [1]=whitespace [2]=printable [3]=other
+        static const int kOrder[4] = {2, 1, 0, 3};
+        static const QColor kColors[4] = {
+            QColor(0x00, 0x50, 0xEE),   // printable  — blue-green
+            QColor(0x88, 0xFF, 0xFF),   // whitespace — white
+            QColor(0x00, 0x00, 0x00),   // null       — black
+            QColor(0xCC, 0x0,  0x30),   // other      — purple
+        };
+
+        const int numW = m_byteClassData.size() / 4;
+
+        auto sampleClass = [&](int pos, int axisLen, int cls) -> float {
+            if (numW <= 0 || axisLen <= 1) return 0.0f;
+            const float fidx = float(pos) / (axisLen - 1) * (numW - 1);
+            const int   lo   = qBound(0, int(fidx), numW - 1);
+            const int   hi   = qMin(lo + 1, numW - 1);
+            const float frac = fidx - float(lo);
+            return m_byteClassData[lo * 4 + cls] * (1.0f - frac)
+                 + m_byteClassData[hi * 4 + cls] * frac;
+        };
+
+        if (!m_rotated)
+        {
+            for (int x = 0; x < w; ++x)
+            {
+                int y = h;
+                for (int i = 0; i < 4; ++i)
+                {
+                    const int segH = (i < 3)
+                        ? qRound(sampleClass(x, w, kOrder[i]) * h)
+                        : y;
+                    if (segH > 0)
+                    {
+                        y -= segH;
+                        p.fillRect(x, y, 1, segH, kColors[i]);
+                    }
+                }
+            }
+        }
+        else
+        {
+            for (int y = 0; y < h; ++y)
+            {
+                int x = 0;
+                for (int i = 0; i < 4; ++i)
+                {
+                    const int segW = (i < 3)
+                        ? qRound(sampleClass(y, h, kOrder[i]) * w)
+                        : (w - x);
+                    if (segW > 0)
+                        p.fillRect(x, y, segW, 1, kColors[i]);
+                    x += segW;
+                }
+            }
+        }
+
+        if (m_hasSelection && m_fileSize > 0)
+        {
+            const double fs = double(m_fileSize);
+            if (!m_rotated)
+            {
+                const int x1 = qBound(0, qRound(double(m_selStart) / fs * (w - 1)), w - 1);
+                const int x2 = qMin(w, qMax(x1 + 3, qRound(double(m_selEnd) / fs * (w - 1)) + 1));
+                p.fillRect(x1, 0, x2 - x1, h, QColor(255, 255, 255, 80));
+                p.setCompositionMode(QPainter::RasterOp_SourceXorDestination);
+                p.setPen(QPen(Qt::white, 1));
+                p.drawLine(x1, 0, x1, h - 1);
+                if (x2 - 1 > x1) p.drawLine(x2 - 1, 0, x2 - 1, h - 1);
+                p.setCompositionMode(QPainter::CompositionMode_SourceOver);
+            }
+            else
+            {
+                const int y1 = qBound(0, qRound(double(m_selStart) / fs * (h - 1)), h - 1);
+                const int y2 = qMin(h, qMax(y1 + 3, qRound(double(m_selEnd) / fs * (h - 1)) + 1));
+                p.fillRect(0, y1, w, y2 - y1, QColor(255, 255, 255, 80));
+                p.setCompositionMode(QPainter::RasterOp_SourceXorDestination);
+                p.setPen(QPen(Qt::white, 1));
+                p.drawLine(0, y1, w - 1, y1);
+                if (y2 - 1 > y1) p.drawLine(0, y2 - 1, w - 1, y2 - 1);
+                p.setCompositionMode(QPainter::CompositionMode_SourceOver);
+            }
+        }
+
+        const int hoverMax = m_rotated ? h : w;
+        if (m_hoverX >= 0 && m_hoverX < hoverMax)
+        {
+            p.setCompositionMode(QPainter::RasterOp_SourceXorDestination);
+            p.setPen(QPen(Qt::white, 3));
+            if (m_rotated) p.drawLine(0, m_hoverX, w, m_hoverX);
+            else           p.drawLine(m_hoverX, 0, m_hoverX, h);
+            p.setCompositionMode(QPainter::CompositionMode_SourceOver);
+        }
+        return;
+    }
+
     if (m_data.isEmpty())
     {
         p.setPen(palette().mid().color());
@@ -297,7 +427,7 @@ void EntropyView::mousePressEvent(QMouseEvent *event)
     if (event->button() == Qt::LeftButton)
     {
         m_dragging = true;
-        if (!m_data.isEmpty() && m_fileSize > 0)
+        if (m_fileSize > 0 && (!m_data.isEmpty() || !m_byteClassData.isEmpty()))
         {
             const QPoint pos     = event->position().toPoint();
             const int    coord   = m_rotated ? pos.y() : pos.x();
@@ -306,7 +436,13 @@ void EntropyView::mousePressEvent(QMouseEvent *event)
             {
                 const float      t      = qBound(0.0f, float(coord) / (axisLen - 1), 1.0f);
                 const qulonglong offset = static_cast<qulonglong>(t * m_fileSize);
-                emit positionClicked(offset);
+                if (event->modifiers() & Qt::ShiftModifier)
+                    emit rangeSelected(m_dragAnchor, offset);
+                else
+                {
+                    m_dragAnchor = offset;
+                    emit positionClicked(offset);
+                }
             }
         }
     }
@@ -326,7 +462,7 @@ void EntropyView::mouseMoveEvent(QMouseEvent *event)
     m_hoverX = m_rotated ? pos.y() : pos.x();
     update();
 
-    if (!m_data.isEmpty() && m_fileSize > 0)
+    if (m_fileSize > 0 && (!m_data.isEmpty() || !m_byteClassData.isEmpty()))
     {
         const int axisLen = m_rotated ? height() : width();
         if (axisLen > 1)
@@ -335,7 +471,7 @@ void EntropyView::mouseMoveEvent(QMouseEvent *event)
             const qulonglong offset = static_cast<qulonglong>(t * m_fileSize);
             emit positionHovered(offset, sampleAt(m_hoverX, axisLen));
             if (m_dragging)
-                emit positionClicked(offset);
+                emit rangeSelected(m_dragAnchor, offset);
         }
     }
     QWidget::mouseMoveEvent(event);
@@ -491,6 +627,89 @@ static QVector<quint64> calculateBigram(
     return cancelFlag->load() ? QVector<quint64>() : counts;
 }
 
+static QVector<float> calculateByteClass(
+    const QString &path,
+    int windowSize,
+    qulonglong &outFileSize,
+    const std::shared_ptr<std::atomic_bool> &cancelFlag,
+    const std::shared_ptr<filestats::OperationPause> &pause,
+    const std::function<void(int)> &progressCallback)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+    {
+        outFileSize = 0;
+        return {};
+    }
+
+    const qint64 total   = file.size();
+    outFileSize          = static_cast<qulonglong>(total);
+    qint64 scanned       = 0;
+    int    lastProg      = -1;
+    QVector<float> results;
+    if (total > 0 && windowSize > 0)
+        results.reserve(4 * static_cast<int>(qMin((total + windowSize - 1) / windowSize, qint64(1 << 20))));
+
+    while (!cancelFlag->load() && !file.atEnd())
+    {
+        if (pause && !pause->waitIfPaused(cancelFlag))
+            return {};
+
+        const QByteArray chunk = file.read(windowSize);
+        if (chunk.isEmpty())
+            break;
+
+        // Buckets: [0]=null(0x00), [1]=whitespace(tab/LF/CR/space), [2]=printable(0x21-0x7E), [3]=other(control+high)
+        int counts[4] = {};
+        for (unsigned char b : chunk)
+        {
+            if (b == 0x00)
+                ++counts[0];
+            else if (b == 0x09 || b == 0x0A || b == 0x0B || b == 0x0C || b == 0x0D || b == 0x20)
+                ++counts[1];
+            else if (b >= 0x21 && b <= 0x7E)
+                ++counts[2];
+            else
+                ++counts[3];
+        }
+        const float n = float(chunk.size());
+        results.append(counts[0] / n);
+        results.append(counts[1] / n);
+        results.append(counts[2] / n);
+        results.append(counts[3] / n);
+
+        scanned += chunk.size();
+        const int prog = (total > 0) ? int(1000LL * scanned / total) : 1000;
+        if (prog != lastProg)
+        {
+            lastProg = prog;
+            progressCallback(prog);
+        }
+    }
+
+    if (cancelFlag->load())
+        return {};
+
+    // 3-tap Gaussian smooth [0.25, 0.5, 0.25] per class along the window axis
+    const int nW = results.size() / 4;
+    if (nW >= 3)
+    {
+        QVector<float> smoothed(results.size());
+        for (int i = 0; i < nW; ++i)
+        {
+            const int prev = qMax(0, i - 1);
+            const int next = qMin(nW - 1, i + 1);
+            for (int c = 0; c < 4; ++c)
+                smoothed[i * 4 + c] = 0.25f * results[prev * 4 + c]
+                                    + 0.50f * results[i    * 4 + c]
+                                    + 0.25f * results[next * 4 + c];
+        }
+        results = std::move(smoothed);
+    }
+
+    return results;
+}
+
 // -----------------------------------------------------------------------
 // FilePropertiesPanel — entropy methods
 // -----------------------------------------------------------------------
@@ -590,6 +809,15 @@ void FilePropertiesPanel::startEntropyAnalysis()
                 if (guard) guard->applyBigramResults(generation, counts, fileSize);
             }, Qt::QueuedConnection);
         }
+        else if (mode == EntropyMode::ByteClass)
+        {
+            const QVector<float> results = calculateByteClass(path, windowSize, fileSize, cancelFlag, pause, progressCb);
+            if (cancelFlag->load())
+                return;
+            QMetaObject::invokeMethod(qApp, [guard, generation, results, fileSize, windowSize]() {
+                if (guard) guard->applyByteClassResults(generation, results, fileSize, windowSize);
+            }, Qt::QueuedConnection);
+        }
         else
         {
             const QVector<float> results = calculateEntropy(path, windowSize, fileSize, cancelFlag, pause, progressCb);
@@ -665,6 +893,20 @@ void FilePropertiesPanel::applyBigramResults(int generation, QVector<quint64> co
     QTimer::singleShot(0, this, [this]() { repairExpandedSectionGeometry(SectionId::Entropy); });
 }
 
+void FilePropertiesPanel::applyByteClassResults(int generation, QVector<float> data,
+                                                qulonglong fileSize, int windowSize)
+{
+    if (generation != m_entropyState.generation)
+        return;
+    if (m_entropyView)
+        m_entropyView->setByteClassData(data, fileSize, windowSize);
+    updateEntropyStatsLabel();
+    if (m_entropyOperation) m_entropyOperation->clear();
+    resetEntropyTitle();
+    requestSectionLayoutRefresh(SectionId::Entropy);
+    QTimer::singleShot(0, this, [this]() { repairExpandedSectionGeometry(SectionId::Entropy); });
+}
+
 void FilePropertiesPanel::markEntropyContentsChanged()
 {
     m_entropyState.started          = false;
@@ -715,9 +957,32 @@ void FilePropertiesPanel::resetEntropyTitle()
 
 void FilePropertiesPanel::updateEntropyStatsLabel()
 {
-    if (!m_entropyStatsLabel || !m_entropyView || m_entropyView->isBigram() || m_entropyView->data().isEmpty())
+    if (!m_entropyStatsLabel || !m_entropyView)
     {
         if (m_entropyStatsLabel) m_entropyStatsLabel->clear();
+        return;
+    }
+    if (m_entropyView->isBigram())
+    {
+        m_entropyStatsLabel->clear();
+        return;
+    }
+    if (m_entropyView->isByteClass())
+    {
+        if (m_entropyView->byteClassData().isEmpty())
+            m_entropyStatsLabel->clear();
+        else
+            m_entropyStatsLabel->setText(
+                tr("Printable %1%   Space %2%   Null %3%   Binary %4%")
+                    .arg(qRound(m_entropyView->byteClassAvg(2) * 100))
+                    .arg(qRound(m_entropyView->byteClassAvg(1) * 100))
+                    .arg(qRound(m_entropyView->byteClassAvg(0) * 100))
+                    .arg(qRound(m_entropyView->byteClassAvg(3) * 100)));
+        return;
+    }
+    if (m_entropyView->data().isEmpty())
+    {
+        m_entropyStatsLabel->clear();
         return;
     }
     const auto fmt = [](float e) {

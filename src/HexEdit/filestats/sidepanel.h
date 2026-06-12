@@ -87,7 +87,7 @@ class FilePropertiesPanel : public QDialog
     };
     Q_ENUM(SectionId)
 
-    enum class EntropyMode  { Shannon, Bigram };
+    enum class EntropyMode  { Shannon, Bigram, ByteClass };
 
     explicit FilePropertiesPanel(HexView *hexView, QWidget *parent = nullptr);
     ~FilePropertiesPanel() override;
@@ -124,6 +124,7 @@ class FilePropertiesPanel : public QDialog
     void           updateEntropyProgress(int generation, int value);
     void           applyEntropyResults(int generation, QVector<float> data, qulonglong fileSize, int windowSize);
     void           applyBigramResults(int generation, QVector<quint64> counts, qulonglong fileSize);
+    void           applyByteClassResults(int generation, QVector<float> data, qulonglong fileSize, int windowSize);
     void           setEntropyProgressTitle(int value);
     void           resetEntropyTitle();
     void           updateEntropyStatsLabel();

@@ -22,18 +22,22 @@ public:
     void setData(const QVector<float> &data, qulonglong fileSize, int windowSize);
     void setBigramData(const QVector<quint64> &counts, qulonglong fileSize);
     void setBigramScale(BigramScale scale);
+    void setByteClassData(const QVector<float> &data, qulonglong fileSize, int windowSize);
     void clear();
     void setRotated(bool rotated);
     void setSelection(qulonglong start, qulonglong end);
     void clearSelection();
 
-    const QVector<float>  &data()       const { return m_data; }
-    const QVector<quint64> &bigramCounts() const { return m_bigramCounts; }
-    bool  isRotated() const { return m_rotated; }
-    bool  isBigram()  const { return m_isBigram; }
-    float minEntropy() const;
-    float avgEntropy() const;
-    float maxEntropy() const;
+    const QVector<float>   &data()          const { return m_data; }
+    const QVector<quint64> &bigramCounts()  const { return m_bigramCounts; }
+    const QVector<float>   &byteClassData() const { return m_byteClassData; }
+    bool  isRotated()   const { return m_rotated; }
+    bool  isBigram()    const { return m_isBigram; }
+    bool  isByteClass() const { return m_isByteClass; }
+    float minEntropy()    const;
+    float avgEntropy()    const;
+    float maxEntropy()    const;
+    float byteClassAvg(int classIdx) const;
 
     QSize sizeHint() const override;
     QSize minimumSizeHint() const override;
@@ -41,6 +45,7 @@ public:
 signals:
     void positionHovered(qulonglong byteOffset, float entropy);
     void positionClicked(qulonglong byteOffset);
+    void rangeSelected(qulonglong anchor, qulonglong cursor);
     void hoverCleared();
 
 protected:
@@ -57,14 +62,17 @@ private:
 
     QVector<float>   m_data;
     QVector<quint64> m_bigramCounts;
+    QVector<float>   m_byteClassData;
     QImage           m_bigramImage;
     qulonglong       m_fileSize     = 0;
     int              m_windowSize   = 256;
+    qulonglong       m_dragAnchor   = 0;
     int              m_hoverX       = -1;
     bool             m_rotated      = true;
     bool             m_dragging     = false;
     bool             m_hasSelection = false;
     bool             m_isBigram     = false;
+    bool             m_isByteClass  = false;
     BigramScale      m_bigramScale  = BigramScale::Log;
     qulonglong       m_selStart     = 0;
     qulonglong       m_selEnd       = 0;
