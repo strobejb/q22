@@ -755,20 +755,19 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     m_bigramScaleCombo->setVisible(false);
     entropyControlsLayout->addWidget(m_bigramScaleCombo);
 
-    m_bigramStrideCombo = new MenuComboBox(entropyControls);
-    m_bigramStrideCombo->addItem(tr("Stride 1"), QVariant::fromValue(1));
-    m_bigramStrideCombo->addItem(tr("Stride 2"), QVariant::fromValue(2));
-    m_bigramStrideCombo->addItem(tr("Stride 4"), QVariant::fromValue(4));
-    m_bigramStrideCombo->addItem(tr("Stride 8"), QVariant::fromValue(8));
-    m_bigramStrideCombo->setCurrentIndex(0);
-    m_bigramStrideCombo->setFocusPolicy(Qt::StrongFocus);
-    m_bigramStrideCombo->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-    m_bigramStrideCombo->setFixedHeight(qMax(24, m_bigramStrideCombo->sizeHint().height() - 4));
-    m_bigramStrideCombo->setToolTip(tr("Byte pair distance: 1 = consecutive, 2 = every other byte (16-bit), 4 = 32-bit words, 8 = 64-bit words"));
-    m_bigramStrideCombo->setVisible(false);
-    entropyControlsLayout->addWidget(m_bigramStrideCombo);
+    m_bigramStrideSpinner = new StepSpinBox(tr("Stride:"), 1, 8, 1, entropyControls);
+    m_bigramStrideSpinner->setValues({1, 2, 4, 8});
+    m_bigramStrideSpinner->setValue(1);
+    m_bigramStrideSpinner->setLabelAlignment(Qt::AlignRight);
+    m_bigramStrideSpinner->setLabelValueSpacing(4);
+    m_bigramStrideSpinner->setValueWidth(12);
+    m_bigramStrideSpinner->setValueBold(true);
+    m_bigramStrideSpinner->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_bigramStrideSpinner->setToolTip(tr("Byte pair distance: 1 = consecutive, 2 = every other byte (16-bit), 4 = 32-bit words, 8 = 64-bit words"));
+    m_bigramStrideSpinner->setVisible(false);
 
     entropyControlsLayout->addStretch();
+    entropyControlsLayout->addWidget(m_bigramStrideSpinner);
     m_entropyWindowLabel = new QLabel(tr("Sample:"), entropyControls);
     m_entropyWindowLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     entropyControlsLayout->addWidget(m_entropyWindowLabel);
@@ -1123,7 +1122,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
                 if (m_entropyWindowLabel)  m_entropyWindowLabel->setVisible(!isBigram);
                 if (m_entropyWindowCombo)  m_entropyWindowCombo->setVisible(!isBigram);
                 if (m_bigramScaleCombo)    m_bigramScaleCombo->setVisible(isBigram);
-                if (m_bigramStrideCombo)   m_bigramStrideCombo->setVisible(isBigram);
+                if (m_bigramStrideSpinner) m_bigramStrideSpinner->setVisible(isBigram);
                 m_entropyState.rescanRequired = true;
                 m_entropyState.rescanMessage  = tr("View changed");
                 if (m_entropyOperation)
@@ -1137,10 +1136,9 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
                 if (m_entropyView)
                     m_entropyView->setBigramScale(scale);
             });
-    connect(m_bigramStrideCombo, &QComboBox::currentIndexChanged, this,
-            [this](int index)
+    connect(m_bigramStrideSpinner, &StepSpinBox::valueChanged, this,
+            [this](int stride)
             {
-                const int stride = m_bigramStrideCombo->itemData(index).toInt();
                 if (stride <= 0 || stride == m_bigramStride)
                     return;
                 m_bigramStride                  = stride;

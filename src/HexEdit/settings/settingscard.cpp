@@ -440,11 +440,29 @@ StepSpinBox::StepSpinBox(const QString &label, int min, int max, int step,
 
 void StepSpinBox::setValue(int v)
 {
-    v = qBound(m_min, v, m_max);
+    if (!m_values.isEmpty()) {
+        // snap to nearest value in the discrete list
+        int best = m_values.first();
+        int bestDist = qAbs(v - best);
+        for (int candidate : m_values) {
+            const int d = qAbs(v - candidate);
+            if (d < bestDist) { best = candidate; bestDist = d; }
+        }
+        v = best;
+    } else {
+        v = qBound(m_min, v, m_max);
+    }
     if (v == m_value) return;
     m_value = v;
     update();
     emit valueChanged(m_value);
+}
+
+void StepSpinBox::setValues(const QVector<int> &values)
+{
+    m_values = values;
+    if (!m_values.isEmpty())
+        setValue(m_value);
 }
 
 void StepSpinBox::setLabelAlignment(Qt::Alignment alignment)
@@ -463,6 +481,16 @@ void StepSpinBox::setLabelValueSpacing(int spacing)
     update();
 }
 
+void StepSpinBox::setValueWidth(int pixels)
+{
+    pixels = qMax(1, pixels);
+    if (m_valWidth == pixels)
+        return;
+    m_valWidth = pixels;
+    updateGeometry();
+    update();
+}
+
 void StepSpinBox::setValueBold(bool bold)
 {
     if (m_valueBold == bold)
@@ -475,8 +503,9 @@ QSize StepSpinBox::sizeHint() const
 {
     const QFontMetrics fm(font());
     const int labelValueSpacing = m_labelValueSpacing >= 0 ? m_labelValueSpacing : SSB_SPACING;
+    const int valW = m_valWidth > 0 ? m_valWidth : SSB_VAL_W;
     return QSize(fm.horizontalAdvance(m_label) + labelValueSpacing
-                 + SSB_VAL_W + SSB_VAL_GAP + SSB_BTN_W * 2 + 1,
+                 + valW + SSB_VAL_GAP + SSB_BTN_W * 2 + 1,
                  qMax(fm.height(), SSB_BTN_H) + 2 * ROW_VPAD);
 }
 
@@ -519,8 +548,9 @@ void StepSpinBox::paintEvent(QPaintEvent *)
     // Value text
     const QRect grp  = groupRect();
     const int labelValueSpacing = m_labelValueSpacing >= 0 ? m_labelValueSpacing : SSB_SPACING;
-    const QRect valueR(qMax(0, grp.left() - SSB_VAL_GAP - SSB_VAL_W), 0,
-                       SSB_VAL_W, r.height());
+    const int valW = m_valWidth > 0 ? m_valWidth : SSB_VAL_W;
+    const QRect valueR(qMax(0, grp.left() - SSB_VAL_GAP - valW), 0,
+                       valW, r.height());
     const QRect labelR(0, 0, qMax(0, valueR.left() - labelValueSpacing), r.height());
     p.drawText(labelR, m_labelAlignment, m_label);
     if (m_valueBold) {
@@ -584,8 +614,16 @@ void StepSpinBox::mouseReleaseEvent(QMouseEvent *e)
 {
     if (e->button() == Qt::LeftButton) {
         if (m_pressed != None && hitZone(e->pos()) == m_pressed) {
-            if (m_pressed == Minus) setValue(m_value - m_step);
-            else                    setValue(m_value + m_step);
+            if (!m_values.isEmpty()) {
+                const int idx = m_values.indexOf(m_value);
+                if (m_pressed == Minus && idx > 0)
+                    setValue(m_values[idx - 1]);
+                else if (m_pressed == Plus && idx >= 0 && idx < m_values.size() - 1)
+                    setValue(m_values[idx + 1]);
+            } else {
+                if (m_pressed == Minus) setValue(m_value - m_step);
+                else                    setValue(m_value + m_step);
+            }
         }
         m_pressed = None;
         m_hover   = hitZone(e->pos());
@@ -613,8 +651,24 @@ void StepSpinBox::leaveEvent(QEvent *)
 void StepSpinBox::keyPressEvent(QKeyEvent *e)
 {
     switch (e->key()) {
-    case Qt::Key_Right: setValue(m_value + m_step); e->accept(); break;
-    case Qt::Key_Left:  setValue(m_value - m_step); e->accept(); break;
+    case Qt::Key_Right:
+        if (!m_values.isEmpty()) {
+            const int idx = m_values.indexOf(m_value);
+            if (idx >= 0 && idx < m_values.size() - 1) setValue(m_values[idx + 1]);
+        } else {
+            setValue(m_value + m_step);
+        }
+        e->accept();
+        break;
+    case Qt::Key_Left:
+        if (!m_values.isEmpty()) {
+            const int idx = m_values.indexOf(m_value);
+            if (idx > 0) setValue(m_values[idx - 1]);
+        } else {
+            setValue(m_value - m_step);
+        }
+        e->accept();
+        break;
     default: QWidget::keyPressEvent(e); break;
     }
 }

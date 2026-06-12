@@ -5,6 +5,7 @@
 #include <QIcon>
 #include <QKeyEvent>
 #include <QUrl>
+#include <QVector>
 #include <QWidget>
 
 // ── SettingsCard ──────────────────────────────────────────────────────────────
@@ -116,8 +117,10 @@ public:
 
     int  value() const { return m_value; }
     void setValue(int v);
+    void setValues(const QVector<int> &values);
     void setLabelAlignment(Qt::Alignment alignment);
     void setLabelValueSpacing(int spacing);
+    void setValueWidth(int pixels);
     void setValueBold(bool bold);
 
     QSize sizeHint() const override;
@@ -140,13 +143,15 @@ private:
     QRect   minusRect() const;
     QRect   plusRect()  const;
 
-    QString m_label;
+    QString       m_label;
     Qt::Alignment m_labelAlignment = Qt::AlignLeft | Qt::AlignVCenter;
-    bool    m_valueBold = false;
-    int     m_labelValueSpacing = -1;
-    int     m_value = 0, m_min = 0, m_max = 99, m_step = 1;
-    HitZone m_hover   = None;
-    HitZone m_pressed = None;
+    bool          m_valueBold = false;
+    int           m_labelValueSpacing = -1;
+    int           m_valWidth = -1;
+    int           m_value = 0, m_min = 0, m_max = 99, m_step = 1;
+    QVector<int>  m_values;
+    HitZone       m_hover   = None;
+    HitZone       m_pressed = None;
 };
 
 // ── DangerButton ──────────────────────────────────────────────────────────────

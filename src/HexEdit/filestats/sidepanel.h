@@ -294,7 +294,7 @@ class FilePropertiesPanel : public QDialog
     QComboBox                        *m_entropyWindowCombo  = nullptr;
     QComboBox                        *m_entropyModeCombo    = nullptr;
     QComboBox                        *m_bigramScaleCombo    = nullptr;
-    QComboBox                        *m_bigramStrideCombo   = nullptr;
+    StepSpinBox                      *m_bigramStrideSpinner = nullptr;
     QLabel                           *m_entropyWindowLabel  = nullptr;
     QToolButton                      *m_entropyRotateButton = nullptr;
     int                               m_entropyWindowSize   = 256;
