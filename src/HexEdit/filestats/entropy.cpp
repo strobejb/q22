@@ -2,10 +2,19 @@
 #include "filestats/sidepanel.h"
 #include "filestats/widgets.h"
 #include "HexView/hexview.h"
+#include "combos/menucombobox.h"
+#include "settings/settingscard.h"
 #include "theme.h"
 
+#include <QAction>
+#include <QActionGroup>
 #include <QApplication>
 #include <QDateTime>
+#include <QFrame>
+#include <QHBoxLayout>
+#include <QMenu>
+#include <QSizePolicy>
+#include <QVBoxLayout>
 #include <QFile>
 #include <QLabel>
 #include <QMetaObject>
@@ -1718,4 +1727,472 @@ void FilePropertiesPanel::updateEntropyStatsLabel()
                 .arg(fmt(m_entropyView->minEntropy()))
                 .arg(fmt(m_entropyView->avgEntropy()))
                 .arg(fmt(m_entropyView->maxEntropy())));
+}
+
+void FilePropertiesPanel::buildEntropySection(QWidget *parent, QVBoxLayout *contentLayout)
+{
+    m_entropyHeader = new SectionHeader(tr("Entropy"), parent);
+    m_entropyHeader->setClickedCallback(
+        [this]() { setSectionCollapsed(SectionId::Entropy, !isSectionCollapsed(SectionId::Entropy)); });
+    contentLayout->addWidget(m_entropyHeader);
+    m_entropyHeader->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_entropyHeaderGap = new QSpacerItem(0, kHeaderControlGap, QSizePolicy::Minimum, QSizePolicy::Fixed);
+    contentLayout->addSpacerItem(m_entropyHeaderGap);
+
+    m_entropySectionBody = new QWidget(parent);
+    m_entropySectionBody->setMinimumWidth(0);
+    auto *entropyBodyLayout = new QVBoxLayout(m_entropySectionBody);
+    entropyBodyLayout->setContentsMargins(kSectionHeaderOuterMargin + kCardLeftInset, 0,
+                                          kSectionHeaderOuterMargin + kCardScrollbarInset, 0);
+    entropyBodyLayout->setSpacing(0);
+
+    auto startEntropy = [this]()
+    {
+        if (m_entropyState.started)
+            return;
+        m_entropyState.started = true;
+        startEntropyAnalysis();
+    };
+    m_entropyOperation = new SectionOperationStrip(
+        parent, startEntropy,
+        [this]() { cancelEntropyAnalysis(); },
+        [this]() { resumeEntropyAnalysis(); },
+        startEntropy);
+
+    auto *entropyControlsStack       = new QWidget(m_entropySectionBody);
+    auto *entropyControlsStackLayout = new QVBoxLayout(entropyControlsStack);
+    entropyControlsStackLayout->setContentsMargins(kSettingsCardShadowInset, 0, kSettingsCardShadowInset, 0);
+    entropyControlsStackLayout->setSpacing(0);
+
+    auto *entropyControls       = new QWidget(entropyControlsStack);
+    auto *entropyControlsLayout = new QHBoxLayout(entropyControls);
+    entropyControlsLayout->setContentsMargins(0, 4, 0, 4);
+    entropyControlsLayout->setSpacing(6);
+
+    m_entropyModeCombo = new MenuComboBox(entropyControls);
+    m_entropyModeCombo->addItem(tr("Shannon"),    QVariant::fromValue(int(EntropyMode::Shannon)));
+    m_entropyModeCombo->addItem(tr("Bigram"),     QVariant::fromValue(int(EntropyMode::Bigram)));
+    m_entropyModeCombo->addItem(tr("Byte Class"), QVariant::fromValue(int(EntropyMode::ByteClass)));
+    m_entropyModeCombo->addItem(tr("Hilbert"),    QVariant::fromValue(int(EntropyMode::Hilbert)));
+    m_entropyModeCombo->addItem(tr("Gilbert"),    QVariant::fromValue(int(EntropyMode::Gilbert)));
+    m_entropyModeCombo->setCurrentIndex(0);
+    m_entropyModeCombo->setFocusPolicy(Qt::StrongFocus);
+    m_entropyModeCombo->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_entropyModeCombo->setFixedHeight(qMax(24, m_entropyModeCombo->sizeHint().height() - 4));
+    m_entropyModeCombo->setToolTip(
+        tr("Visualisation mode: byte entropy per window, byte-pair frequency heatmap, byte class stacked bars, "
+           "square Hilbert curve map, or adaptive Gilbert curve map"));
+    entropyControlsLayout->addWidget(m_entropyModeCombo);
+
+    // Hilbert/Gilbert/ByteClass color picker button — shown after mode combo
+    m_hilbertColorMenu = new QMenu(this);
+    themeMenu(m_hilbertColorMenu);
+    auto *colorGroup = new QActionGroup(m_hilbertColorMenu);
+    colorGroup->setExclusive(true);
+    m_colorByteClassAction = m_hilbertColorMenu->addAction(tr("Byte Class"));
+    m_colorByteClassAction->setCheckable(true);
+    m_colorByteClassAction->setChecked(true);
+    m_colorByteClassAction->setActionGroup(colorGroup);
+    m_colorMagnitudeAction = m_hilbertColorMenu->addAction(tr("Magnitude"));
+    m_colorMagnitudeAction->setCheckable(true);
+    m_colorMagnitudeAction->setActionGroup(colorGroup);
+    m_colorEntropyAction = m_hilbertColorMenu->addAction(tr("Entropy"));
+    m_colorEntropyAction->setCheckable(true);
+    m_colorEntropyAction->setActionGroup(colorGroup);
+    m_colorDetailAction = m_hilbertColorMenu->addAction(tr("Detail"));
+    m_colorDetailAction->setCheckable(true);
+    m_colorDetailAction->setActionGroup(colorGroup);
+
+    m_hilbertColorButton = new QToolButton(entropyControls);
+    m_hilbertColorButton->setFixedSize(28, 28);
+    m_hilbertColorButton->setFocusPolicy(Qt::TabFocus);
+    m_hilbertColorButton->setToolTip(tr("Colorisation mode"));
+    m_hilbertColorButton->setAutoRaise(true);
+    m_hilbertColorButton->setPopupMode(QToolButton::InstantPopup);
+    m_hilbertColorButton->setProperty("iconThemeName", QStringLiteral("actions/palette"));
+    m_hilbertColorButton->setProperty("iconSize", 16);
+    m_hilbertColorButton->setIconSize(QSize(16, 16));
+    m_hilbertColorButton->setIcon(
+        recoloredIcon(QStringLiteral("actions/palette"), palette().buttonText().color(), 16));
+    {
+        const bool    dark    = QApplication::palette().window().color().lightness() < 128;
+        const QString hover   = dark ? QStringLiteral("rgba(255,255,255,0.15)") : QStringLiteral("rgba(0,0,0,0.10)");
+        const QString pressed = dark ? QStringLiteral("rgba(255,255,255,0.25)") : QStringLiteral("rgba(0,0,0,0.18)");
+        m_hilbertColorButton->setStyleSheet(QStringLiteral(R"(
+            QToolButton {
+                border: none;
+                border-radius: 6px;
+                background: transparent;
+            }
+            QToolButton:hover   { background: %1; }
+            QToolButton:pressed { background: %2; }
+        )").arg(hover, pressed));
+    }
+    m_hilbertColorButton->setMenu(m_hilbertColorMenu);
+    m_hilbertColorButton->hide();
+    entropyControlsLayout->addWidget(m_hilbertColorButton);
+
+    // ByteClass-specific scheme menu — swapped onto color button in ByteClass mode
+    m_byteClassSchemeMenu = new QMenu(this);
+    themeMenu(m_byteClassSchemeMenu);
+    auto *schemeGroup = new QActionGroup(m_byteClassSchemeMenu);
+    schemeGroup->setExclusive(true);
+    m_bcSchemeSemanticAction = m_byteClassSchemeMenu->addAction(tr("Semantic"));
+    m_bcSchemeSemanticAction->setCheckable(true);
+    m_bcSchemeSemanticAction->setChecked(true);
+    m_bcSchemeSemanticAction->setActionGroup(schemeGroup);
+    m_bcSchemeAsciiAction = m_byteClassSchemeMenu->addAction(tr("ASCII Range"));
+    m_bcSchemeAsciiAction->setCheckable(true);
+    m_bcSchemeAsciiAction->setActionGroup(schemeGroup);
+    m_bcSchemeBitDensAction = m_byteClassSchemeMenu->addAction(tr("Bit Density"));
+    m_bcSchemeBitDensAction->setCheckable(true);
+    m_bcSchemeBitDensAction->setActionGroup(schemeGroup);
+    m_bcSchemeNibbleAction = m_byteClassSchemeMenu->addAction(tr("Nibble Range"));
+    m_bcSchemeNibbleAction->setCheckable(true);
+    m_bcSchemeNibbleAction->setActionGroup(schemeGroup);
+    connect(m_bcSchemeSemanticAction, &QAction::triggered, this,
+            [this]() { if (m_entropyView) m_entropyView->setByteClassScheme(ByteClassScheme::Semantic); });
+    connect(m_bcSchemeAsciiAction, &QAction::triggered, this,
+            [this]() { if (m_entropyView) m_entropyView->setByteClassScheme(ByteClassScheme::AsciiRange); });
+    connect(m_bcSchemeBitDensAction, &QAction::triggered, this,
+            [this]() { if (m_entropyView) m_entropyView->setByteClassScheme(ByteClassScheme::BitDensity); });
+    connect(m_bcSchemeNibbleAction, &QAction::triggered, this,
+            [this]() { if (m_entropyView) m_entropyView->setByteClassScheme(ByteClassScheme::NibbleRange); });
+
+    // Zoom button (all modes except Bigram)
+    m_hilbertZoomButton = new QToolButton(entropyControls);
+    m_hilbertZoomButton->setFixedSize(28, 28);
+    m_hilbertZoomButton->setFocusPolicy(Qt::TabFocus);
+    m_hilbertZoomButton->setAutoRaise(true);
+    m_hilbertZoomButton->setIconSize(QSize(16, 16));
+    m_hilbertZoomButton->setIcon(
+        recoloredIcon(QStringLiteral("actions/zoom-in"), palette().buttonText().color(), 16));
+    m_hilbertZoomButton->setToolTip(tr("Re-scan selected range at full resolution"));
+    {
+        const bool    dark    = QApplication::palette().window().color().lightness() < 128;
+        const QString hover   = dark ? QStringLiteral("rgba(255,255,255,0.15)") : QStringLiteral("rgba(0,0,0,0.10)");
+        const QString pressed = dark ? QStringLiteral("rgba(255,255,255,0.25)") : QStringLiteral("rgba(0,0,0,0.18)");
+        m_hilbertZoomButton->setStyleSheet(QStringLiteral(R"(
+            QToolButton { border: none; border-radius: 6px; background: transparent; }
+            QToolButton:hover   { background: %1; }
+            QToolButton:pressed { background: %2; }
+        )").arg(hover, pressed));
+    }
+    entropyControlsLayout->insertWidget(1, m_hilbertZoomButton);
+
+    m_bigramScaleCombo = new MenuComboBox(entropyControls);
+    m_bigramScaleCombo->addItem(tr("Log"),    QVariant::fromValue(int(BigramScale::Log)));
+    m_bigramScaleCombo->addItem(tr("Sqrt"),   QVariant::fromValue(int(BigramScale::Sqrt)));
+    m_bigramScaleCombo->addItem(tr("Linear"), QVariant::fromValue(int(BigramScale::Linear)));
+    m_bigramScaleCombo->setCurrentIndex(0);
+    m_bigramScaleCombo->setFocusPolicy(Qt::StrongFocus);
+    m_bigramScaleCombo->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_bigramScaleCombo->setFixedHeight(qMax(24, m_bigramScaleCombo->sizeHint().height() - 4));
+    m_bigramScaleCombo->setToolTip(
+        tr("Frequency scale: Log compresses bright peaks to reveal rare pairs; Sqrt is a gentler middle ground; "
+           "Linear shows raw counts"));
+    m_bigramScaleCombo->setVisible(false);
+    entropyControlsLayout->addWidget(m_bigramScaleCombo);
+
+    m_bigramStrideSpinner = new StepSpinBox(tr("Stride:"), 1, 8, 1, entropyControls);
+    m_bigramStrideSpinner->setValues({1, 2, 4, 8});
+    m_bigramStrideSpinner->setValue(1);
+    m_bigramStrideSpinner->setLabelAlignment(Qt::AlignRight);
+    m_bigramStrideSpinner->setLabelValueSpacing(4);
+    m_bigramStrideSpinner->setValueWidth(12);
+    m_bigramStrideSpinner->setValueBold(true);
+    m_bigramStrideSpinner->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_bigramStrideSpinner->setToolTip(
+        tr("Byte pair distance: 1 = consecutive, 2 = every other byte (16-bit), 4 = 32-bit words, 8 = 64-bit words"));
+    m_bigramStrideSpinner->setVisible(false);
+
+    entropyControlsLayout->addStretch();
+    entropyControlsLayout->addWidget(m_bigramStrideSpinner);
+
+    m_entropyWindowLabel = new QLabel(tr("Sample:"), entropyControls);
+    m_entropyWindowLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    entropyControlsLayout->addWidget(m_entropyWindowLabel);
+
+    m_entropyWindowCombo = new MenuComboBox(entropyControls);
+    m_entropyWindowCombo->addItem(tr("128 bytes"),  QVariant::fromValue(128));
+    m_entropyWindowCombo->addItem(tr("256 bytes"),  QVariant::fromValue(256));
+    m_entropyWindowCombo->addItem(tr("512 bytes"),  QVariant::fromValue(512));
+    m_entropyWindowCombo->addItem(tr("1024 bytes"), QVariant::fromValue(1024));
+    m_entropyWindowCombo->setCurrentIndex(1);
+    m_entropyWindowCombo->setFocusPolicy(Qt::StrongFocus);
+    m_entropyWindowCombo->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_entropyWindowCombo->setFixedHeight(qMax(24, m_entropyWindowCombo->sizeHint().height() - 4));
+    m_entropyWindowCombo->setToolTip(tr("Entropy window size (bytes per sample)"));
+    entropyControlsLayout->addWidget(m_entropyWindowCombo);
+
+    m_hilbertGridLabel = new QLabel(tr("Grid:"), entropyControls);
+    m_hilbertGridLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_hilbertGridLabel->hide();
+    entropyControlsLayout->addWidget(m_hilbertGridLabel);
+
+    m_hilbertGridCombo = new MenuComboBox(entropyControls);
+    m_hilbertGridCombo->addItem(tr("64×64"),   QVariant::fromValue(64));
+    m_hilbertGridCombo->addItem(tr("128×128"), QVariant::fromValue(128));
+    m_hilbertGridCombo->addItem(tr("256×256"), QVariant::fromValue(256));
+    m_hilbertGridCombo->addItem(tr("512×512"), QVariant::fromValue(512));
+    m_hilbertGridCombo->setCurrentIndex(2);
+    m_hilbertGridCombo->setFocusPolicy(Qt::StrongFocus);
+    m_hilbertGridCombo->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_hilbertGridCombo->setFixedHeight(qMax(24, m_hilbertGridCombo->sizeHint().height() - 4));
+    m_hilbertGridCombo->setToolTip(tr("Curve grid resolution (samples)"));
+    m_hilbertGridCombo->hide();
+    entropyControlsLayout->addWidget(m_hilbertGridCombo);
+
+    entropyControlsStackLayout->addWidget(entropyControls);
+    entropyControlsStackLayout->addSpacing(kHeaderControlGap + 4);
+    entropyControlsStackLayout->addWidget(m_entropyOperation->widget());
+    entropyControlsStackLayout->addSpacing(kHeaderControlGap + 4);
+
+    // Graph in bordered frame
+    auto *entropyViewFrame = new QFrame(entropyControlsStack);
+    entropyViewFrame->setObjectName(QStringLiteral("entropyViewFrame"));
+    entropyViewFrame->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    entropyViewFrame->setStyleSheet(QStringLiteral(R"(
+        QFrame#entropyViewFrame {
+            background: palette(base);
+            border: 1px solid palette(mid);
+            border-radius: 6px;
+        }
+    )"));
+    auto *entropyViewFrameLayout = new QVBoxLayout(entropyViewFrame);
+    entropyViewFrameLayout->setContentsMargins(1, 1, 1, 1);
+    entropyViewFrameLayout->setSpacing(0);
+
+    m_entropyView = new EntropyView(entropyViewFrame);
+    m_entropyView->setRotated(true);
+    m_entropyView->setMinimumSize(0, 0);
+    m_entropyView->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
+    entropyViewFrameLayout->addWidget(m_entropyView);
+    entropyControlsStackLayout->addWidget(entropyViewFrame);
+
+    m_bigramRescanTimer = new QTimer(this);
+    m_bigramRescanTimer->setSingleShot(true);
+    m_bigramRescanTimer->setInterval(300);
+    connect(m_bigramRescanTimer, &QTimer::timeout, this,
+            [this]()
+            {
+                if (m_entropyMode == EntropyMode::Bigram && m_entropyState.started
+                    && !m_entropyState.rescanRequired)
+                    startEntropyAnalysis();
+            });
+
+    // Resize handle
+    auto *entropyResizeWrap   = new QWidget(entropyControlsStack);
+    auto *entropyResizeLayout = new QVBoxLayout(entropyResizeWrap);
+    entropyResizeLayout->setContentsMargins(0, 0, 0, 0);
+    entropyResizeLayout->setSpacing(0);
+    auto *entropyResizeHandle = new VerticalResizeHandle(
+        [this](int dy) { resizeSection(SectionId::Entropy, dy); }, entropyResizeWrap);
+    entropyResizeLayout->addWidget(entropyResizeHandle);
+    entropyResizeLayout->setAlignment(entropyResizeHandle, Qt::AlignTop);
+    entropyControlsStackLayout->addWidget(entropyResizeWrap);
+
+    // Stats / hover label
+    m_entropyStatsLabel = new QLabel(entropyControlsStack);
+    m_entropyStatsLabel->setAlignment(Qt::AlignCenter);
+    m_entropyStatsLabel->setContentsMargins(0, 4, 0, 4);
+    m_entropyStatsLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    entropyControlsStackLayout->addWidget(m_entropyStatsLabel);
+    entropyControlsStackLayout->addSpacing(kContentMargin);
+
+    entropyBodyLayout->addWidget(entropyControlsStack);
+    contentLayout->addWidget(m_entropySectionBody);
+
+    registerPanelSection({
+        SectionId::Entropy,
+        tr("Entropy"),
+        m_entropyHeader,
+        m_entropySectionBody,
+        m_entropyHeaderGap,
+        nullptr,
+        entropyViewFrame,
+        kEntropyViewMinHeight,
+        [this]() { maybeStartEntropyAnalysis(); },
+        [this](bool collapsed)
+        {
+            if (m_entropyState.pause && m_entropyState.started)
+            {
+                if (collapsed)
+                {
+                    m_entropyState.pausedByCollapse = true;
+                    m_entropyState.pause->setPaused(true);
+                }
+                else if (m_entropyState.pausedByCollapse && m_entropyOperation)
+                {
+                    m_entropyOperation->setProgressActionResume();
+                }
+            }
+            if (m_entropyState.started)
+                setEntropyProgressTitle(m_entropyState.progress);
+        },
+        [this](bool contentsChanged) { if (contentsChanged) markEntropyContentsChanged(); },
+        [this]() { resetEntropyForCurrentDocument(); },
+    });
+
+    // Signal connections for entropy controls
+    connect(m_entropyModeCombo, &QComboBox::currentIndexChanged, this,
+            [this](int index)
+            {
+                const auto mode = static_cast<EntropyMode>(m_entropyModeCombo->itemData(index).toInt());
+                if (mode == m_entropyMode)
+                    return;
+                m_entropyMode = mode;
+                if (m_entropyView)       m_entropyView->clear();
+                if (m_entropyStatsLabel) m_entropyStatsLabel->clear();
+                const bool isBigram    = (mode == EntropyMode::Bigram);
+                const bool isImageMode = (mode == EntropyMode::Bigram || mode == EntropyMode::Hilbert
+                                          || mode == EntropyMode::Gilbert);
+                const bool isGridMode  = (mode == EntropyMode::Hilbert || mode == EntropyMode::Gilbert);
+                const bool isZoomMode  = !isBigram;
+                if (m_entropyWindowLabel)  m_entropyWindowLabel->setVisible(!isImageMode);
+                if (m_entropyWindowCombo)  m_entropyWindowCombo->setVisible(!isImageMode);
+                if (m_hilbertGridLabel)    m_hilbertGridLabel->setVisible(isGridMode);
+                if (m_hilbertGridCombo)    m_hilbertGridCombo->setVisible(isGridMode);
+                const bool isByteClass = (mode == EntropyMode::ByteClass);
+                if (m_hilbertColorButton)
+                {
+                    m_hilbertColorButton->setVisible(isGridMode || isByteClass);
+                    m_hilbertColorButton->setMenu(isByteClass ? m_byteClassSchemeMenu : m_hilbertColorMenu);
+                }
+                if (m_hilbertZoomButton)
+                {
+                    if (!isZoomMode)
+                        m_hilbertZoomButton->hide();
+                    else
+                        updateZoomButton();
+                }
+                if (m_bigramScaleCombo)    m_bigramScaleCombo->setVisible(isBigram);
+                if (m_bigramStrideSpinner) m_bigramStrideSpinner->setVisible(isBigram);
+                triggerParamRescan(tr("View changed"));
+            });
+    connect(m_bigramScaleCombo, &QComboBox::currentIndexChanged, this,
+            [this](int index)
+            {
+                const auto scale =
+                    static_cast<BigramScale>(m_bigramScaleCombo->itemData(index).toInt());
+                if (m_entropyView)
+                    m_entropyView->setBigramScale(scale);
+            });
+    connect(m_bigramStrideSpinner, &StepSpinBox::valueChanged, this,
+            [this](int stride)
+            {
+                if (stride <= 0 || stride == m_bigramStride)
+                    return;
+                m_bigramStride = stride;
+                triggerParamRescan(tr("Stride changed"));
+            });
+    connect(m_entropyWindowCombo, &QComboBox::currentIndexChanged, this,
+            [this](int index)
+            {
+                const int ws = m_entropyWindowCombo->itemData(index).toInt();
+                if (ws <= 0 || ws == m_entropyWindowSize)
+                    return;
+                m_entropyWindowSize = ws;
+                triggerParamRescan(tr("Window size changed"));
+            });
+    connect(m_hilbertGridCombo, &QComboBox::currentIndexChanged, this,
+            [this](int index)
+            {
+                const int gs = m_hilbertGridCombo->itemData(index).toInt();
+                if (gs <= 0 || gs == m_hilbertGridSide)
+                    return;
+                m_hilbertGridSide = gs;
+                triggerParamRescan(tr("Grid size changed"));
+            });
+
+    auto connectColorAction = [this](QAction *action, HilbertColorMode mode)
+    {
+        connect(action, &QAction::triggered, this,
+                [this, mode]() { if (m_entropyView) m_entropyView->setHilbertColorMode(mode); });
+    };
+    connectColorAction(m_colorByteClassAction, HilbertColorMode::ByteClass);
+    connectColorAction(m_colorMagnitudeAction,  HilbertColorMode::Magnitude);
+    connectColorAction(m_colorEntropyAction,    HilbertColorMode::Entropy);
+    connectColorAction(m_colorDetailAction,     HilbertColorMode::Detail);
+
+    connect(m_hilbertZoomButton, &QToolButton::clicked, this,
+            [this]()
+            {
+                if (m_hexView && m_hexView->selectionEnd() > m_hexView->selectionStart())
+                {
+                    m_entropyScopeStart  = static_cast<qulonglong>(m_hexView->selectionStart());
+                    m_entropyScopeLength = static_cast<qulonglong>(m_hexView->selectionEnd())
+                                         - m_entropyScopeStart;
+                }
+                else
+                {
+                    m_entropyScopeStart  = 0;
+                    m_entropyScopeLength = 0;
+                }
+                updateZoomButton();
+                m_entropyState.started           = false;
+                m_entropyState.pausedByCollapse  = false;
+                m_entropyState.autoStartConsumed = false;
+                m_entropyState.rescanRequired    = false;
+                startEntropyAnalysis();
+            });
+    connect(m_entropyView, &EntropyView::positionHovered, this,
+            [this](qulonglong offset, float entropy)
+            {
+                if (!m_entropyStatsLabel)
+                    return;
+                if (m_entropyMode == EntropyMode::ByteClass || m_entropyMode == EntropyMode::Hilbert
+                    || m_entropyMode == EntropyMode::Gilbert)
+                    m_entropyStatsLabel->setText(
+                        QStringLiteral("0x")
+                        + QStringLiteral("%1").arg(offset, 8, 16, QLatin1Char('0')).toUpper());
+                else
+                    m_entropyStatsLabel->setText(
+                        tr("0x%1  —  %2 bits/byte")
+                            .arg(QStringLiteral("%1").arg(offset, 8, 16, QLatin1Char('0')).toUpper())
+                            .arg(double(entropy * 8.0), 0, 'f', 2));
+            });
+    connect(m_entropyView, &EntropyView::hoverCleared,    this, [this]() { updateEntropyStatsLabel(); });
+    connect(m_entropyView, &EntropyView::selectionCleared, this, [this]() { updateZoomButton(); });
+    connect(m_entropyView, &EntropyView::positionClicked, this,
+            [this](qulonglong offset)
+            {
+                if (m_hexView)
+                {
+                    const auto pos = static_cast<size_w>(offset);
+                    m_hexView->setCurSel(pos, pos);
+                    m_hexView->scrollCenter(pos);
+                    m_hexView->setFocus();
+                }
+                updateZoomButton();
+            });
+    connect(m_entropyView, &EntropyView::rangeSelected, this,
+            [this](qulonglong anchor, qulonglong cursor)
+            {
+                if (!m_hexView) return;
+                const auto lo = static_cast<size_w>(qMin(anchor, cursor));
+                const auto hi = static_cast<size_w>(qMax(anchor, cursor));
+                if (m_entropyView) m_entropyView->setSelection(lo, hi);
+                m_hexView->setCurSel(lo, hi);
+                m_hexView->scrollCenterIfOffScreen(static_cast<size_w>(cursor));
+                m_hexView->setFocus();
+                updateZoomButton();
+            });
+    if (m_hexView)
+        connect(m_hexView, &HexView::selectionChanged, this,
+                [this](size_w start, size_w end)
+                {
+                    if (m_entropyView)
+                    {
+                        if (end > start)
+                            m_entropyView->setSelection(static_cast<qulonglong>(start),
+                                                        static_cast<qulonglong>(end));
+                        else
+                            m_entropyView->clearSelection();
+                    }
+                    if (m_entropyMode == EntropyMode::Bigram && m_entropyState.started
+                        && !m_entropyState.rescanRequired && m_bigramRescanTimer)
+                        m_bigramRescanTimer->start();
+                    updateZoomButton();
+                });
 }

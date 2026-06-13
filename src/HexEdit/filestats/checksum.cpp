@@ -2,10 +2,12 @@
 
 #include "HexView/hexview.h"
 #include "filestats/widgets.h"
+#include "settings/settingscard.h"
 #include "theme.h"
 
 #include <QApplication>
 #include <QCheckBox>
+#include <QVBoxLayout>
 #include <QCryptographicHash>
 #include <QFile>
 #include <QFileInfo>
@@ -25,6 +27,8 @@
 #include <functional>
 #include <memory>
 #include <utility>
+
+using namespace filestats;
 
 static QStringList checksumAlgorithmNames()
 {
@@ -422,4 +426,102 @@ void FilePropertiesPanel::resumeChecksumCalculation()
             it.value()->setText(tr("Calculating..."));
     setChecksumProgressTitle(m_checksumState.progress);
     requestSectionLayoutRefresh(SectionId::Checksums);
+}
+
+void FilePropertiesPanel::buildChecksumSection(QWidget *parent, QVBoxLayout *contentLayout)
+{
+    m_checksumHeader = new SectionHeader(tr("Checksums"), parent);
+    m_checksumHeader->setClickedCallback(
+        [this]() { setSectionCollapsed(SectionId::Checksums, !isSectionCollapsed(SectionId::Checksums)); });
+    contentLayout->addWidget(m_checksumHeader);
+    m_checksumHeader->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_checksumHeaderGap = new QSpacerItem(0, kHeaderControlGap, QSizePolicy::Minimum, QSizePolicy::Fixed);
+    contentLayout->addSpacerItem(m_checksumHeaderGap);
+
+    m_checksumSectionBody = new QWidget(parent);
+    m_checksumSectionBody->setMinimumWidth(0);
+    auto *checksumBodyLayout = new QVBoxLayout(m_checksumSectionBody);
+    checksumBodyLayout->setContentsMargins(kSectionHeaderOuterMargin + kCardLeftInset, 0,
+                                           kSectionHeaderOuterMargin + kCardScrollbarInset, 0);
+    checksumBodyLayout->setSpacing(0);
+
+    auto startChecksums = [this]()
+    {
+        if (m_checksumState.started)
+            return;
+        m_checksumState.started = true;
+        startChecksumCalculation();
+    };
+    m_checksumOperation = new SectionOperationStrip(
+        parent, startChecksums,
+        [this]() { cancelChecksumCalculation(); },
+        [this]() { resumeChecksumCalculation(); },
+        startChecksums);
+    contentLayout->addWidget(m_checksumOperation->widget());
+
+    auto checksumRow = [this](const QString &name, bool checked)
+    {
+        QLabel    *value    = nullptr;
+        QCheckBox *checkBox = nullptr;
+        auto *row = new PropertyRow(name, &value, m_checksumSectionBody, PropertyRow::Action::CopyValue, {},
+                                    &checkBox, checked);
+        m_checksumValues.insert(name, value);
+        if (checkBox)
+        {
+            m_checksumChecks.insert(name, checkBox);
+            connect(checkBox, &QCheckBox::toggled, this, &FilePropertiesPanel::markChecksumAlgorithmsChanged);
+        }
+        return row;
+    };
+
+    auto *checksumCard = new SettingsCard(
+        {
+            checksumRow(QStringLiteral("SHA512"),  false),
+            checksumRow(QStringLiteral("SHA256"),  true),
+            checksumRow(QStringLiteral("SHA1"),    false),
+            checksumRow(QStringLiteral("MD5"),     true),
+            checksumRow(QStringLiteral("CRC32"),   false),
+            checksumRow(QStringLiteral("CRC32C"),  false),
+            checksumRow(QStringLiteral("CRC16"),   false),
+        },
+        SettingsCard::Style::Spaced, m_checksumSectionBody);
+    checksumCard->setMinimumWidth(0);
+    checksumBodyLayout->addWidget(checksumCard);
+    contentLayout->addWidget(m_checksumSectionBody);
+
+    registerPanelSection({
+        SectionId::Checksums,
+        tr("Checksums"),
+        m_checksumHeader,
+        m_checksumSectionBody,
+        m_checksumHeaderGap,
+        m_checksumOperation,
+        nullptr,
+        0,
+        [this]() { maybeStartChecksumCalculation(); },
+        [this](bool collapsed)
+        {
+            if (m_checksumState.pause && m_checksumState.started)
+            {
+                if (collapsed)
+                {
+                    m_checksumState.pausedByCollapse = true;
+                    m_checksumState.pause->setPaused(true);
+                    const QStringList    algorithms = selectedChecksumAlgorithms();
+                    const QSet<QString> selected(algorithms.cbegin(), algorithms.cend());
+                    for (auto it = m_checksumValues.begin(); it != m_checksumValues.end(); ++it)
+                        if (selected.contains(it.key()))
+                            it.value()->setText(tr("Paused"));
+                }
+                else if (m_checksumState.pausedByCollapse && m_checksumOperation)
+                {
+                    m_checksumOperation->setProgressActionResume();
+                }
+            }
+            if (m_checksumState.started)
+                setChecksumProgressTitle(m_checksumState.progress);
+        },
+        [this](bool contentsChanged) { if (contentsChanged) markChecksumContentsChanged(); },
+        [this]() { resetChecksumForCurrentDocument(); },
+    });
 }

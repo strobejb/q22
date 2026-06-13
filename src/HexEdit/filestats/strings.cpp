@@ -2,11 +2,29 @@
 #include "filestats/stringscan.h"
 
 #include "HexView/hexview.h"
+#include "combos/menucombobox.h"
 #include "filestats/widgets.h"
 #include "settings/settingscard.h"
+#include "settings/settings.h"
+#include "theme.h"
 
 #include <QApplication>
 #include <QAction>
+#include <QActionGroup>
+#include <QCursor>
+#include <QEvent>
+#include <QFontMetrics>
+#include <QGridLayout>
+#include <QHBoxLayout>
+#include <QMenu>
+#include <QPainter>
+#include <QPoint>
+#include <QResizeEvent>
+#include <QScrollBar>
+#include <QSizePolicy>
+#include <QStyleOptionHeader>
+#include <QTimer>
+#include <QVBoxLayout>
 #include <QBrush>
 #include <QElapsedTimer>
 #include <QComboBox>
@@ -59,6 +77,141 @@ public:
                    < other.data(0, Qt::UserRole).toULongLong();
 
         return QString::localeAwareCompare(text(column), other.text(column)) < 0;
+    }
+};
+
+class StringsHeaderCorner : public QWidget
+{
+public:
+    explicit StringsHeaderCorner(QTreeWidget *tree) : QWidget(tree), m_tree(tree)
+    {
+        setAttribute(Qt::WA_TransparentForMouseEvents, false);
+        if (m_tree)
+        {
+            m_tree->installEventFilter(this);
+            if (m_tree->header())
+                m_tree->header()->installEventFilter(this);
+            if (m_tree->verticalScrollBar())
+                m_tree->verticalScrollBar()->installEventFilter(this);
+        }
+        updateGeometryFromTree();
+    }
+
+protected:
+    bool eventFilter(QObject *object, QEvent *event) override
+    {
+        Q_UNUSED(object)
+        switch (event->type())
+        {
+        case QEvent::Resize:
+        case QEvent::Show:
+        case QEvent::Hide:
+        case QEvent::LayoutRequest:
+            updateGeometryFromTree();
+            break;
+        default:
+            break;
+        }
+        return QWidget::eventFilter(object, event);
+    }
+
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.fillRect(rect(), palette().base());
+    }
+
+private:
+    void updateGeometryFromTree()
+    {
+        if (!m_tree || !m_tree->header())
+            return;
+        const int width = m_tree->verticalScrollBar()->width();
+        if (width <= 0 || m_tree->header()->isHidden() || !m_tree->verticalScrollBar()->isVisible())
+        {
+            hide();
+            return;
+        }
+        setGeometry(m_tree->width() - width, 0, width, m_tree->header()->height());
+        raise();
+        show();
+    }
+
+    QTreeWidget *m_tree = nullptr;
+};
+
+static constexpr int kStringsResultHeaderBottomGap = 3;
+
+class InlineSortHeader : public QHeaderView
+{
+public:
+    explicit InlineSortHeader(Qt::Orientation orientation, QWidget *parent = nullptr)
+        : QHeaderView(orientation, parent)
+    {
+        setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    }
+
+protected:
+    void paintSection(QPainter *painter, const QRect &rect, int logicalIndex) const override
+    {
+        if (!painter || !rect.isValid())
+            return;
+
+        painter->save();
+        painter->fillRect(rect, palette().base());
+        QFont headerFont = font();
+        if (headerFont.pointSizeF() > 0)
+            headerFont.setPointSizeF(qMax(1.0, headerFont.pointSizeF() - 1.0));
+        else if (headerFont.pixelSize() > 0)
+            headerFont.setPixelSize(qMax(1, headerFont.pixelSize() - 1));
+        headerFont.setWeight(QFont::DemiBold);
+        const QFontMetrics headerMetrics(headerFont);
+        painter->setFont(headerFont);
+
+        QStyleOptionHeader opt;
+        initStyleOption(&opt);
+        initStyleOptionForIndex(&opt, logicalIndex);
+        opt.rect              = rect.adjusted(0, 0, 0, -kStringsResultHeaderBottomGap);
+        opt.fontMetrics       = QFontMetrics(headerFont);
+        const QPoint localPos = mapFromGlobal(QCursor::pos());
+        const bool   hovered  = rect.contains(localPos);
+        if (hovered)
+        {
+            opt.state |= QStyle::State_MouseOver;
+            opt.palette.setColor(QPalette::Button, palette().button().color());
+            opt.palette.setColor(QPalette::Window, palette().button().color());
+        }
+        else
+        {
+            opt.palette.setColor(QPalette::Button, palette().base().color());
+            opt.palette.setColor(QPalette::Window, palette().base().color());
+        }
+        const QColor headerTextColor = hovered ? palette().windowText().color() : stringsHeaderTextColor(palette());
+        opt.palette.setColor(QPalette::ButtonText, headerTextColor);
+        opt.palette.setColor(QPalette::WindowText, headerTextColor);
+        const QString text = opt.text;
+        opt.text.clear();
+        opt.sortIndicator = QStyleOptionHeader::None;
+        style()->drawControl(QStyle::CE_Header, &opt, painter, this);
+
+        const int     kTextPadding = stringsHeaderPadding(headerMetrics);
+        constexpr int kIconGap     = 4;
+        constexpr int kIconSize    = 10;
+        const QRect   textRect     = opt.rect.adjusted(kTextPadding, kTextPadding, -kTextPadding, -kTextPadding);
+        painter->setPen(headerTextColor);
+        painter->drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter, text);
+
+        if (logicalIndex == sortIndicatorSection())
+        {
+            const int     textWidth = painter->fontMetrics().horizontalAdvance(text);
+            const int     x         = qMin(textRect.left() + textWidth + kIconGap, textRect.right() - kIconSize + 1);
+            const QRect   iconRect(x, textRect.top() + (textRect.height() - kIconSize) / 2, kIconSize, kIconSize);
+            const QString iconName = sortIndicatorOrder() == Qt::AscendingOrder
+                                         ? QStringLiteral("ui/go-up-symbolic")
+                                         : QStringLiteral("ui/go-down-symbolic");
+            recoloredIcon(iconName, headerTextColor, kIconSize).paint(painter, iconRect);
+        }
+        painter->restore();
     }
 };
 
@@ -477,4 +630,411 @@ void FilePropertiesPanel::finishStringScan(int generation, const QVector<QVarian
         m_stringsOperation->clear();
     resetStringsTitle();
     requestSectionLayoutRefresh(SectionId::Strings);
+}
+
+void FilePropertiesPanel::buildStringsSection(QWidget *parent, QVBoxLayout *contentLayout)
+{
+    m_stringsHeader = new SectionHeader(tr("Strings"), parent);
+    m_stringsHeader->setClickedCallback(
+        [this]() { setSectionCollapsed(SectionId::Strings, !isSectionCollapsed(SectionId::Strings)); });
+    contentLayout->addWidget(m_stringsHeader);
+    m_stringsHeader->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_stringsHeaderGap = new QSpacerItem(0, kHeaderControlGap, QSizePolicy::Minimum, QSizePolicy::Fixed);
+    contentLayout->addSpacerItem(m_stringsHeaderGap);
+
+    m_stringsSectionBody = new QWidget(parent);
+    m_stringsSectionBody->setMinimumWidth(0);
+    auto *stringsBodyLayout = new QVBoxLayout(m_stringsSectionBody);
+    stringsBodyLayout->setContentsMargins(kSectionHeaderOuterMargin + kCardLeftInset, 0,
+                                          kSectionHeaderOuterMargin + kCardScrollbarInset, 0);
+    stringsBodyLayout->setSpacing(0);
+
+    auto startStrings = [this]()
+    {
+        if (m_stringsState.started)
+            return;
+        m_stringsState.started = true;
+        startStringScan();
+    };
+    m_stringsOperation = new SectionOperationStrip(
+        parent, startStrings,
+        [this]() { cancelStringScan(); },
+        [this]() { resumeStringScan(); },
+        [this, startStrings]()
+        {
+            if (m_stringsListFrame)
+                m_stringsListFrame->clearList();
+            startStrings();
+        });
+
+    auto *stringsControlsStack       = new QWidget(m_stringsSectionBody);
+    auto *stringsControlsStackLayout = new QVBoxLayout(stringsControlsStack);
+    stringsControlsStackLayout->setContentsMargins(kSettingsCardShadowInset, 0, kSettingsCardShadowInset, 0);
+    stringsControlsStackLayout->setSpacing(0);
+
+    auto *stringsOptionsMenu = new QMenu(this);
+    themeMenu(stringsOptionsMenu);
+    m_includeWhitespaceAction = stringsOptionsMenu->addAction(tr("Include whitespace"));
+    m_includeWhitespaceAction->setCheckable(true);
+    m_includeWhitespaceAction->setChecked(true);
+    stringsOptionsMenu->addSeparator();
+    m_prefixHexOffsetAction = stringsOptionsMenu->addAction(tr("Prefix hex offset"));
+    m_prefixHexOffsetAction->setCheckable(true);
+    m_prefixHexOffsetAction->setChecked(false);
+
+    m_stringOptionsButton = new QToolButton(m_stringsSectionBody);
+    m_stringOptionsButton->setFixedSize(28, 28);
+    m_stringOptionsButton->setFocusPolicy(Qt::TabFocus);
+    m_stringOptionsButton->setToolTip(tr("String options"));
+    m_stringOptionsButton->setAutoRaise(true);
+    m_stringOptionsButton->setPopupMode(QToolButton::InstantPopup);
+    m_stringOptionsButton->setProperty("iconThemeName", QStringLiteral("permissions"));
+    m_stringOptionsButton->setProperty("iconSize", 16);
+    m_stringOptionsButton->setIconSize(QSize(16, 16));
+    m_stringOptionsButton->setIcon(
+        recoloredIcon(QStringLiteral("permissions"), palette().buttonText().color(), 16));
+    {
+        const bool    dark    = QApplication::palette().window().color().lightness() < 128;
+        const QString hover   = dark ? QStringLiteral("rgba(255,255,255,0.15)") : QStringLiteral("rgba(0,0,0,0.10)");
+        const QString pressed = dark ? QStringLiteral("rgba(255,255,255,0.25)") : QStringLiteral("rgba(0,0,0,0.18)");
+        m_stringOptionsButton->setStyleSheet(QStringLiteral(R"(
+            QToolButton {
+                border: none;
+                border-radius: 6px;
+                background: transparent;
+            }
+            QToolButton:hover { background: %1; }
+            QToolButton:focus { border: 2px solid palette(highlight); }
+            QToolButton:pressed { background: %2; }
+            QToolButton::menu-indicator { image: none; width: 0; }
+        )").arg(hover, pressed));
+    }
+
+    m_stringEncoding = new MenuComboBox(m_stringsSectionBody);
+    m_stringEncoding->addItem(tr("Printable ASCII"), QStringLiteral("[ -~]"));
+    m_stringEncoding->addItem(tr("Alphanumeric"),    QStringLiteral("[A-Za-z0-9]"));
+    m_stringEncoding->addItem(tr("ASCII text"),      QStringLiteral("[\\t -~]"));
+    m_stringEncoding->addItem(tr("C identifiers"),   QStringLiteral("[A-Za-z_][A-Za-z0-9_]*\\0"));
+    m_stringEncoding->setCurrentIndex(1);
+    m_stringEncoding->setFocusPolicy(Qt::StrongFocus);
+    m_stringEncoding->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    m_stringEncoding->setFixedHeight(qMax(24, m_stringEncoding->sizeHint().height() - 4));
+    m_stringEncoding->setToolTip(tr("Character filter"));
+
+    m_minStringLength = new StepSpinBox(tr("Min:"), 3, 128, 1, m_stringsSectionBody);
+    m_minStringLength->setValue(5);
+    m_minStringLength->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_minStringLength->setLabelAlignment(Qt::AlignRight);
+    m_minStringLength->setLabelValueSpacing(4);
+    m_minStringLength->setValueBold(true);
+
+    auto *stringsControls       = new QWidget(m_stringsSectionBody);
+    auto *stringsControlsLayout = new QHBoxLayout(stringsControls);
+    stringsControlsLayout->setContentsMargins(0, 0, 0, 0);
+    stringsControlsLayout->setSpacing(kContentMargin + 6);
+    stringsControlsLayout->addWidget(m_stringOptionsButton, 0, Qt::AlignVCenter);
+    stringsControlsLayout->addWidget(m_stringEncoding, 0, Qt::AlignVCenter);
+    stringsControlsLayout->addStretch(1);
+    stringsControlsLayout->addWidget(m_minStringLength, 0);
+    stringsControlsStackLayout->addWidget(stringsControls);
+    stringsControlsStackLayout->addSpacing(kHeaderControlGap + 4);
+    stringsControlsStackLayout->addWidget(m_stringsOperation->widget());
+    stringsControlsStackLayout->addSpacing(kHeaderControlGap + 4);
+
+    m_stringsListFrame = new StringListFrame(m_stringsSectionBody);
+    m_stringsListFrame->setObjectName(QStringLiteral("stringsListFrame"));
+    m_stringsListFrame->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_stringsListFrame->setFixedHeight(kStringsListMinHeight);
+    m_stringsListFrame->setStyleSheet(QStringLiteral(R"(
+        QFrame#stringsListFrame {
+            background: palette(base);
+            border: 1px solid palette(mid);
+            border-radius: 6px;
+        }
+    )"));
+
+    m_stringsList = new QTreeWidget(m_stringsListFrame);
+    m_stringsList->setHeader(new InlineSortHeader(Qt::Horizontal, m_stringsList));
+    m_stringsList->setProperty("filePropertiesStringsList", true);
+    m_stringsList->setMinimumSize(0, 0);
+    m_stringsList->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
+    m_stringsList->setColumnCount(2);
+    m_stringsList->setHeaderLabels({tr("String"), tr("Offset")});
+    m_stringsList->setHeaderHidden(false);
+    m_stringsList->setRootIsDecorated(false);
+    m_stringsList->setAlternatingRowColors(false);
+    m_stringsList->setUniformRowHeights(true);
+    m_stringsList->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_stringsList->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_stringsList->header()->setStretchLastSection(false);
+    m_stringsList->header()->setSortIndicatorShown(true);
+    {
+        QFont headerFont = m_stringsList->header()->font();
+        if (headerFont.pointSizeF() > 0)
+            headerFont.setPointSizeF(qMax(1.0, headerFont.pointSizeF() - 1.0));
+        else if (headerFont.pixelSize() > 0)
+            headerFont.setPixelSize(qMax(1, headerFont.pixelSize() - 1));
+        headerFont.setWeight(QFont::DemiBold);
+        const QFontMetrics headerMetrics(headerFont);
+        const int          headerPad             = stringsHeaderPadding(headerMetrics);
+        constexpr int      kStringsItemCellInset = 3;
+        const int          stringsItemLeftPad    = qMax(0, headerPad - kStringsItemCellInset);
+        const int          headerHeight =
+            headerMetrics.height() + 2 * headerPad + kStringsResultHeaderBottomGap;
+        m_stringsList->header()->setFixedHeight(headerHeight);
+        m_stringsList->setStyleSheet(
+            QStringLiteral(
+                "QTreeWidget[filePropertiesStringsList=true]::item { padding: 3px 6px 3px %1px; }")
+                .arg(stringsItemLeftPad));
+    }
+    m_stringsList->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    m_stringsList->header()->setSectionResizeMode(1, QHeaderView::Fixed);
+    m_stringsList->setSortingEnabled(true);
+    m_stringsList->header()->setSortIndicator(1, Qt::AscendingOrder);
+    new StringsHeaderCorner(m_stringsList);
+    updateStringsOffsetColumnWidth();
+
+    m_stringsListFrame->setListWidget(m_stringsList);
+    stringsControlsStackLayout->addWidget(m_stringsListFrame);
+
+    // Status bar: label + Next/All/Export buttons
+    m_stringsStatusRow        = new QWidget(m_stringsSectionBody);
+    auto *stringsStatusLayout = new QGridLayout(m_stringsStatusRow);
+    stringsStatusLayout->setContentsMargins(6, 6, 6, 2);
+    stringsStatusLayout->setHorizontalSpacing(8);
+    stringsStatusLayout->setVerticalSpacing(0);
+    m_stringsStatusLabel = new QLabel(m_stringsStatusRow);
+    m_stringsStatusLabel->setWordWrap(true);
+    m_stringsStatusLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    {
+        QFont statusFont = m_stringsStatusLabel->font();
+        if (statusFont.pointSizeF() > 0)
+            statusFont.setPointSizeF(qMax(1.0, statusFont.pointSizeF() - 1.0));
+        else if (statusFont.pixelSize() > 0)
+            statusFont.setPixelSize(qMax(1, statusFont.pixelSize() - 1));
+        m_stringsStatusLabel->setFont(statusFont);
+        m_stringsStatusLabel->setStyleSheet(
+            QStringLiteral("color: %1;").arg(cssColor(subduedTextColor(palette()))));
+    }
+    m_stringsProgressLabel = new QLabel(m_stringsStatusRow);
+    {
+        QFont progressFont = m_stringsProgressLabel->font();
+        if (progressFont.pointSizeF() > 0)
+            progressFont.setPointSizeF(qMax(1.0, progressFont.pointSizeF() - 1.0));
+        else if (progressFont.pixelSize() > 0)
+            progressFont.setPixelSize(qMax(1, progressFont.pixelSize() - 1));
+        m_stringsProgressLabel->setFont(progressFont);
+        m_stringsProgressLabel->setStyleSheet(
+            QStringLiteral("color: %1;").arg(cssColor(subduedTextColor(palette()))));
+    }
+
+    static constexpr int kStringsFooterButtonSize = 24;
+    m_stringsNextButton = new QPushButton(m_stringsStatusRow);
+    m_stringsNextButton->setFlat(false);
+    m_stringsNextButton->setCursor(Qt::PointingHandCursor);
+    m_stringsNextButton->setToolTip(tr("Next"));
+    m_stringsNextButton->setFixedSize(kStringsFooterButtonSize, kStringsFooterButtonSize);
+    m_stringsNextButton->setIcon(
+        recoloredIcon(QStringLiteral("ui/go-next-symbolic"), palette().buttonText().color(), 12));
+    m_stringsNextButton->setIconSize(QSize(12, 12));
+
+    m_stringsAllButton = new QPushButton(m_stringsStatusRow);
+    m_stringsAllButton->setFlat(false);
+    m_stringsAllButton->setCursor(Qt::PointingHandCursor);
+    m_stringsAllButton->setToolTip(tr("Complete scan to end of file"));
+    m_stringsAllButton->setFixedSize(kStringsFooterButtonSize, kStringsFooterButtonSize);
+    m_stringsAllButton->setIcon(
+        recoloredIcon(QStringLiteral("actions/go-last-symbolic"), palette().buttonText().color(), 12));
+    m_stringsAllButton->setIconSize(QSize(12, 12));
+
+    m_stringsExportButton = new QPushButton(m_stringsStatusRow);
+    m_stringsExportButton->setFlat(false);
+    m_stringsExportButton->setCursor(Qt::PointingHandCursor);
+    m_stringsExportButton->setToolTip(tr("Export results"));
+    m_stringsExportButton->setFixedSize(kStringsFooterButtonSize, kStringsFooterButtonSize);
+    m_stringsExportButton->setIcon(
+        recoloredIcon(QStringLiteral("actions/downloads"), palette().buttonText().color(), 12));
+    m_stringsExportButton->setIconSize(QSize(12, 12));
+
+    {
+        const QColor nextBg       = palette().button().color();
+        const bool   nextDark     = palette().window().color().lightness() < 128;
+        auto         overlayColor = [](const QColor &base, const QColor &overlay, int alpha)
+        {
+            const int inv = 255 - alpha;
+            return QColor((base.red() * inv + overlay.red() * alpha) / 255,
+                          (base.green() * inv + overlay.green() * alpha) / 255,
+                          (base.blue() * inv + overlay.blue() * alpha) / 255);
+        };
+        const QColor nextHover    = nextDark ? overlayColor(nextBg, QColor(255, 255, 255), 30)
+                                             : overlayColor(nextBg, QColor(0, 0, 0), 22);
+        const QColor nextPressed  = palette().mid().color();
+        const QColor nextBorder   = palette().mid().color();
+        const QString stringsFooterButtonStyle =
+            QStringLiteral(R"(
+            QPushButton {
+                border: 1px solid %1;
+                border-radius: 6px;
+                min-width: %6px;
+                max-width: %6px;
+                min-height: %6px;
+                max-height: %6px;
+                padding: 0px;
+                color: %2;
+                background: %3;
+            }
+            QPushButton:hover    { background: %4; }
+            QPushButton:pressed  { background: %5; }
+        )")
+                .arg(cssColor(nextBorder), cssColor(palette().buttonText().color()), cssColor(nextBg),
+                     cssColor(nextHover), cssColor(nextPressed), QString::number(kStringsFooterButtonSize));
+        m_stringsNextButton->setStyleSheet(stringsFooterButtonStyle);
+        m_stringsAllButton->setStyleSheet(stringsFooterButtonStyle);
+        m_stringsExportButton->setStyleSheet(stringsFooterButtonStyle);
+    }
+
+    stringsStatusLayout->addWidget(m_stringsStatusLabel,   0, 0, Qt::AlignVCenter);
+    stringsStatusLayout->addWidget(m_stringsNextButton,    0, 1, Qt::AlignVCenter);
+    stringsStatusLayout->addWidget(m_stringsAllButton,     0, 2, Qt::AlignVCenter);
+    stringsStatusLayout->addWidget(m_stringsExportButton,  0, 3, Qt::AlignVCenter);
+    stringsStatusLayout->addWidget(m_stringsProgressLabel, 1, 0);
+    stringsStatusLayout->setColumnStretch(0, 1);
+    m_stringsStatusRow->hide();
+
+    auto *stringsResizeWrap   = new QWidget(m_stringsSectionBody);
+    auto *stringsResizeLayout = new QVBoxLayout(stringsResizeWrap);
+    stringsResizeLayout->setContentsMargins(0, 0, 0, 0);
+    stringsResizeLayout->setSpacing(0);
+    m_stringsResizeHandle = new VerticalResizeHandle(
+        [this](int dy) { resizeSection(SectionId::Strings, dy); }, stringsResizeWrap);
+    stringsResizeLayout->addWidget(m_stringsResizeHandle);
+    stringsResizeLayout->setAlignment(m_stringsResizeHandle, Qt::AlignTop);
+    stringsControlsStackLayout->addWidget(stringsResizeWrap);
+    stringsControlsStackLayout->addWidget(m_stringsStatusRow);
+    stringsControlsStackLayout->addSpacing(2 * kStringsFooterButtonSize / 3);
+    stringsBodyLayout->addWidget(stringsControlsStack);
+    contentLayout->addWidget(m_stringsSectionBody);
+
+    registerPanelSection({
+        SectionId::Strings,
+        tr("Strings"),
+        m_stringsHeader,
+        m_stringsSectionBody,
+        m_stringsHeaderGap,
+        nullptr,
+        m_stringsListFrame,
+        kStringsListMinHeight,
+        [this]() { maybeStartStringScan(); },
+        [this](bool collapsed)
+        {
+            if (m_stringsState.pause && m_stringsState.started)
+            {
+                if (collapsed)
+                {
+                    m_stringsState.pausedByCollapse = true;
+                    m_stringsState.pause->setPaused(true);
+                }
+                else if (m_stringsState.pausedByCollapse && m_stringsOperation)
+                {
+                    m_stringsOperation->setProgressActionResume();
+                }
+            }
+            if (m_stringsState.started)
+                setStringsProgressTitle(m_stringsState.progress);
+        },
+        [this](bool contentsChanged) { if (contentsChanged) markStringsContentsChanged(); },
+        [this]() { resetStringsForCurrentDocument(); },
+    });
+
+    // Signal connections for strings controls
+    auto markStringsOptionsChanged = [this]()
+    {
+        m_stringsState.started          = false;
+        m_stringsState.pausedByCollapse = false;
+        ++m_stringsState.generation;
+        if (m_stringsState.cancel)
+            m_stringsState.cancel->store(true);
+        if (m_stringsState.pause)
+            m_stringsState.pause->wake();
+        m_stringMoreAvailable         = false;
+        m_stringsState.rescanRequired = true;
+        m_stringsState.rescanMessage  = tr("Options changed");
+        m_stringNextOffset            = 0;
+        clearStringExportTemp();
+        if (m_stringsListFrame)
+            m_stringsListFrame->clearList();
+        if (m_stringsStatusRow)
+            m_stringsStatusRow->hide();
+        if (m_stringsOperation)
+            m_stringsOperation->showRescan(m_stringsState.rescanMessage);
+        requestSectionLayoutRefresh(SectionId::Strings);
+    };
+    connect(m_minStringLength, &StepSpinBox::valueChanged, this,
+            [markStringsOptionsChanged](int) { markStringsOptionsChanged(); });
+    connect(m_stringEncoding, &QComboBox::currentIndexChanged, this,
+            [markStringsOptionsChanged](int) { markStringsOptionsChanged(); });
+    connect(m_includeWhitespaceAction, &QAction::toggled, this,
+            [markStringsOptionsChanged](bool) { markStringsOptionsChanged(); });
+    connect(m_prefixHexOffsetAction, &QAction::toggled, this,
+            [markStringsOptionsChanged](bool) { markStringsOptionsChanged(); });
+
+    connect(m_stringOptionsButton, &QToolButton::clicked, this,
+            [this, stringsOptionsMenu]()
+            {
+                if (stringsOptionsMenu->isVisible())
+                {
+                    stringsOptionsMenu->hide();
+                    return;
+                }
+                const QPoint cur            = QCursor::pos();
+                const bool   same           = (m_stringOptionsMenuClosePos == cur);
+                m_stringOptionsMenuClosePos = {-1, -1};
+                if (same)
+                    return;
+                connect(
+                    stringsOptionsMenu, &QMenu::aboutToHide, this,
+                    [this]() { m_stringOptionsMenuClosePos = QCursor::pos(); },
+                    Qt::SingleShotConnection);
+                stringsOptionsMenu->popup(smartMenuPos(m_stringOptionsButton, stringsOptionsMenu));
+            });
+    connect(m_stringsNextButton, &QPushButton::clicked, this,
+            [this]()
+            {
+                if (m_stringsState.started || !m_stringMoreAvailable)
+                    return;
+                m_stringsState.started = true;
+                startStringScan(m_stringNextOffset, true);
+            });
+    connect(m_stringsAllButton, &QPushButton::clicked, this,
+            [this]()
+            {
+                if (m_stringsState.started || !m_stringMoreAvailable)
+                    return;
+                m_stringsState.started = true;
+                startStringScan(m_stringNextOffset, true, true);
+            });
+    connect(m_stringsExportButton, &QPushButton::clicked, this,
+            &FilePropertiesPanel::exportStringResults);
+    connect(m_stringsList, &QTreeWidget::itemClicked, this,
+            [this](QTreeWidgetItem *item, int)
+            {
+                if (!item || !m_hexView || item->data(0, kStringFooterRole).toBool())
+                    return;
+                const size_w offset = static_cast<size_w>(item->data(0, Qt::UserRole).toULongLong());
+                const size_w length = static_cast<size_w>(item->data(0, Qt::UserRole + 1).toULongLong());
+                m_hexView->scrollCenterIfOffScreen(offset, length);
+                m_hexView->setCurSel(offset, qMin(offset + length, m_hexView->size()));
+                m_hexView->setFocus();
+            });
+    connect(m_stringsList, &QTreeWidget::itemActivated, this,
+            [this](QTreeWidgetItem *item, int)
+            {
+                if (!item || !m_hexView || item->data(0, kStringFooterRole).toBool())
+                    return;
+                const size_w offset = static_cast<size_w>(item->data(0, Qt::UserRole).toULongLong());
+                const size_w length = static_cast<size_w>(item->data(0, Qt::UserRole + 1).toULongLong());
+                m_hexView->scrollCenterIfOffScreen(offset, length);
+                m_hexView->setCurSel(offset, qMin(offset + length, m_hexView->size()));
+                m_hexView->setFocus();
+            });
 }

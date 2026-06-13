@@ -2,13 +2,19 @@
 
 #include "HexView/hexview.h"
 #include "filestats/widgets.h"
+#include "settings/settingscard.h"
 
+#include <QDesktopServices>
 #include <QFileInfo>
 #include <QLabel>
 #include <QLocale>
 #include <QProgressBar>
 #include <QToolButton>
 #include <QTreeWidget>
+#include <QUrl>
+#include <QVBoxLayout>
+
+using namespace filestats;
 
 QString FilePropertiesPanel::formatSize(qulonglong bytes)
 {
@@ -136,4 +142,50 @@ void FilePropertiesPanel::resetStringsForCurrentDocument()
     else if (m_stringsList)
         m_stringsList->clear();
     requestSectionLayoutRefresh(SectionId::Strings);
+}
+
+void FilePropertiesPanel::buildPropertiesSection(QWidget *parent, QVBoxLayout *contentLayout)
+{
+    m_fileHeader = new SectionHeader(tr("File Information"), parent);
+    m_fileHeader->setClickedCallback(
+        [this]() { setSectionCollapsed(SectionId::Properties, !isSectionCollapsed(SectionId::Properties)); });
+    contentLayout->addWidget(m_fileHeader);
+    m_fileHeader->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_fileHeaderGap = new QSpacerItem(0, kHeaderControlGap, QSizePolicy::Minimum, QSizePolicy::Fixed);
+    contentLayout->addSpacerItem(m_fileHeaderGap);
+
+    m_fileSectionBody = new QWidget(parent);
+    m_fileSectionBody->setMinimumWidth(0);
+    auto *fileBodyLayout = new QVBoxLayout(m_fileSectionBody);
+    fileBodyLayout->setContentsMargins(kSectionHeaderOuterMargin + kCardLeftInset, 0,
+                                       kSectionHeaderOuterMargin + kCardScrollbarInset, 0);
+    fileBodyLayout->setSpacing(0);
+
+    auto *card = new SettingsCard(
+        {
+            new PropertyRow(tr("Name"), &m_nameValue, m_fileSectionBody),
+            new PropertyRow(tr("Location"), &m_locationValue, m_fileSectionBody, PropertyRow::Action::OpenExternal,
+                            [this]()
+                            {
+                                if (!m_hexView)
+                                    return;
+                                const QString path = m_hexView->filePath();
+                                if (!path.isEmpty())
+                                    QDesktopServices::openUrl(
+                                        QUrl::fromLocalFile(QFileInfo(path).absolutePath()));
+                            }),
+            new PropertyRow(tr("Size"), &m_sizeValue, m_fileSectionBody),
+        },
+        SettingsCard::Style::Spaced, m_fileSectionBody);
+    card->setMinimumWidth(0);
+    fileBodyLayout->addWidget(card);
+    contentLayout->addWidget(m_fileSectionBody);
+
+    registerPanelSection({
+        SectionId::Properties,
+        tr("File Information"),
+        m_fileHeader,
+        m_fileSectionBody,
+        m_fileHeaderGap,
+    });
 }

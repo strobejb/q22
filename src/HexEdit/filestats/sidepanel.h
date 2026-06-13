@@ -32,6 +32,7 @@ class QToolButton;
 class QTimer;
 class QTreeWidget;
 class StepSpinBox;
+class QVBoxLayout;
 class QWidget;
 
 namespace filestats
@@ -315,6 +316,10 @@ class FilePropertiesPanel : public QDialog
     QAction                          *m_bcSchemeBitDensAction    = nullptr;
     QAction                          *m_bcSchemeNibbleAction     = nullptr;
     QToolButton                      *m_entropyRotateButton = nullptr;
+    void   buildPropertiesSection(QWidget *parent, QVBoxLayout *contentLayout);
+    void   buildChecksumSection(QWidget *parent, QVBoxLayout *contentLayout);
+    void   buildStringsSection(QWidget *parent, QVBoxLayout *contentLayout);
+    void   buildEntropySection(QWidget *parent, QVBoxLayout *contentLayout);
     void   triggerParamRescan(const QString &message);
     qint64 m_entropyScanStartMs = 0;
     qint64 m_entropyLastScanMs  = -1;
