@@ -1078,6 +1078,42 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
 
     for (SectionId s : m_sectionOrder)
     {
+        PanelSection *ps = sectionFor(s);
+        if (ps && ps->header)
+        {
+            if (ps->resize.target)
+            {
+                ps->header->setDoubleClickCallback(
+                    [this, s]()
+                    {
+                        if (AppSettings::prefSectionHeaderDoubleClick())
+                            toggleSectionFullExpand(s);
+                    });
+            }
+            else
+            {
+                ps->header->setDoubleClickCallback(
+                    [this, s]()
+                    {
+                        if (!AppSettings::prefSectionHeaderDoubleClick())
+                            return;
+                        QTimer::singleShot(0, this,
+                                           [this, s]()
+                                           {
+                                               PanelSection *sec = sectionFor(s);
+                                               if (!sec || !sec->header || !m_scrollArea || !m_content
+                                                   || sec->collapsed)
+                                                   return;
+                                               const int y = sec->header->mapTo(m_content, QPoint(0, 0)).y();
+                                               ++m_programmaticScrollDepth;
+                                               m_scrollArea->verticalScrollBar()->setValue(
+                                                   qMax(0, y - kContentMargin));
+                                               QTimer::singleShot(
+                                                   0, this, [this] { --m_programmaticScrollDepth; });
+                                           });
+                    });
+            }
+        }
         sectionFor(s)->header->setDragCallbacks(
             [this, s](QPoint p)
             {

@@ -86,6 +86,9 @@ void    setPrefBookmarkNested(bool on);
 bool    prefBookmarkSelectionHighlights(); // true = activating a bookmark selects its byte range (default true)
 void    setPrefBookmarkSelectionHighlights(bool on);
 
+bool    prefSectionHeaderDoubleClick();    // true = double-click section header triggers expand/scroll-to-top
+void    setPrefSectionHeaderDoubleClick(bool on);
+
 } // namespace AppSettings
 
 #endif // SETTINGS_H

@@ -287,6 +287,13 @@ void SectionHeader::mouseReleaseEvent(QMouseEvent *event)
     QWidget::mouseReleaseEvent(event);
 }
 
+void SectionHeader::mouseDoubleClickEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton && !m_dragging && m_doubleClicked)
+        m_doubleClicked();
+    QWidget::mouseDoubleClickEvent(event);
+}
+
 void SectionHeader::paintEvent(QPaintEvent *event)
 {
     Q_UNUSED(event);

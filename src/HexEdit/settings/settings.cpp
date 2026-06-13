@@ -370,3 +370,15 @@ void AppSettings::setPrefBookmarkSelectionHighlights(bool on)
     OPEN_SETTINGS;
     s.setValue("bookmarks/selectionHighlights", on);
 }
+
+bool AppSettings::prefSectionHeaderDoubleClick()
+{
+    OPEN_SETTINGS;
+    return s.value("sidepanel/headerDoubleClick", true).toBool();
+}
+
+void AppSettings::setPrefSectionHeaderDoubleClick(bool on)
+{
+    OPEN_SETTINGS;
+    s.setValue("sidepanel/headerDoubleClick", on);
+}

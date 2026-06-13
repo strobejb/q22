@@ -99,6 +99,7 @@ class SectionHeader : public QWidget
     void setSectionExpanded(bool expanded) { m_sectionExpanded = expanded; updateChevronIcon(); update(); }
     void setExpandCallback(std::function<void()> callback) { m_expandCallback = std::move(callback); }
     void setClickedCallback(std::function<void()> callback) { m_clicked = std::move(callback); }
+    void setDoubleClickCallback(std::function<void()> callback) { m_doubleClicked = std::move(callback); }
     void setDragCallbacks(std::function<void(QPoint)> started, std::function<void(QPoint)> moved,
                           std::function<void(QPoint)> ended)
     {
@@ -116,6 +117,7 @@ class SectionHeader : public QWidget
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
+    void mouseDoubleClickEvent(QMouseEvent *event) override;
     void paintEvent(QPaintEvent *event) override;
 
   private:
@@ -128,6 +130,7 @@ class SectionHeader : public QWidget
     QLabel                     *m_icon = nullptr;
     std::function<void()>       m_clicked;
     std::function<void()>       m_expandCallback;
+    std::function<void()>       m_doubleClicked;
     std::function<void(QPoint)> m_dragStarted;
     std::function<void(QPoint)> m_dragMoved;
     std::function<void(QPoint)> m_dragEnded;
