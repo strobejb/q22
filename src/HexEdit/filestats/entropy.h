@@ -11,8 +11,9 @@ class QPaintEvent;
 namespace filestats
 {
 
-enum class BigramScale     { Log, Linear, Sqrt };
+enum class BigramScale      { Log, Linear, Sqrt };
 enum class HilbertColorMode { ByteClass, Magnitude, Entropy, Detail };
+enum class ByteClassScheme  { Semantic, AsciiRange, BitDensity, NibbleRange };
 
 class EntropyView : public QWidget
 {
@@ -27,6 +28,7 @@ public:
     void setHilbertData(const QVector<quint8> &bytes, qulonglong scopeSize, int sampleCount, int gridSide, qulonglong scopeStart = 0);
     void setGilbertData(const QVector<quint8> &bytes, qulonglong scopeSize, int sampleCount, qulonglong scopeStart = 0);
     void setHilbertColorMode(HilbertColorMode mode);
+    void setByteClassScheme(ByteClassScheme scheme);
     void clear();
     void setRotated(bool rotated);
     void setSelection(qulonglong start, qulonglong end);
@@ -35,8 +37,9 @@ public:
     const QVector<float>   &data()          const { return m_data; }
     const QVector<quint64> &bigramCounts()  const { return m_bigramCounts; }
     const QVector<float>   &byteClassData() const { return m_byteClassData; }
-    bool  isRotated()     const { return m_rotated; }
-    bool  hasSelection()  const { return m_hasSelection; }
+    bool             isRotated()       const { return m_rotated; }
+    bool             hasSelection()    const { return m_hasSelection; }
+    ByteClassScheme  byteClassScheme() const { return m_byteClassScheme; }
     bool  isBigram()    const { return m_isBigram; }
     bool  isByteClass() const { return m_isByteClass; }
     bool             isHilbert()       const { return m_isHilbert; }
@@ -94,6 +97,7 @@ private:
     bool             m_isHilbert          = false;
     bool             m_isGilbert          = false;
     HilbertColorMode m_hilbertColorMode   = HilbertColorMode::ByteClass;
+    ByteClassScheme  m_byteClassScheme    = ByteClassScheme::Semantic;
     BigramScale      m_bigramScale        = BigramScale::Log;
     qulonglong       m_selStart           = 0;
     qulonglong       m_selEnd             = 0;

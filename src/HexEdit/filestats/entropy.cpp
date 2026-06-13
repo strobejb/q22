@@ -5,6 +5,7 @@
 #include "theme.h"
 
 #include <QApplication>
+#include <QDateTime>
 #include <QFile>
 #include <QLabel>
 #include <QMetaObject>
@@ -439,13 +440,20 @@ qulonglong EntropyView::offsetForWidgetPos(int wx, int wy) const
     return m_scopeStart + withinScope;
 }
 
+void EntropyView::setByteClassScheme(ByteClassScheme scheme)
+{
+    m_byteClassScheme = scheme;
+    update();
+}
+
 float EntropyView::byteClassAvg(int classIdx) const
 {
-    const int n = m_byteClassData.size() / 4;
+    const int n          = m_byteClassData.size() / 16;
+    const int schemeBase = int(m_byteClassScheme) * 4;
     if (n == 0 || classIdx < 0 || classIdx > 3) return 0.0f;
     double sum = 0.0;
     for (int i = 0; i < n; ++i)
-        sum += double(m_byteClassData[i * 4 + classIdx]);
+        sum += double(m_byteClassData[i * 16 + schemeBase + classIdx]);
     return float(sum / n);
 }
 
@@ -607,17 +615,33 @@ void EntropyView::paintEvent(QPaintEvent *)
             return;
         }
 
-        // Display order: printable → whitespace → null → other/binary
-        // Data layout per window: [0]=null [1]=whitespace [2]=printable [3]=other
-        static const int kOrder[4] = {2, 1, 0, 3};
-        static const QColor kColors[4] = {
-            QColor(0x00, 0x50, 0xEE),   // printable  — blue-green
-            QColor(0x88, 0xFF, 0xFF),   // whitespace — white
-            QColor(0x00, 0x00, 0x00),   // null       — black
-            QColor(0xCC, 0x0,  0x30),   // other      — purple
-        };
+        // Per-scheme display: order[i] = class drawn at position i (bottom-first in rotated mode)
+        // colors[i] pairs with order[i]. Data layout: 16 floats/window [s0c0..c3, s1c0..c3, s2c0..c3, s3c0..c3]
+        // Shared palette — same as Hilbert/Gilbert ByteClass mode for visual consistency
+        static const QColor kNull (0x00, 0x00, 0x00);   // black      — null / zero / sparse / low
+        static const QColor kSpace(0x88, 0xFF, 0xFF);   // cyan       — whitespace / moderate-high
+        static const QColor kPrint(0x00, 0x50, 0xEE);   // blue       — printable / structured
+        static const QColor kOther(0xCC, 0x00, 0x30);   // red/purple — binary / high / dense
 
-        const int numW = m_byteClassData.size() / 4;
+        struct SchemeDisplay { int order[4]; QColor colors[4]; };
+        static const SchemeDisplay kSchemes[] = {
+            // Semantic     — class layout: [0]=null [1]=whitespace [2]=printable [3]=other
+            //   draw bottom→top: printable | whitespace | null | other
+            {{2,1,0,3}, {kPrint, kSpace, kNull, kOther}},
+            // ASCII Range  — class layout: [0]=control(00-1F) [1]=printable(20-7E) [2]=DEL(7F) [3]=high(80-FF)
+            //   draw bottom→top: printable | control | high | DEL
+            {{1,0,3,2}, {kPrint, kNull, kOther, kSpace}},
+            // Bit Density  — class layout: [0]=0-2 bits [1]=3-4 bits [2]=5-6 bits [3]=7-8 bits
+            //   draw bottom→top: sparse | med-lo | med-hi | dense
+            {{0,1,2,3}, {kNull, kPrint, kSpace, kOther}},
+            // Nibble Range — class layout: [0]=00-3F [1]=40-7F [2]=80-BF [3]=C0-FF
+            //   draw bottom→top: low | mid-lo | mid-hi | high
+            {{0,1,2,3}, {kNull, kPrint, kSpace, kOther}},
+        };
+        const SchemeDisplay &sd = kSchemes[int(m_byteClassScheme)];
+
+        const int numW       = m_byteClassData.size() / 16;
+        const int schemeBase = int(m_byteClassScheme) * 4;
 
         auto sampleClass = [&](int pos, int axisLen, int cls) -> float {
             if (numW <= 0 || axisLen <= 1) return 0.0f;
@@ -625,8 +649,8 @@ void EntropyView::paintEvent(QPaintEvent *)
             const int   lo   = qBound(0, int(fidx), numW - 1);
             const int   hi   = qMin(lo + 1, numW - 1);
             const float frac = fidx - float(lo);
-            return m_byteClassData[lo * 4 + cls] * (1.0f - frac)
-                 + m_byteClassData[hi * 4 + cls] * frac;
+            return m_byteClassData[lo * 16 + schemeBase + cls] * (1.0f - frac)
+                 + m_byteClassData[hi * 16 + schemeBase + cls] * frac;
         };
 
         if (!m_rotated)
@@ -637,12 +661,12 @@ void EntropyView::paintEvent(QPaintEvent *)
                 for (int i = 0; i < 4; ++i)
                 {
                     const int segH = (i < 3)
-                        ? qRound(sampleClass(x, w, kOrder[i]) * h)
+                        ? qRound(sampleClass(x, w, sd.order[i]) * h)
                         : y;
                     if (segH > 0)
                     {
                         y -= segH;
-                        p.fillRect(x, y, 1, segH, kColors[i]);
+                        p.fillRect(x, y, 1, segH, sd.colors[i]);
                     }
                 }
             }
@@ -655,10 +679,10 @@ void EntropyView::paintEvent(QPaintEvent *)
                 for (int i = 0; i < 4; ++i)
                 {
                     const int segW = (i < 3)
-                        ? qRound(sampleClass(y, h, kOrder[i]) * w)
+                        ? qRound(sampleClass(y, h, sd.order[i]) * w)
                         : (w - x);
                     if (segW > 0)
-                        p.fillRect(x, y, segW, 1, kColors[i]);
+                        p.fillRect(x, y, segW, 1, sd.colors[i]);
                     x += segW;
                 }
             }
@@ -1068,12 +1092,32 @@ static QVector<float> calculateByteClass(
     if (startOffset > 0)
         file.seek(static_cast<qint64>(startOffset));
 
+    // Build per-byte scheme lookup tables (256 entries each, computed once).
+    // Layout per window in results: 16 floats — [scheme0_c0..c3, scheme1_c0..c3, scheme2_c0..c3, scheme3_c0..c3]
+    // Scheme 0 — Semantic:    null | whitespace | printable ASCII | control+high
+    // Scheme 1 — ASCII Range: 0x00-0x1F control | 0x20-0x7E printable | 0x7F DEL | 0x80-0xFF high
+    // Scheme 2 — Bit Density: 0-2 bits set | 3-4 bits | 5-6 bits | 7-8 bits
+    // Scheme 3 — Nibble Range: 0x00-0x3F | 0x40-0x7F | 0x80-0xBF | 0xC0-0xFF
+    static const int kNumSchemes = 4;
+    uint8_t lut[kNumSchemes][256];
+    for (int b = 0; b < 256; ++b)
+    {
+        const auto u = static_cast<unsigned char>(b);
+        lut[0][b] = (u == 0x00) ? 0
+                  : (u == 0x09 || u == 0x0A || u == 0x0B || u == 0x0C || u == 0x0D || u == 0x20) ? 1
+                  : (u >= 0x21 && u <= 0x7E) ? 2 : 3;
+        lut[1][b] = (u < 0x20) ? 0 : (u <= 0x7E) ? 1 : (u == 0x7F) ? 2 : 3;
+        int bits = 0; for (int x = u; x; x &= x - 1) ++bits;
+        lut[2][b] = static_cast<uint8_t>(bits <= 2 ? 0 : bits <= 4 ? 1 : bits <= 6 ? 2 : 3);
+        lut[3][b] = (u < 0x40) ? 0 : (u < 0x80) ? 1 : (u < 0xC0) ? 2 : 3;
+    }
+
     const qint64 scanTotal = static_cast<qint64>(byteCount);
     qint64 scanned         = 0;
     int    lastProg        = -1;
     QVector<float> results;
     if (scanTotal > 0 && windowSize > 0)
-        results.reserve(4 * static_cast<int>(qMin((scanTotal + windowSize - 1) / windowSize, qint64(1 << 20))));
+        results.reserve(16 * static_cast<int>(qMin((scanTotal + windowSize - 1) / windowSize, qint64(1 << 20))));
 
     while (!cancelFlag->load() && scanned < scanTotal)
     {
@@ -1085,24 +1129,15 @@ static QVector<float> calculateByteClass(
         if (chunk.isEmpty())
             break;
 
-        // Buckets: [0]=null(0x00), [1]=whitespace(tab/LF/CR/space), [2]=printable(0x21-0x7E), [3]=other(control+high)
-        int counts[4] = {};
+        int counts[kNumSchemes][4] = {};
         for (unsigned char b : chunk)
-        {
-            if (b == 0x00)
-                ++counts[0];
-            else if (b == 0x09 || b == 0x0A || b == 0x0B || b == 0x0C || b == 0x0D || b == 0x20)
-                ++counts[1];
-            else if (b >= 0x21 && b <= 0x7E)
-                ++counts[2];
-            else
-                ++counts[3];
-        }
+            for (int s = 0; s < kNumSchemes; ++s)
+                ++counts[s][lut[s][b]];
+
         const float n = float(chunk.size());
-        results.append(counts[0] / n);
-        results.append(counts[1] / n);
-        results.append(counts[2] / n);
-        results.append(counts[3] / n);
+        for (int s = 0; s < kNumSchemes; ++s)
+            for (int c = 0; c < 4; ++c)
+                results.append(counts[s][c] / n);
 
         scanned += chunk.size();
         const int prog = (scanTotal > 0) ? int(1000LL * scanned / scanTotal) : 1000;
@@ -1116,8 +1151,8 @@ static QVector<float> calculateByteClass(
     if (cancelFlag->load())
         return {};
 
-    // 3-tap Gaussian smooth [0.25, 0.5, 0.25] per class along the window axis
-    const int nW = results.size() / 4;
+    // 3-tap Gaussian smooth [0.25, 0.5, 0.25] per value along the window axis
+    const int nW = results.size() / 16;
     if (nW >= 3)
     {
         QVector<float> smoothed(results.size());
@@ -1125,10 +1160,10 @@ static QVector<float> calculateByteClass(
         {
             const int prev = qMax(0, i - 1);
             const int next = qMin(nW - 1, i + 1);
-            for (int c = 0; c < 4; ++c)
-                smoothed[i * 4 + c] = 0.25f * results[prev * 4 + c]
-                                    + 0.50f * results[i    * 4 + c]
-                                    + 0.25f * results[next * 4 + c];
+            for (int v = 0; v < 16; ++v)
+                smoothed[i * 16 + v] = 0.25f * results[prev * 16 + v]
+                                     + 0.50f * results[i    * 16 + v]
+                                     + 0.25f * results[next * 16 + v];
         }
         results = std::move(smoothed);
     }
@@ -1245,7 +1280,11 @@ void FilePropertiesPanel::updateZoomButton()
     }
     else
     {
-        m_hilbertZoomButton->hide();
+        m_hilbertZoomButton->setIcon(recoloredIcon(QStringLiteral("actions/zoom-in"),
+                                                   palette().buttonText().color(), 16));
+        m_hilbertZoomButton->setToolTip(tr("Select a range in the map or hex view to zoom in"));
+        m_hilbertZoomButton->setEnabled(false);
+        m_hilbertZoomButton->show();
     }
 }
 
@@ -1287,6 +1326,7 @@ void FilePropertiesPanel::startEntropyAnalysis()
         return;
     }
 
+    m_entropyScanStartMs             = QDateTime::currentMSecsSinceEpoch();
     m_entropyState.autoStartConsumed = true;
     m_entropyState.rescanRequired    = false;
     m_entropyState.rescanMessage.clear();
@@ -1443,6 +1483,7 @@ void FilePropertiesPanel::applyEntropyResults(int generation, QVector<float> dat
 {
     if (generation != m_entropyState.generation)
         return;
+    m_entropyLastScanMs = QDateTime::currentMSecsSinceEpoch() - m_entropyScanStartMs;
     if (m_entropyView)
         m_entropyView->setData(data, scopeSize, windowSize, scopeStart);
     updateEntropyStatsLabel();
@@ -1457,6 +1498,7 @@ void FilePropertiesPanel::applyBigramResults(int generation, QVector<quint64> co
 {
     if (generation != m_entropyState.generation)
         return;
+    m_entropyLastScanMs = QDateTime::currentMSecsSinceEpoch() - m_entropyScanStartMs;
     if (m_entropyView)
         m_entropyView->setBigramData(counts, fileSize);
     updateEntropyStatsLabel();
@@ -1471,6 +1513,7 @@ void FilePropertiesPanel::applyByteClassResults(int generation, QVector<float> d
 {
     if (generation != m_entropyState.generation)
         return;
+    m_entropyLastScanMs = QDateTime::currentMSecsSinceEpoch() - m_entropyScanStartMs;
     if (m_entropyView)
         m_entropyView->setByteClassData(data, scopeSize, windowSize, scopeStart);
     updateEntropyStatsLabel();
@@ -1487,6 +1530,7 @@ void FilePropertiesPanel::applyHilbertResults(int generation, QVector<quint8> by
 {
     if (generation != m_entropyState.generation)
         return;
+    m_entropyLastScanMs = QDateTime::currentMSecsSinceEpoch() - m_entropyScanStartMs;
     if (m_entropyView)
         m_entropyView->setHilbertData(bytes, scopeSize, sampleCount, gridSide, scopeStart);
     updateEntropyStatsLabel();
@@ -1503,6 +1547,7 @@ void FilePropertiesPanel::applyGilbertResults(int generation, QVector<quint8> by
 {
     if (generation != m_entropyState.generation)
         return;
+    m_entropyLastScanMs = QDateTime::currentMSecsSinceEpoch() - m_entropyScanStartMs;
     if (m_entropyView)
         m_entropyView->setGilbertData(bytes, scopeSize, sampleCount, scopeStart);
     updateEntropyStatsLabel();
@@ -1515,6 +1560,7 @@ void FilePropertiesPanel::applyGilbertResults(int generation, QVector<quint8> by
 
 void FilePropertiesPanel::markEntropyContentsChanged()
 {
+    m_entropyLastScanMs             = -1;
     m_entropyState.started          = false;
     m_entropyState.pausedByCollapse = false;
     ++m_entropyState.generation;
@@ -1532,6 +1578,7 @@ void FilePropertiesPanel::markEntropyContentsChanged()
 
 void FilePropertiesPanel::resetEntropyForCurrentDocument()
 {
+    m_entropyLastScanMs              = -1;
     m_entropyState.started           = false;
     m_entropyState.pausedByCollapse  = false;
     m_entropyState.autoStartConsumed = false;
@@ -1540,14 +1587,43 @@ void FilePropertiesPanel::resetEntropyForCurrentDocument()
     if (m_entropyState.pause)  m_entropyState.pause->wake();
     if (m_entropyView)         m_entropyView->clear();
     if (m_entropyStatsLabel)   m_entropyStatsLabel->clear();
-    m_entropyState.rescanRequired = false;
-    m_entropyState.rescanMessage.clear();
-    if (m_entropyOperation)    m_entropyOperation->clear();
     m_entropyScopeStart  = 0;
     m_entropyScopeLength = 0;
     updateZoomButton();
     resetEntropyTitle();
+    m_entropyState.rescanRequired = true;
+    m_entropyState.rescanMessage  = tr("File changed");
+    if (m_entropyOperation)    m_entropyOperation->showRescan(m_entropyState.rescanMessage);
     requestSectionLayoutRefresh(SectionId::Entropy);
+}
+
+void FilePropertiesPanel::triggerParamRescan(const QString &message)
+{
+    static constexpr qint64 kAutoRescanThresholdMs = 5000;
+
+    if (m_entropyLastScanMs >= 0 && m_entropyLastScanMs < kAutoRescanThresholdMs)
+    {
+        // Last scan was fast enough — restart immediately without prompting
+        m_entropyState.started          = true;
+        m_entropyState.pausedByCollapse = false;
+        if (m_entropyView)       m_entropyView->clear();
+        if (m_entropyStatsLabel) m_entropyStatsLabel->clear();
+        startEntropyAnalysis();
+    }
+    else
+    {
+        m_entropyState.started          = false;
+        m_entropyState.pausedByCollapse = false;
+        ++m_entropyState.generation;
+        if (m_entropyState.cancel) m_entropyState.cancel->store(true);
+        if (m_entropyState.pause)  m_entropyState.pause->wake();
+        if (m_entropyView)         m_entropyView->clear();
+        if (m_entropyStatsLabel)   m_entropyStatsLabel->clear();
+        m_entropyState.rescanRequired = true;
+        m_entropyState.rescanMessage  = message;
+        if (m_entropyOperation)    m_entropyOperation->showRescan(message);
+        requestSectionLayoutRefresh(SectionId::Entropy);
+    }
 }
 
 void FilePropertiesPanel::setEntropyProgressTitle(int value)
@@ -1581,8 +1657,8 @@ void FilePropertiesPanel::updateEntropyStatsLabel()
         if (m_entropyScopeLength > 0)
             m_entropyStatsLabel->setText(
                 tr("Zoomed: 0x%1 – 0x%2")
-                    .arg(m_entropyScopeStart, 0, 16)
-                    .arg(m_entropyScopeStart + m_entropyScopeLength - 1, 0, 16));
+                    .arg(QString::number(m_entropyScopeStart, 16).toUpper())
+                    .arg(QString::number(m_entropyScopeStart + m_entropyScopeLength - 1, 16).toUpper()));
         else
             m_entropyStatsLabel->clear();
         return;
@@ -1592,27 +1668,32 @@ void FilePropertiesPanel::updateEntropyStatsLabel()
         if (m_entropyView->byteClassData().isEmpty())
         {
             m_entropyStatsLabel->clear();
+            return;
         }
-        else if (m_entropyScopeLength > 0)
-        {
+        // Class names vary by scheme; order matches byteClassAvg(0..3)
+        using BC = filestats::ByteClassScheme;
+        struct ClassNames { const char *c[4]; };
+        static const ClassNames kNames[] = {
+            {{"Null",    "Space",    "Printable", "Binary" }},  // Semantic
+            {{"Control", "Printable","DEL",       "High"   }},  // AsciiRange
+            {{"0-2 bits","3-4 bits", "5-6 bits",  "7-8 bits"}}, // BitDensity
+            {{"00-3F",   "40-7F",    "80-BF",     "C0-FF"  }},  // NibbleRange
+        };
+        const auto &cn = kNames[int(m_entropyView->byteClassScheme())];
+        const auto pct = [&](int i){ return qRound(m_entropyView->byteClassAvg(i) * 100); };
+        const QString stats = QStringLiteral("%1 %2%   %3 %4%   %5 %6%   %7 %8%")
+            .arg(QLatin1String(cn.c[0])).arg(pct(0))
+            .arg(QLatin1String(cn.c[1])).arg(pct(1))
+            .arg(QLatin1String(cn.c[2])).arg(pct(2))
+            .arg(QLatin1String(cn.c[3])).arg(pct(3));
+        if (m_entropyScopeLength > 0)
             m_entropyStatsLabel->setText(
-                tr("Zoomed: 0x%1 – 0x%2   Printable %3%   Space %4%   Null %5%   Binary %6%")
-                    .arg(m_entropyScopeStart, 0, 16)
-                    .arg(m_entropyScopeStart + m_entropyScopeLength - 1, 0, 16)
-                    .arg(qRound(m_entropyView->byteClassAvg(2) * 100))
-                    .arg(qRound(m_entropyView->byteClassAvg(1) * 100))
-                    .arg(qRound(m_entropyView->byteClassAvg(0) * 100))
-                    .arg(qRound(m_entropyView->byteClassAvg(3) * 100)));
-        }
+                tr("Zoomed: 0x%1 – 0x%2\n")
+                    .arg(QString::number(m_entropyScopeStart, 16).toUpper())
+                    .arg(QString::number(m_entropyScopeStart + m_entropyScopeLength - 1, 16).toUpper())
+                + "\n" + stats);
         else
-        {
-            m_entropyStatsLabel->setText(
-                tr("Printable %1%   Space %2%   Null %3%   Binary %4%")
-                    .arg(qRound(m_entropyView->byteClassAvg(2) * 100))
-                    .arg(qRound(m_entropyView->byteClassAvg(1) * 100))
-                    .arg(qRound(m_entropyView->byteClassAvg(0) * 100))
-                    .arg(qRound(m_entropyView->byteClassAvg(3) * 100)));
-        }
+            m_entropyStatsLabel->setText(stats);
         return;
     }
     if (m_entropyView->data().isEmpty())
@@ -1625,9 +1706,9 @@ void FilePropertiesPanel::updateEntropyStatsLabel()
     };
     if (m_entropyScopeLength > 0)
         m_entropyStatsLabel->setText(
-            tr("Zoomed: 0x%1 – 0x%2   Min %3   Avg %4   Max %5  bits/byte")
-                .arg(m_entropyScopeStart, 0, 16)
-                .arg(m_entropyScopeStart + m_entropyScopeLength - 1, 0, 16)
+            tr("Zoomed: 0x%1 – 0x%2\nMin %3   Avg %4   Max %5  bits/byte")
+                .arg(QString::number(m_entropyScopeStart, 16).toUpper())
+                .arg(QString::number(m_entropyScopeStart + m_entropyScopeLength - 1, 16).toUpper())
                 .arg(fmt(m_entropyView->minEntropy()))
                 .arg(fmt(m_entropyView->avgEntropy()))
                 .arg(fmt(m_entropyView->maxEntropy())));

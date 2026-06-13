@@ -693,47 +693,10 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     auto *entropyControlsLayout = new QHBoxLayout(entropyControls);
     entropyControlsLayout->setContentsMargins(0, 4, 0, 4);
     entropyControlsLayout->setSpacing(6);
-    m_entropyRotateButton = new QToolButton(entropyControls);
-    auto *entropyRotateButton = m_entropyRotateButton;
-    entropyRotateButton->setFixedSize(24, 24);
-    entropyRotateButton->setFocusPolicy(Qt::TabFocus);
-    entropyRotateButton->setToolTip(tr("Rotate view"));
-    entropyRotateButton->setAutoRaise(true);
-    entropyRotateButton->setProperty("iconSize", 14);
-    entropyRotateButton->setIconSize(QSize(14, 14));
-    {
-        const bool    dark    = palette().window().color().lightness() < 128;
-        const QString hover   = dark ? QStringLiteral("rgba(255,255,255,0.15)") : QStringLiteral("rgba(0,0,0,0.10)");
-        const QString pressed = dark ? QStringLiteral("rgba(255,255,255,0.25)") : QStringLiteral("rgba(0,0,0,0.18)");
-        entropyRotateButton->setStyleSheet(QStringLiteral(R"(
-            QToolButton {
-                border: none;
-                border-radius: 6px;
-                background: transparent;
-            }
-            QToolButton:hover { background: %1; }
-            QToolButton:focus { border: 2px solid palette(highlight); }
-            QToolButton:pressed { background: %2; }
-            QToolButton::menu-indicator { image: none; width: 0; }
-        )").arg(hover, pressed));
-    }
-    // EntropyView defaults to rotated=true (vertical), so start with rotate-horz
-    entropyRotateButton->setProperty("iconThemeName", QStringLiteral("actions/rotate-horz"));
-    entropyRotateButton->setIcon(recoloredIcon(QStringLiteral("actions/rotate-horz"), palette().buttonText().color(), 14));
-    entropyControlsLayout->addWidget(entropyRotateButton);
-    entropyControlsLayout->addSpacing(4);
-    connect(entropyRotateButton, &QToolButton::clicked, this,
-            [this]()
-            {
-                if (!m_entropyView)
-                    return;
-                const bool nowRotated = !m_entropyView->isRotated();
-                m_entropyView->setRotated(nowRotated);
-                const QString iconName = nowRotated ? QStringLiteral("actions/rotate-horz")
-                                                    : QStringLiteral("actions/rotate-vert");
-                m_entropyRotateButton->setProperty("iconThemeName", iconName);
-                m_entropyRotateButton->setIcon(recoloredIcon(iconName, palette().buttonText().color(), 14));
-            });
+    // Rotate button disabled — view is hardcoded to vertical (rotated=true) to match HexView orientation.
+    // Keep EntropyView::setRotated() available for future use.
+    // m_entropyRotateButton = new QToolButton(entropyControls);
+    // ... (setup and connect omitted) ...
     m_entropyModeCombo = new MenuComboBox(entropyControls);
     m_entropyModeCombo->addItem(tr("Shannon"),    QVariant::fromValue(int(EntropyMode::Shannon)));
     m_entropyModeCombo->addItem(tr("Bigram"),     QVariant::fromValue(int(EntropyMode::Bigram)));
@@ -748,7 +711,8 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     entropyControlsLayout->addWidget(m_entropyModeCombo);
 
     // Color-picker button (Hilbert/Gilbert only) — immediately after the mode combo
-    auto *hilbertColorMenu = new QMenu(this);
+    m_hilbertColorMenu = new QMenu(this);
+    auto *hilbertColorMenu = m_hilbertColorMenu;
     themeMenu(hilbertColorMenu);
     auto *colorGroup = new QActionGroup(hilbertColorMenu);
     colorGroup->setExclusive(true);
@@ -772,10 +736,10 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     m_hilbertColorButton->setToolTip(tr("Colorisation mode"));
     m_hilbertColorButton->setAutoRaise(true);
     m_hilbertColorButton->setPopupMode(QToolButton::InstantPopup);
-    m_hilbertColorButton->setProperty("iconThemeName", QStringLiteral("actions/color-picker"));
+    m_hilbertColorButton->setProperty("iconThemeName", QStringLiteral("actions/palette"));
     m_hilbertColorButton->setProperty("iconSize", 16);
     m_hilbertColorButton->setIconSize(QSize(16, 16));
-    m_hilbertColorButton->setIcon(recoloredIcon(QStringLiteral("actions/color-picker"), palette().buttonText().color(), 16));
+    m_hilbertColorButton->setIcon(recoloredIcon(QStringLiteral("actions/palette"), palette().buttonText().color(), 16));
     {
         const bool    dark    = QApplication::palette().window().color().lightness() < 128;
         const QString hover   = dark ? QStringLiteral("rgba(255,255,255,0.15)") : QStringLiteral("rgba(0,0,0,0.10)");
@@ -791,8 +755,39 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
         )").arg(hover, pressed));
     }
     m_hilbertColorButton->setMenu(hilbertColorMenu);
-    m_hilbertColorButton->hide(); // hidden until Hilbert/Gilbert mode
+    m_hilbertColorButton->hide(); // hidden until Hilbert/Gilbert/ByteClass mode
     entropyControlsLayout->addWidget(m_hilbertColorButton);
+
+    // Byte class scheme menu — swapped onto color button in ByteClass mode
+    m_byteClassSchemeMenu = new QMenu(this);
+    themeMenu(m_byteClassSchemeMenu);
+    auto *schemeGroup = new QActionGroup(m_byteClassSchemeMenu);
+    schemeGroup->setExclusive(true);
+    m_bcSchemeSemanticAction = m_byteClassSchemeMenu->addAction(tr("Semantic"));
+    m_bcSchemeSemanticAction->setCheckable(true);
+    m_bcSchemeSemanticAction->setChecked(true);
+    m_bcSchemeSemanticAction->setActionGroup(schemeGroup);
+    m_bcSchemeAsciiAction = m_byteClassSchemeMenu->addAction(tr("ASCII Range"));
+    m_bcSchemeAsciiAction->setCheckable(true);
+    m_bcSchemeAsciiAction->setActionGroup(schemeGroup);
+    m_bcSchemeBitDensAction = m_byteClassSchemeMenu->addAction(tr("Bit Density"));
+    m_bcSchemeBitDensAction->setCheckable(true);
+    m_bcSchemeBitDensAction->setActionGroup(schemeGroup);
+    m_bcSchemeNibbleAction = m_byteClassSchemeMenu->addAction(tr("Nibble Range"));
+    m_bcSchemeNibbleAction->setCheckable(true);
+    m_bcSchemeNibbleAction->setActionGroup(schemeGroup);
+    connect(m_bcSchemeSemanticAction, &QAction::triggered, this, [this]() {
+        if (m_entropyView) m_entropyView->setByteClassScheme(filestats::ByteClassScheme::Semantic);
+    });
+    connect(m_bcSchemeAsciiAction, &QAction::triggered, this, [this]() {
+        if (m_entropyView) m_entropyView->setByteClassScheme(filestats::ByteClassScheme::AsciiRange);
+    });
+    connect(m_bcSchemeBitDensAction, &QAction::triggered, this, [this]() {
+        if (m_entropyView) m_entropyView->setByteClassScheme(filestats::ByteClassScheme::BitDensity);
+    });
+    connect(m_bcSchemeNibbleAction, &QAction::triggered, this, [this]() {
+        if (m_entropyView) m_entropyView->setByteClassScheme(filestats::ByteClassScheme::NibbleRange);
+    });
 
     // Zoom button (all modes except Bigram) — immediately after the color button
     m_hilbertZoomButton = new QToolButton(entropyControls);
@@ -812,7 +807,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
             QToolButton:pressed { background: %2; }
         )").arg(hover, pressed));
     }
-    entropyControlsLayout->addWidget(m_hilbertZoomButton); // visible by default (Shannon is default mode)
+    entropyControlsLayout->insertWidget(1, m_hilbertZoomButton); // between mode combo and color button
 
     m_bigramScaleCombo = new MenuComboBox(entropyControls);
     m_bigramScaleCombo->addItem(tr("Log"),    QVariant::fromValue(int(filestats::BigramScale::Log)));
@@ -890,11 +885,11 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     entropyViewFrameLayout->setSpacing(0);
 
     m_entropyView = new filestats::EntropyView(entropyViewFrame);
+    m_entropyView->setRotated(true); // fixed vertical orientation — matches HexView's top-to-bottom layout
     m_entropyView->setMinimumSize(0, 0);
     m_entropyView->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
     entropyViewFrameLayout->addWidget(m_entropyView);
     entropyControlsStackLayout->addWidget(entropyViewFrame);
-    // EntropyView defaults to rotated=true; the icon was already set above.
 
     m_bigramRescanTimer = new QTimer(this);
     m_bigramRescanTimer->setSingleShot(true);
@@ -1195,26 +1190,28 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
                 const auto mode     = static_cast<EntropyMode>(m_entropyModeCombo->itemData(index).toInt());
                 if (mode == m_entropyMode)
                     return;
-                m_entropyMode                   = mode;
-                m_entropyState.started          = false;
-                m_entropyState.pausedByCollapse = false;
-                ++m_entropyState.generation;
-                if (m_entropyState.cancel)
-                    m_entropyState.cancel->store(true);
-                if (m_entropyView)
-                    m_entropyView->clear();
-                if (m_entropyStatsLabel)
-                    m_entropyStatsLabel->clear();
+                m_entropyMode = mode;
+                if (m_entropyView)       m_entropyView->clear();
+                if (m_entropyStatsLabel) m_entropyStatsLabel->clear();
                 const bool isBigram     = (mode == EntropyMode::Bigram);
                 const bool isImageMode  = (mode == EntropyMode::Bigram || mode == EntropyMode::Hilbert || mode == EntropyMode::Gilbert);
                 const bool isGridMode   = (mode == EntropyMode::Hilbert || mode == EntropyMode::Gilbert);
                 const bool isZoomMode   = !isBigram;
-                if (m_entropyRotateButton) m_entropyRotateButton->setEnabled(!isImageMode);
+                // m_entropyRotateButton disabled — rotation hardcoded to vertical
+                // if (m_entropyRotateButton) m_entropyRotateButton->setEnabled(!isImageMode);
                 if (m_entropyWindowLabel)  m_entropyWindowLabel->setVisible(!isImageMode);
                 if (m_entropyWindowCombo)  m_entropyWindowCombo->setVisible(!isImageMode);
                 if (m_hilbertGridLabel)    m_hilbertGridLabel->setVisible(isGridMode);
                 if (m_hilbertGridCombo)    m_hilbertGridCombo->setVisible(isGridMode);
-                if (m_hilbertColorButton) m_hilbertColorButton->setVisible(isGridMode);
+                const bool isByteClass  = (mode == EntropyMode::ByteClass);
+                if (m_hilbertColorButton)
+                {
+                    m_hilbertColorButton->setVisible(isGridMode || isByteClass);
+                    if (isByteClass)
+                        m_hilbertColorButton->setMenu(m_byteClassSchemeMenu);
+                    else
+                        m_hilbertColorButton->setMenu(m_hilbertColorMenu);
+                }
                 if (m_hilbertZoomButton)  {
                     if (!isZoomMode)
                         m_hilbertZoomButton->hide(); // Bigram: always hide
@@ -1223,11 +1220,7 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
                 }
                 if (m_bigramScaleCombo)    m_bigramScaleCombo->setVisible(isBigram);
                 if (m_bigramStrideSpinner) m_bigramStrideSpinner->setVisible(isBigram);
-                m_entropyState.rescanRequired = true;
-                m_entropyState.rescanMessage  = tr("View changed");
-                if (m_entropyOperation)
-                    m_entropyOperation->showRescan(m_entropyState.rescanMessage);
-                requestSectionLayoutRefresh(SectionId::Entropy);
+                triggerParamRescan(tr("View changed"));
             });
     connect(m_bigramScaleCombo, &QComboBox::currentIndexChanged, this,
             [this](int index)
@@ -1241,21 +1234,8 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
             {
                 if (stride <= 0 || stride == m_bigramStride)
                     return;
-                m_bigramStride                  = stride;
-                m_entropyState.started          = false;
-                m_entropyState.pausedByCollapse = false;
-                ++m_entropyState.generation;
-                if (m_entropyState.cancel)
-                    m_entropyState.cancel->store(true);
-                if (m_entropyView)
-                    m_entropyView->clear();
-                if (m_entropyStatsLabel)
-                    m_entropyStatsLabel->clear();
-                m_entropyState.rescanRequired = true;
-                m_entropyState.rescanMessage  = tr("Stride changed");
-                if (m_entropyOperation)
-                    m_entropyOperation->showRescan(m_entropyState.rescanMessage);
-                requestSectionLayoutRefresh(SectionId::Entropy);
+                m_bigramStride = stride;
+                triggerParamRescan(tr("Stride changed"));
             });
     connect(m_entropyWindowCombo, &QComboBox::currentIndexChanged, this,
             [this](int index)
@@ -1263,23 +1243,8 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
                 const int ws = m_entropyWindowCombo->itemData(index).toInt();
                 if (ws <= 0 || ws == m_entropyWindowSize)
                     return;
-                m_entropyWindowSize             = ws;
-                m_entropyState.started          = false;
-                m_entropyState.pausedByCollapse = false;
-                ++m_entropyState.generation;
-                if (m_entropyState.cancel)
-                    m_entropyState.cancel->store(true);
-                if (m_entropyState.pause)
-                    m_entropyState.pause->wake();
-                if (m_entropyView)
-                    m_entropyView->clear();
-                if (m_entropyStatsLabel)
-                    m_entropyStatsLabel->clear();
-                m_entropyState.rescanRequired = true;
-                m_entropyState.rescanMessage  = tr("Window size changed");
-                if (m_entropyOperation)
-                    m_entropyOperation->showRescan(m_entropyState.rescanMessage);
-                requestSectionLayoutRefresh(SectionId::Entropy);
+                m_entropyWindowSize = ws;
+                triggerParamRescan(tr("Window size changed"));
             });
     auto connectColorAction = [this](QAction *action, filestats::HilbertColorMode mode) {
         connect(action, &QAction::triggered, this, [this, mode]() {
@@ -1297,23 +1262,8 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
                 const int gs = m_hilbertGridCombo->itemData(index).toInt();
                 if (gs <= 0 || gs == m_hilbertGridSide)
                     return;
-                m_hilbertGridSide               = gs;
-                m_entropyState.started          = false;
-                m_entropyState.pausedByCollapse = false;
-                ++m_entropyState.generation;
-                if (m_entropyState.cancel)
-                    m_entropyState.cancel->store(true);
-                if (m_entropyState.pause)
-                    m_entropyState.pause->wake();
-                if (m_entropyView)
-                    m_entropyView->clear();
-                if (m_entropyStatsLabel)
-                    m_entropyStatsLabel->clear();
-                m_entropyState.rescanRequired = true;
-                m_entropyState.rescanMessage  = tr("Grid size changed");
-                if (m_entropyOperation)
-                    m_entropyOperation->showRescan(m_entropyState.rescanMessage);
-                requestSectionLayoutRefresh(SectionId::Entropy);
+                m_hilbertGridSide = gs;
+                triggerParamRescan(tr("Grid size changed"));
             });
     connect(m_hilbertZoomButton, &QToolButton::clicked, this, [this]() {
         if (m_hexView && m_hexView->selectionEnd() > m_hexView->selectionStart())
@@ -1344,11 +1294,11 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
                     return;
                 if (m_entropyMode == EntropyMode::ByteClass || m_entropyMode == EntropyMode::Hilbert || m_entropyMode == EntropyMode::Gilbert)
                     m_entropyStatsLabel->setText(
-                        tr("0x%1").arg(offset, 8, 16, QLatin1Char('0')));
+                        QStringLiteral("0x") + QStringLiteral("%1").arg(offset, 8, 16, QLatin1Char('0')).toUpper());
                 else
                     m_entropyStatsLabel->setText(
                         tr("0x%1  —  %2 bits/byte")
-                            .arg(offset, 8, 16, QLatin1Char('0'))
+                            .arg(QStringLiteral("%1").arg(offset, 8, 16, QLatin1Char('0')).toUpper())
                             .arg(double(entropy * 8.0), 0, 'f', 2));
             });
     connect(m_entropyView, &filestats::EntropyView::hoverCleared, this,
