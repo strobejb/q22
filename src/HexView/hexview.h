@@ -496,6 +496,7 @@ private:
     void   positionCaret(int x, int y, int pane);
     void   repositionCaret();
     void   scrollToCaret();
+    void   selectPrintableBytes(size_w offset, bool extended);
 
     // ── Hit testing ───────────────────────────────────────────────────────────
     HitTestRegion hitTest(int x, int y, int *bookmarkIdx = nullptr);
@@ -657,6 +658,8 @@ private:
     bool    m_fResizeAddr       = false;
     bool    m_fStartDrag        = false;
     QPoint  m_dragStartPos;
+    qint64  m_lastDoubleClickTime = -1;
+    QPoint  m_lastDoubleClickPos;
     HitTestRegion m_pressedHitTest = HVHT_NONE;
 
     // Scroll timer (for auto-scroll during mouse drag)

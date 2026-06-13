@@ -9,6 +9,7 @@
 #include "hexview.h"
 
 #include <QApplication>
+#include <QDateTime>
 #include <QPlainTextEdit>
 #include <QContextMenuEvent>
 #include <QCursor>
@@ -21,6 +22,14 @@
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+// extended=false: alphanumeric word chars for double-click
+// extended=true:  all printable ASCII (0x20–0x7E) for triple-click
+inline static bool isselectable(int ch, bool extended = false)
+{
+    if (extended)
+        return ch > 0x20 && ch <= 0x7E;
+    return std::isalnum(ch) || ch == '_' || ch == '.' || ch == '$';
+}
 static bool inrange(size_w offset, size_w start, size_w finish)
 {
     return (offset >= start && offset < finish) ||
@@ -375,6 +384,19 @@ void HexView::mousePressEvent(QMouseEvent *event)
 
     int x = event->pos().x();
     int y = event->pos().y();
+
+    // Triple-click: third press within double-click interval → expand to all printable ASCII
+    if (m_lastDoubleClickTime >= 0
+            && QDateTime::currentMSecsSinceEpoch() - m_lastDoubleClickTime  < (qint64)QApplication::doubleClickInterval()
+            && (event->pos() - m_lastDoubleClickPos).manhattanLength()      <= QApplication::startDragDistance()
+            && m_pDataSeq) {
+
+        // triple-click! just extend the selection under the cursor
+        m_lastDoubleClickTime = -1;
+        const size_w cur = offsetFromPhysCoord(x, y, &m_nWhichPane, &x, &y, &m_nSubItem);
+        selectPrintableBytes(cur, true);
+        return;
+    }
 
     //qDebug() << "press:" << x << y;
 
@@ -911,6 +933,33 @@ void HexView::mouseMoveEvent(QMouseEvent *event)
     }
 }
 
+void HexView::selectPrintableBytes(size_w offset, bool extended)
+{
+    // Select the alphanumeric word under the cursor
+    size_t back = (size_t)std::min((size_w)128, m_nCursorOffset);
+    uint8_t buf[256];
+    size_t len = m_pDataSeq->render(m_nCursorOffset - back, buf, 256);
+
+    size_t i;
+    for (i = back; i < len; i++)
+        if (!isselectable(buf[i], extended))
+            break;
+
+    m_nSelectionEnd = m_nCursorOffset - back + i;
+
+    for (i = 0; i < back; i++)
+        if (!isselectable(buf[back - i - 1], extended))
+            break;
+
+    m_nSelectionStart = m_nCursorOffset - i;
+    m_nCursorOffset   = m_nSelectionEnd;
+
+    emit selectionChanged(selectionStart(), selectionEnd());
+    emit cursorChanged(m_nCursorOffset);
+    viewport()->update();
+    scrollToCaret();
+}
+
 void HexView::mouseDoubleClickEvent(QMouseEvent *event)
 {
     if (event->button() != Qt::LeftButton) {
@@ -924,25 +973,12 @@ void HexView::mouseDoubleClickEvent(QMouseEvent *event)
     HitTestRegion ht = hitTest(x, y, &m_pressedBookmarkIdx);
     if (ht & HVHT_BOOKMARK) return;
 
-    // Select the alphanumeric word under the cursor
-    size_t back = (size_t)std::min((size_w)128, m_nCursorOffset);
-    uint8_t buf[256];
-    size_t len = m_pDataSeq->render(m_nCursorOffset - back, buf, 256);
+    // select word under mouse
+    selectPrintableBytes(m_nCursorOffset, false);
 
-    size_t i;
-    for (i = back; i < len; i++)
-        if (!std::isalnum(buf[i])) break;
-    m_nSelectionEnd = m_nCursorOffset - back + i;
-
-    for (i = 0; i < back; i++)
-        if (!std::isalnum(buf[back - i - 1])) break;
-    m_nSelectionStart = m_nCursorOffset - i;
-    m_nCursorOffset   = m_nSelectionEnd;
-
-    emit selectionChanged(selectionStart(), selectionEnd());
-    emit cursorChanged(m_nCursorOffset);
-    viewport()->update();
-    scrollToCaret();
+    // preempt triple-clicks as well
+    m_lastDoubleClickTime = QDateTime::currentMSecsSinceEpoch();
+    m_lastDoubleClickPos  = event->pos();
 }
 
 void HexView::wheelEvent(QWheelEvent *event)
