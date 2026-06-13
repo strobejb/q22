@@ -1271,7 +1271,14 @@ void FilePropertiesPanel::updateZoomButton()
         return;
     const bool hasSel   = m_entropyView && m_entropyView->hasSelection();
     const bool isZoomed = m_entropyScopeLength > 0;
-    if (hasSel)
+    // True when the active selection is exactly what we're already zoomed into —
+    // re-zooming would be a no-op, so treat it as "restore" instead.
+    const bool selMatchesScope = isZoomed && m_hexView
+        && m_hexView->selectionEnd() > m_hexView->selectionStart()
+        && static_cast<qulonglong>(m_hexView->selectionStart()) == m_entropyScopeStart
+        && (static_cast<qulonglong>(m_hexView->selectionEnd())
+            - static_cast<qulonglong>(m_hexView->selectionStart())) == m_entropyScopeLength;
+    if (hasSel && !selMatchesScope)
     {
         m_hilbertZoomButton->setIcon(recoloredIcon(QStringLiteral("actions/zoom-in"),
                                                    palette().buttonText().color(), 16));
@@ -2118,7 +2125,14 @@ void FilePropertiesPanel::buildEntropySection(QWidget *parent, QVBoxLayout *cont
     connect(m_hilbertZoomButton, &QToolButton::clicked, this,
             [this]()
             {
-                if (m_hexView && m_hexView->selectionEnd() > m_hexView->selectionStart())
+                const bool isZoomed = m_entropyScopeLength > 0;
+                const bool selMatchesScope = isZoomed && m_hexView
+                    && m_hexView->selectionEnd() > m_hexView->selectionStart()
+                    && static_cast<qulonglong>(m_hexView->selectionStart()) == m_entropyScopeStart
+                    && (static_cast<qulonglong>(m_hexView->selectionEnd())
+                        - static_cast<qulonglong>(m_hexView->selectionStart())) == m_entropyScopeLength;
+                if (m_hexView && m_hexView->selectionEnd() > m_hexView->selectionStart()
+                    && !selMatchesScope)
                 {
                     m_entropyScopeStart  = static_cast<qulonglong>(m_hexView->selectionStart());
                     m_entropyScopeLength = static_cast<qulonglong>(m_hexView->selectionEnd())
