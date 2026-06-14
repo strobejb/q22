@@ -1663,20 +1663,89 @@ void FilePropertiesPanel::updateEntropyStatsLabel()
         if (m_entropyStatsLabel) m_entropyStatsLabel->clear();
         return;
     }
+    // Shared helpers for building colour-swatch legend rows
+    // Each item: coloured ■ + label; items separated by nbsp-gap + breakable space
+    auto sw = [](const QColor &col, const QString &lbl) -> QString {
+        return QStringLiteral("<span style='color:%1;'>&#9632;</span>&nbsp;%2")
+            .arg(col.name()).arg(lbl);
+    };
+    // 3-stop gradient legend: low / mid / high with arrow separators
+    auto gradLegend = [&sw](const QColor &lo, const QString &loLbl,
+                            const QColor &mid, const QString &midLbl,
+                            const QColor &hi, const QString &hiLbl) -> QString {
+        QString s = sw(lo, loLbl);
+        if (!midLbl.isEmpty()) s += QLatin1String("&nbsp;&nbsp;&nbsp; ") + sw(mid, midLbl);
+        s += QLatin1String("&nbsp;&nbsp;&nbsp; ") + sw(hi, hiLbl);
+        return s;
+    };
+    // Colours shared with paintEvent / rebuildHilbertImage
+    static const QColor kEntLo (  0,  10,  80);   // Shannon/Bigram gradient low
+    static const QColor kEntMid(130,   0, 200);   // Shannon/Bigram gradient mid (~0.65)
+    static const QColor kEntHi (255,  80, 120);   // Shannon/Bigram gradient high
+    static const QColor kHMagLo(  0,   0,   0);   // Hilbert Magnitude low
+    static const QColor kHMagMid(110,  0, 160);   // Hilbert Magnitude mid
+    static const QColor kHMagHi(  0, 210, 220);   // Hilbert Magnitude high
+    static const QColor kHVarLo(  0,   0,  70);   // Hilbert Entropy (var) low
+    static const QColor kHVarMid( 20,  0, 170);   // Hilbert Entropy (var) mid
+    static const QColor kHVarHi(255,  20, 147);   // Hilbert Entropy (var) high
+    static const QColor kHDetLo(  0,   0,   0);   // Hilbert Detail low
+    static const QColor kHDetMid(200, 80,   0);   // Hilbert Detail mid
+    static const QColor kHDetHi(255, 240,  20);   // Hilbert Detail high
+
+    auto zoomPrefix = [this]() -> QString {
+        return m_entropyScopeLength > 0
+            ? tr("Zoomed: 0x%1 – 0x%2")
+                  .arg(QString::number(m_entropyScopeStart, 16).toUpper())
+                  .arg(QString::number(m_entropyScopeStart + m_entropyScopeLength - 1, 16).toUpper())
+                  + QLatin1String("<br>")
+            : QString();
+    };
+
     if (m_entropyView->isBigram())
     {
-        m_entropyStatsLabel->clear();
+        m_entropyStatsLabel->setText(
+            zoomPrefix()
+            + gradLegend(kEntLo,  tr("Rare"),
+                         kEntMid, QString(),
+                         kEntHi,  tr("Common")));
         return;
     }
     if (m_entropyView->isHilbert() || m_entropyView->isGilbert())
     {
-        if (m_entropyScopeLength > 0)
-            m_entropyStatsLabel->setText(
-                tr("Zoomed: 0x%1 – 0x%2")
-                    .arg(QString::number(m_entropyScopeStart, 16).toUpper())
-                    .arg(QString::number(m_entropyScopeStart + m_entropyScopeLength - 1, 16).toUpper()));
-        else
-            m_entropyStatsLabel->clear();
+        using HCM = filestats::HilbertColorMode;
+        QString legend;
+        switch (m_entropyView->hilbertColorMode())
+        {
+        case HCM::ByteClass:
+        {
+            // Same 4-colour palette as ByteClass panel (Semantic layout)
+            static const QColor kNull (0x00, 0x00, 0x00);
+            static const QColor kSpace(0x88, 0xFF, 0xFF);
+            static const QColor kPrint(0x00, 0x50, 0xEE);
+            static const QColor kOther(0xCC, 0x00, 0x30);
+            legend = sw(kNull,  tr("Null"))  + QLatin1String("&nbsp;&nbsp;&nbsp; ")
+                   + sw(kSpace, tr("Space")) + QLatin1String("&nbsp;&nbsp;&nbsp; ")
+                   + sw(kPrint, tr("Printable")) + QLatin1String("&nbsp;&nbsp;&nbsp; ")
+                   + sw(kOther, tr("Other"));
+            break;
+        }
+        case HCM::Magnitude:
+            legend = gradLegend(kHMagLo,  QStringLiteral("0x00"),
+                                kHMagMid, QStringLiteral("0x80"),
+                                kHMagHi,  QStringLiteral("0xFF"));
+            break;
+        case HCM::Entropy:
+            legend = gradLegend(kHVarLo,  tr("Low (ordered)"),
+                                kHVarMid, QString(),
+                                kHVarHi,  tr("High (random)"));
+            break;
+        case HCM::Detail:
+            legend = gradLegend(kHDetLo,  tr("Same"),
+                                kHDetMid, QString(),
+                                kHDetHi,  tr("Max Δ"));
+            break;
+        }
+        m_entropyStatsLabel->setText(zoomPrefix() + legend);
         return;
     }
     if (m_entropyView->isByteClass())
@@ -1686,28 +1755,44 @@ void FilePropertiesPanel::updateEntropyStatsLabel()
             m_entropyStatsLabel->clear();
             return;
         }
-        // Class names vary by scheme; order matches byteClassAvg(0..3)
+        // Class names vary by scheme; display order matches graph draw order (kSchemes)
         using BC = filestats::ByteClassScheme;
         struct ClassNames { const char *c[4]; };
         static const ClassNames kNames[] = {
-            {{"Null",    "Space",    "Printable", "Binary" }},  // Semantic
-            {{"Control", "Printable","DEL",       "High"   }},  // AsciiRange
-            {{"0-2 bits","3-4 bits", "5-6 bits",  "7-8 bits"}}, // BitDensity
-            {{"00-3F",   "40-7F",    "80-BF",     "C0-FF"  }},  // NibbleRange
+            {{"Null",    "Space",    "Printable", "Binary"  }},  // Semantic
+            //{{"Control", "Printable","DEL",       "High"    }},  // AsciiRange
+            {{"0-2 bits","3-4 bits", "5-6 bits",  "7-8 bits"}},  // BitDensity
+            {{"00-3F",   "40-7F",    "80-BF",     "C0-FF"   }},  // NibbleRange
         };
+        // Mirrors kSchemes in paintEvent — same order[] and colors[] so the key matches the graph
+        static const QColor kNull (0x00, 0x00, 0x00);
+        static const QColor kSpace(0x88, 0xFF, 0xFF);
+        static const QColor kPrint(0x00, 0x50, 0xEE);
+        static const QColor kOther(0xCC, 0x00, 0x30);
+        struct SchemeDisplay { int order[4]; QColor colors[4]; };
+        static const SchemeDisplay kSchemes[] = {
+            {{2,1,0,3}, {kPrint, kSpace, kNull, kOther}},  // Semantic
+            //{{1,0,3,2}, {kPrint, kNull, kOther, kSpace}},  // AsciiRange
+            {{0,1,2,3}, {kNull, kPrint, kSpace, kOther}},  // BitDensity
+            {{0,1,2,3}, {kNull, kPrint, kSpace, kOther}},  // NibbleRange
+        };
+        const SchemeDisplay &sd = kSchemes[int(m_entropyView->byteClassScheme())];
         const auto &cn = kNames[int(m_entropyView->byteClassScheme())];
         const auto pct = [&](int i){ return qRound(m_entropyView->byteClassAvg(i) * 100); };
-        const QString stats = QStringLiteral("%1 %2%   %3 %4%   %5 %6%   %7 %8%")
-            .arg(QLatin1String(cn.c[0])).arg(pct(0))
-            .arg(QLatin1String(cn.c[1])).arg(pct(1))
-            .arg(QLatin1String(cn.c[2])).arg(pct(2))
-            .arg(QLatin1String(cn.c[3])).arg(pct(3));
+        QString stats;
+        for (int i = 0; i < 3; ++i) {
+            const int cls = sd.order[i];
+            stats += QStringLiteral("<span style='color:%1;'>&#9632;</span>&nbsp;%2:&nbsp;%3%&nbsp;&nbsp;&nbsp; ")
+                .arg(sd.colors[i].name())
+                .arg(QLatin1String(cn.c[cls]))
+                .arg(pct(cls));
+        }
         if (m_entropyScopeLength > 0)
             m_entropyStatsLabel->setText(
-                tr("Zoomed: 0x%1 – 0x%2\n")
+                tr("Zoomed: 0x%1 – 0x%2")
                     .arg(QString::number(m_entropyScopeStart, 16).toUpper())
                     .arg(QString::number(m_entropyScopeStart + m_entropyScopeLength - 1, 16).toUpper())
-                + "\n" + stats);
+                + QLatin1String("<br>") + stats);
         else
             m_entropyStatsLabel->setText(stats);
         return;
@@ -1720,20 +1805,15 @@ void FilePropertiesPanel::updateEntropyStatsLabel()
     const auto fmt = [](float e) {
         return QStringLiteral("%1").arg(double(e * 8.0), 0, 'f', 2);
     };
-    if (m_entropyScopeLength > 0)
-        m_entropyStatsLabel->setText(
-            tr("Zoomed: 0x%1 – 0x%2\nMin %3   Avg %4   Max %5  bits/byte")
-                .arg(QString::number(m_entropyScopeStart, 16).toUpper())
-                .arg(QString::number(m_entropyScopeStart + m_entropyScopeLength - 1, 16).toUpper())
-                .arg(fmt(m_entropyView->minEntropy()))
-                .arg(fmt(m_entropyView->avgEntropy()))
-                .arg(fmt(m_entropyView->maxEntropy())));
-    else
-        m_entropyStatsLabel->setText(
-            tr("Min %1   Avg %2   Max %3  bits/byte")
-                .arg(fmt(m_entropyView->minEntropy()))
-                .arg(fmt(m_entropyView->avgEntropy()))
-                .arg(fmt(m_entropyView->maxEntropy())));
+    const QString shannonLegend = gradLegend(kEntLo,  QStringLiteral("0"),
+                                             kEntMid, QStringLiteral("~5"),
+                                             kEntHi,  QStringLiteral("8 b/byte"));
+    const QString shannonStats  = tr("Min %1   Avg %2   Max %3  bits/byte")
+        .arg(fmt(m_entropyView->minEntropy()))
+        .arg(fmt(m_entropyView->avgEntropy()))
+        .arg(fmt(m_entropyView->maxEntropy()));
+    m_entropyStatsLabel->setText(
+        zoomPrefix() + shannonLegend + QLatin1String("<br>") + shannonStats);
 }
 
 void FilePropertiesPanel::buildEntropySection(QWidget *parent, QVBoxLayout *contentLayout)
@@ -1787,8 +1867,8 @@ void FilePropertiesPanel::buildEntropySection(QWidget *parent, QVBoxLayout *cont
     m_entropyModeCombo->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     m_entropyModeCombo->setFixedHeight(qMax(24, m_entropyModeCombo->sizeHint().height() - 4));
     m_entropyModeCombo->setToolTip(
-        tr("Visualisation mode: byte entropy per window, byte-pair frequency heatmap, byte class stacked bars, "
-           "square Hilbert curve map, or adaptive Gilbert curve map"));
+        tr("Visualisation mode:\nByte entropy per window\nByte-pair frequency heatmap\nbyte class stacked bars\n"
+           "square Hilbert curve map\nadaptive Gilbert curve map"));
     entropyControlsLayout->addWidget(m_entropyModeCombo);
 
     // Hilbert/Gilbert/ByteClass color picker button — shown after mode combo
@@ -2001,7 +2081,9 @@ void FilePropertiesPanel::buildEntropySection(QWidget *parent, QVBoxLayout *cont
 
     // Stats / hover label
     m_entropyStatsLabel = new QLabel(entropyControlsStack);
+    m_entropyStatsLabel->setTextFormat(Qt::RichText);
     m_entropyStatsLabel->setAlignment(Qt::AlignCenter);
+    m_entropyStatsLabel->setWordWrap(true);
     m_entropyStatsLabel->setContentsMargins(0, 4, 0, 4);
     m_entropyStatsLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     entropyControlsStackLayout->addWidget(m_entropyStatsLabel);
