@@ -96,6 +96,7 @@ class SectionHeader : public QWidget
     void setTitle(const QString &title) { m_title = title; update(); }
     void setCollapsed(bool collapsed);
     void setExpandable(bool expandable) { m_expandable = expandable; updateChevronIcon(); update(); }
+    void setCloseMode(bool on);
     void setSectionExpanded(bool expanded) { m_sectionExpanded = expanded; updateChevronIcon(); update(); }
     void setExpandCallback(std::function<void()> callback) { m_expandCallback = std::move(callback); }
     void setClickedCallback(std::function<void()> callback) { m_clicked = std::move(callback); }
@@ -135,6 +136,7 @@ class SectionHeader : public QWidget
     std::function<void(QPoint)> m_dragMoved;
     std::function<void(QPoint)> m_dragEnded;
     bool                        m_collapsed           = false;
+    bool                        m_closeMode           = false;
     bool                        m_expandable          = false;
     bool                        m_sectionExpanded     = false;
     bool                        m_chevronHovered      = false;

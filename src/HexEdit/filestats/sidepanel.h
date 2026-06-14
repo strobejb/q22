@@ -351,37 +351,68 @@ class FilePropertiesPanel : public QDialog
     QPoint                            m_stringOptionsMenuClosePos{-1, -1};
 };
 
-class SidePanelHost : public QWidget
+// Generic slide-in panel host. Handles the animation, resize grip, and panel
+// widget lifecycle. Subclasses implement createPanelWidget() and optionally
+// override onPanelCreated() and onFullyOpenedChanged().
+class SidePanelHostBase : public QWidget
 {
     Q_OBJECT
   public:
-    explicit SidePanelHost(HexView *hexView, QWidget *parent = nullptr);
+    // gripOnLeft: true  → grip on left edge (right-side panel; drag left to expand)
+    //             false → grip on right edge (left-side panel; drag right to expand)
+    explicit SidePanelHostBase(int defaultWidth, int minWidth, int maxWidth,
+                               bool gripOnLeft, QWidget *parent = nullptr);
 
     bool isOpen() const;
-    void toggle();
-    void openSection(FilePropertiesPanel::SectionId section);
+    virtual void toggle();
     void closePanel();
-    void refreshPanel();
-    void resetPanelForCurrentDocument();
 
   signals:
     void openChanged(bool open);
 
   protected:
-    bool eventFilter(QObject *obj, QEvent *event) override;
+    virtual QWidget *createPanelWidget()                = 0;
+    virtual void    onPanelCreated(QWidget * /*panel*/) {}
+    virtual void    onFullyOpenedChanged(bool /*open*/) {}
+
+    void     openPanel();
+    QWidget *panelWidget() const;
+    void     setExpanded(bool expanded);
+    void     setPaneWidth(int width);
 
   private:
-    void setExpanded(bool expanded);
-    void setPaneWidth(int width);
+    bool eventFilter(QObject *obj, QEvent *event) override;
 
-    HexView                      *m_hexView      = nullptr;
-    QWidget                      *m_resizeHandle = nullptr;
-    QPropertyAnimation           *m_widthAnim    = nullptr;
-    QPointer<FilePropertiesPanel> m_panel;
-    bool                          m_resizing         = false;
-    int                           m_paneWidth        = 400;
-    int                           m_resizeStartWidth = 0;
-    qreal                         m_resizeStartX     = 0.0;
+    QWidget            *m_resizeHandle     = nullptr;
+    QPropertyAnimation *m_widthAnim        = nullptr;
+    QPointer<QWidget>   m_panel;
+    bool                m_resizing         = false;
+    bool                m_gripOnLeft       = true;
+    int                 m_minWidth         = 0;
+    int                 m_maxWidth         = 0;
+    int                 m_paneWidth        = 0;
+    int                 m_resizeStartWidth = 0;
+    qreal               m_resizeStartX     = 0.0;
+};
+
+class SidePanelHost : public SidePanelHostBase
+{
+    Q_OBJECT
+  public:
+    explicit SidePanelHost(HexView *hexView, QWidget *parent = nullptr);
+
+    void toggle() override;
+    void openSection(FilePropertiesPanel::SectionId section);
+    void refreshPanel();
+    void resetPanelForCurrentDocument();
+
+  protected:
+    QWidget *createPanelWidget() override;
+    void     onPanelCreated(QWidget *panel) override;
+    void     onFullyOpenedChanged(bool open) override;
+
+  private:
+    HexView *m_hexView = nullptr;
 };
 
 #endif // FILESTATS_SIDEPANEL_H

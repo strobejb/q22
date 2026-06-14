@@ -11,6 +11,7 @@
 #include "dialogs/dlgexport.h"
 #include "dialogs/dlgimport.h"
 #include "dialogs/dlgpastespecial.h"
+#include "disasm/disasmpanel.h"
 #include "fileproperties.h"
 #include "filestats/banner.h"
 #include "panels/dockpanelhost.h"
@@ -660,6 +661,9 @@ MainWindow::MainWindow(QWidget *parent)
     m_sidePanelHost = new SidePanelHost(m_hv, contentRow);
     contentLay->addWidget(m_sidePanelHost, 0);
 
+    m_disasmPanelHost = new DisassemblerPanelHost(m_hv, contentRow);
+    contentLay->addWidget(m_disasmPanelHost, 0);
+
     vlay->addWidget(contentRow, 1);
     m_bookmarkDialog = new BookmarkDialog(this);
     auto *dockPanelHost = new DockPanelHost(m_hv, central);
@@ -830,7 +834,27 @@ MainWindow::MainWindow(QWidget *parent)
                 this, &MainWindow::toggleSidePanel);
         connect(m_sidePanelHost, &SidePanelHost::openChanged,
                 m_statusBar, &StatusBar::setFileInfoPanelOpen);
+        connect(m_statusBar, &StatusBar::codeToggled,
+                this, &MainWindow::toggleDisassemblerPanel);
+        connect(m_disasmPanelHost, &SidePanelHostBase::openChanged,
+                m_statusBar, &StatusBar::setCodePanelOpen);
     }
+
+    // Radio-button exclusivity: opening one side panel closes the others.
+    connect(m_sidePanelHost, &SidePanelHostBase::openChanged, this, [this](bool open) {
+        if (!open) return;
+        if (m_disasmPanelHost && m_disasmPanelHost->isOpen())
+            m_disasmPanelHost->closePanel();
+        if (m_statusBar)
+            m_statusBar->setTypesPanelOpen(false);
+    });
+    connect(m_disasmPanelHost, &SidePanelHostBase::openChanged, this, [this](bool open) {
+        if (!open) return;
+        if (m_sidePanelHost && m_sidePanelHost->isOpen())
+            m_sidePanelHost->closePanel();
+        if (m_statusBar)
+            m_statusBar->setTypesPanelOpen(false);
+    });
 
     // ── Edit menu ─────────────────────────────────────────────────────────────
     // Shortcuts not set in the .ui file are assigned here so they are also
@@ -1431,8 +1455,18 @@ void MainWindow::openFile(const QString &path) {
 
 void MainWindow::toggleSidePanel()
 {
-    if (m_sidePanelHost)
-        m_sidePanelHost->toggle();
+    if (!m_sidePanelHost) return;
+    if (!m_sidePanelHost->isOpen() && m_disasmPanelHost && m_disasmPanelHost->isOpen())
+        m_disasmPanelHost->closePanel();
+    m_sidePanelHost->toggle();
+}
+
+void MainWindow::toggleDisassemblerPanel()
+{
+    if (!m_disasmPanelHost) return;
+    if (!m_disasmPanelHost->isOpen() && m_sidePanelHost && m_sidePanelHost->isOpen())
+        m_sidePanelHost->closePanel();
+    m_disasmPanelHost->toggle();
 }
 
 void MainWindow::openSidePanelSection(FilePropertiesPanel::SectionId section)

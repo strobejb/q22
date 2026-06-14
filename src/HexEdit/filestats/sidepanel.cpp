@@ -1242,87 +1242,80 @@ void FilePropertiesPanel::clearSectionFullExpand(SectionId sectionId)
         setSectionCollapsed(pair.first, pair.second, false);
 }
 
-SidePanelHost::SidePanelHost(HexView *hexView, QWidget *parent) : QWidget(parent), m_hexView(hexView)
+// ── SidePanelHostBase ─────────────────────────────────────────────────────────
+
+SidePanelHostBase::SidePanelHostBase(int defaultWidth, int minWidth, int maxWidth,
+                                     bool gripOnLeft, QWidget *parent)
+    : QWidget(parent)
+    , m_gripOnLeft(gripOnLeft)
+    , m_minWidth(minWidth)
+    , m_maxWidth(maxWidth)
+    , m_paneWidth(defaultWidth)
 {
     setAcceptDrops(true);
     setMinimumWidth(0);
     setMaximumWidth(0);
     hide();
 
-    auto *layout = new QHBoxLayout(this);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(0);
+    auto *lay = new QHBoxLayout(this);
+    lay->setContentsMargins(0, 0, 0, 0);
+    lay->setSpacing(0);
 
     m_resizeHandle = new SidePanelResizeGrip(this);
     m_resizeHandle->installEventFilter(this);
-    layout->addWidget(m_resizeHandle);
+    // For gripOnLeft (right-side panel) the grip is the leftmost widget.
+    // For !gripOnLeft (left-side panel) the grip is the rightmost; the panel
+    // widget is inserted at index 0 when created, pushing grip to the right.
+    lay->addWidget(m_resizeHandle);
 
     m_widthAnim = new QPropertyAnimation(this, "maximumWidth", this);
     m_widthAnim->setDuration(kFileInfoPaneAnimMs);
     m_widthAnim->setEasingCurve(QEasingCurve::OutCubic);
 }
 
-bool SidePanelHost::isOpen() const
+bool SidePanelHostBase::isOpen() const { return m_panel != nullptr; }
+
+QWidget *SidePanelHostBase::panelWidget() const { return m_panel; }
+
+void SidePanelHostBase::toggle()
 {
-    return m_panel != nullptr;
+    if (m_panel) closePanel();
+    else openPanel();
 }
 
-void SidePanelHost::toggle()
+void SidePanelHostBase::openPanel()
 {
     if (m_panel)
     {
-        closePanel();
-        return;
-    }
-
-    openSection(FilePropertiesPanel::SectionId::Properties);
-}
-
-void SidePanelHost::openSection(FilePropertiesPanel::SectionId section)
-{
-    if (m_panel)
-    {
-        m_panel->showSection(section);
         if (!isVisible() || maximumWidth() < m_paneWidth)
             setExpanded(true);
         emit openChanged(true);
         return;
     }
 
-    auto *panel = new FilePropertiesPanel(m_hexView, this);
-    panel->setWindowFlags(Qt::Widget);
+    auto *panel = createPanelWidget();
     panel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     m_panel = panel;
-    if (auto *hostLayout = qobject_cast<QHBoxLayout *>(layout()))
-        hostLayout->addWidget(panel);
+
+    auto *hostLayout = qobject_cast<QHBoxLayout *>(layout());
+    if (m_gripOnLeft)
+        hostLayout->addWidget(panel);        // grip at 0, panel at 1
+    else
+        hostLayout->insertWidget(0, panel);  // panel at 0, grip stays at 1
+
     panel->show();
-
-    connect(panel, &FilePropertiesPanel::closeRequested, this, &SidePanelHost::closePanel);
-
-    panel->showSection(section);
+    onPanelCreated(panel);
     emit openChanged(true);
     setExpanded(true);
 }
 
-void SidePanelHost::closePanel()
+void SidePanelHostBase::closePanel()
 {
     emit openChanged(false);
     setExpanded(false);
 }
 
-void SidePanelHost::refreshPanel()
-{
-    if (m_panel)
-        m_panel->refresh();
-}
-
-void SidePanelHost::resetPanelForCurrentDocument()
-{
-    if (m_panel)
-        m_panel->resetForCurrentDocument();
-}
-
-void SidePanelHost::setExpanded(bool expanded)
+void SidePanelHostBase::setExpanded(bool expanded)
 {
     if (!m_widthAnim)
         return;
@@ -1330,8 +1323,7 @@ void SidePanelHost::setExpanded(bool expanded)
     m_widthAnim->stop();
     m_widthAnim->disconnect();
 
-    if (m_panel)
-        m_panel->setPanelFullyOpened(false);
+    onFullyOpenedChanged(false);
 
     setMinimumWidth(0);
     if (expanded)
@@ -1350,8 +1342,7 @@ void SidePanelHost::setExpanded(bool expanded)
                 if (maximumWidth() == m_paneWidth)
                 {
                     setMinimumWidth(m_paneWidth);
-                    if (m_panel)
-                        m_panel->setPanelFullyOpened(true);
+                    onFullyOpenedChanged(true);
                 }
             },
             Qt::SingleShotConnection);
@@ -1378,14 +1369,14 @@ void SidePanelHost::setExpanded(bool expanded)
     m_widthAnim->start();
 }
 
-void SidePanelHost::setPaneWidth(int width)
+void SidePanelHostBase::setPaneWidth(int width)
 {
-    m_paneWidth = qBound(kFileInfoPaneMinWidth, width, kFileInfoPaneMaxWidth);
+    m_paneWidth = qBound(m_minWidth, width, m_maxWidth);
     setMinimumWidth(m_paneWidth);
     setMaximumWidth(m_paneWidth);
 }
 
-bool SidePanelHost::eventFilter(QObject *obj, QEvent *event)
+bool SidePanelHostBase::eventFilter(QObject *obj, QEvent *event)
 {
     if (obj != m_resizeHandle)
         return QWidget::eventFilter(obj, event);
@@ -1411,7 +1402,8 @@ bool SidePanelHost::eventFilter(QObject *obj, QEvent *event)
     {
         auto     *me    = static_cast<QMouseEvent *>(event);
         const int delta = qRound(me->globalPosition().x() - m_resizeStartX);
-        setPaneWidth(m_resizeStartWidth - delta);
+        // gripOnLeft: drag left (negative delta) → wider; !gripOnLeft: drag right (positive) → wider
+        setPaneWidth(m_gripOnLeft ? m_resizeStartWidth - delta : m_resizeStartWidth + delta);
         return true;
     }
 
@@ -1426,4 +1418,55 @@ bool SidePanelHost::eventFilter(QObject *obj, QEvent *event)
     }
 
     return QWidget::eventFilter(obj, event);
+}
+
+// ── SidePanelHost ─────────────────────────────────────────────────────────────
+
+SidePanelHost::SidePanelHost(HexView *hexView, QWidget *parent)
+    : SidePanelHostBase(400, kFileInfoPaneMinWidth, kFileInfoPaneMaxWidth, /*gripOnLeft=*/true, parent)
+    , m_hexView(hexView)
+{}
+
+QWidget *SidePanelHost::createPanelWidget()
+{
+    auto *panel = new FilePropertiesPanel(m_hexView, this);
+    panel->setWindowFlags(Qt::Widget);
+    return panel;
+}
+
+void SidePanelHost::onPanelCreated(QWidget *panel)
+{
+    connect(static_cast<FilePropertiesPanel *>(panel), &FilePropertiesPanel::closeRequested,
+            this, &SidePanelHost::closePanel);
+}
+
+void SidePanelHost::onFullyOpenedChanged(bool open)
+{
+    if (auto *p = qobject_cast<FilePropertiesPanel *>(panelWidget()))
+        p->setPanelFullyOpened(open);
+}
+
+void SidePanelHost::toggle()
+{
+    if (isOpen()) closePanel();
+    else openSection(FilePropertiesPanel::SectionId::Properties);
+}
+
+void SidePanelHost::openSection(FilePropertiesPanel::SectionId section)
+{
+    openPanel();
+    if (auto *p = qobject_cast<FilePropertiesPanel *>(panelWidget()))
+        p->showSection(section);
+}
+
+void SidePanelHost::refreshPanel()
+{
+    if (auto *p = qobject_cast<FilePropertiesPanel *>(panelWidget()))
+        p->refresh();
+}
+
+void SidePanelHost::resetPanelForCurrentDocument()
+{
+    if (auto *p = qobject_cast<FilePropertiesPanel *>(panelWidget()))
+        p->resetForCurrentDocument();
 }

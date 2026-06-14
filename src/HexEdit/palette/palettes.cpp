@@ -32,7 +32,7 @@
 
 // ─── applyPalette ─────────────────────────────────────────────────────────────
 
-static QColor blend(const QColor &a, const QColor &b, double r = 0.5)
+QColor blend(const QColor &a, const QColor &b, double r = 0.5)
 {
     return QColor(
         qRound(a.red()   + r * (b.red()   - a.red())),

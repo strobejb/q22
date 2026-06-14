@@ -57,11 +57,13 @@ public:
 
     void setFileInfoPanelOpen(bool open);
     void setTypesPanelOpen(bool open);
+    void setCodePanelOpen(bool open);
     void setAlignment(bool toolsRight, bool infoRight);
 
 signals:
     void fileInfoToggled();
     void typesToggled(bool checked);
+    void codeToggled();
 
 public slots:
     void update();

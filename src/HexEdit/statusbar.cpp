@@ -179,6 +179,7 @@ StatusBar::StatusBar(HexView *hv, QStatusBar *bar, bool showPanelToggles,
 
     m_codeBtn = makeToggleButton("statusCodeBtn", "actions/chip", "D");
     m_codeBtn->setToolTip(tr("Disassemble"));
+    connect(m_codeBtn, &QToolButton::clicked, this, &StatusBar::codeToggled);
 
     m_toggleStrip = new QWidget(bar);
     m_toggleLayout = new QHBoxLayout(m_toggleStrip);
@@ -378,6 +379,12 @@ void StatusBar::setTypesPanelOpen(bool open)
 {
     if (m_typesBtn)
         m_typesBtn->setChecked(open);
+}
+
+void StatusBar::setCodePanelOpen(bool open)
+{
+    if (m_codeBtn)
+        m_codeBtn->setChecked(open);
 }
 
 QString StatusBar::computeValueText() const

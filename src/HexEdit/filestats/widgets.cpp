@@ -101,8 +101,24 @@ void SectionHeader::setCollapsed(bool collapsed)
     updateChevronIcon();
 }
 
+void SectionHeader::setCloseMode(bool on)
+{
+    m_closeMode = on;
+    setExpandable(on);
+    updateChevronIcon();
+}
+
 void SectionHeader::updateChevronIcon()
 {
+    if (m_closeMode)
+    {
+        const QColor color = m_chevronPressed ? palette().windowText().color()
+                                              : subduedTextColor(palette());
+        m_icon->setPixmap(
+            recoloredIcon(QStringLiteral("ui/go-next-symbolic"), color, 16).pixmap(16, 16));
+        return;
+    }
+
     QString      iconName;
     QColor       iconColor;
     if (m_expandable && m_hover)

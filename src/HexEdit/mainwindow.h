@@ -12,6 +12,7 @@ namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
 
 class BookmarkDialog;
+class DisassemblerPanelHost;
 class FindPanel;
 class GotoPanel;
 class PreferencesDialog;
@@ -55,6 +56,7 @@ private:
     void runFind(bool forward);
     void execFind(const QByteArray &pattern, uint flags);
     void toggleSidePanel();
+    void toggleDisassemblerPanel();
     void openSidePanelSection(FilePropertiesPanel::SectionId section);
     void refreshSidePanel();
     void resetSidePanel();
@@ -76,7 +78,8 @@ private:
     BookmarkDialog    *m_bookmarkDialog = nullptr;
     FindPanel         *m_findDialog     = nullptr;
     GotoPanel         *m_gotoDialog     = nullptr;
-    SidePanelHost *m_sidePanelHost = nullptr;
+    SidePanelHost         *m_sidePanelHost  = nullptr;
+    DisassemblerPanelHost *m_disasmPanelHost = nullptr;
     PreferencesDialog *m_prefsDialog    = nullptr;
     bool            m_useCustomTitleBar = true;
     bool            m_inResizeZone      = false;

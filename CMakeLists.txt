@@ -1,5 +1,27 @@
 cmake_minimum_required(VERSION 3.16)
 
+# ── Capstone disassembly library ──────────────────────────────────────────────
+include(FetchContent)
+set(CAPSTONE_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
+set(CAPSTONE_BUILD_CSTOOL   OFF CACHE BOOL "" FORCE)
+set(CAPSTONE_ARCHITECTURE_DEFAULT OFF CACHE BOOL "" FORCE)
+set(CAPSTONE_X86_SUPPORT    ON  CACHE BOOL "" FORCE)
+set(CAPSTONE_ARM_SUPPORT    ON  CACHE BOOL "" FORCE)
+set(CAPSTONE_AARCH64_SUPPORT ON CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    capstone
+    GIT_REPOSITORY https://github.com/capstone-engine/capstone.git
+    GIT_TAG        5.0.3
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(capstone)
+if(TARGET capstone)
+    target_compile_options(capstone PRIVATE
+        $<$<C_COMPILER_ID:GNU,Clang,AppleClang>:-w>
+        $<$<C_COMPILER_ID:MSVC>:/W0>
+    )
+endif()
+
 set(HEXEDIT_VERSION_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/src/HexEdit/version.h")
 file(STRINGS "${HEXEDIT_VERSION_HEADER}" HEXEDIT_VERSION_LINES
     REGEX "^#define VERSION_(MAJOR|MINOR|PATCH|BUILD_COUNT)[ \t]+[0-9]+")
@@ -16,7 +38,7 @@ endforeach()
 
 project(HexEdit
     VERSION ${HEXEDIT_VERSION_MAJOR}.${HEXEDIT_VERSION_MINOR}.${HEXEDIT_VERSION_PATCH}
-    LANGUAGES CXX)
+    LANGUAGES CXX C)
 
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
