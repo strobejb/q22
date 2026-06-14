@@ -17,6 +17,8 @@ class MenuComboBox : public QComboBox
 public:
     explicit MenuComboBox(QWidget *parent = nullptr);
 
+    void setLeadingIcon(const QIcon &icon);
+
 protected:
     QSize sizeHint()        const override;
     QSize minimumSizeHint() const override;
@@ -28,6 +30,7 @@ private:
     void  setPopupOpen(bool open);
 
     QMenu  *m_menu      = nullptr;
+    QIcon   m_leadingIcon;
     QPoint  m_closePos  { -1, -1 };
 
     bool isSameClickReopen();

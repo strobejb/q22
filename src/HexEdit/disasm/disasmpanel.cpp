@@ -6,15 +6,16 @@
 #include "theme.h"
 
 #include <QApplication>
-#include <QCheckBox>
 #include <QComboBox>
 #include <QFont>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QRegularExpression>
 #include <QTextEdit>
+#include <QToolButton>
 #include <QStyle>
 #include <QTextCharFormat>
 #include <QTextCursor>
@@ -96,22 +97,40 @@ void DisassemblerPanel::buildUi()
     auto *optLay = new QHBoxLayout;
     optLay->setContentsMargins(0, 0, 0, 0);
     optLay->setSpacing(6);
+
     m_archCombo = new MenuComboBox(content);
     m_archCombo->setToolTip(tr("Architecture"));
     for (int i = 0; i < kArchCount; ++i)
         m_archCombo->addItem(tr(kArchEntries[i].label));
-    m_archCombo->setCurrentIndex(0);  // x86 64-bit
-    m_archCombo->setFixedHeight(qMax(24, static_cast<QComboBox *>(m_archCombo)->sizeHint().height() - 4));
-    m_followCursor = new QCheckBox(tr("Follow cursor"), content);
-    m_followCursor->setChecked(true);
-    auto *chipIcon = new QLabel(content);
-    chipIcon->setPixmap(
+    m_archCombo->setCurrentIndex(0);
+    m_archCombo->setLeadingIcon(
         recoloredIcon(QStringLiteral("actions/chip"),
-                      filestats::subduedTextColor(palette()), 16).pixmap(16, 16));
-    chipIcon->setFixedSize(16, 16);
-    optLay->addWidget(chipIcon);
+                      filestats::subduedTextColor(palette()), 16));
+    const int comboH = qMax(24, static_cast<QComboBox *>(m_archCombo)->sizeHint().height() - 4);
+    m_archCombo->setFixedHeight(comboH);
+
+    // Read-only offset display with trailing pin toggle.
+    m_offsetEdit = new QLineEdit(content);
+    m_offsetEdit->setReadOnly(true);
+    m_offsetEdit->setFixedHeight(comboH);
+    m_offsetEdit->setPlaceholderText(tr("Offset"));
+    const auto existingBtns = m_offsetEdit->findChildren<QToolButton *>();
+    m_pinAction = m_offsetEdit->addAction(
+        recoloredIcon(QStringLiteral("actions/pin1"),
+                      palette().color(QPalette::WindowText), 16),
+        QLineEdit::TrailingPosition);
+    m_pinAction->setToolTip(tr("Pin offset"));
+    for (auto *btn : m_offsetEdit->findChildren<QToolButton *>())
+        if (!existingBtns.contains(btn))
+            btn->setCursor(Qt::PointingHandCursor);
+    // Width: 8 hex digits + generous left/right padding + trailing icon room
+    const int offsetW = m_offsetEdit->fontMetrics().horizontalAdvance(QStringLiteral("00000000")) + 40
+                        + 16 + 8; // icon + Qt's action button right margin
+    m_offsetEdit->setFixedWidth(offsetW);
+
     optLay->addWidget(m_archCombo);
-    optLay->addWidget(m_followCursor);
+    optLay->addSpacing(4);
+    optLay->addWidget(m_offsetEdit);
     optLay->addStretch(1);
     contentLay->addLayout(optLay);
     contentLay->addSpacing(4);
@@ -162,14 +181,14 @@ void DisassemblerPanel::buildUi()
     connect(m_archCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, [this](int) { openCapstone(); disassemble(); });
 
-    connect(m_followCursor, &QCheckBox::toggled,
-            this, [this](bool on) { if (on) disassemble(); });
-
     connect(m_hv, &HexView::cursorChanged,
-            this, [this](size_w) { if (m_followCursor->isChecked()) disassemble(); });
+            this, [this](size_w) { if (!m_pinned) disassemble(); });
 
     connect(m_hv, &HexView::contentChanged,
-            this, [this](size_w, size_w, uint) { if (m_followCursor->isChecked()) disassemble(); });
+            this, [this](size_w, size_w, uint) { if (!m_pinned) disassemble(); });
+
+    connect(m_pinAction, &QAction::triggered,
+            this, [this]() { setPinned(!m_pinned); });
 }
 
 void DisassemblerPanel::openCapstone()
@@ -272,8 +291,8 @@ void DisassemblerPanel::disassemble()
     const QColor    wt  = pal.windowText().color();
 
     // Semantic colours from the hex view's own palette
-    const QColor addrColor  = blend(QColor(m_hv->getHexColour(HVC_ADDRESS)), m_hv->getHexColour(HVC_BACKGROUND));
-    const QColor bytesColor = QColor(m_hv->getHexColour(HVC_ADDRESS));
+    const QColor addrColor  = QColor(m_hv->getHexColour(HVC_ADDRESS));
+    const QColor bytesColor = blend(QColor(m_hv->getHexColour(HVC_ADDRESS)), m_hv->getHexColour(HVC_BACKGROUND));
     const QColor instrColor = QColor(m_hv->getHexColour(HVC_HEXEVEN));
     const QColor opColor    = QColor(m_hv->getHexColour(HVC_HEXODD));
     const QColor numColor   = QColor(m_hv->getHexColour(HVC_MODIFY));
@@ -386,6 +405,28 @@ void DisassemblerPanel::disassemble()
             .arg(coveredBytes));
 
     cs_free(insn, count);
+    updateOffsetDisplay();
+}
+
+void DisassemblerPanel::updateOffsetDisplay()
+{
+    if (!m_offsetEdit || !m_hv || m_pinned)
+        return;
+    const size_w offset = m_hv->cursorOffset();
+    m_offsetEdit->setText(QString::number(offset, 16).toUpper().rightJustified(8, QLatin1Char('0')));
+}
+
+void DisassemblerPanel::setPinned(bool pinned)
+{
+    m_pinned = pinned;
+    const QString iconName  = pinned ? QStringLiteral("actions/pin0") : QStringLiteral("actions/pin1");
+    const QColor  iconColor = pinned
+        ? filestats::subduedTextColor(m_offsetEdit->palette())
+        : m_offsetEdit->palette().color(QPalette::WindowText);
+    m_pinAction->setIcon(recoloredIcon(iconName, iconColor, 16));
+    m_pinAction->setToolTip(pinned ? tr("Unpin offset") : tr("Pin offset"));
+    if (!pinned)
+        disassemble();
 }
 
 // ── DisassemblerPanelHost ─────────────────────────────────────────────────────

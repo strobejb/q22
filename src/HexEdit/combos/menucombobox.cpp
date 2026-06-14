@@ -201,12 +201,16 @@ void MenuComboBox::setPopupOpen(bool open)
 QSize MenuComboBox::sizeHint() const
 {
     QSize s = QComboBox::sizeHint();
+    if (!m_leadingIcon.isNull())
+        s.setWidth(s.width() + fontMetrics().height() + 8);
     return { s.width(), s.height() + 2 * kPad() };
 }
 
 QSize MenuComboBox::minimumSizeHint() const
 {
     QSize s = QComboBox::minimumSizeHint();
+    if (!m_leadingIcon.isNull())
+        s.setWidth(s.width() + fontMetrics().height() + 8);
     return { s.width(), s.height() + 2 * kPad() };
 }
 
@@ -227,11 +231,36 @@ void MenuComboBox::paintEvent(QPaintEvent *)
         opt.state &= ~(QStyle::State_On | QStyle::State_Sunken);
     }
     painter.drawComplexControl(QStyle::CC_ComboBox, opt);
-    painter.drawControl(QStyle::CE_ComboBoxLabel, opt);
+
+    // Draw label: if there's a leading icon, render it then draw the text
+    // manually so we can offset the text rect (same approach as DataTypeComboBox).
+    QRect textRect = style()->subControlRect(QStyle::CC_ComboBox, &opt, QStyle::SC_ComboBoxEditField, this);
+    if (!m_leadingIcon.isNull()) {
+        const int iconSz = fontMetrics().height();
+        const QRect iconRect(textRect.left(),
+                             textRect.top() + (textRect.height() - iconSz) / 2,
+                             iconSz, iconSz);
+        m_leadingIcon.paint(&painter, iconRect);
+        textRect.setLeft(iconRect.right() + 8);
+        style()->drawItemText(&painter, textRect,
+                              Qt::AlignLeft | Qt::AlignVCenter,
+                              opt.palette, isEnabled(),
+                              opt.currentText, QPalette::ButtonText);
+    } else {
+        painter.drawControl(QStyle::CE_ComboBoxLabel, opt);
+    }
+
     // The ::drop-down stylesheet rule suppresses the native arrow; draw it explicitly.
     QStyleOptionComboBox arrowOpt = opt;
     arrowOpt.rect = style()->subControlRect(QStyle::CC_ComboBox, &opt, QStyle::SC_ComboBoxArrow, this);
     painter.drawPrimitive(QStyle::PE_IndicatorArrowDown, arrowOpt);
+}
+
+void MenuComboBox::setLeadingIcon(const QIcon &icon)
+{
+    m_leadingIcon = icon;
+    updateGeometry();
+    update();
 }
 
 void MenuComboBox::buildMenu()

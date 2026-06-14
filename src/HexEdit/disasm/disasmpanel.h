@@ -8,8 +8,9 @@
 
 class HexView;
 class MenuComboBox;
-class QCheckBox;
+class QAction;
 class QLabel;
+class QLineEdit;
 class QPlainTextEdit;
 
 class DisassemblerPanel : public QWidget
@@ -29,14 +30,18 @@ private:
     void buildUi();
     void disassemble();
     void highlightCurrentLine();
+    void updateOffsetDisplay();
+    void setPinned(bool pinned);
     void openCapstone();
     void closeCapstone();
 
-    HexView        *m_hv           = nullptr;
-    MenuComboBox   *m_archCombo    = nullptr;
-    QCheckBox      *m_followCursor = nullptr;
-    QPlainTextEdit *m_view         = nullptr;
-    QLabel         *m_statusLabel  = nullptr;
+    HexView        *m_hv          = nullptr;
+    MenuComboBox   *m_archCombo   = nullptr;
+    QLineEdit      *m_offsetEdit  = nullptr;
+    QAction        *m_pinAction   = nullptr;
+    QPlainTextEdit *m_view        = nullptr;
+    QLabel         *m_statusLabel = nullptr;
+    bool            m_pinned      = false;
 
     cs_arch m_csArch   = CS_ARCH_X86;
     cs_mode m_csMode   = (cs_mode)CS_MODE_64;
