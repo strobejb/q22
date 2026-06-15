@@ -21,6 +21,7 @@
 #include <QTextCursor>
 #include <QVBoxLayout>
 
+
 // ── arch table ────────────────────────────────────────────────────────────────
 
 struct ArchEntry
@@ -140,6 +141,7 @@ void DisassemblerPanel::buildUi()
     m_view->setReadOnly(true);
     m_view->setLineWrapMode(QPlainTextEdit::NoWrap);
     m_view->setFrameShape(QFrame::NoFrame);
+    m_view->document()->setDocumentMargin(6.0);
     QFont viewFont = m_hv->font();
     if (viewFont.pointSize() > 0)
         viewFont.setPointSize(viewFont.pointSize() - 1);
@@ -160,7 +162,8 @@ void DisassemblerPanel::buildUi()
     m_view->setPalette(vp);
 
     m_view->setStyleSheet(
-        QStringLiteral("QPlainTextEdit { border: 1px solid palette(mid); border-radius: 3px;"
+        QStringLiteral("QPlainTextEdit { border: 1px solid palette(mid); border-radius: 6px;"
+                       " padding: 0;"
                        " selection-background-color: %1; selection-color: %2; }")
         .arg(filestats::cssColor(selBgColor), filestats::cssColor(selFgColor)));
 
