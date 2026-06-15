@@ -1570,6 +1570,13 @@ void SidePanelSlot::hostOpening(SidePanelHostBase *openingHost)
             m_slotAnim->setEasingCurve(QEasingCurve::OutCubic);
             m_slotAnim->setStartValue(maximumWidth());
             m_slotAnim->setEndValue(newWidth);
+            connect(m_slotAnim, &QPropertyAnimation::valueChanged, this, [this](const QVariant &v) {
+                setMinimumWidth(v.toInt());
+            });
+            connect(m_slotAnim, &QPropertyAnimation::finished, this, [this, newWidth]() {
+                setMinimumWidth(newWidth);
+                m_slotAnim->disconnect();
+            }, Qt::SingleShotConnection);
             m_slotAnim->start();
         }
     } else {
@@ -1630,6 +1637,12 @@ void SidePanelSlot::beginExpand(int toWidth)
     m_slotAnim->setEasingCurve(QEasingCurve::OutCubic);
     m_slotAnim->setStartValue(maximumWidth());
     m_slotAnim->setEndValue(toWidth);
+    // Keep minimumWidth == maximumWidth every frame so the layout is forced
+    // to honour the animated width.  Without this the hex view (Expanding
+    // policy) takes all available space and the slot stays at 0.
+    connect(m_slotAnim, &QPropertyAnimation::valueChanged, this, [this](const QVariant &v) {
+        setMinimumWidth(v.toInt());
+    });
     connect(m_slotAnim, &QPropertyAnimation::finished, this, [this, toWidth]() {
         setMinimumWidth(toWidth);
         m_slotAnim->disconnect();
@@ -1639,12 +1652,16 @@ void SidePanelSlot::beginExpand(int toWidth)
 
 void SidePanelSlot::beginCollapse()
 {
-    setMinimumWidth(0);
     m_slotAnim->stop();
     m_slotAnim->disconnect();
     m_slotAnim->setEasingCurve(QEasingCurve::InCubic);
     m_slotAnim->setStartValue(maximumWidth());
     m_slotAnim->setEndValue(0);
+    // Keep minimumWidth in sync so the slot holds its animated width and the
+    // panel remains visible throughout the slide-out.
+    connect(m_slotAnim, &QPropertyAnimation::valueChanged, this, [this](const QVariant &v) {
+        setMinimumWidth(v.toInt());
+    });
     connect(m_slotAnim, &QPropertyAnimation::finished, this, [this]() {
         hide();
         m_slotAnim->disconnect();

@@ -54,6 +54,28 @@ set_tests_properties(findpanel_tests PROPERTIES
         "PATH=path_list_prepend:${QT_RUNTIME_BIN_DIR}"
 )
 
+add_executable(typelib_tests
+    typelib_tests.cpp
+)
+
+target_link_libraries(typelib_tests PRIVATE
+    TypeLib
+    Qt${QT_VERSION_MAJOR}::Core
+    Qt${QT_VERSION_MAJOR}::Test
+)
+target_compile_definitions(typelib_tests PRIVATE
+    TYPELIB_TEST_DATA_DIR="${TYPELIB_DATA_BINARY_DIR}"
+)
+if(TARGET TypeLibData)
+    add_dependencies(typelib_tests TypeLibData)
+endif()
+
+add_test(NAME typelib_tests COMMAND typelib_tests)
+set_tests_properties(typelib_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION
+        "PATH=path_list_prepend:${QT_RUNTIME_BIN_DIR}"
+)
+
 add_executable(stringscan_tests
     stringscan_tests.cpp
     ../src/HexEdit/filestats/stringscan.cpp

@@ -205,6 +205,10 @@ if(WIN32)
     target_link_libraries(hexedit PRIVATE dwmapi advapi32)
 endif()
 
+if(TARGET TypeLibData)
+    add_dependencies(hexedit TypeLibData)
+endif()
+
 find_file(ADWAITA_QT6_PLUGIN adwaita.so
     PATH_SUFFIXES styles
     PATHS
