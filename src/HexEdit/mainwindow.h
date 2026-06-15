@@ -13,6 +13,8 @@ QT_END_NAMESPACE
 
 class BookmarkDialog;
 class DisassemblerPanelHost;
+class SidePanelHost;
+class SidePanelSlot;
 class FindPanel;
 class GotoPanel;
 class PreferencesDialog;

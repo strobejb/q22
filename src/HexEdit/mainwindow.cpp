@@ -14,6 +14,7 @@
 #include "disasm/disasmpanel.h"
 #include "fileproperties.h"
 #include "filestats/banner.h"
+#include "filestats/sidepanel.h"
 #include "panels/dockpanelhost.h"
 #include "panels/findpanel.h"
 #include "panels/gotopanel.h"
@@ -658,11 +659,13 @@ MainWindow::MainWindow(QWidget *parent)
     hexColumnLay->addWidget(m_hv, 1);
     contentLay->addWidget(hexColumn, 1);
 
-    m_sidePanelHost = new SidePanelHost(m_hv, contentRow);
-    contentLay->addWidget(m_sidePanelHost, 0);
-
+    m_sidePanelHost   = new SidePanelHost(m_hv, contentRow);
     m_disasmPanelHost = new DisassemblerPanelHost(m_hv, contentRow);
-    contentLay->addWidget(m_disasmPanelHost, 0);
+
+    auto *panelSlot = new SidePanelSlot(contentRow);
+    panelSlot->addHost(m_sidePanelHost);
+    panelSlot->addHost(m_disasmPanelHost);
+    contentLay->addWidget(panelSlot, 0);
 
     vlay->addWidget(contentRow, 1);
     m_bookmarkDialog = new BookmarkDialog(this);

@@ -351,6 +351,8 @@ class FilePropertiesPanel : public QDialog
     QPoint                            m_stringOptionsMenuClosePos{-1, -1};
 };
 
+class SidePanelSlot;
+
 // Generic slide-in panel host. Handles the animation, resize grip, and panel
 // widget lifecycle. Subclasses implement createPanelWidget() and optionally
 // override onPanelCreated() and onFullyOpenedChanged().
@@ -364,6 +366,7 @@ class SidePanelHostBase : public QWidget
                                bool gripOnLeft, QWidget *parent = nullptr);
 
     bool isOpen() const;
+    int  paneWidth() const { return m_paneWidth; }
     virtual void toggle();
     void closePanel();
 
@@ -375,16 +378,27 @@ class SidePanelHostBase : public QWidget
     virtual void    onPanelCreated(QWidget * /*panel*/) {}
     virtual void    onFullyOpenedChanged(bool /*open*/) {}
 
+    void resizeEvent(QResizeEvent *) override;
+
     void     openPanel();
     QWidget *panelWidget() const;
     void     setExpanded(bool expanded);
     void     setPaneWidth(int width);
 
+    // Slot-based slide animation (used when installed in a SidePanelSlot)
+    void slideIn(std::function<void()> onDone = {});
+    void slideOut(std::function<void()> onDone = {});
+    void notifyFullyOpened(bool open);
+    void destroyPanel();
+    void positionPanel();
+
   private:
     bool eventFilter(QObject *obj, QEvent *event) override;
 
+    SidePanelSlot      *m_slot             = nullptr;
     QWidget            *m_resizeHandle     = nullptr;
     QPropertyAnimation *m_widthAnim        = nullptr;
+    QPropertyAnimation *m_slideAnim        = nullptr;
     QPointer<QWidget>   m_panel;
     bool                m_resizing         = false;
     bool                m_gripOnLeft       = true;
@@ -393,6 +407,38 @@ class SidePanelHostBase : public QWidget
     int                 m_paneWidth        = 0;
     int                 m_resizeStartWidth = 0;
     qreal               m_resizeStartX     = 0.0;
+
+    friend class SidePanelSlot;
+};
+
+// Shared container that holds multiple SidePanelHostBase instances as
+// absolutely-positioned, overlapping children. The slot owns the single
+// layout-level width animation; each host uses pos-only slide animation
+// within the fixed-width slot — so panel content never reflowss during
+// transitions, and switching panels produces an overlay rather than
+// an extension of the total panel area.
+class SidePanelSlot : public QWidget
+{
+    Q_OBJECT
+public:
+    explicit SidePanelSlot(QWidget *parent = nullptr);
+    void addHost(SidePanelHostBase *host);
+
+    // Called by SidePanelHostBase
+    void hostOpening(SidePanelHostBase *host);
+    void hostClosing(SidePanelHostBase *host);
+    void hostPaneWidthChanged(SidePanelHostBase *host, int newWidth);
+
+protected:
+    void resizeEvent(QResizeEvent *) override;
+
+private:
+    void beginExpand(int toWidth);
+    void beginCollapse();
+
+    QList<SidePanelHostBase *> m_hosts;
+    SidePanelHostBase         *m_activeHost = nullptr;
+    QPropertyAnimation        *m_slotAnim   = nullptr;
 };
 
 class SidePanelHost : public SidePanelHostBase

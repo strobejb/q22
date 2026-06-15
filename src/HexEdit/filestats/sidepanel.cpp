@@ -1263,14 +1263,13 @@ SidePanelHostBase::SidePanelHostBase(int defaultWidth, int minWidth, int maxWidt
 
     m_resizeHandle = new SidePanelResizeGrip(this);
     m_resizeHandle->installEventFilter(this);
-    // For gripOnLeft (right-side panel) the grip is the leftmost widget.
-    // For !gripOnLeft (left-side panel) the grip is the rightmost; the panel
-    // widget is inserted at index 0 when created, pushing grip to the right.
     lay->addWidget(m_resizeHandle);
+    // Stretch so the grip stays at its natural width when the panel is
+    // positioned absolutely (not inside this layout).
+    lay->addStretch(1);
 
     m_widthAnim = new QPropertyAnimation(this, "maximumWidth", this);
     m_widthAnim->setDuration(kFileInfoPaneAnimMs);
-    m_widthAnim->setEasingCurve(QEasingCurve::OutCubic);
 }
 
 bool SidePanelHostBase::isOpen() const { return m_panel != nullptr; }
@@ -1283,12 +1282,102 @@ void SidePanelHostBase::toggle()
     else openPanel();
 }
 
+void SidePanelHostBase::positionPanel()
+{
+    if (!m_panel) return;
+    const int gripW  = m_resizeHandle ? m_resizeHandle->width() : 0;
+    const int panelW = m_paneWidth - gripW;
+    const int x      = m_gripOnLeft ? gripW : 0;
+    m_panel->setGeometry(x, 0, panelW, height());
+}
+
+void SidePanelHostBase::resizeEvent(QResizeEvent *e)
+{
+    QWidget::resizeEvent(e);
+    if (!m_panel) return;
+    // During a slide animation only update size; don't fight the pos animation.
+    if (m_slideAnim && m_slideAnim->state() == QAbstractAnimation::Running) {
+        const int gripW = m_resizeHandle ? m_resizeHandle->width() : 0;
+        m_panel->resize(m_paneWidth - gripW, height());
+    } else {
+        positionPanel();
+    }
+}
+
+void SidePanelHostBase::slideIn(std::function<void()> onDone)
+{
+    if (!m_panel) return;
+    if (m_slideAnim) { m_slideAnim->stop(); m_slideAnim = nullptr; }
+
+    const int gripW   = m_resizeHandle ? m_resizeHandle->width() : 0;
+    const int panelW  = m_paneWidth - gripW;
+    const int targetX = m_gripOnLeft ? gripW : 0;
+    const int startX  = m_gripOnLeft ? m_paneWidth : -panelW;
+
+    m_panel->setGeometry(startX, 0, panelW, height());
+
+    m_slideAnim = new QPropertyAnimation(m_panel, "pos", this);
+    m_slideAnim->setStartValue(QPoint(startX, 0));
+    m_slideAnim->setEndValue(QPoint(targetX, 0));
+    m_slideAnim->setDuration(kFileInfoPaneAnimMs);
+    m_slideAnim->setEasingCurve(QEasingCurve::OutCubic);
+    connect(m_slideAnim, &QPropertyAnimation::finished, this, [this, onDone]() {
+        m_slideAnim = nullptr;
+        positionPanel();
+        notifyFullyOpened(true);
+        if (onDone) onDone();
+    });
+    m_slideAnim->start(QAbstractAnimation::DeleteWhenStopped);
+}
+
+void SidePanelHostBase::slideOut(std::function<void()> onDone)
+{
+    if (m_slideAnim) { m_slideAnim->stop(); m_slideAnim = nullptr; }
+    notifyFullyOpened(false);
+
+    if (!m_panel) {
+        if (onDone) onDone();
+        return;
+    }
+
+    const int endX = m_gripOnLeft ? m_paneWidth : -m_paneWidth;
+
+    m_slideAnim = new QPropertyAnimation(m_panel, "pos", this);
+    m_slideAnim->setStartValue(m_panel->pos());
+    m_slideAnim->setEndValue(QPoint(endX, 0));
+    m_slideAnim->setDuration(kFileInfoPaneAnimMs);
+    m_slideAnim->setEasingCurve(QEasingCurve::InCubic);
+    connect(m_slideAnim, &QPropertyAnimation::finished, this, [this, onDone]() {
+        m_slideAnim = nullptr;   // clear before any downstream resizeEvent
+        if (onDone) onDone();
+    });
+    m_slideAnim->start(QAbstractAnimation::DeleteWhenStopped);
+}
+
+void SidePanelHostBase::notifyFullyOpened(bool open)
+{
+    onFullyOpenedChanged(open);
+    if (open)
+        setMinimumWidth(m_paneWidth);
+}
+
+void SidePanelHostBase::destroyPanel()
+{
+    if (m_panel) {
+        m_panel->deleteLater();
+        m_panel = nullptr;
+    }
+}
+
 void SidePanelHostBase::openPanel()
 {
     if (m_panel)
     {
-        if (!isVisible() || maximumWidth() < m_paneWidth)
+        if (m_slot) {
+            m_slot->hostOpening(this);
+        } else if (!isVisible() || maximumWidth() < m_paneWidth) {
             setExpanded(true);
+        }
         emit openChanged(true);
         return;
     }
@@ -1297,26 +1386,33 @@ void SidePanelHostBase::openPanel()
     panel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     m_panel = panel;
 
-    auto *hostLayout = qobject_cast<QHBoxLayout *>(layout());
-    if (m_gripOnLeft)
-        hostLayout->addWidget(panel);        // grip at 0, panel at 1
-    else
-        hostLayout->insertWidget(0, panel);  // panel at 0, grip stays at 1
-
+    // Position absolutely within the host — panel is NOT added to the layout,
+    // so its geometry is fixed at m_paneWidth and won't reflow during animation.
+    panel->setParent(this);
+    positionPanel();
     panel->show();
+
     onPanelCreated(panel);
     emit openChanged(true);
-    setExpanded(true);
+
+    if (m_slot)
+        m_slot->hostOpening(this);
+    else
+        setExpanded(true);
 }
 
 void SidePanelHostBase::closePanel()
 {
     emit openChanged(false);
-    setExpanded(false);
+    if (m_slot)
+        m_slot->hostClosing(this);
+    else
+        setExpanded(false);
 }
 
 void SidePanelHostBase::setExpanded(bool expanded)
 {
+    // Standalone (no slot) width animation — keeps the host's own maximumWidth animated.
     if (!m_widthAnim)
         return;
 
@@ -1355,11 +1451,7 @@ void SidePanelHostBase::setExpanded(bool expanded)
             {
                 if (maximumWidth() == 0)
                 {
-                    if (m_panel)
-                    {
-                        m_panel->deleteLater();
-                        m_panel = nullptr;
-                    }
+                    destroyPanel();
                     hide();
                 }
             },
@@ -1372,8 +1464,13 @@ void SidePanelHostBase::setExpanded(bool expanded)
 void SidePanelHostBase::setPaneWidth(int width)
 {
     m_paneWidth = qBound(m_minWidth, width, m_maxWidth);
-    setMinimumWidth(m_paneWidth);
-    setMaximumWidth(m_paneWidth);
+    if (m_slot) {
+        m_slot->hostPaneWidthChanged(this, m_paneWidth);
+    } else {
+        setMinimumWidth(m_paneWidth);
+        setMaximumWidth(m_paneWidth);
+    }
+    positionPanel();
 }
 
 bool SidePanelHostBase::eventFilter(QObject *obj, QEvent *event)
@@ -1387,10 +1484,10 @@ bool SidePanelHostBase::eventFilter(QObject *obj, QEvent *event)
         auto *me = static_cast<QMouseEvent *>(event);
         if (me->button() == Qt::LeftButton && isVisible())
         {
-            m_widthAnim->stop();
+            if (m_widthAnim) m_widthAnim->stop();
             m_resizing         = true;
             m_resizeStartX     = me->globalPosition().x();
-            m_resizeStartWidth = width();
+            m_resizeStartWidth = m_slot ? m_slot->width() : width();
             if (m_resizeHandle)
                 static_cast<SidePanelResizeGrip *>(m_resizeHandle)->setActive(true);
             m_resizeHandle->grabMouse();
@@ -1418,6 +1515,141 @@ bool SidePanelHostBase::eventFilter(QObject *obj, QEvent *event)
     }
 
     return QWidget::eventFilter(obj, event);
+}
+
+// ── SidePanelSlot ─────────────────────────────────────────────────────────────
+
+SidePanelSlot::SidePanelSlot(QWidget *parent)
+    : QWidget(parent)
+{
+    setMinimumWidth(0);
+    setMaximumWidth(0);
+    hide();
+
+    m_slotAnim = new QPropertyAnimation(this, "maximumWidth", this);
+    m_slotAnim->setDuration(kFileInfoPaneAnimMs);
+}
+
+void SidePanelSlot::addHost(SidePanelHostBase *host)
+{
+    m_hosts.append(host);
+    host->setParent(this);
+    host->hide();
+    host->m_slot = this;
+}
+
+void SidePanelSlot::hostOpening(SidePanelHostBase *openingHost)
+{
+    SidePanelHostBase *prev = m_activeHost;
+    m_activeHost = openingHost;
+
+    const int newWidth = openingHost->paneWidth();
+
+    // Place opening host at its full pane width. The slot clips it until expanded.
+    openingHost->setGeometry(0, 0, newWidth, height());
+    openingHost->show();
+    openingHost->raise();
+
+    if (prev && prev != openingHost) {
+        // Overlay switch: incoming panel slides in on top of the stationary
+        // outgoing panel, covering it progressively from right to left.
+        // No slide-out — sliding both would expose the outgoing panel to the
+        // left of the incoming one for most of the animation.
+        prev->notifyFullyOpened(false);
+        if (prev->m_slideAnim) { prev->m_slideAnim->stop(); prev->m_slideAnim = nullptr; }
+        prev->positionPanel();  // snap outgoing to its fully-open position
+        openingHost->slideIn([prev]() {
+            prev->destroyPanel();
+            prev->hide();
+        });
+
+        // Animate slot to new width if the panels have different widths.
+        if (maximumWidth() != newWidth) {
+            m_slotAnim->stop();
+            m_slotAnim->disconnect();
+            m_slotAnim->setEasingCurve(QEasingCurve::OutCubic);
+            m_slotAnim->setStartValue(maximumWidth());
+            m_slotAnim->setEndValue(newWidth);
+            m_slotAnim->start();
+        }
+    } else {
+        // Opening from fully closed.
+        beginExpand(newWidth);
+        openingHost->slideIn();
+    }
+}
+
+void SidePanelSlot::hostClosing(SidePanelHostBase *host)
+{
+    if (m_activeHost == host)
+        m_activeHost = nullptr;
+
+    host->slideOut([host]() {
+        host->destroyPanel();
+        host->hide();
+    });
+
+    // Start the slot collapse simultaneously with the slide-out so the hex
+    // view grows in sync with the panel leaving (no blank gap).  Defer by
+    // one event-loop tick so that if hostOpening() is called synchronously
+    // in the same stack (panel switch via exclusivity signal) it can set
+    // m_activeHost first and cancel the collapse.
+    if (!m_activeHost) {
+        QTimer::singleShot(0, this, [this]() {
+            if (!m_activeHost)
+                beginCollapse();
+        });
+    }
+}
+
+void SidePanelSlot::hostPaneWidthChanged(SidePanelHostBase *host, int newWidth)
+{
+    if (host != m_activeHost) return;
+    m_slotAnim->stop();
+    m_slotAnim->disconnect();
+    // Immediate resize during grip drag (no animation).
+    setMinimumWidth(newWidth);
+    setMaximumWidth(newWidth);
+    // resizeEvent fires and repositions the host.
+}
+
+void SidePanelSlot::resizeEvent(QResizeEvent *e)
+{
+    QWidget::resizeEvent(e);
+    for (auto *host : m_hosts) {
+        if (host->isVisible())
+            host->setGeometry(0, 0, host->paneWidth(), height());
+    }
+}
+
+void SidePanelSlot::beginExpand(int toWidth)
+{
+    show();
+    m_slotAnim->stop();
+    m_slotAnim->disconnect();
+    m_slotAnim->setEasingCurve(QEasingCurve::OutCubic);
+    m_slotAnim->setStartValue(maximumWidth());
+    m_slotAnim->setEndValue(toWidth);
+    connect(m_slotAnim, &QPropertyAnimation::finished, this, [this, toWidth]() {
+        setMinimumWidth(toWidth);
+        m_slotAnim->disconnect();
+    }, Qt::SingleShotConnection);
+    m_slotAnim->start();
+}
+
+void SidePanelSlot::beginCollapse()
+{
+    setMinimumWidth(0);
+    m_slotAnim->stop();
+    m_slotAnim->disconnect();
+    m_slotAnim->setEasingCurve(QEasingCurve::InCubic);
+    m_slotAnim->setStartValue(maximumWidth());
+    m_slotAnim->setEndValue(0);
+    connect(m_slotAnim, &QPropertyAnimation::finished, this, [this]() {
+        hide();
+        m_slotAnim->disconnect();
+    }, Qt::SingleShotConnection);
+    m_slotAnim->start();
 }
 
 // ── SidePanelHost ─────────────────────────────────────────────────────────────
