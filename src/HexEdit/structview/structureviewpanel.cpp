@@ -9,7 +9,9 @@
 #include "theme.h"
 
 #include <QApplication>
+#include <QAction>
 #include <QComboBox>
+#include <QEvent>
 #include <QFrame>
 #include <QHeaderView>
 #include <QHBoxLayout>
@@ -20,6 +22,7 @@
 #include <QStyle>
 #include <QStyleOptionHeader>
 #include <QTreeView>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 #include <cmath>
@@ -182,6 +185,13 @@ void StructureViewPanel::showEvent(QShowEvent *event)
     updateOffsetDisplay();
 }
 
+void StructureViewPanel::changeEvent(QEvent *event)
+{
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::PaletteChange || event->type() == QEvent::ApplicationPaletteChange)
+        updateTreeSelectionPalette();
+}
+
 void StructureViewPanel::buildUi()
 {
     auto *rootLay = new QVBoxLayout(this);
@@ -203,7 +213,7 @@ void StructureViewPanel::buildUi()
     auto *content = new QWidget(this);
     auto *contentLay = new QVBoxLayout(content);
     contentLay->setContentsMargins(filestats::kContentMargin, filestats::kContentMargin,
-                                   filestats::kContentMargin + 7, 6);
+                                   filestats::kContentMargin + 7, 8);
     contentLay->setSpacing(4);
 
     auto *optLay = new QHBoxLayout;
@@ -222,7 +232,17 @@ void StructureViewPanel::buildUi()
     m_offsetEdit->setReadOnly(true);
     m_offsetEdit->setFixedHeight(comboH);
     m_offsetEdit->setPlaceholderText(tr("Offset"));
-    const int offsetW = m_offsetEdit->fontMetrics().horizontalAdvance(QStringLiteral("00000000")) + 34;
+    const auto existingBtns = m_offsetEdit->findChildren<QToolButton *>();
+    m_pinAction = m_offsetEdit->addAction(
+        recoloredIcon(QStringLiteral("actions/pin1"),
+                      palette().color(QPalette::WindowText), 16),
+        QLineEdit::TrailingPosition);
+    m_pinAction->setToolTip(tr("Pin offset"));
+    for (auto *btn : m_offsetEdit->findChildren<QToolButton *>())
+        if (!existingBtns.contains(btn))
+            btn->setCursor(Qt::PointingHandCursor);
+    const int offsetW = m_offsetEdit->fontMetrics().horizontalAdvance(QStringLiteral("00000000")) + 40
+                        + 16 + 8; // icon + Qt's action button right margin
     m_offsetEdit->setFixedWidth(offsetW);
 
     optLay->addWidget(m_rootCombo, 1);
@@ -267,6 +287,7 @@ void StructureViewPanel::buildUi()
     m_tree->header()->resizeSection(StructureTreeModel::ValueColumn, 90);
     m_tree->header()->resizeSection(StructureTreeModel::OffsetColumn, 84);
     m_tree->header()->resizeSection(StructureTreeModel::CommentColumn, 140);
+    updateTreeSelectionPalette();
     {
         QFont headerFont = m_tree->header()->font();
         if (headerFont.pointSizeF() > 0)
@@ -277,33 +298,9 @@ void StructureViewPanel::buildUi()
         const QFontMetrics metrics(headerFont);
         const int headerPad = filestats::stringsHeaderPadding(metrics);
         constexpr int itemCellInset = 3;
-        const int itemLeftPad = qMax(0, headerPad - itemCellInset);
+        m_treeItemLeftPad = qMax(0, headerPad - itemCellInset);
         m_tree->header()->setFixedHeight(metrics.height() + 2 * headerPad + kHeaderBottomGap);
-        m_tree->setStyleSheet(
-            QStringLiteral(R"(
-        QTreeView#structureGrid {
-            background: palette(base);
-            border: none;
-            border-radius: 5px;
-            padding: 0px;
-            outline: none;
-        }
-        QTreeView#structureGrid::viewport {
-            background: palette(base);
-            border-radius: 5px;
-        }
-        QTreeView#structureGrid QHeaderView::section {
-            background: palette(base);
-            border: none;
-            padding: 4px 6px;
-        }
-        QTreeView#structureGrid QHeaderView::section:hover {
-            background: palette(button);
-        }
-        QTreeView#structureGrid::item {
-            padding: 3px 6px 3px %1px;
-        }
-    )").arg(itemLeftPad));
+        updateTreeSelectionPalette();
     }
 
     gridLay->addWidget(m_tree);
@@ -327,6 +324,69 @@ void StructureViewPanel::buildUi()
             this, [this](size_w) { updateOffsetDisplay(); });
     connect(m_hv, &HexView::contentChanged,
             this, [this](size_w, size_w, uint) { updateOffsetDisplay(); });
+    connect(m_pinAction, &QAction::triggered,
+            this, [this]() { setPinned(!m_pinned); });
+}
+
+void StructureViewPanel::updateTreeSelectionPalette()
+{
+    if (!m_tree || !m_hv)
+        return;
+
+    const QColor activeSelection = QColor(m_hv->getHexColour(HVC_SELECTION));
+    const QColor activeText = QColor(m_hv->getHexColour(HVC_SELTEXT));
+    const QColor inactiveSelection = QColor(m_hv->getHexColour(HVC_SELECTION_INACTIVE));
+    const QColor inactiveText = QColor(m_hv->getHexColour(HVC_SELTEXT_INACTIVE));
+
+    QPalette pal = m_tree->palette();
+    pal.setColor(QPalette::Active, QPalette::Highlight, activeSelection);
+    pal.setColor(QPalette::Active, QPalette::HighlightedText, activeText);
+    pal.setColor(QPalette::Inactive, QPalette::Highlight, inactiveSelection);
+    pal.setColor(QPalette::Inactive, QPalette::HighlightedText, inactiveText);
+    m_tree->setPalette(pal);
+    if (m_tree->viewport())
+        m_tree->viewport()->setPalette(pal);
+
+    m_tree->setStyleSheet(
+        QStringLiteral(R"(
+        QTreeView#structureGrid {
+            background: palette(base);
+            border: none;
+            border-radius: 5px;
+            padding: 0px;
+            outline: none;
+        }
+        QTreeView#structureGrid::viewport {
+            background: palette(base);
+            border-radius: 5px;
+        }
+        QTreeView#structureGrid QHeaderView::section {
+            background: palette(base);
+            border: none;
+            padding: 4px 6px;
+        }
+        QTreeView#structureGrid QHeaderView::section:hover {
+            background: palette(button);
+        }
+        QTreeView#structureGrid::item {
+            padding: 3px 6px 3px %1px;
+        }
+        QTreeView#structureGrid::item:hover {
+            background: palette(button);
+        }
+        QTreeView#structureGrid::item:selected {
+            background: %2;
+            color: %3;
+        }
+        QTreeView#structureGrid::item:selected:!active {
+            background: %4;
+            color: %5;
+        }
+    )").arg(m_treeItemLeftPad)
+            .arg(filestats::cssColor(activeSelection),
+                 filestats::cssColor(activeText),
+                 filestats::cssColor(inactiveSelection),
+                 filestats::cssColor(inactiveText)));
 }
 
 void StructureViewPanel::updateDefinitionsUi()
@@ -354,10 +414,23 @@ void StructureViewPanel::updateDefinitionsUi()
 
 void StructureViewPanel::updateOffsetDisplay()
 {
-    if (!m_offsetEdit || !m_hv)
+    if (!m_offsetEdit || !m_hv || m_pinned)
         return;
 
     m_offsetEdit->setText(QString::number(m_hv->cursorOffset(), 16).toUpper().rightJustified(8, QLatin1Char('0')));
+}
+
+void StructureViewPanel::setPinned(bool pinned)
+{
+    m_pinned = pinned;
+    const QString iconName = pinned ? QStringLiteral("actions/pin0") : QStringLiteral("actions/pin1");
+    const QColor iconColor = pinned
+        ? filestats::subduedTextColor(m_offsetEdit->palette())
+        : m_offsetEdit->palette().color(QPalette::WindowText);
+    m_pinAction->setIcon(recoloredIcon(iconName, iconColor, 16));
+    m_pinAction->setToolTip(pinned ? tr("Unpin offset") : tr("Pin offset"));
+    if (!pinned)
+        updateOffsetDisplay();
 }
 
 QString StructureViewPanel::displayNameForTypeDecl(TypeDecl *decl) const

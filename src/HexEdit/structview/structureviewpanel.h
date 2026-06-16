@@ -6,6 +6,7 @@
 #include <QWidget>
 
 class HexView;
+class QAction;
 class QLabel;
 class QLineEdit;
 class QTreeView;
@@ -28,11 +29,14 @@ public slots:
 
 protected:
     void showEvent(QShowEvent *event) override;
+    void changeEvent(QEvent *event) override;
 
 private:
     void buildUi();
+    void updateTreeSelectionPalette();
     void updateDefinitionsUi();
     void updateOffsetDisplay();
+    void setPinned(bool pinned);
     QString displayNameForTypeDecl(TypeDecl *decl) const;
 
     HexView                    *m_hv = nullptr;
@@ -40,8 +44,11 @@ private:
     StructureTreeModel         *m_model = nullptr;
     MenuComboBox               *m_rootCombo = nullptr;
     QLineEdit                  *m_offsetEdit = nullptr;
+    QAction                    *m_pinAction = nullptr;
     QTreeView                  *m_tree = nullptr;
     QLabel                     *m_statusLabel = nullptr;
+    int                         m_treeItemLeftPad = 6;
+    bool                        m_pinned = false;
 };
 
 class StructureViewPanelHost : public SidePanelHostBase

@@ -91,7 +91,7 @@ void DisassemblerPanel::buildUi()
     // Right margin = kContentMargin + 7 to compensate for the 7-px resize grip
     // on the left (kGripWidth in resizegrip.cpp), so content is visually centred.
     contentLay->setContentsMargins(filestats::kContentMargin, filestats::kContentMargin,
-                                   filestats::kContentMargin + 7, 6);
+                                   filestats::kContentMargin + 7, 8);
     contentLay->setSpacing(4);
 
     // Options row

@@ -1546,6 +1546,8 @@ void SidePanelSlot::hostOpening(SidePanelHostBase *openingHost)
     const int newWidth = openingHost->paneWidth();
 
     // Place opening host at its full pane width. The slot clips it until expanded.
+    openingHost->setMinimumWidth(newWidth);
+    openingHost->setMaximumWidth(newWidth);
     openingHost->setGeometry(0, 0, newWidth, height());
     openingHost->show();
     openingHost->raise();
@@ -1617,7 +1619,25 @@ void SidePanelSlot::hostPaneWidthChanged(SidePanelHostBase *host, int newWidth)
     // Immediate resize during grip drag (no animation).
     setMinimumWidth(newWidth);
     setMaximumWidth(newWidth);
-    // resizeEvent fires and repositions the host.
+    updateGeometry();
+
+    // Keep the active host's constraints in sync with the slot.  The host is
+    // absolutely positioned inside this slot, so stale min/max values from the
+    // previous open width can prevent its child panel from reflowing during a
+    // live grip drag even though the slot itself changed size.
+    host->setMinimumWidth(newWidth);
+    host->setMaximumWidth(newWidth);
+    host->setGeometry(0, 0, newWidth, height());
+    host->positionPanel();
+    if (QWidget *panel = host->panelWidget())
+    {
+        panel->updateGeometry();
+        if (QLayout *layout = panel->layout())
+        {
+            layout->invalidate();
+            layout->activate();
+        }
+    }
 }
 
 void SidePanelSlot::resizeEvent(QResizeEvent *e)
@@ -1625,7 +1645,12 @@ void SidePanelSlot::resizeEvent(QResizeEvent *e)
     QWidget::resizeEvent(e);
     for (auto *host : m_hosts) {
         if (host->isVisible())
+        {
+            host->setMinimumWidth(host->paneWidth());
+            host->setMaximumWidth(host->paneWidth());
             host->setGeometry(0, 0, host->paneWidth(), height());
+            host->positionPanel();
+        }
     }
 }
 
