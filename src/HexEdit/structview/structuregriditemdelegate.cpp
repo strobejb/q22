@@ -1,14 +1,23 @@
 #include "structview/structuregriditemdelegate.h"
 
+#include "structview/structuretreemodel.h"
+
 #include <QApplication>
+#include <QFont>
+#include <QFontMetrics>
 #include <QLineEdit>
 #include <QPainter>
 #include <QTreeView>
 
+#include <algorithm>
 #include <cmath>
 
 namespace
 {
+static constexpr bool kAlignStructureNameIdentifiers = true;
+static constexpr bool kEmphasizeAlignedNameIdentifiers = true;
+static constexpr qreal kNameIdentifierColumnWidth = 44.0;
+
 qreal devicePixelSize(const QPainter *painter)
 {
     const qreal dpr = painter && painter->device() ? painter->device()->devicePixelRatioF() : 1.0;
@@ -46,29 +55,47 @@ void StructureGridItemDelegate::paint(QPainter *painter,
 {
     QStyleOptionViewItem opt(option);
     initStyleOption(&opt, index);
+    if (index.data(StructureTreeModel::EmphasizeNameRole).toBool())
+        opt.font.setBold(true);
+
+    if (kAlignStructureNameIdentifiers && paintAlignedName(painter, &opt, index))
+    {
+        drawGridLines(painter, opt, index);
+        return;
+    }
 
     QStyledItemDelegate::paint(painter, opt, index);
 
     if (isEditingIndex(index))
         return;
 
+    drawGridLines(painter, opt, index);
+}
+
+void StructureGridItemDelegate::drawGridLines(QPainter *painter,
+                                              const QStyleOptionViewItem &option,
+                                              const QModelIndex &index) const
+{
+    if (isEditingIndex(index))
+        return;
+
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing, false);
-    const QColor gridColour = StructureGridItemDelegate::gridColour(opt.palette);
+    const QColor gridColour = StructureGridItemDelegate::gridColour(option.palette);
 
     const qreal px = devicePixelSize(painter);
-    const qreal y = snapToDevicePixel(painter, opt.rect.top());
-    const qreal x = snapToDevicePixel(painter, opt.rect.right() + 1.0) - px;
-    painter->fillRect(QRectF(opt.rect.left(), y, opt.rect.width(), px), gridColour);
-    if (const auto *view = qobject_cast<const QTreeView *>(opt.widget))
+    const qreal y = snapToDevicePixel(painter, option.rect.top());
+    const qreal x = snapToDevicePixel(painter, option.rect.right() + 1.0) - px;
+    painter->fillRect(QRectF(option.rect.left(), y, option.rect.width(), px), gridColour);
+    if (const auto *view = qobject_cast<const QTreeView *>(option.widget))
     {
         if (!view->indexBelow(index).isValid())
         {
-            const qreal bottomY = snapToDevicePixel(painter, opt.rect.bottom() + 1.0) - px;
-            painter->fillRect(QRectF(opt.rect.left(), bottomY, opt.rect.width(), px), gridColour);
+            const qreal bottomY = snapToDevicePixel(painter, option.rect.bottom() + 1.0) - px;
+            painter->fillRect(QRectF(option.rect.left(), bottomY, option.rect.width(), px), gridColour);
         }
     }
-    painter->fillRect(QRectF(x, opt.rect.top(), px, opt.rect.height()), gridColour);
+    painter->fillRect(QRectF(x, option.rect.top(), px, option.rect.height()), gridColour);
     painter->restore();
 }
 
@@ -168,6 +195,58 @@ void StructureGridItemDelegate::destroyEditor(QWidget *editor, const QModelIndex
 bool StructureGridItemDelegate::isEditingIndex(const QModelIndex &index) const
 {
     return m_editingIndex.isValid() && m_editingIndex == index;
+}
+
+bool StructureGridItemDelegate::paintAlignedName(QPainter *painter,
+                                                 QStyleOptionViewItem *option,
+                                                 const QModelIndex &index) const
+{
+    if (!painter || !option || index.column() != StructureTreeModel::NameColumn || isEditingIndex(index))
+        return false;
+
+    const QString prefix = index.data(StructureTreeModel::NameTypePrefixRole).toString();
+    const QString identifier = index.data(StructureTreeModel::NameIdentifierRole).toString();
+    const QString suffix = index.data(StructureTreeModel::NameSuffixRole).toString();
+    if (prefix.isEmpty() || identifier.isEmpty())
+        return false;
+
+    QStyleOptionViewItem backgroundOption(*option);
+    backgroundOption.text.clear();
+    backgroundOption.icon = QIcon();
+    backgroundOption.features &= ~(QStyleOptionViewItem::HasDisplay | QStyleOptionViewItem::HasDecoration);
+
+    const QWidget *widget = option->widget;
+    QStyle *style = widget ? widget->style() : QApplication::style();
+    style->drawPrimitive(QStyle::PE_PanelItemViewItem, &backgroundOption, painter, widget);
+
+    const QRect textRect = itemTextRect(*option, index);
+    const QFontMetricsF metrics(option->font);
+    const qreal spaceWidth = metrics.horizontalAdvance(QLatin1Char(' '));
+    const qreal baseline = textRect.top() + (textRect.height() - metrics.height()) / 2.0 + metrics.ascent();
+    const QColor textColour = option->state & QStyle::State_Selected
+        ? option->palette.color(QPalette::HighlightedText)
+        : option->palette.color(QPalette::Text);
+
+    painter->save();
+    painter->setClipRect(option->rect);
+    painter->setFont(option->font);
+    painter->setPen(textColour);
+    painter->drawText(QPointF(textRect.left(), baseline), prefix);
+
+    const qreal prefixWidth = metrics.horizontalAdvance(prefix);
+    const qreal nameX = textRect.left() + std::max(kNameIdentifierColumnWidth, prefixWidth + spaceWidth);
+
+    if (kEmphasizeAlignedNameIdentifiers)
+    {
+        QFont nameFont = option->font;
+        if (nameFont.weight() < QFont::DemiBold)
+            nameFont.setWeight(QFont::DemiBold);
+        painter->setFont(nameFont);
+    }
+    painter->drawText(QPointF(nameX, baseline), identifier + suffix);
+    painter->restore();
+
+    return true;
 }
 
 QRect StructureGridItemDelegate::itemTextRect(const QStyleOptionViewItem &option, const QModelIndex &index) const

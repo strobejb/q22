@@ -24,6 +24,8 @@ private slots:
     void builderFormatsScalarsAndEndian();
     void builderFormatsCharacterArraysAsStrings();
     void builderFormatsScalarArraysAsPreviewLists();
+    void builderUsesNameFieldForStructArrayElements();
+    void builderAlignsFieldNamesWithinCompoundTypes();
     void builderBuildsNestedStructRowsAndOffsets();
     void builderSupportsArraysOffsetsEnumsAndSwitchCases();
     void builderEvaluatesUnionSwitchSelectorsFromTypedLayout();
@@ -302,8 +304,69 @@ void StructViewTests::builderFormatsScalarArraysAsPreviewLists()
     QCOMPARE(rows[0]->children.size(), size_t(2));
     QCOMPARE(rows[0]->children[0]->value, QStringLiteral("{ 0, 1, 2, 3 }"));
     QCOMPARE(rows[0]->children[0]->children.size(), size_t(4));
+    QVERIFY(!rows[0]->children[0]->emphasizeName);
     QCOMPARE(rows[0]->children[1]->value, QStringLiteral("{ 0, 1, 2, 3, 4, 5, 6, 7, ... }"));
     QCOMPARE(rows[0]->children[1]->children.size(), size_t(10));
+    QVERIFY(!rows[0]->children[1]->emphasizeName);
+}
+
+void StructViewTests::builderUsesNameFieldForStructArrayElements()
+{
+    // Scenario: a PE-style array contains structured elements whose meaningful
+    // label lives inside each element rather than in the array index.
+    // Expected: [name(Name)] keeps the array expandable but appends the rendered
+    // child field value to each element row, giving labels like "[0] - .text".
+    // Regression guard: name tags used to work only for enum-indexed arrays, so
+    // section headers could not surface their embedded Name field in the grid.
+    TypeLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef struct _Section { char Name[8]; dword size; } Section;\n"
+                        "[export]\n"
+                        "struct Root { [name(Name)] Section sections[2]; } root;\n"));
+
+    const QByteArray bytes = QByteArray(".text\0\0\0", 8)
+                             + QByteArray::fromHex("10000000")
+                             + QByteArray(".rdata\0\0", 8)
+                             + QByteArray::fromHex("20000000");
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(1));
+    QCOMPARE(rows[0]->children[0]->name, QStringLiteral("Section sections[]"));
+    QVERIFY(rows[0]->children[0]->emphasizeName);
+    QCOMPARE(rows[0]->children[0]->children.size(), size_t(2));
+    QCOMPARE(rows[0]->children[0]->children[0]->name, QStringLiteral("[0] - .text"));
+    QCOMPARE(rows[0]->children[0]->children[1]->name, QStringLiteral("[1] - .rdata"));
+    QVERIFY(!rows[0]->children[0]->children[0]->emphasizeName);
+    QVERIFY(!rows[0]->children[0]->children[1]->emphasizeName);
+    QCOMPARE(rows[0]->children[0]->children[0]->children[0]->value, QStringLiteral("\".text\""));
+    QCOMPARE(rows[0]->children[0]->children[1]->children[0]->value, QStringLiteral("\".rdata\""));
+}
+
+void StructViewTests::builderAlignsFieldNamesWithinCompoundTypes()
+{
+    // Scenario: sibling fields have type prefixes with different display widths,
+    // such as "dword" followed by "signed word".
+    // Expected: the model keeps normal display text but exposes split name
+    // pieces, letting the delegate align identifiers with font metrics.
+    // Regression guard: visual alignment must not be faked with spaces because
+    // proportional UI fonts make character-count padding visibly wrong.
+    TypeLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "[export]\n"
+                        "struct Root { dword a; signed word b; } root;\n"));
+
+    const QByteArray bytes = QByteArray::fromHex("010000000200");
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(2));
+    QCOMPARE(rows[0]->children[0]->name, QStringLiteral("dword a"));
+    QCOMPARE(rows[0]->children[0]->nameTypePrefix, QStringLiteral("dword"));
+    QCOMPARE(rows[0]->children[0]->nameIdentifier, QStringLiteral("a"));
+    QCOMPARE(rows[0]->children[1]->name, QStringLiteral("signed word b"));
+    QCOMPARE(rows[0]->children[1]->nameTypePrefix, QStringLiteral("signed word"));
+    QCOMPARE(rows[0]->children[1]->nameIdentifier, QStringLiteral("b"));
 }
 
 void StructViewTests::builderBuildsNestedStructRowsAndOffsets()

@@ -77,6 +77,23 @@ QVariant StructureTreeModel::data(const QModelIndex &index, int role) const
     if (role == Qt::DisplayRole || role == Qt::EditRole)
         return cellText(row, index.column());
 
+    if (index.column() == NameColumn)
+    {
+        switch (role)
+        {
+        case NameTypePrefixRole:
+            return row->nameTypePrefix;
+        case NameIdentifierRole:
+            return row->nameIdentifier;
+        case NameSuffixRole:
+            return row->nameSuffix;
+        case EmphasizeNameRole:
+            return row->emphasizeName;
+        default:
+            break;
+        }
+    }
+
     return {};
 }
 
@@ -206,7 +223,13 @@ void StructureTreeModel::setCellText(StructureRow *row, int column, const QStrin
     switch (column)
     {
     case NameColumn:
+        if (row->name == text)
+            break;
         row->name = text;
+        row->nameTypePrefix.clear();
+        row->nameIdentifier.clear();
+        row->nameSuffix.clear();
+        row->emphasizeName = false;
         break;
     case ValueColumn:
         row->value = text;

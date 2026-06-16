@@ -30,6 +30,8 @@ public:
 
 private:
     bool isEditingIndex(const QModelIndex &index) const;
+    void drawGridLines(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const;
+    bool paintAlignedName(QPainter *painter, QStyleOptionViewItem *option, const QModelIndex &index) const;
     QRect itemTextRect(const QStyleOptionViewItem &option, const QModelIndex &index) const;
 
     mutable QPersistentModelIndex m_editingIndex;

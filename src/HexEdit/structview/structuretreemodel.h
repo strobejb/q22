@@ -15,6 +15,10 @@ struct StructureRow
     explicit StructureRow(StructureRow *parentRow = nullptr);
 
     QString name;
+    QString nameTypePrefix;
+    QString nameIdentifier;
+    QString nameSuffix;
+    bool emphasizeName = false;
     QString value;
     QString offset;
     QString comment;
@@ -38,6 +42,14 @@ public:
         OffsetColumn,
         CommentColumn,
         ColumnCount
+    };
+
+    enum Role
+    {
+        NameTypePrefixRole = Qt::UserRole + 1,
+        NameIdentifierRole,
+        NameSuffixRole,
+        EmphasizeNameRole
     };
 
     explicit StructureTreeModel(QObject *parent = nullptr);
