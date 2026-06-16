@@ -83,6 +83,16 @@ set(PROJECT_SOURCES
         settings/settings.h
         statusbar.cpp
         statusbar.h
+        structview/structuredefinitionmanager.cpp
+        structview/structuredefinitionmanager.h
+        structview/structuregriditemdelegate.cpp
+        structview/structuregriditemdelegate.h
+        structview/structuretreemodel.cpp
+        structview/structuretreemodel.h
+        structview/structurevaluebuilder.cpp
+        structview/structurevaluebuilder.h
+        structview/structureviewpanel.cpp
+        structview/structureviewpanel.h
         themepicker.cpp
         themepicker.h
         chrome/titlebar.cpp
@@ -192,7 +202,7 @@ target_include_directories(hexedit PRIVATE
 set_target_properties(hexedit PROPERTIES
     AUTOUIC_SEARCH_PATHS "${HEXEDIT_SOURCE_DIR};${HEXEDIT_SOURCE_DIR}/bookmarks"
 )
-target_link_libraries(hexedit PRIVATE Qt${QT_VERSION_MAJOR}::Widgets HexView capstone)
+target_link_libraries(hexedit PRIVATE Qt${QT_VERSION_MAJOR}::Widgets HexView TypeLib capstone)
 if(TARGET Qt${QT_VERSION_MAJOR}::DBus)
     target_link_libraries(hexedit PRIVATE Qt${QT_VERSION_MAJOR}::DBus)
     target_compile_definitions(hexedit PRIVATE HEXEDIT_HAVE_DBUS)

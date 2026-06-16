@@ -13,6 +13,7 @@ QT_END_NAMESPACE
 
 class BookmarkDialog;
 class DisassemblerPanelHost;
+class StructureViewPanelHost;
 class SidePanelHost;
 class SidePanelSlot;
 class FindPanel;
@@ -59,6 +60,7 @@ private:
     void execFind(const QByteArray &pattern, uint flags);
     void toggleSidePanel();
     void toggleDisassemblerPanel();
+    void toggleStructurePanel();
     void openSidePanelSection(FilePropertiesPanel::SectionId section);
     void refreshSidePanel();
     void resetSidePanel();
@@ -82,6 +84,7 @@ private:
     GotoPanel         *m_gotoDialog     = nullptr;
     SidePanelHost         *m_sidePanelHost  = nullptr;
     DisassemblerPanelHost *m_disasmPanelHost = nullptr;
+    StructureViewPanelHost *m_structurePanelHost = nullptr;
     PreferencesDialog *m_prefsDialog    = nullptr;
     bool            m_useCustomTitleBar = true;
     bool            m_inResizeZone      = false;

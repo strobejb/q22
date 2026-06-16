@@ -24,6 +24,7 @@
 #include "settings/preferences.h"
 #include "settings/settings.h"
 #include "statusbar.h"
+#include "structview/structureviewpanel.h"
 #include "chrome/titlebar.h"
 #include "theme.h"
 #include "themepicker.h"
@@ -659,12 +660,14 @@ MainWindow::MainWindow(QWidget *parent)
     hexColumnLay->addWidget(m_hv, 1);
     contentLay->addWidget(hexColumn, 1);
 
-    m_sidePanelHost   = new SidePanelHost(m_hv, contentRow);
-    m_disasmPanelHost = new DisassemblerPanelHost(m_hv, contentRow);
+    m_sidePanelHost      = new SidePanelHost(m_hv, contentRow);
+    m_disasmPanelHost    = new DisassemblerPanelHost(m_hv, contentRow);
+    m_structurePanelHost = new StructureViewPanelHost(m_hv, contentRow);
 
     auto *panelSlot = new SidePanelSlot(contentRow);
     panelSlot->addHost(m_sidePanelHost);
     panelSlot->addHost(m_disasmPanelHost);
+    panelSlot->addHost(m_structurePanelHost);
     contentLay->addWidget(panelSlot, 0);
 
     vlay->addWidget(contentRow, 1);
@@ -841,6 +844,10 @@ MainWindow::MainWindow(QWidget *parent)
                 this, &MainWindow::toggleDisassemblerPanel);
         connect(m_disasmPanelHost, &SidePanelHostBase::openChanged,
                 m_statusBar, &StatusBar::setCodePanelOpen);
+        connect(m_statusBar, &StatusBar::typesToggled,
+                this, &MainWindow::toggleStructurePanel);
+        connect(m_structurePanelHost, &SidePanelHostBase::openChanged,
+                m_statusBar, &StatusBar::setTypesPanelOpen);
     }
 
     // Radio-button exclusivity: opening one side panel closes the others.
@@ -848,15 +855,22 @@ MainWindow::MainWindow(QWidget *parent)
         if (!open) return;
         if (m_disasmPanelHost && m_disasmPanelHost->isOpen())
             m_disasmPanelHost->closePanel();
-        if (m_statusBar)
-            m_statusBar->setTypesPanelOpen(false);
+        if (m_structurePanelHost && m_structurePanelHost->isOpen())
+            m_structurePanelHost->closePanel();
     });
     connect(m_disasmPanelHost, &SidePanelHostBase::openChanged, this, [this](bool open) {
         if (!open) return;
         if (m_sidePanelHost && m_sidePanelHost->isOpen())
             m_sidePanelHost->closePanel();
-        if (m_statusBar)
-            m_statusBar->setTypesPanelOpen(false);
+        if (m_structurePanelHost && m_structurePanelHost->isOpen())
+            m_structurePanelHost->closePanel();
+    });
+    connect(m_structurePanelHost, &SidePanelHostBase::openChanged, this, [this](bool open) {
+        if (!open) return;
+        if (m_sidePanelHost && m_sidePanelHost->isOpen())
+            m_sidePanelHost->closePanel();
+        if (m_disasmPanelHost && m_disasmPanelHost->isOpen())
+            m_disasmPanelHost->closePanel();
     });
 
     // ── Edit menu ─────────────────────────────────────────────────────────────
@@ -1461,6 +1475,8 @@ void MainWindow::toggleSidePanel()
     if (!m_sidePanelHost) return;
     if (!m_sidePanelHost->isOpen() && m_disasmPanelHost && m_disasmPanelHost->isOpen())
         m_disasmPanelHost->closePanel();
+    if (!m_sidePanelHost->isOpen() && m_structurePanelHost && m_structurePanelHost->isOpen())
+        m_structurePanelHost->closePanel();
     m_sidePanelHost->toggle();
 }
 
@@ -1469,7 +1485,19 @@ void MainWindow::toggleDisassemblerPanel()
     if (!m_disasmPanelHost) return;
     if (!m_disasmPanelHost->isOpen() && m_sidePanelHost && m_sidePanelHost->isOpen())
         m_sidePanelHost->closePanel();
+    if (!m_disasmPanelHost->isOpen() && m_structurePanelHost && m_structurePanelHost->isOpen())
+        m_structurePanelHost->closePanel();
     m_disasmPanelHost->toggle();
+}
+
+void MainWindow::toggleStructurePanel()
+{
+    if (!m_structurePanelHost) return;
+    if (!m_structurePanelHost->isOpen() && m_sidePanelHost && m_sidePanelHost->isOpen())
+        m_sidePanelHost->closePanel();
+    if (!m_structurePanelHost->isOpen() && m_disasmPanelHost && m_disasmPanelHost->isOpen())
+        m_disasmPanelHost->closePanel();
+    m_structurePanelHost->toggle();
 }
 
 void MainWindow::openSidePanelSection(FilePropertiesPanel::SectionId section)

@@ -76,6 +76,29 @@ set_tests_properties(typelib_tests PROPERTIES
         "PATH=path_list_prepend:${QT_RUNTIME_BIN_DIR}"
 )
 
+add_executable(structview_tests
+    structview_tests.cpp
+    ../src/HexEdit/structview/structuredefinitionmanager.cpp
+    ../src/HexEdit/structview/structuretreemodel.cpp
+)
+
+target_include_directories(structview_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/src/HexEdit
+)
+
+target_link_libraries(structview_tests PRIVATE
+    TypeLib
+    Qt${QT_VERSION_MAJOR}::Core
+    Qt${QT_VERSION_MAJOR}::Test
+)
+
+add_test(NAME structview_tests COMMAND structview_tests)
+set_tests_properties(structview_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION
+        "PATH=path_list_prepend:${QT_RUNTIME_BIN_DIR}"
+)
+
 add_executable(stringscan_tests
     stringscan_tests.cpp
     ../src/HexEdit/filestats/stringscan.cpp
