@@ -17,6 +17,8 @@
 #include <QFrame>
 #include <QHeaderView>
 #include <QHBoxLayout>
+#include <QHideEvent>
+#include <QItemSelectionModel>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMouseEvent>
@@ -28,6 +30,7 @@
 #include <QVBoxLayout>
 
 #include <cmath>
+#include <cstdint>
 
 namespace
 {
@@ -80,7 +83,10 @@ protected:
             return;
 
         painter->save();
-        painter->fillRect(rect, palette().base());
+        const bool hovered = rect.contains(mapFromGlobal(QCursor::pos()));
+        const QColor background = hovered ? palette().color(QPalette::Button)
+                                          : palette().color(QPalette::Base);
+        painter->fillRect(rect, background);
 
         QFont headerFont = font();
         if (headerFont.pointSizeF() > 0)
@@ -96,11 +102,10 @@ protected:
         opt.fontMetrics = QFontMetrics(headerFont);
         opt.text.clear();
         opt.sortIndicator = QStyleOptionHeader::None;
-        opt.palette.setColor(QPalette::Button, palette().base().color());
-        opt.palette.setColor(QPalette::Window, palette().base().color());
+        opt.palette.setColor(QPalette::Button, background);
+        opt.palette.setColor(QPalette::Window, background);
         style()->drawControl(QStyle::CE_Header, &opt, painter, this);
 
-        const bool hovered = rect.contains(mapFromGlobal(QCursor::pos()));
         const QColor textColor = hovered ? palette().color(QPalette::WindowText)
                                          : filestats::stringsHeaderTextColor(palette());
         const int pad = filestats::stringsHeaderPadding(QFontMetrics(headerFont));
@@ -113,6 +118,18 @@ protected:
                                   : QString());
         painter->restore();
     }
+
+    void mouseMoveEvent(QMouseEvent *event) override
+    {
+        QHeaderView::mouseMoveEvent(event);
+        viewport()->update();
+    }
+
+    void leaveEvent(QEvent *event) override
+    {
+        QHeaderView::leaveEvent(event);
+        viewport()->update();
+    }
 };
 
 class StructureGridView : public QTreeView
@@ -124,6 +141,67 @@ public:
     }
 
 protected:
+    bool viewportEvent(QEvent *event) override
+    {
+        switch (event->type())
+        {
+        case QEvent::MouseButtonPress:
+        {
+            auto *mouse = static_cast<QMouseEvent *>(event);
+            if (mouse->button() == Qt::LeftButton)
+            {
+                m_resizeSection = resizeSectionAt(mouse->pos());
+                if (m_resizeSection >= 0)
+                {
+                    m_resizeStartX = mouse->position().x();
+                    m_resizeStartWidth = header()->sectionSize(m_resizeSection);
+                    return true;
+                }
+            }
+            break;
+        }
+        case QEvent::MouseButtonDblClick:
+        {
+            auto *mouse = static_cast<QMouseEvent *>(event);
+            if (mouse->button() == Qt::LeftButton && toggleAggregateRow(indexAt(mouse->pos())))
+                return true;
+            break;
+        }
+        case QEvent::MouseMove:
+        {
+            auto *mouse = static_cast<QMouseEvent *>(event);
+            if (m_resizeSection >= 0)
+            {
+                const int dx = qRound(mouse->position().x() - m_resizeStartX);
+                header()->resizeSection(m_resizeSection,
+                                        qMax(header()->minimumSectionSize(), m_resizeStartWidth + dx));
+                return true;
+            }
+            viewport()->setCursor(resizeSectionAt(mouse->pos()) >= 0 ? Qt::SplitHCursor : Qt::ArrowCursor);
+            break;
+        }
+        case QEvent::MouseButtonRelease:
+        {
+            auto *mouse = static_cast<QMouseEvent *>(event);
+            if (m_resizeSection >= 0)
+            {
+                m_resizeSection = -1;
+                viewport()->setCursor(resizeSectionAt(mouse->pos()) >= 0 ? Qt::SplitHCursor : Qt::ArrowCursor);
+                return true;
+            }
+            break;
+        }
+        case QEvent::Leave:
+            if (m_resizeSection < 0)
+                viewport()->unsetCursor();
+            break;
+        default:
+            break;
+        }
+
+        return QTreeView::viewportEvent(event);
+    }
+
     void drawBranches(QPainter *painter, const QRect &rect, const QModelIndex &index) const override
     {
         painter->save();
@@ -174,6 +252,46 @@ protected:
 
         painter->restore();
     }
+
+private:
+    bool toggleAggregateRow(const QModelIndex &index)
+    {
+        if (!index.isValid()
+            || (index.column() != StructureTreeModel::ValueColumn
+                && index.column() != StructureTreeModel::OffsetColumn))
+            return false;
+
+        const QModelIndex rowIndex = index.sibling(index.row(), StructureTreeModel::NameColumn);
+        const QModelIndex valueIndex = index.sibling(index.row(), StructureTreeModel::ValueColumn);
+        const QString value = valueIndex.data(Qt::DisplayRole).toString().trimmed();
+        if (!model()->hasChildren(rowIndex) || !value.startsWith(QLatin1Char('{')))
+            return false;
+
+        setExpanded(rowIndex, !isExpanded(rowIndex));
+        return true;
+    }
+
+    int resizeSectionAt(const QPoint &pos) const
+    {
+        constexpr int kResizeSlop = 4;
+        const int count = header()->count();
+        for (int visual = 0; visual < count - 1; ++visual)
+        {
+            const int logical = header()->logicalIndex(visual);
+            if (header()->isSectionHidden(logical))
+                continue;
+
+            const int edgeX = header()->sectionViewportPosition(logical) + header()->sectionSize(logical);
+            if (qAbs(pos.x() - edgeX) <= kResizeSlop)
+                return logical;
+        }
+
+        return -1;
+    }
+
+    int m_resizeSection = -1;
+    qreal m_resizeStartX = 0.0;
+    int m_resizeStartWidth = 0;
 };
 }
 
@@ -186,6 +304,11 @@ StructureViewPanel::StructureViewPanel(HexView *hv, QWidget *parent)
     buildUi();
 }
 
+StructureViewPanel::~StructureViewPanel()
+{
+    clearHexViewOverlay();
+}
+
 void StructureViewPanel::refresh()
 {
     m_definitions->reload();
@@ -196,6 +319,12 @@ void StructureViewPanel::showEvent(QShowEvent *event)
     QWidget::showEvent(event);
     m_definitions->ensureLoaded();
     updateOffsetDisplay();
+}
+
+void StructureViewPanel::hideEvent(QHideEvent *event)
+{
+    QWidget::hideEvent(event);
+    clearHexViewOverlay();
 }
 
 void StructureViewPanel::changeEvent(QEvent *event)
@@ -300,6 +429,8 @@ void StructureViewPanel::buildUi()
     m_tree->header()->resizeSection(StructureTreeModel::ValueColumn, 90);
     m_tree->header()->resizeSection(StructureTreeModel::OffsetColumn, 84);
     m_tree->header()->resizeSection(StructureTreeModel::CommentColumn, 140);
+    connect(m_tree->selectionModel(), &QItemSelectionModel::currentChanged,
+            this, &StructureViewPanel::updateHexViewSelection);
     updateTreeSelectionPalette();
     {
         QFont headerFont = m_tree->header()->font();
@@ -335,8 +466,11 @@ void StructureViewPanel::buildUi()
             });
     connect(m_hv, &HexView::cursorChanged,
             this, [this](size_w) {
+                if (m_updatingHexViewFromStructure)
+                    return;
                 updateOffsetDisplay();
-                if (!m_pinned)
+                uint64_t explicitOffset = 0;
+                if (!m_pinned && !explicitRootOffset(selectedRootType(), &explicitOffset))
                     rebuildRows();
             });
     connect(m_hv, &HexView::contentChanged,
@@ -440,7 +574,24 @@ void StructureViewPanel::updateOffsetDisplay()
     if (!m_offsetEdit || !m_hv || m_pinned)
         return;
 
-    m_offsetEdit->setText(QString::number(m_hv->cursorOffset(), 16).toUpper().rightJustified(8, QLatin1Char('0')));
+    uint64_t explicitOffset = 0;
+    const uint64_t offset = explicitRootOffset(selectedRootType(), &explicitOffset)
+        ? explicitOffset
+        : m_hv->cursorOffset();
+    m_offsetEdit->setText(QString::number(offset, 16).toUpper().rightJustified(8, QLatin1Char('0')));
+}
+
+void StructureViewPanel::updatePinAction()
+{
+    if (!m_pinAction || !m_offsetEdit)
+        return;
+
+    const QString iconName = m_pinned ? QStringLiteral("actions/pin0") : QStringLiteral("actions/pin1");
+    const QColor iconColor = m_pinned
+        ? filestats::subduedTextColor(m_offsetEdit->palette())
+        : m_offsetEdit->palette().color(QPalette::WindowText);
+    m_pinAction->setIcon(recoloredIcon(iconName, iconColor, 16));
+    m_pinAction->setToolTip(m_pinned ? tr("Unpin offset") : tr("Pin offset"));
 }
 
 void StructureViewPanel::setPinned(bool pinned)
@@ -448,12 +599,7 @@ void StructureViewPanel::setPinned(bool pinned)
     m_pinned = pinned;
     if (pinned && m_hv)
         m_pinnedOffset = m_hv->cursorOffset();
-    const QString iconName = pinned ? QStringLiteral("actions/pin0") : QStringLiteral("actions/pin1");
-    const QColor iconColor = pinned
-        ? filestats::subduedTextColor(m_offsetEdit->palette())
-        : m_offsetEdit->palette().color(QPalette::WindowText);
-    m_pinAction->setIcon(recoloredIcon(iconName, iconColor, 16));
-    m_pinAction->setToolTip(pinned ? tr("Unpin offset") : tr("Pin offset"));
+    updatePinAction();
     if (!pinned)
         updateOffsetDisplay();
     rebuildRows();
@@ -468,11 +614,22 @@ void StructureViewPanel::rebuildRows()
     if (!rootType)
     {
         m_model->clear();
+        clearHexViewOverlay();
         return;
     }
 
-    const uint64_t baseOffset = m_pinned ? m_pinnedOffset : m_hv->cursorOffset();
+    uint64_t explicitOffset = 0;
+    const bool hasExplicitOffset = explicitRootOffset(rootType, &explicitOffset);
+    if (hasExplicitOffset && m_pinned)
+    {
+        m_pinned = false;
+        updatePinAction();
+    }
+    const uint64_t baseOffset = hasExplicitOffset ? explicitOffset
+        : (m_pinned ? m_pinnedOffset : m_hv->cursorOffset());
+    m_offsetEdit->setText(QString::number(baseOffset, 16).toUpper().rightJustified(8, QLatin1Char('0')));
     StructureValueBuilder builder;
+    m_rebuildingRows = true;
     m_model->setRows(builder.build(m_definitions->library(),
                                    rootType,
                                    baseOffset,
@@ -480,6 +637,8 @@ void StructureViewPanel::rebuildRows()
                                        return m_hv ? m_hv->getData(static_cast<size_w>(offset), buffer, length) : 0;
                                    }));
     applyInitialExpansion();
+    m_rebuildingRows = false;
+    clearHexViewOverlay();
 }
 
 void StructureViewPanel::applyInitialExpansion()
@@ -516,6 +675,94 @@ void StructureViewPanel::applyInitialExpansion()
             if (firstField.isValid())
                 m_tree->expand(firstField);
         }
+    }
+}
+
+void StructureViewPanel::updateHexViewSelection(const QModelIndex &current)
+{
+    if (!m_hv || !m_model || m_rebuildingRows)
+        return;
+
+    StructureRow *row = m_model->rowForIndex(current);
+    if (!row || row->parent == nullptr)
+    {
+        clearHexViewOverlay();
+        return;
+    }
+
+    if (row->byteLength > 0 && row->absoluteOffset < m_hv->size())
+    {
+        const uint64_t requestedEnd = row->absoluteOffset > UINT64_MAX - row->byteLength
+            ? UINT64_MAX
+            : row->absoluteOffset + row->byteLength;
+        const size_w start = static_cast<size_w>(row->absoluteOffset);
+        const size_w end = static_cast<size_w>(qMin<uint64_t>(requestedEnd, m_hv->size()));
+        if (end > start)
+            setHexViewSelectionFromStructure(start, end);
+    }
+
+    StructureRow *scope = row->parent;
+    while (scope && scope->parent && scope->byteLength == 0)
+        scope = scope->parent;
+
+    if (!scope || !scope->parent || scope->byteLength == 0 || scope->absoluteOffset >= m_hv->size())
+    {
+        clearHexViewOverlay();
+        return;
+    }
+
+    HexView::OverlayRange range;
+    range.offset = static_cast<size_w>(scope->absoluteOffset);
+    range.length = static_cast<size_w>(qMin<uint64_t>(scope->byteLength, m_hv->size() - range.offset));
+    if (range.length == 0)
+    {
+        clearHexViewOverlay();
+        return;
+    }
+    range.bgSlot = HVC_RANGE_OVERLAY;
+    range.priority = 1;
+    m_hv->setOverlayRanges(HexView::OverlayLayer::StructureView, {range});
+}
+
+void StructureViewPanel::clearHexViewOverlay()
+{
+    if (m_hv)
+        m_hv->clearOverlayRanges(HexView::OverlayLayer::StructureView);
+}
+
+void StructureViewPanel::setHexViewSelectionFromStructure(size_w start, size_w end)
+{
+    if (!m_hv)
+        return;
+
+    m_updatingHexViewFromStructure = true;
+    m_hv->setCurSel(start, end, true);
+    m_hv->scrollCenterIfOffScreen(start, end - start);
+    m_updatingHexViewFromStructure = false;
+}
+
+bool StructureViewPanel::explicitRootOffset(TypeDecl *rootType, uint64_t *offset) const
+{
+    if (!rootType || !offset)
+        return false;
+
+    ExprNode *expr = nullptr;
+    if (!FindTag(rootType->tagList, TOK_OFFSET, &expr) || !expr)
+        return false;
+
+    // Root-level offsets are a file-placement hint for exported definitions.
+    // They must be constant here; data-dependent field offsets are handled by
+    // StructureRenderEngine while it walks already-rendered rows.
+    switch (expr->type)
+    {
+    case EXPR_NUMBER:
+    case EXPR_UNARY:
+    case EXPR_BINARY:
+    case EXPR_TERTIARY:
+        *offset = static_cast<uint64_t>(Evaluate(expr));
+        return true;
+    default:
+        return false;
     }
 }
 

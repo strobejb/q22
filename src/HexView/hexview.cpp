@@ -220,6 +220,7 @@ bool HexView::initBuf(const uint8_t *buf, size_t len, bool copy, bool readonly)
         m_nCursorOffset   = 0;
         m_nSelectionStart = 0;
         m_nSelectionEnd   = 0;
+        m_structureViewOverlayRanges.clear();
         m_nVScrollPos     = 0;
         m_nHScrollPos     = 0;
         updateMetrics();
@@ -237,6 +238,7 @@ bool HexView::openFile(const QString &path, uint /*flags*/)
         m_nCursorOffset   = 0;
         m_nSelectionStart = 0;
         m_nSelectionEnd   = 0;
+        m_structureViewOverlayRanges.clear();
         m_nVScrollPos     = 0;
         m_nHScrollPos     = 0;
         recalcLayout();
@@ -259,6 +261,7 @@ bool HexView::clearFile()
         m_nCursorOffset   = 0;
         m_nSelectionStart = 0;
         m_nSelectionEnd   = 0;
+        m_structureViewOverlayRanges.clear();
         m_nVScrollPos     = 0;
         m_nHScrollPos     = 0;
         emit lengthChanged(0);
@@ -307,6 +310,35 @@ bool HexView::setHexColour(HvColorSlot slot, QColor col)
     if (slot >= HVC_MAX_COLOURS) return false;
     m_ColourList[slot] = col;
     return true;
+}
+
+void HexView::setOverlayRanges(OverlayLayer layer, const QList<OverlayRange> &ranges)
+{
+    QList<OverlayRange> *target = nullptr;
+    switch (layer)
+    {
+    case OverlayLayer::StructureView:
+        target = &m_structureViewOverlayRanges;
+        break;
+    }
+
+    if (!target)
+        return;
+
+    for (const OverlayRange &range : *target)
+        invalidateRange(range.offset, range.offset + range.length);
+
+    *target = ranges;
+
+    for (const OverlayRange &range : *target)
+        invalidateRange(range.offset, range.offset + range.length);
+
+    viewport()->update();
+}
+
+void HexView::clearOverlayRanges(OverlayLayer layer)
+{
+    setOverlayRanges(layer, {});
 }
 
 uint HexView::setStyle(uint mask, uint styles)
@@ -849,7 +881,7 @@ size_t HexView::fillData(uint8_t *buf, size_t buflen, size_w len)
 
 // ── Cursor / selection setters ────────────────────────────────────────────────
 
-bool HexView::setCurSel(size_w selStart, size_w selEnd)
+bool HexView::setCurSel(size_w selStart, size_w selEnd, bool preserveCursor)
 {
     size_w sz = m_pDataSeq ? m_pDataSeq->size() : 0;
     if (selStart > sz || selEnd > sz) return false;
@@ -860,11 +892,11 @@ bool HexView::setCurSel(size_w selStart, size_w selEnd)
     m_nSelectionEnd   = selEnd;
     m_nSubItem        = 0;
 
-    if (m_nCursorOffset != selEnd) {
+    if (!preserveCursor && m_nCursorOffset != selEnd) {
         m_nCursorOffset = selEnd;
         scrollToCaret();
-        invalidateRange(selStart, selEnd);
     }
+    invalidateRange(selStart, selEnd);
     return true;
 }
 

@@ -249,7 +249,8 @@ typedef struct _IMAGE_SECTION_HEADER
 
 [
    export, 
-   assoc(".exe", ".sys", ".dll")
+   assoc(".exe", ".sys", ".dll"),
+   offset(0)
 ]
 typedef struct _PE
 {

@@ -68,9 +68,9 @@ public:
     void setTypeDecls(const QList<TypeDecl *> &typeDecls);
     void setRows(std::vector<std::unique_ptr<StructureRow>> rows);
     void setRowsForTests(std::vector<std::unique_ptr<StructureRow>> rows);
+    StructureRow *rowForIndex(const QModelIndex &index) const;
 
 private:
-    StructureRow *rowForIndex(const QModelIndex &index) const;
     StructureRow *parentRowForIndex(const QModelIndex &index) const;
     QString cellText(const StructureRow *row, int column) const;
     void setCellText(StructureRow *row, int column, const QString &text);

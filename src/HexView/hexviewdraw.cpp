@@ -200,6 +200,14 @@ QColor HexView::defaultColourForSlot(HvColorSlot slot, const QPalette &pal)
     case HVC_MATCHED:            return pal.color(QPalette::Highlight);//QColor(255, 165, 0);
     case HVC_MATCHEDSEL:         return pal.color(QPalette::Highlight);
     case HVC_HIGHLIGHT:          return pal.color(QPalette::Highlight);
+    case HVC_RANGE_OVERLAY: {
+        const QColor bg = defaultColourForSlot(HVC_BACKGROUND, pal);
+        const QColor sel = defaultColourForSlot(HVC_SELECTION, pal);
+        return QColor(qRound(bg.red() + 0.45 * (sel.red() - bg.red())),
+                      qRound(bg.green() + 0.45 * (sel.green() - bg.green())),
+                      qRound(bg.blue() + 0.45 * (sel.blue() - bg.blue())),
+                      qRound(bg.alpha() + 0.45 * (sel.alpha() - bg.alpha())));
+    }
     case HVC_BOOKMARK1:          return QColor(255, 255,   0);
     case HVC_BOOKMARK2:          return QColor(255, 165,   0);
     case HVC_BOOKMARK3:          return QColor(255,  80,  80);
@@ -443,7 +451,9 @@ bool HexView::getHighlightCol(size_w offset, int pane,
         const bool inMod = choice.hasModified;
 
         HEXCOL c;
-        if ((hl || inMod) && inSel) {
+        if (hl && hl->_selectionWins && inSel) {
+            c = {selFG, selBG};
+        } else if ((hl || inMod) && inSel) {
             c = selWins ? HEXCOL{selFG, selBG} : HEXCOL{matchFG, matchBG};
         } else if (hl) {
             const QRgb hlBG = hl->colourIndex >= 0
@@ -504,9 +514,10 @@ size_t HexView::formatLine(uint8_t *data, size_t length, size_w offset, size_t d
 
     // Build per-line highlight list in priority order:
     //   1. matched search ranges (highest)
-    //   2. bookmarks
-    //   3. modified byte ranges
-    //   4. selection (lowest — any highlight above wins)
+    //   2. low-priority transient overlays
+    //   3. bookmarks
+    //   4. modified byte ranges
+    //   5. selection (lowest unless an overlay explicitly lets selection win)
     QList<Bookmark> lineHighlights;
     const size_w lineEnd = offset + (size_w)length;
     // When dataShift > 0 on the first display line, 'offset' has wrapped to a
@@ -514,9 +525,31 @@ size_t HexView::formatLine(uint8_t *data, size_t length, size_w offset, size_t d
     // the correct file address of the first real byte, so use that for overlap
     // comparisons instead of bare 'offset' to avoid spuriously failing checks.
     const size_w realLineStart = offset + (size_w)dataShift;
-    for (const Bookmark &bm : matchHighlights)
+    for (Bookmark bm : matchHighlights)
         if (bm.offset + bm.length > realLineStart && bm.offset < lineEnd)
+        {
+            bm._highlightPriority = 2;
             lineHighlights.append(bm);
+        }
+    for (const OverlayRange &range : m_structureViewOverlayRanges) {
+        if (range.length == 0)
+            continue;
+
+        const size_w rangeEnd = range.offset > (size_w)-1 - range.length
+            ? (size_w)-1
+            : range.offset + range.length;
+        if (rangeEnd <= realLineStart || range.offset >= lineEnd)
+            continue;
+
+        Bookmark overlay;
+        overlay.offset = range.offset;
+        overlay.length = range.length;
+        overlay.bgColour = getHexColour(range.bgSlot);
+        overlay.fgColour = range.fgSlot < HVC_MAX_COLOURS ? getHexColour(range.fgSlot) : 0;
+        overlay._highlightPriority = range.priority;
+        overlay._selectionWins = true;
+        lineHighlights.append(overlay);
+    }
     for (const Bookmark &bm : m_bookmarks)
         if (bm.offset + bm.length > realLineStart && bm.offset < lineEnd)
             lineHighlights.append(bm);

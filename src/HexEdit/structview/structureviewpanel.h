@@ -1,9 +1,11 @@
 #ifndef STRUCTVIEW_STRUCTUREVIEWPANEL_H
 #define STRUCTVIEW_STRUCTUREVIEWPANEL_H
 
+#include "HexView/seqbase.h"
 #include "filestats/sidepanel.h"
 
 #include <QList>
+#include <QModelIndex>
 #include <QWidget>
 
 class HexView;
@@ -22,6 +24,7 @@ class StructureViewPanel : public QWidget
     Q_OBJECT
 public:
     explicit StructureViewPanel(HexView *hv, QWidget *parent = nullptr);
+    ~StructureViewPanel() override;
 
 signals:
     void closeRequested();
@@ -31,6 +34,7 @@ public slots:
 
 protected:
     void showEvent(QShowEvent *event) override;
+    void hideEvent(QHideEvent *event) override;
     void changeEvent(QEvent *event) override;
 
 private:
@@ -38,9 +42,14 @@ private:
     void updateTreeSelectionPalette();
     void updateDefinitionsUi();
     void updateOffsetDisplay();
+    void updatePinAction();
     void setPinned(bool pinned);
     void rebuildRows();
     void applyInitialExpansion();
+    void updateHexViewSelection(const QModelIndex &current);
+    void clearHexViewOverlay();
+    void setHexViewSelectionFromStructure(size_w start, size_w end);
+    bool explicitRootOffset(TypeDecl *rootType, uint64_t *offset) const;
     void selectAssociatedRootType(const QList<ExportedStructureType> &exportedTypes);
     TypeDecl *selectedRootType() const;
     QString displayNameForTypeDecl(TypeDecl *decl) const;
@@ -55,6 +64,8 @@ private:
     QLabel                     *m_statusLabel = nullptr;
     int                         m_treeItemLeftPad = 6;
     bool                        m_pinned = false;
+    bool                        m_updatingHexViewFromStructure = false;
+    bool                        m_rebuildingRows = false;
     uint64_t                    m_pinnedOffset = 0;
 };
 

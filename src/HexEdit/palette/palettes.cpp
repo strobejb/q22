@@ -266,6 +266,9 @@ void applyPalette(HexView *hv, const PaletteInfo &info)
     hv->setHexColour(HVC_SELTEXT,            effectiveHexColour(eff, HVC_SELTEXT, pal));
     hv->setHexColour(HVC_SELECTION_INACTIVE, effectiveHexColour(eff, HVC_SELECTION_INACTIVE, pal));
     hv->setHexColour(HVC_SELTEXT_INACTIVE,   effectiveHexColour(eff, HVC_SELTEXT_INACTIVE, pal));
+    hv->setHexColour(HVC_RANGE_OVERLAY,      blend(effectiveHexColour(eff, HVC_BACKGROUND, pal),
+                                                   effectiveHexColour(eff, HVC_SELECTION, pal),
+                                                   0.45));
 
     hv->setHexColour(HVC_MATCHED,            effectiveHexColour(eff, HVC_MATCHED, pal));
     hv->setHexColour(HVC_MATCHEDSEL,         effectiveHexColour(eff, HVC_MATCHEDSEL, pal));

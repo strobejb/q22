@@ -17,6 +17,7 @@ namespace
 static constexpr bool kAlignStructureNameIdentifiers = true;
 static constexpr bool kEmphasizeAlignedNameIdentifiers = true;
 static constexpr qreal kNameIdentifierColumnWidth = 44.0;
+static constexpr qreal kArrayIndexColumnWidth = 24.0;
 
 qreal devicePixelSize(const QPainter *painter)
 {
@@ -207,7 +208,8 @@ bool StructureGridItemDelegate::paintAlignedName(QPainter *painter,
     const QString prefix = index.data(StructureTreeModel::NameTypePrefixRole).toString();
     const QString identifier = index.data(StructureTreeModel::NameIdentifierRole).toString();
     const QString suffix = index.data(StructureTreeModel::NameSuffixRole).toString();
-    if (prefix.isEmpty() || identifier.isEmpty())
+    const bool arrayIndexPrefix = prefix.startsWith(QLatin1Char('['));
+    if (prefix.isEmpty() || (!arrayIndexPrefix && identifier.isEmpty()))
         return false;
 
     QStyleOptionViewItem backgroundOption(*option);
@@ -231,12 +233,14 @@ bool StructureGridItemDelegate::paintAlignedName(QPainter *painter,
     painter->setClipRect(option->rect);
     painter->setFont(option->font);
     painter->setPen(textColour);
-    painter->drawText(QPointF(textRect.left(), baseline), prefix);
 
     const qreal prefixWidth = metrics.horizontalAdvance(prefix);
-    const qreal nameX = textRect.left() + std::max(kNameIdentifierColumnWidth, prefixWidth + spaceWidth);
+    const qreal identifierColumnWidth = arrayIndexPrefix ? kArrayIndexColumnWidth : kNameIdentifierColumnWidth;
+    const qreal nameX = textRect.left() + std::max(identifierColumnWidth, prefixWidth + spaceWidth);
 
-    if (kEmphasizeAlignedNameIdentifiers)
+    painter->drawText(QPointF(textRect.left(), baseline), prefix);
+
+    if (kEmphasizeAlignedNameIdentifiers && !arrayIndexPrefix)
     {
         QFont nameFont = option->font;
         if (nameFont.weight() < QFont::DemiBold)

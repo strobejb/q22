@@ -141,8 +141,12 @@ HighlightChoice chooseHighlight(const QList<Bookmark> &highlights, size_w pos, b
         {
             choice.hasModified = true;
         }
-        else if (choice.bookmarkIndex < 0 || (bm._rangeEditing && !highlights[choice.bookmarkIndex]._rangeEditing) ||
-                 (bm._rangeEditing == highlights[choice.bookmarkIndex]._rangeEditing &&
+        else if (choice.bookmarkIndex < 0 ||
+                 bm._highlightPriority > highlights[choice.bookmarkIndex]._highlightPriority ||
+                 (bm._highlightPriority == highlights[choice.bookmarkIndex]._highlightPriority &&
+                  bm._rangeEditing && !highlights[choice.bookmarkIndex]._rangeEditing) ||
+                 (bm._highlightPriority == highlights[choice.bookmarkIndex]._highlightPriority &&
+                  bm._rangeEditing == highlights[choice.bookmarkIndex]._rangeEditing &&
                   bm.length < highlights[choice.bookmarkIndex].length))
         {
             choice.bookmarkIndex = i;

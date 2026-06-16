@@ -122,7 +122,14 @@ Qt::ItemFlags StructureTreeModel::flags(const QModelIndex &index) const
     if (!index.isValid())
         return Qt::NoItemFlags;
 
-    return QAbstractItemModel::flags(index) | Qt::ItemIsEditable;
+    const Qt::ItemFlags flags = QAbstractItemModel::flags(index);
+    const StructureRow *row = rowForIndex(index);
+    if (row && !row->children.empty()
+        && (index.column() == ValueColumn || index.column() == OffsetColumn)
+        && row->value.trimmed().startsWith(QLatin1Char('{')))
+        return flags;
+
+    return flags | Qt::ItemIsEditable;
 }
 
 bool StructureTreeModel::setData(const QModelIndex &index, const QVariant &value, int role)

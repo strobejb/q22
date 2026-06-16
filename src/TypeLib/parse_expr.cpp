@@ -578,7 +578,7 @@ INUMTYPE Evaluate(ExprNode *expr)
 		switch(expr->tok)
 		{
 		case '+':			return left;//+left;
-		case '-':			return left;//-left;
+		case '-':			return -left;
 		case '!':			return !left;
 		case '~':			return ~left;
 		default:			return 0;
@@ -612,8 +612,8 @@ INUMTYPE Evaluate(ExprNode *expr)
 			case '^':			return left ^  right;
 			case TOK_ANDAND:	return left && right;
 			case TOK_OROR:		return left || right;
-			case TOK_SHR:		return left << right;
-			case TOK_SHL:		return left >> right;
+			case TOK_SHR:		return left >> right;
+			case TOK_SHL:		return left << right;
 			case TOK_GE:		return left >= right;
 			case TOK_LE:		return left <= right;
 			default:			return 0;

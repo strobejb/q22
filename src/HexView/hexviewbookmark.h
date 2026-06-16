@@ -30,6 +30,15 @@ struct Bookmark {
     // separate from _active because layout recomputes and clears _active often;
     // the drag owner must survive replaceBookmark() re-sorting every mouse move.
     bool    _rangeEditing = false;
+
+    // Transient draw priority for synthetic highlight records.  Real bookmarks
+    // and search matches use the default priority; lower-priority overlays can
+    // reuse the same renderer without ever winning over user-authored ranges.
+    int     _highlightPriority = 0;
+
+    // Synthetic overlays can opt out of the normal highlight+selection blend:
+    // when true, the real HexView selection colour wins inside this range.
+    bool    _selectionWins = false;
 };
 
 #endif // HEXVIEWBOOKMARK_H

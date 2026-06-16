@@ -39,6 +39,7 @@ enum HvColorSlot {
     HVC_MATCHED,
     HVC_MATCHEDSEL,         // must be HVC_MATCHED + 1
     HVC_HIGHLIGHT,          // generic highlight BG (bookmarks, search matches)
+    HVC_RANGE_OVERLAY,      // transient UI-owned range overlay
     HVC_BOOKMARK1,
     HVC_BOOKMARK2,
     HVC_BOOKMARK3,
@@ -221,6 +222,18 @@ public:
         BookmarkButtonAction bottomRight = BookmarkButtonAction::Close;
     };
 
+    enum class OverlayLayer {
+        StructureView,
+    };
+
+    struct OverlayRange {
+        size_w      offset   = 0;
+        size_w      length   = 0;
+        HvColorSlot bgSlot   = HVC_RANGE_OVERLAY;
+        HvColorSlot fgSlot   = HVC_MAX_COLOURS;
+        int         priority = -1;
+    };
+
     explicit HexView(QWidget *parent = nullptr);
     ~HexView();
 
@@ -262,7 +275,7 @@ public:
     void   endGroup();
 
     // Cursor / selection
-    bool   setCurSel(size_w selStart, size_w selEnd);
+    bool   setCurSel(size_w selStart, size_w selEnd, bool preserveCursor = false);
     bool   setCurPos(size_w pos);
     bool   setSelStart(size_w pos);
     bool   setSelEnd(size_w pos);
@@ -326,6 +339,10 @@ public:
     void   setBookmarkContextCalloutEnabled(bool on) { m_bookmarkContextCalloutEnabled = on; }
     bool   bookmarkContextCalloutEnabled() const { return m_bookmarkContextCalloutEnabled; }
 
+    // Transient owner-managed range overlays.  These are display-only and never
+    // participate in bookmark persistence, hit-testing, note layout, or menus.
+    void   setOverlayRanges(OverlayLayer layer, const QList<OverlayRange> &ranges);
+    void   clearOverlayRanges(OverlayLayer layer);
 
     // Geometry of a bookmark note strip.
     struct NoteStripGeom {
@@ -599,6 +616,7 @@ private:
 
     // Bookmarks
     QList<Bookmark> m_bookmarks;
+    QList<OverlayRange> m_structureViewOverlayRanges;
     BookmarkButtonLayout m_bookmarkButtonLayout;
     int  m_pressedBookmarkIdx = -1;
 
