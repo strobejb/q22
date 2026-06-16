@@ -1,9 +1,11 @@
 #include "structview/structurevaluebuilder.h"
+#include "structview/structurerenderengine.h"
 
-std::vector<std::unique_ptr<StructureRow>> StructureValueBuilder::build(TypeLibrary *,
-                                                                        TypeDecl *,
-                                                                        uint64_t,
-                                                                        const ByteReader &) const
+std::vector<std::unique_ptr<StructureRow>> StructureValueBuilder::build(TypeLibrary *library,
+                                                                        TypeDecl *rootType,
+                                                                        uint64_t baseOffset,
+                                                                        const ByteReader &reader) const
 {
-    return {};
+    StructureRenderEngine engine(library, rootType, baseOffset, reader);
+    return engine.build();
 }

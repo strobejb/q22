@@ -3,6 +3,7 @@
 
 #include "filestats/sidepanel.h"
 
+#include <QList>
 #include <QWidget>
 
 class HexView;
@@ -13,6 +14,7 @@ class QTreeView;
 class MenuComboBox;
 class StructureDefinitionManager;
 class StructureTreeModel;
+struct ExportedStructureType;
 struct TypeDecl;
 
 class StructureViewPanel : public QWidget
@@ -37,6 +39,10 @@ private:
     void updateDefinitionsUi();
     void updateOffsetDisplay();
     void setPinned(bool pinned);
+    void rebuildRows();
+    void applyInitialExpansion();
+    void selectAssociatedRootType(const QList<ExportedStructureType> &exportedTypes);
+    TypeDecl *selectedRootType() const;
     QString displayNameForTypeDecl(TypeDecl *decl) const;
 
     HexView                    *m_hv = nullptr;
@@ -49,6 +55,7 @@ private:
     QLabel                     *m_statusLabel = nullptr;
     int                         m_treeItemLeftPad = 6;
     bool                        m_pinned = false;
+    uint64_t                    m_pinnedOffset = 0;
 };
 
 class StructureViewPanelHost : public SidePanelHostBase

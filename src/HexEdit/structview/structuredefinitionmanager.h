@@ -19,6 +19,7 @@ struct ExportedStructureType
     TypeDecl *typeDecl = nullptr;
     QString  filePath;
     QString  fileName;
+    QStringList assocExtensions;
 };
 
 class StructureDefinitionManager : public QObject

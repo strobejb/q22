@@ -258,8 +258,8 @@ typedef struct _PE
   [offset(dosHeader.e_lfanew), switch_is(ntHeaders32.OptionalHeader.Magic)] 
   union 
   {
-    [case(0)] IMAGE_NT_HEADERS32 ntHeaders32;
-    [case(1)] IMAGE_NT_HEADERS64 ntHeaders64;
+    [case(0x10b)] IMAGE_NT_HEADERS32 ntHeaders32;
+    [case(0x20b)] IMAGE_NT_HEADERS64 ntHeaders64;
   };
 
   //[offset(ntHeaders32.FileHeader.SizeOfOptionalHeader)]

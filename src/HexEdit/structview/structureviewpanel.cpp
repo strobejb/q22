@@ -6,12 +6,14 @@
 #include "structview/structuredefinitionmanager.h"
 #include "structview/structuregriditemdelegate.h"
 #include "structview/structuretreemodel.h"
+#include "structview/structurevaluebuilder.h"
 #include "theme.h"
 
 #include <QApplication>
 #include <QAction>
 #include <QComboBox>
 #include <QEvent>
+#include <QFileInfo>
 #include <QFrame>
 #include <QHeaderView>
 #include <QHBoxLayout>
@@ -30,6 +32,17 @@
 namespace
 {
 static constexpr int kHeaderBottomGap = 3;
+
+enum class InitialStructureExpansion
+{
+    Collapsed,
+    FirstLevel,
+    FirstLevelAndFirstField,
+    All,
+};
+
+static constexpr InitialStructureExpansion kInitialStructureExpansion =
+    InitialStructureExpansion::FirstLevelAndFirstField;
 
 qreal devicePixelSize(const QPainter *painter)
 {
@@ -321,11 +334,21 @@ void StructureViewPanel::buildUi()
                 updateDefinitionsUi();
             });
     connect(m_hv, &HexView::cursorChanged,
-            this, [this](size_w) { updateOffsetDisplay(); });
+            this, [this](size_w) {
+                updateOffsetDisplay();
+                if (!m_pinned)
+                    rebuildRows();
+            });
     connect(m_hv, &HexView::contentChanged,
-            this, [this](size_w, size_w, uint) { updateOffsetDisplay(); });
+            this, [this](size_w, size_w, uint) {
+                updateOffsetDisplay();
+                if (!m_pinned)
+                    rebuildRows();
+            });
     connect(m_pinAction, &QAction::triggered,
             this, [this]() { setPinned(!m_pinned); });
+    connect(m_rootCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int) { rebuildRows(); });
 }
 
 void StructureViewPanel::updateTreeSelectionPalette()
@@ -392,15 +415,14 @@ void StructureViewPanel::updateTreeSelectionPalette()
 void StructureViewPanel::updateDefinitionsUi()
 {
     const QList<ExportedStructureType> exportedTypes = m_definitions->exportedTypes();
-    QList<TypeDecl *> exportedDecls;
-    for (const ExportedStructureType &type : exportedTypes)
-        exportedDecls.push_back(type.typeDecl);
-
-    m_model->setTypeDecls(exportedDecls);
 
     m_rootCombo->clear();
     for (const ExportedStructureType &type : exportedTypes)
-        m_rootCombo->addItem(displayNameForTypeDecl(type.typeDecl));
+    {
+        m_rootCombo->addItem(displayNameForTypeDecl(type.typeDecl),
+                             QVariant::fromValue<qulonglong>(reinterpret_cast<qulonglong>(type.typeDecl)));
+    }
+    selectAssociatedRootType(exportedTypes);
 
     if (!m_definitions->lastError().isEmpty())
     {
@@ -410,6 +432,7 @@ void StructureViewPanel::updateDefinitionsUi()
 
     const int fileCount = m_definitions->definitionFiles().size();
     m_statusLabel->setText(tr("%1 definition file(s), %2 exported type(s)").arg(fileCount).arg(exportedTypes.size()));
+    rebuildRows();
 }
 
 void StructureViewPanel::updateOffsetDisplay()
@@ -423,6 +446,8 @@ void StructureViewPanel::updateOffsetDisplay()
 void StructureViewPanel::setPinned(bool pinned)
 {
     m_pinned = pinned;
+    if (pinned && m_hv)
+        m_pinnedOffset = m_hv->cursorOffset();
     const QString iconName = pinned ? QStringLiteral("actions/pin0") : QStringLiteral("actions/pin1");
     const QColor iconColor = pinned
         ? filestats::subduedTextColor(m_offsetEdit->palette())
@@ -431,6 +456,96 @@ void StructureViewPanel::setPinned(bool pinned)
     m_pinAction->setToolTip(pinned ? tr("Unpin offset") : tr("Pin offset"));
     if (!pinned)
         updateOffsetDisplay();
+    rebuildRows();
+}
+
+void StructureViewPanel::rebuildRows()
+{
+    if (!m_model || !m_hv || !m_definitions || !m_definitions->library())
+        return;
+
+    TypeDecl *rootType = selectedRootType();
+    if (!rootType)
+    {
+        m_model->clear();
+        return;
+    }
+
+    const uint64_t baseOffset = m_pinned ? m_pinnedOffset : m_hv->cursorOffset();
+    StructureValueBuilder builder;
+    m_model->setRows(builder.build(m_definitions->library(),
+                                   rootType,
+                                   baseOffset,
+                                   [this](uint64_t offset, uint8_t *buffer, size_t length) -> size_t {
+                                       return m_hv ? m_hv->getData(static_cast<size_w>(offset), buffer, length) : 0;
+                                   }));
+    applyInitialExpansion();
+}
+
+void StructureViewPanel::applyInitialExpansion()
+{
+    if (!m_tree || !m_model)
+        return;
+
+    m_tree->collapseAll();
+
+    switch (kInitialStructureExpansion)
+    {
+    case InitialStructureExpansion::Collapsed:
+        return;
+    case InitialStructureExpansion::All:
+        m_tree->expandAll();
+        return;
+    case InitialStructureExpansion::FirstLevel:
+    case InitialStructureExpansion::FirstLevelAndFirstField:
+        break;
+    }
+
+    const int rootRows = m_model->rowCount();
+    for (int row = 0; row < rootRows; ++row)
+    {
+        const QModelIndex rootIndex = m_model->index(row, StructureTreeModel::NameColumn);
+        if (!rootIndex.isValid())
+            continue;
+
+        m_tree->expand(rootIndex);
+
+        if (kInitialStructureExpansion == InitialStructureExpansion::FirstLevelAndFirstField)
+        {
+            const QModelIndex firstField = m_model->index(0, StructureTreeModel::NameColumn, rootIndex);
+            if (firstField.isValid())
+                m_tree->expand(firstField);
+        }
+    }
+}
+
+void StructureViewPanel::selectAssociatedRootType(const QList<ExportedStructureType> &exportedTypes)
+{
+    if (!m_rootCombo || !m_hv || exportedTypes.isEmpty())
+        return;
+
+    const QString suffix = QFileInfo(m_hv->filePath()).suffix().toLower();
+    if (suffix.isEmpty())
+        return;
+
+    const QString dottedSuffix = QLatin1Char('.') + suffix;
+    for (int i = 0; i < exportedTypes.size(); ++i)
+    {
+        if (exportedTypes[i].assocExtensions.contains(dottedSuffix, Qt::CaseInsensitive))
+        {
+            m_rootCombo->setCurrentIndex(i);
+            return;
+        }
+    }
+}
+
+TypeDecl *StructureViewPanel::selectedRootType() const
+{
+    if (!m_rootCombo || m_rootCombo->currentIndex() < 0)
+        return nullptr;
+
+    const qulonglong ptr = m_rootCombo->currentData().toULongLong();
+    return reinterpret_cast<TypeDecl *>(ptr);
 }
 
 QString StructureViewPanel::displayNameForTypeDecl(TypeDecl *decl) const

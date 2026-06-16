@@ -18,6 +18,11 @@ struct StructureRow
     QString value;
     QString offset;
     QString comment;
+    Type *type = nullptr;
+    TypeDecl *typeDecl = nullptr;
+    uint64_t absoluteOffset = 0;
+    uint64_t relativeOffset = 0;
+    uint64_t byteLength = 0;
     StructureRow *parent = nullptr;
     std::vector<std::unique_ptr<StructureRow>> children;
 };
@@ -49,6 +54,7 @@ public:
     void clear();
     void setTypeLibrary(TypeLibrary *library);
     void setTypeDecls(const QList<TypeDecl *> &typeDecls);
+    void setRows(std::vector<std::unique_ptr<StructureRow>> rows);
     void setRowsForTests(std::vector<std::unique_ptr<StructureRow>> rows);
 
 private:

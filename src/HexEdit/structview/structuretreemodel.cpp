@@ -159,7 +159,7 @@ void StructureTreeModel::setTypeDecls(const QList<TypeDecl *> &typeDecls)
     endResetModel();
 }
 
-void StructureTreeModel::setRowsForTests(std::vector<std::unique_ptr<StructureRow>> rows)
+void StructureTreeModel::setRows(std::vector<std::unique_ptr<StructureRow>> rows)
 {
     beginResetModel();
     m_root = std::make_unique<StructureRow>();
@@ -169,6 +169,11 @@ void StructureTreeModel::setRowsForTests(std::vector<std::unique_ptr<StructureRo
         m_root->children.push_back(std::move(row));
     }
     endResetModel();
+}
+
+void StructureTreeModel::setRowsForTests(std::vector<std::unique_ptr<StructureRow>> rows)
+{
+    setRows(std::move(rows));
 }
 
 StructureRow *StructureTreeModel::rowForIndex(const QModelIndex &index) const

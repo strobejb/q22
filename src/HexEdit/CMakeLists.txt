@@ -89,6 +89,8 @@ set(PROJECT_SOURCES
         structview/structuregriditemdelegate.h
         structview/structuretreemodel.cpp
         structview/structuretreemodel.h
+        structview/structurerenderengine.cpp
+        structview/structurerenderengine.h
         structview/structurevaluebuilder.cpp
         structview/structurevaluebuilder.h
         structview/structureviewpanel.cpp

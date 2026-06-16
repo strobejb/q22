@@ -9,6 +9,28 @@
 
 namespace
 {
+void collectAssocExtensions(ExprNode *expr, QStringList *extensions)
+{
+    if (!expr || !extensions)
+        return;
+
+    if (expr->type == EXPR_COMMA)
+    {
+        collectAssocExtensions(expr->left, extensions);
+        collectAssocExtensions(expr->right, extensions);
+        return;
+    }
+
+    if (expr->type == EXPR_STRINGBUF && expr->str)
+    {
+        QString ext = QString::fromLocal8Bit(expr->str).trimmed().toLower();
+        if (!ext.isEmpty() && !ext.startsWith(QLatin1Char('.')))
+            ext.prepend(QLatin1Char('.'));
+        if (!ext.isEmpty() && !extensions->contains(ext))
+            extensions->push_back(ext);
+    }
+}
+
 QString settingsSiblingDir(const QString &name)
 {
     const QFileInfo settingsFile(QSettings().fileName());
@@ -78,6 +100,9 @@ QList<ExportedStructureType> StructureDefinitionManager::exportedTypes() const
             type.filePath = QString::fromLocal8Bit(fileDesc->filePath);
             type.fileName = QString::fromLocal8Bit(fileDesc->fileName);
         }
+        ExprNode *assocExpr = nullptr;
+        if (FindTag(decl->tagList, TOK_ASSOC, &assocExpr))
+            collectAssocExtensions(assocExpr, &type.assocExtensions);
         types.push_back(type);
     }
 

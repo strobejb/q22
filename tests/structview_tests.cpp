@@ -1,11 +1,14 @@
 #include "structview/structuredefinitionmanager.h"
 #include "structview/structuretreemodel.h"
+#include "structview/structurevaluebuilder.h"
 
 #include <QFile>
 #include <QDir>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QtTest/QtTest>
+
+#include <cstring>
 
 class StructViewTests : public QObject
 {
@@ -17,6 +20,14 @@ private slots:
     void reloadSwapsInParsedTypeLibrary();
     void failedReloadPreservesPreviousLibrary();
     void exportedTypesUseExplicitExportTagsOnly();
+    void exportedTypesExposeAssocExtensions();
+    void builderFormatsScalarsAndEndian();
+    void builderFormatsCharacterArraysAsStrings();
+    void builderFormatsScalarArraysAsPreviewLists();
+    void builderBuildsNestedStructRowsAndOffsets();
+    void builderSupportsArraysOffsetsEnumsAndSwitchCases();
+    void builderEvaluatesUnionSwitchSelectorsFromTypedLayout();
+    void builderEvaluatesFieldsAndCorrectedExpressions();
     void modelHeadersMatchStructureGridColumns();
     void modelSupportsHierarchyAndEditableCells();
     void modelBuildsExpandableRowsForStructFields();
@@ -27,6 +38,44 @@ static void writeTextFile(const QString &path, const QByteArray &text)
     QFile file(path);
     QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
     QCOMPARE(file.write(text), qint64(text.size()));
+}
+
+static bool parseBuffer(Parser &parser, const char *text)
+{
+    parser.Init(text, strlen(text));
+    return parser.Parse() != 0;
+}
+
+static TypeDecl *firstExported(TypeLibrary *library)
+{
+    if (!library)
+        return nullptr;
+
+    for (TypeDecl *decl : library->globalTypeDeclList)
+        if (decl && FindTag(decl->tagList, TOK_EXPORT, nullptr))
+            return decl;
+
+    return nullptr;
+}
+
+static std::vector<std::unique_ptr<StructureRow>> buildRows(TypeLibrary *library,
+                                                            TypeDecl *root,
+                                                            const QByteArray &bytes,
+                                                            uint64_t baseOffset = 0)
+{
+    StructureValueBuilder builder;
+    return builder.build(library,
+                         root,
+                         baseOffset,
+                         [&bytes](uint64_t offset, uint8_t *buffer, size_t length) -> size_t {
+                             if (offset >= static_cast<uint64_t>(bytes.size()))
+                                 return 0;
+
+                             const size_t available = static_cast<size_t>(bytes.size() - static_cast<int>(offset));
+                             const size_t copied = qMin(length, available);
+                             memcpy(buffer, bytes.constData() + offset, copied);
+                             return copied;
+                         });
 }
 
 void StructViewTests::managerCreatesUserStructsDirectory()
@@ -152,6 +201,226 @@ void StructViewTests::exportedTypesUseExplicitExportTagsOnly()
     const QList<ExportedStructureType> exported = manager.exportedTypes();
     QCOMPARE(exported.size(), 1);
     QVERIFY(exported[0].typeDecl != nullptr);
+}
+
+void StructViewTests::exportedTypesExposeAssocExtensions()
+{
+    // Scenario: an exported TypeLib declaration declares file associations.
+    // Expected: the Structure View loader exposes normalized lowercase suffixes
+    // so the panel can auto-select the matching root type for the current file.
+    // Regression guard: PE/ELF-style definitions should not require the user to
+    // manually pick the root structure every time the panel reloads.
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+
+    const QString userDir = temp.filePath(QStringLiteral("structs"));
+    QVERIFY(QDir().mkpath(userDir));
+    writeTextFile(QDir(userDir).filePath(QStringLiteral("types.txt")),
+                  "[export, assoc(\".EXE\", \"dll\")]\n"
+                  "struct PeRoot { byte magic; } pe;\n");
+
+    StructureDefinitionManager manager;
+    manager.setBuiltinStructDirsForTests({});
+    manager.setUserStructsDirForTests(userDir);
+
+    QVERIFY2(manager.reload(), qPrintable(manager.lastError()));
+    const QList<ExportedStructureType> exported = manager.exportedTypes();
+    QCOMPARE(exported.size(), 1);
+    QCOMPARE(exported[0].assocExtensions, QStringList({ QStringLiteral(".exe"), QStringLiteral(".dll") }));
+}
+
+void StructViewTests::builderFormatsScalarsAndEndian()
+{
+    // Scenario: a selected exported root contains ordinary scalar fields and a
+    // declaration-level endian tag.
+    // Expected: values are read from the supplied byte reader, little endian is
+    // the default, and [endian("big")] only changes the tagged declaration.
+    // Regression guard: the Structure View grid must show file data, not just
+    // the parsed type outline.
+    TypeLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "[export]\n"
+                        "struct Root { byte a; word b; [endian(\"big\")] word c; } root;\n"));
+
+    const QByteArray bytes = QByteArray::fromHex("1201000102");
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(3));
+    QCOMPARE(rows[0]->name, QStringLiteral("struct Root root"));
+    QCOMPARE(rows[0]->children[0]->name, QStringLiteral("byte a"));
+    QCOMPARE(rows[0]->children[1]->name, QStringLiteral("word b"));
+    QCOMPARE(rows[0]->children[0]->value, QStringLiteral("18"));
+    QCOMPARE(rows[0]->children[1]->value, QStringLiteral("1"));
+    QCOMPARE(rows[0]->children[2]->value, QStringLiteral("258"));
+}
+
+void StructViewTests::builderFormatsCharacterArraysAsStrings()
+{
+    // Scenario: a structure contains fixed-size char and wchar_t buffers.
+    // Expected: the array rows still expand into elements, but the parent value
+    // gives the useful quoted string preview instead of a generic {...}.
+    // Regression guard: strings are a common binary-structure case and should be
+    // readable without expanding every character cell.
+    TypeLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "[export]\n"
+                        "struct Root { char label[5]; wchar_t wide[3]; } root;\n"));
+
+    const QByteArray bytes = QByteArray("Hi\0X!", 5)
+                             + QByteArray::fromHex("410042000000");
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(2));
+    QCOMPARE(rows[0]->children[0]->name, QStringLiteral("char label[]"));
+    QCOMPARE(rows[0]->children[0]->value, QStringLiteral("\"Hi\""));
+    QCOMPARE(rows[0]->children[0]->children.size(), size_t(5));
+    QCOMPARE(rows[0]->children[1]->name, QStringLiteral("wchar_t wide[]"));
+    QCOMPARE(rows[0]->children[1]->value, QStringLiteral("\"AB\""));
+    QCOMPARE(rows[0]->children[1]->children.size(), size_t(3));
+}
+
+void StructViewTests::builderFormatsScalarArraysAsPreviewLists()
+{
+    // Scenario: a structure contains ordinary scalar arrays rather than strings.
+    // Expected: the parent array row remains expandable, but its value previews
+    // the first scalar elements and adds an ellipsis when the array is longer.
+    // Regression guard: scalar arrays should be quickly readable without opening
+    // every child row, while char/wchar arrays keep their string-specific path.
+    TypeLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "[export]\n"
+                        "struct Root { byte small[4]; word large[10]; } root;\n"));
+
+    const QByteArray bytes = QByteArray::fromHex(
+        "00010203"
+        "0000010002000300040005000600070008000900");
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(2));
+    QCOMPARE(rows[0]->children[0]->value, QStringLiteral("{ 0, 1, 2, 3 }"));
+    QCOMPARE(rows[0]->children[0]->children.size(), size_t(4));
+    QCOMPARE(rows[0]->children[1]->value, QStringLiteral("{ 0, 1, 2, 3, 4, 5, 6, 7, ... }"));
+    QCOMPARE(rows[0]->children[1]->children.size(), size_t(10));
+}
+
+void StructViewTests::builderBuildsNestedStructRowsAndOffsets()
+{
+    // Scenario: a root structure contains a nested structure value.
+    // Expected: the nested row is expandable, child offsets advance inside it,
+    // and offsets are displayed as zero-padded absolute hex addresses.
+    // Regression guard: recursive rendering must not collapse nested structs
+    // into a flat definition list or lose byte positions.
+    TypeLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "struct Inner { byte x; word y; };\n"
+                        "[export]\n"
+                        "struct Root { byte magic; struct Inner inner; } root;\n"));
+
+    const QByteArray bytes = QByteArray::fromHex("00000000AA112233");
+    auto rows = buildRows(&library, firstExported(&library), bytes, 4);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(2));
+    QCOMPARE(rows[0]->children[0]->offset, QStringLiteral("00000004"));
+    QCOMPARE(rows[0]->children[1]->offset, QStringLiteral("00000005"));
+    QCOMPARE(rows[0]->children[1]->children.size(), size_t(2));
+    QCOMPARE(rows[0]->children[1]->children[0]->offset, QStringLiteral("00000005"));
+    QCOMPARE(rows[0]->children[1]->children[1]->offset, QStringLiteral("00000006"));
+}
+
+void StructViewTests::builderSupportsArraysOffsetsEnumsAndSwitchCases()
+{
+    // Scenario: TypeLib tags drive the visual interpretation: an offset jumps to
+    // a later byte, enum values display labels, arrays use evaluated counts, and
+    // a switch_is union chooses the matching case.
+    // Expected: each of those legacy-core tags affects only the relevant rows.
+    // Regression guard: the new engine must preserve the useful old TypeView
+    // behaviour without keeping the Win32 grid dependency.
+    TypeLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "enum Kind { One = 1, Two = 2 };\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  byte count;\n"
+                        "  byte values[count];\n"
+                        "  [offset(8), enum(\"Kind\")] word kind;\n"
+                        "  [switch_is(kind)] union Choice {\n"
+                        "    [case(1)] byte small;\n"
+                        "    [case(2)] word large;\n"
+                        "  } choice;\n"
+                        "} root;\n"));
+
+    const QByteArray bytes = QByteArray::fromHex("030A0B0C0000000002003412");
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(4));
+    QCOMPARE(rows[0]->children[1]->children.size(), size_t(3));
+    QCOMPARE(rows[0]->children[2]->offset, QStringLiteral("00000008"));
+    QCOMPARE(rows[0]->children[2]->value, QStringLiteral("Two"));
+    QCOMPARE(rows[0]->children[3]->children.size(), size_t(1));
+    QCOMPARE(rows[0]->children[1]->name, QStringLiteral("byte values[]"));
+    QCOMPARE(rows[0]->children[3]->children[0]->name, QStringLiteral("word large"));
+    QCOMPARE(rows[0]->children[3]->children[0]->value, QStringLiteral("4660"));
+}
+
+void StructViewTests::builderEvaluatesUnionSwitchSelectorsFromTypedLayout()
+{
+    // Scenario: a union selector references a field inside one possible union
+    // member before that member has been rendered as a row.
+    // Expected: switch_is can still read the selector from the typed layout at
+    // the union offset, then render only the matching case.
+    // Regression guard: PE uses ntHeaders32.OptionalHeader.Magic this way, so
+    // row-context-only evaluation cannot decide the union case.
+    TypeLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  byte prefix;\n"
+                        "  [offset(4), switch_is(choice32.magic)] union Choice {\n"
+                        "    [case(0x10b)] struct H32 { word magic; byte selected32; } choice32;\n"
+                        "    [case(0x20b)] struct H64 { word magic; byte selected64; } choice64;\n"
+                        "  };\n"
+                        "} root;\n"));
+
+    const QByteArray bytes = QByteArray::fromHex("AA0000000B0199");
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(2));
+    QCOMPARE(rows[0]->children[1]->name, QStringLiteral("struct H32 choice32"));
+    QCOMPARE(rows[0]->children[1]->children.size(), size_t(2));
+    QCOMPARE(rows[0]->children[1]->children[1]->name, QStringLiteral("byte selected32"));
+    QCOMPARE(rows[0]->children[1]->children[1]->value, QStringLiteral("153"));
+}
+
+void StructViewTests::builderEvaluatesFieldsAndCorrectedExpressions()
+{
+    // Scenario: an array bound references a field already rendered in the
+    // current row.
+    // Expected: field lookup reads from the row context rather than from UI text
+    // or a process-global grid item.
+    // Regression guard: expression evaluation is the most important separation
+    // point between TypeLib syntax and file-data rendering.
+    TypeLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  byte count;\n"
+                        "  byte values[count];\n"
+                        "} root;\n"));
+
+    const QByteArray bytes = QByteArray::fromHex("02AABB");
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(2));
+    QCOMPARE(rows[0]->children[1]->children.size(), size_t(2));
+    QCOMPARE(rows[0]->children[1]->children[0]->value, QStringLiteral("170"));
+    QCOMPARE(rows[0]->children[1]->children[1]->value, QStringLiteral("187"));
 }
 
 void StructViewTests::modelHeadersMatchStructureGridColumns()
