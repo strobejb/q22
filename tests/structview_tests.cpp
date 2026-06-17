@@ -1,4 +1,5 @@
 #include "structview/structuredefinitionmanager.h"
+#include "structview/structuresemanticview.h"
 #include "structview/structuretreemodel.h"
 #include "structview/structurevaluebuilder.h"
 
@@ -24,12 +25,18 @@ private slots:
     void builderFormatsScalarsAndEndian();
     void builderFormatsCharacterArraysAsStrings();
     void builderFormatsScalarArraysAsPreviewLists();
+    void builderUsesSizeIsForUnsizedArrays();
+    void builderUsesCommonUnionPrefixForSizeIs();
     void builderUsesNameFieldForStructArrayElements();
     void builderAlignsFieldNamesWithinCompoundTypes();
     void builderBuildsNestedStructRowsAndOffsets();
     void builderSupportsArraysOffsetsEnumsAndSwitchCases();
     void builderEvaluatesUnionSwitchSelectorsFromTypedLayout();
     void builderEvaluatesFieldsAndCorrectedExpressions();
+    void builderPlacesDynamicStructsUnderNamedDynamicContainers();
+    void semanticRegistryRunsKnownViewsAndIgnoresUnknownViews();
+    void builderRunsSemanticViewsAfterDynamicPlacement();
+    void builderKeepsRawDynamicRowsWhenSemanticImportDataIsTruncated();
     void modelHeadersMatchStructureGridColumns();
     void modelSupportsHierarchyAndEditableCells();
     void modelBuildsExpandableRowsForStructFields();
@@ -78,6 +85,36 @@ static std::vector<std::unique_ptr<StructureRow>> buildRows(TypeLibrary *library
                              memcpy(buffer, bytes.constData() + offset, copied);
                              return copied;
                          });
+}
+
+static void writeLe32(QByteArray *bytes, qsizetype offset, quint32 value)
+{
+    QVERIFY(bytes != nullptr);
+    QVERIFY(offset >= 0);
+    QVERIFY(offset + 4 <= bytes->size());
+    (*bytes)[offset + 0] = char(value & 0xff);
+    (*bytes)[offset + 1] = char((value >> 8) & 0xff);
+    (*bytes)[offset + 2] = char((value >> 16) & 0xff);
+    (*bytes)[offset + 3] = char((value >> 24) & 0xff);
+}
+
+static void writeLe16(QByteArray *bytes, qsizetype offset, quint16 value)
+{
+    QVERIFY(bytes != nullptr);
+    QVERIFY(offset >= 0);
+    QVERIFY(offset + 2 <= bytes->size());
+    (*bytes)[offset + 0] = char(value & 0xff);
+    (*bytes)[offset + 1] = char((value >> 8) & 0xff);
+}
+
+static void writeAscii(QByteArray *bytes, qsizetype offset, const char *text)
+{
+    QVERIFY(bytes != nullptr);
+    QVERIFY(text != nullptr);
+    const qsizetype length = qsizetype(strlen(text)) + 1;
+    QVERIFY(offset >= 0);
+    QVERIFY(offset + length <= bytes->size());
+    memcpy(bytes->data() + offset, text, size_t(length));
 }
 
 void StructViewTests::managerCreatesUserStructsDirectory()
@@ -310,12 +347,93 @@ void StructViewTests::builderFormatsScalarArraysAsPreviewLists()
     QVERIFY(!rows[0]->children[1]->emphasizeName);
 }
 
+void StructViewTests::builderUsesSizeIsForUnsizedArrays()
+{
+    // Scenario: a file format stores an array count in an earlier field, and
+    // the TypeLib declaration uses [] plus [size_is(...)] rather than a fixed
+    // declarator bound.
+    // Expected: the parser accepts the unsized array syntax and the renderer
+    // expands exactly the count read from the already-rendered structure data.
+    // Regression guard: PE section headers must not be capped by a placeholder
+    // array size in pe.txt just because the count is data-driven.
+    TypeLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef struct _Header { byte count; } Header;\n"
+                        "typedef struct _Item { byte value; } Item;\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  Header header;\n"
+                        "  [size_is(header.count)] Item items[];\n"
+                        "} root;\n"));
+
+    const QByteArray bytes = QByteArray::fromHex("030A0B0C");
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(2));
+    QCOMPARE(rows[0]->children[1]->name, QStringLiteral("Item items[]"));
+    QCOMPARE(rows[0]->children[1]->children.size(), size_t(3));
+    QCOMPARE(rows[0]->children[1]->children[0]->children[0]->value, QStringLiteral("10"));
+    QCOMPARE(rows[0]->children[1]->children[2]->children[0]->value, QStringLiteral("12"));
+}
+
+void StructViewTests::builderUsesCommonUnionPrefixForSizeIs()
+{
+    // Scenario: a PE-style header has common fields followed by a 32/64-bit
+    // union, while a later flexible array count lives in the common prefix.
+    // Expected: [size_is(ntHeaders.FileHeader.NumberOfSections)] works for both
+    // union branches and the selected branch still controls where the array
+    // starts in the byte stream.
+    // Regression guard: section counts must not depend on spelling a fake
+    // ntHeaders32/ntHeaders64 path just because the optional header is a union.
+    const char *definition =
+        "typedef struct _FileHeader { byte NumberOfSections; } FileHeader;\n"
+        "typedef struct _Optional32 { word Magic; byte marker32; } Optional32;\n"
+        "typedef struct _Optional64 { word Magic; dword marker64; } Optional64;\n"
+        "typedef struct _Section { byte value; } Section;\n"
+        "typedef struct _NtHeaders {\n"
+        "  dword Signature;\n"
+        "  FileHeader FileHeader;\n"
+        "  [switch_is(OptionalHeader32.Magic)] union {\n"
+        "    [case(0x10b)] Optional32 OptionalHeader32;\n"
+        "    [case(0x20b)] Optional64 OptionalHeader64;\n"
+        "  };\n"
+        "} NtHeaders;\n"
+        "[export]\n"
+        "struct Root {\n"
+        "  NtHeaders ntHeaders;\n"
+        "  [size_is(ntHeaders.FileHeader.NumberOfSections)] Section sections[];\n"
+        "} root;\n";
+
+    auto render = [definition](const QByteArray &bytes) {
+        auto library = std::make_unique<TypeLibrary>();
+        Parser parser(library.get());
+        if (!parseBuffer(parser, definition))
+            return std::vector<std::unique_ptr<StructureRow>>();
+        return buildRows(library.get(), firstExported(library.get()), bytes);
+    };
+
+    const QByteArray pe32 = QByteArray::fromHex("00000000" "03" "0B01" "AA" "0A0B0C");
+    auto rows32 = render(pe32);
+    QCOMPARE(rows32.size(), size_t(1));
+    QCOMPARE(rows32[0]->children[0]->children[2]->name, QStringLiteral("Optional32 OptionalHeader32"));
+    QCOMPARE(rows32[0]->children[1]->children.size(), size_t(3));
+    QCOMPARE(rows32[0]->children[1]->children[2]->children[0]->value, QStringLiteral("12"));
+
+    const QByteArray pe64 = QByteArray::fromHex("00000000" "05" "0B02" "44332211" "0102030405");
+    auto rows64 = render(pe64);
+    QCOMPARE(rows64.size(), size_t(1));
+    QCOMPARE(rows64[0]->children[0]->children[2]->name, QStringLiteral("Optional64 OptionalHeader64"));
+    QCOMPARE(rows64[0]->children[1]->children.size(), size_t(5));
+    QCOMPARE(rows64[0]->children[1]->children[4]->children[0]->value, QStringLiteral("5"));
+}
+
 void StructViewTests::builderUsesNameFieldForStructArrayElements()
 {
     // Scenario: a PE-style array contains structured elements whose meaningful
     // label lives inside each element rather than in the array index.
     // Expected: [name(Name)] keeps the array expandable but appends the rendered
-    // child field value to each element row, giving labels like "[0] - .text".
+    // child field value to each element row, giving labels like "[0].text".
     // Regression guard: name tags used to work only for enum-indexed arrays, so
     // section headers could not surface their embedded Name field in the grid.
     TypeLibrary library;
@@ -335,8 +453,8 @@ void StructViewTests::builderUsesNameFieldForStructArrayElements()
     QCOMPARE(rows[0]->children[0]->name, QStringLiteral("Section sections[]"));
     QVERIFY(rows[0]->children[0]->emphasizeName);
     QCOMPARE(rows[0]->children[0]->children.size(), size_t(2));
-    QCOMPARE(rows[0]->children[0]->children[0]->name, QStringLiteral("[0] - .text"));
-    QCOMPARE(rows[0]->children[0]->children[1]->name, QStringLiteral("[1] - .rdata"));
+    QCOMPARE(rows[0]->children[0]->children[0]->name, QStringLiteral("[0].text"));
+    QCOMPARE(rows[0]->children[0]->children[1]->name, QStringLiteral("[1].rdata"));
     QVERIFY(!rows[0]->children[0]->children[0]->emphasizeName);
     QVERIFY(!rows[0]->children[0]->children[1]->emphasizeName);
     QCOMPARE(rows[0]->children[0]->children[0]->children[0]->value, QStringLiteral("\".text\""));
@@ -484,6 +602,213 @@ void StructViewTests::builderEvaluatesFieldsAndCorrectedExpressions()
     QCOMPARE(rows[0]->children[1]->children.size(), size_t(2));
     QCOMPARE(rows[0]->children[1]->children[0]->value, QStringLiteral("170"));
     QCOMPARE(rows[0]->children[1]->children[1]->value, QStringLiteral("187"));
+}
+
+void StructViewTests::builderPlacesDynamicStructsUnderNamedDynamicContainers()
+{
+    // Scenario: a PE-style data-directory entry names a logical RVA, while a
+    // section-header array declares named dynamic containers and RVA mapping.
+    // Expected: SECTION rows are rendered at the root using [name] aliases, and
+    // the dynamic structure appears under the SECTION whose range contains it.
+    // Regression guard: optional PE structures must be declared in TypeLib data,
+    // not hard-coded into the Structure View renderer.
+    TypeLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "enum Dir { Export = 0, Import = 1 };\n"
+                        "typedef struct _DataDir { dword VirtualAddress; dword Size; } DataDir;\n"
+                        "typedef struct _Section { char Name[8]; dword VirtualAddress; dword SizeOfRawData; dword PointerToRawData; } Section;\n"
+                        "typedef struct _SectionBucket { } SECTION;\n"
+                        "typedef struct _ImportDesc { dword thunk; } ImportDesc;\n"
+                        "typedef struct _ExportDir { dword flags; } ExportDir;\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  [dynamic_struct(Export, ExportDir, VirtualAddress, Size != 0), dynamic_struct(Import, ImportDesc, VirtualAddress, Size != 0)] DataDir dirs[2];\n"
+                        "  [name(Name), dynamic_container(SECTION), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section sections[2];\n"
+                        "} root;\n"));
+
+    QByteArray bytes(0x90, '\0');
+    auto put32 = [&bytes](qsizetype offset, quint32 value) {
+        bytes[offset + 0] = char(value & 0xff);
+        bytes[offset + 1] = char((value >> 8) & 0xff);
+        bytes[offset + 2] = char((value >> 16) & 0xff);
+        bytes[offset + 3] = char((value >> 24) & 0xff);
+    };
+    put32(8, 0x1200);
+    put32(12, 4);
+    memcpy(bytes.data() + 16, ".text\0\0\0", 8);
+    put32(24, 0x1000);
+    put32(28, 0x100);
+    put32(32, 0x40);
+    memcpy(bytes.data() + 36, ".idata\0\0", 8);
+    put32(44, 0x1200);
+    put32(48, 0x100);
+    put32(52, 0x80);
+    put32(0x80, 0x12345678);
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(4));
+
+    StructureRow *sections = rows[0]->children[1].get();
+    QCOMPARE(sections->children.size(), size_t(2));
+    QCOMPARE(sections->children[0]->children.size(), size_t(4));
+    QCOMPARE(sections->children[1]->name, QStringLiteral("[1].idata"));
+    QCOMPARE(sections->children[1]->children.size(), size_t(4));
+    QCOMPARE(rows[0]->children[2]->name, QStringLiteral("SECTION .text"));
+    QCOMPARE(rows[0]->children[2]->children.size(), size_t(0));
+    QCOMPARE(rows[0]->children[3]->name, QStringLiteral("SECTION .idata"));
+    QCOMPARE(rows[0]->children[3]->offset, QStringLiteral("00000080"));
+
+    StructureRow *dynamicImport = rows[0]->children[3]->children[0].get();
+    QCOMPARE(dynamicImport->name, QStringLiteral("ImportDesc"));
+    QCOMPARE(dynamicImport->offset, QStringLiteral("00000080"));
+    QCOMPARE(dynamicImport->children.size(), size_t(1));
+    QCOMPARE(dynamicImport->children[0]->name, QStringLiteral("dword thunk"));
+    QCOMPARE(dynamicImport->children[0]->value, QStringLiteral("305419896"));
+}
+
+void StructViewTests::semanticRegistryRunsKnownViewsAndIgnoresUnknownViews()
+{
+    // Scenario: semantic rendering is an optional interpreter layer selected by
+    // string ids in TypeLib definitions.
+    // Expected: known ids can append semantic rows through the shared context,
+    // while unknown ids are ignored without affecting the raw row tree.
+    // Regression guard: new semantic views must be pluggable and safe, not a
+    // fragile type-name switch buried inside StructureRenderEngine.
+    StructureSemanticViewRegistry &registry = StructureSemanticViewRegistry::instance();
+    registry.registerInterpreter(QStringLiteral("test.semantic"), [](StructureSemanticContext &context) {
+        context.appendSemanticRow(context.currentRow(), QStringLiteral("semantic row"), QStringLiteral("value"));
+    });
+
+    StructureRow root;
+    root.name = QStringLiteral("root");
+    std::vector<StructureOffsetMap> maps;
+    StructureSemanticContext context(nullptr, &root, &root, 0, {}, maps);
+
+    QVERIFY(!registry.run(QStringLiteral("missing.semantic"), context));
+    QCOMPARE(root.children.size(), size_t(0));
+
+    QVERIFY(registry.run(QStringLiteral("test.semantic"), context));
+    QCOMPARE(root.children.size(), size_t(1));
+    QCOMPARE(static_cast<int>(root.children[0]->kind), static_cast<int>(StructureRowKind::Semantic));
+    QCOMPARE(root.children[0]->name, QStringLiteral("semantic row"));
+}
+
+void StructViewTests::builderRunsSemanticViewsAfterDynamicPlacement()
+{
+    // Scenario: a PE import directory is declared as a dynamic structure and
+    // marked with view("pe.imports").
+    // Expected: raw IMAGE_IMPORT_DESCRIPTOR fields stay visible, then semantic
+    // DLL/function rows are appended beneath the dynamically placed import row.
+    // Regression guard: PE knowledge must augment dynamic rows after RVA mapping
+    // has found the containing section, not replace the raw TypeLib rendering.
+    TypeLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "enum Dir { Import = 0 };\n"
+                        "typedef struct _DataDir { dword VirtualAddress; dword Size; } DataDir;\n"
+                        "typedef struct _Section { char Name[8]; dword VirtualAddress; dword SizeOfRawData; dword PointerToRawData; } Section;\n"
+                        "typedef struct _SectionBucket { } SECTION;\n"
+                        "[view(\"pe.imports\")]\n"
+                        "typedef struct _ImportDesc { dword OriginalFirstThunk; dword TimeDateStamp; dword ForwarderChain; dword Name; dword FirstThunk; } ImportDesc;\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  [dynamic_struct(Import, ImportDesc, VirtualAddress, Size != 0)] DataDir dirs[1];\n"
+                        "  [name(Name), dynamic_container(SECTION), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section sections[1];\n"
+                        "} root;\n"));
+
+    QByteArray bytes(0x140, '\0');
+    writeLe32(&bytes, 0, 0x1200);
+    writeLe32(&bytes, 4, 0x80);
+    writeAscii(&bytes, 8, ".idata");
+    writeLe32(&bytes, 16, 0x1200);
+    writeLe32(&bytes, 20, 0x100);
+    writeLe32(&bytes, 24, 0x80);
+    writeLe32(&bytes, 0x80, 0x1240);
+    writeLe32(&bytes, 0x8c, 0x1260);
+    writeLe32(&bytes, 0x90, 0x1240);
+    writeLe32(&bytes, 0xc0, 0x1270);
+    writeAscii(&bytes, 0xe0, "KERNEL32.dll");
+    writeLe16(&bytes, 0xf0, 0x1234);
+    writeAscii(&bytes, 0xf2, "CreateFileW");
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(3));
+    QCOMPARE(rows[0]->children[2]->name, QStringLiteral("SECTION .idata"));
+
+    StructureRow *dynamicImport = rows[0]->children[2]->children[0].get();
+    QCOMPARE(dynamicImport->name, QStringLiteral("ImportDesc"));
+    QCOMPARE(dynamicImport->children.size(), size_t(6));
+    QCOMPARE(dynamicImport->children[0]->name, QStringLiteral("dword OriginalFirstThunk"));
+    QCOMPARE(static_cast<int>(dynamicImport->children[0]->kind), static_cast<int>(StructureRowKind::Raw));
+
+    StructureRow *dllRow = dynamicImport->children[5].get();
+    QCOMPARE(static_cast<int>(dllRow->kind), static_cast<int>(StructureRowKind::Semantic));
+    QCOMPARE(dllRow->name, QStringLiteral("DLL KERNEL32.dll"));
+    QCOMPARE(dllRow->children.size(), size_t(1));
+    QCOMPARE(static_cast<int>(dllRow->children[0]->kind), static_cast<int>(StructureRowKind::Semantic));
+    QCOMPARE(dllRow->children[0]->name, QStringLiteral("Import CreateFileW"));
+    QCOMPARE(dllRow->children[0]->value, QStringLiteral("hint 4660"));
+
+    std::vector<std::unique_ptr<StructureRow>> modelRows;
+    modelRows.push_back(std::move(rows[0]));
+    StructureTreeModel model;
+    model.setRowsForTests(std::move(modelRows));
+    const QModelIndex rootIndex = model.index(0, StructureTreeModel::NameColumn);
+    const QModelIndex sectionIndex = model.index(2, StructureTreeModel::NameColumn, rootIndex);
+    const QModelIndex importIndex = model.index(0, StructureTreeModel::NameColumn, sectionIndex);
+    const QModelIndex dllIndex = model.index(5, StructureTreeModel::NameColumn, importIndex);
+    QVERIFY(dllIndex.isValid());
+    QVERIFY(!(model.flags(dllIndex) & Qt::ItemIsEditable));
+}
+
+void StructViewTests::builderKeepsRawDynamicRowsWhenSemanticImportDataIsTruncated()
+{
+    // Scenario: a PE import directory row is present, but the imported DLL/name
+    // tables are incomplete or outside the mapped bytes.
+    // Expected: semantic interpretation stops quietly while the raw dynamic
+    // IMAGE_IMPORT_DESCRIPTOR row and its fields remain available.
+    // Regression guard: educational views must never make the base structure
+    // renderer brittle when a file is malformed or partially loaded.
+    TypeLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "enum Dir { Import = 0 };\n"
+                        "typedef struct _DataDir { dword VirtualAddress; dword Size; } DataDir;\n"
+                        "typedef struct _Section { char Name[8]; dword VirtualAddress; dword SizeOfRawData; dword PointerToRawData; } Section;\n"
+                        "typedef struct _SectionBucket { } SECTION;\n"
+                        "[view(\"pe.imports\")]\n"
+                        "typedef struct _ImportDesc { dword OriginalFirstThunk; dword TimeDateStamp; dword ForwarderChain; dword Name; dword FirstThunk; } ImportDesc;\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  [dynamic_struct(Import, ImportDesc, VirtualAddress, Size != 0)] DataDir dirs[1];\n"
+                        "  [name(Name), dynamic_container(SECTION), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section sections[1];\n"
+                        "} root;\n"));
+
+    QByteArray bytes(0xa0, '\0');
+    writeLe32(&bytes, 0, 0x1200);
+    writeLe32(&bytes, 4, 0x80);
+    writeAscii(&bytes, 8, ".idata");
+    writeLe32(&bytes, 16, 0x1200);
+    writeLe32(&bytes, 20, 0x100);
+    writeLe32(&bytes, 24, 0x80);
+    writeLe32(&bytes, 0x80, 0x1240);
+    writeLe32(&bytes, 0x8c, 0x1260);
+    writeLe32(&bytes, 0x90, 0x1240);
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(3));
+    QVERIFY(!rows[0]->children[2]->children.empty());
+
+    StructureRow *dynamicImport = rows[0]->children[2]->children[0].get();
+    QCOMPARE(dynamicImport->name, QStringLiteral("ImportDesc"));
+    QVERIFY(dynamicImport->children.size() >= size_t(5));
+    QCOMPARE(dynamicImport->children[0]->name, QStringLiteral("dword OriginalFirstThunk"));
+    QCOMPARE(dynamicImport->children[0]->value, QStringLiteral("4672"));
+    QCOMPARE(static_cast<int>(dynamicImport->children[0]->kind), static_cast<int>(StructureRowKind::Raw));
 }
 
 void StructViewTests::modelHeadersMatchStructureGridColumns()

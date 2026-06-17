@@ -146,7 +146,10 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[])
 		case TOK_STYLE:		case TOK_SWITCHIS:
 		case TOK_CASE:		case TOK_DISPLAY:
 		case TOK_NAME:		case TOK_ENUM:
-		case TOK_ASSOC:
+		case TOK_ASSOC:		case TOK_OFFSETMAP:
+		case TOK_DYNAMICCONTAINER:
+		case TOK_DYNAMICSTRUCT:
+		case TOK_VIEW:
 
 			tmp = t;
 			Advance();
@@ -155,7 +158,8 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[])
 			if(!Expected('('))
 				return false;
 
-			if(tmp == TOK_SIZEIS || tmp == TOK_LENGTHIS || tmp == TOK_ASSOC)
+			if(tmp == TOK_SIZEIS || tmp == TOK_LENGTHIS || tmp == TOK_ASSOC
+				|| tmp == TOK_OFFSETMAP || tmp == TOK_DYNAMICCONTAINER || tmp == TOK_DYNAMICSTRUCT)
 			{
 				// full comma-separated expression 
 				if((expr = CommaExpression(TOK_NULL)) == 0)
@@ -375,7 +379,8 @@ int Parser::Parse()
 			TOK_LENGTHIS, TOK_SIZEIS, TOK_IGNORE, TOK_STRING,
 			TOK_OFFSET, TOK_ALIGN, TOK_BITFLAG, TOK_STYLE, TOK_DISPLAY,
 			TOK_ENDIAN,	TOK_SWITCHIS, TOK_CASE, TOK_NAME, 
-			TOK_ENUM, TOK_EXPORT, TOK_ASSOC,
+			TOK_ENUM, TOK_EXPORT, TOK_ASSOC, TOK_OFFSETMAP,
+			TOK_DYNAMICCONTAINER, TOK_DYNAMICSTRUCT, TOK_VIEW,
 			TOK_NULL 
 
 		};
@@ -601,4 +606,3 @@ extern "C" FNUMTYPE FNUM(void *p)
 	Parser *parser = (Parser *)p;
 	return parser->FNUM();
 }
-

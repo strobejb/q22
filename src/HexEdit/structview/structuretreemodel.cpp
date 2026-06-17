@@ -77,6 +77,9 @@ QVariant StructureTreeModel::data(const QModelIndex &index, int role) const
     if (role == Qt::DisplayRole || role == Qt::EditRole)
         return cellText(row, index.column());
 
+    if (role == RowKindRole)
+        return static_cast<int>(row->kind);
+
     if (index.column() == NameColumn)
     {
         switch (role)
@@ -124,6 +127,9 @@ Qt::ItemFlags StructureTreeModel::flags(const QModelIndex &index) const
 
     const Qt::ItemFlags flags = QAbstractItemModel::flags(index);
     const StructureRow *row = rowForIndex(index);
+    if (row && row->kind == StructureRowKind::Semantic)
+        return flags;
+
     if (row && !row->children.empty()
         && (index.column() == ValueColumn || index.column() == OffsetColumn)
         && row->value.trimmed().startsWith(QLatin1Char('{')))

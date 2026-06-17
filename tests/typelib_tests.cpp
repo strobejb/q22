@@ -12,6 +12,8 @@ private slots:
 	void includeParserUsesTheSameTypeLibrary();
 	void fileRefsRemainValidForSharedLibraryAfterParserDies();
 	void cleanupBelongsToTheTypeLibrary();
+	void dynamicPlacementTagsParse();
+	void viewTagsParse();
 	void standardTypelibFilesParse();
 };
 
@@ -124,6 +126,67 @@ void TypeLibTests::cleanupBelongsToTheTypeLibrary()
 
 	QVERIFY(library.globalTypeDeclList.empty());
 	QVERIFY(library.globalFileHistory.empty());
+}
+
+void TypeLibTests::dynamicPlacementTagsParse()
+{
+	// Scenario: a structure definition uses the dynamic placement tags consumed
+	// by Structure View, including repeated dynamic_struct entries.
+	// Expected: TypeLib treats them as ordinary parsed tags with expression
+	// payloads, so they can be round-tripped and interpreted by the renderer.
+	// Regression guard: dynamic PE placement must live in definition files, not
+	// in hard-coded C++ parser branches.
+	Parser parser;
+	QVERIFY(parseBuffer(parser,
+						"enum Dir { ExportEntry = 0, ImportEntry = 1 };\n"
+						"typedef struct _DataDir { dword VirtualAddress; dword Size; } DataDir;\n"
+						"typedef struct _Section { dword VirtualAddress; dword SizeOfRawData; dword PointerToRawData; } Section;\n"
+						"typedef struct _SectionBucket { } SectionBucket;\n"
+						"typedef struct _Import { dword value; } ImportDesc;\n"
+						"[export]\n"
+						"struct Root {\n"
+						"  [dynamic_struct(ImportEntry, ImportDesc, VirtualAddress, Size != 0)] DataDir dirs[2];\n"
+						"  [dynamic_container(SectionBucket), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section sections[2];\n"
+						"} root;\n"));
+
+	TypeDecl *root = nullptr;
+	for(TypeDecl *decl : parser.GetTypeLibrary()->globalTypeDeclList)
+	{
+		if(decl && FindTag(decl->tagList, TOK_EXPORT, nullptr))
+		{
+			root = decl;
+			break;
+		}
+	}
+
+	QVERIFY(root);
+	QVERIFY(root->baseType);
+	QVERIFY(root->baseType->sptr);
+	QCOMPARE(root->baseType->sptr->typeDeclList.size(), size_t(2));
+	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[0]->tagList, TOK_DYNAMICSTRUCT, nullptr));
+	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[1]->tagList, TOK_DYNAMICCONTAINER, nullptr));
+	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[1]->tagList, TOK_OFFSETMAP, nullptr));
+}
+
+void TypeLibTests::viewTagsParse()
+{
+	// Scenario: a TypeLib declaration opts into a C++ semantic interpreter with
+	// a compact view("id") hook.
+	// Expected: the parser preserves the string expression on the TypeDecl, so
+	// Structure View can run optional interpreters after raw rendering.
+	// Regression guard: semantic interpretation must remain declarative TypeLib
+	// metadata, not a hard-coded type-name check in the renderer.
+	Parser parser;
+	QVERIFY(parseBuffer(parser,
+						"[view(\"pe.imports\")]\n"
+						"typedef struct _Import { dword thunk; } ImportDesc;\n"));
+
+	QCOMPARE(parser.GetTypeLibrary()->globalTypeDeclList.size(), size_t(1));
+	ExprNode *expr = nullptr;
+	QVERIFY(FindTag(parser.GetTypeLibrary()->globalTypeDeclList[0]->tagList, TOK_VIEW, &expr));
+	QVERIFY(expr);
+	QCOMPARE(expr->type, EXPR_STRINGBUF);
+	QCOMPARE(QString::fromLocal8Bit(expr->str), QStringLiteral("pe.imports"));
 }
 
 void TypeLibTests::standardTypelibFilesParse()

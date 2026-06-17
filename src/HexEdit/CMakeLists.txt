@@ -87,6 +87,10 @@ set(PROJECT_SOURCES
         structview/structuredefinitionmanager.h
         structview/structuregriditemdelegate.cpp
         structview/structuregriditemdelegate.h
+        structview/pesemanticview.cpp
+        structview/pesemanticview.h
+        structview/structuresemanticview.cpp
+        structview/structuresemanticview.h
         structview/structuretreemodel.cpp
         structview/structuretreemodel.h
         structview/structurerenderengine.cpp

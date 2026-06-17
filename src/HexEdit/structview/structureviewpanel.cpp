@@ -258,13 +258,17 @@ private:
     {
         if (!index.isValid()
             || (index.column() != StructureTreeModel::ValueColumn
-                && index.column() != StructureTreeModel::OffsetColumn))
+                && index.column() != StructureTreeModel::OffsetColumn
+                && index.column() != StructureTreeModel::NameColumn))
             return false;
 
         const QModelIndex rowIndex = index.sibling(index.row(), StructureTreeModel::NameColumn);
         const QModelIndex valueIndex = index.sibling(index.row(), StructureTreeModel::ValueColumn);
         const QString value = valueIndex.data(Qt::DisplayRole).toString().trimmed();
         if (!model()->hasChildren(rowIndex) || !value.startsWith(QLatin1Char('{')))
+            return false;
+        if (index.column() == StructureTreeModel::NameColumn
+            && !rowIndex.data(StructureTreeModel::NameTypePrefixRole).toString().startsWith(QLatin1Char('[')))
             return false;
 
         setExpanded(rowIndex, !isExpanded(rowIndex));

@@ -148,7 +148,7 @@ Type * Parser::PostfixDecl(Type *tptr)
 {
 	for(;;)
 	{
-		ExprNode *elements;
+		ExprNode *elements = 0;
 		FILEREF fileref(lexer.CurrentFile());
 
 		switch(t.kind)
@@ -161,6 +161,10 @@ Type * Parser::PostfixDecl(Type *tptr)
 			{
 				if((elements = Expression(TOKEN(']'))) == 0)
 					return 0;
+			}
+			else
+			{
+				Advance();
 			}
 
 			tptr = new Type(typeARRAY, tptr);
@@ -428,7 +432,8 @@ Type * Parser::ParseStructBody(Symbol *sym, TYPE ty)
 			TOK_LENGTHIS, TOK_SIZEIS, TOK_IGNORE, TOK_STRING,
 			TOK_OFFSET, TOK_ALIGN, TOK_BITFLAG, TOK_STYLE, TOK_DISPLAY,
 			TOK_ENDIAN,	TOK_SWITCHIS, TOK_CASE, TOK_NAME, 
-			TOK_ENUM, TOK_BITFLAG,
+			TOK_ENUM, TOK_BITFLAG, TOK_OFFSETMAP,
+			TOK_DYNAMICCONTAINER, TOK_DYNAMICSTRUCT, TOK_VIEW,
 			TOK_NULL 
 
 		};

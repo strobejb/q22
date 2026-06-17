@@ -10,6 +10,12 @@
 #include <memory>
 #include <vector>
 
+enum class StructureRowKind
+{
+    Raw,
+    Semantic
+};
+
 struct StructureRow
 {
     explicit StructureRow(StructureRow *parentRow = nullptr);
@@ -24,6 +30,7 @@ struct StructureRow
     QString comment;
     Type *type = nullptr;
     TypeDecl *typeDecl = nullptr;
+    StructureRowKind kind = StructureRowKind::Raw;
     uint64_t absoluteOffset = 0;
     uint64_t relativeOffset = 0;
     uint64_t byteLength = 0;
@@ -49,7 +56,8 @@ public:
         NameTypePrefixRole = Qt::UserRole + 1,
         NameIdentifierRole,
         NameSuffixRole,
-        EmphasizeNameRole
+        EmphasizeNameRole,
+        RowKindRole
     };
 
     explicit StructureTreeModel(QObject *parent = nullptr);

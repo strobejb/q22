@@ -78,8 +78,10 @@ set_tests_properties(typelib_tests PROPERTIES
 
 add_executable(structview_tests
     structview_tests.cpp
+    ../src/HexEdit/structview/pesemanticview.cpp
     ../src/HexEdit/structview/structuredefinitionmanager.cpp
     ../src/HexEdit/structview/structurerenderengine.cpp
+    ../src/HexEdit/structview/structuresemanticview.cpp
     ../src/HexEdit/structview/structuretreemodel.cpp
     ../src/HexEdit/structview/structurevaluebuilder.cpp
 )

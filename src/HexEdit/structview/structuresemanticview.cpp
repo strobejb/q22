@@ -1,0 +1,218 @@
+#include "structview/structuresemanticview.h"
+
+#include "structview/pesemanticview.h"
+
+#include <QLatin1Char>
+
+#include <cstring>
+
+StructureSemanticContext::StructureSemanticContext(TypeLibrary *library,
+                                                   StructureRow *rootRow,
+                                                   StructureRow *currentRow,
+                                                   uint64_t baseOffset,
+                                                   const StructureValueBuilder::ByteReader &reader,
+                                                   const std::vector<StructureOffsetMap> &offsetMaps)
+    : m_library(library)
+    , m_rootRow(rootRow)
+    , m_currentRow(currentRow)
+    , m_baseOffset(baseOffset)
+    , m_reader(reader)
+    , m_offsetMaps(&offsetMaps)
+{
+}
+
+TypeLibrary *StructureSemanticContext::library() const
+{
+    return m_library;
+}
+
+StructureRow *StructureSemanticContext::rootRow() const
+{
+    return m_rootRow;
+}
+
+StructureRow *StructureSemanticContext::currentRow() const
+{
+    return m_currentRow;
+}
+
+uint64_t StructureSemanticContext::baseOffset() const
+{
+    return m_baseOffset;
+}
+
+bool StructureSemanticContext::mapLogicalOffset(uint64_t logicalOffset, uint64_t *fileOffset) const
+{
+    if (!fileOffset || !m_offsetMaps)
+        return false;
+
+    for (const StructureOffsetMap &map : *m_offsetMaps)
+    {
+        if (logicalOffset < map.logicalStart || logicalOffset >= map.logicalStart + map.logicalSize)
+            continue;
+
+        *fileOffset = map.fileOffset + (logicalOffset - map.logicalStart);
+        return true;
+    }
+
+    return false;
+}
+
+bool StructureSemanticContext::readBytes(uint64_t absoluteOffset, uint8_t *buffer, size_t length) const
+{
+    if (!buffer || length == 0)
+        return false;
+
+    const size_t got = m_reader ? m_reader(absoluteOffset, buffer, length) : 0;
+    return got == length;
+}
+
+bool StructureSemanticContext::readUInt16(uint64_t absoluteOffset, uint16_t *value) const
+{
+    uint8_t data[2] = {};
+    if (!value || !readBytes(absoluteOffset, data, sizeof(data)))
+        return false;
+
+    *value = uint16_t(data[0]) | (uint16_t(data[1]) << 8);
+    return true;
+}
+
+bool StructureSemanticContext::readUInt32(uint64_t absoluteOffset, uint32_t *value) const
+{
+    uint8_t data[4] = {};
+    if (!value || !readBytes(absoluteOffset, data, sizeof(data)))
+        return false;
+
+    *value = uint32_t(data[0]) | (uint32_t(data[1]) << 8) | (uint32_t(data[2]) << 16) | (uint32_t(data[3]) << 24);
+    return true;
+}
+
+bool StructureSemanticContext::readUInt64(uint64_t absoluteOffset, uint64_t *value) const
+{
+    uint8_t data[8] = {};
+    if (!value || !readBytes(absoluteOffset, data, sizeof(data)))
+        return false;
+
+    *value = 0;
+    for (int i = 0; i < 8; ++i)
+        *value |= uint64_t(data[i]) << (i * 8);
+    return true;
+}
+
+QString StructureSemanticContext::readAsciiString(uint64_t absoluteOffset, size_t maxLength) const
+{
+    QString text;
+    for (size_t i = 0; i < maxLength; ++i)
+    {
+        uint8_t ch = 0;
+        if (!readBytes(absoluteOffset + i, &ch, 1))
+            break;
+        if (ch == 0)
+            return text;
+        if (ch < 0x20)
+            text += QLatin1Char('.');
+        else
+            text += QLatin1Char(char(ch));
+    }
+    return QString();
+}
+
+StructureRow *StructureSemanticContext::appendSemanticRow(StructureRow *parent,
+                                                          const QString &name,
+                                                          const QString &value,
+                                                          uint64_t absoluteOffset,
+                                                          uint64_t byteLength) const
+{
+    if (!parent)
+        return nullptr;
+
+    auto row = std::make_unique<StructureRow>(parent);
+    row->kind = StructureRowKind::Semantic;
+    row->name = name;
+    row->value = value;
+    row->absoluteOffset = absoluteOffset;
+    row->relativeOffset = absoluteOffset >= m_baseOffset ? absoluteOffset - m_baseOffset : 0;
+    row->byteLength = byteLength;
+    row->offset = byteLength > 0 ? formatOffset(absoluteOffset) : QString();
+
+    StructureRow *raw = row.get();
+    parent->children.push_back(std::move(row));
+    return raw;
+}
+
+QString StructureSemanticContext::formatOffset(uint64_t offset) const
+{
+    return QString::number(offset, 16).toUpper().rightJustified(8, QLatin1Char('0'));
+}
+
+StructureSemanticViewRegistry &StructureSemanticViewRegistry::instance()
+{
+    static StructureSemanticViewRegistry registry;
+    return registry;
+}
+
+void StructureSemanticViewRegistry::registerInterpreter(const QString &id,
+                                                        const StructureSemanticInterpreter &interpreter)
+{
+    if (!id.isEmpty() && interpreter)
+        m_interpreters.insert(id, interpreter);
+}
+
+bool StructureSemanticViewRegistry::run(const QString &id, StructureSemanticContext &context) const
+{
+    const auto it = m_interpreters.find(id);
+    if (it == m_interpreters.end())
+        return false;
+
+    it.value()(context);
+    return true;
+}
+
+void registerBuiltInStructureSemanticViews()
+{
+    static bool registered = false;
+    if (registered)
+        return;
+
+    registered = true;
+    registerPeSemanticViews(StructureSemanticViewRegistry::instance());
+}
+
+namespace
+{
+void runSemanticViewsForRow(StructureRow *rootRow,
+                            StructureRow *row,
+                            TypeLibrary *library,
+                            uint64_t baseOffset,
+                            const StructureValueBuilder::ByteReader &reader,
+                            const std::vector<StructureOffsetMap> &offsetMaps)
+{
+    if (!row)
+        return;
+
+    if (row->kind == StructureRowKind::Raw && row->typeDecl)
+    {
+        for (Tag *tag = row->typeDecl->tagList; tag; tag = tag->link)
+        {
+            if (tag->tok != TOK_VIEW || !tag->expr || tag->expr->type != EXPR_STRINGBUF || !tag->expr->str)
+                continue;
+
+            StructureSemanticContext context(library, rootRow, row, baseOffset, reader, offsetMaps);
+            StructureSemanticViewRegistry::instance().run(QString::fromLocal8Bit(tag->expr->str), context);
+        }
+    }
+
+    for (size_t i = 0; i < row->children.size(); ++i)
+        runSemanticViewsForRow(rootRow, row->children[i].get(), library, baseOffset, reader, offsetMaps);
+}
+}
+
+void runStructureSemanticViews(TypeLibrary *library,
+                               StructureRow *rootRow,
+                               uint64_t baseOffset,
+                               const StructureValueBuilder::ByteReader &reader,
+                               const std::vector<StructureOffsetMap> &offsetMaps)
+{
+    registerBuiltInStructureSemanticViews();
+    runSemanticViewsForRow(rootRow, rootRow, library, baseOffset, reader, offsetMaps);
+}
