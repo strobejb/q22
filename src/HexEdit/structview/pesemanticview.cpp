@@ -109,10 +109,12 @@ void interpretPeImports(StructureSemanticContext &context)
             dllName = context.readAsciiString(context.baseOffset() + nameOffset);
 
         StructureRow *dllRow = context.appendSemanticRow(importRow,
-                                                         QStringLiteral("DLL %1").arg(dllDisplayName(dllName)),
+                                                         dllDisplayName(dllName),
                                                          QStringLiteral("{...}"),
                                                          descriptorOffset,
                                                          kImportDescriptorSize);
+        if (dllRow)
+            dllRow->branchIconPath = QStringLiteral(":/icons/rendered/box-blue.svg");
         appendImportsForDescriptor(context, dllRow, descriptor);
     }
 }

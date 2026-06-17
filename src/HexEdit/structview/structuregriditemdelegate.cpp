@@ -5,6 +5,7 @@
 #include <QApplication>
 #include <QFont>
 #include <QFontMetrics>
+#include <QIcon>
 #include <QLineEdit>
 #include <QPainter>
 #include <QTreeView>
@@ -18,6 +19,7 @@ static constexpr bool kAlignStructureNameIdentifiers = true;
 static constexpr bool kEmphasizeAlignedNameIdentifiers = true;
 static constexpr qreal kNameIdentifierColumnWidth = 44.0;
 static constexpr qreal kArrayIndexColumnWidth = 24.0;
+static constexpr QFont::Weight kStructureTypePrefixWeight = QFont::Weight(650);
 
 qreal devicePixelSize(const QPainter *painter)
 {
@@ -56,14 +58,15 @@ void StructureGridItemDelegate::paint(QPainter *painter,
 {
     QStyleOptionViewItem opt(option);
     initStyleOption(&opt, index);
-    if (index.data(StructureTreeModel::EmphasizeNameRole).toBool())
-        opt.font.setBold(true);
 
     if (kAlignStructureNameIdentifiers && paintAlignedName(painter, &opt, index))
     {
         drawGridLines(painter, opt, index);
         return;
     }
+
+    if (index.data(StructureTreeModel::EmphasizeNameRole).toBool())
+        opt.font.setBold(true);
 
     QStyledItemDelegate::paint(painter, opt, index);
 
@@ -209,6 +212,7 @@ bool StructureGridItemDelegate::paintAlignedName(QPainter *painter,
     const QString identifier = index.data(StructureTreeModel::NameIdentifierRole).toString();
     const QString suffix = index.data(StructureTreeModel::NameSuffixRole).toString();
     const bool arrayIndexPrefix = prefix.startsWith(QLatin1Char('['));
+    const bool emphasizeName = index.data(StructureTreeModel::EmphasizeNameRole).toBool();
     if (prefix.isEmpty() || (!arrayIndexPrefix && identifier.isEmpty()))
         return false;
 
@@ -229,24 +233,33 @@ bool StructureGridItemDelegate::paintAlignedName(QPainter *painter,
         ? option->palette.color(QPalette::HighlightedText)
         : option->palette.color(QPalette::Text);
 
+    QFont prefixFont = option->font;
+    QFont identifierFont = option->font;
+    if (!arrayIndexPrefix)
+    {
+        const QFont::Weight prefixWeight = emphasizeName ? kStructureTypePrefixWeight : option->font.weight();
+        if (prefixFont.weight() < prefixWeight)
+            prefixFont.setWeight(prefixWeight);
+
+        const QFont::Weight identifierWeight = emphasizeName ? QFont::Bold : QFont::DemiBold;
+        if (identifierFont.weight() < identifierWeight)
+            identifierFont.setWeight(identifierWeight);
+    }
+
     painter->save();
     painter->setClipRect(option->rect);
-    painter->setFont(option->font);
     painter->setPen(textColour);
 
-    const qreal prefixWidth = metrics.horizontalAdvance(prefix);
+    const QFontMetricsF prefixMetrics(prefixFont);
+    const qreal prefixWidth = prefixMetrics.horizontalAdvance(prefix);
     const qreal identifierColumnWidth = arrayIndexPrefix ? kArrayIndexColumnWidth : kNameIdentifierColumnWidth;
     const qreal nameX = textRect.left() + std::max(identifierColumnWidth, prefixWidth + spaceWidth);
 
+    painter->setFont(prefixFont);
     painter->drawText(QPointF(textRect.left(), baseline), prefix);
 
     if (kEmphasizeAlignedNameIdentifiers && !arrayIndexPrefix)
-    {
-        QFont nameFont = option->font;
-        if (nameFont.weight() < QFont::DemiBold)
-            nameFont.setWeight(QFont::DemiBold);
-        painter->setFont(nameFont);
-    }
+        painter->setFont(identifierFont);
     painter->drawText(QPointF(nameX, baseline), identifier + suffix);
     painter->restore();
 

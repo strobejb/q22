@@ -190,7 +190,7 @@ void runSemanticViewsForRow(StructureRow *rootRow,
     if (!row)
         return;
 
-    if (row->kind == StructureRowKind::Raw && row->typeDecl)
+    if (row->kind != StructureRowKind::Semantic && row->typeDecl)
     {
         for (Tag *tag = row->typeDecl->tagList; tag; tag = tag->link)
         {

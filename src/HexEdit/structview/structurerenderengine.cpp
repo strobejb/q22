@@ -14,6 +14,7 @@ namespace
 static constexpr uint64_t kMaxArrayElements = 100;
 static constexpr qsizetype kMaxArrayPreviewElements = 8;
 static constexpr bool kPrefixArrayAliasesWithDash = false;
+static const char kDynamicBranchIconPath[] = ":/icons/rendered/box-blue.svg";
 
 uint64_t scalarSize(TYPE type)
 {
@@ -950,6 +951,8 @@ void StructureRenderEngine::appendDynamicRows(StructureRow *parent)
         }
         row->value = QStringLiteral("{...}");
         row->byteLength = container.byteLength;
+        row->kind = StructureRowKind::Dynamic;
+        row->branchIconPath = QString::fromLatin1(kDynamicBranchIconPath);
         container.row = row.get();
         parent->children.push_back(std::move(row));
     }
@@ -964,6 +967,8 @@ void StructureRenderEngine::appendDynamicRows(StructureRow *parent)
         Type *renderType = request.typeDecl->declList.empty() ? request.typeDecl->baseType : request.typeDecl->declList[0];
         auto row = makeRow(container->row, renderType, request.typeDecl, m_baseOffset + fileOffset);
         applyDeclarationName(row.get(), renderType);
+        row->kind = StructureRowKind::Dynamic;
+        row->branchIconPath = QString::fromLatin1(kDynamicBranchIconPath);
         row->byteLength = formatType(row.get(), renderType, request.typeDecl, m_baseOffset + fileOffset);
         if (row->value.isEmpty() && !row->children.empty())
             row->value = QStringLiteral("{...}");

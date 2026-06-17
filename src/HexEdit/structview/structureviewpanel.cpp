@@ -18,6 +18,7 @@
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QHideEvent>
+#include <QIcon>
 #include <QItemSelectionModel>
 #include <QLabel>
 #include <QLineEdit>
@@ -46,6 +47,16 @@ enum class InitialStructureExpansion
 
 static constexpr InitialStructureExpansion kInitialStructureExpansion =
     InitialStructureExpansion::FirstLevelAndFirstField;
+static constexpr int kBranchIconSize = 16;
+static const char kBranchSingleBoxIconPath[] = ":/icons/rendered/boxes-gray.svg";
+static const char kBranchCollapsedBoxIconPath[] = ":/icons/rendered/boxes-blue.svg";
+static const char kBranchExpandedBoxIconPath[] = ":/icons/rendered/double-open-lid-cutout-exact.svg";
+
+//static const char kBranchCollapsedBoxIconPath[] = ":/icons/rendered/double-symbol-chevron-collapsed.svg";
+//static const char kBranchExpandedBoxIconPath[] = ":/icons/rendered/double-symbol-chevron-expanded.svg";
+
+//static const char kBranchCollapsedBoxIconPath[] = ":/icons/rendered/single-closed.svg";
+//static const char kBranchExpandedBoxIconPath[] = ":/icons/rendered/double-closed.svg";
 
 qreal devicePixelSize(const QPainter *painter)
 {
@@ -216,6 +227,33 @@ protected:
             painter->fillRect(QRectF(rect.left(), bottomY, rect.width(), px), grid);
         }
         painter->restore();
+
+        if (!index.data(StructureTreeModel::BranchIconPathRole).toString().isEmpty())
+        {
+            const bool expandable = model() && model()->hasChildren(index);
+            const QIcon icon(QString::fromLatin1(expandable
+                                                    ? (isExpanded(index) ? kBranchExpandedBoxIconPath
+                                                                         : kBranchCollapsedBoxIconPath)
+                                                    : kBranchSingleBoxIconPath));
+            const int iconSize = qMin(kBranchIconSize, qMax(0, qMin(rect.width(), rect.height()) - 2));
+            if (iconSize > 0)
+            {
+                const int branchSlotWidth = qMin(rect.width(), qMax(1, indentation()));
+                const QRect branchSlot(rect.right() - branchSlotWidth + 1,
+                                       rect.top(),
+                                       branchSlotWidth,
+                                       rect.height());
+                const QRect iconRect(branchSlot.left() + qMax(0, (branchSlot.width() - iconSize) / 2),
+                                     branchSlot.top() + qMax(0, (branchSlot.height() - iconSize) / 2),
+                                     iconSize,
+                                     iconSize);
+                icon.paint(painter,
+                           iconRect,
+                           Qt::AlignCenter,
+                           isEnabled() ? QIcon::Normal : QIcon::Disabled);
+            }
+            return;
+        }
 
         if (!useClassicPlusMinusExpanders())
         {

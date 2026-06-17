@@ -649,23 +649,43 @@ void StructViewTests::builderPlacesDynamicStructsUnderNamedDynamicContainers()
     auto rows = buildRows(&library, firstExported(&library), bytes);
     QCOMPARE(rows.size(), size_t(1));
     QCOMPARE(rows[0]->children.size(), size_t(4));
+    QVERIFY(rows[0]->branchIconPath.isEmpty());
 
     StructureRow *sections = rows[0]->children[1].get();
+    QVERIFY(rows[0]->children[0]->branchIconPath.isEmpty());
+    QVERIFY(sections->branchIconPath.isEmpty());
     QCOMPARE(sections->children.size(), size_t(2));
     QCOMPARE(sections->children[0]->children.size(), size_t(4));
     QCOMPARE(sections->children[1]->name, QStringLiteral("[1].idata"));
     QCOMPARE(sections->children[1]->children.size(), size_t(4));
     QCOMPARE(rows[0]->children[2]->name, QStringLiteral("SECTION .text"));
+    QCOMPARE(rows[0]->children[2]->branchIconPath, QStringLiteral(":/icons/rendered/box-blue.svg"));
     QCOMPARE(rows[0]->children[2]->children.size(), size_t(0));
     QCOMPARE(rows[0]->children[3]->name, QStringLiteral("SECTION .idata"));
+    QCOMPARE(rows[0]->children[3]->branchIconPath, QStringLiteral(":/icons/rendered/box-blue.svg"));
     QCOMPARE(rows[0]->children[3]->offset, QStringLiteral("00000080"));
 
     StructureRow *dynamicImport = rows[0]->children[3]->children[0].get();
     QCOMPARE(dynamicImport->name, QStringLiteral("ImportDesc"));
     QCOMPARE(dynamicImport->offset, QStringLiteral("00000080"));
+    QCOMPARE(static_cast<int>(rows[0]->children[3]->kind), static_cast<int>(StructureRowKind::Dynamic));
+    QCOMPARE(static_cast<int>(dynamicImport->kind), static_cast<int>(StructureRowKind::Dynamic));
+    QCOMPARE(dynamicImport->branchIconPath, QStringLiteral(":/icons/rendered/box-blue.svg"));
     QCOMPARE(dynamicImport->children.size(), size_t(1));
     QCOMPARE(dynamicImport->children[0]->name, QStringLiteral("dword thunk"));
     QCOMPARE(dynamicImport->children[0]->value, QStringLiteral("305419896"));
+
+    std::vector<std::unique_ptr<StructureRow>> modelRows;
+    modelRows.push_back(std::move(rows[0]));
+    StructureTreeModel model;
+    model.setRowsForTests(std::move(modelRows));
+    const QModelIndex rootIndex = model.index(0, StructureTreeModel::NameColumn);
+    const QModelIndex sectionIndex = model.index(3, StructureTreeModel::NameColumn, rootIndex);
+    const QModelIndex dynamicIndex = model.index(0, StructureTreeModel::NameColumn, sectionIndex);
+    QVERIFY(sectionIndex.isValid());
+    QVERIFY(dynamicIndex.isValid());
+    QVERIFY(!(model.flags(sectionIndex) & Qt::ItemIsEditable));
+    QVERIFY(!(model.flags(dynamicIndex) & Qt::ItemIsEditable));
 }
 
 void StructViewTests::semanticRegistryRunsKnownViewsAndIgnoresUnknownViews()
@@ -746,7 +766,8 @@ void StructViewTests::builderRunsSemanticViewsAfterDynamicPlacement()
 
     StructureRow *dllRow = dynamicImport->children[5].get();
     QCOMPARE(static_cast<int>(dllRow->kind), static_cast<int>(StructureRowKind::Semantic));
-    QCOMPARE(dllRow->name, QStringLiteral("DLL KERNEL32.dll"));
+    QCOMPARE(dllRow->name, QStringLiteral("KERNEL32.dll"));
+    QCOMPARE(dllRow->branchIconPath, QStringLiteral(":/icons/rendered/box-blue.svg"));
     QCOMPARE(dllRow->children.size(), size_t(1));
     QCOMPARE(static_cast<int>(dllRow->children[0]->kind), static_cast<int>(StructureRowKind::Semantic));
     QCOMPARE(dllRow->children[0]->name, QStringLiteral("Import CreateFileW"));

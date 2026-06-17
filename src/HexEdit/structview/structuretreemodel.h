@@ -13,6 +13,7 @@
 enum class StructureRowKind
 {
     Raw,
+    Dynamic,
     Semantic
 };
 
@@ -25,6 +26,7 @@ struct StructureRow
     QString nameIdentifier;
     QString nameSuffix;
     bool emphasizeName = false;
+    QString branchIconPath;
     QString value;
     QString offset;
     QString comment;
@@ -57,6 +59,7 @@ public:
         NameIdentifierRole,
         NameSuffixRole,
         EmphasizeNameRole,
+        BranchIconPathRole,
         RowKindRole
     };
 

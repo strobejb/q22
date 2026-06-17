@@ -92,6 +92,8 @@ QVariant StructureTreeModel::data(const QModelIndex &index, int role) const
             return row->nameSuffix;
         case EmphasizeNameRole:
             return row->emphasizeName;
+        case BranchIconPathRole:
+            return row->branchIconPath;
         default:
             break;
         }
@@ -127,7 +129,7 @@ Qt::ItemFlags StructureTreeModel::flags(const QModelIndex &index) const
 
     const Qt::ItemFlags flags = QAbstractItemModel::flags(index);
     const StructureRow *row = rowForIndex(index);
-    if (row && row->kind == StructureRowKind::Semantic)
+    if (row && row->kind != StructureRowKind::Raw)
         return flags;
 
     if (row && !row->children.empty()
@@ -243,6 +245,7 @@ void StructureTreeModel::setCellText(StructureRow *row, int column, const QStrin
         row->nameIdentifier.clear();
         row->nameSuffix.clear();
         row->emphasizeName = false;
+        row->branchIconPath.clear();
         break;
     case ValueColumn:
         row->value = text;
