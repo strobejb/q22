@@ -8,6 +8,7 @@
 #include <QApplication>
 #include <QComboBox>
 #include <QFont>
+#include <QFontMetrics>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -43,6 +44,25 @@ static const ArchEntry kArchEntries[] = {
 static constexpr int kArchCount = (int)(sizeof(kArchEntries) / sizeof(kArchEntries[0]));
 
 static constexpr bool kHighlightCurrentLine = false; // tint the line under the cursor
+
+static QFont disassemblyViewFont(const QFont &hexViewFont)
+{
+    QFont font = hexViewFont;
+    const QFont defaultFont = QApplication::font();
+
+    if (font.pointSizeF() > 0)
+    {
+        const qreal defaultSize = defaultFont.pointSizeF() > 0 ? defaultFont.pointSizeF() : font.pointSizeF();
+        font.setPointSizeF(qMax(defaultSize, font.pointSizeF() - 2.0));
+    }
+    else if (font.pixelSize() > 0)
+    {
+        const int defaultSize = defaultFont.pixelSize() > 0 ? defaultFont.pixelSize() : QFontMetrics(defaultFont).height();
+        font.setPixelSize(qMax(defaultSize, font.pixelSize() - 2));
+    }
+
+    return font;
+}
 
 
 // ── DisassemblerPanel ─────────────────────────────────────────────────────────
@@ -109,6 +129,8 @@ void DisassemblerPanel::buildUi()
                       filestats::subduedTextColor(palette()), 16));
     const int comboH = qMax(24, static_cast<QComboBox *>(m_archCombo)->sizeHint().height() - 4);
     m_archCombo->setFixedHeight(comboH);
+    m_archCombo->setMaximumWidth(qRound(static_cast<QComboBox *>(m_archCombo)->sizeHint().width() * 1.7));
+    m_archCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
     // Read-only offset display with trailing pin toggle.
     m_offsetEdit = new QLineEdit(content);
@@ -129,7 +151,7 @@ void DisassemblerPanel::buildUi()
                         + 16 + 8; // icon + Qt's action button right margin
     m_offsetEdit->setFixedWidth(offsetW);
 
-    optLay->addWidget(m_archCombo);
+    optLay->addWidget(m_archCombo, 1);
     optLay->addSpacing(4);
     optLay->addWidget(m_offsetEdit);
     optLay->addStretch(1);
@@ -142,12 +164,7 @@ void DisassemblerPanel::buildUi()
     m_view->setLineWrapMode(QPlainTextEdit::NoWrap);
     m_view->setFrameShape(QFrame::NoFrame);
     m_view->document()->setDocumentMargin(6.0);
-    QFont viewFont = m_hv->font();
-    if (viewFont.pointSize() > 0)
-        viewFont.setPointSize(viewFont.pointSize() - 1);
-    else if (viewFont.pixelSize() > 0)
-        viewFont.setPixelSize(viewFont.pixelSize() - 1);
-    m_view->setFont(viewFont);
+    m_view->setFont(disassemblyViewFont(m_hv->font()));
 
     // Match the hex view's background and selection colours.
     // Background goes through QPalette::Base (stylesheet doesn't set background-color).
@@ -311,11 +328,12 @@ void DisassemblerPanel::disassemble()
     fmtInstr.setForeground(instrColor);       // mnemonic – odd column, bold
     fmtInstr.setFontWeight(QFont::Bold);
     fmtOp.setForeground(opColor);             // registers/identifiers – even column, bold
-    fmtOp.setFontWeight(QFont::Bold);
+    fmtOp.setFontWeight(QFont::Medium);
     fmtMod.setForeground(opColor);            // byte ptr / dword ptr – even column, not bold
     fmtNum.setForeground(numColor);           // numeric literals – modified colour, bold
-    fmtNum.setFontWeight(QFont::Bold);
+    fmtNum.setFontWeight(QFont::Medium);
     fmtPunct.setForeground(wt);               // [ ] , + - * : – plain foreground
+    fmtPunct.setFontWeight(QFont::Bold);               // [ ] , + - * : – plain foreground
 
     // Single pass regex: modifier phrases > hex numbers > decimal > punctuation
     static const QRegularExpression reTok(QStringLiteral(

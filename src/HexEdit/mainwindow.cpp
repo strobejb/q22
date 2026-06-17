@@ -62,6 +62,7 @@
 #include <QLabel>
 #include <QMessageBox>
 #include <QIcon>
+#include <QKeySequence>
 #include <QMenu>
 #include <QPointer>
 #include <QStyle>
@@ -77,6 +78,26 @@ namespace {
 enum class PanelToggleHost { TitleBar, StatusBar };
 
 static constexpr PanelToggleHost kPanelToggleHost = PanelToggleHost::StatusBar;
+
+static QKeySequence fileInfoPanelShortcut()
+{
+    return QKeySequence(QStringLiteral("Ctrl+I"));
+}
+
+static QKeySequence disassemblerPanelShortcut()
+{
+    return QKeySequence(QStringLiteral("Ctrl+D"));
+}
+
+static QKeySequence structurePanelShortcut()
+{
+    return QKeySequence(QStringLiteral("Ctrl+T"));
+}
+
+static QString shortcutLabel(const QKeySequence &shortcut)
+{
+    return shortcut.toString(QKeySequence::NativeText);
+}
 
 void jumpToBookmark(HexView *hv, int idx)
 {
@@ -709,7 +730,17 @@ MainWindow::MainWindow(QWidget *parent)
     fileChangeTimer->setInterval(1000);
     connect(fileChangeTimer, &QTimer::timeout,
             this, [this]() { checkWatchedFileChanged(this); });
+    ui->actionProperties->setShortcut(fileInfoPanelShortcut());
+    addAction(ui->actionProperties);
     connect(ui->actionProperties, &QAction::triggered, this, &MainWindow::toggleSidePanel);
+
+    auto *disassemblerShortcut = new QShortcut(disassemblerPanelShortcut(), this);
+    connect(disassemblerShortcut, &QShortcut::activated,
+            this, &MainWindow::toggleDisassemblerPanel);
+
+    auto *structureShortcut = new QShortcut(structurePanelShortcut(), this);
+    connect(structureShortcut, &QShortcut::activated,
+            this, &MainWindow::toggleStructurePanel);
     ui->actionChecksum->setEnabled(true);
     connect(ui->actionChecksum, &QAction::triggered,
             this, [this]() { openSidePanelSection(FilePropertiesPanel::SectionId::Checksums); });
@@ -831,6 +862,9 @@ MainWindow::MainWindow(QWidget *parent)
                                 AppSettings::prefStatusbarToolsRight(),
                                 AppSettings::prefStatusbarInfoRight(),
                                 this);
+    m_statusBar->setPanelShortcutText(shortcutLabel(fileInfoPanelShortcut()),
+                                      shortcutLabel(structurePanelShortcut()),
+                                      shortcutLabel(disassemblerPanelShortcut()));
     ui->statusbar->setCursor(Qt::ArrowCursor);
     ui->statusbar->setAcceptDrops(true);
     ui->statusbar->setContentsMargins(0, 0, 0, 2);

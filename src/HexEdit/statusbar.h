@@ -55,6 +55,9 @@ public:
     StatusBar(HexView *hv, QStatusBar *bar, bool showPanelToggles,
               bool toolsRight, bool infoRight, QObject *parent = nullptr);
 
+    void setPanelShortcutText(const QString &fileInfoShortcut,
+                              const QString &typesShortcut,
+                              const QString &codeShortcut);
     void setFileInfoPanelOpen(bool open);
     void setTypesPanelOpen(bool open);
     void setCodePanelOpen(bool open);

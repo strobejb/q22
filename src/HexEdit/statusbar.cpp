@@ -140,6 +140,14 @@ static QString fmtHex(quint64 v, int width)
     return QString::number(v, 16).toUpper().rightJustified(width, '0');
 }
 
+static QString tooltipWithShortcut(const QString &label, const QString &shortcut)
+{
+    if (shortcut.isEmpty())
+        return label;
+
+    return QStringLiteral("%1 (%2)").arg(label, shortcut);
+}
+
 StatusBar::StatusBar(HexView *hv, QStatusBar *bar, bool showPanelToggles,
                      bool toolsRight, bool infoRight, QObject *parent)
     : QObject(parent),
@@ -169,17 +177,15 @@ StatusBar::StatusBar(HexView *hv, QStatusBar *bar, bool showPanelToggles,
     };
 
     m_fileInfoBtn = makeToggleButton("statusFileInfoBtn", "actions/help-about-symbolic", "i");
-    m_fileInfoBtn->setToolTip(tr("File Information"));
     connect(m_fileInfoBtn, &QToolButton::clicked, this, &StatusBar::fileInfoToggled);
 
     //m_typesBtn = makeToggleButton("statusTypesBtn", "actions/binstruct0101", "T");
     m_typesBtn = makeToggleButton("statusTypesBtn", "actions/cube", "T");
-    m_typesBtn->setToolTip(tr("Structure View"));
     connect(m_typesBtn, &QToolButton::toggled, this, &StatusBar::typesToggled);
 
     m_codeBtn = makeToggleButton("statusCodeBtn", "actions/chip", "D");
-    m_codeBtn->setToolTip(tr("Disassemble"));
     connect(m_codeBtn, &QToolButton::clicked, this, &StatusBar::codeToggled);
+    setPanelShortcutText(QString(), QString(), QString());
 
     m_toggleStrip = new QWidget(bar);
     m_toggleLayout = new QHBoxLayout(m_toggleStrip);
@@ -258,6 +264,18 @@ StatusBar::StatusBar(HexView *hv, QStatusBar *bar, bool showPanelToggles,
 
     rebuildLayout();
     update();
+}
+
+void StatusBar::setPanelShortcutText(const QString &fileInfoShortcut,
+                                     const QString &typesShortcut,
+                                     const QString &codeShortcut)
+{
+    if (m_fileInfoBtn)
+        m_fileInfoBtn->setToolTip(tooltipWithShortcut(tr("File Information"), fileInfoShortcut));
+    if (m_typesBtn)
+        m_typesBtn->setToolTip(tooltipWithShortcut(tr("Structure View"), typesShortcut));
+    if (m_codeBtn)
+        m_codeBtn->setToolTip(tooltipWithShortcut(tr("Disassemble"), codeShortcut));
 }
 
 bool StatusBar::eventFilter(QObject *obj, QEvent *event)
