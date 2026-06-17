@@ -15,6 +15,8 @@ private slots:
 	void dynamicPlacementTagsParse();
 	void viewTagsParse();
 	void endianExpressionTagsParse();
+	void lengthIsIsReserved();
+	void unsizedArraysRequireSizeIs();
 	void elfRootIsExportedAndAssociated();
 	void standardTypelibFilesParse();
 };
@@ -215,6 +217,46 @@ void TypeLibTests::endianExpressionTagsParse()
 	QVERIFY(FindTag(root->tagList, TOK_ENDIAN, &expr));
 	QVERIFY(expr);
 	QCOMPARE(expr->type, EXPR_BINARY);
+}
+
+void TypeLibTests::lengthIsIsReserved()
+{
+	// Scenario: TypeLib knows the IDL-flavoured length_is keyword, but qexed
+	// does not implement its rendering semantics.
+	// Expected: the parser rejects it with a deliberate reserved-keyword error
+	// instead of accepting a tag that Structure View will ignore later.
+	// Regression guard: unsupported IDL syntax should fail near the definition
+	// author, not become a surprising empty array or layout bug in the UI.
+	Parser parser;
+	QVERIFY(!parseBuffer(parser,
+						 "struct Root {\n"
+						 "  [length_is(count)] byte data[];\n"
+						 "  byte count;\n"
+						 "} root;\n"));
+	QCOMPARE(parser.LastErr(), ERROR_RESERVED_KEYWORD);
+}
+
+void TypeLibTests::unsizedArraysRequireSizeIs()
+{
+	// Scenario: a definition declares a flexible array member with [] but gives
+	// no TypeLib count tag.
+	// Expected: the parser rejects the declaration because Structure View cannot
+	// safely infer how many elements to render.
+	// Regression guard: empty arrays should not silently render as zero elements
+	// or depend on later UI code to diagnose definition mistakes.
+	Parser missingSize;
+	QVERIFY(!parseBuffer(missingSize,
+						 "struct Root {\n"
+						 "  byte data[];\n"
+						 "} root;\n"));
+	QCOMPARE(missingSize.LastErr(), ERROR_UNSIZED_ARRAY_REQUIRES_SIZEIS);
+
+	Parser withSize;
+	QVERIFY(parseBuffer(withSize,
+						"struct Root {\n"
+						"  byte count;\n"
+						"  [size_is(count)] byte data[];\n"
+						"} root;\n"));
 }
 
 void TypeLibTests::elfRootIsExportedAndAssociated()

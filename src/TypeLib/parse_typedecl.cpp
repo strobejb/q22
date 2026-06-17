@@ -21,6 +21,17 @@ static void Unnamed(char *typeName)
 	sprintf(typeName, "$noname$%04d", unnamed++);
 }
 
+static bool HasUnsizedArray(Type *type)
+{
+	for(Type *cursor = type; cursor; cursor = cursor->link)
+	{
+		if(cursor->ty == typeARRAY && cursor->elements == 0)
+			return true;
+	}
+
+	return false;
+}
+
 Symbol *InstallSymbol(SymbolTable &table, char *name)
 {
 	Symbol *sym = new Symbol;
@@ -749,6 +760,13 @@ TypeDecl * Parser::ParseTypeDecl(Tag *tagList, SymbolTable &symTable, bool neste
 
 		// glue the basetype and variable-declaration together
 		type = AppendType(InvertType(type), typeDecl->baseType);
+
+		if(HasUnsizedArray(type) && !FindTag(typeDecl->tagList, TOK_SIZEIS, 0))
+		{
+			Error(ERROR_UNSIZED_ARRAY_REQUIRES_SIZEIS);
+			delete type;
+			return 0;
+		}
 
 		// Change typeIDENTIFIER to typeTYPEDEF when appropriate
 		if(typeDecl->typeAlias)

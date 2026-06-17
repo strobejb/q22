@@ -109,6 +109,12 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[])
 	{
 		foundtag = true;
 
+		if(t == TOK_LENGTHIS)
+		{
+			Error(ERROR_RESERVED_KEYWORD, inenglish(t));
+			return false;
+		}
+
 		//
 		//	Make sure that the tag is allowed
 		//
@@ -142,7 +148,7 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[])
 		// TAGS which take expression-parameters
 		case TOK_OFFSET:	case TOK_ALIGN:	 
 		case TOK_BITFLAG:	case TOK_ENDIAN:
-		case TOK_SIZEIS:	case TOK_LENGTHIS: 	
+		case TOK_SIZEIS:
 		case TOK_STYLE:		case TOK_SWITCHIS:
 		case TOK_CASE:		case TOK_DISPLAY:
 		case TOK_NAME:		case TOK_ENUM:
@@ -158,7 +164,7 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[])
 			if(!Expected('('))
 				return false;
 
-			if(tmp == TOK_SIZEIS || tmp == TOK_LENGTHIS || tmp == TOK_ASSOC
+			if(tmp == TOK_SIZEIS || tmp == TOK_ASSOC
 				|| tmp == TOK_OFFSETMAP || tmp == TOK_DYNAMICCONTAINER || tmp == TOK_DYNAMICSTRUCT)
 			{
 				// full comma-separated expression 
