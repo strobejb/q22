@@ -27,6 +27,8 @@ struct StructureRow
     QString nameSuffix;
     bool emphasizeName = false;
     QString branchIconPath;
+    QString branchOpenIconPath;
+    QString branchEmptyIconPath;
     QString value;
     QString offset;
     QString comment;
@@ -60,6 +62,8 @@ public:
         NameSuffixRole,
         EmphasizeNameRole,
         BranchIconPathRole,
+        BranchOpenIconPathRole,
+        BranchEmptyIconPathRole,
         RowKindRole
     };
 
@@ -69,6 +73,7 @@ public:
     QModelIndex parent(const QModelIndex &child) const override;
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;
     int columnCount(const QModelIndex &parent = QModelIndex()) const override;
+    bool hasChildren(const QModelIndex &parent = QModelIndex()) const override;
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
     QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const override;
     Qt::ItemFlags flags(const QModelIndex &index) const override;

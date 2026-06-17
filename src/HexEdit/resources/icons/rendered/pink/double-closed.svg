@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none" shape-rendering="geometricPrecision" role="img" aria-labelledby="title desc">
+  <title id="title">Pink double folder box, closed</title>
+  <desc id="desc">A pink closed double-box companion using normalized light lids.</desc>
+  <defs>
+    <linearGradient id="pink-double-closed-top" gradientUnits="userSpaceOnUse" x1="8" y1="4" x2="55" y2="40">
+      <stop offset="0%" stop-color="#FFF8FC"/><stop offset="34%" stop-color="#FFD9EE"/><stop offset="72%" stop-color="#F7A8D2"/><stop offset="100%" stop-color="#E57FB5"/>
+    </linearGradient>
+    <linearGradient id="pink-double-closed-left" gradientUnits="userSpaceOnUse" x1="7" y1="14" x2="38" y2="58">
+      <stop offset="0%" stop-color="#F2A1CA"/><stop offset="58%" stop-color="#DC6FA9"/><stop offset="100%" stop-color="#B84582"/>
+    </linearGradient>
+    <linearGradient id="pink-double-closed-right" gradientUnits="userSpaceOnUse" x1="28" y1="18" x2="58" y2="59">
+      <stop offset="0%" stop-color="#B53A79"/><stop offset="54%" stop-color="#8E175A"/><stop offset="100%" stop-color="#65063D"/>
+    </linearGradient>
+    <linearGradient id="pink-double-closed-rim-light" gradientUnits="userSpaceOnUse" x1="12" y1="7" x2="47" y2="34">
+      <stop offset="0%" stop-color="#FFF8FC"/><stop offset="52%" stop-color="#FFD9EE"/><stop offset="100%" stop-color="#F7A8D2"/>
+    </linearGradient>
+    <linearGradient id="pink-double-closed-rim-left" gradientUnits="userSpaceOnUse" x1="14" y1="18" x2="35" y2="35">
+      <stop offset="0%" stop-color="#F2A1CA"/><stop offset="100%" stop-color="#DC6FA9"/>
+    </linearGradient>
+    <linearGradient id="pink-double-closed-rim-right" gradientUnits="userSpaceOnUse" x1="31" y1="17" x2="50" y2="35">
+      <stop offset="0%" stop-color="#B53A79"/><stop offset="100%" stop-color="#8E175A"/>
+    </linearGradient>
+      <linearGradient id="pink-double-light-normalized-front-top" gradientUnits="userSpaceOnUse" x1="28" y1="19" x2="75" y2="55">
+      <stop offset="0%" stop-color="#FFF8FC"/><stop offset="34%" stop-color="#FFD9EE"/><stop offset="72%" stop-color="#F7A8D2"/><stop offset="100%" stop-color="#E57FB5"/>
+    </linearGradient>
+      <linearGradient id="pink-double-normalized-front-left" gradientUnits="userSpaceOnUse" x1="27" y1="29" x2="58" y2="73">
+      <stop offset="0%" stop-color="#F2A1CA"/><stop offset="58%" stop-color="#DC6FA9"/><stop offset="100%" stop-color="#B84582"/>
+    </linearGradient>
+  </defs>
+  <g>
+    <polygon points="6.00,16.75 22.00,28.75 22.00,44.25 6.00,32.25" fill="url(#pink-double-closed-left)"/>
+    <polygon points="22.00,28.75 38.00,16.75 38.00,32.25 22.00,44.25" fill="url(#pink-double-closed-right)"/>
+    <path d="M22.00 28.75V44.25" stroke="#51002F" stroke-opacity="0.12" stroke-width="0.65"/>
+    <path d="M6.00 16.75V32.25" stroke="#FFFFFF" stroke-opacity="0.24" stroke-width="0.7"/>
+    <polygon points="22.00,4.75 38.00,16.75 22.00,28.75 6.00,16.75" fill="url(#pink-double-closed-top)"/>
+    <polygon points="22.00,5.70 36.74,16.75 22.00,27.80 7.26,16.75" fill="#FFFFFF" opacity="0.10"/>
+    <path d="M22.00 4.75L6.00 16.75" stroke="#FFFFFF" stroke-opacity="0.30" stroke-width="0.8" stroke-linecap="round"/>
+    <path d="M22.00 4.75L38.00 16.75" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="0.65" stroke-linecap="round"/>
+    <polygon points="26.00,31.75 42.00,43.75 42.00,59.25 26.00,47.25" fill="url(#pink-double-normalized-front-left)"/>
+    <polygon points="42.00,43.75 58.00,31.75 58.00,47.25 42.00,59.25" fill="url(#pink-double-closed-right)"/>
+    <path d="M42.00 43.75V59.25" stroke="#51002F" stroke-opacity="0.12" stroke-width="0.65"/>
+    <path d="M26.00 31.75V47.25" stroke="#FFFFFF" stroke-opacity="0.24" stroke-width="0.7"/>
+    <polygon points="42.00,19.75 58.00,31.75 42.00,43.75 26.00,31.75" fill="url(#pink-double-light-normalized-front-top)"/>
+    <polygon points="42.00,20.70 56.74,31.75 42.00,42.80 27.26,31.75" fill="#FFFFFF" opacity="0.10"/>
+    <path d="M42.00 19.75L26.00 31.75" stroke="#FFFFFF" stroke-opacity="0.30" stroke-width="0.8" stroke-linecap="round"/>
+    <path d="M42.00 19.75L58.00 31.75" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="0.65" stroke-linecap="round"/>
+  </g>
+</svg>

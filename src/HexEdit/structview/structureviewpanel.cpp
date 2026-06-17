@@ -48,15 +48,6 @@ enum class InitialStructureExpansion
 static constexpr InitialStructureExpansion kInitialStructureExpansion =
     InitialStructureExpansion::FirstLevelAndFirstField;
 static constexpr int kBranchIconSize = 16;
-static const char kBranchSingleBoxIconPath[] = ":/icons/rendered/boxes-gray.svg";
-static const char kBranchCollapsedBoxIconPath[] = ":/icons/rendered/boxes-blue.svg";
-static const char kBranchExpandedBoxIconPath[] = ":/icons/rendered/double-open-lid-cutout-exact.svg";
-
-//static const char kBranchCollapsedBoxIconPath[] = ":/icons/rendered/double-symbol-chevron-collapsed.svg";
-//static const char kBranchExpandedBoxIconPath[] = ":/icons/rendered/double-symbol-chevron-expanded.svg";
-
-//static const char kBranchCollapsedBoxIconPath[] = ":/icons/rendered/single-closed.svg";
-//static const char kBranchExpandedBoxIconPath[] = ":/icons/rendered/double-closed.svg";
 
 qreal devicePixelSize(const QPainter *painter)
 {
@@ -228,13 +219,24 @@ protected:
         }
         painter->restore();
 
-        if (!index.data(StructureTreeModel::BranchIconPathRole).toString().isEmpty())
+        const QString closedBranchIcon = index.data(StructureTreeModel::BranchIconPathRole).toString();
+        if (!closedBranchIcon.isEmpty())
         {
-            const bool expandable = model() && model()->hasChildren(index);
-            const QIcon icon(QString::fromLatin1(expandable
-                                                    ? (isExpanded(index) ? kBranchExpandedBoxIconPath
-                                                                         : kBranchCollapsedBoxIconPath)
-                                                    : kBranchSingleBoxIconPath));
+            const bool expandable = model() && model()->rowCount(index) > 0;
+            QString iconPath = closedBranchIcon;
+            if (!expandable)
+            {
+                const QString emptyBranchIcon = index.data(StructureTreeModel::BranchEmptyIconPathRole).toString();
+                if (!emptyBranchIcon.isEmpty())
+                    iconPath = emptyBranchIcon;
+            }
+            else if (isExpanded(index))
+            {
+                const QString openBranchIcon = index.data(StructureTreeModel::BranchOpenIconPathRole).toString();
+                if (!openBranchIcon.isEmpty())
+                    iconPath = openBranchIcon;
+            }
+            const QIcon icon(iconPath);
             const int iconSize = qMin(kBranchIconSize, qMax(0, qMin(rect.width(), rect.height()) - 2));
             if (iconSize > 0)
             {

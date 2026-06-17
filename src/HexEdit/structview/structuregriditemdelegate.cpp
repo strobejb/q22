@@ -211,9 +211,12 @@ bool StructureGridItemDelegate::paintAlignedName(QPainter *painter,
     const QString prefix = index.data(StructureTreeModel::NameTypePrefixRole).toString();
     const QString identifier = index.data(StructureTreeModel::NameIdentifierRole).toString();
     const QString suffix = index.data(StructureTreeModel::NameSuffixRole).toString();
+    const bool hasBranchIcon = !index.data(StructureTreeModel::BranchIconPathRole).toString().isEmpty();
     const bool arrayIndexPrefix = prefix.startsWith(QLatin1Char('['));
     const bool emphasizeName = index.data(StructureTreeModel::EmphasizeNameRole).toBool();
-    if (prefix.isEmpty() || (!arrayIndexPrefix && identifier.isEmpty()))
+    if (prefix.isEmpty() && !hasBranchIcon)
+        return false;
+    if (!prefix.isEmpty() && !arrayIndexPrefix && identifier.isEmpty())
         return false;
 
     QStyleOptionViewItem backgroundOption(*option);
@@ -249,6 +252,14 @@ bool StructureGridItemDelegate::paintAlignedName(QPainter *painter,
     painter->save();
     painter->setClipRect(option->rect);
     painter->setPen(textColour);
+
+    if (prefix.isEmpty())
+    {
+        painter->setFont(option->font);
+        painter->drawText(QPointF(textRect.left(), baseline), option->text);
+        painter->restore();
+        return true;
+    }
 
     const QFontMetricsF prefixMetrics(prefixFont);
     const qreal prefixWidth = prefixMetrics.horizontalAdvance(prefix);

@@ -14,7 +14,9 @@ namespace
 static constexpr uint64_t kMaxArrayElements = 100;
 static constexpr qsizetype kMaxArrayPreviewElements = 8;
 static constexpr bool kPrefixArrayAliasesWithDash = false;
-static const char kDynamicBranchIconPath[] = ":/icons/rendered/box-blue.svg";
+static const char kDynamicBranchClosedIconPath[] = ":/icons/rendered/blue/double-closed.svg";
+static const char kDynamicBranchOpenIconPath[] = ":/icons/rendered/blue/double-open.svg";
+static const char kDynamicBranchEmptyIconPath[] = ":/icons/rendered/gray/double-closed.svg";
 
 uint64_t scalarSize(TYPE type)
 {
@@ -952,7 +954,9 @@ void StructureRenderEngine::appendDynamicRows(StructureRow *parent)
         row->value = QStringLiteral("{...}");
         row->byteLength = container.byteLength;
         row->kind = StructureRowKind::Dynamic;
-        row->branchIconPath = QString::fromLatin1(kDynamicBranchIconPath);
+        row->branchIconPath = QString::fromLatin1(kDynamicBranchClosedIconPath);
+        row->branchOpenIconPath = QString::fromLatin1(kDynamicBranchOpenIconPath);
+        row->branchEmptyIconPath = QString::fromLatin1(kDynamicBranchEmptyIconPath);
         container.row = row.get();
         parent->children.push_back(std::move(row));
     }
@@ -968,7 +972,9 @@ void StructureRenderEngine::appendDynamicRows(StructureRow *parent)
         auto row = makeRow(container->row, renderType, request.typeDecl, m_baseOffset + fileOffset);
         applyDeclarationName(row.get(), renderType);
         row->kind = StructureRowKind::Dynamic;
-        row->branchIconPath = QString::fromLatin1(kDynamicBranchIconPath);
+        row->branchIconPath = QString::fromLatin1(kDynamicBranchClosedIconPath);
+        row->branchOpenIconPath = QString::fromLatin1(kDynamicBranchOpenIconPath);
+        row->branchEmptyIconPath = QString::fromLatin1(kDynamicBranchEmptyIconPath);
         row->byteLength = formatType(row.get(), renderType, request.typeDecl, m_baseOffset + fileOffset);
         if (row->value.isEmpty() && !row->children.empty())
             row->value = QStringLiteral("{...}");

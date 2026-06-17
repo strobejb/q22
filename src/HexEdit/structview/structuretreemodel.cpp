@@ -65,6 +65,18 @@ int StructureTreeModel::columnCount(const QModelIndex &) const
     return ColumnCount;
 }
 
+bool StructureTreeModel::hasChildren(const QModelIndex &parent) const
+{
+    if (parent.isValid() && parent.column() != 0)
+        return false;
+
+    const StructureRow *row = rowForIndex(parent);
+    if (!row)
+        return false;
+
+    return !row->children.empty() || !row->branchIconPath.isEmpty();
+}
+
 QVariant StructureTreeModel::data(const QModelIndex &index, int role) const
 {
     if (!index.isValid())
@@ -94,6 +106,10 @@ QVariant StructureTreeModel::data(const QModelIndex &index, int role) const
             return row->emphasizeName;
         case BranchIconPathRole:
             return row->branchIconPath;
+        case BranchOpenIconPathRole:
+            return row->branchOpenIconPath;
+        case BranchEmptyIconPathRole:
+            return row->branchEmptyIconPath;
         default:
             break;
         }
@@ -246,6 +262,8 @@ void StructureTreeModel::setCellText(StructureRow *row, int column, const QStrin
         row->nameSuffix.clear();
         row->emphasizeName = false;
         row->branchIconPath.clear();
+        row->branchOpenIconPath.clear();
+        row->branchEmptyIconPath.clear();
         break;
     case ValueColumn:
         row->value = text;

@@ -10,6 +10,9 @@ static constexpr uint64_t kImportDescriptorSize = 20;
 static constexpr size_t kMaxImportDescriptors = 256;
 static constexpr size_t kMaxThunkEntries = 512;
 static constexpr uint32_t kOrdinalImport32 = 0x80000000u;
+static const char kDllBranchClosedIconPath[] = ":/icons/rendered/blue/single-closed.svg";
+static const char kDllBranchOpenIconPath[] = ":/icons/rendered/blue/single-open.svg";
+static const char kDllBranchEmptyIconPath[] = ":/icons/rendered/gray/single-closed.svg";
 
 struct ImportDescriptor
 {
@@ -114,7 +117,11 @@ void interpretPeImports(StructureSemanticContext &context)
                                                          descriptorOffset,
                                                          kImportDescriptorSize);
         if (dllRow)
-            dllRow->branchIconPath = QStringLiteral(":/icons/rendered/box-blue.svg");
+        {
+            dllRow->branchIconPath = QString::fromLatin1(kDllBranchClosedIconPath);
+            dllRow->branchOpenIconPath = QString::fromLatin1(kDllBranchOpenIconPath);
+            dllRow->branchEmptyIconPath = QString::fromLatin1(kDllBranchEmptyIconPath);
+        }
         appendImportsForDescriptor(context, dllRow, descriptor);
     }
 }

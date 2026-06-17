@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none" shape-rendering="geometricPrecision" role="img" aria-labelledby="title desc">
+  <title id="title">Gray single folder box, open</title>
+  <desc id="desc">The darkened single-box variant used for the open state.</desc>
+  <defs>
+    <linearGradient id="midgray-single-closed-top" gradientUnits="userSpaceOnUse" x1="8" y1="4" x2="55" y2="40">
+      <stop offset="0%" stop-color="#F7FBFF"/><stop offset="34%" stop-color="#CDE8FF"/><stop offset="72%" stop-color="#9FD0FA"/><stop offset="100%" stop-color="#7EB6E8"/>
+    </linearGradient>
+    <linearGradient id="midgray-single-closed-left" gradientUnits="userSpaceOnUse" x1="7" y1="14" x2="38" y2="58">
+      <stop offset="0%" stop-color="#D1D1D1"/><stop offset="58%" stop-color="#B4B4B4"/><stop offset="100%" stop-color="#969696"/>
+    </linearGradient>
+    <linearGradient id="midgray-single-closed-right" gradientUnits="userSpaceOnUse" x1="28" y1="18" x2="58" y2="59">
+      <stop offset="0%" stop-color="#989898"/><stop offset="54%" stop-color="#747474"/><stop offset="100%" stop-color="#5A5A5A"/>
+    </linearGradient>
+    <linearGradient id="midgray-single-closed-rim-light" gradientUnits="userSpaceOnUse" x1="12" y1="7" x2="47" y2="34">
+      <stop offset="0%" stop-color="#F7FBFF"/><stop offset="52%" stop-color="#CDE8FF"/><stop offset="100%" stop-color="#9FD0FA"/>
+    </linearGradient>
+    <linearGradient id="midgray-single-closed-rim-left" gradientUnits="userSpaceOnUse" x1="14" y1="18" x2="35" y2="35">
+      <stop offset="0%" stop-color="#D1D1D1"/><stop offset="100%" stop-color="#B4B4B4"/>
+    </linearGradient>
+    <linearGradient id="midgray-single-closed-rim-right" gradientUnits="userSpaceOnUse" x1="31" y1="17" x2="50" y2="35">
+      <stop offset="0%" stop-color="#989898"/><stop offset="100%" stop-color="#747474"/>
+    </linearGradient>
+    <linearGradient id="midgray-single-darkened-top" gradientUnits="userSpaceOnUse"
+                    x1="17" y1="8" x2="50" y2="35">
+      <stop offset="0%" stop-color="#D1D1D1"/>
+      <stop offset="58%" stop-color="#B4B4B4"/>
+      <stop offset="100%" stop-color="#969696"/>
+    </linearGradient>
+    <linearGradient id="midgray-single-darkened-left" gradientUnits="userSpaceOnUse"
+                    x1="7" y1="14" x2="38" y2="58">
+      <stop offset="0%" stop-color="#A8A8A8"/>
+      <stop offset="58%" stop-color="#858585"/>
+      <stop offset="100%" stop-color="#686868"/>
+    </linearGradient>
+  </defs>
+  <g>
+    <polygon points="14.00,21.00 32.00,34.50 32.00,52.00 14.00,38.50" fill="url(#midgray-single-darkened-left)"/>
+    <polygon points="32.00,34.50 50.00,21.00 50.00,38.50 32.00,52.00" fill="url(#midgray-single-closed-right)"/>
+    <path d="M32.00 34.50V52.00" stroke="#4B4B4B" stroke-opacity="0.12" stroke-width="0.65"/>
+    <path d="M14.00 21.00V38.50" stroke="#FEFEFE" stroke-opacity="0.24" stroke-width="0.7"/>
+    <polygon points="32.00,7.50 50.00,21.00 32.00,34.50 14.00,21.00" fill="url(#midgray-single-darkened-top)"/>
+    <polygon points="32.00,8.45 48.74,21.00 32.00,33.55 15.26,21.00" fill="#FEFEFE" opacity="0.14"/>
+    <path d="M32.00 7.50L14.00 21.00" stroke="#FEFEFE" stroke-opacity="0.30" stroke-width="0.8" stroke-linecap="round"/>
+    <path d="M32.00 7.50L50.00 21.00" stroke="#FEFEFE" stroke-opacity="0.16" stroke-width="0.65" stroke-linecap="round"/>
+  </g>
+</svg>
