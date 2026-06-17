@@ -1,5 +1,6 @@
 #include "structview/structuresemanticview.h"
 
+#include "structview/elfsemanticview.h"
 #include "structview/pesemanticview.h"
 
 #include <QLatin1Char>
@@ -175,6 +176,7 @@ void registerBuiltInStructureSemanticViews()
         return;
 
     registered = true;
+    registerElfSemanticViews(StructureSemanticViewRegistry::instance());
     registerPeSemanticViews(StructureSemanticViewRegistry::instance());
 }
 

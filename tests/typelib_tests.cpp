@@ -14,6 +14,8 @@ private slots:
 	void cleanupBelongsToTheTypeLibrary();
 	void dynamicPlacementTagsParse();
 	void viewTagsParse();
+	void endianExpressionTagsParse();
+	void elfRootIsExportedAndAssociated();
 	void standardTypelibFilesParse();
 };
 
@@ -187,6 +189,71 @@ void TypeLibTests::viewTagsParse()
 	QVERIFY(expr);
 	QCOMPARE(expr->type, EXPR_STRINGBUF);
 	QCOMPARE(QString::fromLocal8Bit(expr->str), QStringLiteral("pe.imports"));
+}
+
+void TypeLibTests::endianExpressionTagsParse()
+{
+	// Scenario: a binary format declares its byte order inside an already
+	// addressable field rather than as a fixed string in the definition file.
+	// Expected: endian(expr) is preserved as an expression tag, letting Structure
+	// View evaluate it against file data while rendering.
+	// Regression guard: ELF needs endian(header.e_ident[EI_DATA] == ELFDATA2MSB)
+	// instead of only the older endian("big") spelling.
+	Parser parser;
+	QVERIFY(parseBuffer(parser,
+						"enum Data { Big = 2 };\n"
+						"[export, endian(header[0] == Big)]\n"
+						"struct Root { byte header[1]; word value; } root;\n"));
+
+	TypeDecl *root = nullptr;
+	for(TypeDecl *decl : parser.GetTypeLibrary()->globalTypeDeclList)
+		if(decl && FindTag(decl->tagList, TOK_EXPORT, nullptr))
+			root = decl;
+
+	QVERIFY(root);
+	ExprNode *expr = nullptr;
+	QVERIFY(FindTag(root->tagList, TOK_ENDIAN, &expr));
+	QVERIFY(expr);
+	QCOMPARE(expr->type, EXPR_BINARY);
+}
+
+void TypeLibTests::elfRootIsExportedAndAssociated()
+{
+	// Scenario: qexed ships ELF as a real Structure View root definition.
+	// Expected: elf.txt parses to an exported root with common ELF suffix
+	// associations, so the UI can list and auto-select it like PE.
+	// Regression guard: ELF support should not remain a stale standalone header
+	// typedef that never appears in the Structure View picker.
+	const QDir typeLibDir(QStringLiteral(TYPELIB_TEST_DATA_DIR));
+	const QString path = typeLibDir.filePath(QStringLiteral("elf.txt"));
+	Parser parser;
+	QVERIFY2(parser.Ooof(qPrintable(path)), qPrintable(parser.LastErrStr()));
+
+	TypeDecl *elf = nullptr;
+	for(TypeDecl *decl : parser.GetTypeLibrary()->globalTypeDeclList)
+		if(decl && FindTag(decl->tagList, TOK_EXPORT, nullptr))
+			elf = decl;
+
+	QVERIFY(elf);
+	QVERIFY(FindTag(elf->tagList, TOK_ENDIAN, nullptr));
+	QVERIFY(FindTag(elf->tagList, TOK_VIEW, nullptr));
+
+	ExprNode *assoc = nullptr;
+	QVERIFY(FindTag(elf->tagList, TOK_ASSOC, &assoc));
+	QVERIFY(assoc);
+	auto containsAssoc = [](auto &&self, ExprNode *expr, const QString &needle) -> bool {
+		if(!expr)
+			return false;
+		if(expr->type == EXPR_STRINGBUF && expr->str
+			&& QString::fromLocal8Bit(expr->str) == needle)
+		{
+			return true;
+		}
+		return self(self, expr->left, needle) || self(self, expr->right, needle);
+	};
+	QVERIFY(containsAssoc(containsAssoc, assoc, QStringLiteral(".elf")));
+	QVERIFY(containsAssoc(containsAssoc, assoc, QStringLiteral(".so")));
+	QVERIFY(containsAssoc(containsAssoc, assoc, QStringLiteral(".o")));
 }
 
 void TypeLibTests::standardTypelibFilesParse()

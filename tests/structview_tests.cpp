@@ -6,6 +6,7 @@
 #include <QFile>
 #include <QDir>
 #include <QSignalSpy>
+#include <QStringList>
 #include <QTemporaryDir>
 #include <QtTest/QtTest>
 
@@ -33,10 +34,14 @@ private slots:
     void builderSupportsArraysOffsetsEnumsAndSwitchCases();
     void builderEvaluatesUnionSwitchSelectorsFromTypedLayout();
     void builderEvaluatesFieldsAndCorrectedExpressions();
+    void builderUsesDynamicEndianExpressions();
+    void builderRendersElf32AndElf64Tables();
     void builderPlacesDynamicStructsUnderNamedDynamicContainers();
     void semanticRegistryRunsKnownViewsAndIgnoresUnknownViews();
     void builderRunsSemanticViewsAfterDynamicPlacement();
     void builderKeepsRawDynamicRowsWhenSemanticImportDataIsTruncated();
+    void builderAddsElfSectionAndSymbolSemanticRows();
+    void builderKeepsRawElfRowsWhenSemanticDataIsTruncated();
     void modelHeadersMatchStructureGridColumns();
     void modelSupportsHierarchyAndEditableCells();
     void modelBuildsExpandableRowsForStructFields();
@@ -87,6 +92,28 @@ static std::vector<std::unique_ptr<StructureRow>> buildRows(TypeLibrary *library
                          });
 }
 
+static bool parseStandardElfDefinition(TypeLibrary *library)
+{
+    if (!library)
+        return false;
+
+    Parser parser(library);
+    const QString path = QDir(QStringLiteral(TYPELIB_TEST_DATA_DIR)).filePath(QStringLiteral("elf.txt"));
+    return parser.Ooof(qPrintable(path));
+}
+
+static StructureRow *findChildNamed(StructureRow *parent, const QString &name)
+{
+    if (!parent)
+        return nullptr;
+
+    for (const auto &child : parent->children)
+        if (child->name == name)
+            return child.get();
+
+    return nullptr;
+}
+
 static void writeLe32(QByteArray *bytes, qsizetype offset, quint32 value)
 {
     QVERIFY(bytes != nullptr);
@@ -105,6 +132,35 @@ static void writeLe16(QByteArray *bytes, qsizetype offset, quint16 value)
     QVERIFY(offset + 2 <= bytes->size());
     (*bytes)[offset + 0] = char(value & 0xff);
     (*bytes)[offset + 1] = char((value >> 8) & 0xff);
+}
+
+static void writeLe64(QByteArray *bytes, qsizetype offset, quint64 value)
+{
+    QVERIFY(bytes != nullptr);
+    QVERIFY(offset >= 0);
+    QVERIFY(offset + 8 <= bytes->size());
+    for (int i = 0; i < 8; ++i)
+        (*bytes)[offset + i] = char((value >> (i * 8)) & 0xff);
+}
+
+static void writeBe16(QByteArray *bytes, qsizetype offset, quint16 value)
+{
+    QVERIFY(bytes != nullptr);
+    QVERIFY(offset >= 0);
+    QVERIFY(offset + 2 <= bytes->size());
+    (*bytes)[offset + 0] = char((value >> 8) & 0xff);
+    (*bytes)[offset + 1] = char(value & 0xff);
+}
+
+static void writeBe32(QByteArray *bytes, qsizetype offset, quint32 value)
+{
+    QVERIFY(bytes != nullptr);
+    QVERIFY(offset >= 0);
+    QVERIFY(offset + 4 <= bytes->size());
+    (*bytes)[offset + 0] = char((value >> 24) & 0xff);
+    (*bytes)[offset + 1] = char((value >> 16) & 0xff);
+    (*bytes)[offset + 2] = char((value >> 8) & 0xff);
+    (*bytes)[offset + 3] = char(value & 0xff);
 }
 
 static void writeAscii(QByteArray *bytes, qsizetype offset, const char *text)
@@ -604,6 +660,138 @@ void StructViewTests::builderEvaluatesFieldsAndCorrectedExpressions()
     QCOMPARE(rows[0]->children[1]->children[1]->value, QStringLiteral("187"));
 }
 
+void StructViewTests::builderUsesDynamicEndianExpressions()
+{
+    // Scenario: a format stores byte order in the file header, and the exported
+    // root TypeDecl uses endian(expr) to select how later numeric fields read.
+    // Expected: the same definition renders big-endian and little-endian inputs
+    // differently, and expression reads inherit that byte order too.
+    // Regression guard: ELF must not require hard-coded C++ endian knowledge for
+    // ordinary raw fields declared in TypeLib.
+    const char *definition =
+        "[export, endian(marker == 2)]\n"
+        "struct Root { byte marker; word value; dword count; byte items[count]; } root;\n";
+
+    auto render = [definition](const QByteArray &bytes) {
+        auto library = std::make_unique<TypeLibrary>();
+        Parser parser(library.get());
+        if (!parseBuffer(parser, definition))
+            return std::vector<std::unique_ptr<StructureRow>>();
+        return buildRows(library.get(), firstExported(library.get()), bytes);
+    };
+
+    auto bigRows = render(QByteArray::fromHex("02" "0102" "00000002" "AABB"));
+    QCOMPARE(bigRows.size(), size_t(1));
+    QCOMPARE(bigRows[0]->children[1]->value, QStringLiteral("258"));
+    QCOMPARE(bigRows[0]->children[3]->children.size(), size_t(2));
+
+    auto littleRows = render(QByteArray::fromHex("01" "0102" "02000000" "AABB"));
+    QCOMPARE(littleRows.size(), size_t(1));
+    QCOMPARE(littleRows[0]->children[1]->value, QStringLiteral("513"));
+    QCOMPARE(littleRows[0]->children[3]->children.size(), size_t(2));
+}
+
+void StructViewTests::builderRendersElf32AndElf64Tables()
+{
+    // Scenario: ELF stores the 32/64-bit layout choice in e_ident[EI_CLASS].
+    // Expected: TypeLib switch_is selects the matching header branch, and the
+    // program/section table arrays use offsets and counts from that branch.
+    // Regression guard: ELF support must not assume PE-like fixed offsets or a
+    // single word size.
+    TypeLibrary library32;
+    QVERIFY2(parseStandardElfDefinition(&library32), "elf.txt failed to parse");
+    QByteArray elf32(0x180, '\0');
+    elf32[0] = char(0x7f);
+    elf32[1] = 'E';
+    elf32[2] = 'L';
+    elf32[3] = 'F';
+    elf32[4] = char(1);
+    elf32[5] = char(1);
+    elf32[6] = char(1);
+    writeLe16(&elf32, 16, 2);
+    writeLe16(&elf32, 18, 3);
+    writeLe32(&elf32, 20, 1);
+    writeLe32(&elf32, 24, 0x12345678);
+    writeLe32(&elf32, 28, 0x80);
+    writeLe32(&elf32, 32, 0x100);
+    writeLe16(&elf32, 42, 32);
+    writeLe16(&elf32, 44, 1);
+    writeLe16(&elf32, 46, 40);
+    writeLe16(&elf32, 48, 2);
+
+    auto rows32 = buildRows(&library32, firstExported(&library32), elf32);
+    QCOMPARE(rows32.size(), size_t(1));
+    QStringList childNames32;
+    for (const auto &child : rows32[0]->children)
+        childNames32.push_back(child->name);
+    const QByteArray childNames32Message = childNames32.join(QStringLiteral(", ")).toLocal8Bit();
+    StructureRow *header32 = findChildNamed(rows32[0].get(), QStringLiteral("Elf32_EhdrTail header32"));
+    QVERIFY2(header32, childNames32Message.constData());
+    QCOMPARE(header32->children[9]->value, QStringLiteral("1"));
+    QVERIFY2(findChildNamed(rows32[0].get(), QStringLiteral("Elf32_Phdr programHeaders32[]")),
+             childNames32Message.constData());
+    StructureRow *sections32 = findChildNamed(rows32[0].get(), QStringLiteral("Elf32_Shdr sectionHeaders32[]"));
+    QVERIFY2(sections32, childNames32Message.constData());
+    QCOMPARE(sections32->children.size(), size_t(2));
+    QCOMPARE(header32->children[3]->value, QStringLiteral("305419896"));
+
+    TypeLibrary library32be;
+    QVERIFY2(parseStandardElfDefinition(&library32be), "elf.txt failed to parse");
+    QByteArray elf32be(0x180, '\0');
+    elf32be[0] = char(0x7f);
+    elf32be[1] = 'E';
+    elf32be[2] = 'L';
+    elf32be[3] = 'F';
+    elf32be[4] = char(1);
+    elf32be[5] = char(2);
+    elf32be[6] = char(1);
+    writeBe16(&elf32be, 16, 2);
+    writeBe16(&elf32be, 18, 3);
+    writeBe32(&elf32be, 20, 1);
+    writeBe32(&elf32be, 24, 0x01020304);
+    writeBe32(&elf32be, 28, 0x80);
+    writeBe32(&elf32be, 32, 0x100);
+    writeBe16(&elf32be, 42, 32);
+    writeBe16(&elf32be, 44, 1);
+    writeBe16(&elf32be, 46, 40);
+    writeBe16(&elf32be, 48, 1);
+
+    auto rows32be = buildRows(&library32be, firstExported(&library32be), elf32be);
+    QCOMPARE(rows32be.size(), size_t(1));
+    StructureRow *header32be = findChildNamed(rows32be[0].get(), QStringLiteral("Elf32_EhdrTail header32"));
+    QVERIFY(header32be);
+    QCOMPARE(header32be->children[3]->value, QStringLiteral("16909060"));
+
+    TypeLibrary library64;
+    QVERIFY2(parseStandardElfDefinition(&library64), "elf.txt failed to parse");
+    QByteArray elf64(0x180, '\0');
+    elf64[0] = char(0x7f);
+    elf64[1] = 'E';
+    elf64[2] = 'L';
+    elf64[3] = 'F';
+    elf64[4] = char(2);
+    elf64[5] = char(1);
+    elf64[6] = char(1);
+    writeLe16(&elf64, 16, 3);
+    writeLe16(&elf64, 18, 62);
+    writeLe32(&elf64, 20, 1);
+    writeLe64(&elf64, 24, 0x1122334455667788ull);
+    writeLe64(&elf64, 32, 0x80);
+    writeLe64(&elf64, 40, 0x100);
+    writeLe16(&elf64, 54, 56);
+    writeLe16(&elf64, 56, 1);
+    writeLe16(&elf64, 58, 64);
+    writeLe16(&elf64, 60, 1);
+
+    auto rows64 = buildRows(&library64, firstExported(&library64), elf64);
+    QCOMPARE(rows64.size(), size_t(1));
+    QVERIFY(findChildNamed(rows64[0].get(), QStringLiteral("Elf64_EhdrTail header64")));
+    QVERIFY(findChildNamed(rows64[0].get(), QStringLiteral("Elf64_Phdr programHeaders64[]")));
+    StructureRow *sections64 = findChildNamed(rows64[0].get(), QStringLiteral("Elf64_Shdr sectionHeaders64[]"));
+    QVERIFY(sections64);
+    QCOMPARE(sections64->children.size(), size_t(1));
+}
+
 void StructViewTests::builderPlacesDynamicStructsUnderNamedDynamicContainers()
 {
     // Scenario: a PE-style data-directory entry names a logical RVA, while a
@@ -661,14 +849,14 @@ void StructViewTests::builderPlacesDynamicStructsUnderNamedDynamicContainers()
     QCOMPARE(sections->children[1]->name, QStringLiteral("[1].idata"));
     QCOMPARE(sections->children[1]->children.size(), size_t(4));
     QCOMPARE(rows[0]->children[2]->name, QStringLiteral("SECTION .text"));
-    QCOMPARE(rows[0]->children[2]->branchIconPath, QStringLiteral(":/icons/rendered/blue/double-closed.svg"));
-    QCOMPARE(rows[0]->children[2]->branchOpenIconPath, QStringLiteral(":/icons/rendered/blue/double-open.svg"));
-    QCOMPARE(rows[0]->children[2]->branchEmptyIconPath, QStringLiteral(":/icons/rendered/gray/double-closed.svg"));
+    QCOMPARE(rows[0]->children[2]->branchIconPath, QStringLiteral(":/icons/duosym/blue/double-closed.svg"));
+    QCOMPARE(rows[0]->children[2]->branchOpenIconPath, QStringLiteral(":/icons/duosym/blue/double-open.svg"));
+    QCOMPARE(rows[0]->children[2]->branchEmptyIconPath, QStringLiteral(":/icons/duosym/gray/double-closed.svg"));
     QCOMPARE(rows[0]->children[2]->children.size(), size_t(0));
     QCOMPARE(rows[0]->children[3]->name, QStringLiteral("SECTION .idata"));
-    QCOMPARE(rows[0]->children[3]->branchIconPath, QStringLiteral(":/icons/rendered/blue/double-closed.svg"));
-    QCOMPARE(rows[0]->children[3]->branchOpenIconPath, QStringLiteral(":/icons/rendered/blue/double-open.svg"));
-    QCOMPARE(rows[0]->children[3]->branchEmptyIconPath, QStringLiteral(":/icons/rendered/gray/double-closed.svg"));
+    QCOMPARE(rows[0]->children[3]->branchIconPath, QStringLiteral(":/icons/duosym/blue/double-closed.svg"));
+    QCOMPARE(rows[0]->children[3]->branchOpenIconPath, QStringLiteral(":/icons/duosym/blue/double-open.svg"));
+    QCOMPARE(rows[0]->children[3]->branchEmptyIconPath, QStringLiteral(":/icons/duosym/gray/double-closed.svg"));
     QCOMPARE(rows[0]->children[3]->offset, QStringLiteral("00000080"));
 
     StructureRow *dynamicImport = rows[0]->children[3]->children[0].get();
@@ -676,9 +864,9 @@ void StructViewTests::builderPlacesDynamicStructsUnderNamedDynamicContainers()
     QCOMPARE(dynamicImport->offset, QStringLiteral("00000080"));
     QCOMPARE(static_cast<int>(rows[0]->children[3]->kind), static_cast<int>(StructureRowKind::Dynamic));
     QCOMPARE(static_cast<int>(dynamicImport->kind), static_cast<int>(StructureRowKind::Dynamic));
-    QCOMPARE(dynamicImport->branchIconPath, QStringLiteral(":/icons/rendered/blue/double-closed.svg"));
-    QCOMPARE(dynamicImport->branchOpenIconPath, QStringLiteral(":/icons/rendered/blue/double-open.svg"));
-    QCOMPARE(dynamicImport->branchEmptyIconPath, QStringLiteral(":/icons/rendered/gray/double-closed.svg"));
+    QCOMPARE(dynamicImport->branchIconPath, QStringLiteral(":/icons/duosym/blue/double-closed.svg"));
+    QCOMPARE(dynamicImport->branchOpenIconPath, QStringLiteral(":/icons/duosym/blue/double-open.svg"));
+    QCOMPARE(dynamicImport->branchEmptyIconPath, QStringLiteral(":/icons/duosym/gray/double-closed.svg"));
     QCOMPARE(dynamicImport->children.size(), size_t(1));
     QCOMPARE(dynamicImport->children[0]->name, QStringLiteral("dword thunk"));
     QCOMPARE(dynamicImport->children[0]->value, QStringLiteral("305419896"));
@@ -844,6 +1032,119 @@ void StructViewTests::builderKeepsRawDynamicRowsWhenSemanticImportDataIsTruncate
     QCOMPARE(dynamicImport->children[0]->name, QStringLiteral("dword OriginalFirstThunk"));
     QCOMPARE(dynamicImport->children[0]->value, QStringLiteral("4672"));
     QCOMPARE(static_cast<int>(dynamicImport->children[0]->kind), static_cast<int>(StructureRowKind::Raw));
+}
+
+void StructViewTests::builderAddsElfSectionAndSymbolSemanticRows()
+{
+    // Scenario: an ELF file has a section-header string table plus a symbol
+    // table linked to its own string table.
+    // Expected: the raw TypeLib tables remain visible, and the semantic pass
+    // appends named SECTION rows with resolved SYMBOL children.
+    // Regression guard: ELF domain knowledge belongs in elfsemanticview.cpp,
+    // augmenting the declarative structs rather than replacing them.
+    TypeLibrary library;
+    QVERIFY2(parseStandardElfDefinition(&library), "elf.txt failed to parse");
+
+    QByteArray bytes(0x320, '\0');
+    bytes[0] = char(0x7f);
+    bytes[1] = 'E';
+    bytes[2] = 'L';
+    bytes[3] = 'F';
+    bytes[4] = char(1);
+    bytes[5] = char(1);
+    bytes[6] = char(1);
+    writeLe16(&bytes, 16, 2);
+    writeLe16(&bytes, 18, 3);
+    writeLe32(&bytes, 20, 1);
+    writeLe32(&bytes, 32, 0x100);
+    writeLe16(&bytes, 46, 40);
+    writeLe16(&bytes, 48, 5);
+    writeLe16(&bytes, 50, 4);
+
+    auto writeSection = [&bytes](qsizetype index,
+                                 quint32 name,
+                                 quint32 type,
+                                 quint32 offset,
+                                 quint32 size,
+                                 quint32 link,
+                                 quint32 entrySize) {
+        const qsizetype base = 0x100 + index * 40;
+        writeLe32(&bytes, base + 0, name);
+        writeLe32(&bytes, base + 4, type);
+        writeLe32(&bytes, base + 16, offset);
+        writeLe32(&bytes, base + 20, size);
+        writeLe32(&bytes, base + 24, link);
+        writeLe32(&bytes, base + 36, entrySize);
+    };
+
+    const QByteArray shstr("\0.text\0.symtab\0.strtab\0.shstrtab\0", 33);
+    memcpy(bytes.data() + 0x280, shstr.constData(), size_t(shstr.size()));
+    const QByteArray strtab("\0main\0", 6);
+    memcpy(bytes.data() + 0x260, strtab.constData(), size_t(strtab.size()));
+
+    writeSection(1, 1, 1, 0x200, 4, 0, 0);
+    writeSection(2, 7, 2, 0x220, 32, 3, 16);
+    writeSection(3, 15, 3, 0x260, 6, 0, 0);
+    writeSection(4, 23, 3, 0x280, quint32(shstr.size()), 0, 0);
+
+    writeLe32(&bytes, 0x220 + 16, 1);
+    writeLe32(&bytes, 0x220 + 20, 0x1000);
+    writeLe32(&bytes, 0x220 + 24, 4);
+    bytes[0x220 + 28] = char(0x12);
+    writeLe16(&bytes, 0x220 + 30, 1);
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+    QVERIFY(findChildNamed(rows[0].get(), QStringLiteral("Elf32_Shdr sectionHeaders32[]")));
+
+    StructureRow *text = findChildNamed(rows[0].get(), QStringLiteral("SECTION .text"));
+    QVERIFY(text);
+    QCOMPARE(text->offset, QStringLiteral("00000200"));
+    QCOMPARE(text->byteLength, uint64_t(4));
+
+    StructureRow *symtab = findChildNamed(rows[0].get(), QStringLiteral("SECTION .symtab"));
+    QVERIFY(symtab);
+    StructureRow *symbol = findChildNamed(symtab, QStringLiteral("SYMBOL main"));
+    QVERIFY(symbol);
+    QCOMPARE(symbol->value, QStringLiteral("value 0x1000, size 4"));
+}
+
+void StructViewTests::builderKeepsRawElfRowsWhenSemanticDataIsTruncated()
+{
+    // Scenario: an ELF header points at a section table, but the string table
+    // data needed by the educational semantic pass is missing.
+    // Expected: semantic rows are skipped quietly while raw header/table rows
+    // from TypeLib remain available.
+    // Regression guard: malformed ELF files must not make Structure View blank
+    // or fail just because name resolution cannot complete.
+    TypeLibrary library;
+    QVERIFY2(parseStandardElfDefinition(&library), "elf.txt failed to parse");
+
+    QByteArray bytes(0x160, '\0');
+    bytes[0] = char(0x7f);
+    bytes[1] = 'E';
+    bytes[2] = 'L';
+    bytes[3] = 'F';
+    bytes[4] = char(1);
+    bytes[5] = char(1);
+    bytes[6] = char(1);
+    writeLe16(&bytes, 16, 2);
+    writeLe16(&bytes, 18, 3);
+    writeLe32(&bytes, 20, 1);
+    writeLe32(&bytes, 32, 0x100);
+    writeLe16(&bytes, 46, 40);
+    writeLe16(&bytes, 48, 2);
+    writeLe16(&bytes, 50, 1);
+    writeLe32(&bytes, 0x100 + 40 + 0, 1);
+    writeLe32(&bytes, 0x100 + 40 + 4, 3);
+    writeLe32(&bytes, 0x100 + 40 + 16, 0x300);
+    writeLe32(&bytes, 0x100 + 40 + 20, 0x20);
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+    QVERIFY(findChildNamed(rows[0].get(), QStringLiteral("Elf32_EhdrTail header32")));
+    QVERIFY(findChildNamed(rows[0].get(), QStringLiteral("Elf32_Shdr sectionHeaders32[]")));
+    QVERIFY(!findChildNamed(rows[0].get(), QStringLiteral("SECTION .text")));
 }
 
 void StructViewTests::modelHeadersMatchStructureGridColumns()

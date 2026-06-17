@@ -78,6 +78,7 @@ set_tests_properties(typelib_tests PROPERTIES
 
 add_executable(structview_tests
     structview_tests.cpp
+    ../src/HexEdit/structview/elfsemanticview.cpp
     ../src/HexEdit/structview/pesemanticview.cpp
     ../src/HexEdit/structview/structuredefinitionmanager.cpp
     ../src/HexEdit/structview/structurerenderengine.cpp
@@ -96,6 +97,12 @@ target_link_libraries(structview_tests PRIVATE
     Qt${QT_VERSION_MAJOR}::Core
     Qt${QT_VERSION_MAJOR}::Test
 )
+target_compile_definitions(structview_tests PRIVATE
+    TYPELIB_TEST_DATA_DIR="${TYPELIB_DATA_BINARY_DIR}"
+)
+if(TARGET TypeLibData)
+    add_dependencies(structview_tests TypeLibData)
+endif()
 
 add_test(NAME structview_tests COMMAND structview_tests)
 set_tests_properties(structview_tests PROPERTIES

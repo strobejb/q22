@@ -35,6 +35,7 @@ private:
     uint64_t sizeOf(Type *type, uint64_t offset);
 
     struct EvalContext;
+    struct EndianScope;
     struct OffsetMap
     {
         uint64_t logicalStart = 0;
@@ -63,7 +64,7 @@ private:
     bool evaluateArrayCount(StructureRow *scope, TypeDecl *typeDecl, Type *arrayType, INUMTYPE *result, uint64_t offset);
     StructureRow *findFieldRow(StructureRow *scope, ExprNode *expr);
     StructureRow *findDirectField(StructureRow *scope, const char *name) const;
-    bool readInteger(uint64_t offset, uint64_t length, INUMTYPE *result) const;
+    bool readInteger(uint64_t offset, uint64_t length, INUMTYPE *result, bool bigEndian) const;
     struct ResolvedField;
     bool resolveField(Type *scopeType, ExprNode *expr, uint64_t scopeOffset, ResolvedField *field);
     bool resolveDirectField(Type *scopeType, const char *name, uint64_t scopeOffset, ResolvedField *field);
@@ -80,7 +81,7 @@ private:
 
     QString typeName(Type *type) const;
     QString formatOffset(uint64_t offset) const;
-    bool isBigEndian(TypeDecl *typeDecl) const;
+    bool declarationBigEndian(TypeDecl *typeDecl, StructureRow *scope, Type *scopeType, uint64_t scopeOffset);
     Enum *tagEnum(TypeDecl *typeDecl) const;
     QString enumNameForValue(Enum *eptr, INUMTYPE value) const;
     DeclarationParts declarationParts(Type *type) const;
@@ -96,6 +97,8 @@ private:
     TypeLibrary *m_library = nullptr;
     TypeDecl *m_rootType = nullptr;
     uint64_t m_baseOffset = 0;
+    bool m_bigEndian = false;
+    bool m_evaluatingEndian = false;
     StructureValueBuilder::ByteReader m_reader;
     std::vector<DynamicContainer> m_dynamicContainers;
     std::vector<DynamicRequest> m_dynamicRequests;

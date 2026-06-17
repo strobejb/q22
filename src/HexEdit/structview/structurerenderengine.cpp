@@ -132,6 +132,7 @@ struct StructureRenderEngine::ResolvedField
     TypeDecl *typeDecl = nullptr;
     uint64_t offset = 0;
     uint64_t length = 0;
+    bool bigEndian = false;
 };
 
 struct StructureRenderEngine::EvalContext
@@ -139,6 +140,26 @@ struct StructureRenderEngine::EvalContext
     StructureRow *row = nullptr;
     Type *type = nullptr;
     uint64_t offset = 0;
+};
+
+struct StructureRenderEngine::EndianScope
+{
+    EndianScope(StructureRenderEngine *engine, bool bigEndian)
+        : engine(engine)
+        , previous(engine ? engine->m_bigEndian : false)
+    {
+        if (engine)
+            engine->m_bigEndian = bigEndian;
+    }
+
+    ~EndianScope()
+    {
+        if (engine)
+            engine->m_bigEndian = previous;
+    }
+
+    StructureRenderEngine *engine = nullptr;
+    bool previous = false;
 };
 
 StructureRenderEngine::StructureRenderEngine(TypeLibrary *library,
@@ -162,6 +183,8 @@ std::vector<std::unique_ptr<StructureRow>> StructureRenderEngine::build()
                         m_rootType, m_baseOffset);
     root->parent = nullptr;
     root->value = QStringLiteral("{...}");
+    EndianScope rootEndian(this, declarationBigEndian(m_rootType, root.get(), root->type, m_baseOffset));
+    root->bigEndian = m_bigEndian;
     if (m_rootType->declList.size() == 1)
     {
         Type *rootType = m_rootType->declList[0];
@@ -199,6 +222,7 @@ StructureRenderEngine::RowPtr StructureRenderEngine::makeRow(StructureRow *paren
     auto row = std::make_unique<StructureRow>(parent);
     row->type = type;
     row->typeDecl = typeDecl;
+    row->bigEndian = m_bigEndian;
     row->absoluteOffset = offset;
     row->relativeOffset = offset >= m_baseOffset ? offset - m_baseOffset : 0;
     row->offset = formatOffset(offset);
@@ -219,6 +243,9 @@ uint64_t StructureRenderEngine::appendTypeDecl(StructureRow *parent, TypeDecl *t
         if (evaluate(parent, offsetExpr, &evaluated, offset))
             offset = m_baseOffset + evaluated;
     }
+
+    const bool bigEndian = declarationBigEndian(typeDecl, parent, parent ? parent->type : nullptr, offset);
+    EndianScope endian(this, bigEndian);
 
     uint64_t length = 0;
     if (typeDecl->declList.empty() && typeDecl->nested)
@@ -412,8 +439,7 @@ uint64_t StructureRenderEngine::formatScalar(StructureRow *row, Type *type, Type
         return length;
     }
 
-    const bool bigEndian = isBigEndian(typeDecl);
-    const uint64_t raw = unsignedValue(data, length, bigEndian);
+    const uint64_t raw = unsignedValue(data, length, m_bigEndian);
     Enum *displayEnum = tagEnum(typeDecl);
     if (!displayEnum && base->ty == typeENUM)
         displayEnum = base->eptr;
@@ -530,8 +556,10 @@ bool StructureRenderEngine::evaluateArrayCount(StructureRow *scope,
     if (!arrayType || arrayType->ty != typeARRAY || !result)
         return false;
 
+    StructureRow *evalScope = scope && scope->parent ? scope->parent : scope;
+
     if (arrayType->elements)
-        return evaluate(scope, arrayType->elements, result, offset);
+        return evaluate(evalScope, arrayType->elements, result, offset);
 
     ExprNode *sizeExpr = nullptr;
     if (!FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_SIZEIS, &sizeExpr) || !sizeExpr)
@@ -539,7 +567,7 @@ bool StructureRenderEngine::evaluateArrayCount(StructureRow *scope,
 
     std::vector<ExprNode *> args;
     appendCommaArgs(sizeExpr, &args);
-    return !args.empty() && evaluate(scope, args[0], result, offset);
+    return !args.empty() && evaluate(evalScope, args[0], result, offset);
 }
 
 bool StructureRenderEngine::evaluate(const EvalContext &context, ExprNode *expr, INUMTYPE *result)
@@ -558,11 +586,11 @@ bool StructureRenderEngine::evaluate(const EvalContext &context, ExprNode *expr,
     case EXPR_ARRAY:
     {
         if (StructureRow *row = findFieldRow(context.row, expr))
-            return readInteger(row->absoluteOffset, row->byteLength, result);
+            return readInteger(row->absoluteOffset, row->byteLength, result, row->bigEndian);
 
         ResolvedField field;
         if (resolveField(context.type, expr, context.offset, &field))
-            return readInteger(field.offset, field.length, result);
+            return readInteger(field.offset, field.length, result, field.bigEndian);
 
         if (expr->type == EXPR_IDENTIFIER && m_library)
         {
@@ -761,6 +789,11 @@ bool StructureRenderEngine::resolveDirectField(Type *scopeType, const char *name
                 declOffset = m_baseOffset + evaluated;
         }
 
+        const bool bigEndian = m_evaluatingEndian
+            ? m_bigEndian
+            : declarationBigEndian(decl, nullptr, scopeType, scopeOffset);
+        EndianScope endian(this, bigEndian);
+
         uint64_t declLength = 0;
         for (Type *type : decl->declList)
         {
@@ -771,6 +804,7 @@ bool StructureRenderEngine::resolveDirectField(Type *scopeType, const char *name
                 field->typeDecl = decl;
                 field->offset = declOffset;
                 field->length = fieldLength;
+                field->bigEndian = m_bigEndian;
                 return true;
             }
 
@@ -800,7 +834,7 @@ bool StructureRenderEngine::resolveDirectField(Type *scopeType, const char *name
     return false;
 }
 
-bool StructureRenderEngine::readInteger(uint64_t offset, uint64_t length, INUMTYPE *result) const
+bool StructureRenderEngine::readInteger(uint64_t offset, uint64_t length, INUMTYPE *result, bool bigEndian) const
 {
     uint8_t data[sizeof(INUMTYPE)] = {};
     const size_t requested = static_cast<size_t>(std::max<uint64_t>(1, std::min<uint64_t>(length, sizeof(data))));
@@ -808,7 +842,7 @@ bool StructureRenderEngine::readInteger(uint64_t offset, uint64_t length, INUMTY
     if (got == 0)
         return false;
 
-    *result = unsignedValue(data, got, false);
+    *result = unsignedValue(data, got, bigEndian);
     return true;
 }
 
@@ -975,6 +1009,9 @@ void StructureRenderEngine::appendDynamicRows(StructureRow *parent)
         row->branchIconPath = QString::fromLatin1(kDynamicBranchClosedIconPath);
         row->branchOpenIconPath = QString::fromLatin1(kDynamicBranchOpenIconPath);
         row->branchEmptyIconPath = QString::fromLatin1(kDynamicBranchEmptyIconPath);
+        const bool bigEndian = declarationBigEndian(request.typeDecl, row.get(), renderType, m_baseOffset + fileOffset);
+        EndianScope endian(this, bigEndian);
+        row->bigEndian = m_bigEndian;
         row->byteLength = formatType(row.get(), renderType, request.typeDecl, m_baseOffset + fileOffset);
         if (row->value.isEmpty() && !row->children.empty())
             row->value = QStringLiteral("{...}");
@@ -1135,12 +1172,30 @@ QString StructureRenderEngine::formatOffset(uint64_t offset) const
     return QString::number(offset, 16).toUpper().rightJustified(8, QLatin1Char('0'));
 }
 
-bool StructureRenderEngine::isBigEndian(TypeDecl *typeDecl) const
+bool StructureRenderEngine::declarationBigEndian(TypeDecl *typeDecl,
+                                                 StructureRow *scope,
+                                                 Type *scopeType,
+                                                 uint64_t scopeOffset)
 {
     ExprNode *expr = nullptr;
-    return FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_ENDIAN, &expr)
-           && expr && expr->type == EXPR_STRINGBUF && expr->str
-           && std::strcmp(expr->str, "big") == 0;
+    if (!FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_ENDIAN, &expr) || !expr)
+        return m_bigEndian;
+
+    if (expr->type == EXPR_STRINGBUF && expr->str)
+    {
+        if (std::strcmp(expr->str, "big") == 0)
+            return true;
+        if (std::strcmp(expr->str, "little") == 0)
+            return false;
+        return m_bigEndian;
+    }
+
+    INUMTYPE value = 0;
+    const bool wasEvaluatingEndian = m_evaluatingEndian;
+    m_evaluatingEndian = true;
+    const bool ok = evaluate(EvalContext{ scope, scope ? scope->type : scopeType, scopeOffset }, expr, &value);
+    m_evaluatingEndian = wasEvaluatingEndian;
+    return ok ? value != 0 : m_bigEndian;
 }
 
 Enum *StructureRenderEngine::tagEnum(TypeDecl *typeDecl) const
@@ -1283,10 +1338,9 @@ QString StructureRenderEngine::stringArrayValue(StructureRow *scope, Type *type,
     }
     else
     {
-        const bool bigEndian = isBigEndian(typeDecl);
         for (int i = 0; i + 1 < bytes.size(); i += 2)
         {
-            const ushort ch = bigEndian
+            const ushort ch = m_bigEndian
                 ? ushort((uchar(bytes[i]) << 8) | uchar(bytes[i + 1]))
                 : ushort(uchar(bytes[i]) | (uchar(bytes[i + 1]) << 8));
             if (ch == 0)
@@ -1352,7 +1406,7 @@ QString StructureRenderEngine::fieldNameValue(StructureRow *scope, Type *scopeTy
         return {};
 
     INUMTYPE value = 0;
-    if (!readInteger(field.offset, field.length, &value))
+    if (!readInteger(field.offset, field.length, &value, field.bigEndian))
         return {};
 
     return QString::number(value);

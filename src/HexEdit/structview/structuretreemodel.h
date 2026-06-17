@@ -35,6 +35,7 @@ struct StructureRow
     Type *type = nullptr;
     TypeDecl *typeDecl = nullptr;
     StructureRowKind kind = StructureRowKind::Raw;
+    bool bigEndian = false;
     uint64_t absoluteOffset = 0;
     uint64_t relativeOffset = 0;
     uint64_t byteLength = 0;
