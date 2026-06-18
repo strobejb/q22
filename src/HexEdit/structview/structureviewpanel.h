@@ -3,9 +3,11 @@
 
 #include "HexView/seqbase.h"
 #include "filestats/sidepanel.h"
+#include "structview/structuredisplayoptions.h"
 
 #include <QList>
 #include <QModelIndex>
+#include <QPoint>
 #include <QWidget>
 
 class HexView;
@@ -46,6 +48,12 @@ private:
     void setPinned(bool pinned);
     void rebuildRows();
     void applyInitialExpansion();
+    void showGridContextMenu(const QPoint &pos);
+    StructureDisplayOptions displayOptions() const;
+    void applyDisplayOptions();
+    void setUseDefinedTypeNames(bool enabled);
+    void setUseHexadecimalOffsets(bool enabled);
+    void setUseRelativeOffsets(bool enabled);
     void updateHexViewSelection(const QModelIndex &current);
     void clearHexViewOverlay();
     void setHexViewSelectionFromStructure(size_w start, size_w end);
@@ -64,6 +72,9 @@ private:
     QLabel                     *m_statusLabel = nullptr;
     int                         m_treeItemLeftPad = 6;
     bool                        m_pinned = false;
+    bool                        m_useDefinedTypeNames = true;
+    bool                        m_useHexadecimalOffsets = true;
+    bool                        m_useRelativeOffsets = false;
     bool                        m_updatingHexViewFromStructure = false;
     bool                        m_rebuildingRows = false;
     uint64_t                    m_pinnedOffset = 0;

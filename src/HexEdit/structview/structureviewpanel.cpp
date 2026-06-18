@@ -22,6 +22,7 @@
 #include <QItemSelectionModel>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QStyle>
@@ -461,6 +462,7 @@ void StructureViewPanel::buildUi()
     m_tree->setSelectionMode(QAbstractItemView::SingleSelection);
     m_tree->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_tree->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::EditKeyPressed);
+    m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
     m_tree->setMouseTracking(true);
     m_tree->setIndentation(18);
     m_tree->header()->setStretchLastSection(true);
@@ -475,6 +477,8 @@ void StructureViewPanel::buildUi()
     m_tree->header()->resizeSection(StructureTreeModel::CommentColumn, 140);
     connect(m_tree->selectionModel(), &QItemSelectionModel::currentChanged,
             this, &StructureViewPanel::updateHexViewSelection);
+    connect(m_tree, &QWidget::customContextMenuRequested,
+            this, &StructureViewPanel::showGridContextMenu);
     updateTreeSelectionPalette();
     {
         QFont headerFont = m_tree->header()->font();
@@ -673,13 +677,16 @@ void StructureViewPanel::rebuildRows()
         : (m_pinned ? m_pinnedOffset : m_hv->cursorOffset());
     m_offsetEdit->setText(QString::number(baseOffset, 16).toUpper().rightJustified(8, QLatin1Char('0')));
     StructureValueBuilder builder;
+    const StructureDisplayOptions options = displayOptions();
     m_rebuildingRows = true;
     m_model->setRows(builder.build(m_definitions->library(),
                                    rootType,
                                    baseOffset,
                                    [this](uint64_t offset, uint8_t *buffer, size_t length) -> size_t {
                                        return m_hv ? m_hv->getData(static_cast<size_w>(offset), buffer, length) : 0;
-                                   }));
+                                   },
+                                   options));
+    m_model->applyDisplayOptions(options);
     applyInitialExpansion();
     m_rebuildingRows = false;
     clearHexViewOverlay();
@@ -720,6 +727,77 @@ void StructureViewPanel::applyInitialExpansion()
                 m_tree->expand(firstField);
         }
     }
+}
+
+void StructureViewPanel::showGridContextMenu(const QPoint &pos)
+{
+    QMenu menu(this);
+
+    QAction *definedTypes = menu.addAction(tr("Use defined type names"));
+    definedTypes->setCheckable(true);
+    definedTypes->setChecked(m_useDefinedTypeNames);
+    connect(definedTypes, &QAction::triggered,
+            this, &StructureViewPanel::setUseDefinedTypeNames);
+
+    menu.addSeparator();
+
+    QAction *hexadecimalOffsets = menu.addAction(tr("Hexadecimal offsets"));
+    hexadecimalOffsets->setCheckable(true);
+    hexadecimalOffsets->setChecked(m_useHexadecimalOffsets);
+    connect(hexadecimalOffsets, &QAction::triggered,
+            this, &StructureViewPanel::setUseHexadecimalOffsets);
+
+    QAction *relativeOffsets = menu.addAction(tr("Relative offsets"));
+    relativeOffsets->setCheckable(true);
+    relativeOffsets->setChecked(m_useRelativeOffsets);
+    connect(relativeOffsets, &QAction::triggered,
+            this, &StructureViewPanel::setUseRelativeOffsets);
+
+    menu.exec(m_tree ? m_tree->mapToGlobal(pos) : mapToGlobal(pos));
+}
+
+StructureDisplayOptions StructureViewPanel::displayOptions() const
+{
+    StructureDisplayOptions options;
+    options.typeNameMode = m_useDefinedTypeNames
+        ? StructureTypeNameMode::Defined
+        : StructureTypeNameMode::Storage;
+    options.hexadecimalOffsets = m_useHexadecimalOffsets;
+    options.relativeOffsets = m_useRelativeOffsets;
+    return options;
+}
+
+void StructureViewPanel::applyDisplayOptions()
+{
+    if (m_model)
+        m_model->applyDisplayOptions(displayOptions());
+}
+
+void StructureViewPanel::setUseDefinedTypeNames(bool enabled)
+{
+    if (m_useDefinedTypeNames == enabled)
+        return;
+
+    m_useDefinedTypeNames = enabled;
+    applyDisplayOptions();
+}
+
+void StructureViewPanel::setUseHexadecimalOffsets(bool enabled)
+{
+    if (m_useHexadecimalOffsets == enabled)
+        return;
+
+    m_useHexadecimalOffsets = enabled;
+    applyDisplayOptions();
+}
+
+void StructureViewPanel::setUseRelativeOffsets(bool enabled)
+{
+    if (m_useRelativeOffsets == enabled)
+        return;
+
+    m_useRelativeOffsets = enabled;
+    applyDisplayOptions();
 }
 
 void StructureViewPanel::updateHexViewSelection(const QModelIndex &current)

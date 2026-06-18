@@ -1,6 +1,7 @@
 #include "structview/structurerenderengine.h"
 
 #include "structview/structuresemanticview.h"
+#include "structview/structuretypenameformatter.h"
 
 #include <QByteArray>
 #include <QLatin1String>
@@ -165,10 +166,12 @@ struct StructureRenderEngine::EndianScope
 StructureRenderEngine::StructureRenderEngine(TypeLibrary *library,
                                              TypeDecl *rootType,
                                              uint64_t baseOffset,
-                                             const StructureValueBuilder::ByteReader &reader)
+                                             const StructureValueBuilder::ByteReader &reader,
+                                             const StructureDisplayOptions &options)
     : m_library(library)
     , m_rootType(rootType)
     , m_baseOffset(baseOffset)
+    , m_options(options)
     , m_reader(reader)
 {
 }
@@ -226,6 +229,7 @@ StructureRenderEngine::RowPtr StructureRenderEngine::makeRow(StructureRow *paren
     row->absoluteOffset = offset;
     row->relativeOffset = offset >= m_baseOffset ? offset - m_baseOffset : 0;
     row->offset = formatOffset(offset);
+    row->generatedOffset = true;
     row->comment = typeDecl && typeDecl->comment ? QString::fromLocal8Bit(typeDecl->comment) : QString();
     return row;
 }
@@ -1125,51 +1129,13 @@ StructureRenderEngine::DynamicContainer *StructureRenderEngine::mapLogicalOffset
 
 QString StructureRenderEngine::typeName(Type *type) const
 {
-    if (!type)
-        return {};
-
-    switch (type->ty)
-    {
-    case typeIDENTIFIER:
-        return type->sym ? QString::fromLocal8Bit(type->sym->name) : QString();
-    case typeTYPEDEF:
-        return type->sym ? QString::fromLocal8Bit(type->sym->name) : typeName(type->link);
-    case typeSTRUCT:
-        return type->sptr && type->sptr->symbol && !type->sptr->symbol->anonymous
-            ? QStringLiteral("struct %1").arg(QString::fromLocal8Bit(type->sptr->symbol->name))
-            : QStringLiteral("struct");
-    case typeUNION:
-        return type->sptr && type->sptr->symbol && !type->sptr->symbol->anonymous
-            ? QStringLiteral("union %1").arg(QString::fromLocal8Bit(type->sptr->symbol->name))
-            : QStringLiteral("union");
-    case typeENUM:
-        return type->eptr && type->eptr->symbol && !type->eptr->symbol->anonymous
-            ? QStringLiteral("enum %1").arg(QString::fromLocal8Bit(type->eptr->symbol->name))
-            : QStringLiteral("enum");
-    case typeARRAY:
-        return typeName(type->link) + QStringLiteral("[]");
-    case typePOINTER:
-        return typeName(type->link) + QStringLiteral(" *");
-    case typeSIGNED:
-        return QStringLiteral("signed %1").arg(typeName(type->link));
-    case typeUNSIGNED:
-        return QStringLiteral("unsigned %1").arg(typeName(type->link));
-    case typeCHAR: return QStringLiteral("char");
-    case typeWCHAR: return QStringLiteral("wchar_t");
-    case typeBYTE: return QStringLiteral("byte");
-    case typeWORD: return QStringLiteral("word");
-    case typeDWORD: return QStringLiteral("dword");
-    case typeQWORD: return QStringLiteral("qword");
-    case typeFLOAT: return QStringLiteral("float");
-    case typeDOUBLE: return QStringLiteral("double");
-    default:
-        return typeName(type->link);
-    }
+    return StructureTypeNameFormatter(m_options).typeName(type);
 }
 
 QString StructureRenderEngine::formatOffset(uint64_t offset) const
 {
-    return QString::number(offset, 16).toUpper().rightJustified(8, QLatin1Char('0'));
+    const uint64_t relativeOffset = offset >= m_baseOffset ? offset - m_baseOffset : 0;
+    return formatStructureOffset(offset, relativeOffset, m_options);
 }
 
 bool StructureRenderEngine::declarationBigEndian(TypeDecl *typeDecl,
@@ -1231,70 +1197,19 @@ QString StructureRenderEngine::enumNameForValue(Enum *eptr, INUMTYPE value) cons
     return {};
 }
 
-StructureRenderEngine::DeclarationParts StructureRenderEngine::declarationParts(Type *type) const
-{
-    DeclarationParts parts;
-    if (!type)
-        return parts;
-
-    if (type->ty != typeIDENTIFIER)
-    {
-        parts.prefix = typeName(type);
-        return parts;
-    }
-
-    parts.prefix = typeName(type->link);
-    parts.name = type->sym ? QString::fromLocal8Bit(type->sym->name) : QString();
-    parts.suffix = declaratorSuffix(type->link);
-    for (int i = 0; i < parts.suffix.size() / 2 && parts.prefix.endsWith(QStringLiteral("[]")); ++i)
-        parts.prefix.chop(2);
-    return parts;
-}
-
-QString StructureRenderEngine::declarationName(Type *type) const
-{
-    const DeclarationParts parts = declarationParts(type);
-
-    if (parts.prefix.isEmpty())
-        return parts.name + parts.suffix;
-    if (parts.name.isEmpty())
-        return parts.prefix + parts.suffix;
-    return parts.prefix + QLatin1Char(' ') + parts.name + parts.suffix;
-}
-
 void StructureRenderEngine::applyDeclarationName(StructureRow *row, Type *type) const
 {
     if (!row)
         return;
 
-    const DeclarationParts parts = declarationParts(type);
-    row->name = declarationName(type);
+    const StructureTypeNameFormatter formatter(m_options);
+    const StructureDeclarationParts parts = formatter.declarationParts(type);
+    row->name = formatter.declarationName(type);
     row->nameTypePrefix = parts.prefix;
     row->nameIdentifier = parts.name;
     row->nameSuffix = parts.suffix;
-    row->emphasizeName = isCompoundDeclaration(type);
-}
-
-bool StructureRenderEngine::isCompoundDeclaration(Type *type) const
-{
-    for (Type *cursor = type; cursor; cursor = cursor->link)
-    {
-        Type *base = BaseNode(cursor);
-        if (base && (base->ty == typeSTRUCT || base->ty == typeUNION))
-            return true;
-    }
-    return false;
-}
-
-QString StructureRenderEngine::declaratorSuffix(Type *type) const
-{
-    QString suffix;
-    for (Type *cursor = type; cursor; cursor = cursor->link)
-    {
-        if (cursor->ty == typeARRAY)
-            suffix += QStringLiteral("[]");
-    }
-    return suffix;
+    row->emphasizeName = formatter.isCompoundDeclaration(type);
+    row->generatedName = true;
 }
 
 QString StructureRenderEngine::stringArrayValue(StructureRow *scope, Type *type, TypeDecl *typeDecl, uint64_t offset)

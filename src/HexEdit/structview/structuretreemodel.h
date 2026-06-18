@@ -1,6 +1,7 @@
 #ifndef STRUCTVIEW_STRUCTURETREEMODEL_H
 #define STRUCTVIEW_STRUCTURETREEMODEL_H
 
+#include "structview/structuredisplayoptions.h"
 #include "TypeLib/parser.h"
 
 #include <QAbstractItemModel>
@@ -26,11 +27,13 @@ struct StructureRow
     QString nameIdentifier;
     QString nameSuffix;
     bool emphasizeName = false;
+    bool generatedName = false;
     QString branchIconPath;
     QString branchOpenIconPath;
     QString branchEmptyIconPath;
     QString value;
     QString offset;
+    bool generatedOffset = false;
     QString comment;
     Type *type = nullptr;
     TypeDecl *typeDecl = nullptr;
@@ -85,6 +88,7 @@ public:
     void setTypeDecls(const QList<TypeDecl *> &typeDecls);
     void setRows(std::vector<std::unique_ptr<StructureRow>> rows);
     void setRowsForTests(std::vector<std::unique_ptr<StructureRow>> rows);
+    void applyDisplayOptions(const StructureDisplayOptions &options);
     StructureRow *rowForIndex(const QModelIndex &index) const;
 
 private:
@@ -93,6 +97,9 @@ private:
     void setCellText(StructureRow *row, int column, const QString &text);
     std::unique_ptr<StructureRow> makeRowForTypeDecl(TypeDecl *decl) const;
     void addChildRowsForTypeDecl(StructureRow *parentRow, TypeDecl *decl, int depth) const;
+    void applyDisplayOptionsToRow(StructureRow *row,
+                                  const StructureDisplayOptions &options,
+                                  const QModelIndex &index);
     Type *compoundTypeForDecl(TypeDecl *decl) const;
     Type *compoundTypeInChain(Type *type) const;
     QString typeName(Type *type) const;

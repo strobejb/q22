@@ -50,6 +50,7 @@ private slots:
     void builderKeepsRawElfRowsWhenSemanticDataIsTruncated();
     void modelHeadersMatchStructureGridColumns();
     void modelSupportsHierarchyAndEditableCells();
+    void modelAppliesTypeDisplayOptionsWithoutResettingRows();
     void modelBuildsExpandableRowsForStructFields();
 };
 
@@ -1425,6 +1426,59 @@ void StructViewTests::modelSupportsHierarchyAndEditableCells()
     QVERIFY(model.flags(childValue) & Qt::ItemIsEditable);
     QVERIFY(model.setData(childValue, QStringLiteral("0x14C")));
     QCOMPARE(model.data(childValue).toString(), QStringLiteral("0x14C"));
+}
+
+void StructViewTests::modelAppliesTypeDisplayOptionsWithoutResettingRows()
+{
+    // Scenario: the user right-clicks Structure View and changes only the type
+    // display lens, for example from TypeLib aliases to primitive storage types.
+    // Expected: visible name text updates in place, preserving the existing row
+    // objects so expansion, scroll position, and selection do not jump.
+    // Regression guard: the first implementation rebuilt the whole tree for a
+    // cosmetic setting, causing expanded structures to collapse unnecessarily.
+    Parser parser;
+    QVERIFY(parseBuffer(parser,
+                        "typedef dword e32_addr;\n"
+                        "[export]\n"
+                        "struct Root { byte pad[4]; e32_addr entry; } root;\n"));
+    TypeDecl *root = firstExported(parser.GetTypeLibrary());
+    QVERIFY(root != nullptr);
+
+    auto rows = buildRows(parser.GetTypeLibrary(), root, QByteArray(32, '\0'), 0x10);
+    StructureTreeModel model;
+    model.setRowsForTests(std::move(rows));
+
+    const QModelIndex rootIndex = model.index(0, StructureTreeModel::NameColumn);
+    const QModelIndex fieldIndex = model.index(1, StructureTreeModel::NameColumn, rootIndex);
+    const QModelIndex fieldOffset = model.index(1, StructureTreeModel::OffsetColumn, rootIndex);
+    QVERIFY(fieldIndex.isValid());
+    QVERIFY(fieldOffset.isValid());
+    StructureRow *fieldRow = model.rowForIndex(fieldIndex);
+    QCOMPARE(model.data(fieldIndex).toString(), QStringLiteral("e32_addr entry"));
+    QCOMPARE(model.data(fieldOffset).toString(), QStringLiteral("00000014"));
+
+    QSignalSpy resetSpy(&model, &QAbstractItemModel::modelReset);
+    QSignalSpy changedSpy(&model, &QAbstractItemModel::dataChanged);
+    StructureDisplayOptions options;
+    options.typeNameMode = StructureTypeNameMode::Storage;
+    options.hexadecimalOffsets = false;
+    model.applyDisplayOptions(options);
+
+    QCOMPARE(resetSpy.count(), 0);
+    QVERIFY(changedSpy.count() > 0);
+    QCOMPARE(model.rowForIndex(fieldIndex), fieldRow);
+    QCOMPARE(model.data(fieldIndex).toString(), QStringLiteral("dword entry"));
+    QCOMPARE(model.data(fieldOffset).toString(), QStringLiteral("20"));
+
+    options.hexadecimalOffsets = true;
+    options.relativeOffsets = true;
+    model.applyDisplayOptions(options);
+    QCOMPARE(model.rowForIndex(fieldIndex), fieldRow);
+    QCOMPARE(model.data(fieldOffset).toString(), QStringLiteral("+0004"));
+
+    options.hexadecimalOffsets = false;
+    model.applyDisplayOptions(options);
+    QCOMPARE(model.data(fieldOffset).toString(), QStringLiteral("+4"));
 }
 
 void StructViewTests::modelBuildsExpandableRowsForStructFields()

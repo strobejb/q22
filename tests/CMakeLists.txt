@@ -83,6 +83,7 @@ add_executable(structview_tests
     ../src/HexEdit/structview/structuredefinitionmanager.cpp
     ../src/HexEdit/structview/structurerenderengine.cpp
     ../src/HexEdit/structview/structuresemanticview.cpp
+    ../src/HexEdit/structview/structuretypenameformatter.cpp
     ../src/HexEdit/structview/structuretreemodel.cpp
     ../src/HexEdit/structview/structurevaluebuilder.cpp
 )

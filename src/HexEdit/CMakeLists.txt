@@ -93,6 +93,9 @@ set(PROJECT_SOURCES
         structview/pesemanticview.h
         structview/structuresemanticview.cpp
         structview/structuresemanticview.h
+        structview/structuredisplayoptions.h
+        structview/structuretypenameformatter.cpp
+        structview/structuretypenameformatter.h
         structview/structuretreemodel.cpp
         structview/structuretreemodel.h
         structview/structurerenderengine.cpp

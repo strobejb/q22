@@ -135,6 +135,7 @@ StructureRow *StructureSemanticContext::appendSemanticRow(StructureRow *parent,
     row->relativeOffset = absoluteOffset >= m_baseOffset ? absoluteOffset - m_baseOffset : 0;
     row->byteLength = byteLength;
     row->offset = byteLength > 0 ? formatOffset(absoluteOffset) : QString();
+    row->generatedOffset = byteLength > 0;
 
     StructureRow *raw = row.get();
     parent->children.push_back(std::move(row));

@@ -1,5 +1,7 @@
 #include "structview/structuretreemodel.h"
 
+#include "structview/structuretypenameformatter.h"
+
 #include <QLatin1String>
 
 namespace
@@ -224,6 +226,14 @@ void StructureTreeModel::setRowsForTests(std::vector<std::unique_ptr<StructureRo
     setRows(std::move(rows));
 }
 
+void StructureTreeModel::applyDisplayOptions(const StructureDisplayOptions &options)
+{
+    for (int row = 0; row < m_root->children.size(); ++row)
+        applyDisplayOptionsToRow(m_root->children[row].get(),
+                                 options,
+                                 index(row, NameColumn));
+}
+
 StructureRow *StructureTreeModel::rowForIndex(const QModelIndex &index) const
 {
     if (!index.isValid())
@@ -261,6 +271,7 @@ void StructureTreeModel::setCellText(StructureRow *row, int column, const QStrin
         row->nameIdentifier.clear();
         row->nameSuffix.clear();
         row->emphasizeName = false;
+        row->generatedName = false;
         row->branchIconPath.clear();
         row->branchOpenIconPath.clear();
         row->branchEmptyIconPath.clear();
@@ -270,6 +281,7 @@ void StructureTreeModel::setCellText(StructureRow *row, int column, const QStrin
         break;
     case OffsetColumn:
         row->offset = text;
+        row->generatedOffset = false;
         break;
     case CommentColumn:
         row->comment = text;
@@ -284,6 +296,7 @@ std::unique_ptr<StructureRow> StructureTreeModel::makeRowForTypeDecl(TypeDecl *d
     auto row = std::make_unique<StructureRow>(m_root.get());
     row->value = QStringLiteral("{...}");
     row->offset = QStringLiteral("00000000");
+    row->generatedOffset = true;
     row->comment = decl->comment ? QString::fromLocal8Bit(decl->comment) : QString();
 
     QStringList names;
@@ -326,6 +339,50 @@ void StructureTreeModel::addChildRowsForTypeDecl(StructureRow *parentRow, TypeDe
         child->parent = parentRow;
         addChildRowsForTypeDecl(child.get(), childDecl, depth + 1);
         parentRow->children.push_back(std::move(child));
+    }
+}
+
+void StructureTreeModel::applyDisplayOptionsToRow(StructureRow *row,
+                                                  const StructureDisplayOptions &options,
+                                                  const QModelIndex &index)
+{
+    if (!row)
+        return;
+
+    if (row->generatedName && row->type)
+    {
+        const StructureTypeNameFormatter formatter(options);
+        const StructureDeclarationParts parts = formatter.declarationParts(row->type);
+        row->name = formatter.declarationName(row->type);
+        row->nameTypePrefix = parts.prefix;
+        row->nameIdentifier = parts.name;
+        row->nameSuffix = parts.suffix;
+        row->emphasizeName = formatter.isCompoundDeclaration(row->type);
+        if (index.isValid())
+            emit dataChanged(index, index, { Qt::DisplayRole,
+                                             Qt::EditRole,
+                                             NameTypePrefixRole,
+                                             NameIdentifierRole,
+                                             NameSuffixRole,
+                                             EmphasizeNameRole });
+    }
+
+    if (row->generatedOffset && !row->offset.isEmpty())
+    {
+        row->offset = formatStructureOffset(row->absoluteOffset, row->relativeOffset, options);
+        if (index.isValid())
+        {
+            const QModelIndex offsetIndex = this->index(index.row(), OffsetColumn, index.parent());
+            emit dataChanged(offsetIndex, offsetIndex, { Qt::DisplayRole, Qt::EditRole });
+        }
+    }
+
+    for (int childRow = 0; childRow < row->children.size(); ++childRow)
+    {
+        const QModelIndex childIndex = index.isValid()
+            ? this->index(childRow, NameColumn, index)
+            : QModelIndex();
+        applyDisplayOptionsToRow(row->children[childRow].get(), options, childIndex);
     }
 }
 

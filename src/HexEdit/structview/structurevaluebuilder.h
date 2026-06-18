@@ -1,6 +1,7 @@
 #ifndef STRUCTVIEW_STRUCTUREVALUEBUILDER_H
 #define STRUCTVIEW_STRUCTUREVALUEBUILDER_H
 
+#include "structview/structuredisplayoptions.h"
 #include "structview/structuretreemodel.h"
 
 #include <cstdint>
@@ -17,6 +18,11 @@ public:
                                                      TypeDecl *rootType,
                                                      uint64_t baseOffset,
                                                      const ByteReader &reader) const;
+    std::vector<std::unique_ptr<StructureRow>> build(TypeLibrary *library,
+                                                     TypeDecl *rootType,
+                                                     uint64_t baseOffset,
+                                                     const ByteReader &reader,
+                                                     const StructureDisplayOptions &options) const;
 };
 
 #endif // STRUCTVIEW_STRUCTUREVALUEBUILDER_H
