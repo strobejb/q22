@@ -54,6 +54,11 @@ void TypeLibrary::Cleanup()
 		delete globalTypeDeclList[i];
 	}
 
+	for(i = 0; i < globalTagSetList.size(); i++)
+	{
+		delete globalTagSetList[i];
+	}
+
 	for(i = 0; i < globalFileHistory.size(); i++)
 	{
 		free(globalFileHistory[i]->buf);
@@ -63,6 +68,7 @@ void TypeLibrary::Cleanup()
 	globalIdentifierList.clear();
 	globalTagSymbolList.clear();
 	globalTypeDeclList.clear();
+	globalTagSetList.clear();
 	globalFileHistory.clear();
 	aliasesInstalled = false;
 }
@@ -85,11 +91,18 @@ Tag * FindTag(Tag *tag, TOKEN tok, ExprNode **expr /*= 0*/)
 	return 0;
 }
 
+static Tag *CloneTagList(Tag *tag, Tag *tail = 0)
+{
+	if(!tag)
+		return tail;
+
+	return new Tag(tag->tok, CloneTagList(tag->link, tail), CopyExpr(tag->expr));
+}
 
 //
 //	Parse any IDL-style tags, return into the Tag* linked-list
 //
-bool Parser::ParseTags(Tag **tagList, TOKEN allowed[])
+bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 {
 	Tag *	tag = 0;
 	bool	foundtag = false;
@@ -112,6 +125,12 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[])
 		if(t == TOK_LENGTHIS)
 		{
 			Error(ERROR_RESERVED_KEYWORD, inenglish(t));
+			return false;
+		}
+
+		if(t == TOK_TAGS && !allowTagSetUse)
+		{
+			Error(ERROR_TAGS_NOT_ALLOWED_IN_TAGSET);
 			return false;
 		}
 
@@ -144,6 +163,33 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[])
 			tag = new Tag(t, tag);
 			Advance();
 			break;
+
+		case TOK_TAGS:
+		{
+			char tagSetName[MAX_STRING_LEN];
+			Advance();
+
+			if(!Expected('('))
+				return false;
+
+			strcpy(tagSetName, t.str);
+			if(!Expected(TOK_IDENTIFIER))
+				return false;
+
+			TagSet *tagSet = LookupTagSet(tagSetName);
+			if(!tagSet)
+			{
+				Error(ERROR_UNKNOWN_TAGSET, tagSetName);
+				return false;
+			}
+
+			tag = CloneTagList(tagSet->tagList, tag);
+
+			if(!Expected(')'))
+				return false;
+
+			break;
+		}
 
 		// TAGS which take expression-parameters
 		case TOK_OFFSET:	case TOK_ALIGN:	 
@@ -214,6 +260,18 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[])
 	return true;
 }
 
+TagSet * Parser::LookupTagSet(char *name)
+{
+	for(size_t i = 0; i < typeLibrary->globalTagSetList.size(); i++)
+	{
+		TagSet *tagSet = typeLibrary->globalTagSetList[i];
+		if(tagSet && strcmp(tagSet->name, name) == 0)
+			return tagSet;
+	}
+
+	return 0;
+}
+
 //
 //	Parse any 'include "filename"; ' statements
 //	
@@ -259,6 +317,63 @@ Statement * Parser::ParseInclude()
 	// start parsing!
 	//Advance();
 	return new Statement(_strdup(fileName));
+}
+
+TagSet * Parser::ParseTagSet(FILEREF fileRef)
+{
+	char tagSetName[MAX_STRING_LEN];
+	Tag *tagList = 0;
+
+	if(!Expected(TOK_TAGSET))
+		return 0;
+
+	strcpy(tagSetName, t.str);
+	if(!Expected(TOK_IDENTIFIER))
+		return 0;
+
+	if(LookupTagSet(tagSetName))
+	{
+		Error(ERROR_TAGSET_REDEFINITION, tagSetName);
+		return 0;
+	}
+
+	TagSet *tagSet = new TagSet(tagSetName);
+	tagSet->fileRef = fileRef;
+
+	lexer.FileRef(&tagSet->tagRef);
+	if(t != '[')
+	{
+		delete tagSet;
+		Expected('[');
+		return 0;
+	}
+
+	TOKEN allowed[] =
+	{
+		TOK_SIZEIS, TOK_IGNORE, TOK_STRING,
+		TOK_OFFSET, TOK_ALIGN, TOK_BITFLAG, TOK_STYLE, TOK_DISPLAY,
+		TOK_ENDIAN, TOK_SWITCHIS, TOK_CASE, TOK_NAME,
+		TOK_ENUM, TOK_EXPORT, TOK_ASSOC, TOK_OFFSETMAP,
+		TOK_DYNAMICCONTAINER, TOK_DYNAMICSTRUCT, TOK_VIEW,
+		TOK_NULL
+	};
+
+	if(!ParseTags(&tagList, allowed, false))
+	{
+		delete tagSet;
+		return 0;
+	}
+
+	tagSet->tagList = tagList;
+
+	if(!Expected(';'))
+	{
+		delete tagSet;
+		return 0;
+	}
+
+	lexer.FileRef(&tagSet->postRef);
+	return tagSet;
 }
 
 void Parser::Initialize()
@@ -386,7 +501,7 @@ int Parser::Parse()
 			TOK_OFFSET, TOK_ALIGN, TOK_BITFLAG, TOK_STYLE, TOK_DISPLAY,
 			TOK_ENDIAN,	TOK_SWITCHIS, TOK_CASE, TOK_NAME, 
 			TOK_ENUM, TOK_EXPORT, TOK_ASSOC, TOK_OFFSETMAP,
-			TOK_DYNAMICCONTAINER, TOK_DYNAMICSTRUCT, TOK_VIEW,
+			TOK_DYNAMICCONTAINER, TOK_DYNAMICSTRUCT, TOK_VIEW, TOK_TAGS,
 			TOK_NULL 
 
 		};
@@ -403,6 +518,24 @@ int Parser::Parse()
 		//
 		switch(t.kind)
 		{
+		case TOK_TAGSET:
+		{
+			if(tagList)
+			{
+				Error(ERROR_ILLEGAL_TAG, inenglish(tagList->tok));
+				delete tagList;
+				return 0;
+			}
+
+			TagSet *tagSet = ParseTagSet(fileRef);
+			if(!tagSet)
+				return 0;
+
+			typeLibrary->globalTagSetList.push_back(tagSet);
+			lexer.CurrentFile()->stmtList.push_back(new Statement(tagSet));
+			break;
+		}
+
 		case TOK_INCLUDE:
 			
 			// include-statement (not the same as #include which

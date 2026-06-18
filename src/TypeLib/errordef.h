@@ -32,8 +32,10 @@ DEFINE_ERR( ERROR_PREPROC,				"Error in preprocessor")
 DEFINE_ERR( ERROR_BITFIELDUNION,		"Bitfield not allowed in Union")
 DEFINE_ERR( ERROR_RESERVED_KEYWORD,		"Keyword '%s' is reserved but not supported")
 DEFINE_ERR( ERROR_UNSIZED_ARRAY_REQUIRES_SIZEIS, "Unsized array declaration requires a size_is tag")
+DEFINE_ERR( ERROR_UNKNOWN_TAGSET,		"Unknown tagset '%s'")
+DEFINE_ERR( ERROR_TAGSET_REDEFINITION,	"Redefinition of tagset '%s'")
+DEFINE_ERR( ERROR_TAGS_NOT_ALLOWED_IN_TAGSET, "tags(...) cannot be used inside a tagset")
 DEFINE_ERR( ERROR_FILENOTFOUND,			"Failed to open '%s'")
 DEFINE_ERR( ERROR_NOSUCHFILE,			"Filename '%s' does not exist")
 DEFINE_ERR(	ERROR_UNKNOWN,				"Unknown error" )
-
 

@@ -14,13 +14,17 @@ enum STATEMENT
 {
 	stmtINVALID,
 	stmtINCLUDE,
+	stmtTAGSET,
 	stmtTYPEDECL,
 };
+
+struct TagSet;
 
 struct Statement
 {
 	Statement()					: str(0),		stmtType(stmtINVALID),  expr(0) {}
 	Statement(char *s)			: str(s),		stmtType(stmtINCLUDE),  expr(0) {}
+	Statement(TagSet *t)			: tagSet(t),	stmtType(stmtTAGSET),   expr(0) {}
 	Statement(TypeDecl *t)		: typeDecl(t),	stmtType(stmtTYPEDECL), expr(0) {}
 
 	STATEMENT	stmtType;
@@ -29,6 +33,7 @@ struct Statement
 	union
 	{
 		char		*str;			// 'include' statements
+		TagSet		*tagSet;		// reusable tag aliases
 		TypeDecl	*typeDecl;		// any type decl
 	};
 

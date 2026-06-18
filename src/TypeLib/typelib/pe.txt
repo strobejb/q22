@@ -9,13 +9,6 @@
 
 include "basetypes.txt";
 
-/* oof */
-struct Smeg
-{
-  int a;
-};
-
-/* smeg */
 enum IMAGE_DIRECTORY
 {
 	IMAGE_DIRECTORY_ENTRY_EXPORT          = 0,   // Export Directory
@@ -35,28 +28,12 @@ enum IMAGE_DIRECTORY
 	IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR = 14,   // COM Runtime descriptor
 };
 
-
-
-struct FOO
-{
-  union {
-	int x;	// union member x 
-	int y;  // union member y 
-  };
-};
-
-[export]
-struct BAR 
-{
-   struct 
-   {
-	char a;		// blah blah
-	int b;
-	int c, d;	// hello world
-	
-   };
-   struct FOO f;
-} bar, car;
+tagset PE_DATA_DIRECTORY_TAGS
+[
+    name(IMAGE_DIRECTORY),
+    dynamic_struct(IMAGE_DIRECTORY_ENTRY_EXPORT, IMAGE_EXPORT_DIRECTORY, VirtualAddress, Size != 0),
+    dynamic_struct(IMAGE_DIRECTORY_ENTRY_IMPORT, IMAGE_IMPORT_DESCRIPTOR, VirtualAddress, Size != 0)
+];
 
 
 typedef struct _IMAGE_DOS_HEADER {      // DOS .EXE header
@@ -177,11 +154,7 @@ typedef struct _IMAGE_OPTIONAL_HEADER {
     dword   LoaderFlags;
     dword   NumberOfRvaAndSizes;
 
-    [
-        name(IMAGE_DIRECTORY),
-        dynamic_struct(IMAGE_DIRECTORY_ENTRY_EXPORT, IMAGE_EXPORT_DIRECTORY, VirtualAddress, Size != 0),
-        dynamic_struct(IMAGE_DIRECTORY_ENTRY_IMPORT, IMAGE_IMPORT_DESCRIPTOR, VirtualAddress, Size != 0)
-    ]
+    [tags(PE_DATA_DIRECTORY_TAGS)]
     IMAGE_DATA_DIRECTORY DataDirectory[16];
 
 } IMAGE_OPTIONAL_HEADER32, *PIMAGE_OPTIONAL_HEADER32;
@@ -217,11 +190,7 @@ typedef struct _IMAGE_OPTIONAL_HEADER64 {
     DWORD       LoaderFlags;
     DWORD       NumberOfRvaAndSizes;
 
-    [
-        name(IMAGE_DIRECTORY),
-        dynamic_struct(IMAGE_DIRECTORY_ENTRY_EXPORT, IMAGE_EXPORT_DIRECTORY, VirtualAddress, Size != 0),
-        dynamic_struct(IMAGE_DIRECTORY_ENTRY_IMPORT, IMAGE_IMPORT_DESCRIPTOR, VirtualAddress, Size != 0)
-    ]
+    [tags(PE_DATA_DIRECTORY_TAGS)]
     IMAGE_DATA_DIRECTORY DataDirectory[16];//IMAGE_NUMBEROF_DIRECTORY_ENTRIES];
 } IMAGE_OPTIONAL_HEADER64, *PIMAGE_OPTIONAL_HEADER64;
 

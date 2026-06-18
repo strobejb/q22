@@ -39,6 +39,7 @@ struct TypeLibrary
 	SymbolTable	globalIdentifierList;
 	SymbolTable globalTagSymbolList;
 	TypeDeclList globalTypeDeclList;
+	TagSetList globalTagSetList;
 	vector <FILE_DESC *> globalFileHistory;
 
 	bool aliasesInstalled;
@@ -90,12 +91,14 @@ private:
 	Parser(Parser *p);
 
 	// parser
-	bool		ParseTags(Tag **tagList, TOKEN allowed[]);
+	bool		ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse = true);
 	Statement * ParseInclude();
+	TagSet   * ParseTagSet(FILEREF fileRef);
 	void		ExportStructs();
 	void		Cleanup();
 	void		InstallTypeAliases();
 	TypeDecl *	LookupTypeDecl(char *name);
+	TagSet   *  LookupTagSet(char *name);
 	Type	 *	MakeTypeDef(TYPE base, char *name, TYPE base2 = typeNULL);
 	Enum	 *	FindEnum(char *enumName);
 

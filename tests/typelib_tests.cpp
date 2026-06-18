@@ -2,6 +2,8 @@
 
 #include "parser.h"
 
+#include <cstdio>
+
 class TypeLibTests : public QObject
 {
 	Q_OBJECT
@@ -12,9 +14,14 @@ private slots:
 	void includeParserUsesTheSameTypeLibrary();
 	void fileRefsRemainValidForSharedLibraryAfterParserDies();
 	void cleanupBelongsToTheTypeLibrary();
+	void tagsetsParseAndExpand();
+	void tagsetErrorsArePrecise();
+	void includeDefinedTagsetsCanBeUsedByParent();
+	void tagsetsDumpInSourceOrder();
 	void dynamicPlacementTagsParse();
 	void viewTagsParse();
 	void endianExpressionTagsParse();
+	void ternaryExpressionTagsParse();
 	void lengthIsIsReserved();
 	void unsizedArraysRequireSizeIs();
 	void elfRootIsExportedAndAssociated();
@@ -25,6 +32,15 @@ static bool parseBuffer(Parser &parser, const char *text)
 {
 	parser.Init(text, strlen(text));
 	return parser.Parse() != 0;
+}
+
+static int countTags(Tag *tag, TOKEN tok)
+{
+	int count = 0;
+	for(; tag; tag = tag->link)
+		if(tag->tok == tok)
+			count++;
+	return count;
 }
 
 void TypeLibTests::defaultParsersDoNotShareTypes()
@@ -132,6 +148,142 @@ void TypeLibTests::cleanupBelongsToTheTypeLibrary()
 	QVERIFY(library.globalFileHistory.empty());
 }
 
+void TypeLibTests::tagsetsParseAndExpand()
+{
+	// Scenario: a TypeLib file declares a reusable annotation block for repeated
+	// structure members.
+	// Expected: the tagset is stored on the TypeLibrary, while tags(NAME) expands
+	// to ordinary cloned tags on the target declaration.
+	// Regression guard: PE data-directory rules should be declared once without
+	// teaching Structure View about a separate runtime tagset concept.
+	Parser parser;
+	QVERIFY(parseBuffer(parser,
+						"enum Dir { ExportEntry = 0, ImportEntry = 1 };\n"
+						"typedef struct _DataDir { dword VirtualAddress; dword Size; } DataDir;\n"
+						"typedef struct _Bucket { } Bucket;\n"
+						"typedef struct _Export { dword value; } ExportDesc;\n"
+						"typedef struct _Import { dword value; } ImportDesc;\n"
+						"tagset DIRECTORY_TAGS\n"
+						"[\n"
+						"  name(Dir),\n"
+						"  dynamic_struct(ExportEntry, ExportDesc, VirtualAddress, Size != 0),\n"
+						"  dynamic_struct(ImportEntry, ImportDesc, VirtualAddress, Size != 0)\n"
+						"];\n"
+						"[export]\n"
+						"struct Root {\n"
+						"  [tags(DIRECTORY_TAGS)] DataDir dirs[2];\n"
+						"} root;\n"));
+
+	QCOMPARE(parser.GetTypeLibrary()->globalTagSetList.size(), size_t(1));
+	QCOMPARE(QString::fromLocal8Bit(parser.GetTypeLibrary()->globalTagSetList[0]->name), QStringLiteral("DIRECTORY_TAGS"));
+
+	TypeDecl *root = nullptr;
+	for(TypeDecl *decl : parser.GetTypeLibrary()->globalTypeDeclList)
+		if(decl && FindTag(decl->tagList, TOK_EXPORT, nullptr))
+			root = decl;
+
+	QVERIFY(root);
+	QVERIFY(root->baseType);
+	QVERIFY(root->baseType->sptr);
+	QCOMPARE(root->baseType->sptr->typeDeclList.size(), size_t(1));
+
+	Tag *expanded = root->baseType->sptr->typeDeclList[0]->tagList;
+	QVERIFY(FindTag(expanded, TOK_NAME, nullptr));
+	QCOMPARE(countTags(expanded, TOK_DYNAMICSTRUCT), 2);
+	QVERIFY(!FindTag(expanded, TOK_TAGS, nullptr));
+}
+
+void TypeLibTests::tagsetErrorsArePrecise()
+{
+	// Scenario: tagsets are a simple alias feature, not a macro language with
+	// forward references or composition.
+	// Expected: invalid uses fail at parse time with dedicated diagnostics.
+	// Regression guard: missing or recursive aliases should not become generic
+	// syntax errors that leave definition authors guessing.
+	Parser unknown;
+	QVERIFY(!parseBuffer(unknown,
+						 "struct Root {\n"
+						 "  [tags(MISSING)] byte value;\n"
+						 "} root;\n"));
+	QCOMPARE(unknown.LastErr(), ERROR_UNKNOWN_TAGSET);
+
+	Parser duplicate;
+	QVERIFY(!parseBuffer(duplicate,
+						 "tagset COMMON [offset(1)];\n"
+						 "tagset COMMON [offset(2)];\n"));
+	QCOMPARE(duplicate.LastErr(), ERROR_TAGSET_REDEFINITION);
+
+	Parser nested;
+	QVERIFY(!parseBuffer(nested,
+						 "tagset BASE [offset(1)];\n"
+						 "tagset WRAPPED [tags(BASE)];\n"));
+	QCOMPARE(nested.LastErr(), ERROR_TAGS_NOT_ALLOWED_IN_TAGSET);
+}
+
+void TypeLibTests::includeDefinedTagsetsCanBeUsedByParent()
+{
+	// Scenario: a shared TypeLibrary parses an included file that defines a
+	// reusable tagset, then the parent file consumes it.
+	// Expected: tagsets live in the same library-level result state as types, so
+	// includes can provide common annotation blocks.
+	// Regression guard: tagsets must not be parser-local cursor state.
+	QTemporaryDir dir;
+	QVERIFY(dir.isValid());
+
+	QFile includeFile(dir.filePath("common.tl"));
+	QVERIFY(includeFile.open(QIODevice::WriteOnly | QIODevice::Text));
+	QVERIFY(includeFile.write("tagset COMMON [offset(4)];\n") > 0);
+	includeFile.close();
+
+	QFile mainFile(dir.filePath("main.tl"));
+	QVERIFY(mainFile.open(QIODevice::WriteOnly | QIODevice::Text));
+	QVERIFY(mainFile.write("include \"common.tl\";\nstruct Root { [tags(COMMON)] byte value; } root;\n") > 0);
+	mainFile.close();
+
+	TypeLibrary library;
+	Parser parser(&library);
+	QVERIFY(parser.Ooof(qPrintable(mainFile.fileName())));
+	QCOMPARE(library.globalTagSetList.size(), size_t(1));
+
+	TypeDecl *root = library.globalTypeDeclList.back();
+	QVERIFY(root);
+	QVERIFY(root->baseType);
+	QVERIFY(root->baseType->sptr);
+	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[0]->tagList, TOK_OFFSET, nullptr));
+}
+
+void TypeLibTests::tagsetsDumpInSourceOrder()
+{
+	// Scenario: TypeLib round-tripping emits the durable parse result back to a
+	// text file.
+	// Expected: tagset declarations remain ordinary source-order statements,
+	// while tagset uses have already expanded to normal tags.
+	// Regression guard: adding semantic TagSet objects must not make Dump()
+	// reorder or drop source-level alias declarations.
+	Parser parser;
+	QVERIFY(parseBuffer(parser,
+						"tagset COMMON [offset(4)];\n"
+						"[tags(COMMON)] byte value;\n"));
+
+	QTemporaryDir dir;
+	QVERIFY(dir.isValid());
+	const QString dumpPath = dir.filePath(QStringLiteral("dump.txt"));
+	FILE *fp = fopen(qPrintable(dumpPath), "wb");
+	QVERIFY(fp != nullptr);
+	parser.Dump(fp);
+	fclose(fp);
+
+	QFile dumpFile(dumpPath);
+	QVERIFY(dumpFile.open(QIODevice::ReadOnly));
+	const QByteArray dumped = dumpFile.readAll();
+	const int tagsetPos = dumped.indexOf("tagset COMMON");
+	const int valuePos = dumped.indexOf("byte value");
+	QVERIFY(tagsetPos >= 0);
+	QVERIFY(valuePos > tagsetPos);
+	QVERIFY(dumped.contains("[offset(4)]"));
+	QVERIFY(!dumped.contains("tags(COMMON)"));
+}
+
 void TypeLibTests::dynamicPlacementTagsParse()
 {
 	// Scenario: a structure definition uses the dynamic placement tags consumed
@@ -217,6 +369,41 @@ void TypeLibTests::endianExpressionTagsParse()
 	QVERIFY(FindTag(root->tagList, TOK_ENDIAN, &expr));
 	QVERIFY(expr);
 	QCOMPARE(expr->type, EXPR_BINARY);
+}
+
+void TypeLibTests::ternaryExpressionTagsParse()
+{
+	// Scenario: a definition chooses a render-time count from file data using
+	// C-style conditional syntax.
+	// Expected: TypeLib preserves the ternary expression as the size_is payload,
+	// so the renderer can evaluate the selected branch later.
+	// Regression guard: conditional expressions should remain part of the small
+	// expression language instead of forcing format-specific C++ for simple
+	// branchy counts.
+	Parser parser;
+	QVERIFY(parseBuffer(parser,
+						"[export]\n"
+						"struct Root {\n"
+						"  byte flag;\n"
+						"  [size_is(flag ? 3 : 1)] byte values[];\n"
+						"} root;\n"));
+
+	TypeDecl *root = nullptr;
+	for(TypeDecl *decl : parser.GetTypeLibrary()->globalTypeDeclList)
+		if(decl && FindTag(decl->tagList, TOK_EXPORT, nullptr))
+			root = decl;
+
+	QVERIFY(root);
+	QVERIFY(root->baseType);
+	QVERIFY(root->baseType->sptr);
+	QCOMPARE(root->baseType->sptr->typeDeclList.size(), size_t(2));
+
+	ExprNode *expr = nullptr;
+	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[1]->tagList, TOK_SIZEIS, &expr));
+	QVERIFY(expr);
+	QCOMPARE(expr->type, EXPR_COMMA);
+	QVERIFY(expr->left);
+	QCOMPARE(expr->left->type, EXPR_TERTIARY);
 }
 
 void TypeLibTests::lengthIsIsReserved()

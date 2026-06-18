@@ -588,10 +588,6 @@ bool StructureRenderEngine::evaluate(const EvalContext &context, ExprNode *expr,
         if (StructureRow *row = findFieldRow(context.row, expr))
             return readInteger(row->absoluteOffset, row->byteLength, result, row->bigEndian);
 
-        ResolvedField field;
-        if (resolveField(context.type, expr, context.offset, &field))
-            return readInteger(field.offset, field.length, result, field.bigEndian);
-
         if (expr->type == EXPR_IDENTIFIER && m_library)
         {
             if (Symbol *sym = LookupSymbol(m_library->globalIdentifierList, expr->str))
@@ -618,6 +614,10 @@ bool StructureRenderEngine::evaluate(const EvalContext &context, ExprNode *expr,
                 }
             }
         }
+
+        ResolvedField field;
+        if (resolveField(context.type, expr, context.offset, &field))
+            return readInteger(field.offset, field.length, result, field.bigEndian);
         return false;
     }
     case EXPR_NUMBER:

@@ -27,7 +27,11 @@ private slots:
     void builderFormatsCharacterArraysAsStrings();
     void builderFormatsScalarArraysAsPreviewLists();
     void builderUsesSizeIsForUnsizedArrays();
+    void builderEvaluatesTernaryExpressions();
     void builderUsesCommonUnionPrefixForSizeIs();
+    void builderEvaluatesTernaryUnionMemberSizeAndOffset();
+    void builderEvaluatesEndianAwareUnionMembers();
+    void builderEvaluatesArrayIndexedUnionMembers();
     void builderUsesNameFieldForStructArrayElements();
     void builderAlignsFieldNamesWithinCompoundTypes();
     void builderBuildsNestedStructRowsAndOffsets();
@@ -35,6 +39,8 @@ private slots:
     void builderEvaluatesUnionSwitchSelectorsFromTypedLayout();
     void builderEvaluatesFieldsAndCorrectedExpressions();
     void builderUsesDynamicEndianExpressions();
+    void builderEvaluatesEnumIndexedArraysInExpressions();
+    void builderEvaluatesEnumIndexedUnionMembersInExpressions();
     void builderRendersElf32AndElf64Tables();
     void builderPlacesDynamicStructsUnderNamedDynamicContainers();
     void semanticRegistryRunsKnownViewsAndIgnoresUnknownViews();
@@ -441,6 +447,40 @@ void StructViewTests::builderUsesSizeIsForUnsizedArrays()
     QCOMPARE(rows[0]->children[1]->children[2]->children[0]->value, QStringLiteral("12"));
 }
 
+void StructViewTests::builderEvaluatesTernaryExpressions()
+{
+    // Scenario: a structure definition uses a C-style conditional expression to
+    // select between two possible array counts from already-rendered file data.
+    // Expected: the renderer evaluates only the matching ternary branch and
+    // expands the flexible array to that count.
+    // Regression guard: ternary expressions should work in Structure View tags,
+    // so simple data-driven choices do not need a semantic C++ interpreter.
+    const char *definition =
+        "[export]\n"
+        "struct Root {\n"
+        "  byte flag;\n"
+        "  [size_is(flag ? 3 : 1)] byte values[];\n"
+        "} root;\n";
+
+    auto render = [definition](const QByteArray &bytes) {
+        auto library = std::make_unique<TypeLibrary>();
+        Parser parser(library.get());
+        if (!parseBuffer(parser, definition))
+            return std::vector<std::unique_ptr<StructureRow>>();
+        return buildRows(library.get(), firstExported(library.get()), bytes);
+    };
+
+    auto rowsWhenTrue = render(QByteArray::fromHex("010A0B0C"));
+    QCOMPARE(rowsWhenTrue.size(), size_t(1));
+    QCOMPARE(rowsWhenTrue[0]->children[1]->children.size(), size_t(3));
+    QCOMPARE(rowsWhenTrue[0]->children[1]->children[2]->value, QStringLiteral("12"));
+
+    auto rowsWhenFalse = render(QByteArray::fromHex("000A0B0C"));
+    QCOMPARE(rowsWhenFalse.size(), size_t(1));
+    QCOMPARE(rowsWhenFalse[0]->children[1]->children.size(), size_t(1));
+    QCOMPARE(rowsWhenFalse[0]->children[1]->children[0]->value, QStringLiteral("10"));
+}
+
 void StructViewTests::builderUsesCommonUnionPrefixForSizeIs()
 {
     // Scenario: a PE-style header has common fields followed by a 32/64-bit
@@ -490,6 +530,119 @@ void StructViewTests::builderUsesCommonUnionPrefixForSizeIs()
     QCOMPARE(rows64[0]->children[0]->children[2]->name, QStringLiteral("Optional64 OptionalHeader64"));
     QCOMPARE(rows64[0]->children[1]->children.size(), size_t(5));
     QCOMPARE(rows64[0]->children[1]->children[4]->children[0]->value, QStringLiteral("5"));
+}
+
+void StructViewTests::builderEvaluatesTernaryUnionMemberSizeAndOffset()
+{
+    // Scenario: a later array is described by fields inside whichever union
+    // branch matches the current file, and both size_is and offset use ternary
+    // expressions over explicit branch-member paths.
+    // Expected: only the selected ternary branch is resolved, so PE/ELF-style
+    // 32/64 layouts can share one declaration without probing the wrong member.
+    // Regression guard: branch-specific union field lookup must be robust enough
+    // for definitions such as header64.count/header32.count in render tags.
+    const char *definition =
+        "typedef struct _H32 { byte count; byte tableOffset; byte marker32; } H32;\n"
+        "typedef struct _H64 { byte pad; byte count; byte tableOffset; byte marker64; } H64;\n"
+        "typedef struct _Item { byte value; } Item;\n"
+        "[export]\n"
+        "struct Root {\n"
+        "  byte is64;\n"
+        "  [switch_is(is64)] union {\n"
+        "    [case(0)] H32 header32;\n"
+        "    [case(1)] H64 header64;\n"
+        "  };\n"
+        "  [offset(is64 ? header64.tableOffset : header32.tableOffset), size_is(is64 ? header64.count : header32.count)] Item items[];\n"
+        "} root;\n";
+
+    auto render = [definition](const QByteArray &bytes) {
+        auto library = std::make_unique<TypeLibrary>();
+        Parser parser(library.get());
+        if (!parseBuffer(parser, definition))
+            return std::vector<std::unique_ptr<StructureRow>>();
+        return buildRows(library.get(), firstExported(library.get()), bytes);
+    };
+
+    auto rows32 = render(QByteArray::fromHex("00" "0206AA" "0000" "0A0B"));
+    QCOMPARE(rows32.size(), size_t(1));
+    QCOMPARE(rows32[0]->children[1]->name, QStringLiteral("H32 header32"));
+    QCOMPARE(rows32[0]->children[2]->offset, QStringLiteral("00000006"));
+    QCOMPARE(rows32[0]->children[2]->children.size(), size_t(2));
+    QCOMPARE(rows32[0]->children[2]->children[1]->children[0]->value, QStringLiteral("11"));
+
+    auto rows64 = render(QByteArray::fromHex("01" "FF030899" "000000" "111213"));
+    QCOMPARE(rows64.size(), size_t(1));
+    QCOMPARE(rows64[0]->children[1]->name, QStringLiteral("H64 header64"));
+    QCOMPARE(rows64[0]->children[2]->offset, QStringLiteral("00000008"));
+    QCOMPARE(rows64[0]->children[2]->children.size(), size_t(3));
+    QCOMPARE(rows64[0]->children[2]->children[2]->children[0]->value, QStringLiteral("19"));
+}
+
+void StructViewTests::builderEvaluatesEndianAwareUnionMembers()
+{
+    // Scenario: a file-level endian tag changes how numeric fields are read, and
+    // an array count is selected from a branch-specific union member.
+    // Expected: expression reads used by size_is respect the active endian state
+    // before the array is expanded.
+    // Regression guard: ELF big-endian headers must not turn a count like 0x0003
+    // into 0x0300 just because the field is reached through a union branch.
+    const char *definition =
+        "typedef struct _Header { word count; } Header;\n"
+        "[export, endian(bigEndian)]\n"
+        "struct Root {\n"
+        "  byte bigEndian;\n"
+        "  [switch_is(bigEndian)] union {\n"
+        "    [case(0)] Header headerLe;\n"
+        "    [case(1)] Header headerBe;\n"
+        "  };\n"
+        "  [size_is(bigEndian ? headerBe.count : headerLe.count)] byte values[];\n"
+        "} root;\n";
+
+    auto render = [definition](const QByteArray &bytes) {
+        auto library = std::make_unique<TypeLibrary>();
+        Parser parser(library.get());
+        if (!parseBuffer(parser, definition))
+            return std::vector<std::unique_ptr<StructureRow>>();
+        return buildRows(library.get(), firstExported(library.get()), bytes);
+    };
+
+    auto rowsLe = render(QByteArray::fromHex("00" "0300" "0A0B0C"));
+    QCOMPARE(rowsLe.size(), size_t(1));
+    QCOMPARE(rowsLe[0]->children[2]->children.size(), size_t(3));
+    QCOMPARE(rowsLe[0]->children[2]->children[2]->value, QStringLiteral("12"));
+
+    auto rowsBe = render(QByteArray::fromHex("01" "0003" "0A0B0C"));
+    QCOMPARE(rowsBe.size(), size_t(1));
+    QCOMPARE(rowsBe[0]->children[2]->children.size(), size_t(3));
+    QCOMPARE(rowsBe[0]->children[2]->children[2]->value, QStringLiteral("12"));
+}
+
+void StructViewTests::builderEvaluatesArrayIndexedUnionMembers()
+{
+    // Scenario: a render expression reaches through a selected union member and
+    // indexes into an array field inside that member.
+    // Expected: field resolution applies the array element offset before reading
+    // the final field value.
+    // Regression guard: offset/size/name expressions often grow from simple
+    // fields into paths like header64.entries[1].count as format support matures.
+    TypeLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef struct _Entry { byte count; byte marker; } Entry;\n"
+                        "typedef struct _H64 { Entry entries[2]; } H64;\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  byte is64;\n"
+                        "  [switch_is(is64)] union {\n"
+                        "    [case(1)] H64 header64;\n"
+                        "  };\n"
+                        "  [size_is(header64.entries[1].count)] byte values[];\n"
+                        "} root;\n"));
+
+    auto rows = buildRows(&library, firstExported(&library), QByteArray::fromHex("01" "01AA03BB" "0A0B0C"));
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children[2]->children.size(), size_t(3));
+    QCOMPARE(rows[0]->children[2]->children[2]->value, QStringLiteral("12"));
 }
 
 void StructViewTests::builderUsesNameFieldForStructArrayElements()
@@ -697,6 +850,82 @@ void StructViewTests::builderUsesDynamicEndianExpressions()
     QCOMPARE(littleRows.size(), size_t(1));
     QCOMPARE(littleRows[0]->children[1]->value, QStringLiteral("513"));
     QCOMPARE(littleRows[0]->children[3]->children.size(), size_t(2));
+}
+
+void StructViewTests::builderEvaluatesEnumIndexedArraysInExpressions()
+{
+    // Scenario: an ELF-style identifier array is indexed by enum constants
+    // inside size_is and offset expressions.
+    // Expected: enum identifiers resolve before array indexing, so e_ident slots
+    // can drive normal Structure View rendering decisions.
+    // Regression guard: earlier ELF experiments failed around expressions like
+    // header.e_ident[EI_CLASS] even though both pieces worked independently.
+    const char *definition =
+        "enum Ident { EI_CLASS = 4, EI_DATA = 5, ELFCLASS32 = 1 };\n"
+        "typedef struct _Header { byte e_ident[8]; byte count32; byte tableOffset32; } Header;\n"
+        "typedef struct _Item { byte value; } Item;\n"
+        "[export]\n"
+        "struct Root {\n"
+        "  Header header;\n"
+        "  [offset(header.e_ident[EI_CLASS] == ELFCLASS32 ? header.tableOffset32 : 0), size_is(header.e_ident[EI_CLASS] == ELFCLASS32 ? header.count32 : 0)] Item items[];\n"
+        "} root;\n";
+
+    auto render = [definition](const QByteArray &bytes) {
+        auto library = std::make_unique<TypeLibrary>();
+        Parser parser(library.get());
+        if (!parseBuffer(parser, definition))
+            return std::vector<std::unique_ptr<StructureRow>>();
+        return buildRows(library.get(), firstExported(library.get()), bytes);
+    };
+
+    auto rows32 = render(QByteArray::fromHex("00000000" "01" "00" "0000" "02" "0C" "0000" "0A0B"));
+    QCOMPARE(rows32.size(), size_t(1));
+    QCOMPARE(rows32[0]->children[1]->offset, QStringLiteral("0000000C"));
+    QCOMPARE(rows32[0]->children[1]->children.size(), size_t(2));
+    QCOMPARE(rows32[0]->children[1]->children[1]->children[0]->value, QStringLiteral("11"));
+
+    auto rowsOther = render(QByteArray::fromHex("00000000" "02" "00" "0000" "02" "0C" "0000" "0A0B"));
+    QCOMPARE(rowsOther.size(), size_t(1));
+    QCOMPARE(rowsOther[0]->children.size(), size_t(1));
+}
+
+void StructViewTests::builderEvaluatesEnumIndexedUnionMembersInExpressions()
+{
+    // Scenario: a not-yet-rendered union branch contains an e_ident array, and a
+    // declaration tag indexes that array with enum constants.
+    // Expected: typed-layout field resolution, enum lookup, array indexing, and
+    // endian(expr) evaluation all compose for the branch path.
+    // Regression guard: definitions such as endian(header32.e_ident[EI_DATA] ==
+    // ELFDATA2MSB) should be reliable if we choose that spelling in ELF.
+    const char *definition =
+        "enum Ident { EI_DATA = 5, ELFDATA2MSB = 2 };\n"
+        "typedef struct _Header32 { byte e_ident[8]; word count; } Header32;\n"
+        "[export, endian(header32.e_ident[EI_DATA] == ELFDATA2MSB)]\n"
+        "struct Root {\n"
+        "  byte selector;\n"
+        "  [switch_is(selector)] union {\n"
+        "    [case(1)] Header32 header32;\n"
+        "  };\n"
+        "  [size_is(header32.count)] byte values[];\n"
+        "} root;\n";
+
+    auto render = [definition](const QByteArray &bytes) {
+        auto library = std::make_unique<TypeLibrary>();
+        Parser parser(library.get());
+        if (!parseBuffer(parser, definition))
+            return std::vector<std::unique_ptr<StructureRow>>();
+        return buildRows(library.get(), firstExported(library.get()), bytes);
+    };
+
+    auto littleRows = render(QByteArray::fromHex("01" "0000000000010000" "0300" "0A0B0C"));
+    QCOMPARE(littleRows.size(), size_t(1));
+    QCOMPARE(littleRows[0]->children[2]->children.size(), size_t(3));
+    QCOMPARE(littleRows[0]->children[2]->children[2]->value, QStringLiteral("12"));
+
+    auto bigRows = render(QByteArray::fromHex("01" "0000000000020000" "0003" "0A0B0C"));
+    QCOMPARE(bigRows.size(), size_t(1));
+    QCOMPARE(bigRows[0]->children[2]->children.size(), size_t(3));
+    QCOMPARE(bigRows[0]->children[2]->children[2]->value, QStringLiteral("12"));
 }
 
 void StructViewTests::builderRendersElf32AndElf64Tables()

@@ -63,11 +63,13 @@ struct Structure;
 struct Function;
 struct Type;
 struct TypeDecl;
+struct TagSet;
 struct FILEREF;
 
 typedef vector<Symbol *> SymbolTable;
 typedef vector<Type *> TypeList;
 typedef vector<TypeDecl *> TypeDeclList;
+typedef vector<TagSet *> TagSetList;
 
 Symbol *InstallSymbol(SymbolTable &table, char *name);
 Symbol *LookupSymbol(SymbolTable &table, char *name);
@@ -150,6 +152,26 @@ struct Tag
 	TOKEN			tok;
 	Tag			*	link;
 	ExprNode	*	expr;
+};
+
+struct TagSet
+{
+	TagSet(char *n) : tagList(0)
+	{
+		strcpy(name, n);
+	}
+
+	~TagSet()
+	{
+		delete tagList;
+	}
+
+	char			name[MAX_STRING_LEN];
+	Tag			*	tagList;
+
+	FILEREF			fileRef;
+	FILEREF			tagRef;
+	FILEREF			postRef;
 };
 
 struct Type

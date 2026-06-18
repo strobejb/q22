@@ -139,7 +139,8 @@ ExprNode * Parser::PostfixExpression(ExprNode *p)
 		case '.':
 			
 			Advance();
-			q = Expression(TOK_NULL);
+			q = PrimaryExpression();
+			q = PostfixExpression(q);
 			p = new ExprNode(EXPR_FIELD, op, p, q);
 			break;
 
@@ -147,7 +148,8 @@ ExprNode * Parser::PostfixExpression(ExprNode *p)
 		case TOK_DEREF:
 
 			Advance();
-			q = Expression(TOK_NULL);
+			q = PrimaryExpression();
+			q = PostfixExpression(q);
 			p = new ExprNode(EXPR_DEREF, op, p, q);
 			break;
 
@@ -647,7 +649,25 @@ ExprNode * CopyExpr(ExprNode *expr)
 
 	// copy the contents
 	expr2->brackets = expr->brackets;
-	expr2->val		= expr->val;
+	expr2->base		= expr->base;
+	switch(expr->type)
+	{
+	case EXPR_IDENTIFIER:
+	case EXPR_STRINGBUF:
+		expr2->str = expr->str ? _strdup(expr->str) : 0;
+		break;
+
+	case EXPR_NUMBER:
+		if(expr->tok == TOK_FNUMBER)
+			expr2->fval = expr->fval;
+		else
+			expr2->val = expr->val;
+		break;
+
+	default:
+		expr2->val = expr->val;
+		break;
+	}
 
 	// copy the children
 	expr2->left		= CopyExpr(expr->left);

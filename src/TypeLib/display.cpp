@@ -546,6 +546,20 @@ size_t DisplayTypeDecl(FILE *fp, TypeDecl *typeDecl, int indent)
 	return len;
 }
 
+size_t DisplayTagSet(FILE *fp, TagSet *tagSet)
+{
+	size_t len = 0;
+
+	if(!tagSet)
+		return 0;
+
+	len += fprintf(fp, "tagset %s", tagSet->name);
+	DisplayWhitespace(fp, &tagSet->tagRef);
+	len += DisplayTags(fp, tagSet->tagList);
+
+	return len;
+}
+
 void Parser::Dump(FILE *fp)
 {
 	size_t i;
@@ -562,6 +576,16 @@ void Parser::Dump(FILE *fp)
 
 		switch(stmt->stmtType)
 		{
+		case stmtTAGSET:
+
+			if(fPreserveWhitespace)
+				DisplayWhitespace(fp, &stmt->tagSet->fileRef);
+
+			DisplayTagSet(fp, stmt->tagSet);
+			fprintf(fp, ";");
+
+			break;
+
 		case stmtTYPEDECL:
 
 			typeDecl = stmt->typeDecl;

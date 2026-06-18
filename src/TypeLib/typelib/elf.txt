@@ -284,20 +284,9 @@ typedef struct _Elf64_Sym
 
 typedef struct _ELF
 {
-    byte ei_mag0;                       // ELF magic 0x7f
-    byte ei_mag1;                       // ELF magic 'E'
-    byte ei_mag2;                       // ELF magic 'L'
-    byte ei_mag3;                       // ELF magic 'F'
-    [enum(ELF_CLASS)]
-    byte ei_class;                      // 32-bit or 64-bit layout
-    [enum(ELF_DATA)]
-    byte ei_data;                       // Little or big endian encoding
-    byte ei_version;                    // ELF identification version
-    byte ei_osabi;                      // Target OS ABI
-    byte ei_abiversion;                 // ABI version
-    byte ei_pad[7];                     // Padding to EI_NIDENT
+    byte e_ident[EI_NIDENT];            // ELF identification bytes
 
-    [switch_is(ei_class)]
+    [switch_is(e_ident[EI_CLASS])]
     union
     {
         [case(ELFCLASS32)] Elf32_EhdrTail header32;
@@ -305,26 +294,26 @@ typedef struct _ELF
     };
 
     [
-        offset(header32.e_phoff),
-        size_is(header32.e_phnum)
+        offset(e_ident[EI_CLASS] == ELFCLASS32 ? header32.e_phoff : 0),
+        size_is(e_ident[EI_CLASS] == ELFCLASS32 ? header32.e_phnum : 0)
     ]
     Elf32_Phdr programHeaders32[];
 
     [
-        offset(header64.e_phoff),
-        size_is(header64.e_phnum)
+        offset(e_ident[EI_CLASS] == ELFCLASS64 ? header64.e_phoff : 0),
+        size_is(e_ident[EI_CLASS] == ELFCLASS64 ? header64.e_phnum : 0)
     ]
     Elf64_Phdr programHeaders64[];
 
     [
-        offset(header32.e_shoff),
-        size_is(header32.e_shnum)
+        offset(e_ident[EI_CLASS] == ELFCLASS32 ? header32.e_shoff : 0),
+        size_is(e_ident[EI_CLASS] == ELFCLASS32 ? header32.e_shnum : 0)
     ]
     Elf32_Shdr sectionHeaders32[];
 
     [
-        offset(header64.e_shoff),
-        size_is(header64.e_shnum)
+        offset(e_ident[EI_CLASS] == ELFCLASS64 ? header64.e_shoff : 0),
+        size_is(e_ident[EI_CLASS] == ELFCLASS64 ? header64.e_shnum : 0)
     ]
     Elf64_Shdr sectionHeaders64[];
 
@@ -334,7 +323,7 @@ typedef struct _ELF
     export,
     assoc(".elf", ".so", ".o"),
     offset(0),
-    endian(ei_data == 2),
+    endian(e_ident[EI_DATA] == ELFDATA2MSB),
     view("elf.sections")
 ]
 ELF elf;
