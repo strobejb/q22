@@ -18,6 +18,13 @@ enum class StructureRowKind
     Semantic
 };
 
+enum class StructureRowValueKind
+{
+    Custom,
+    ScalarInteger,
+    ScalarArrayPreview
+};
+
 struct StructureRow
 {
     explicit StructureRow(StructureRow *parentRow = nullptr);
@@ -40,6 +47,11 @@ struct StructureRow
     QString branchOpenIconPath;
     QString branchEmptyIconPath;
     QString value;
+    StructureRowValueKind valueKind = StructureRowValueKind::Custom;
+    uint64_t scalarRawValue = 0;
+    uint64_t scalarByteLength = 0;
+    bool scalarSigned = false;
+    QString scalarCharacterSuffix;
     QString offset;
     bool generatedOffset = false;
     QString comment;

@@ -282,7 +282,10 @@ uint64_t StructureRenderEngine::appendIdentifierRow(StructureRow *parent,
     {
         const QString arrayValue = scalarArrayValue(row.get(), type ? type->link : nullptr);
         if (!arrayValue.isNull())
+        {
+            row->valueKind = StructureRowValueKind::ScalarArrayPreview;
             row->value = arrayValue;
+        }
     }
     if (row->value.isEmpty() && !row->children.empty())
         row->value = QStringLiteral("{...}");
@@ -460,21 +463,33 @@ uint64_t StructureRenderEngine::formatScalar(StructureRow *row, Type *type, Type
     case typeCHAR:
     {
         const char ch = data[0] >= ' ' ? char(data[0]) : '.';
-        row->value = QStringLiteral("%1 '%2'").arg(raw).arg(QLatin1Char(ch));
+        row->valueKind = StructureRowValueKind::ScalarInteger;
+        row->scalarRawValue = raw;
+        row->scalarByteLength = length;
+        row->scalarSigned = false;
+        row->scalarCharacterSuffix = QStringLiteral(" '%1'").arg(QLatin1Char(ch));
+        row->value = formatStructureIntegerValue(raw, length, false, row->scalarCharacterSuffix, m_options);
         break;
     }
     case typeWCHAR:
-        row->value = QString::number(raw);
+        row->valueKind = StructureRowValueKind::ScalarInteger;
+        row->scalarRawValue = raw;
+        row->scalarByteLength = length;
+        row->scalarSigned = false;
+        row->scalarCharacterSuffix.clear();
+        row->value = formatStructureIntegerValue(raw, length, false, QString(), m_options);
         break;
     case typeBYTE:
     case typeWORD:
     case typeDWORD:
     case typeQWORD:
     {
-        if (FindType(type, typeSIGNED))
-            row->value = QString::number(signedValue(raw, length));
-        else
-            row->value = QString::number(raw);
+        row->valueKind = StructureRowValueKind::ScalarInteger;
+        row->scalarRawValue = raw;
+        row->scalarByteLength = length;
+        row->scalarSigned = FindType(type, typeSIGNED);
+        row->scalarCharacterSuffix.clear();
+        row->value = formatStructureIntegerValue(raw, length, row->scalarSigned, QString(), m_options);
         break;
     }
     case typeFLOAT:
@@ -493,7 +508,12 @@ uint64_t StructureRenderEngine::formatScalar(StructureRow *row, Type *type, Type
         break;
     }
     default:
-        row->value = QString::number(raw);
+        row->valueKind = StructureRowValueKind::ScalarInteger;
+        row->scalarRawValue = raw;
+        row->scalarByteLength = length;
+        row->scalarSigned = false;
+        row->scalarCharacterSuffix.clear();
+        row->value = formatStructureIntegerValue(raw, length, false, QString(), m_options);
         break;
     }
 

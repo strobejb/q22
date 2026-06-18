@@ -33,6 +33,8 @@
 
 #include <cmath>
 #include <cstdint>
+#include <functional>
+#include <utility>
 
 namespace
 {
@@ -70,6 +72,8 @@ bool useClassicPlusMinusExpanders()
 class StructureGridHeader : public QHeaderView
 {
 public:
+    using ContextMenuCallback = std::function<void(int column, const QPoint &globalPos)>;
+
     explicit StructureGridHeader(Qt::Orientation orientation, QWidget *parent = nullptr)
         : QHeaderView(orientation, parent)
     {
@@ -77,6 +81,11 @@ public:
         setHighlightSections(false);
         setSectionsClickable(false);
         setMouseTracking(true);
+    }
+
+    void setContextMenuCallback(ContextMenuCallback callback)
+    {
+        m_contextMenuCallback = std::move(callback);
     }
 
 protected:
@@ -128,11 +137,48 @@ protected:
         viewport()->update();
     }
 
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        if (m_contextMenuCallback
+            && (event->button() == Qt::LeftButton || event->button() == Qt::RightButton)
+            && !(event->button() == Qt::LeftButton && nearSectionResizeHandle(event->position().toPoint())))
+        {
+            const int logical = logicalIndexAt(event->position().toPoint());
+            if (logical >= 0)
+            {
+                m_contextMenuCallback(logical, mapToGlobal(event->position().toPoint()));
+                event->accept();
+                return;
+            }
+        }
+
+        QHeaderView::mousePressEvent(event);
+    }
+
     void leaveEvent(QEvent *event) override
     {
         QHeaderView::leaveEvent(event);
         viewport()->update();
     }
+
+private:
+    bool nearSectionResizeHandle(const QPoint &pos) const
+    {
+        constexpr int kResizeSlop = 4;
+        for (int visual = 0; visual < count() - 1; ++visual)
+        {
+            const int logical = logicalIndex(visual);
+            if (isSectionHidden(logical))
+                continue;
+
+            const int edgeX = sectionViewportPosition(logical) + sectionSize(logical);
+            if (qAbs(pos.x() - edgeX) <= kResizeSlop)
+                return true;
+        }
+        return false;
+    }
+
+    ContextMenuCallback m_contextMenuCallback;
 };
 
 class StructureGridView : public QTreeView
@@ -455,7 +501,11 @@ void StructureViewPanel::buildUi()
     m_tree->setObjectName(QStringLiteral("structureGrid"));
     m_tree->setModel(m_model);
     m_tree->setItemDelegate(new StructureGridItemDelegate(m_tree));
-    m_tree->setHeader(new StructureGridHeader(Qt::Horizontal, m_tree));
+    auto *gridHeader = new StructureGridHeader(Qt::Horizontal, m_tree);
+    gridHeader->setContextMenuCallback([this](int column, const QPoint &globalPos) {
+        showHeaderContextMenu(column, globalPos);
+    });
+    m_tree->setHeader(gridHeader);
     m_tree->setRootIsDecorated(true);
     m_tree->setAlternatingRowColors(false);
     m_tree->setUniformRowHeights(true);
@@ -731,29 +781,60 @@ void StructureViewPanel::applyInitialExpansion()
 
 void StructureViewPanel::showGridContextMenu(const QPoint &pos)
 {
+    showOptionsContextMenu(-1, m_tree ? m_tree->mapToGlobal(pos) : mapToGlobal(pos), true);
+}
+
+void StructureViewPanel::showHeaderContextMenu(int column, const QPoint &globalPos)
+{
+    showOptionsContextMenu(column, globalPos, false);
+}
+
+void StructureViewPanel::showOptionsContextMenu(int column, const QPoint &globalPos, bool includeAllColumns)
+{
     QMenu menu(this);
 
-    QAction *definedTypes = menu.addAction(tr("Use defined type names"));
-    definedTypes->setCheckable(true);
-    definedTypes->setChecked(m_useDefinedTypeNames);
-    connect(definedTypes, &QAction::triggered,
-            this, &StructureViewPanel::setUseDefinedTypeNames);
+    const auto addSeparatorIfNeeded = [&menu]() {
+        if (!menu.actions().isEmpty())
+            menu.addSeparator();
+    };
 
-    menu.addSeparator();
+    if (includeAllColumns || column == StructureTreeModel::NameColumn)
+    {
+        QAction *definedTypes = menu.addAction(tr("Use defined type names"));
+        definedTypes->setCheckable(true);
+        definedTypes->setChecked(m_useDefinedTypeNames);
+        connect(definedTypes, &QAction::triggered,
+                this, &StructureViewPanel::setUseDefinedTypeNames);
+    }
 
-    QAction *hexadecimalOffsets = menu.addAction(tr("Hexadecimal offsets"));
-    hexadecimalOffsets->setCheckable(true);
-    hexadecimalOffsets->setChecked(m_useHexadecimalOffsets);
-    connect(hexadecimalOffsets, &QAction::triggered,
-            this, &StructureViewPanel::setUseHexadecimalOffsets);
+    if (includeAllColumns || column == StructureTreeModel::ValueColumn)
+    {
+        addSeparatorIfNeeded();
+        QAction *hexadecimalValues = menu.addAction(includeAllColumns ? tr("Hexadecimal values") : tr("Hexadecimal"));
+        hexadecimalValues->setCheckable(true);
+        hexadecimalValues->setChecked(m_useHexadecimalValues);
+        connect(hexadecimalValues, &QAction::triggered,
+                this, &StructureViewPanel::setUseHexadecimalValues);
+    }
 
-    QAction *relativeOffsets = menu.addAction(tr("Relative offsets"));
-    relativeOffsets->setCheckable(true);
-    relativeOffsets->setChecked(m_useRelativeOffsets);
-    connect(relativeOffsets, &QAction::triggered,
-            this, &StructureViewPanel::setUseRelativeOffsets);
+    if (includeAllColumns || column == StructureTreeModel::OffsetColumn)
+    {
+        addSeparatorIfNeeded();
+        QAction *hexadecimalOffsets = menu.addAction(includeAllColumns ? tr("Hexadecimal offsets") : tr("Hexadecimal"));
+        hexadecimalOffsets->setCheckable(true);
+        hexadecimalOffsets->setChecked(m_useHexadecimalOffsets);
+        connect(hexadecimalOffsets, &QAction::triggered,
+                this, &StructureViewPanel::setUseHexadecimalOffsets);
 
-    menu.exec(m_tree ? m_tree->mapToGlobal(pos) : mapToGlobal(pos));
+        QAction *relativeOffsets = menu.addAction(tr("Relative offsets"));
+        relativeOffsets->setCheckable(true);
+        relativeOffsets->setChecked(m_useRelativeOffsets);
+        connect(relativeOffsets, &QAction::triggered,
+                this, &StructureViewPanel::setUseRelativeOffsets);
+    }
+
+    if (!menu.actions().isEmpty())
+        menu.exec(globalPos);
 }
 
 StructureDisplayOptions StructureViewPanel::displayOptions() const
@@ -762,6 +843,7 @@ StructureDisplayOptions StructureViewPanel::displayOptions() const
     options.typeNameMode = m_useDefinedTypeNames
         ? StructureTypeNameMode::Defined
         : StructureTypeNameMode::Storage;
+    options.hexadecimalValues = m_useHexadecimalValues;
     options.hexadecimalOffsets = m_useHexadecimalOffsets;
     options.relativeOffsets = m_useRelativeOffsets;
     return options;
@@ -779,6 +861,15 @@ void StructureViewPanel::setUseDefinedTypeNames(bool enabled)
         return;
 
     m_useDefinedTypeNames = enabled;
+    applyDisplayOptions();
+}
+
+void StructureViewPanel::setUseHexadecimalValues(bool enabled)
+{
+    if (m_useHexadecimalValues == enabled)
+        return;
+
+    m_useHexadecimalValues = enabled;
     applyDisplayOptions();
 }
 

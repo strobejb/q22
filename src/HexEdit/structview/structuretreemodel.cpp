@@ -4,6 +4,9 @@
 #include "structview/structuretypenameformatter.h"
 
 #include <QLatin1String>
+#include <QStringList>
+
+#include <algorithm>
 
 namespace
 {
@@ -309,6 +312,8 @@ void StructureTreeModel::setCellText(StructureRow *row, int column, const QStrin
         break;
     case ValueColumn:
         row->value = text;
+        row->valueKind = StructureRowValueKind::Custom;
+        row->scalarCharacterSuffix.clear();
         break;
     case OffsetColumn:
         row->offset = text;
@@ -411,6 +416,33 @@ void StructureTreeModel::applyDisplayOptionsToRow(StructureRow *row,
             ? this->index(childRow, NameColumn, index)
             : QModelIndex();
         applyDisplayOptionsToRow(row->children[childRow].get(), options, childIndex);
+    }
+
+    if (row->valueKind == StructureRowValueKind::ScalarInteger)
+    {
+        row->value = formatStructureIntegerValue(row->scalarRawValue,
+                                                 row->scalarByteLength,
+                                                 row->scalarSigned,
+                                                 row->scalarCharacterSuffix,
+                                                 options);
+    }
+    else if (row->valueKind == StructureRowValueKind::ScalarArrayPreview)
+    {
+        QStringList values;
+        const qsizetype previewCount = std::min<qsizetype>(row->children.size(), 8);
+        for (qsizetype i = 0; i < previewCount; ++i)
+            values.push_back(row->children[static_cast<size_t>(i)]->value);
+
+        if (row->children.size() > 8)
+            values.push_back(QStringLiteral("..."));
+
+        row->value = QStringLiteral("{ %1 }").arg(values.join(QStringLiteral(", ")));
+    }
+
+    if (row->valueKind != StructureRowValueKind::Custom && index.isValid())
+    {
+        const QModelIndex valueIndex = this->index(index.row(), ValueColumn, index.parent());
+        emit dataChanged(valueIndex, valueIndex, { Qt::DisplayRole, Qt::EditRole });
     }
 }
 

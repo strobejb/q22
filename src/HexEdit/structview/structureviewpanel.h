@@ -49,9 +49,12 @@ private:
     void rebuildRows();
     void applyInitialExpansion();
     void showGridContextMenu(const QPoint &pos);
+    void showHeaderContextMenu(int column, const QPoint &globalPos);
+    void showOptionsContextMenu(int column, const QPoint &globalPos, bool includeAllColumns);
     StructureDisplayOptions displayOptions() const;
     void applyDisplayOptions();
     void setUseDefinedTypeNames(bool enabled);
+    void setUseHexadecimalValues(bool enabled);
     void setUseHexadecimalOffsets(bool enabled);
     void setUseRelativeOffsets(bool enabled);
     void updateHexViewSelection(const QModelIndex &current);
@@ -72,9 +75,10 @@ private:
     QLabel                     *m_statusLabel = nullptr;
     int                         m_treeItemLeftPad = 6;
     bool                        m_pinned = false;
-    bool                        m_useDefinedTypeNames = true;
+    bool                        m_useDefinedTypeNames = false;
+    bool                        m_useHexadecimalValues = false;
     bool                        m_useHexadecimalOffsets = true;
-    bool                        m_useRelativeOffsets = false;
+    bool                        m_useRelativeOffsets = true;
     bool                        m_updatingHexViewFromStructure = false;
     bool                        m_rebuildingRows = false;
     uint64_t                    m_pinnedOffset = 0;
