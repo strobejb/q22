@@ -30,6 +30,7 @@ private:
 
     struct EvalContext;
     struct EndianScope;
+    struct AlignmentScope;
     struct OffsetMap
     {
         uint64_t logicalStart = 0;
@@ -72,12 +73,21 @@ private:
     bool offsetMapArgs(ExprNode *expr, ExprNode **logicalStart, ExprNode **logicalSize, ExprNode **fileOffset) const;
     TypeDecl *findTypeDecl(const char *name) const;
     DynamicContainer *mapLogicalOffset(uint64_t logicalOffset, uint64_t *fileOffset);
+    void resolveEntryPointRows(StructureRow *row);
 
     QString typeName(Type *type) const;
     QString formatOffset(uint64_t offset) const;
+    uint64_t alignedOffset(uint64_t offset, uint64_t alignment) const;
+    uint64_t declarationAlignment(TypeDecl *typeDecl,
+                                  StructureRow *scope,
+                                  Type *scopeType,
+                                  uint64_t scopeOffset,
+                                  uint64_t fallback) const;
     bool declarationBigEndian(TypeDecl *typeDecl, StructureRow *scope, Type *scopeType, uint64_t scopeOffset);
     Enum *tagEnum(TypeDecl *typeDecl) const;
     QString enumNameForValue(Enum *eptr, INUMTYPE value) const;
+    QStringList enumChoiceLabels(Enum *eptr) const;
+    void applyEntryPointTag(StructureRow *row, TypeDecl *typeDecl, Type *scopeType, uint64_t scopeOffset);
     void applyDeclarationName(StructureRow *row, Type *type) const;
     QString stringArrayValue(StructureRow *scope, Type *type, TypeDecl *typeDecl, uint64_t offset);
     QString scalarArrayValue(StructureRow *scope, Type *type) const;
@@ -88,6 +98,7 @@ private:
     TypeDecl *m_rootType = nullptr;
     uint64_t m_baseOffset = 0;
     bool m_bigEndian = false;
+    uint64_t m_structAlignment = 1;
     bool m_evaluatingEndian = false;
     StructureDisplayOptions m_options;
     StructureValueBuilder::ByteReader m_reader;

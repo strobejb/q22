@@ -14,11 +14,16 @@ class HexView;
 class QAction;
 class QLabel;
 class QLineEdit;
+class QPlainTextEdit;
+class QStackedWidget;
+class QToolButton;
 class QTreeView;
 class MenuComboBox;
+class StructureContentFrame;
 class StructureDefinitionManager;
 class StructureTreeModel;
 struct ExportedStructureType;
+struct StructureRow;
 struct TypeDecl;
 
 class StructureViewPanel : public QWidget
@@ -50,7 +55,16 @@ private:
     void applyInitialExpansion();
     void showGridContextMenu(const QPoint &pos);
     void showHeaderContextMenu(int column, const QPoint &globalPos);
-    void showOptionsContextMenu(int column, const QPoint &globalPos, bool includeAllColumns);
+    void showOptionsContextMenu(int column, const QPoint &globalPos, bool includeAllColumns, const QModelIndex &rowIndex = QModelIndex());
+    void expandSubtree(const QModelIndex &index);
+    void collapseSubtree(const QModelIndex &index);
+    void showGridPage();
+    void showSourcePage(TypeDecl *typeDecl = nullptr);
+    void showLogPage();
+    void updateContentFramePage();
+    void locateIndexInSource(const QModelIndex &index);
+    bool loadSourceFile(const QString &path, int line);
+    StructureRow *sourceRowForIndex(const QModelIndex &index) const;
     StructureDisplayOptions displayOptions() const;
     void applyDisplayOptions();
     void setUseDefinedTypeNames(bool enabled);
@@ -71,7 +85,12 @@ private:
     MenuComboBox               *m_rootCombo = nullptr;
     QLineEdit                  *m_offsetEdit = nullptr;
     QAction                    *m_pinAction = nullptr;
+    StructureContentFrame      *m_contentFrame = nullptr;
+    QToolButton                *m_logButton = nullptr;
+    QStackedWidget             *m_viewStack = nullptr;
     QTreeView                  *m_tree = nullptr;
+    QPlainTextEdit             *m_sourceView = nullptr;
+    QPlainTextEdit             *m_logView = nullptr;
     QLabel                     *m_statusLabel = nullptr;
     int                         m_treeItemLeftPad = 6;
     bool                        m_pinned = false;

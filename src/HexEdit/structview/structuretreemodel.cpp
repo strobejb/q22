@@ -125,6 +125,19 @@ QVariant StructureTreeModel::data(const QModelIndex &index, int role) const
     if (role == RowKindRole)
         return static_cast<int>(row->kind);
 
+    if (index.column() == ValueColumn)
+    {
+        switch (role)
+        {
+        case ValueChoicesRole:
+            return row->valueChoices;
+        case HasValueChoicesRole:
+            return !row->valueChoices.isEmpty();
+        default:
+            break;
+        }
+    }
+
     if (index.column() == NameColumn)
     {
         switch (role)
@@ -314,6 +327,7 @@ void StructureTreeModel::setCellText(StructureRow *row, int column, const QStrin
         row->value = text;
         row->valueKind = StructureRowValueKind::Custom;
         row->scalarCharacterSuffix.clear();
+        row->valueChoices.clear();
         break;
     case OffsetColumn:
         row->offset = text;

@@ -27,6 +27,10 @@ private slots:
     void builderFormatsCharacterArraysAsStrings();
     void builderFormatsScalarArraysAsPreviewLists();
     void builderPopulatesCommentsFromTypeDeclarations();
+    void builderUsesPackedLayoutByDefault();
+    void builderAppliesStructAndFieldAlignment();
+    void builderLetsOffsetOverrideAlignment();
+    void builderKeepsUnionMembersAtAlignedBase();
     void builderUsesSizeIsForUnsizedArrays();
     void builderEvaluatesTernaryExpressions();
     void builderUsesCommonUnionPrefixForSizeIs();
@@ -37,6 +41,7 @@ private slots:
     void builderAlignsFieldNamesWithinCompoundTypes();
     void builderBuildsNestedStructRowsAndOffsets();
     void builderSupportsArraysOffsetsEnumsAndSwitchCases();
+    void builderExposesEnumChoicesAndEntrypoints();
     void builderEvaluatesUnionSwitchSelectorsFromTypedLayout();
     void builderEvaluatesFieldsAndCorrectedExpressions();
     void builderUsesDynamicEndianExpressions();
@@ -446,6 +451,108 @@ void StructViewTests::builderPopulatesCommentsFromTypeDeclarations()
     QCOMPARE(rows[0]->children[1]->comment, QStringLiteral("flag bits"));
 }
 
+void StructViewTests::builderUsesPackedLayoutByDefault()
+{
+    // Scenario: a definition does not request any alignment.
+    // Expected: Structure View renders fields back-to-back, matching the packed
+    // default for this IDL dialect.
+    // Regression guard: adding align support must not silently switch existing
+    // definitions to compiler-like natural alignment.
+    TypeLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "[export]\n"
+                        "struct Root { byte a; dword b; } root;\n"));
+    TypeDecl *root = firstExported(&library);
+    QVERIFY(root);
+
+    QByteArray bytes(8, '\0');
+    auto rows = buildRows(&library, root, bytes);
+
+    QCOMPARE(rows[0]->children[0]->absoluteOffset, uint64_t(0));
+    QCOMPARE(rows[0]->children[1]->absoluteOffset, uint64_t(1));
+}
+
+void StructViewTests::builderAppliesStructAndFieldAlignment()
+{
+    // Scenario: a struct declares a default field alignment, and one member asks
+    // for a stronger alignment.
+    // Expected: the struct-level align applies to ordinary members, while the
+    // field-level align overrides it for that member only.
+    // Regression guard: align tags should work both as compound layout policy
+    // and as a local field placement override.
+    TypeLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "[export, align(4)]\n"
+                        "struct Root {\n"
+                        "  byte a;\n"
+                        "  dword b;\n"
+                        "  [align(8)] dword c;\n"
+                        "  byte d;\n"
+                        "} root;\n"));
+    TypeDecl *root = firstExported(&library);
+    QVERIFY(root);
+
+    QByteArray bytes(32, '\0');
+    auto rows = buildRows(&library, root, bytes);
+
+    QCOMPARE(rows[0]->children[0]->absoluteOffset, uint64_t(0));
+    QCOMPARE(rows[0]->children[1]->absoluteOffset, uint64_t(4));
+    QCOMPARE(rows[0]->children[2]->absoluteOffset, uint64_t(8));
+    QCOMPARE(rows[0]->children[3]->absoluteOffset, uint64_t(12));
+}
+
+void StructViewTests::builderLetsOffsetOverrideAlignment()
+{
+    // Scenario: a field has both an explicit offset and an alignment tag.
+    // Expected: offset is treated as authoritative file placement and is not
+    // rounded by align.
+    // Regression guard: PE/ELF definitions use offset for exact locations; align
+    // must not move those fields.
+    TypeLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "[export, align(8)]\n"
+                        "struct Root { byte a; [offset(2), align(8)] dword b; } root;\n"));
+    TypeDecl *root = firstExported(&library);
+    QVERIFY(root);
+
+    QByteArray bytes(16, '\0');
+    auto rows = buildRows(&library, root, bytes);
+
+    QCOMPARE(rows[0]->children[1]->absoluteOffset, uint64_t(2));
+}
+
+void StructViewTests::builderKeepsUnionMembersAtAlignedBase()
+{
+    // Scenario: a union field is placed in an aligned struct.
+    // Expected: the union itself is aligned as a field, but each union member
+    // starts at the same base offset.
+    // Regression guard: alignment must not accidentally serialize union members
+    // as if they were struct fields.
+    TypeLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "[export, align(4)]\n"
+                        "struct Root {\n"
+                        "  byte a;\n"
+                        "  union U { byte x; dword y; } u;\n"
+                        "  byte z;\n"
+                        "} root;\n"));
+    TypeDecl *root = firstExported(&library);
+    QVERIFY(root);
+
+    QByteArray bytes(16, '\0');
+    auto rows = buildRows(&library, root, bytes);
+    StructureRow *u = rows[0]->children[1].get();
+
+    QCOMPARE(u->absoluteOffset, uint64_t(4));
+    QCOMPARE(u->children[0]->absoluteOffset, uint64_t(4));
+    QCOMPARE(u->children[1]->absoluteOffset, uint64_t(4));
+    QCOMPARE(rows[0]->children[2]->absoluteOffset, uint64_t(8));
+}
+
 void StructViewTests::builderUsesSizeIsForUnsizedArrays()
 {
     // Scenario: a file format stores an array count in an earlier field, and
@@ -792,6 +899,38 @@ void StructViewTests::builderSupportsArraysOffsetsEnumsAndSwitchCases()
     QCOMPARE(rows[0]->children[1]->name, QStringLiteral("byte values[]"));
     QCOMPARE(rows[0]->children[3]->children[0]->name, QStringLiteral("word large"));
     QCOMPARE(rows[0]->children[3]->children[0]->value, QStringLiteral("4660"));
+}
+
+void StructViewTests::builderExposesEnumChoicesAndEntrypoints()
+{
+    // Scenario: a rendered field has an enum display tag, and another field
+    // identifies where executable code begins.
+    // Expected: the value row keeps the enum label choices for a combo editor,
+    // and the entrypoint row exposes a concrete file offset for UI integration.
+    // Regression guard: dropdown editing and disassembler handoff should be
+    // driven by renderer metadata, not by parsing display text in the delegate.
+    TypeLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "enum Kind { One = 1, Two = 2 };\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  [enum(\"Kind\")] byte kind;\n"
+                        "  [entrypoint(entryRva)] dword entryRva;\n"
+                        "} root;\n"));
+
+    const QByteArray bytes = QByteArray(4, '\0') + QByteArray::fromHex("02" "10000000");
+    auto rows = buildRows(&library, firstExported(&library), bytes, 4);
+    QCOMPARE(rows.size(), size_t(1));
+
+    StructureRow *kind = rows[0]->children[0].get();
+    QCOMPARE(kind->value, QStringLiteral("Two"));
+    QCOMPARE(kind->valueChoices, QStringList({ QStringLiteral("One"), QStringLiteral("Two") }));
+
+    StructureRow *entry = rows[0]->children[1].get();
+    QVERIFY(entry->hasCodeTarget);
+    QCOMPARE(entry->codeLogicalOffset, uint64_t(0x10));
+    QCOMPARE(entry->codeTargetOffset, uint64_t(0x14));
 }
 
 void StructViewTests::builderEvaluatesUnionSwitchSelectorsFromTypedLayout()

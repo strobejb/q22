@@ -121,6 +121,11 @@ QString StructureDefinitionManager::lastError() const
     return m_lastError;
 }
 
+QString StructureDefinitionManager::loadLog() const
+{
+    return m_loadLog.join(QLatin1Char('\n'));
+}
+
 bool StructureDefinitionManager::isLoaded() const
 {
     return m_loaded;
@@ -170,12 +175,18 @@ bool StructureDefinitionManager::reload()
     QDir().mkpath(userStructsDir());
 
     const QStringList files = discoverDefinitionFiles();
+    m_loadLog.clear();
+    m_loadLog.push_back(tr("Reloading structure definitions"));
+    for (const QString &file : files)
+        m_loadLog.push_back(tr("  %1").arg(QDir::toNativeSeparators(file)));
+
     auto              nextLibrary = std::make_unique<TypeLibrary>();
     QString           errorMessage;
     if (!parseFiles(files, nextLibrary.get(), &errorMessage))
     {
         m_loaded = true;
         m_lastError = errorMessage;
+        m_loadLog.push_back(tr("Failed: %1").arg(errorMessage));
         updateWatchedFiles(files);
         emit reloadFailed(errorMessage);
         return false;
@@ -184,6 +195,8 @@ bool StructureDefinitionManager::reload()
     m_library = std::move(nextLibrary);
     m_definitionFiles = files;
     m_lastError.clear();
+    m_loadLog.push_back(tr("Loaded %1 definition file(s)").arg(files.size()));
+    m_loadLog.push_back(tr("Exported type(s): %1").arg(exportedTypes().size()));
     m_loaded = true;
     updateWatchedFiles(files);
     emit definitionsReloaded();

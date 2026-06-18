@@ -13,6 +13,8 @@
 #include <QAction>
 #include <QComboBox>
 #include <QEvent>
+#include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QFrame>
 #include <QHeaderView>
@@ -25,8 +27,13 @@
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPainterPath>
+#include <QPlainTextEdit>
 #include <QStyle>
 #include <QStyleOptionHeader>
+#include <QStackedWidget>
+#include <QTextBlock>
+#include <QTextCursor>
 #include <QTreeView>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -51,6 +58,49 @@ enum class InitialStructureExpansion
 static constexpr InitialStructureExpansion kInitialStructureExpansion =
     InitialStructureExpansion::FirstLevelAndFirstField;
 static constexpr int kBranchIconSize = 16;
+
+static QFont structureSourceViewFont(const QFont &hexViewFont)
+{
+    QFont font = hexViewFont;
+    const QFont defaultFont = QApplication::font();
+
+    if (font.pointSizeF() > 0)
+    {
+        const qreal defaultSize = defaultFont.pointSizeF() > 0 ? defaultFont.pointSizeF() : font.pointSizeF();
+        font.setPointSizeF(qMax(defaultSize, font.pointSizeF() - 2.0));
+    }
+    else if (font.pixelSize() > 0)
+    {
+        const int defaultSize = defaultFont.pixelSize() > 0 ? defaultFont.pixelSize() : QFontMetrics(defaultFont).height();
+        font.setPixelSize(qMax(defaultSize, font.pixelSize() - 2));
+    }
+
+    return font;
+}
+
+static void applyStructureTextViewPalette(QPlainTextEdit *edit, HexView *hv)
+{
+    if (!edit)
+        return;
+
+    const QColor bgColor = hv ? QColor(hv->getHexColour(HVC_BACKGROUND))
+                              : edit->palette().color(QPalette::Base);
+    const QColor selBgColor = hv ? QColor(hv->getHexColour(HVC_SELECTION))
+                                 : edit->palette().color(QPalette::Highlight);
+    const QColor selFgColor = hv ? QColor(hv->getHexColour(HVC_SELTEXT))
+                                 : edit->palette().color(QPalette::HighlightedText);
+
+    QPalette editPalette = edit->palette();
+    editPalette.setColor(QPalette::Base, bgColor);
+    edit->setPalette(editPalette);
+    edit->setFrameShape(QFrame::NoFrame);
+    edit->setStyleSheet(
+        QStringLiteral("QPlainTextEdit#%1 { border: none; padding: 0;"
+                       " selection-background-color: %2; selection-color: %3; }")
+            .arg(edit->objectName(),
+                 filestats::cssColor(selBgColor),
+                 filestats::cssColor(selFgColor)));
+}
 
 qreal devicePixelSize(const QPainter *painter)
 {
@@ -386,6 +436,401 @@ private:
 };
 }
 
+class StructureContentFrame : public QWidget
+{
+public:
+    enum class Page
+    {
+        Struct,
+        Source,
+    };
+
+    enum class TabAlignment
+    {
+        Left,
+        Right,
+    };
+
+    explicit StructureContentFrame(QWidget *parent = nullptr)
+        : QWidget(parent)
+    {
+        setMouseTracking(true);
+
+        m_contentLayout = new QVBoxLayout(this);
+        m_contentLayout->setContentsMargins(kBorderWidth, kBorderWidth, kBorderWidth,
+                                            kTabHeight + kBorderWidth);
+        m_contentLayout->setSpacing(0);
+    }
+
+    void setContentWidget(QWidget *widget)
+    {
+        if (!widget)
+            return;
+        m_contentLayout->addWidget(widget);
+    }
+
+    void setStatusLabel(QLabel *label)
+    {
+        m_statusLabel = label;
+        if (m_statusLabel)
+        {
+            m_statusLabel->setParent(this);
+            m_statusLabel->setWordWrap(false);
+        }
+        updateFooterChildren();
+    }
+
+    void setLogButton(QToolButton *button)
+    {
+        m_logButton = button;
+        if (m_logButton)
+            m_logButton->setParent(this);
+        updateFooterChildren();
+    }
+
+    void setTabChangedCallback(std::function<void(Page)> callback)
+    {
+        m_tabChangedCallback = std::move(callback);
+    }
+
+    void setCurrentPage(Page page)
+    {
+        if (m_currentPage == page)
+            return;
+
+        m_currentPage = page;
+        update();
+    }
+
+    Page currentPage() const
+    {
+        return m_currentPage;
+    }
+
+    void setLogActive(bool active)
+    {
+        if (m_logActive == active)
+            return;
+
+        m_logActive = active;
+        update();
+    }
+
+    QSize sizeHint() const override
+    {
+        return QSize(420, 320);
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+
+        updateTabRects();
+        const QColor border = palette().color(QPalette::Mid);
+        const QColor base = palette().color(QPalette::Base);
+        const QColor footer = palette().color(QPalette::Window);
+
+        painter.fillRect(rect(), footer);
+        paintContentBody(&painter, base, border);
+
+        paintTab(&painter, m_structTabRect, tr("View"), Page::Struct);
+        paintTab(&painter, m_sourceTabRect, tr("Source"), Page::Source);
+    }
+
+    void resizeEvent(QResizeEvent *event) override
+    {
+        QWidget::resizeEvent(event);
+        updateTabRects();
+        updateFooterChildren();
+    }
+
+    void mouseMoveEvent(QMouseEvent *event) override
+    {
+        const int hoverTab = tabAt(event->pos());
+        if (m_hoverTab != hoverTab)
+        {
+            m_hoverTab = hoverTab;
+            update();
+        }
+        setCursor(hoverTab >= 0 ? Qt::PointingHandCursor : Qt::ArrowCursor);
+        QWidget::mouseMoveEvent(event);
+    }
+
+    void leaveEvent(QEvent *event) override
+    {
+        m_hoverTab = -1;
+        unsetCursor();
+        update();
+        QWidget::leaveEvent(event);
+    }
+
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton)
+        {
+            const int tab = tabAt(event->pos());
+            if (tab >= 0)
+            {
+                const Page page = tab == 0 ? Page::Struct : Page::Source;
+                if (m_tabChangedCallback)
+                    m_tabChangedCallback(page);
+                event->accept();
+                return;
+            }
+        }
+
+        QWidget::mousePressEvent(event);
+    }
+
+private:
+    static constexpr int kRadius = 6;
+    static constexpr int kBorderWidth = 1;
+    static constexpr int kTabHeight = 24;
+    static constexpr int kTabHorzPad = 14;
+    static constexpr int kFooterPad = 6;
+    static constexpr int kFooterGap = 6;
+    static constexpr TabAlignment kTabAlignment = TabAlignment::Right;
+
+    int tabTop() const
+    {
+        return height() - kTabHeight;
+    }
+
+    QRectF contentBodyRect() const
+    {
+        return QRectF(0.5, 0.5, qMax(0, width() - 1), qMax(0, tabTop()));
+    }
+
+    void updateTabRects()
+    {
+        const QFontMetrics metrics(font());
+        const int structW = metrics.horizontalAdvance(tr("View")) + 2 * kTabHorzPad;
+        const int sourceW = metrics.horizontalAdvance(tr("Source")) + 2 * kTabHorzPad;
+        const int y = tabTop();
+
+        if (kTabAlignment == TabAlignment::Right)
+        {
+            const int sourceX = width() - kFooterPad - sourceW;
+            const int structX = sourceX - structW + 1;
+            m_structTabRect = QRect(structX, y, structW, kTabHeight);
+            m_sourceTabRect = QRect(sourceX, y, sourceW, kTabHeight);
+        }
+        else
+        {
+            const int structX = kFooterPad;
+            const int sourceX = structX + structW - 1;
+            m_structTabRect = QRect(structX, y, structW, kTabHeight);
+            m_sourceTabRect = QRect(sourceX, y, sourceW, kTabHeight);
+        }
+    }
+
+    QRect tabGroupRect() const
+    {
+        return m_structTabRect.united(m_sourceTabRect);
+    }
+
+    void updateFooterChildren()
+    {
+        updateTabRects();
+
+        const QRect tabs = tabGroupRect();
+        const int footerTop = tabTop();
+        const int buttonSize = qMax(0, kTabHeight - 4);
+        QRect logRect;
+        QRect labelRect;
+
+        if (kTabAlignment == TabAlignment::Right)
+        {
+            logRect = QRect(tabs.left() - kFooterGap - buttonSize,
+                            footerTop + (kTabHeight - buttonSize) / 2,
+                            buttonSize,
+                            buttonSize);
+            labelRect = QRect(kFooterPad,
+                              footerTop,
+                              qMax(0, logRect.left() - kFooterGap - kFooterPad),
+                              kTabHeight);
+        }
+        else
+        {
+            logRect = QRect(tabs.right() + 1 + kFooterGap,
+                            footerTop + (kTabHeight - buttonSize) / 2,
+                            buttonSize,
+                            buttonSize);
+            labelRect = QRect(logRect.right() + 1 + kFooterGap,
+                              footerTop,
+                              qMax(0, width() - (logRect.right() + 1 + kFooterGap + kFooterPad)),
+                              kTabHeight);
+        }
+
+        if (m_logButton)
+        {
+            m_logButton->setGeometry(logRect);
+            m_logButton->setVisible(logRect.width() > 0 && logRect.left() >= 0 && logRect.right() < width());
+        }
+
+        if (m_statusLabel)
+            m_statusLabel->setGeometry(labelRect);
+    }
+
+    int tabAt(const QPoint &pos) const
+    {
+        if (m_structTabRect.contains(pos))
+            return 0;
+        if (m_sourceTabRect.contains(pos))
+            return 1;
+        return -1;
+    }
+
+    void paintContentBody(QPainter *painter, const QColor &base, const QColor &border)
+    {
+        if (!painter)
+            return;
+
+        const QRectF body = contentBodyRect();
+        if (body.width() <= 0.0 || body.height() <= 0.0)
+            return;
+
+        QPainterPath fillPath;
+        fillPath.moveTo(body.left() + kRadius, body.top());
+        fillPath.lineTo(body.right() - kRadius, body.top());
+        fillPath.quadTo(body.right(), body.top(), body.right(), body.top() + kRadius);
+        fillPath.lineTo(body.right(), body.bottom());
+        fillPath.lineTo(body.left() + kRadius, body.bottom());
+        fillPath.quadTo(body.left(), body.bottom(), body.left(), body.bottom() - kRadius);
+        fillPath.lineTo(body.left(), body.top() + kRadius);
+        fillPath.quadTo(body.left(), body.top(), body.left() + kRadius, body.top());
+        fillPath.closeSubpath();
+        painter->fillPath(fillPath, base);
+
+        QPainterPath borderPath;
+        borderPath.moveTo(body.left() + kRadius, body.top());
+        borderPath.lineTo(body.right() - kRadius, body.top());
+        borderPath.quadTo(body.right(), body.top(), body.right(), body.top() + kRadius);
+        borderPath.lineTo(body.right(), body.bottom());
+
+        const QRect activeTab = activeTabRect();
+        if (!activeTab.isValid())
+        {
+            borderPath.lineTo(body.left() + kRadius, body.bottom());
+        }
+        else
+        {
+            borderPath.lineTo(activeTab.right() + 0.5, body.bottom());
+            borderPath.moveTo(activeTab.left() + 0.5, body.bottom());
+            borderPath.lineTo(body.left() + kRadius, body.bottom());
+        }
+
+        borderPath.quadTo(body.left(), body.bottom(), body.left(), body.bottom() - kRadius);
+        borderPath.lineTo(body.left(), body.top() + kRadius);
+        borderPath.quadTo(body.left(), body.top(), body.left() + kRadius, body.top());
+
+        painter->setPen(QPen(border, 1.0));
+        painter->setBrush(Qt::NoBrush);
+        painter->drawPath(borderPath);
+    }
+
+    QRect activeTabRect() const
+    {
+        if (m_logActive)
+            return QRect();
+        return m_currentPage == Page::Struct ? m_structTabRect : m_sourceTabRect;
+    }
+
+    void paintTab(QPainter *painter, const QRect &rect, const QString &text, Page page)
+    {
+        if (!painter || !rect.isValid())
+            return;
+
+        const bool active = !m_logActive && m_currentPage == page;
+        const bool hovered = tabAt(mapFromGlobal(QCursor::pos())) >= 0
+            && ((page == Page::Struct && m_hoverTab == 0) || (page == Page::Source && m_hoverTab == 1));
+        const QColor border = palette().color(QPalette::Mid);
+        const QColor fill = active ? palette().color(QPalette::Base)
+            : hovered ? palette().color(QPalette::Button).lighter(104)
+                      : palette().color(QPalette::Button);
+        const QColor textColor = active || hovered
+            ? palette().color(QPalette::WindowText)
+            : filestats::subduedTextColor(palette());
+
+        QRectF tabRect(rect);
+        tabRect.adjust(0.5, 0.5, -0.5, -0.5);
+
+        if (active)
+        {
+            QPainterPath fillPath;
+            fillPath.moveTo(tabRect.left(), tabRect.top());
+            fillPath.lineTo(tabRect.right(), tabRect.top());
+            fillPath.lineTo(tabRect.right(), tabRect.bottom() - kRadius);
+            fillPath.quadTo(tabRect.right(), tabRect.bottom(),
+                            tabRect.right() - kRadius, tabRect.bottom());
+            fillPath.lineTo(tabRect.left() + kRadius, tabRect.bottom());
+            fillPath.quadTo(tabRect.left(), tabRect.bottom(),
+                            tabRect.left(), tabRect.bottom() - kRadius);
+            fillPath.lineTo(tabRect.left(), tabRect.top());
+            fillPath.closeSubpath();
+            painter->fillPath(fillPath, fill);
+
+            QPainterPath borderPath;
+            borderPath.moveTo(tabRect.left(), tabRect.top());
+            borderPath.lineTo(tabRect.left(), tabRect.bottom() - kRadius);
+            borderPath.quadTo(tabRect.left(), tabRect.bottom(),
+                              tabRect.left() + kRadius, tabRect.bottom());
+            borderPath.lineTo(tabRect.right() - kRadius, tabRect.bottom());
+            borderPath.quadTo(tabRect.right(), tabRect.bottom(),
+                              tabRect.right(), tabRect.bottom() - kRadius);
+            borderPath.lineTo(tabRect.right(), tabRect.top());
+            painter->setPen(QPen(border, 1.0));
+            painter->setBrush(Qt::NoBrush);
+            painter->drawPath(borderPath);
+        }
+        else
+        {
+            QPainterPath fillPath;
+            fillPath.moveTo(tabRect.left(), tabRect.top());
+            fillPath.lineTo(tabRect.right(), tabRect.top());
+            fillPath.lineTo(tabRect.right(), tabRect.bottom() - kRadius);
+            fillPath.quadTo(tabRect.right(), tabRect.bottom(),
+                            tabRect.right() - kRadius, tabRect.bottom());
+            fillPath.lineTo(tabRect.left() + kRadius, tabRect.bottom());
+            fillPath.quadTo(tabRect.left(), tabRect.bottom(),
+                            tabRect.left(), tabRect.bottom() - kRadius);
+            fillPath.lineTo(tabRect.left(), tabRect.top());
+            fillPath.closeSubpath();
+            painter->fillPath(fillPath, fill);
+
+            QPainterPath borderPath;
+            borderPath.moveTo(tabRect.left(), tabRect.top());
+            borderPath.lineTo(tabRect.right(), tabRect.top());
+            borderPath.lineTo(tabRect.right(), tabRect.bottom() - kRadius);
+            borderPath.quadTo(tabRect.right(), tabRect.bottom(),
+                              tabRect.right() - kRadius, tabRect.bottom());
+            borderPath.lineTo(tabRect.left() + kRadius, tabRect.bottom());
+            borderPath.quadTo(tabRect.left(), tabRect.bottom(),
+                              tabRect.left(), tabRect.bottom() - kRadius);
+            borderPath.lineTo(tabRect.left(), tabRect.top());
+            painter->setPen(QPen(border, 1.0));
+            painter->setBrush(Qt::NoBrush);
+            painter->drawPath(borderPath);
+        }
+
+        painter->setPen(textColor);
+        painter->drawText(rect.adjusted(kTabHorzPad, 0, -kTabHorzPad, -1),
+                          Qt::AlignCenter, text);
+    }
+
+    QVBoxLayout *m_contentLayout = nullptr;
+    QLabel *m_statusLabel = nullptr;
+    QToolButton *m_logButton = nullptr;
+    QRect m_structTabRect;
+    QRect m_sourceTabRect;
+    Page m_currentPage = Page::Struct;
+    bool m_logActive = false;
+    int m_hoverTab = -1;
+    std::function<void(Page)> m_tabChangedCallback;
+};
+
 StructureViewPanel::StructureViewPanel(HexView *hv, QWidget *parent)
     : QWidget(parent)
     , m_hv(hv)
@@ -483,21 +928,13 @@ void StructureViewPanel::buildUi()
     contentLay->addLayout(optLay);
     contentLay->addSpacing(4);
 
-    auto *gridFrame = new QFrame(content);
-    gridFrame->setObjectName(QStringLiteral("structureGridFrame"));
-    gridFrame->setStyleSheet(QStringLiteral(R"(
-        QFrame#structureGridFrame {
-            background: palette(base);
-            border: 1px solid palette(mid);
-            border-radius: 6px;
-        }
-    )"));
+    m_contentFrame = new StructureContentFrame(content);
+    m_contentFrame->setObjectName(QStringLiteral("structureContentFrame"));
 
-    auto *gridLay = new QVBoxLayout(gridFrame);
-    gridLay->setContentsMargins(1, 1, 1, 1);
-    gridLay->setSpacing(0);
+    m_viewStack = new QStackedWidget(m_contentFrame);
+    m_viewStack->setObjectName(QStringLiteral("structureViewStack"));
 
-    m_tree = new StructureGridView(gridFrame);
+    m_tree = new StructureGridView(m_viewStack);
     m_tree->setObjectName(QStringLiteral("structureGrid"));
     m_tree->setModel(m_model);
     m_tree->setItemDelegate(new StructureGridItemDelegate(m_tree));
@@ -545,13 +982,46 @@ void StructureViewPanel::buildUi()
         updateTreeSelectionPalette();
     }
 
-    gridLay->addWidget(m_tree);
-    contentLay->addWidget(gridFrame, 1);
+    m_sourceView = new QPlainTextEdit(m_viewStack);
+    m_sourceView->setReadOnly(false);
+    m_sourceView->document()->setDocumentMargin(6.0);
+    m_sourceView->setFont(structureSourceViewFont(m_hv ? m_hv->font() : font()));
+    m_sourceView->setLineWrapMode(QPlainTextEdit::NoWrap);
+    m_sourceView->setObjectName(QStringLiteral("structureSourceView"));
+    applyStructureTextViewPalette(m_sourceView, m_hv);
 
-    m_statusLabel = new QLabel(content);
+    m_logView = new QPlainTextEdit(m_viewStack);
+    m_logView->setReadOnly(true);
+    m_logView->document()->setDocumentMargin(6.0);
+    m_logView->setObjectName(QStringLiteral("structureLogView"));
+    applyStructureTextViewPalette(m_logView, m_hv);
+
+    m_viewStack->addWidget(m_tree);
+    m_viewStack->addWidget(m_sourceView);
+    m_viewStack->addWidget(m_logView);
+
+    m_contentFrame->setContentWidget(m_viewStack);
+
+    m_logButton = new QToolButton(m_contentFrame);
+    m_logButton->setAutoRaise(true);
+    m_logButton->setCursor(Qt::PointingHandCursor);
+    m_logButton->setIcon(recoloredIcon(QStringLiteral("actions/terminal"),
+                                       palette().color(QPalette::WindowText), 16));
+    m_logButton->setToolTip(tr("Show definition log"));
+
+    m_statusLabel = new QLabel(m_contentFrame);
     m_statusLabel->setTextFormat(Qt::PlainText);
-    m_statusLabel->setWordWrap(true);
-    contentLay->addWidget(m_statusLabel);
+    m_statusLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    m_contentFrame->setStatusLabel(m_statusLabel);
+    m_contentFrame->setLogButton(m_logButton);
+    m_contentFrame->setTabChangedCallback([this](StructureContentFrame::Page page) {
+        if (page == StructureContentFrame::Page::Struct)
+            showGridPage();
+        else
+            showSourcePage(selectedRootType());
+    });
+
+    contentLay->addWidget(m_contentFrame, 1);
 
     rootLay->addWidget(content, 1);
 
@@ -579,6 +1049,20 @@ void StructureViewPanel::buildUi()
             });
     connect(m_pinAction, &QAction::triggered,
             this, [this]() { setPinned(!m_pinned); });
+    connect(m_logButton, &QToolButton::clicked,
+            this, [this]() {
+                if (m_viewStack && m_viewStack->currentWidget() == m_logView)
+                {
+                    if (m_contentFrame && m_contentFrame->currentPage() == StructureContentFrame::Page::Source)
+                        showSourcePage(selectedRootType());
+                    else
+                        showGridPage();
+                }
+                else
+                {
+                    showLogPage();
+                }
+            });
     connect(m_rootCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, [this](int) { rebuildRows(); });
 }
@@ -781,7 +1265,8 @@ void StructureViewPanel::applyInitialExpansion()
 
 void StructureViewPanel::showGridContextMenu(const QPoint &pos)
 {
-    showOptionsContextMenu(-1, m_tree ? m_tree->mapToGlobal(pos) : mapToGlobal(pos), true);
+    const QModelIndex rowIndex = m_tree ? m_tree->indexAt(pos).siblingAtColumn(StructureTreeModel::NameColumn) : QModelIndex();
+    showOptionsContextMenu(-1, m_tree ? m_tree->mapToGlobal(pos) : mapToGlobal(pos), true, rowIndex);
 }
 
 void StructureViewPanel::showHeaderContextMenu(int column, const QPoint &globalPos)
@@ -789,7 +1274,7 @@ void StructureViewPanel::showHeaderContextMenu(int column, const QPoint &globalP
     showOptionsContextMenu(column, globalPos, false);
 }
 
-void StructureViewPanel::showOptionsContextMenu(int column, const QPoint &globalPos, bool includeAllColumns)
+void StructureViewPanel::showOptionsContextMenu(int column, const QPoint &globalPos, bool includeAllColumns, const QModelIndex &rowIndex)
 {
     QMenu menu(this);
 
@@ -798,8 +1283,51 @@ void StructureViewPanel::showOptionsContextMenu(int column, const QPoint &global
             menu.addSeparator();
     };
 
+    if (rowIndex.isValid() && m_model && m_model->hasChildren(rowIndex))
+    {
+        QAction *expand = menu.addAction(tr("Expand"));
+        connect(expand, &QAction::triggered,
+                this, [this, rowIndex]() { m_tree->expand(rowIndex); });
+
+        QAction *collapse = menu.addAction(tr("Collapse"));
+        connect(collapse, &QAction::triggered,
+                this, [this, rowIndex]() { m_tree->collapse(rowIndex); });
+
+        QAction *expandTree = menu.addAction(tr("Expand subtree"));
+        connect(expandTree, &QAction::triggered,
+                this, [this, rowIndex]() { expandSubtree(rowIndex); });
+
+        QAction *collapseTree = menu.addAction(tr("Collapse subtree"));
+        connect(collapseTree, &QAction::triggered,
+                this, [this, rowIndex]() { collapseSubtree(rowIndex); });
+    }
+
+    if (sourceRowForIndex(rowIndex))
+    {
+        addSeparatorIfNeeded();
+        QAction *locateSource = menu.addAction(tr("Locate in source"));
+        connect(locateSource, &QAction::triggered,
+                this, [this, rowIndex]() { locateIndexInSource(rowIndex); });
+    }
+
+    if (StructureRow *row = m_model && rowIndex.isValid() ? m_model->rowForIndex(rowIndex) : nullptr)
+    {
+        if (row->hasCodeTarget && m_hv)
+        {
+            addSeparatorIfNeeded();
+            QAction *openCode = menu.addAction(tr("Open in Disassembler"));
+            connect(openCode, &QAction::triggered,
+                    this, [this, row]() {
+                        const size_w offset = static_cast<size_w>(row->codeTargetOffset);
+                        m_hv->setCurSel(offset, offset, true);
+                        m_hv->scrollCenterIfOffScreen(offset, 1);
+                    });
+        }
+    }
+
     if (includeAllColumns || column == StructureTreeModel::NameColumn)
     {
+        addSeparatorIfNeeded();
         QAction *definedTypes = menu.addAction(tr("Use defined type names"));
         definedTypes->setCheckable(true);
         definedTypes->setChecked(m_useDefinedTypeNames);
@@ -835,6 +1363,145 @@ void StructureViewPanel::showOptionsContextMenu(int column, const QPoint &global
 
     if (!menu.actions().isEmpty())
         menu.exec(globalPos);
+}
+
+void StructureViewPanel::expandSubtree(const QModelIndex &index)
+{
+    if (!m_tree || !m_model || !index.isValid())
+        return;
+
+    m_tree->expand(index);
+    const int rows = m_model->rowCount(index);
+    for (int row = 0; row < rows; ++row)
+        expandSubtree(m_model->index(row, StructureTreeModel::NameColumn, index));
+}
+
+void StructureViewPanel::collapseSubtree(const QModelIndex &index)
+{
+    if (!m_tree || !m_model || !index.isValid())
+        return;
+
+    const int rows = m_model->rowCount(index);
+    for (int row = 0; row < rows; ++row)
+        collapseSubtree(m_model->index(row, StructureTreeModel::NameColumn, index));
+    m_tree->collapse(index);
+}
+
+void StructureViewPanel::showGridPage()
+{
+    if (m_viewStack && m_tree)
+        m_viewStack->setCurrentWidget(m_tree);
+    if (m_contentFrame)
+    {
+        m_contentFrame->setCurrentPage(StructureContentFrame::Page::Struct);
+        m_contentFrame->setLogActive(false);
+    }
+}
+
+void StructureViewPanel::showSourcePage(TypeDecl *typeDecl)
+{
+    if (!m_viewStack || !m_sourceView)
+        return;
+
+    QString path;
+    int line = 0;
+    if (typeDecl && typeDecl->fileRef.fileDesc)
+    {
+        path = QString::fromLocal8Bit(typeDecl->fileRef.fileDesc->filePath);
+        line = static_cast<int>(typeDecl->fileRef.lineNo);
+    }
+
+    if (loadSourceFile(path, line))
+    {
+        m_viewStack->setCurrentWidget(m_sourceView);
+        if (m_contentFrame)
+        {
+            m_contentFrame->setCurrentPage(StructureContentFrame::Page::Source);
+            m_contentFrame->setLogActive(false);
+        }
+    }
+}
+
+void StructureViewPanel::showLogPage()
+{
+    if (!m_viewStack || !m_logView || !m_definitions)
+        return;
+
+    m_logView->setPlainText(m_definitions->loadLog());
+    m_viewStack->setCurrentWidget(m_logView);
+    if (m_contentFrame)
+        m_contentFrame->setLogActive(true);
+}
+
+void StructureViewPanel::updateContentFramePage()
+{
+    if (!m_contentFrame || !m_viewStack)
+        return;
+
+    if (m_viewStack->currentWidget() == m_logView)
+    {
+        m_contentFrame->setLogActive(true);
+        return;
+    }
+
+    m_contentFrame->setLogActive(false);
+    m_contentFrame->setCurrentPage(m_viewStack->currentWidget() == m_sourceView
+                                       ? StructureContentFrame::Page::Source
+                                       : StructureContentFrame::Page::Struct);
+}
+
+void StructureViewPanel::locateIndexInSource(const QModelIndex &index)
+{
+    StructureRow *row = sourceRowForIndex(index);
+    if (!row)
+        return;
+
+    if (loadSourceFile(row->sourcePath, row->sourceLine) && m_viewStack && m_sourceView)
+    {
+        m_viewStack->setCurrentWidget(m_sourceView);
+        updateContentFramePage();
+    }
+}
+
+bool StructureViewPanel::loadSourceFile(const QString &path, int line)
+{
+    if (!m_sourceView || path.isEmpty())
+        return false;
+
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+    {
+        m_sourceView->setPlainText(tr("Unable to open %1").arg(QDir::toNativeSeparators(path)));
+        return true;
+    }
+
+    m_sourceView->setPlainText(QString::fromUtf8(file.readAll()));
+    if (line > 0)
+    {
+        QTextBlock block = m_sourceView->document()->findBlockByNumber(line - 1);
+        if (block.isValid())
+        {
+            QTextCursor cursor(block);
+            m_sourceView->setTextCursor(cursor);
+            m_sourceView->centerCursor();
+        }
+    }
+    return true;
+}
+
+StructureRow *StructureViewPanel::sourceRowForIndex(const QModelIndex &index) const
+{
+    if (!m_model || !index.isValid())
+        return nullptr;
+
+    StructureRow *row = m_model->rowForIndex(index);
+    while (row)
+    {
+        if (!row->sourcePath.isEmpty())
+            return row;
+        row = row->parent;
+    }
+    return nullptr;
 }
 
 StructureDisplayOptions StructureViewPanel::displayOptions() const

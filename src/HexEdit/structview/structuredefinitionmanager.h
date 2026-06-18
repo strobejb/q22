@@ -32,6 +32,7 @@ public:
     QStringList definitionFiles() const;
     QList<ExportedStructureType> exportedTypes() const;
     QString lastError() const;
+    QString loadLog() const;
     bool isLoaded() const;
 
     QString userStructsDir() const;
@@ -61,6 +62,7 @@ private:
     QStringList                  m_builtinDirsOverride;
     QString                      m_userDirOverride;
     QString                      m_lastError;
+    QStringList                  m_loadLog;
     bool                         m_loaded = false;
 };
 

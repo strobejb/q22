@@ -7,6 +7,7 @@
 #include <QAbstractItemModel>
 #include <QList>
 #include <QString>
+#include <QStringList>
 
 #include <memory>
 #include <vector>
@@ -52,13 +53,20 @@ struct StructureRow
     uint64_t scalarByteLength = 0;
     bool scalarSigned = false;
     QString scalarCharacterSuffix;
+    QStringList valueChoices;
     QString offset;
     bool generatedOffset = false;
     QString comment;
     Type *type = nullptr;
     TypeDecl *typeDecl = nullptr;
+    FILEREF sourceRef;
+    QString sourcePath;
+    int sourceLine = 0;
     StructureRowKind kind = StructureRowKind::Raw;
     bool bigEndian = false;
+    bool hasCodeTarget = false;
+    uint64_t codeLogicalOffset = 0;
+    uint64_t codeTargetOffset = 0;
     uint64_t absoluteOffset = 0;
     uint64_t relativeOffset = 0;
     uint64_t byteLength = 0;
@@ -88,7 +96,9 @@ public:
         BranchIconPathRole,
         BranchOpenIconPathRole,
         BranchEmptyIconPathRole,
-        RowKindRole
+        RowKindRole,
+        ValueChoicesRole,
+        HasValueChoicesRole
     };
 
     explicit StructureTreeModel(QObject *parent = nullptr);

@@ -3,11 +3,13 @@
 #include "structview/structuretreemodel.h"
 
 #include <QApplication>
+#include <QComboBox>
 #include <QFont>
 #include <QFontMetrics>
 #include <QIcon>
 #include <QLineEdit>
 #include <QPainter>
+#include <QStyleOptionComboBox>
 #include <QTreeView>
 
 #include <algorithm>
@@ -70,6 +72,18 @@ void StructureGridItemDelegate::paint(QPainter *painter,
 
     QStyledItemDelegate::paint(painter, opt, index);
 
+    if (index.column() == StructureTreeModel::ValueColumn
+        && index.data(StructureTreeModel::HasValueChoicesRole).toBool())
+    {
+        QStyleOptionComboBox combo;
+        combo.rect = QRect(opt.rect.right() - 18, opt.rect.top() + 2, 16, qMax(0, opt.rect.height() - 4));
+        combo.state = QStyle::State_Enabled;
+        combo.palette = opt.palette;
+        const QWidget *widget = opt.widget;
+        QStyle *style = widget ? widget->style() : QApplication::style();
+        style->drawPrimitive(QStyle::PE_IndicatorArrowDown, &combo, painter, widget);
+    }
+
     if (isEditingIndex(index))
         return;
 
@@ -111,6 +125,25 @@ QWidget *StructureGridItemDelegate::createEditor(QWidget *parent,
     if (parent)
         parent->update(option.rect);
 
+    if (index.column() == StructureTreeModel::ValueColumn
+        && index.data(StructureTreeModel::HasValueChoicesRole).toBool())
+    {
+        auto *combo = new QComboBox(parent);
+        combo->setFrame(false);
+        combo->setEditable(false);
+        combo->addItems(index.data(StructureTreeModel::ValueChoicesRole).toStringList());
+        combo->setAutoFillBackground(true);
+        combo->setStyleSheet(QStringLiteral(
+            "QComboBox {"
+            " border: none;"
+            " border-radius: 0px;"
+            " padding: 0px;"
+            " margin: 0px;"
+            " background: palette(base);"
+            "}"));
+        return combo;
+    }
+
     auto *edit = new QLineEdit(parent);
     edit->setFrame(false);
     edit->setAutoFillBackground(true);
@@ -135,6 +168,13 @@ void StructureGridItemDelegate::setEditorData(QWidget *editor, const QModelIndex
         return;
     }
 
+    if (auto *combo = qobject_cast<QComboBox *>(editor))
+    {
+        const int match = combo->findText(index.data(Qt::EditRole).toString());
+        combo->setCurrentIndex(match >= 0 ? match : 0);
+        return;
+    }
+
     QStyledItemDelegate::setEditorData(editor, index);
 }
 
@@ -146,6 +186,12 @@ void StructureGridItemDelegate::setModelData(QWidget *editor, QAbstractItemModel
         return;
     }
 
+    if (auto *combo = qobject_cast<QComboBox *>(editor))
+    {
+        model->setData(index, combo->currentText(), Qt::EditRole);
+        return;
+    }
+
     QStyledItemDelegate::setModelData(editor, model, index);
 }
 
@@ -154,7 +200,7 @@ void StructureGridItemDelegate::updateEditorGeometry(QWidget *editor,
                                                      const QModelIndex &index) const
 {
     auto *edit = qobject_cast<QLineEdit *>(editor);
-    if (!edit)
+    if (!edit && !qobject_cast<QComboBox *>(editor))
     {
         QStyledItemDelegate::updateEditorGeometry(editor, option, index);
         return;
@@ -166,20 +212,23 @@ void StructureGridItemDelegate::updateEditorGeometry(QWidget *editor,
     const QRect textRect = itemTextRect(option, index);
     const QRect cellRect = opt.rect;
 
-    edit->setGeometry(cellRect);
-    edit->setFont(opt.font);
+    editor->setGeometry(cellRect);
+    editor->setFont(opt.font);
 
-    QPalette pal = edit->palette();
+    QPalette pal = editor->palette();
     pal.setColor(QPalette::Base, opt.palette.color(QPalette::Base));
     pal.setColor(QPalette::Text, opt.palette.color(QPalette::Text));
     pal.setColor(QPalette::Highlight, opt.palette.color(QPalette::Highlight));
     pal.setColor(QPalette::HighlightedText, opt.palette.color(QPalette::HighlightedText));
-    edit->setPalette(pal);
+    editor->setPalette(pal);
 
-    edit->setTextMargins(qMax(0, textRect.left() - cellRect.left()),
-                         qMax(0, textRect.top() - cellRect.top()),
-                         qMax(0, cellRect.right() - textRect.right()),
-                         qMax(0, cellRect.bottom() - textRect.bottom()));
+    if (edit)
+    {
+        edit->setTextMargins(qMax(0, textRect.left() - cellRect.left()),
+                             qMax(0, textRect.top() - cellRect.top()),
+                             qMax(0, cellRect.right() - textRect.right()),
+                             qMax(0, cellRect.bottom() - textRect.bottom()));
+    }
 }
 
 void StructureGridItemDelegate::destroyEditor(QWidget *editor, const QModelIndex &index) const

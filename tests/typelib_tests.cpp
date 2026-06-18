@@ -20,6 +20,7 @@ private slots:
 	void tagsetsDumpInSourceOrder();
 	void dynamicPlacementTagsParse();
 	void viewTagsParse();
+	void alignAndEntrypointTagsParse();
 	void endianExpressionTagsParse();
 	void ternaryExpressionTagsParse();
 	void lengthIsIsReserved();
@@ -343,6 +344,37 @@ void TypeLibTests::viewTagsParse()
 	QVERIFY(expr);
 	QCOMPARE(expr->type, EXPR_STRINGBUF);
 	QCOMPARE(QString::fromLocal8Bit(expr->str), QStringLiteral("pe.imports"));
+}
+
+void TypeLibTests::alignAndEntrypointTagsParse()
+{
+	// Scenario: Structure View definitions annotate both layout and a field that
+	// identifies executable code.
+	// Expected: align works on the exported compound declaration and on an
+	// individual field, while entrypoint survives as a normal expression tag for
+	// the renderer to resolve later.
+	// Regression guard: align existed as a keyword long before the renderer used
+	// it, so adding entrypoint must not disturb existing tag parsing.
+	Parser parser;
+	QVERIFY(parseBuffer(parser,
+						"[export, align(4)]\n"
+						"struct Root {\n"
+						"  byte magic;\n"
+						"  [align(8), entrypoint(codeRva)] dword codeRva;\n"
+						"} root;\n"));
+
+	TypeDecl *root = nullptr;
+	for(TypeDecl *decl : parser.GetTypeLibrary()->globalTypeDeclList)
+		if(decl && FindTag(decl->tagList, TOK_EXPORT, nullptr))
+			root = decl;
+
+	QVERIFY(root);
+	QVERIFY(FindTag(root->tagList, TOK_ALIGN, nullptr));
+	QVERIFY(root->baseType);
+	QVERIFY(root->baseType->sptr);
+	QCOMPARE(root->baseType->sptr->typeDeclList.size(), size_t(2));
+	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[1]->tagList, TOK_ALIGN, nullptr));
+	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[1]->tagList, TOK_ENTRYPOINT, nullptr));
 }
 
 void TypeLibTests::endianExpressionTagsParse()

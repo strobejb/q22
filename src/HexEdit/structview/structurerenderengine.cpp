@@ -162,6 +162,26 @@ struct StructureRenderEngine::EndianScope
     bool previous = false;
 };
 
+struct StructureRenderEngine::AlignmentScope
+{
+    AlignmentScope(StructureRenderEngine *engine, uint64_t alignment)
+        : engine(engine)
+        , previous(engine ? engine->m_structAlignment : 1)
+    {
+        if (engine)
+            engine->m_structAlignment = alignment > 0 ? alignment : 1;
+    }
+
+    ~AlignmentScope()
+    {
+        if (engine)
+            engine->m_structAlignment = previous;
+    }
+
+    StructureRenderEngine *engine = nullptr;
+    uint64_t previous = 1;
+};
+
 StructureRenderEngine::StructureRenderEngine(TypeLibrary *library,
                                              TypeDecl *rootType,
                                              uint64_t baseOffset,
@@ -186,6 +206,7 @@ std::vector<std::unique_ptr<StructureRow>> StructureRenderEngine::build()
     root->parent = nullptr;
     root->value = QStringLiteral("{...}");
     EndianScope rootEndian(this, declarationBigEndian(m_rootType, root.get(), root->type, m_baseOffset));
+    AlignmentScope rootAlignment(this, declarationAlignment(m_rootType, root.get(), root->type, m_baseOffset, m_structAlignment));
     root->bigEndian = m_bigEndian;
     if (m_rootType->declList.size() == 1)
     {
@@ -203,6 +224,7 @@ std::vector<std::unique_ptr<StructureRow>> StructureRenderEngine::build()
     collectDynamicRows();
     collectDynamicRows(root.get());
     appendDynamicRows(root.get());
+    resolveEntryPointRows(root.get());
 
     std::vector<StructureOffsetMap> semanticOffsetMaps;
     for (const DynamicContainer &container : m_dynamicContainers)
@@ -225,6 +247,13 @@ StructureRenderEngine::RowPtr StructureRenderEngine::makeRow(StructureRow *paren
     row->type = type;
     row->typeDecl = typeDecl;
     row->bigEndian = m_bigEndian;
+    row->sourceRef = typeDecl && typeDecl->tagRef.fileDesc ? typeDecl->tagRef
+        : (typeDecl ? typeDecl->fileRef : FILEREF());
+    if (row->sourceRef.fileDesc)
+    {
+        row->sourcePath = QString::fromLocal8Bit(row->sourceRef.fileDesc->filePath);
+        row->sourceLine = static_cast<int>(row->sourceRef.lineNo);
+    }
     row->absoluteOffset = offset;
     row->relativeOffset = offset >= m_baseOffset ? offset - m_baseOffset : 0;
     row->offset = formatOffset(offset);
@@ -246,17 +275,31 @@ uint64_t StructureRenderEngine::appendTypeDecl(StructureRow *parent, TypeDecl *t
         if (evaluate(parent, offsetExpr, &evaluated, offset))
             offset = m_baseOffset + evaluated;
     }
+    else
+    {
+        const uint64_t alignment = typeDecl->compoundType
+            ? m_structAlignment
+            : declarationAlignment(typeDecl, parent, parent ? parent->type : nullptr, offset, m_structAlignment);
+        offset = alignedOffset(offset, alignment);
+    }
 
     const bool bigEndian = declarationBigEndian(typeDecl, parent, parent ? parent->type : nullptr, offset);
     EndianScope endian(this, bigEndian);
+    const uint64_t childAlignment = declarationAlignment(typeDecl,
+                                                         parent,
+                                                         parent ? parent->type : nullptr,
+                                                         offset,
+                                                         m_structAlignment);
 
     uint64_t length = 0;
     if (typeDecl->declList.empty() && typeDecl->nested)
     {
+        AlignmentScope alignment(this, childAlignment);
         length = recurseType(parent, typeDecl->baseType, typeDecl, offset);
         return offset >= originalOffset ? (offset - originalOffset) + length : length;
     }
 
+    AlignmentScope alignment(this, typeDecl->compoundType ? childAlignment : m_structAlignment);
     for (Type *type : typeDecl->declList)
         length += recurseType(parent, type, typeDecl, offset + length);
 
@@ -275,6 +318,7 @@ uint64_t StructureRenderEngine::appendIdentifierRow(StructureRow *parent,
 
     const uint64_t length = recurseType(row.get(), type ? type->link : nullptr, typeDecl, offset);
     row->byteLength = length;
+    applyEntryPointTag(row.get(), typeDecl, type ? type->link : nullptr, offset);
     const QString stringValue = stringArrayValue(row.get(), type ? type->link : nullptr, typeDecl, offset);
     if (!stringValue.isNull())
         row->value = stringValue;
@@ -455,6 +499,7 @@ uint64_t StructureRenderEngine::formatScalar(StructureRow *row, Type *type, Type
         const QString enumName = enumNameForValue(displayEnum, raw);
         row->value = enumName.isEmpty() ? QString::number(raw, 16).toUpper().rightJustified(int(length * 2), QLatin1Char('0'))
                                         : enumName;
+        row->valueChoices = enumChoiceLabels(displayEnum);
         return length;
     }
 
@@ -1145,6 +1190,24 @@ StructureRenderEngine::DynamicContainer *StructureRenderEngine::mapLogicalOffset
     return nullptr;
 }
 
+void StructureRenderEngine::resolveEntryPointRows(StructureRow *row)
+{
+    if (!row)
+        return;
+
+    if (row->hasCodeTarget)
+    {
+        uint64_t mappedOffset = 0;
+        if (mapLogicalOffset(row->codeLogicalOffset, &mappedOffset))
+            row->codeTargetOffset = m_baseOffset + mappedOffset;
+        else
+            row->codeTargetOffset = m_baseOffset + row->codeLogicalOffset;
+    }
+
+    for (auto &child : row->children)
+        resolveEntryPointRows(child.get());
+}
+
 QString StructureRenderEngine::typeName(Type *type) const
 {
     return StructureTypeNameFormatter(m_options).typeName(type);
@@ -1154,6 +1217,37 @@ QString StructureRenderEngine::formatOffset(uint64_t offset) const
 {
     const uint64_t relativeOffset = offset >= m_baseOffset ? offset - m_baseOffset : 0;
     return formatStructureOffset(offset, relativeOffset, m_options);
+}
+
+uint64_t StructureRenderEngine::alignedOffset(uint64_t offset, uint64_t alignment) const
+{
+    if (alignment <= 1)
+        return offset;
+
+    const uint64_t remainder = offset % alignment;
+    if (remainder == 0)
+        return offset;
+
+    const uint64_t increment = alignment - remainder;
+    return offset > UINT64_MAX - increment ? offset : offset + increment;
+}
+
+uint64_t StructureRenderEngine::declarationAlignment(TypeDecl *typeDecl,
+                                                     StructureRow *scope,
+                                                     Type *scopeType,
+                                                     uint64_t scopeOffset,
+                                                     uint64_t fallback) const
+{
+    ExprNode *expr = nullptr;
+    if (!FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_ALIGN, &expr) || !expr)
+        return fallback > 0 ? fallback : 1;
+
+    INUMTYPE value = 0;
+    if (!const_cast<StructureRenderEngine *>(this)->evaluate(EvalContext{ scope, scopeType, scopeOffset }, expr, &value)
+        || value <= 0)
+        return fallback > 0 ? fallback : 1;
+
+    return static_cast<uint64_t>(value);
 }
 
 bool StructureRenderEngine::declarationBigEndian(TypeDecl *typeDecl,
@@ -1213,6 +1307,48 @@ QString StructureRenderEngine::enumNameForValue(Enum *eptr, INUMTYPE value) cons
             return QString::fromLocal8Bit(field->name->name);
     }
     return {};
+}
+
+QStringList StructureRenderEngine::enumChoiceLabels(Enum *eptr) const
+{
+    QStringList labels;
+    if (!eptr)
+        return labels;
+
+    for (EnumField *field : eptr->fieldList)
+    {
+        if (field && field->name)
+            labels.push_back(QString::fromLocal8Bit(field->name->name));
+    }
+    return labels;
+}
+
+void StructureRenderEngine::applyEntryPointTag(StructureRow *row, TypeDecl *typeDecl, Type *scopeType, uint64_t scopeOffset)
+{
+    ExprNode *expr = nullptr;
+    if (!row || !FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_ENTRYPOINT, &expr) || !expr)
+        return;
+
+    INUMTYPE value = 0;
+    const bool selfField = expr->type == EXPR_IDENTIFIER
+        && expr->str
+        && row->type
+        && row->type->sym
+        && std::strcmp(expr->str, row->type->sym->name) == 0
+        && row->valueKind == StructureRowValueKind::ScalarInteger;
+    if (selfField)
+    {
+        value = static_cast<INUMTYPE>(row->scalarRawValue);
+    }
+    else if (!evaluate(row, expr, &value, scopeOffset) && !evaluate(row->parent, expr, &value, scopeOffset))
+    {
+        return;
+    }
+
+    row->hasCodeTarget = true;
+    row->codeLogicalOffset = static_cast<uint64_t>(value);
+    row->codeTargetOffset = m_baseOffset + row->codeLogicalOffset;
+    Q_UNUSED(scopeType);
 }
 
 void StructureRenderEngine::applyDeclarationName(StructureRow *row, Type *type) const
