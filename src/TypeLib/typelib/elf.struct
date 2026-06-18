@@ -1,5 +1,6 @@
+// q22-struct v1
 //
-//  elf.txt
+//  elf.struct
 //
 //  www.catch22.net
 //
@@ -7,7 +8,7 @@
 //  Please refer to the file LICENCE.TXT for copying permission
 //
 
-include "basetypes.txt";
+include "basetypes.struct";
 
 enum ELF_IDENT
 {
@@ -287,25 +288,29 @@ typedef struct _ELF
 
     [
         offset(e_ident[EI_CLASS] == ELFCLASS32 ? header32.e_phoff : 0),
-        size_is(e_ident[EI_CLASS] == ELFCLASS32 ? header32.e_phnum : 0)
+        size_is(e_ident[EI_CLASS] == ELFCLASS32 ? header32.e_phnum : 0),
+        name(p_type)
     ]
     Elf32_Phdr programHeaders32[];
 
     [
         offset(e_ident[EI_CLASS] == ELFCLASS64 ? header64.e_phoff : 0),
-        size_is(e_ident[EI_CLASS] == ELFCLASS64 ? header64.e_phnum : 0)
+        size_is(e_ident[EI_CLASS] == ELFCLASS64 ? header64.e_phnum : 0),
+        name(p_type)
     ]
     Elf64_Phdr programHeaders64[];
 
     [
         offset(e_ident[EI_CLASS] == ELFCLASS32 ? header32.e_shoff : 0),
-        size_is(e_ident[EI_CLASS] == ELFCLASS32 ? header32.e_shnum : 0)
+        size_is(e_ident[EI_CLASS] == ELFCLASS32 ? header32.e_shnum : 0),
+        name(sh_type)
     ]
     Elf32_Shdr sectionHeaders32[];
 
     [
         offset(e_ident[EI_CLASS] == ELFCLASS64 ? header64.e_shoff : 0),
-        size_is(e_ident[EI_CLASS] == ELFCLASS64 ? header64.e_shnum : 0)
+        size_is(e_ident[EI_CLASS] == ELFCLASS64 ? header64.e_shnum : 0),
+        name(sh_type)
     ]
     Elf64_Shdr sectionHeaders64[];
 

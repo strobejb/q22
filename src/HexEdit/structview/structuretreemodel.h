@@ -22,6 +22,14 @@ struct StructureRow
 {
     explicit StructureRow(StructureRow *parentRow = nullptr);
 
+    void setNameParts(const QString &prefix,
+                      const QString &identifier,
+                      const QString &suffix = QString(),
+                      bool emphasize = false);
+    void setBranchIcons(const QString &closedIconPath,
+                        const QString &openIconPath,
+                        const QString &emptyIconPath);
+
     QString name;
     QString nameTypePrefix;
     QString nameIdentifier;

@@ -449,12 +449,12 @@ void TypeLibTests::unsizedArraysRequireSizeIs()
 void TypeLibTests::elfRootIsExportedAndAssociated()
 {
 	// Scenario: qexed ships ELF as a real Structure View root definition.
-	// Expected: elf.txt parses to an exported root with common ELF suffix
+	// Expected: elf.struct parses to an exported root with common ELF suffix
 	// associations, so the UI can list and auto-select it like PE.
 	// Regression guard: ELF support should not remain a stale standalone header
 	// typedef that never appears in the Structure View picker.
 	const QDir typeLibDir(QStringLiteral(TYPELIB_TEST_DATA_DIR));
-	const QString path = typeLibDir.filePath(QStringLiteral("elf.txt"));
+	const QString path = typeLibDir.filePath(QStringLiteral("elf.struct"));
 	Parser parser;
 	QVERIFY2(parser.Ooof(qPrintable(path)), qPrintable(parser.LastErrStr()));
 
@@ -489,21 +489,24 @@ void TypeLibTests::standardTypelibFilesParse()
 {
 	// Scenario: qexed ships real TypeLib definition files for users and tests.
 	// Expected: every shipped example parses from the runtime data directory, and
-	// relative includes such as elf.txt -> basetypes.txt resolve naturally.
+	// relative includes such as elf.struct -> basetypes.struct resolve naturally.
 	// Regression guard: the examples must not drift into stale, untested app data.
 	const QDir typeLibDir(QStringLiteral(TYPELIB_TEST_DATA_DIR));
 	QVERIFY2(typeLibDir.exists(), qPrintable(typeLibDir.absolutePath()));
 
 	const QStringList files = {
-		QStringLiteral("basetypes.txt"),
-		QStringLiteral("elf.txt"),
-		QStringLiteral("pe.txt"),
+		QStringLiteral("basetypes.struct"),
+		QStringLiteral("elf.struct"),
+		QStringLiteral("pe.struct"),
 	};
 
 	for(const QString &file : files)
 	{
 		const QString path = typeLibDir.filePath(file);
 		QVERIFY2(QFileInfo::exists(path), qPrintable(path));
+		QFile source(path);
+		QVERIFY2(source.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(path));
+		QCOMPARE(QString::fromUtf8(source.readLine()).trimmed(), QStringLiteral("// q22-struct v1"));
 
 		Parser parser;
 		QVERIFY2(parser.Ooof(qPrintable(path)), qPrintable(parser.LastErrStr()));

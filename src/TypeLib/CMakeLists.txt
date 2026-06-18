@@ -25,7 +25,7 @@ target_include_directories(TypeLib PUBLIC
 set(TYPELIB_DATA_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/typelib")
 set(TYPELIB_DATA_BINARY_DIR "${PROJECT_BINARY_DIR}/typelib")
 file(GLOB TYPELIB_STANDARD_FILES CONFIGURE_DEPENDS
-    "${TYPELIB_DATA_SOURCE_DIR}/*.txt"
+    "${TYPELIB_DATA_SOURCE_DIR}/*.struct"
 )
 
 add_custom_target(TypeLibData ALL

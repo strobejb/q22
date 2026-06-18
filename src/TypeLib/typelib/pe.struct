@@ -1,5 +1,6 @@
+// q22-struct v1
 //
-//  pe.txt
+//  pe.struct
 //
 //  www.catch22.net
 //
@@ -7,7 +8,7 @@
 //  Please refer to the file LICENCE.TXT for copying permission
 //
 
-include "basetypes.txt";
+include "basetypes.struct";
 
 enum IMAGE_DIRECTORY
 {

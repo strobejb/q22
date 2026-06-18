@@ -256,11 +256,13 @@ void appendSymbols(StructureSemanticContext &context,
         if (name.isEmpty())
             continue;
 
-        context.appendSemanticRow(sectionRow,
-                                  QStringLiteral("SYMBOL %1").arg(name),
-                                  symbolValueText(value, size),
-                                  context.baseOffset() + entryOffset,
-                                  entrySize);
+        StructureRow *symbolRow = context.appendSemanticRow(sectionRow,
+                                                            QStringLiteral("SYMBOL %1").arg(name),
+                                                            symbolValueText(value, size),
+                                                            context.baseOffset() + entryOffset,
+                                                            entrySize);
+        if (symbolRow)
+            symbolRow->setNameParts(QStringLiteral("SYMBOL"), name);
     }
 }
 
@@ -300,14 +302,19 @@ void interpretElfSections(StructureSemanticContext &context)
         if (section.type == kShtNull && section.name.isEmpty())
             continue;
 
-        const QString displayName = section.name.isEmpty()
-            ? QStringLiteral("SECTION [%1]").arg(i)
-            : QStringLiteral("SECTION %1").arg(section.name);
+        const QString sectionLabel = section.name.isEmpty()
+            ? QStringLiteral("[%1]").arg(i)
+            : section.name;
+        const QString displayName = QStringLiteral("SECTION %1").arg(sectionLabel);
         sectionRows[i] = context.appendSemanticRow(root,
                                                    displayName,
                                                    QStringLiteral("{...}"),
                                                    context.baseOffset() + section.fileOffset,
                                                    section.size);
+        if (sectionRows[i])
+        {
+            sectionRows[i]->setNameParts(QStringLiteral("SECTION"), sectionLabel, QString(), true);
+        }
     }
 
     for (size_t i = 0; i < sections.size(); ++i)

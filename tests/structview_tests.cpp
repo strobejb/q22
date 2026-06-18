@@ -26,6 +26,7 @@ private slots:
     void builderFormatsScalarsAndEndian();
     void builderFormatsCharacterArraysAsStrings();
     void builderFormatsScalarArraysAsPreviewLists();
+    void builderPopulatesCommentsFromTypeDeclarations();
     void builderUsesSizeIsForUnsizedArrays();
     void builderEvaluatesTernaryExpressions();
     void builderUsesCommonUnionPrefixForSizeIs();
@@ -105,7 +106,7 @@ static bool parseStandardElfDefinition(TypeLibrary *library)
         return false;
 
     Parser parser(library);
-    const QString path = QDir(QStringLiteral(TYPELIB_TEST_DATA_DIR)).filePath(QStringLiteral("elf.txt"));
+    const QString path = QDir(QStringLiteral(TYPELIB_TEST_DATA_DIR)).filePath(QStringLiteral("elf.struct"));
     return parser.Ooof(qPrintable(path));
 }
 
@@ -210,8 +211,8 @@ void StructViewTests::managerCreatesUserStructsDirectory()
 void StructViewTests::managerDiscoversBuiltinAndUserDefinitionFiles()
 {
     // Scenario: shipped definitions and user definitions are both available.
-    // Expected: built-ins and user files are discovered, with the current .txt
-    // extension and future .bstruct extension both accepted.
+    // Expected: built-ins and user files are discovered, with the .struct
+    // extension and legacy .txt/.bstruct extensions all accepted.
     // Regression guard: adding the user watched directory must not hide the
     // runtime definitions that ship with the app.
     QTemporaryDir temp;
@@ -221,7 +222,8 @@ void StructViewTests::managerDiscoversBuiltinAndUserDefinitionFiles()
     const QString userDir = temp.filePath(QStringLiteral("structs"));
     QVERIFY(QDir().mkpath(builtinDir));
     QVERIFY(QDir().mkpath(userDir));
-    writeTextFile(QDir(builtinDir).filePath(QStringLiteral("builtin.txt")), "typedef dword BuiltinType;\n");
+    writeTextFile(QDir(builtinDir).filePath(QStringLiteral("builtin.struct")), "typedef dword BuiltinType;\n");
+    writeTextFile(QDir(userDir).filePath(QStringLiteral("user.txt")), "typedef byte LegacyType;\n");
     writeTextFile(QDir(userDir).filePath(QStringLiteral("user.bstruct")), "typedef word UserType;\n");
 
     StructureDefinitionManager manager;
@@ -229,7 +231,7 @@ void StructViewTests::managerDiscoversBuiltinAndUserDefinitionFiles()
     manager.setUserStructsDirForTests(userDir);
 
     QVERIFY2(manager.reload(), qPrintable(manager.lastError()));
-    QCOMPARE(manager.definitionFiles().size(), 2);
+    QCOMPARE(manager.definitionFiles().size(), 3);
 }
 
 void StructViewTests::reloadSwapsInParsedTypeLibrary()
@@ -418,6 +420,32 @@ void StructViewTests::builderFormatsScalarArraysAsPreviewLists()
     QVERIFY(!rows[0]->children[1]->emphasizeName);
 }
 
+void StructViewTests::builderPopulatesCommentsFromTypeDeclarations()
+{
+    // Scenario: TypeLib definitions use ordinary C/C++ trailing comments to
+    // document fields and structures.
+    // Expected: Structure View displays a trimmed copy of those comments in the
+    // Comment column, while the parser keeps the original whitespace refs for
+    // round-tripping.
+    // Regression guard: comments used to be captured in source whitespace only,
+    // leaving rendered structure rows with an empty Comment column.
+    TypeLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  dword signature; // file signature  \n"
+                        "  word flags;      /*  flag bits  */\n"
+                        "} root; //  root structure  \n"));
+
+    auto rows = buildRows(&library, firstExported(&library), QByteArray::fromHex("000000000000"));
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->comment, QStringLiteral("root structure"));
+    QCOMPARE(rows[0]->children.size(), size_t(2));
+    QCOMPARE(rows[0]->children[0]->comment, QStringLiteral("file signature"));
+    QCOMPARE(rows[0]->children[1]->comment, QStringLiteral("flag bits"));
+}
+
 void StructViewTests::builderUsesSizeIsForUnsizedArrays()
 {
     // Scenario: a file format stores an array count in an earlier field, and
@@ -426,7 +454,7 @@ void StructViewTests::builderUsesSizeIsForUnsizedArrays()
     // Expected: the parser accepts the unsized array syntax and the renderer
     // expands exactly the count read from the already-rendered structure data.
     // Regression guard: PE section headers must not be capped by a placeholder
-    // array size in pe.txt just because the count is data-driven.
+    // array size in pe.struct just because the count is data-driven.
     TypeLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
@@ -937,7 +965,7 @@ void StructViewTests::builderRendersElf32AndElf64Tables()
     // Regression guard: ELF support must not assume PE-like fixed offsets or a
     // single word size.
     TypeLibrary library32;
-    QVERIFY2(parseStandardElfDefinition(&library32), "elf.txt failed to parse");
+    QVERIFY2(parseStandardElfDefinition(&library32), "elf.struct failed to parse");
     QByteArray elf32(0x180, '\0');
     elf32[0] = char(0x7f);
     elf32[1] = 'E';
@@ -974,7 +1002,7 @@ void StructViewTests::builderRendersElf32AndElf64Tables()
     QCOMPARE(header32->children[3]->value, QStringLiteral("305419896"));
 
     TypeLibrary library32be;
-    QVERIFY2(parseStandardElfDefinition(&library32be), "elf.txt failed to parse");
+    QVERIFY2(parseStandardElfDefinition(&library32be), "elf.struct failed to parse");
     QByteArray elf32be(0x180, '\0');
     elf32be[0] = char(0x7f);
     elf32be[1] = 'E';
@@ -1001,7 +1029,7 @@ void StructViewTests::builderRendersElf32AndElf64Tables()
     QCOMPARE(header32be->children[3]->value, QStringLiteral("16909060"));
 
     TypeLibrary library64;
-    QVERIFY2(parseStandardElfDefinition(&library64), "elf.txt failed to parse");
+    QVERIFY2(parseStandardElfDefinition(&library64), "elf.struct failed to parse");
     QByteArray elf64(0x180, '\0');
     elf64[0] = char(0x7f);
     elf64[1] = 'E';
@@ -1273,7 +1301,7 @@ void StructViewTests::builderAddsElfSectionAndSymbolSemanticRows()
     // Regression guard: ELF domain knowledge belongs in elfsemanticview.cpp,
     // augmenting the declarative structs rather than replacing them.
     TypeLibrary library;
-    QVERIFY2(parseStandardElfDefinition(&library), "elf.txt failed to parse");
+    QVERIFY2(parseStandardElfDefinition(&library), "elf.struct failed to parse");
 
     QByteArray bytes(0x320, '\0');
     bytes[0] = char(0x7f);
@@ -1348,7 +1376,7 @@ void StructViewTests::builderKeepsRawElfRowsWhenSemanticDataIsTruncated()
     // Regression guard: malformed ELF files must not make Structure View blank
     // or fail just because name resolution cannot complete.
     TypeLibrary library;
-    QVERIFY2(parseStandardElfDefinition(&library), "elf.txt failed to parse");
+    QVERIFY2(parseStandardElfDefinition(&library), "elf.struct failed to parse");
 
     QByteArray bytes(0x160, '\0');
     bytes[0] = char(0x7f);
@@ -1426,6 +1454,10 @@ void StructViewTests::modelSupportsHierarchyAndEditableCells()
     QVERIFY(model.flags(childValue) & Qt::ItemIsEditable);
     QVERIFY(model.setData(childValue, QStringLiteral("0x14C")));
     QCOMPARE(model.data(childValue).toString(), QStringLiteral("0x14C"));
+
+    const QModelIndex childOffset = model.index(0, StructureTreeModel::OffsetColumn, parentIndex);
+    QVERIFY(childOffset.isValid());
+    QVERIFY(!(model.flags(childOffset) & Qt::ItemIsEditable));
 }
 
 void StructViewTests::modelAppliesTypeDisplayOptionsWithoutResettingRows()

@@ -37,15 +37,22 @@ QString settingsSiblingDir(const QString &name)
     return settingsFile.dir().filePath(name);
 }
 
-QStringList existingDefinitionFilesInDir(const QString &dirPath)
+QStringList existingDefinitionFilesInDir(const QString &dirPath, bool includeLegacyExtensions)
 {
     QDir dir(dirPath);
     if (!dir.exists())
         return {};
 
+    QStringList nameFilters = { QStringLiteral("*.struct") };
+    if (includeLegacyExtensions)
+    {
+        nameFilters.push_back(QStringLiteral("*.txt"));
+        nameFilters.push_back(QStringLiteral("*.bstruct"));
+    }
+
     QStringList files;
     const QFileInfoList entries = dir.entryInfoList(
-        { QStringLiteral("*.txt"), QStringLiteral("*.bstruct") },
+        nameFilters,
         QDir::Files | QDir::Readable,
         QDir::Name | QDir::IgnoreCase);
 
@@ -194,9 +201,9 @@ QStringList StructureDefinitionManager::discoverDefinitionFiles() const
     QStringList files;
 
     for (const QString &dir : builtinStructDirs())
-        files.append(existingDefinitionFilesInDir(dir));
+        files.append(existingDefinitionFilesInDir(dir, false));
 
-    const QStringList userFiles = existingDefinitionFilesInDir(userStructsDir());
+    const QStringList userFiles = existingDefinitionFilesInDir(userStructsDir(), true);
     for (const QString &file : userFiles)
         if (!files.contains(file))
             files.push_back(file);

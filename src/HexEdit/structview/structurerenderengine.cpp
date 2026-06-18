@@ -1,5 +1,7 @@
 #include "structview/structurerenderengine.h"
 
+#include "structview/structurebranchicons.h"
+#include "structview/structurecommentformatter.h"
 #include "structview/structuresemanticview.h"
 #include "structview/structuretypenameformatter.h"
 
@@ -15,9 +17,6 @@ namespace
 static constexpr uint64_t kMaxArrayElements = 100;
 static constexpr qsizetype kMaxArrayPreviewElements = 8;
 static constexpr bool kPrefixArrayAliasesWithDash = false;
-static const char kDynamicBranchClosedIconPath[] = ":/icons/rendered/blue/double-closed.svg";
-static const char kDynamicBranchOpenIconPath[] = ":/icons/rendered/blue/double-open.svg";
-static const char kDynamicBranchEmptyIconPath[] = ":/icons/rendered/gray/double-closed.svg";
 
 uint64_t scalarSize(TYPE type)
 {
@@ -230,7 +229,7 @@ StructureRenderEngine::RowPtr StructureRenderEngine::makeRow(StructureRow *paren
     row->relativeOffset = offset >= m_baseOffset ? offset - m_baseOffset : 0;
     row->offset = formatOffset(offset);
     row->generatedOffset = true;
-    row->comment = typeDecl && typeDecl->comment ? QString::fromLocal8Bit(typeDecl->comment) : QString();
+    row->comment = structureDisplayComment(typeDecl);
     return row;
 }
 
@@ -986,15 +985,14 @@ void StructureRenderEngine::appendDynamicRows(StructureRow *parent)
         applyDeclarationName(row.get(), renderType);
         if (!container.alias.isEmpty())
         {
-            row->name = row->name + QLatin1Char(' ') + container.alias;
-            row->nameIdentifier = container.alias;
+            row->setNameParts(row->nameTypePrefix, container.alias, row->nameSuffix, row->emphasizeName);
         }
         row->value = QStringLiteral("{...}");
         row->byteLength = container.byteLength;
         row->kind = StructureRowKind::Dynamic;
-        row->branchIconPath = QString::fromLatin1(kDynamicBranchClosedIconPath);
-        row->branchOpenIconPath = QString::fromLatin1(kDynamicBranchOpenIconPath);
-        row->branchEmptyIconPath = QString::fromLatin1(kDynamicBranchEmptyIconPath);
+        row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueDoubleClosed),
+                            QString::fromLatin1(StructureBranchIcons::kBlueDoubleOpen),
+                            QString::fromLatin1(StructureBranchIcons::kGrayDoubleClosed));
         container.row = row.get();
         parent->children.push_back(std::move(row));
     }
@@ -1010,9 +1008,9 @@ void StructureRenderEngine::appendDynamicRows(StructureRow *parent)
         auto row = makeRow(container->row, renderType, request.typeDecl, m_baseOffset + fileOffset);
         applyDeclarationName(row.get(), renderType);
         row->kind = StructureRowKind::Dynamic;
-        row->branchIconPath = QString::fromLatin1(kDynamicBranchClosedIconPath);
-        row->branchOpenIconPath = QString::fromLatin1(kDynamicBranchOpenIconPath);
-        row->branchEmptyIconPath = QString::fromLatin1(kDynamicBranchEmptyIconPath);
+        row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueDoubleClosed),
+                            QString::fromLatin1(StructureBranchIcons::kBlueDoubleOpen),
+                            QString::fromLatin1(StructureBranchIcons::kGrayDoubleClosed));
         const bool bigEndian = declarationBigEndian(request.typeDecl, row.get(), renderType, m_baseOffset + fileOffset);
         EndianScope endian(this, bigEndian);
         row->bigEndian = m_bigEndian;
@@ -1204,11 +1202,8 @@ void StructureRenderEngine::applyDeclarationName(StructureRow *row, Type *type) 
 
     const StructureTypeNameFormatter formatter(m_options);
     const StructureDeclarationParts parts = formatter.declarationParts(type);
+    row->setNameParts(parts.prefix, parts.name, parts.suffix, formatter.isCompoundDeclaration(type));
     row->name = formatter.declarationName(type);
-    row->nameTypePrefix = parts.prefix;
-    row->nameIdentifier = parts.name;
-    row->nameSuffix = parts.suffix;
-    row->emphasizeName = formatter.isCompoundDeclaration(type);
     row->generatedName = true;
 }
 

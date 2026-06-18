@@ -85,6 +85,8 @@ set(PROJECT_SOURCES
         statusbar.h
         structview/structuredefinitionmanager.cpp
         structview/structuredefinitionmanager.h
+        structview/structurebranchicons.h
+        structview/structurecommentformatter.h
         structview/structuregriditemdelegate.cpp
         structview/structuregriditemdelegate.h
         structview/elfsemanticview.cpp

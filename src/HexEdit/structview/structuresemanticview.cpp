@@ -2,6 +2,7 @@
 
 #include "structview/elfsemanticview.h"
 #include "structview/pesemanticview.h"
+#include "structview/structurebranchicons.h"
 
 #include <QLatin1Char>
 
@@ -136,6 +137,12 @@ StructureRow *StructureSemanticContext::appendSemanticRow(StructureRow *parent,
     row->byteLength = byteLength;
     row->offset = byteLength > 0 ? formatOffset(absoluteOffset) : QString();
     row->generatedOffset = byteLength > 0;
+    if (value.trimmed() == QStringLiteral("{...}"))
+    {
+        row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueDoubleClosed),
+                            QString::fromLatin1(StructureBranchIcons::kBlueDoubleOpen),
+                            QString::fromLatin1(StructureBranchIcons::kGrayDoubleClosed));
+    }
 
     StructureRow *raw = row.get();
     parent->children.push_back(std::move(row));

@@ -21,6 +21,8 @@
 #include "types.h"
 #include "stmt.h"
 
+bool LocateComment(FILEREF *fileRef, char **s, char **cs, char **ce, char **e);
+
 //#include "lexer.h"
 //#include "error.h"
 //#include "expr.h"

@@ -1,5 +1,6 @@
 #include "structview/structuretreemodel.h"
 
+#include "structview/structurecommentformatter.h"
 #include "structview/structuretypenameformatter.h"
 
 #include <QLatin1String>
@@ -12,6 +13,33 @@ static constexpr int kMaxDefinitionDepth = 8;
 StructureRow::StructureRow(StructureRow *parentRow)
     : parent(parentRow)
 {
+}
+
+void StructureRow::setNameParts(const QString &prefix,
+                                const QString &identifier,
+                                const QString &suffix,
+                                bool emphasize)
+{
+    nameTypePrefix = prefix;
+    nameIdentifier = identifier;
+    nameSuffix = suffix;
+    emphasizeName = emphasize;
+
+    if (prefix.isEmpty())
+        name = identifier + suffix;
+    else if (identifier.isEmpty())
+        name = prefix + suffix;
+    else
+        name = prefix + QLatin1Char(' ') + identifier + suffix;
+}
+
+void StructureRow::setBranchIcons(const QString &closedIconPath,
+                                  const QString &openIconPath,
+                                  const QString &emptyIconPath)
+{
+    branchIconPath = closedIconPath;
+    branchOpenIconPath = openIconPath;
+    branchEmptyIconPath = emptyIconPath;
 }
 
 StructureTreeModel::StructureTreeModel(QObject *parent)
@@ -147,11 +175,14 @@ Qt::ItemFlags StructureTreeModel::flags(const QModelIndex &index) const
 
     const Qt::ItemFlags flags = QAbstractItemModel::flags(index);
     const StructureRow *row = rowForIndex(index);
+    if (index.column() == OffsetColumn)
+        return flags;
+
     if (row && row->kind != StructureRowKind::Raw)
         return flags;
 
     if (row && !row->children.empty()
-        && (index.column() == ValueColumn || index.column() == OffsetColumn)
+        && index.column() == ValueColumn
         && row->value.trimmed().startsWith(QLatin1Char('{')))
         return flags;
 
@@ -297,7 +328,7 @@ std::unique_ptr<StructureRow> StructureTreeModel::makeRowForTypeDecl(TypeDecl *d
     row->value = QStringLiteral("{...}");
     row->offset = QStringLiteral("00000000");
     row->generatedOffset = true;
-    row->comment = decl->comment ? QString::fromLocal8Bit(decl->comment) : QString();
+    row->comment = structureDisplayComment(decl);
 
     QStringList names;
     for (Type *type : decl->declList)
@@ -353,11 +384,8 @@ void StructureTreeModel::applyDisplayOptionsToRow(StructureRow *row,
     {
         const StructureTypeNameFormatter formatter(options);
         const StructureDeclarationParts parts = formatter.declarationParts(row->type);
+        row->setNameParts(parts.prefix, parts.name, parts.suffix, formatter.isCompoundDeclaration(row->type));
         row->name = formatter.declarationName(row->type);
-        row->nameTypePrefix = parts.prefix;
-        row->nameIdentifier = parts.name;
-        row->nameSuffix = parts.suffix;
-        row->emphasizeName = formatter.isCompoundDeclaration(row->type);
         if (index.isValid())
             emit dataChanged(index, index, { Qt::DisplayRole,
                                              Qt::EditRole,
