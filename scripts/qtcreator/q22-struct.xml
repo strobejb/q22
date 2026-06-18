@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE language>
+<language
+    name="Q22 Struct"
+    version="2"
+    kateversion="5.79"
+    section="Sources"
+    extensions="*.struct"
+    mimetype="text/x-q22-struct"
+    priority="20"
+    author="q22"
+    license="MIT">
+
+<highlighting>
+<list name="keywords">
+    <item>include</item>
+    <item>typedef</item>
+    <item>struct</item>
+    <item>union</item>
+    <item>enum</item>
+    <item>const</item>
+    <item>signed</item>
+    <item>unsigned</item>
+    <item>tagset</item>
+    <item>tags</item>
+</list>
+
+<list name="tags">
+    <item>export</item>
+    <item>assoc</item>
+    <item>offset</item>
+    <item>size_is</item>
+    <item>endian</item>
+    <item>switch_is</item>
+    <item>case</item>
+    <item>name</item>
+    <item>dynamic_container</item>
+    <item>dynamic_struct</item>
+    <item>offset_map</item>
+    <item>view</item>
+</list>
+
+<list name="types">
+    <item>byte</item>
+    <item>word</item>
+    <item>dword</item>
+    <item>qword</item>
+    <item>char</item>
+    <item>wchar_t</item>
+    <item>float</item>
+    <item>double</item>
+</list>
+
+<contexts>
+    <context name="Normal" attribute="Normal Text" lineEndContext="#stay">
+        <Detect2Chars char="/" char1="/" attribute="Comment" context="Line Comment"/>
+        <Detect2Chars char="/" char1="*" attribute="Comment" context="Block Comment"/>
+        <DetectChar char="&quot;" attribute="String" context="String"/>
+        <keyword String="tags" attribute="Tag"/>
+        <keyword String="keywords" attribute="Keyword"/>
+        <keyword String="types" attribute="Data Type"/>
+        <Float attribute="Float"/>
+        <Int attribute="Decimal"/>
+    </context>
+
+    <context name="Line Comment" attribute="Comment" lineEndContext="#pop"/>
+    <context name="Block Comment" attribute="Comment" lineEndContext="#stay">
+        <Detect2Chars char="*" char1="/" attribute="Comment" context="#pop"/>
+    </context>
+
+    <context name="String" attribute="String" lineEndContext="#pop">
+        <HlCStringChar attribute="Char"/>
+        <DetectChar char="&quot;" attribute="String" context="#pop"/>
+    </context>
+</contexts>
+
+<itemDatas>
+    <itemData name="Normal Text" defStyleNum="dsNormal"/>
+    <itemData name="Keyword" defStyleNum="dsKeyword"/>
+    <itemData name="Tag" defStyleNum="dsFunction"/>
+    <itemData name="Data Type" defStyleNum="dsDataType"/>
+    <itemData name="String" defStyleNum="dsString"/>
+    <itemData name="Char" defStyleNum="dsChar"/>
+    <itemData name="Comment" defStyleNum="dsComment"/>
+    <itemData name="Decimal" defStyleNum="dsDecVal"/>
+    <itemData name="Float" defStyleNum="dsFloat"/>
+</itemDatas>
+</highlighting>
+
+<general>
+    <keywords casesensitive="1"/>
+</general>
+
+</language>
