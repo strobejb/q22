@@ -31,6 +31,20 @@ void collectAssocExtensions(ExprNode *expr, QStringList *extensions)
     }
 }
 
+QString descriptionFromTags(Tag *tagList)
+{
+    ExprNode *expr = nullptr;
+    if (!FindTag(tagList, TOK_DESCRIPTION, &expr)
+        || !expr
+        || expr->type != EXPR_STRINGBUF
+        || !expr->str)
+    {
+        return {};
+    }
+
+    return QString::fromLocal8Bit(expr->str).trimmed();
+}
+
 QString settingsSiblingDir(const QString &name)
 {
     const QFileInfo settingsFile(QSettings().fileName());
@@ -107,6 +121,8 @@ QList<ExportedStructureType> StructureDefinitionManager::exportedTypes() const
             type.filePath = QString::fromLocal8Bit(fileDesc->filePath);
             type.fileName = QString::fromLocal8Bit(fileDesc->fileName);
         }
+        type.description = descriptionFromTags(decl->tagList);
+
         ExprNode *assocExpr = nullptr;
         if (FindTag(decl->tagList, TOK_ASSOC, &assocExpr))
             collectAssocExtensions(assocExpr, &type.assocExtensions);

@@ -23,6 +23,7 @@ private slots:
     void failedReloadPreservesPreviousLibrary();
     void exportedTypesUseExplicitExportTagsOnly();
     void exportedTypesExposeAssocExtensions();
+    void exportedTypesExposeDescriptions();
     void builderFormatsScalarsAndEndian();
     void builderFormatsCharacterArraysAsStrings();
     void builderFormatsScalarArraysAsPreviewLists();
@@ -47,6 +48,7 @@ private slots:
     void builderUsesDynamicEndianExpressions();
     void builderEvaluatesEnumIndexedArraysInExpressions();
     void builderEvaluatesEnumIndexedUnionMembersInExpressions();
+    void builderUsesSimpleRootNamesForBuiltinTypedefRoots();
     void builderRendersElf32AndElf64Tables();
     void builderPlacesDynamicStructsUnderNamedDynamicContainers();
     void semanticRegistryRunsKnownViewsAndIgnoresUnknownViews();
@@ -112,6 +114,16 @@ static bool parseStandardElfDefinition(TypeLibrary *library)
 
     Parser parser(library);
     const QString path = QDir(QStringLiteral(TYPELIB_TEST_DATA_DIR)).filePath(QStringLiteral("elf.struct"));
+    return parser.Ooof(qPrintable(path));
+}
+
+static bool parseStandardDefinition(TypeLibrary *library, const QString &fileName)
+{
+    if (!library)
+        return false;
+
+    Parser parser(library);
+    const QString path = QDir(QStringLiteral(TYPELIB_TEST_DATA_DIR)).filePath(fileName);
     return parser.Ooof(qPrintable(path));
 }
 
@@ -344,6 +356,36 @@ void StructViewTests::exportedTypesExposeAssocExtensions()
     const QList<ExportedStructureType> exported = manager.exportedTypes();
     QCOMPARE(exported.size(), 1);
     QCOMPARE(exported[0].assocExtensions, QStringList({ QStringLiteral(".exe"), QStringLiteral(".dll") }));
+}
+
+void StructViewTests::exportedTypesExposeDescriptions()
+{
+    // Scenario: exported roots can carry a friendly description for the
+    // Structure View dropdown, while older definitions may omit it.
+    // Expected: the manager exposes the string description when present and an
+    // empty string when absent, leaving the panel to use its existing fallback.
+    // Regression guard: root labels should be TypeLib metadata, not hard-coded
+    // PE/ELF special cases in the combo box.
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+
+    const QString userDir = temp.filePath(QStringLiteral("structs"));
+    QVERIFY(QDir().mkpath(userDir));
+    writeTextFile(QDir(userDir).filePath(QStringLiteral("types.txt")),
+                  "[export, description(\"Friendly Root\")]\n"
+                  "struct Friendly { byte magic; } friendly;\n"
+                  "[export]\n"
+                  "struct Plain { word flags; } plain;\n");
+
+    StructureDefinitionManager manager;
+    manager.setBuiltinStructDirsForTests({});
+    manager.setUserStructsDirForTests(userDir);
+
+    QVERIFY2(manager.reload(), qPrintable(manager.lastError()));
+    const QList<ExportedStructureType> exported = manager.exportedTypes();
+    QCOMPARE(exported.size(), 2);
+    QCOMPARE(exported[0].description, QStringLiteral("Friendly Root"));
+    QCOMPARE(exported[1].description, QString());
 }
 
 void StructViewTests::builderFormatsScalarsAndEndian()
@@ -1094,6 +1136,34 @@ void StructViewTests::builderEvaluatesEnumIndexedUnionMembersInExpressions()
     QCOMPARE(bigRows.size(), size_t(1));
     QCOMPARE(bigRows[0]->children[2]->children.size(), size_t(3));
     QCOMPARE(bigRows[0]->children[2]->children[2]->value, QStringLiteral("12"));
+}
+
+void StructViewTests::builderUsesSimpleRootNamesForBuiltinTypedefRoots()
+{
+    // Scenario: built-in PE and ELF definitions export their typedef root, not a
+    // dummy global variable such as "ELF elf".
+    // Expected: the rendered root node uses the simple structure alias shown to
+    // users, matching PE's long-standing "PE" display.
+    // Regression guard: moving tags between typedefs and variable declarations
+    // should not reintroduce noisy root labels like "ELF elf".
+    TypeLibrary peLibrary;
+    QVERIFY2(parseStandardDefinition(&peLibrary, QStringLiteral("pe.struct")), "pe.struct failed to parse");
+    auto peRows = buildRows(&peLibrary, firstExported(&peLibrary), QByteArray(512, '\0'));
+    QCOMPARE(peRows.size(), size_t(1));
+    QCOMPARE(peRows[0]->name, QStringLiteral("PE"));
+
+    TypeLibrary elfLibrary;
+    QVERIFY2(parseStandardDefinition(&elfLibrary, QStringLiteral("elf.struct")), "elf.struct failed to parse");
+    QByteArray elfBytes(128, '\0');
+    elfBytes[0] = char(0x7f);
+    elfBytes[1] = 'E';
+    elfBytes[2] = 'L';
+    elfBytes[3] = 'F';
+    elfBytes[4] = char(1);
+    elfBytes[5] = char(1);
+    auto elfRows = buildRows(&elfLibrary, firstExported(&elfLibrary), elfBytes);
+    QCOMPARE(elfRows.size(), size_t(1));
+    QCOMPARE(elfRows[0]->name, QStringLiteral("ELF"));
 }
 
 void StructViewTests::builderRendersElf32AndElf64Tables()

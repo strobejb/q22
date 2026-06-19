@@ -275,6 +275,14 @@ typedef struct _Elf64_Sym
     e64      st_size;                   // Symbol size
 } Elf64_Sym;
 
+[
+    export,
+    description("Executable and Linkable Format (ELF)"),
+    assoc(".elf", ".so", ".o"),
+    offset(0),
+    endian(e_ident[EI_DATA] == ELFDATA2MSB),
+    view("elf.sections")
+]
 typedef struct _ELF
 {
     byte e_ident[EI_NIDENT];            // ELF identification bytes
@@ -315,12 +323,3 @@ typedef struct _ELF
     Elf64_Shdr sectionHeaders64[];
 
 } ELF;
-
-[
-    export,
-    assoc(".elf", ".so", ".o"),
-    offset(0),
-    endian(e_ident[EI_DATA] == ELFDATA2MSB),
-    view("elf.sections")
-]
-ELF elf;

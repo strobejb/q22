@@ -29,11 +29,16 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPlainTextEdit>
+#include <QRegularExpression>
 #include <QStyle>
 #include <QStyleOptionHeader>
 #include <QStackedWidget>
+#include <QStringList>
+#include <QSyntaxHighlighter>
 #include <QTextBlock>
+#include <QTextCharFormat>
 #include <QTextCursor>
+#include <QTextDocument>
 #include <QTreeView>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -101,6 +106,433 @@ static void applyStructureTextViewPalette(QPlainTextEdit *edit, HexView *hv)
                  filestats::cssColor(selBgColor),
                  filestats::cssColor(selFgColor)));
 }
+
+static QString typeLibKeywordPattern()
+{
+    QStringList words = {
+        QStringLiteral("char"),
+        QStringLiteral("wchar_t"),
+        QStringLiteral("byte"),
+        QStringLiteral("word"),
+        QStringLiteral("dword"),
+        QStringLiteral("qword"),
+        QStringLiteral("float"),
+        QStringLiteral("double"),
+    };
+
+#ifdef DEFINE_KEYWORD
+#pragma push_macro("DEFINE_KEYWORD")
+#undef DEFINE_KEYWORD
+#define QEXED_RESTORE_DEFINE_KEYWORD
+#endif
+
+#define DEFINE_KEYWORD(tok, str) words.append(QStringLiteral(str));
+#include "keywords.h"
+#undef DEFINE_KEYWORD
+
+#ifdef QEXED_RESTORE_DEFINE_KEYWORD
+#pragma pop_macro("DEFINE_KEYWORD")
+#undef QEXED_RESTORE_DEFINE_KEYWORD
+#endif
+
+    words.removeDuplicates();
+    for (QString &word : words)
+        word = QRegularExpression::escape(word);
+
+    return QStringLiteral(R"(\b(?:%1)\b)").arg(words.join(QLatin1Char('|')));
+}
+
+static QColor mutedBracketIdentifierColor(const QPalette &palette)
+{
+    return palette.color(QPalette::Base).lightness() < 128
+        ? QColor(202, 221, 88)
+        : QColor(116, 145, 28);
+}
+
+static QColor structureKeywordColor(const QPalette &palette)
+{
+    return palette.color(QPalette::Base).lightness() < 128
+        ? QColor(86, 137, 210)
+        : QColor(22, 58, 128);
+}
+
+static QColor structureTagKeywordColor(const QPalette &palette)
+{
+    return palette.color(QPalette::Base).lightness() < 128
+        ? QColor(73, 210, 139)
+        : QColor(0, 137, 82);
+}
+
+static QColor structureDeclarationNameColor(const QPalette &palette)
+{
+    return palette.color(QPalette::Base).lightness() < 128
+        ? QColor(116, 206, 214)
+        : QColor(31, 145, 166);
+}
+
+struct StructureSourceHighlightColors
+{
+    QColor keyword;
+    QColor string;
+    QColor number;
+    QColor tagKeyword;
+    QColor tagIdentifier;
+    QColor declarationName;
+    QColor comment;
+
+    static StructureSourceHighlightColors fromPalette(const QPalette &palette, HexView *hv)
+    {
+        StructureSourceHighlightColors colors;
+        colors.keyword = structureKeywordColor(palette);
+        colors.string = hv ? QColor(hv->getHexColour(HVC_MODIFY))
+                           : palette.color(QPalette::Highlight).darker(130);
+        colors.number = hv ? QColor(hv->getHexColour(HVC_HEXODD))
+                           : palette.color(QPalette::WindowText).darker(135);
+        colors.tagKeyword = structureTagKeywordColor(palette);
+        colors.tagIdentifier = mutedBracketIdentifierColor(palette);
+        colors.declarationName = structureDeclarationNameColor(palette);
+        colors.comment = filestats::subduedTextColor(palette);
+        return colors;
+    }
+};
+
+class StructureSourceHighlighter : public QSyntaxHighlighter
+{
+public:
+    explicit StructureSourceHighlighter(QTextDocument *document, const QPalette &palette, HexView *hv)
+        : QSyntaxHighlighter(document)
+    {
+        const StructureSourceHighlightColors colors = StructureSourceHighlightColors::fromPalette(palette, hv);
+
+        m_keywordFormat.setForeground(colors.keyword);
+        m_bracketKeywordFormat.setForeground(colors.tagKeyword);
+        m_bracketKeywordFormat.setFontWeight(QFont::Normal);
+        m_stringFormat.setForeground(colors.string);
+        m_bracketStringFormat.setForeground(colors.string);
+        m_numberFormat.setForeground(colors.number);
+        m_commentFormat.setForeground(colors.comment);
+        m_bracketIdentifierFormat.setForeground(colors.tagIdentifier);
+        m_bracketIdentifierFormat.setFontWeight(QFont::Normal);
+        m_declarationNameFormat.setForeground(colors.declarationName);
+        m_bracketFormat.setFontWeight(QFont::Bold);
+        m_outerBracketFormat.setForeground(colors.tagKeyword);
+        m_outerBracketFormat.setFontWeight(QFont::Normal);
+
+        m_keywordPattern = QRegularExpression(typeLibKeywordPattern());
+        m_stringPattern = QRegularExpression(
+            QStringLiteral(R"(\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*')"));
+        m_numberPattern = QRegularExpression(
+            QStringLiteral(R"(\b(?:0x[0-9a-fA-F]+|\d+(?:\.\d+)?)\b)"));
+        m_bracketPattern = QRegularExpression(QStringLiteral(R"([\[\]{}])"));
+        m_identifierPattern = QRegularExpression(QStringLiteral(R"(\b[A-Za-z_][A-Za-z0-9_]*\b)"));
+    }
+
+protected:
+    void highlightBlock(const QString &text) override
+    {
+        applyMatches(text, m_keywordPattern, m_keywordFormat);
+        applyMatches(text, m_numberPattern, m_numberFormat);
+        applyMatches(text, m_stringPattern, m_stringFormat);
+        applyDeclarationNames(text);
+        applyMatches(text, m_bracketPattern, m_bracketFormat);
+        applyBracketIdentifiers(text);
+
+        const int commentStart = lineCommentStart(text);
+        if (commentStart >= 0)
+            setFormat(commentStart, text.size() - commentStart, m_commentFormat);
+    }
+
+private:
+    void applyMatches(const QString &text, const QRegularExpression &pattern, const QTextCharFormat &format)
+    {
+        QRegularExpressionMatchIterator it = pattern.globalMatch(text);
+        while (it.hasNext())
+        {
+            const QRegularExpressionMatch match = it.next();
+            setFormat(match.capturedStart(), match.capturedLength(), format);
+        }
+    }
+
+    void applyDeclarationNames(const QString &text)
+    {
+        const int commentStart = lineCommentStart(text);
+        const int scanEnd = commentStart >= 0 ? commentStart : text.size();
+        int statementStart = 0;
+        int depth = qMax(0, previousBlockState());
+        QChar quote;
+        bool escaped = false;
+
+        for (int i = 0; i < scanEnd; ++i)
+        {
+            const QChar ch = text.at(i);
+            if (!quote.isNull())
+            {
+                if (escaped)
+                {
+                    escaped = false;
+                    continue;
+                }
+                if (ch == QLatin1Char('\\'))
+                {
+                    escaped = true;
+                    continue;
+                }
+                if (ch == quote)
+                    quote = QChar();
+                continue;
+            }
+
+            if (ch == QLatin1Char('"') || ch == QLatin1Char('\''))
+            {
+                quote = ch;
+                continue;
+            }
+            if (ch == QLatin1Char('['))
+            {
+                ++depth;
+                continue;
+            }
+            if (ch == QLatin1Char(']') && depth > 0)
+            {
+                --depth;
+                continue;
+            }
+            if (ch == QLatin1Char(';') && depth == 0)
+            {
+                applyDeclarationNameInSpan(text, statementStart, i - statementStart);
+                statementStart = i + 1;
+            }
+        }
+    }
+
+    void applyDeclarationNameInSpan(const QString &text, int start, int length)
+    {
+        if (length <= 0)
+            return;
+
+        const QString span = text.mid(start, length);
+        int lastStart = -1;
+        int lastLength = 0;
+
+        QRegularExpressionMatchIterator it = m_identifierPattern.globalMatch(span);
+        while (it.hasNext())
+        {
+            const QRegularExpressionMatch match = it.next();
+            const int matchStart = match.capturedStart();
+            if (keywordMatch(span, matchStart, match.capturedLength()))
+                continue;
+            if (spanSquareDepthAt(span, matchStart) > 0)
+                continue;
+
+            lastStart = start + matchStart;
+            lastLength = match.capturedLength();
+        }
+
+        if (lastStart >= 0)
+            setFormat(lastStart, lastLength, m_declarationNameFormat);
+    }
+
+    int spanSquareDepthAt(const QString &text, int offset) const
+    {
+        int depth = 0;
+        QChar quote;
+        bool escaped = false;
+
+        for (int i = 0; i < offset && i < text.size(); ++i)
+        {
+            const QChar ch = text.at(i);
+            if (!quote.isNull())
+            {
+                if (escaped)
+                {
+                    escaped = false;
+                    continue;
+                }
+                if (ch == QLatin1Char('\\'))
+                {
+                    escaped = true;
+                    continue;
+                }
+                if (ch == quote)
+                    quote = QChar();
+                continue;
+            }
+
+            if (ch == QLatin1Char('"') || ch == QLatin1Char('\''))
+                quote = ch;
+            else if (ch == QLatin1Char('['))
+                ++depth;
+            else if (ch == QLatin1Char(']') && depth > 0)
+                --depth;
+        }
+
+        return depth;
+    }
+
+    void applyBracketIdentifiers(const QString &text)
+    {
+        const int commentStart = lineCommentStart(text);
+        const int scanEnd = commentStart >= 0 ? commentStart : text.size();
+        int depth = qMax(0, previousBlockState());
+        int spanStart = depth > 0 ? 0 : -1;
+        QChar quote;
+        bool escaped = false;
+
+        for (int i = 0; i < scanEnd; ++i)
+        {
+            const QChar ch = text.at(i);
+            if (!quote.isNull())
+            {
+                if (escaped)
+                {
+                    escaped = false;
+                    continue;
+                }
+                if (ch == QLatin1Char('\\'))
+                {
+                    escaped = true;
+                    continue;
+                }
+                if (ch == quote)
+                    quote = QChar();
+                continue;
+            }
+
+            if (ch == QLatin1Char('"') || ch == QLatin1Char('\''))
+            {
+                quote = ch;
+                continue;
+            }
+
+            if (ch == QLatin1Char('['))
+            {
+                if (depth == 0)
+                {
+                    spanStart = i + 1;
+                    setFormat(i, 1, m_outerBracketFormat);
+                }
+                ++depth;
+            }
+            else if (ch == QLatin1Char(']') && depth > 0)
+            {
+                if (depth == 1)
+                    setFormat(i, 1, m_outerBracketFormat);
+                --depth;
+                if (depth == 0 && spanStart >= 0 && i > spanStart)
+                {
+                    applyBracketIdentifiersInSpan(text, spanStart, i - spanStart);
+                    spanStart = -1;
+                }
+            }
+        }
+
+        if (depth > 0 && spanStart >= 0 && scanEnd > spanStart)
+            applyBracketIdentifiersInSpan(text, spanStart, scanEnd - spanStart);
+
+        setCurrentBlockState(depth);
+    }
+
+    void applyBracketIdentifiersInSpan(const QString &text, int start, int length)
+    {
+        const QString span = text.mid(start, length);
+        applyTagPunctuationInSpan(span, start);
+
+        QRegularExpressionMatchIterator it = m_identifierPattern.globalMatch(span);
+        while (it.hasNext())
+        {
+            const QRegularExpressionMatch match = it.next();
+            const int absoluteStart = start + match.capturedStart();
+            setFormat(absoluteStart,
+                      match.capturedLength(),
+                      keywordMatch(span, match.capturedStart(), match.capturedLength())
+                          ? m_bracketKeywordFormat
+                          : m_bracketIdentifierFormat);
+        }
+
+        applyMatchesInSpan(span, start, m_stringPattern, m_bracketStringFormat);
+    }
+
+    void applyTagPunctuationInSpan(const QString &span, int absoluteOffset)
+    {
+        for (int i = 0; i < span.size(); ++i)
+        {
+            const QChar ch = span.at(i);
+            if (!ch.isLetterOrNumber() && ch != QLatin1Char('_') && !ch.isSpace())
+                setFormat(absoluteOffset + i, 1, m_outerBracketFormat);
+        }
+    }
+
+    void applyMatchesInSpan(const QString &span, int absoluteOffset, const QRegularExpression &pattern, const QTextCharFormat &format)
+    {
+        QRegularExpressionMatchIterator it = pattern.globalMatch(span);
+        while (it.hasNext())
+        {
+            const QRegularExpressionMatch match = it.next();
+            setFormat(absoluteOffset + match.capturedStart(), match.capturedLength(), format);
+        }
+    }
+
+    bool keywordMatch(const QString &text, int start, int length) const
+    {
+        const QRegularExpressionMatch match = m_keywordPattern.match(text, start);
+        return match.hasMatch()
+            && match.capturedStart() == start
+            && match.capturedLength() == length;
+    }
+
+    int lineCommentStart(const QString &text) const
+    {
+        QChar quote;
+        bool escaped = false;
+
+        for (int i = 0; i + 1 < text.size(); ++i)
+        {
+            const QChar ch = text.at(i);
+            if (!quote.isNull())
+            {
+                if (escaped)
+                {
+                    escaped = false;
+                    continue;
+                }
+                if (ch == QLatin1Char('\\'))
+                {
+                    escaped = true;
+                    continue;
+                }
+                if (ch == quote)
+                    quote = QChar();
+                continue;
+            }
+
+            if (ch == QLatin1Char('"') || ch == QLatin1Char('\''))
+            {
+                quote = ch;
+                continue;
+            }
+            if (ch == QLatin1Char('/') && text.at(i + 1) == QLatin1Char('/'))
+                return i;
+        }
+
+        return -1;
+    }
+
+    QRegularExpression m_keywordPattern;
+    QRegularExpression m_stringPattern;
+    QRegularExpression m_numberPattern;
+    QRegularExpression m_bracketPattern;
+    QRegularExpression m_identifierPattern;
+    QTextCharFormat m_keywordFormat;
+    QTextCharFormat m_bracketKeywordFormat;
+    QTextCharFormat m_stringFormat;
+    QTextCharFormat m_bracketStringFormat;
+    QTextCharFormat m_numberFormat;
+    QTextCharFormat m_declarationNameFormat;
+    QTextCharFormat m_bracketIdentifierFormat;
+    QTextCharFormat m_bracketFormat;
+    QTextCharFormat m_outerBracketFormat;
+    QTextCharFormat m_commentFormat;
+};
 
 qreal devicePixelSize(const QPainter *painter)
 {
@@ -184,6 +616,12 @@ protected:
     void mouseMoveEvent(QMouseEvent *event) override
     {
         QHeaderView::mouseMoveEvent(event);
+        if (nearSectionResizeHandle(event->position().toPoint()))
+            viewport()->setCursor(Qt::SplitHCursor);
+        else if (logicalIndexAt(event->position().toPoint()) >= 0)
+            viewport()->setCursor(Qt::PointingHandCursor);
+        else
+            viewport()->setCursor(Qt::ArrowCursor);
         viewport()->update();
     }
 
@@ -208,6 +646,7 @@ protected:
     void leaveEvent(QEvent *event) override
     {
         QHeaderView::leaveEvent(event);
+        viewport()->unsetCursor();
         viewport()->update();
     }
 
@@ -443,6 +882,7 @@ public:
     {
         Struct,
         Source,
+        Log,
     };
 
     enum class TabAlignment
@@ -485,6 +925,7 @@ public:
         m_logButton = button;
         if (m_logButton)
             m_logButton->setParent(this);
+        updateLogButtonState();
         updateFooterChildren();
     }
 
@@ -513,6 +954,7 @@ public:
             return;
 
         m_logActive = active;
+        updateLogButtonState();
         update();
     }
 
@@ -535,7 +977,8 @@ protected:
         painter.fillRect(rect(), footer);
         paintContentBody(&painter, base, border);
 
-        paintTab(&painter, m_structTabRect, tr("View"), Page::Struct);
+        paintLogTab(&painter);
+        paintTab(&painter, m_structTabRect, tr("Structure"), Page::Struct);
         paintTab(&painter, m_sourceTabRect, tr("Source"), Page::Source);
     }
 
@@ -573,7 +1016,9 @@ protected:
             const int tab = tabAt(event->pos());
             if (tab >= 0)
             {
-                const Page page = tab == 0 ? Page::Struct : Page::Source;
+                const Page page = tab == 0 ? Page::Struct
+                    : tab == 1       ? Page::Source
+                                     : Page::Log;
                 if (m_tabChangedCallback)
                     m_tabChangedCallback(page);
                 event->accept();
@@ -589,8 +1034,8 @@ private:
     static constexpr int kBorderWidth = 1;
     static constexpr int kTabHeight = 24;
     static constexpr int kTabHorzPad = 14;
+    static constexpr int kLogTabWidth = 70;
     static constexpr int kFooterPad = 6;
-    static constexpr int kFooterGap = 6;
     static constexpr TabAlignment kTabAlignment = TabAlignment::Right;
 
     int tabTop() const
@@ -606,21 +1051,26 @@ private:
     void updateTabRects()
     {
         const QFontMetrics metrics(font());
-        const int structW = metrics.horizontalAdvance(tr("View")) + 2 * kTabHorzPad;
+        const int structW = metrics.horizontalAdvance(tr("Structure")) + 2 * kTabHorzPad;
         const int sourceW = metrics.horizontalAdvance(tr("Source")) + 2 * kTabHorzPad;
+        const int logW = kLogTabWidth;
         const int y = tabTop();
 
         if (kTabAlignment == TabAlignment::Right)
         {
             const int sourceX = width() - kFooterPad - sourceW;
             const int structX = sourceX - structW + 1;
+            const int logX = structX - logW + 1;
+            m_logTabRect = QRect(logX, y, logW, kTabHeight);
             m_structTabRect = QRect(structX, y, structW, kTabHeight);
             m_sourceTabRect = QRect(sourceX, y, sourceW, kTabHeight);
         }
         else
         {
-            const int structX = kFooterPad;
+            const int logX = kFooterPad;
+            const int structX = logX + logW - 1;
             const int sourceX = structX + structW - 1;
+            m_logTabRect = QRect(logX, y, logW, kTabHeight);
             m_structTabRect = QRect(structX, y, structW, kTabHeight);
             m_sourceTabRect = QRect(sourceX, y, sourceW, kTabHeight);
         }
@@ -628,7 +1078,7 @@ private:
 
     QRect tabGroupRect() const
     {
-        return m_structTabRect.united(m_sourceTabRect);
+        return m_logTabRect.united(m_structTabRect).united(m_sourceTabRect);
     }
 
     void updateFooterChildren()
@@ -637,30 +1087,23 @@ private:
 
         const QRect tabs = tabGroupRect();
         const int footerTop = tabTop();
-        const int buttonSize = qMax(0, kTabHeight - 4);
-        QRect logRect;
         QRect labelRect;
+        const int logButtonSide = qMax(1, kTabHeight - 4);
+        QRect logRect(0, 0, logButtonSide, logButtonSide);
+        logRect.moveCenter(m_logTabRect.center());
 
         if (kTabAlignment == TabAlignment::Right)
         {
-            logRect = QRect(tabs.left() - kFooterGap - buttonSize,
-                            footerTop + (kTabHeight - buttonSize) / 2,
-                            buttonSize,
-                            buttonSize);
             labelRect = QRect(kFooterPad,
                               footerTop,
-                              qMax(0, logRect.left() - kFooterGap - kFooterPad),
+                              qMax(0, tabs.left() - kFooterPad),
                               kTabHeight);
         }
         else
         {
-            logRect = QRect(tabs.right() + 1 + kFooterGap,
-                            footerTop + (kTabHeight - buttonSize) / 2,
-                            buttonSize,
-                            buttonSize);
-            labelRect = QRect(logRect.right() + 1 + kFooterGap,
+            labelRect = QRect(tabs.right() + 1,
                               footerTop,
-                              qMax(0, width() - (logRect.right() + 1 + kFooterGap + kFooterPad)),
+                              qMax(0, width() - tabs.right() - 1 - kFooterPad),
                               kTabHeight);
         }
 
@@ -674,8 +1117,21 @@ private:
             m_statusLabel->setGeometry(labelRect);
     }
 
+    void updateLogButtonState()
+    {
+        if (!m_logButton)
+            return;
+
+        m_logButton->setProperty("logActive", m_logActive);
+        m_logButton->style()->unpolish(m_logButton);
+        m_logButton->style()->polish(m_logButton);
+        m_logButton->update();
+    }
+
     int tabAt(const QPoint &pos) const
     {
+        if (m_logTabRect.contains(pos))
+            return 2;
         if (m_structTabRect.contains(pos))
             return 0;
         if (m_sourceTabRect.contains(pos))
@@ -734,8 +1190,68 @@ private:
     QRect activeTabRect() const
     {
         if (m_logActive)
-            return QRect();
+            return m_logTabRect;
         return m_currentPage == Page::Struct ? m_structTabRect : m_sourceTabRect;
+    }
+
+    void paintLogTab(QPainter *painter)
+    {
+        if (!m_logActive || !painter || !m_logTabRect.isValid())
+            return;
+
+        paintTabChrome(painter, m_logTabRect, palette().color(QPalette::Base), true);
+    }
+
+    void paintTabChrome(QPainter *painter, const QRect &rect, const QColor &fill, bool active)
+    {
+        if (!painter || !rect.isValid())
+            return;
+
+        const QColor border = palette().color(QPalette::Mid);
+        QRectF tabRect(rect);
+        tabRect.adjust(0.5, 0.5, -0.5, -0.5);
+
+        QPainterPath fillPath;
+        fillPath.moveTo(tabRect.left(), tabRect.top());
+        fillPath.lineTo(tabRect.right(), tabRect.top());
+        fillPath.lineTo(tabRect.right(), tabRect.bottom() - kRadius);
+        fillPath.quadTo(tabRect.right(), tabRect.bottom(),
+                        tabRect.right() - kRadius, tabRect.bottom());
+        fillPath.lineTo(tabRect.left() + kRadius, tabRect.bottom());
+        fillPath.quadTo(tabRect.left(), tabRect.bottom(),
+                        tabRect.left(), tabRect.bottom() - kRadius);
+        fillPath.lineTo(tabRect.left(), tabRect.top());
+        fillPath.closeSubpath();
+        painter->fillPath(fillPath, fill);
+
+        QPainterPath borderPath;
+        if (active)
+        {
+            borderPath.moveTo(tabRect.left(), tabRect.top());
+            borderPath.lineTo(tabRect.left(), tabRect.bottom() - kRadius);
+            borderPath.quadTo(tabRect.left(), tabRect.bottom(),
+                              tabRect.left() + kRadius, tabRect.bottom());
+            borderPath.lineTo(tabRect.right() - kRadius, tabRect.bottom());
+            borderPath.quadTo(tabRect.right(), tabRect.bottom(),
+                              tabRect.right(), tabRect.bottom() - kRadius);
+            borderPath.lineTo(tabRect.right(), tabRect.top());
+        }
+        else
+        {
+            borderPath.moveTo(tabRect.left(), tabRect.top());
+            borderPath.lineTo(tabRect.right(), tabRect.top());
+            borderPath.lineTo(tabRect.right(), tabRect.bottom() - kRadius);
+            borderPath.quadTo(tabRect.right(), tabRect.bottom(),
+                              tabRect.right() - kRadius, tabRect.bottom());
+            borderPath.lineTo(tabRect.left() + kRadius, tabRect.bottom());
+            borderPath.quadTo(tabRect.left(), tabRect.bottom(),
+                              tabRect.left(), tabRect.bottom() - kRadius);
+            borderPath.lineTo(tabRect.left(), tabRect.top());
+        }
+
+        painter->setPen(QPen(border, 1.0));
+        painter->setBrush(Qt::NoBrush);
+        painter->drawPath(borderPath);
     }
 
     void paintTab(QPainter *painter, const QRect &rect, const QString &text, Page page)
@@ -754,66 +1270,7 @@ private:
             ? palette().color(QPalette::WindowText)
             : filestats::subduedTextColor(palette());
 
-        QRectF tabRect(rect);
-        tabRect.adjust(0.5, 0.5, -0.5, -0.5);
-
-        if (active)
-        {
-            QPainterPath fillPath;
-            fillPath.moveTo(tabRect.left(), tabRect.top());
-            fillPath.lineTo(tabRect.right(), tabRect.top());
-            fillPath.lineTo(tabRect.right(), tabRect.bottom() - kRadius);
-            fillPath.quadTo(tabRect.right(), tabRect.bottom(),
-                            tabRect.right() - kRadius, tabRect.bottom());
-            fillPath.lineTo(tabRect.left() + kRadius, tabRect.bottom());
-            fillPath.quadTo(tabRect.left(), tabRect.bottom(),
-                            tabRect.left(), tabRect.bottom() - kRadius);
-            fillPath.lineTo(tabRect.left(), tabRect.top());
-            fillPath.closeSubpath();
-            painter->fillPath(fillPath, fill);
-
-            QPainterPath borderPath;
-            borderPath.moveTo(tabRect.left(), tabRect.top());
-            borderPath.lineTo(tabRect.left(), tabRect.bottom() - kRadius);
-            borderPath.quadTo(tabRect.left(), tabRect.bottom(),
-                              tabRect.left() + kRadius, tabRect.bottom());
-            borderPath.lineTo(tabRect.right() - kRadius, tabRect.bottom());
-            borderPath.quadTo(tabRect.right(), tabRect.bottom(),
-                              tabRect.right(), tabRect.bottom() - kRadius);
-            borderPath.lineTo(tabRect.right(), tabRect.top());
-            painter->setPen(QPen(border, 1.0));
-            painter->setBrush(Qt::NoBrush);
-            painter->drawPath(borderPath);
-        }
-        else
-        {
-            QPainterPath fillPath;
-            fillPath.moveTo(tabRect.left(), tabRect.top());
-            fillPath.lineTo(tabRect.right(), tabRect.top());
-            fillPath.lineTo(tabRect.right(), tabRect.bottom() - kRadius);
-            fillPath.quadTo(tabRect.right(), tabRect.bottom(),
-                            tabRect.right() - kRadius, tabRect.bottom());
-            fillPath.lineTo(tabRect.left() + kRadius, tabRect.bottom());
-            fillPath.quadTo(tabRect.left(), tabRect.bottom(),
-                            tabRect.left(), tabRect.bottom() - kRadius);
-            fillPath.lineTo(tabRect.left(), tabRect.top());
-            fillPath.closeSubpath();
-            painter->fillPath(fillPath, fill);
-
-            QPainterPath borderPath;
-            borderPath.moveTo(tabRect.left(), tabRect.top());
-            borderPath.lineTo(tabRect.right(), tabRect.top());
-            borderPath.lineTo(tabRect.right(), tabRect.bottom() - kRadius);
-            borderPath.quadTo(tabRect.right(), tabRect.bottom(),
-                              tabRect.right() - kRadius, tabRect.bottom());
-            borderPath.lineTo(tabRect.left() + kRadius, tabRect.bottom());
-            borderPath.quadTo(tabRect.left(), tabRect.bottom(),
-                              tabRect.left(), tabRect.bottom() - kRadius);
-            borderPath.lineTo(tabRect.left(), tabRect.top());
-            painter->setPen(QPen(border, 1.0));
-            painter->setBrush(Qt::NoBrush);
-            painter->drawPath(borderPath);
-        }
+        paintTabChrome(painter, rect, fill, active);
 
         painter->setPen(textColor);
         painter->drawText(rect.adjusted(kTabHorzPad, 0, -kTabHorzPad, -1),
@@ -823,6 +1280,7 @@ private:
     QVBoxLayout *m_contentLayout = nullptr;
     QLabel *m_statusLabel = nullptr;
     QToolButton *m_logButton = nullptr;
+    QRect m_logTabRect;
     QRect m_structTabRect;
     QRect m_sourceTabRect;
     Page m_currentPage = Page::Struct;
@@ -989,6 +1447,7 @@ void StructureViewPanel::buildUi()
     m_sourceView->setLineWrapMode(QPlainTextEdit::NoWrap);
     m_sourceView->setObjectName(QStringLiteral("structureSourceView"));
     applyStructureTextViewPalette(m_sourceView, m_hv);
+    new StructureSourceHighlighter(m_sourceView->document(), m_sourceView->palette(), m_hv);
 
     m_logView = new QPlainTextEdit(m_viewStack);
     m_logView->setReadOnly(true);
@@ -1003,11 +1462,30 @@ void StructureViewPanel::buildUi()
     m_contentFrame->setContentWidget(m_viewStack);
 
     m_logButton = new QToolButton(m_contentFrame);
+    m_logButton->setObjectName(QStringLiteral("structureLogTabButton"));
     m_logButton->setAutoRaise(true);
     m_logButton->setCursor(Qt::PointingHandCursor);
     m_logButton->setIcon(recoloredIcon(QStringLiteral("actions/terminal"),
                                        palette().color(QPalette::WindowText), 16));
     m_logButton->setToolTip(tr("Show definition log"));
+    m_logButton->setStyleSheet(QStringLiteral(R"(
+        QToolButton#structureLogTabButton {
+            background: transparent;
+            border: none;
+            border-radius: 6px;
+            padding: 2px;
+        }
+        QToolButton#structureLogTabButton[logActive="false"]:hover {
+            background: palette(button);
+        }
+        QToolButton#structureLogTabButton[logActive="false"]:pressed {
+            background: palette(midlight);
+        }
+        QToolButton#structureLogTabButton[logActive="true"]:hover,
+        QToolButton#structureLogTabButton[logActive="true"]:pressed {
+            background: transparent;
+        }
+    )"));
 
     m_statusLabel = new QLabel(m_contentFrame);
     m_statusLabel->setTextFormat(Qt::PlainText);
@@ -1017,8 +1495,10 @@ void StructureViewPanel::buildUi()
     m_contentFrame->setTabChangedCallback([this](StructureContentFrame::Page page) {
         if (page == StructureContentFrame::Page::Struct)
             showGridPage();
-        else
+        else if (page == StructureContentFrame::Page::Source)
             showSourcePage(selectedRootType());
+        else
+            showLogPage();
     });
 
     contentLay->addWidget(m_contentFrame, 1);
@@ -1135,7 +1615,10 @@ void StructureViewPanel::updateDefinitionsUi()
     m_rootCombo->clear();
     for (const ExportedStructureType &type : exportedTypes)
     {
-        m_rootCombo->addItem(displayNameForTypeDecl(type.typeDecl),
+        const QString displayName = type.description.isEmpty()
+            ? displayNameForTypeDecl(type.typeDecl)
+            : type.description;
+        m_rootCombo->addItem(displayName,
                              QVariant::fromValue<qulonglong>(reinterpret_cast<qulonglong>(type.typeDecl)));
     }
     selectAssociatedRootType(exportedTypes);

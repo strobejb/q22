@@ -20,6 +20,7 @@ private slots:
 	void tagsetsDumpInSourceOrder();
 	void dynamicPlacementTagsParse();
 	void viewTagsParse();
+	void descriptionTagsParseAndDisplayRemainsSeparate();
 	void alignAndEntrypointTagsParse();
 	void endianExpressionTagsParse();
 	void ternaryExpressionTagsParse();
@@ -346,6 +347,34 @@ void TypeLibTests::viewTagsParse()
 	QCOMPARE(QString::fromLocal8Bit(expr->str), QStringLiteral("pe.imports"));
 }
 
+void TypeLibTests::descriptionTagsParseAndDisplayRemainsSeparate()
+{
+	// Scenario: an exported Structure View root declares a friendly UI label.
+	// Expected: description("...") is preserved as a normal string tag, while
+	// the older display("...") tag remains separate legacy metadata.
+	// Regression guard: the root dropdown should not overload TOK_DISPLAY or
+	// require special parser-side storage for a simple UI description.
+	Parser parser;
+	QVERIFY(parseBuffer(parser,
+						"[export, description(\"Portable Executable (PE)\"), display(\"legacy\")]\n"
+						"struct Root { dword magic; } root;\n"));
+
+	QCOMPARE(parser.GetTypeLibrary()->globalTypeDeclList.size(), size_t(1));
+	TypeDecl *root = parser.GetTypeLibrary()->globalTypeDeclList[0];
+
+	ExprNode *description = nullptr;
+	QVERIFY(FindTag(root->tagList, TOK_DESCRIPTION, &description));
+	QVERIFY(description);
+	QCOMPARE(description->type, EXPR_STRINGBUF);
+	QCOMPARE(QString::fromLocal8Bit(description->str), QStringLiteral("Portable Executable (PE)"));
+
+	ExprNode *display = nullptr;
+	QVERIFY(FindTag(root->tagList, TOK_DISPLAY, &display));
+	QVERIFY(display);
+	QCOMPARE(display->type, EXPR_STRINGBUF);
+	QCOMPARE(QString::fromLocal8Bit(display->str), QStringLiteral("legacy"));
+}
+
 void TypeLibTests::alignAndEntrypointTagsParse()
 {
 	// Scenario: Structure View definitions annotate both layout and a field that
@@ -499,6 +528,12 @@ void TypeLibTests::elfRootIsExportedAndAssociated()
 	QVERIFY(FindTag(elf->tagList, TOK_ENDIAN, nullptr));
 	QVERIFY(FindTag(elf->tagList, TOK_VIEW, nullptr));
 
+	ExprNode *description = nullptr;
+	QVERIFY(FindTag(elf->tagList, TOK_DESCRIPTION, &description));
+	QVERIFY(description);
+	QCOMPARE(description->type, EXPR_STRINGBUF);
+	QCOMPARE(QString::fromLocal8Bit(description->str), QStringLiteral("Executable and Linkable Format (ELF)"));
+
 	ExprNode *assoc = nullptr;
 	QVERIFY(FindTag(elf->tagList, TOK_ASSOC, &assoc));
 	QVERIFY(assoc);
@@ -543,6 +578,21 @@ void TypeLibTests::standardTypelibFilesParse()
 		Parser parser;
 		QVERIFY2(parser.Ooof(qPrintable(path)), qPrintable(parser.LastErrStr()));
 		QVERIFY2(!parser.GetTypeLibrary()->globalTypeDeclList.empty(), qPrintable(file));
+
+		if(file == QStringLiteral("pe.struct"))
+		{
+			TypeDecl *pe = nullptr;
+			for(TypeDecl *decl : parser.GetTypeLibrary()->globalTypeDeclList)
+				if(decl && FindTag(decl->tagList, TOK_EXPORT, nullptr))
+					pe = decl;
+
+			QVERIFY(pe);
+			ExprNode *description = nullptr;
+			QVERIFY(FindTag(pe->tagList, TOK_DESCRIPTION, &description));
+			QVERIFY(description);
+			QCOMPARE(description->type, EXPR_STRINGBUF);
+			QCOMPARE(QString::fromLocal8Bit(description->str), QStringLiteral("Portable Executable (PE)"));
+		}
 	}
 }
 
