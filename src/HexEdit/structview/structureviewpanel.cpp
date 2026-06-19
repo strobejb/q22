@@ -241,9 +241,11 @@ public:
         m_bracketIdentifierFormat.setForeground(colors.tagIdentifier);
         m_bracketIdentifierFormat.setFontWeight(QFont::Normal);
         m_typeNameFormat.setForeground(colors.typeName);
-        m_bracketFormat.setFontWeight(QFont::Bold);
+        m_bracketFormat.setFontWeight(QFont::Normal);
+        m_tagPunctuationFormat.setForeground(colors.tagKeyword);
+        m_tagPunctuationFormat.setFontWeight(QFont::Normal);
         m_outerBracketFormat.setForeground(colors.tagKeyword);
-        m_outerBracketFormat.setFontWeight(QFont::Normal);
+        m_outerBracketFormat.setFontWeight(QFont::Bold);
 
         m_keywordPattern = QRegularExpression(typeLibKeywordPattern());
         m_typeKeywordPattern = QRegularExpression(typeKeywordPattern());
@@ -251,7 +253,7 @@ public:
             QStringLiteral(R"(\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*')"));
         m_numberPattern = QRegularExpression(
             QStringLiteral(R"(\b(?:0x[0-9a-fA-F]+|\d+(?:\.\d+)?)\b)"));
-        m_bracketPattern = QRegularExpression(QStringLiteral(R"([\[\]{}])"));
+        m_bracketPattern = QRegularExpression(QStringLiteral(R"([{}])"));
         m_identifierPattern = QRegularExpression(QStringLiteral(R"(\b[A-Za-z_][A-Za-z0-9_]*\b)"));
     }
 
@@ -504,7 +506,10 @@ private:
         {
             const QChar ch = span.at(i);
             if (!ch.isLetterOrNumber() && ch != QLatin1Char('_') && !ch.isSpace())
-                setFormat(absoluteOffset + i, 1, m_outerBracketFormat);
+            {
+                const bool squareBracket = ch == QLatin1Char('[') || ch == QLatin1Char(']');
+                setFormat(absoluteOffset + i, 1, squareBracket ? m_outerBracketFormat : m_tagPunctuationFormat);
+            }
         }
     }
 
@@ -586,6 +591,7 @@ private:
     QTextCharFormat m_typeNameFormat;
     QTextCharFormat m_bracketIdentifierFormat;
     QTextCharFormat m_bracketFormat;
+    QTextCharFormat m_tagPunctuationFormat;
     QTextCharFormat m_outerBracketFormat;
     QTextCharFormat m_commentFormat;
 };

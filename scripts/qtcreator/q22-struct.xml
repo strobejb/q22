@@ -2,7 +2,7 @@
 <!DOCTYPE language>
 <language
     name="Q22 Struct"
-    version="2"
+    version="3"
     kateversion="5.79"
     section="Sources"
     extensions="*.struct"
@@ -13,34 +13,22 @@
 
 <highlighting>
 <list name="keywords">
-    <item>include</item>
-    <item>typedef</item>
-    <item>struct</item>
-    <item>union</item>
-    <item>enum</item>
     <item>const</item>
-    <item>signed</item>
-    <item>unsigned</item>
+    <item>default</item>
+    <item>display</item>
+    <item>enum</item>
+    <item>ignore</item>
+    <item>include</item>
+    <item>sizeof</item>
+    <item>string</item>
+    <item>struct</item>
+    <item>style</item>
     <item>tagset</item>
-    <item>tags</item>
+    <item>typedef</item>
+    <item>union</item>
 </list>
 
-<list name="tags">
-    <item>export</item>
-    <item>assoc</item>
-    <item>offset</item>
-    <item>size_is</item>
-    <item>endian</item>
-    <item>switch_is</item>
-    <item>case</item>
-    <item>name</item>
-    <item>dynamic_container</item>
-    <item>dynamic_struct</item>
-    <item>offset_map</item>
-    <item>view</item>
-</list>
-
-<list name="types">
+<list name="typeKeywords">
     <item>byte</item>
     <item>word</item>
     <item>dword</item>
@@ -49,6 +37,35 @@
     <item>wchar_t</item>
     <item>float</item>
     <item>double</item>
+    <item>signed</item>
+    <item>unsigned</item>
+    <item>short</item>
+    <item>long</item>
+    <item>int</item>
+</list>
+
+<list name="tagKeywords">
+    <item>align</item>
+    <item>assoc</item>
+    <item>bitflag</item>
+    <item>case</item>
+    <item>description</item>
+    <item>display</item>
+    <item>dynamic_container</item>
+    <item>dynamic_struct</item>
+    <item>endian</item>
+    <item>entrypoint</item>
+    <item>enum</item>
+    <item>export</item>
+    <item>length_is</item>
+    <item>name</item>
+    <item>offset</item>
+    <item>offset_map</item>
+    <item>optional</item>
+    <item>size_is</item>
+    <item>switch_is</item>
+    <item>tags</item>
+    <item>view</item>
 </list>
 
 <contexts>
@@ -56,14 +73,17 @@
         <Detect2Chars char="/" char1="/" attribute="Comment" context="Line Comment"/>
         <Detect2Chars char="/" char1="*" attribute="Comment" context="Block Comment"/>
         <DetectChar char="&quot;" attribute="String" context="String"/>
-        <keyword String="tags" attribute="Tag"/>
+        <DetectChar char="'" attribute="String" context="Char"/>
+        <DetectChar char="[" attribute="Tag Bracket" context="Tag Block"/>
+        <keyword String="typeKeywords" attribute="Type Keyword"/>
         <keyword String="keywords" attribute="Keyword"/>
-        <keyword String="types" attribute="Data Type"/>
         <Float attribute="Float"/>
         <Int attribute="Decimal"/>
+        <AnyChar String="{}" attribute="Brace"/>
     </context>
 
     <context name="Line Comment" attribute="Comment" lineEndContext="#pop"/>
+
     <context name="Block Comment" attribute="Comment" lineEndContext="#stay">
         <Detect2Chars char="*" char1="/" attribute="Comment" context="#pop"/>
     </context>
@@ -72,15 +92,38 @@
         <HlCStringChar attribute="Char"/>
         <DetectChar char="&quot;" attribute="String" context="#pop"/>
     </context>
+
+    <context name="Char" attribute="String" lineEndContext="#pop">
+        <HlCStringChar attribute="Char"/>
+        <DetectChar char="'" attribute="String" context="#pop"/>
+    </context>
+
+    <context name="Tag Block" attribute="Tag Identifier" lineEndContext="#stay">
+        <Detect2Chars char="/" char1="/" attribute="Comment" context="Line Comment"/>
+        <Detect2Chars char="/" char1="*" attribute="Comment" context="Block Comment"/>
+        <DetectChar char="&quot;" attribute="String" context="String"/>
+        <DetectChar char="'" attribute="String" context="Char"/>
+        <DetectChar char="[" attribute="Tag Bracket" context="Tag Block"/>
+        <DetectChar char="]" attribute="Tag Bracket" context="#pop"/>
+        <keyword String="tagKeywords" attribute="Tag Keyword"/>
+        <keyword String="typeKeywords" attribute="Tag Keyword"/>
+        <Float attribute="Float"/>
+        <Int attribute="Decimal"/>
+        <AnyChar String="(),.+-*/%&amp;|!~?:&lt;&gt;={}" attribute="Tag Punctuation"/>
+    </context>
 </contexts>
 
 <itemDatas>
     <itemData name="Normal Text" defStyleNum="dsNormal"/>
-    <itemData name="Keyword" defStyleNum="dsKeyword"/>
-    <itemData name="Tag" defStyleNum="dsFunction"/>
-    <itemData name="Data Type" defStyleNum="dsDataType"/>
-    <itemData name="String" defStyleNum="dsString"/>
-    <itemData name="Char" defStyleNum="dsChar"/>
+    <itemData name="Keyword" defStyleNum="dsKeyword" color="#CF2338"/>
+    <itemData name="Type Keyword" defStyleNum="dsDataType" color="#0651AE"/>
+    <itemData name="Tag Keyword" defStyleNum="dsKeyword" color="#008952"/>
+    <itemData name="Tag Identifier" defStyleNum="dsNormal" color="#74911C"/>
+    <itemData name="Tag Punctuation" defStyleNum="dsOperator" color="#008952"/>
+    <itemData name="Tag Bracket" defStyleNum="dsOperator" color="#008952" bold="1"/>
+    <itemData name="Brace" defStyleNum="dsOperator"/>
+    <itemData name="String" defStyleNum="dsString" color="#6D48C3"/>
+    <itemData name="Char" defStyleNum="dsChar" color="#6D48C3"/>
     <itemData name="Comment" defStyleNum="dsComment"/>
     <itemData name="Decimal" defStyleNum="dsDecVal"/>
     <itemData name="Float" defStyleNum="dsFloat"/>

@@ -313,9 +313,9 @@ void DisassemblerPanel::disassemble()
     // Semantic colours from the hex view's own palette
     const QColor addrColor  = QColor(m_hv->getHexColour(HVC_ADDRESS));
     const QColor bytesColor = blend(QColor(m_hv->getHexColour(HVC_ADDRESS)), m_hv->getHexColour(HVC_BACKGROUND));
-    const QColor instrColor = QColor(m_hv->getHexColour(HVC_HEXEVEN));
-    const QColor opColor    = QColor(m_hv->getHexColour(HVC_HEXODD));
-    const QColor numColor   = QColor(m_hv->getHexColour(HVC_MODIFY));
+    const QColor instrColor(0xcf, 0x23, 0x38);
+    const QColor opColor(0x06, 0x51, 0xae);
+    const QColor numColor = QColor(m_hv->getHexColour(HVC_HEXODD));
 
     // Bytes column: midpoint between instrColor and opColor
     /*const QColor bytesColor(qRound((instrColor.red()   + opColor.red())   / 2.0),
@@ -326,10 +326,10 @@ void DisassemblerPanel::disassemble()
     fmtGrey.setForeground(addrColor);
     fmtBytes.setForeground(bytesColor);
     fmtInstr.setForeground(instrColor);       // mnemonic – odd column, bold
-    fmtInstr.setFontWeight(QFont::Bold);
+    fmtInstr.setFontWeight(QFont::Medium);
     fmtOp.setForeground(opColor);             // registers/identifiers – even column, bold
     fmtOp.setFontWeight(QFont::Medium);
-    fmtMod.setForeground(opColor);            // byte ptr / dword ptr – even column, not bold
+    fmtMod.setForeground(wt);                 // byte ptr / dword ptr – neutral, not bold
     fmtNum.setForeground(numColor);           // numeric literals – modified colour, bold
     fmtNum.setFontWeight(QFont::Medium);
     fmtPunct.setForeground(wt);               // [ ] , + - * : – plain foreground

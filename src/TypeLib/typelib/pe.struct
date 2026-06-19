@@ -12,44 +12,42 @@ include "basetypes.struct";
 
 enum IMAGE_DIRECTORY
 {
-	IMAGE_DIRECTORY_ENTRY_EXPORT          = 0,   // Export Directory
-	IMAGE_DIRECTORY_ENTRY_IMPORT          = 1,   // Import Directory
-	IMAGE_DIRECTORY_ENTRY_RESOURCE        = 2,   // Resource Directory
-	IMAGE_DIRECTORY_ENTRY_EXCEPTION       = 3,   // Exception Directory
-	IMAGE_DIRECTORY_ENTRY_SECURITY        = 4,   // Security Directory
-	IMAGE_DIRECTORY_ENTRY_BASERELOC       = 5,   // Base Relocation Table
-	IMAGE_DIRECTORY_ENTRY_DEBUG           = 6,   // Debug Directory
-	IMAGE_DIRECTORY_ENTRY_ARCHITECTURE    = 7,   // Architecture Specific Data
-	IMAGE_DIRECTORY_ENTRY_GLOBALPTR       = 8,   // RVA of GP
-	IMAGE_DIRECTORY_ENTRY_TLS             = 9,   // TLS Directory
-	IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG    = 10,   // Load Configuration Directory
-	IMAGE_DIRECTORY_ENTRY_BOUND_IMPORT   = 11,   // Bound Import Directory in headers
-	IMAGE_DIRECTORY_ENTRY_IAT            = 12,   // Import Address Table
-	IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT   = 13,   // Delay Load Import Descriptors
-	IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR = 14,   // COM Runtime descriptor
+    IMAGE_DIRECTORY_ENTRY_EXPORT          = 0,   // Export Directory
+    IMAGE_DIRECTORY_ENTRY_IMPORT          = 1,   // Import Directory
+    IMAGE_DIRECTORY_ENTRY_RESOURCE        = 2,   // Resource Directory
+    IMAGE_DIRECTORY_ENTRY_EXCEPTION       = 3,   // Exception Directory
+    IMAGE_DIRECTORY_ENTRY_SECURITY        = 4,   // Security Directory
+    IMAGE_DIRECTORY_ENTRY_BASERELOC       = 5,   // Base Relocation Table
+    IMAGE_DIRECTORY_ENTRY_DEBUG           = 6,   // Debug Directory
+    IMAGE_DIRECTORY_ENTRY_ARCHITECTURE    = 7,   // Architecture Specific Data
+    IMAGE_DIRECTORY_ENTRY_GLOBALPTR       = 8,   // RVA of GP
+    IMAGE_DIRECTORY_ENTRY_TLS             = 9,   // TLS Directory
+    IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG    = 10,   // Load Configuration Directory
+    IMAGE_DIRECTORY_ENTRY_BOUND_IMPORT   = 11,   // Bound Import Directory in headers
+    IMAGE_DIRECTORY_ENTRY_IAT            = 12,   // Import Address Table
+    IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT   = 13,   // Delay Load Import Descriptors
+    IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR = 14,   // COM Runtime descriptor
 };
 
 tagset PE_DATA_DIRECTORY_TAGS
 [
-    name(IMAGE_DIRECTORY),
-    dynamic_struct(IMAGE_DIRECTORY_ENTRY_EXPORT, IMAGE_EXPORT_DIRECTORY, VirtualAddress, Size != 0),
-    dynamic_struct(IMAGE_DIRECTORY_ENTRY_IMPORT, IMAGE_IMPORT_DESCRIPTOR, VirtualAddress, Size != 0)
+  name(IMAGE_DIRECTORY),
+  dynamic_struct(IMAGE_DIRECTORY_ENTRY_EXPORT, IMAGE_EXPORT_DIRECTORY, VirtualAddress, Size != 0),
+  dynamic_struct(IMAGE_DIRECTORY_ENTRY_IMPORT, IMAGE_IMPORT_DESCRIPTOR, VirtualAddress, Size != 0)
 ];
 
 
 typedef struct _IMAGE_DOS_HEADER {      // DOS .EXE header
-    short e_magic;                     // Magic number
+    short  e_magic;                     // Magic number
     word   e_cblp;                      // bytes on last page of file
     word   e_cp;                        // Pages in file
     word   e_crlc;                      // Relocations
     word   e_cparhdr;                   // Size of header in paragraphs
     word   e_minalloc;                  // Minimum extra paragraphs needed
-    short e_maxalloc;                  // Maximum extra paragraphs needed
+    short  e_maxalloc;                  // Maximum extra paragraphs needed
     word   e_ss;                        // Initial (relative) SS value
     word   e_sp;                        // Initial SP value
     word   e_csum;                      // Checksum
-
-/* hello */
     word   e_ip;                        // Initial IP value
     word   e_cs;                        // Initial (relative) CS value
     word   e_lfarlc;                    // File address of relocation table
@@ -58,7 +56,7 @@ typedef struct _IMAGE_DOS_HEADER {      // DOS .EXE header
     word   e_oemid;                     // OEM identifier (for e_oeminfo)
     word   e_oeminfo;                   // OEM information; e_oemid specific
     word   e_res2[10];                  // Reserved words
-    dword   e_lfanew;                    // File address of new exe header
+    dword  e_lfanew;                    // File address of new exe header
   } IMAGE_DOS_HEADER, *PIMAGE_DOS_HEADER;
 
 typedef enum _IMAGE_FILE_MACHINE
@@ -169,7 +167,7 @@ typedef struct _IMAGE_OPTIONAL_HEADER64 {
     DWORD       SizeOfUninitializedData;
     DWORD       AddressOfEntryPoint;
     DWORD       BaseOfCode;
-    ULONG64   ImageBase;
+    ULONG64     ImageBase;
     DWORD       SectionAlignment;
     DWORD       FileAlignment;
     WORD        MajorOperatingSystemVersion;
@@ -184,15 +182,16 @@ typedef struct _IMAGE_OPTIONAL_HEADER64 {
     DWORD       CheckSum;
     WORD        Subsystem;
     WORD        DllCharacteristics;
-    ULONG64   SizeOfStackReserve;
-    ULONG64   SizeOfStackCommit;
-    ULONG64   SizeOfHeapReserve;
-    ULONG64   SizeOfHeapCommit;
+    ULONG64     SizeOfStackReserve;
+    ULONG64     SizeOfStackCommit;
+    ULONG64     SizeOfHeapReserve;
+    ULONG64     SizeOfHeapCommit;
     DWORD       LoaderFlags;
     DWORD       NumberOfRvaAndSizes;
 
     [tags(PE_DATA_DIRECTORY_TAGS)]
-    IMAGE_DATA_DIRECTORY DataDirectory[16];//IMAGE_NUMBEROF_DIRECTORY_ENTRIES];
+    IMAGE_DATA_DIRECTORY DataDirectory[16]; //IMAGE_NUMBEROF_DIRECTORY_ENTRIES];
+
 } IMAGE_OPTIONAL_HEADER64, *PIMAGE_OPTIONAL_HEADER64;
 
 typedef struct _IMAGE_NT_HEADERS {
@@ -209,11 +208,12 @@ typedef struct _IMAGE_NT_HEADERS {
 
 typedef struct _IMAGE_SECTION_HEADER 
 {
-    char    Name[8];//IMAGE_SIZEOF_SHORT_NAME];
-//    union {
-            dword   PhysicalAddress;
+    char    Name[8]; //IMAGE_SIZEOF_SHORT_NAME];
+
+    //  union {
+    dword   PhysicalAddress;
     //        dword   VirtualSize;
-  //  } Misc;
+    //  } Misc;
     dword   VirtualAddress;
     dword   SizeOfRawData;
     dword   PointerToRawData;
@@ -255,10 +255,10 @@ typedef struct _SECTION
 
 
 [
-   export, 
-   description("Portable Executable (PE)"),
-   assoc(".exe", ".sys", ".dll"),
-   offset(0)
+  export,
+  description("Portable Executable (PE)"),
+  assoc(".exe", ".sys", ".dll"),
+  offset(0)
 ]
 typedef struct _PE
 {
@@ -267,9 +267,13 @@ typedef struct _PE
   [offset(dosHeader.e_lfanew)]
   IMAGE_NT_HEADERS ntHeaders;
 
-  [offset(dosHeader.e_lfanew + 4 + 20 + ntHeaders.FileHeader.SizeOfOptionalHeader),
-  name(Name), dynamic_container(SECTION), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData),
-  size_is(ntHeaders.FileHeader.NumberOfSections)]
+  [
+    offset(dosHeader.e_lfanew + 4 + 20 + ntHeaders.FileHeader.SizeOfOptionalHeader),
+    name(Name),
+    dynamic_container(SECTION),
+    offset_map(VirtualAddress, SizeOfRawData, PointerToRawData),
+    size_is(ntHeaders.FileHeader.NumberOfSections)
+  ]
   IMAGE_SECTION_HEADER sectionHeader[];
 
 } PE;
