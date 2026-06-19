@@ -142,6 +142,30 @@ static QString typeLibKeywordPattern()
     return QStringLiteral(R"(\b(?:%1)\b)").arg(words.join(QLatin1Char('|')));
 }
 
+static QString typeKeywordPattern()
+{
+    QStringList words = {
+        QStringLiteral("byte"),
+        QStringLiteral("word"),
+        QStringLiteral("dword"),
+        QStringLiteral("qword"),
+        QStringLiteral("char"),
+        QStringLiteral("wchar_t"),
+        QStringLiteral("float"),
+        QStringLiteral("double"),
+        QStringLiteral("signed"),
+        QStringLiteral("unsigned"),
+        QStringLiteral("short"),
+        QStringLiteral("long"),
+        QStringLiteral("int"),
+    };
+
+    for (QString &word : words)
+        word = QRegularExpression::escape(word);
+
+    return QStringLiteral(R"(\b(?:%1)\b)").arg(words.join(QLatin1Char('|')));
+}
+
 static QColor mutedBracketIdentifierColor(const QPalette &palette)
 {
     return palette.color(QPalette::Base).lightness() < 128
@@ -149,11 +173,19 @@ static QColor mutedBracketIdentifierColor(const QPalette &palette)
         : QColor(116, 145, 28);
 }
 
-static QColor structureKeywordColor(const QPalette &palette)
+static QColor structureKeywordColor()
 {
-    return palette.color(QPalette::Base).lightness() < 128
-        ? QColor(86, 137, 210)
-        : QColor(22, 58, 128);
+    return QColor(0xcf, 0x23, 0x38);
+}
+
+static QColor structureStringColor()
+{
+    return QColor(0x6d, 0x48, 0xc3);
+}
+
+static QColor structureTypeNameColor()
+{
+    return QColor(0x06, 0x51, 0xae);
 }
 
 static QColor structureTagKeywordColor(const QPalette &palette)
@@ -163,34 +195,28 @@ static QColor structureTagKeywordColor(const QPalette &palette)
         : QColor(0, 137, 82);
 }
 
-static QColor structureDeclarationNameColor(const QPalette &palette)
-{
-    return palette.color(QPalette::Base).lightness() < 128
-        ? QColor(116, 206, 214)
-        : QColor(31, 145, 166);
-}
-
 struct StructureSourceHighlightColors
 {
     QColor keyword;
+    QColor typeKeyword;
     QColor string;
     QColor number;
     QColor tagKeyword;
     QColor tagIdentifier;
-    QColor declarationName;
+    QColor typeName;
     QColor comment;
 
     static StructureSourceHighlightColors fromPalette(const QPalette &palette, HexView *hv)
     {
         StructureSourceHighlightColors colors;
-        colors.keyword = structureKeywordColor(palette);
-        colors.string = hv ? QColor(hv->getHexColour(HVC_MODIFY))
-                           : palette.color(QPalette::Highlight).darker(130);
+        colors.keyword = structureKeywordColor();
+        colors.typeKeyword = structureTypeNameColor();
+        colors.string = structureStringColor();
         colors.number = hv ? QColor(hv->getHexColour(HVC_HEXODD))
                            : palette.color(QPalette::WindowText).darker(135);
         colors.tagKeyword = structureTagKeywordColor(palette);
         colors.tagIdentifier = mutedBracketIdentifierColor(palette);
-        colors.declarationName = structureDeclarationNameColor(palette);
+        colors.typeName = structureTypeNameColor();
         colors.comment = filestats::subduedTextColor(palette);
         return colors;
     }
@@ -205,6 +231,7 @@ public:
         const StructureSourceHighlightColors colors = StructureSourceHighlightColors::fromPalette(palette, hv);
 
         m_keywordFormat.setForeground(colors.keyword);
+        m_typeKeywordFormat.setForeground(colors.typeKeyword);
         m_bracketKeywordFormat.setForeground(colors.tagKeyword);
         m_bracketKeywordFormat.setFontWeight(QFont::Normal);
         m_stringFormat.setForeground(colors.string);
@@ -213,12 +240,13 @@ public:
         m_commentFormat.setForeground(colors.comment);
         m_bracketIdentifierFormat.setForeground(colors.tagIdentifier);
         m_bracketIdentifierFormat.setFontWeight(QFont::Normal);
-        m_declarationNameFormat.setForeground(colors.declarationName);
+        m_typeNameFormat.setForeground(colors.typeName);
         m_bracketFormat.setFontWeight(QFont::Bold);
         m_outerBracketFormat.setForeground(colors.tagKeyword);
         m_outerBracketFormat.setFontWeight(QFont::Normal);
 
         m_keywordPattern = QRegularExpression(typeLibKeywordPattern());
+        m_typeKeywordPattern = QRegularExpression(typeKeywordPattern());
         m_stringPattern = QRegularExpression(
             QStringLiteral(R"(\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*')"));
         m_numberPattern = QRegularExpression(
@@ -231,9 +259,10 @@ protected:
     void highlightBlock(const QString &text) override
     {
         applyMatches(text, m_keywordPattern, m_keywordFormat);
+        applyMatches(text, m_typeKeywordPattern, m_typeKeywordFormat);
         applyMatches(text, m_numberPattern, m_numberFormat);
         applyMatches(text, m_stringPattern, m_stringFormat);
-        applyDeclarationNames(text);
+        applyTypeNames(text);
         applyMatches(text, m_bracketPattern, m_bracketFormat);
         applyBracketIdentifiers(text);
 
@@ -253,7 +282,7 @@ private:
         }
     }
 
-    void applyDeclarationNames(const QString &text)
+    void applyTypeNames(const QString &text)
     {
         const int commentStart = lineCommentStart(text);
         const int scanEnd = commentStart >= 0 ? commentStart : text.size();
@@ -299,20 +328,24 @@ private:
             }
             if (ch == QLatin1Char(';') && depth == 0)
             {
-                applyDeclarationNameInSpan(text, statementStart, i - statementStart);
+                applyTypeNamesInSpan(text, statementStart, i - statementStart, false);
+                statementStart = i + 1;
+            }
+            else if (ch == QLatin1Char('{') && depth == 0)
+            {
+                applyTypeNamesInSpan(text, statementStart, i - statementStart, true);
                 statementStart = i + 1;
             }
         }
     }
 
-    void applyDeclarationNameInSpan(const QString &text, int start, int length)
+    void applyTypeNamesInSpan(const QString &text, int start, int length, bool opensCompound)
     {
         if (length <= 0)
             return;
 
         const QString span = text.mid(start, length);
-        int lastStart = -1;
-        int lastLength = 0;
+        QList<QRegularExpressionMatch> identifiers;
 
         QRegularExpressionMatchIterator it = m_identifierPattern.globalMatch(span);
         while (it.hasNext())
@@ -324,12 +357,25 @@ private:
             if (spanSquareDepthAt(span, matchStart) > 0)
                 continue;
 
-            lastStart = start + matchStart;
-            lastLength = match.capturedLength();
+            identifiers.push_back(match);
         }
 
-        if (lastStart >= 0)
-            setFormat(lastStart, lastLength, m_declarationNameFormat);
+        if (identifiers.isEmpty())
+            return;
+
+        if (span.trimmed().startsWith(QStringLiteral("typedef")))
+        {
+            for (const QRegularExpressionMatch &match : identifiers)
+                setFormat(start + match.capturedStart(), match.capturedLength(), m_typeNameFormat);
+            return;
+        }
+
+        const int typeCount = opensCompound ? identifiers.size() : qMax(0, identifiers.size() - 1);
+        for (int i = 0; i < typeCount; ++i)
+        {
+            const QRegularExpressionMatch &match = identifiers.at(i);
+            setFormat(start + match.capturedStart(), match.capturedLength(), m_typeNameFormat);
+        }
     }
 
     int spanSquareDepthAt(const QString &text, int offset) const
@@ -442,11 +488,11 @@ private:
         {
             const QRegularExpressionMatch match = it.next();
             const int absoluteStart = start + match.capturedStart();
+            const bool isKeyword = keywordMatch(span, match.capturedStart(), match.capturedLength())
+                || typeKeywordMatch(span, match.capturedStart(), match.capturedLength());
             setFormat(absoluteStart,
                       match.capturedLength(),
-                      keywordMatch(span, match.capturedStart(), match.capturedLength())
-                          ? m_bracketKeywordFormat
-                          : m_bracketIdentifierFormat);
+                      isKeyword ? m_bracketKeywordFormat : m_bracketIdentifierFormat);
         }
 
         applyMatchesInSpan(span, start, m_stringPattern, m_bracketStringFormat);
@@ -475,6 +521,14 @@ private:
     bool keywordMatch(const QString &text, int start, int length) const
     {
         const QRegularExpressionMatch match = m_keywordPattern.match(text, start);
+        return match.hasMatch()
+            && match.capturedStart() == start
+            && match.capturedLength() == length;
+    }
+
+    bool typeKeywordMatch(const QString &text, int start, int length) const
+    {
+        const QRegularExpressionMatch match = m_typeKeywordPattern.match(text, start);
         return match.hasMatch()
             && match.capturedStart() == start
             && match.capturedLength() == length;
@@ -518,16 +572,18 @@ private:
     }
 
     QRegularExpression m_keywordPattern;
+    QRegularExpression m_typeKeywordPattern;
     QRegularExpression m_stringPattern;
     QRegularExpression m_numberPattern;
     QRegularExpression m_bracketPattern;
     QRegularExpression m_identifierPattern;
     QTextCharFormat m_keywordFormat;
+    QTextCharFormat m_typeKeywordFormat;
     QTextCharFormat m_bracketKeywordFormat;
     QTextCharFormat m_stringFormat;
     QTextCharFormat m_bracketStringFormat;
     QTextCharFormat m_numberFormat;
-    QTextCharFormat m_declarationNameFormat;
+    QTextCharFormat m_typeNameFormat;
     QTextCharFormat m_bracketIdentifierFormat;
     QTextCharFormat m_bracketFormat;
     QTextCharFormat m_outerBracketFormat;
@@ -1034,7 +1090,8 @@ private:
     static constexpr int kBorderWidth = 1;
     static constexpr int kTabHeight = 24;
     static constexpr int kTabHorzPad = 14;
-    static constexpr int kLogTabWidth = 70;
+    static constexpr int kLogIconSize = 14;
+    static constexpr int kLogButtonSide = 20;
     static constexpr int kFooterPad = 6;
     static constexpr TabAlignment kTabAlignment = TabAlignment::Right;
 
@@ -1053,7 +1110,7 @@ private:
         const QFontMetrics metrics(font());
         const int structW = metrics.horizontalAdvance(tr("Structure")) + 2 * kTabHorzPad;
         const int sourceW = metrics.horizontalAdvance(tr("Source")) + 2 * kTabHorzPad;
-        const int logW = kLogTabWidth;
+        const int logW = kLogIconSize + 2 * kTabHorzPad;
         const int y = tabTop();
 
         if (kTabAlignment == TabAlignment::Right)
@@ -1088,8 +1145,7 @@ private:
         const QRect tabs = tabGroupRect();
         const int footerTop = tabTop();
         QRect labelRect;
-        const int logButtonSide = qMax(1, kTabHeight - 4);
-        QRect logRect(0, 0, logButtonSide, logButtonSide);
+        QRect logRect(0, 0, kLogButtonSide, kLogButtonSide);
         logRect.moveCenter(m_logTabRect.center());
 
         if (kTabAlignment == TabAlignment::Right)
@@ -1465,8 +1521,10 @@ void StructureViewPanel::buildUi()
     m_logButton->setObjectName(QStringLiteral("structureLogTabButton"));
     m_logButton->setAutoRaise(true);
     m_logButton->setCursor(Qt::PointingHandCursor);
-    m_logButton->setIcon(recoloredIcon(QStringLiteral("actions/terminal"),
-                                       palette().color(QPalette::WindowText), 16));
+    constexpr int logIconSize = 14;
+    m_logButton->setIcon(recoloredIcon(QStringLiteral("actions/logs"),
+                                       palette().color(QPalette::WindowText), logIconSize));
+    m_logButton->setIconSize(QSize(logIconSize, logIconSize));
     m_logButton->setToolTip(tr("Show definition log"));
     m_logButton->setStyleSheet(QStringLiteral(R"(
         QToolButton#structureLogTabButton {

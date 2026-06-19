@@ -1500,7 +1500,24 @@ QString StructureRenderEngine::dynamicContainerAlias(StructureRow *row)
 
     ExprNode *nameExpr = nullptr;
     if (FindTag(row->typeDecl ? row->typeDecl->tagList : nullptr, TOK_NAME, &nameExpr))
+    {
+        if (StructureRow *fieldRow = findFieldRow(row, nameExpr))
+        {
+            alias = cleanDynamicAlias(fieldRow->value);
+            if (!alias.isEmpty())
+                return alias;
+
+            const QString stringValue = stringArrayValue(fieldRow,
+                                                         fieldRow->type,
+                                                         fieldRow->typeDecl,
+                                                         fieldRow->absoluteOffset);
+            alias = cleanDynamicAlias(stringValue);
+            if (!alias.isEmpty())
+                return alias;
+        }
+
         alias = cleanDynamicAlias(fieldNameValue(row, row->type, nameExpr, row->absoluteOffset));
+    }
 
     return alias;
 }

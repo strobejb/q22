@@ -267,8 +267,8 @@ typedef struct _PE
   [offset(dosHeader.e_lfanew)]
   IMAGE_NT_HEADERS ntHeaders;
 
-  //[offset(ntHeaders.FileHeader.SizeOfOptionalHeader)]
-  [name(Name), dynamic_container(SECTION), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData),
+  [offset(dosHeader.e_lfanew + 4 + 20 + ntHeaders.FileHeader.SizeOfOptionalHeader),
+  name(Name), dynamic_container(SECTION), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData),
   size_is(ntHeaders.FileHeader.NumberOfSections)]
   IMAGE_SECTION_HEADER sectionHeader[];
 

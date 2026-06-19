@@ -51,6 +51,7 @@ private slots:
     void builderUsesSimpleRootNamesForBuiltinTypedefRoots();
     void builderRendersElf32AndElf64Tables();
     void builderPlacesDynamicStructsUnderNamedDynamicContainers();
+    void builderNamesPeDynamicSectionsFromStandardDefinition();
     void semanticRegistryRunsKnownViewsAndIgnoresUnknownViews();
     void builderRunsSemanticViewsAfterDynamicPlacement();
     void builderKeepsRawDynamicRowsWhenSemanticImportDataIsTruncated();
@@ -1357,6 +1358,66 @@ void StructViewTests::builderPlacesDynamicStructsUnderNamedDynamicContainers()
     QCOMPARE(model.rowCount(emptySectionIndex), 0);
     QVERIFY(!(model.flags(sectionIndex) & Qt::ItemIsEditable));
     QVERIFY(!(model.flags(dynamicIndex) & Qt::ItemIsEditable));
+}
+
+void StructViewTests::builderNamesPeDynamicSectionsFromStandardDefinition()
+{
+    // Scenario: the shipped PE definition renders dynamic SECTION rows from the
+    // real IMAGE_SECTION_HEADER table rather than a simplified test-only type.
+    // Expected: the generated SECTION rows inherit [name(Name)] from each source
+    // section header, producing user-visible names such as SECTION .text.
+    // Regression guard: fixed-width PE section names must survive the generic
+    // dynamic_container handoff instead of falling back to a bare SECTION node.
+    TypeLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("pe.struct")), "pe.struct failed to parse");
+
+    QByteArray bytes(0x300, '\0');
+    writeLe32(&bytes, 0x3c, 0x80);
+    writeLe16(&bytes, 0x86, 2);
+    writeLe16(&bytes, 0x94, 256);
+    writeLe16(&bytes, 0x98, 0x10b);
+    writeLe32(&bytes, 0x98 + 92, 16);
+
+    const qsizetype sectionTable = 0x80 + 4 + 20 + 256;
+    writeAscii(&bytes, sectionTable, ".text");
+    writeLe32(&bytes, sectionTable + 12, 0x1000);
+    writeLe32(&bytes, sectionTable + 16, 0x100);
+    writeLe32(&bytes, sectionTable + 20, 0x200);
+
+    const qsizetype secondSection = sectionTable + 40;
+    writeAscii(&bytes, secondSection, ".idata");
+    writeLe32(&bytes, secondSection + 12, 0x2000);
+    writeLe32(&bytes, secondSection + 16, 0x80);
+    writeLe32(&bytes, secondSection + 20, 0x280);
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+
+    StructureRow *text = findChildNamed(rows[0].get(), QStringLiteral("SECTION .text"));
+    QVERIFY(text);
+    QCOMPARE(text->offset, QStringLiteral("00000200"));
+    QVERIFY(!text->name.startsWith(QStringLiteral("SECTION - ")));
+
+    StructureRow *idata = findChildNamed(rows[0].get(), QStringLiteral("SECTION .idata"));
+    QVERIFY(idata);
+    QCOMPARE(idata->offset, QStringLiteral("00000280"));
+    QVERIFY(!idata->name.startsWith(QStringLiteral("SECTION - ")));
+
+    StructureTreeModel model;
+    model.setRowsForTests(std::move(rows));
+    StructureDisplayOptions options;
+    options.typeNameMode = StructureTypeNameMode::Storage;
+    model.applyDisplayOptions(options);
+
+    const QModelIndex rootIndex = model.index(0, StructureTreeModel::NameColumn);
+    QVERIFY(rootIndex.isValid());
+    QStringList visibleNames;
+    for (int i = 0; i < model.rowCount(rootIndex); ++i)
+        visibleNames.push_back(model.data(model.index(i, StructureTreeModel::NameColumn, rootIndex)).toString());
+    QVERIFY2(visibleNames.contains(QStringLiteral("SECTION .text")),
+             qPrintable(QStringLiteral("SECTION .text missing after display option pass: %1").arg(visibleNames.join(QStringLiteral(", ")))));
+    QVERIFY2(visibleNames.contains(QStringLiteral("SECTION .idata")),
+             qPrintable(QStringLiteral("SECTION .idata missing after display option pass: %1").arg(visibleNames.join(QStringLiteral(", ")))));
 }
 
 void StructViewTests::semanticRegistryRunsKnownViewsAndIgnoresUnknownViews()

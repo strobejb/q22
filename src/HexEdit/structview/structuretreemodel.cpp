@@ -403,8 +403,19 @@ void StructureTreeModel::applyDisplayOptionsToRow(StructureRow *row,
     {
         const StructureTypeNameFormatter formatter(options);
         const StructureDeclarationParts parts = formatter.declarationParts(row->type);
-        row->setNameParts(parts.prefix, parts.name, parts.suffix, formatter.isCompoundDeclaration(row->type));
-        row->name = formatter.declarationName(row->type);
+        const bool preserveResolvedAlias = row->kind != StructureRowKind::Raw && !row->nameIdentifier.isEmpty();
+        if (preserveResolvedAlias)
+        {
+            const QString alias = row->nameIdentifier;
+            const QString suffix = row->nameSuffix;
+            const bool emphasize = row->emphasizeName;
+            row->setNameParts(parts.prefix, alias, suffix, emphasize);
+        }
+        else
+        {
+            row->setNameParts(parts.prefix, parts.name, parts.suffix, formatter.isCompoundDeclaration(row->type));
+            row->name = formatter.declarationName(row->type);
+        }
         if (index.isValid())
             emit dataChanged(index, index, { Qt::DisplayRole,
                                              Qt::EditRole,
