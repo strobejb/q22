@@ -55,9 +55,11 @@
     <item>dynamic_struct</item>
     <item>endian</item>
     <item>entrypoint</item>
+    <item>extent</item>
     <item>enum</item>
     <item>export</item>
     <item>length_is</item>
+    <item>magic</item>
     <item>name</item>
     <item>offset</item>
     <item>offset_map</item>

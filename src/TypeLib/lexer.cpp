@@ -856,6 +856,33 @@ int Lexer::parse_identifier()
 	return ch;
 }
 
+TOKEN Lexer::parse_char()
+{
+	ch = nextch();
+
+	int value = 0;
+	if(ch == '\\')
+	{
+		value = backslash();
+		if(ch != '\'' && ch != 0)
+			ch = nextch();
+	}
+	else
+	{
+		value = ch;
+		ch = nextch();
+	}
+
+	if(ch == '\'')
+		ch = nextch();
+	else
+		Error(ERROR_SYNTAX_ERROR, "'");
+
+	token.num = static_cast<unsigned char>(value);
+	token.base = HEX;
+	return TOK_INUMBER;
+}
+
 //
 //	Next() is the main entry-point into the lexer, it is called by
 //  the parser to retrieve the sequence of tokens in each translation unit
@@ -894,6 +921,12 @@ Token Lexer::Next()
 	{
 		ch = parse_string(ch);
 		token.kind = TOK_STRINGBUF;
+		return token;
+	}
+
+	if(ch == '\'')
+	{
+		token.kind = parse_char();
 		return token;
 	}
 	

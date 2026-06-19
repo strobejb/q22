@@ -21,7 +21,9 @@ private slots:
 	void dynamicPlacementTagsParse();
 	void viewTagsParse();
 	void descriptionTagsParseAndDisplayRemainsSeparate();
+	void magicTagsParse();
 	void alignAndEntrypointTagsParse();
+	void extentTagsAndScalarSizeofParse();
 	void endianExpressionTagsParse();
 	void ternaryExpressionTagsParse();
 	void lengthIsIsReserved();
@@ -375,6 +377,47 @@ void TypeLibTests::descriptionTagsParseAndDisplayRemainsSeparate()
 	QCOMPARE(QString::fromLocal8Bit(display->str), QStringLiteral("legacy"));
 }
 
+void TypeLibTests::magicTagsParse()
+{
+	// Scenario: an exported root declares byte signatures for extensionless
+	// binary files, including a non-printable leading byte.
+	// Expected: magic(...) is preserved as an ordinary comma-expression tag, so
+	// Structure View can extract the offset and signature bytes later.
+	// Regression guard: file association should not be limited to filename
+	// suffixes, and ELF must not require fragile escaped string literals.
+	Parser parser;
+	QVERIFY(parseBuffer(parser,
+						"[export, magic(0, { 'M', 'Z' }), magic(4, { 0x7F, 'E', 'L', 'F' })]\n"
+						"struct Root { byte value; } root;\n"));
+
+	TypeDecl *root = parser.GetTypeLibrary()->globalTypeDeclList[0];
+	QCOMPARE(countTags(root->tagList, TOK_MAGIC), 2);
+
+	Tag *magic = FindTag(root->tagList, TOK_MAGIC, nullptr);
+	QVERIFY(magic);
+	ExprNode *expr = magic->expr;
+	QVERIFY(expr);
+	QCOMPARE(Evaluate(expr), INUMTYPE(4));
+	QCOMPARE(magic->byteSequence.size(), size_t(4));
+	QCOMPARE(magic->byteSequence[0], uint8_t(0x7f));
+	QCOMPARE(magic->byteSequence[1], uint8_t('E'));
+	QCOMPARE(magic->byteSequence[2], uint8_t('L'));
+	QCOMPARE(magic->byteSequence[3], uint8_t('F'));
+
+	QTemporaryDir dir;
+	QVERIFY(dir.isValid());
+	const QString dumpPath = dir.filePath(QStringLiteral("dump.txt"));
+	FILE *fp = fopen(qPrintable(dumpPath), "wb");
+	QVERIFY(fp != nullptr);
+	parser.Dump(fp);
+	fclose(fp);
+
+	QFile dumpFile(dumpPath);
+	QVERIFY(dumpFile.open(QIODevice::ReadOnly));
+	const QByteArray dumped = dumpFile.readAll();
+	QVERIFY(dumped.contains("magic(4, { 0x7F, 'E', 'L', 'F' })"));
+}
+
 void TypeLibTests::alignAndEntrypointTagsParse()
 {
 	// Scenario: Structure View definitions annotate both layout and a field that
@@ -404,6 +447,52 @@ void TypeLibTests::alignAndEntrypointTagsParse()
 	QCOMPARE(root->baseType->sptr->typeDeclList.size(), size_t(2));
 	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[1]->tagList, TOK_ALIGN, nullptr));
 	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[1]->tagList, TOK_ENTRYPOINT, nullptr));
+}
+
+void TypeLibTests::extentTagsAndScalarSizeofParse()
+{
+	// Scenario: a binary format has a declaration whose file span is stored in
+	// the data rather than implied by the selected TypeLib branch, and expressions
+	// occasionally need small static scalar sizes.
+	// Expected: extent(expr) is preserved as a normal tag, while sizeof(name) is
+	// accepted only for a single scalar type name or scalar typedef alias.
+	// Regression guard: PE section headers should not need hand-written
+	// signature/header byte arithmetic once the optional header has an extent.
+	Parser parser;
+	QVERIFY(parseBuffer(parser,
+						"typedef dword DWORD;\n"
+						"[export]\n"
+						"struct Root {\n"
+						"  byte count;\n"
+						"  [optional(count != 0), extent(count + sizeof(byte) + sizeof(DWORD))]\n"
+						"  union { byte tiny; };\n"
+						"} root;\n"));
+
+	TypeDecl *root = nullptr;
+	for(TypeDecl *decl : parser.GetTypeLibrary()->globalTypeDeclList)
+		if(decl && FindTag(decl->tagList, TOK_EXPORT, nullptr))
+			root = decl;
+
+	QVERIFY(root);
+	QVERIFY(root->baseType);
+	QVERIFY(root->baseType->sptr);
+	QCOMPARE(root->baseType->sptr->typeDeclList.size(), size_t(2));
+
+	ExprNode *expr = nullptr;
+	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[1]->tagList, TOK_EXTENT, &expr));
+	QVERIFY(expr);
+	QCOMPARE(expr->type, EXPR_BINARY);
+	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[1]->tagList, TOK_OPTIONAL, &expr));
+	QVERIFY(expr);
+	QCOMPARE(expr->type, EXPR_BINARY);
+
+	Parser fieldSizeof;
+	QVERIFY(!parseBuffer(fieldSizeof,
+						 "struct Root {\n"
+						 "  byte value;\n"
+						 "  [offset(sizeof(root.value))] byte other;\n"
+						 "} root;\n"));
+	QCOMPARE(fieldSizeof.LastErr(), ERROR_SIZEOF_SCALAR_ONLY);
 }
 
 void TypeLibTests::endianExpressionTagsParse()
@@ -537,6 +626,7 @@ void TypeLibTests::elfRootIsExportedAndAssociated()
 	ExprNode *assoc = nullptr;
 	QVERIFY(FindTag(elf->tagList, TOK_ASSOC, &assoc));
 	QVERIFY(assoc);
+	QVERIFY(FindTag(elf->tagList, TOK_MAGIC, nullptr));
 	auto containsAssoc = [](auto &&self, ExprNode *expr, const QString &needle) -> bool {
 		if(!expr)
 			return false;
@@ -573,7 +663,9 @@ void TypeLibTests::standardTypelibFilesParse()
 		QVERIFY2(QFileInfo::exists(path), qPrintable(path));
 		QFile source(path);
 		QVERIFY2(source.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(path));
-		QCOMPARE(QString::fromUtf8(source.readLine()).trimmed(), QStringLiteral("// q22-struct v1"));
+		const QString header = QString::fromUtf8(source.readLine()).trimmed();
+		QVERIFY(header == QStringLiteral("// q22-struct v1")
+				|| header == QStringLiteral("//--q22-struct v1"));
 
 		Parser parser;
 		QVERIFY2(parser.Ooof(qPrintable(path)), qPrintable(parser.LastErrStr()));
@@ -587,6 +679,7 @@ void TypeLibTests::standardTypelibFilesParse()
 					pe = decl;
 
 			QVERIFY(pe);
+			QVERIFY(FindTag(pe->tagList, TOK_MAGIC, nullptr));
 			ExprNode *description = nullptr;
 			QVERIFY(FindTag(pe->tagList, TOK_DESCRIPTION, &description));
 			QVERIFY(description);

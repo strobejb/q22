@@ -7,6 +7,9 @@
 #include <QPersistentModelIndex>
 #include <QRect>
 
+class QAbstractItemModel;
+class QEvent;
+
 class StructureGridItemDelegate : public QStyledItemDelegate
 {
     Q_OBJECT
@@ -21,6 +24,10 @@ public:
     QWidget *createEditor(QWidget *parent,
                           const QStyleOptionViewItem &option,
                           const QModelIndex &index) const override;
+    bool editorEvent(QEvent *event,
+                     QAbstractItemModel *model,
+                     const QStyleOptionViewItem &option,
+                     const QModelIndex &index) override;
     void setEditorData(QWidget *editor, const QModelIndex &index) const override;
     void setModelData(QWidget *editor, QAbstractItemModel *model, const QModelIndex &index) const override;
     void updateEditorGeometry(QWidget *editor,
@@ -35,6 +42,7 @@ private:
     QRect itemTextRect(const QStyleOptionViewItem &option, const QModelIndex &index) const;
 
     mutable QPersistentModelIndex m_editingIndex;
+    mutable QPersistentModelIndex m_popupIndex;
 };
 
 #endif // STRUCTVIEW_STRUCTUREGRIDITEMDELEGATE_H

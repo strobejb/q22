@@ -244,6 +244,7 @@ bool HexView::openFile(const QString &path, uint /*flags*/)
         recalcLayout();
         repositionCaret();
         viewport()->update();
+        emit fileOpened(path);
     }
     return ok;
 }

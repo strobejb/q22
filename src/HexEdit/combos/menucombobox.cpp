@@ -279,6 +279,8 @@ void MenuComboBox::buildMenu()
         a->setChecked(i == cur);
         connect(a, &QAction::triggered, this, [this, i]() {
             setCurrentIndex(i);
+            emit activated(i);
+            emit textActivated(itemText(i));
         });
     }
 }
@@ -297,6 +299,7 @@ void MenuComboBox::showPopup()
     if (isSameClickReopen()) return;
 
     buildMenu();
+    m_menu->setMinimumWidth(width());
     const QPoint pos = smartMenuPos(this, m_menu, /*rightAlign=*/false);
     m_menu->popup(pos);
     setPopupOpen(true);

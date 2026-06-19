@@ -27,6 +27,8 @@ private:
     uint64_t formatType(StructureRow *row, Type *type, TypeDecl *typeDecl, uint64_t offset);
     uint64_t formatScalar(StructureRow *row, Type *type, TypeDecl *typeDecl, uint64_t offset);
     uint64_t sizeOf(Type *type, uint64_t offset);
+    uint64_t scalarSizeOfName(const char *name) const;
+    uint64_t scalarSizeOfType(Type *type) const;
 
     struct EvalContext;
     struct EndianScope;
@@ -83,6 +85,15 @@ private:
                                   Type *scopeType,
                                   uint64_t scopeOffset,
                                   uint64_t fallback) const;
+    uint64_t declarationExtent(TypeDecl *typeDecl,
+                               StructureRow *scope,
+                               Type *scopeType,
+                               uint64_t scopeOffset,
+                               uint64_t fallback);
+    bool declarationIsOptionalAndAbsent(TypeDecl *typeDecl,
+                                        StructureRow *scope,
+                                        Type *scopeType,
+                                        uint64_t scopeOffset);
     bool declarationBigEndian(TypeDecl *typeDecl, StructureRow *scope, Type *scopeType, uint64_t scopeOffset);
     Enum *tagEnum(TypeDecl *typeDecl) const;
     QString enumNameForValue(Enum *eptr, INUMTYPE value) const;

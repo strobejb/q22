@@ -3,6 +3,7 @@
 
 #include "TypeLib/parser.h"
 
+#include <QByteArray>
 #include <QObject>
 #include <QList>
 #include <QString>
@@ -14,6 +15,12 @@
 class QFileSystemWatcher;
 struct TypeDecl;
 
+struct StructureMagicSignature
+{
+    uint64_t   offset = 0;
+    QByteArray bytes;
+};
+
 struct ExportedStructureType
 {
     TypeDecl *typeDecl = nullptr;
@@ -21,6 +28,7 @@ struct ExportedStructureType
     QString  fileName;
     QString  description;
     QStringList assocExtensions;
+    QList<StructureMagicSignature> magicSignatures;
 };
 
 class StructureDefinitionManager : public QObject
@@ -49,12 +57,16 @@ public slots:
 signals:
     void definitionsReloaded();
     void reloadFailed(const QString &message);
+    void definitionFilesChanged();
 
 private:
     QStringList discoverDefinitionFiles() const;
-    bool parseFiles(const QStringList &files, TypeLibrary *library, QString *errorMessage) const;
+    bool parseFiles(const QStringList &files,
+                    TypeLibrary *library,
+                    QString *errorSummary,
+                    QString *errorDiagnostic) const;
     void updateWatchedFiles(const QStringList &files);
-    void scheduleReload();
+    void scheduleChangeNotification();
 
     std::unique_ptr<TypeLibrary> m_library;
     QFileSystemWatcher          *m_watcher = nullptr;

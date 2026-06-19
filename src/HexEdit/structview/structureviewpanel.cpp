@@ -2,6 +2,7 @@
 
 #include "HexView/hexview.h"
 #include "combos/menucombobox.h"
+#include "filestats/banner.h"
 #include "filestats/widgets.h"
 #include "structview/structuredefinitionmanager.h"
 #include "structview/structuregriditemdelegate.h"
@@ -30,6 +31,7 @@
 #include <QPainterPath>
 #include <QPlainTextEdit>
 #include <QRegularExpression>
+#include <QSignalBlocker>
 #include <QStyle>
 #include <QStyleOptionHeader>
 #include <QStackedWidget>
@@ -594,6 +596,71 @@ private:
     QTextCharFormat m_tagPunctuationFormat;
     QTextCharFormat m_outerBracketFormat;
     QTextCharFormat m_commentFormat;
+};
+
+struct LogDiagnosticLink
+{
+    QString path;
+    int     lineNo = 0;
+    int     pathStart = -1;
+    int     pathLength = 0;
+
+    bool isValid() const
+    {
+        return !path.isEmpty() && lineNo > 0 && pathStart >= 0 && pathLength > 0;
+    }
+};
+
+LogDiagnosticLink parseLogDiagnosticLine(const QString &line)
+{
+    static const QRegularExpression diagnosticPattern(
+        QStringLiteral(R"(^\s*(.+)\((\d+)\)\s*:\s*error\b)"),
+        QRegularExpression::CaseInsensitiveOption);
+
+    LogDiagnosticLink link;
+    const QRegularExpressionMatch match = diagnosticPattern.match(line);
+    if (!match.hasMatch())
+        return link;
+
+    bool ok = false;
+    const int parsedLine = match.captured(2).toInt(&ok);
+    if (!ok || parsedLine <= 0)
+        return link;
+
+    link.path = match.captured(1).trimmed();
+    link.lineNo = parsedLine;
+    link.pathStart = match.capturedStart(1);
+    link.pathLength = match.capturedLength(1);
+    return link;
+}
+
+class StructureLogHighlighter : public QSyntaxHighlighter
+{
+public:
+    explicit StructureLogHighlighter(QTextDocument *document)
+        : QSyntaxHighlighter(document)
+    {
+        m_errorFormat.setForeground(QColor(0x8b, 0x00, 0x00));
+        m_errorFormat.setFontWeight(QFont::DemiBold);
+        m_pathFormat.setForeground(QColor(0x8b, 0x00, 0x00));
+        m_pathFormat.setFontWeight(QFont::DemiBold);
+        m_pathFormat.setFontUnderline(true);
+    }
+
+protected:
+    void highlightBlock(const QString &text) override
+    {
+        if (text.contains(QStringLiteral("error"), Qt::CaseInsensitive))
+            setFormat(0, text.size(), m_errorFormat);
+
+        const LogDiagnosticLink link = parseLogDiagnosticLine(text);
+        if (link.isValid())
+            setFormat(link.pathStart, link.pathLength, m_pathFormat);
+    }
+
+private:
+    QTextCharFormat m_errorFormat;
+    QTextCharFormat m_pathFormat;
 };
 
 qreal devicePixelSize(const QPainter *painter)
@@ -1367,6 +1434,8 @@ StructureViewPanel::~StructureViewPanel()
 
 void StructureViewPanel::refresh()
 {
+    if (m_reloadBanner)
+        m_reloadBanner->hide();
     m_definitions->reload();
 }
 
@@ -1387,7 +1456,49 @@ void StructureViewPanel::changeEvent(QEvent *event)
 {
     QWidget::changeEvent(event);
     if (event->type() == QEvent::PaletteChange || event->type() == QEvent::ApplicationPaletteChange)
+    {
         updateTreeSelectionPalette();
+        setStatusLabelError(m_definitions && !m_definitions->lastError().isEmpty());
+    }
+}
+
+bool StructureViewPanel::eventFilter(QObject *watched, QEvent *event)
+{
+    if (m_logView && watched == m_logView->viewport())
+    {
+        if (event->type() == QEvent::MouseMove)
+        {
+            auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            const bool overDiagnosticPath = logDiagnosticAt(mouseEvent->position().toPoint(), nullptr, nullptr);
+            m_logView->viewport()->setCursor(overDiagnosticPath ? Qt::PointingHandCursor : Qt::IBeamCursor);
+        }
+        else if (event->type() == QEvent::Leave)
+        {
+            m_logView->viewport()->unsetCursor();
+        }
+        else if (event->type() == QEvent::MouseButtonRelease)
+        {
+            auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            if (mouseEvent->button() == Qt::LeftButton
+                && locateLogDiagnosticAt(mouseEvent->position().toPoint()))
+            {
+                return true;
+            }
+        }
+    }
+    else if (m_statusLabel && watched == m_statusLabel && event->type() == QEvent::MouseButtonRelease)
+    {
+        auto *mouseEvent = static_cast<QMouseEvent *>(event);
+        if (mouseEvent->button() == Qt::LeftButton
+            && m_definitions
+            && !m_definitions->lastError().isEmpty())
+        {
+            showLogPage();
+            return true;
+        }
+    }
+
+    return QWidget::eventFilter(watched, event);
 }
 
 void StructureViewPanel::buildUi()
@@ -1407,6 +1518,21 @@ void StructureViewPanel::buildUi()
     headerRow->setSpacing(0);
     headerRow->addWidget(header);
     rootLay->addLayout(headerRow);
+
+    auto *bannerRow = new QWidget(this);
+    auto *bannerLay = new QHBoxLayout(bannerRow);
+    bannerLay->setContentsMargins(0, 0, scrollBarW, 0);
+    bannerLay->setSpacing(0);
+
+    m_reloadBanner = new filestats::ActionBanner(
+        tr("Reload"),
+        [this]() { refresh(); },
+        bannerRow,
+        [] {});
+    m_reloadBanner->setObjectName(QStringLiteral("structureDefinitionsChangedBanner"));
+    m_reloadBanner->setMessage(tr("Structure definitions changed on disk"));
+    bannerLay->addWidget(m_reloadBanner);
+    rootLay->addWidget(bannerRow);
 
     auto *content = new QWidget(this);
     auto *contentLay = new QVBoxLayout(content);
@@ -1515,7 +1641,11 @@ void StructureViewPanel::buildUi()
     m_logView->setReadOnly(true);
     m_logView->document()->setDocumentMargin(6.0);
     m_logView->setObjectName(QStringLiteral("structureLogView"));
+    m_logView->setMouseTracking(true);
+    m_logView->viewport()->setMouseTracking(true);
     applyStructureTextViewPalette(m_logView, m_hv);
+    new StructureLogHighlighter(m_logView->document());
+    m_logView->viewport()->installEventFilter(this);
 
     m_viewStack->addWidget(m_tree);
     m_viewStack->addWidget(m_sourceView);
@@ -1554,6 +1684,7 @@ void StructureViewPanel::buildUi()
     m_statusLabel = new QLabel(m_contentFrame);
     m_statusLabel->setTextFormat(Qt::PlainText);
     m_statusLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    m_statusLabel->installEventFilter(this);
     m_contentFrame->setStatusLabel(m_statusLabel);
     m_contentFrame->setLogButton(m_logButton);
     m_contentFrame->setTabChangedCallback([this](StructureContentFrame::Page page) {
@@ -1570,11 +1701,24 @@ void StructureViewPanel::buildUi()
     rootLay->addWidget(content, 1);
 
     connect(m_definitions, &StructureDefinitionManager::definitionsReloaded,
-            this, &StructureViewPanel::updateDefinitionsUi);
+            this, [this]() {
+                if (m_reloadBanner)
+                    m_reloadBanner->hide();
+                updateDefinitionsUi();
+                showGridPage();
+            });
     connect(m_definitions, &StructureDefinitionManager::reloadFailed,
             this, [this](const QString &message) {
+                if (m_reloadBanner)
+                    m_reloadBanner->hide();
+                setStatusLabelError(true);
                 m_statusLabel->setText(message);
                 updateDefinitionsUi();
+            });
+    connect(m_definitions, &StructureDefinitionManager::definitionFilesChanged,
+            this, [this]() {
+                if (m_reloadBanner)
+                    m_reloadBanner->show();
             });
     connect(m_hv, &HexView::cursorChanged,
             this, [this](size_w) {
@@ -1591,6 +1735,8 @@ void StructureViewPanel::buildUi()
                 if (!m_pinned)
                     rebuildRows();
             });
+    connect(m_hv, &HexView::fileOpened,
+            this, [this](const QString &) { refreshForCurrentFileAssociation(); });
     connect(m_pinAction, &QAction::triggered,
             this, [this]() { setPinned(!m_pinned); });
     connect(m_logButton, &QToolButton::clicked,
@@ -1676,24 +1822,36 @@ void StructureViewPanel::updateDefinitionsUi()
 {
     const QList<ExportedStructureType> exportedTypes = m_definitions->exportedTypes();
 
-    m_rootCombo->clear();
-    for (const ExportedStructureType &type : exportedTypes)
     {
-        const QString displayName = type.description.isEmpty()
-            ? displayNameForTypeDecl(type.typeDecl)
-            : type.description;
-        m_rootCombo->addItem(displayName,
-                             QVariant::fromValue<qulonglong>(reinterpret_cast<qulonglong>(type.typeDecl)));
+        const QSignalBlocker blocker(m_rootCombo);
+        m_rootCombo->clear();
+        for (const ExportedStructureType &type : exportedTypes)
+        {
+            const QString displayName = type.description.isEmpty()
+                ? displayNameForTypeDecl(type.typeDecl)
+                : type.description;
+            m_rootCombo->addItem(displayName,
+                                 QVariant::fromValue<qulonglong>(reinterpret_cast<qulonglong>(type.typeDecl)));
+        }
+
+        const int associatedIndex = associatedRootTypeIndex(exportedTypes);
+        if (associatedIndex >= 0)
+            m_rootCombo->setCurrentIndex(associatedIndex);
+        else if (m_hv && !m_hv->filePath().isEmpty())
+            m_rootCombo->setCurrentIndex(-1);
     }
-    selectAssociatedRootType(exportedTypes);
 
     if (!m_definitions->lastError().isEmpty())
     {
+        setStatusLabelError(true);
         m_statusLabel->setText(m_definitions->lastError());
+        m_model->clear();
+        clearHexViewOverlay();
         return;
     }
 
     const int fileCount = m_definitions->definitionFiles().size();
+    setStatusLabelError(false);
     m_statusLabel->setText(tr("%1 definition file(s), %2 exported type(s)").arg(fileCount).arg(exportedTypes.size()));
     rebuildRows();
 }
@@ -2010,6 +2168,46 @@ void StructureViewPanel::locateIndexInSource(const QModelIndex &index)
     }
 }
 
+bool StructureViewPanel::locateLogDiagnosticAt(const QPoint &viewportPos)
+{
+    QString path;
+    int line = 0;
+    if (!logDiagnosticAt(viewportPos, &path, &line))
+        return false;
+
+    if (!loadSourceFile(path, line) || !m_viewStack || !m_sourceView)
+        return false;
+
+    m_viewStack->setCurrentWidget(m_sourceView);
+    updateContentFramePage();
+    return true;
+}
+
+bool StructureViewPanel::logDiagnosticAt(const QPoint &viewportPos, QString *path, int *lineNo) const
+{
+    if (!m_logView)
+        return false;
+
+    const QTextCursor cursor = m_logView->cursorForPosition(viewportPos);
+    const QTextBlock block = cursor.block();
+    if (!block.isValid())
+        return false;
+
+    const LogDiagnosticLink link = parseLogDiagnosticLine(block.text());
+    if (!link.isValid())
+        return false;
+
+    const int column = cursor.position() - block.position();
+    if (column < link.pathStart || column >= link.pathStart + link.pathLength)
+        return false;
+
+    if (path)
+        *path = link.path;
+    if (lineNo)
+        *lineNo = link.lineNo;
+    return true;
+}
+
 bool StructureViewPanel::loadSourceFile(const QString &path, int line)
 {
     if (!m_sourceView || path.isEmpty())
@@ -2034,6 +2232,23 @@ bool StructureViewPanel::loadSourceFile(const QString &path, int line)
         }
     }
     return true;
+}
+
+void StructureViewPanel::setStatusLabelError(bool error)
+{
+    if (!m_statusLabel)
+        return;
+
+    if (!error)
+    {
+        m_statusLabel->setStyleSheet(QString());
+        m_statusLabel->unsetCursor();
+        return;
+    }
+
+    m_statusLabel->setCursor(Qt::PointingHandCursor);
+    m_statusLabel->setStyleSheet(
+        QStringLiteral("color: %1;").arg(filestats::cssColor(errorColour())));
 }
 
 StructureRow *StructureViewPanel::sourceRowForIndex(const QModelIndex &index) const
@@ -2193,24 +2408,91 @@ bool StructureViewPanel::explicitRootOffset(TypeDecl *rootType, uint64_t *offset
     }
 }
 
-void StructureViewPanel::selectAssociatedRootType(const QList<ExportedStructureType> &exportedTypes)
+bool StructureViewPanel::magicSignatureMatches(const StructureMagicSignature &signature) const
 {
-    if (!m_rootCombo || !m_hv || exportedTypes.isEmpty())
-        return;
+    if (!m_hv || signature.bytes.isEmpty())
+        return false;
 
-    const QString suffix = QFileInfo(m_hv->filePath()).suffix().toLower();
-    if (suffix.isEmpty())
-        return;
+    QByteArray fileBytes(signature.bytes.size(), Qt::Uninitialized);
+    const size_t bytesRead = m_hv->getData(static_cast<size_w>(signature.offset),
+                                           reinterpret_cast<uint8_t *>(fileBytes.data()),
+                                           static_cast<size_t>(fileBytes.size()));
+    return bytesRead == static_cast<size_t>(fileBytes.size())
+        && fileBytes == signature.bytes;
+}
 
-    const QString dottedSuffix = QLatin1Char('.') + suffix;
-    for (int i = 0; i < exportedTypes.size(); ++i)
+bool StructureViewPanel::selectAssociatedRootType(const QList<ExportedStructureType> &exportedTypes)
+{
+    if (!m_rootCombo)
+        return false;
+
+    const int index = associatedRootTypeIndex(exportedTypes);
+    if (index < 0)
+        return false;
+
+    const bool changed = m_rootCombo->currentIndex() != index;
+    m_rootCombo->setCurrentIndex(index);
+    return changed;
+}
+
+int StructureViewPanel::associatedRootTypeIndex(const QList<ExportedStructureType> &exportedTypes) const
+{
+    if (!m_hv || exportedTypes.isEmpty())
+        return -1;
+
+    const QString fileName = QFileInfo(m_hv->filePath()).fileName().toLower();
+    if (!fileName.isEmpty())
     {
-        if (exportedTypes[i].assocExtensions.contains(dottedSuffix, Qt::CaseInsensitive))
+        for (int i = 0; i < exportedTypes.size(); ++i)
         {
-            m_rootCombo->setCurrentIndex(i);
-            return;
+            for (QString ext : exportedTypes[i].assocExtensions)
+            {
+                ext = ext.trimmed().toLower();
+                if (ext.isEmpty())
+                    continue;
+                if (!ext.startsWith(QLatin1Char('.')))
+                    ext.prepend(QLatin1Char('.'));
+
+                if (fileName.endsWith(ext) || fileName.contains(ext + QLatin1Char('.')))
+                    return i;
+            }
         }
     }
+
+    for (int i = 0; i < exportedTypes.size(); ++i)
+    {
+        for (const StructureMagicSignature &signature : exportedTypes[i].magicSignatures)
+        {
+            if (magicSignatureMatches(signature))
+                return i;
+        }
+    }
+
+    return -1;
+}
+
+void StructureViewPanel::refreshForCurrentFileAssociation()
+{
+    if (!m_definitions || !m_rootCombo || !m_model)
+        return;
+
+    m_definitions->ensureLoaded();
+    const QList<ExportedStructureType> exportedTypes = m_definitions->exportedTypes();
+    const int associatedIndex = associatedRootTypeIndex(exportedTypes);
+    if (associatedIndex < 0)
+    {
+        m_rootCombo->setCurrentIndex(-1);
+        m_model->clear();
+        clearHexViewOverlay();
+        updateOffsetDisplay();
+        return;
+    }
+
+    const bool rootChanged = m_rootCombo->currentIndex() != associatedIndex;
+    m_rootCombo->setCurrentIndex(associatedIndex);
+    updateOffsetDisplay();
+    if (!rootChanged)
+        rebuildRows();
 }
 
 TypeDecl *StructureViewPanel::selectedRootType() const

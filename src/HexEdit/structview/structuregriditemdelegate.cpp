@@ -1,15 +1,19 @@
 #include "structview/structuregriditemdelegate.h"
 
+#include "combos/menucombobox.h"
 #include "structview/structuretreemodel.h"
 
+#include <QAbstractItemView>
 #include <QApplication>
-#include <QComboBox>
+#include <QEvent>
 #include <QFont>
 #include <QFontMetrics>
 #include <QIcon>
 #include <QLineEdit>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QStyleOptionComboBox>
+#include <QTimer>
 #include <QTreeView>
 
 #include <algorithm>
@@ -33,6 +37,14 @@ qreal snapToDevicePixel(const QPainter *painter, qreal value)
 {
     const qreal dpr = painter && painter->device() ? painter->device()->devicePixelRatioF() : 1.0;
     return dpr > 0.0 ? std::round(value * dpr) / dpr : value;
+}
+
+QAbstractItemView *itemViewForWidget(const QWidget *widget)
+{
+    for (const QWidget *cursor = widget; cursor; cursor = cursor->parentWidget())
+        if (auto *view = qobject_cast<const QAbstractItemView *>(cursor))
+            return const_cast<QAbstractItemView *>(view);
+    return nullptr;
 }
 
 }
@@ -128,11 +140,17 @@ QWidget *StructureGridItemDelegate::createEditor(QWidget *parent,
     if (index.column() == StructureTreeModel::ValueColumn
         && index.data(StructureTreeModel::HasValueChoicesRole).toBool())
     {
-        auto *combo = new QComboBox(parent);
+        auto *combo = new MenuComboBox(parent);
         combo->setFrame(false);
         combo->setEditable(false);
         combo->addItems(index.data(StructureTreeModel::ValueChoicesRole).toStringList());
         combo->setAutoFillBackground(true);
+        auto *self = const_cast<StructureGridItemDelegate *>(this);
+        connect(combo, QOverload<int>::of(&QComboBox::activated),
+                self, [self, combo]() {
+                    emit self->commitData(combo);
+                    emit self->closeEditor(combo);
+                });
         combo->setStyleSheet(QStringLiteral(
             "QComboBox {"
             " border: none;"
@@ -159,6 +177,32 @@ QWidget *StructureGridItemDelegate::createEditor(QWidget *parent,
     return edit;
 }
 
+bool StructureGridItemDelegate::editorEvent(QEvent *event,
+                                            QAbstractItemModel *model,
+                                            const QStyleOptionViewItem &option,
+                                            const QModelIndex &index)
+{
+    if (event
+        && event->type() == QEvent::MouseButtonRelease
+        && index.column() == StructureTreeModel::ValueColumn
+        && index.data(StructureTreeModel::HasValueChoicesRole).toBool())
+    {
+        auto *mouseEvent = static_cast<QMouseEvent *>(event);
+        if (mouseEvent->button() == Qt::LeftButton)
+        {
+            if (auto *view = itemViewForWidget(option.widget))
+            {
+                view->setCurrentIndex(index);
+                m_popupIndex = QPersistentModelIndex(index);
+                view->edit(index);
+                return true;
+            }
+        }
+    }
+
+    return QStyledItemDelegate::editorEvent(event, model, option, index);
+}
+
 void StructureGridItemDelegate::setEditorData(QWidget *editor, const QModelIndex &index) const
 {
     if (auto *edit = qobject_cast<QLineEdit *>(editor))
@@ -172,6 +216,14 @@ void StructureGridItemDelegate::setEditorData(QWidget *editor, const QModelIndex
     {
         const int match = combo->findText(index.data(Qt::EditRole).toString());
         combo->setCurrentIndex(match >= 0 ? match : 0);
+        if (m_popupIndex == index)
+        {
+            m_popupIndex = QPersistentModelIndex();
+            QTimer::singleShot(0, combo, [combo]() {
+                if (combo->isVisible())
+                    combo->showPopup();
+            });
+        }
         return;
     }
 
@@ -238,6 +290,8 @@ void StructureGridItemDelegate::destroyEditor(QWidget *editor, const QModelIndex
 
     if (m_editingIndex == index)
         m_editingIndex = QPersistentModelIndex();
+    if (m_popupIndex == index)
+        m_popupIndex = QPersistentModelIndex();
 
     QStyledItemDelegate::destroyEditor(editor, index);
 

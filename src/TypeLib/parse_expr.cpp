@@ -211,13 +211,61 @@ ExprNode * Parser::UnaryExpression(void)
 		break;
 				
 	// expressions within parenthesis
-	case '(':	
+	case '(':
 		
 		Advance(); 
 		p = FullExpression( TOKEN(')') );
 		if(p) p->brackets = true;
 		p = PostfixExpression(p);	
 		break;
+
+	case TOK_SIZEOF:
+	{
+		Advance();
+		if(!Expected('('))
+			return new ExprNode(EXPR_NULL, TOK_NULL);
+
+		switch(t.kind)
+		{
+		case TOK_CHAR:  case TOK_WCHAR:
+		case TOK_FLOAT: case TOK_DOUBLE:
+		case TOK_BYTE:  case TOK_WORD:
+		case TOK_DWORD: case TOK_QWORD:
+		{
+			TOKEN nameTok = t;
+			p = new ExprNode(EXPR_IDENTIFIER, nameTok);
+			p->str = _strdup(inenglish(nameTok));
+			Advance();
+			break;
+		}
+
+		case TOK_IDENTIFIER:
+			p = PrimaryExpression();
+			p = PostfixExpression(p);
+			break;
+
+		default:
+			Error(ERROR_SIZEOF_SCALAR_ONLY);
+			p = new ExprNode(EXPR_NULL, TOK_NULL);
+			break;
+		}
+
+		if(p && p->type != EXPR_IDENTIFIER)
+		{
+			Error(ERROR_SIZEOF_SCALAR_ONLY);
+			delete p;
+			p = new ExprNode(EXPR_NULL, TOK_NULL);
+		}
+
+		if(!Expected(')'))
+		{
+			delete p;
+			return new ExprNode(EXPR_NULL, TOK_NULL);
+		}
+
+		p = new ExprNode(EXPR_SIZEOF, TOKEN(TOK_SIZEOF), p);
+		break;
+	}
 
 	// pre-increment & pre-decrement operators
 	case TOK_INC: case TOK_DEC:		
@@ -532,6 +580,12 @@ int RecurseFlatten(stringprint &sbuf, ExprNode *expr)
 		RecurseFlatten(sbuf, expr->right);
 		sbuf._stprintf(TEXT(" : "));
 		break;
+
+	case EXPR_SIZEOF:
+		sbuf._stprintf(TEXT("sizeof("));
+		RecurseFlatten(sbuf, expr->left);
+		sbuf._stprintf(TEXT(")"));
+		break;
 	}
 
 	if(expr->brackets)
@@ -628,6 +682,9 @@ INUMTYPE Evaluate(ExprNode *expr)
 			return Evaluate(expr->left);
 		else
 			return Evaluate(expr->right);
+
+	case EXPR_SIZEOF:
+		return 0;
 
 	default:
 		// don't understand anything else

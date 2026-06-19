@@ -1,4 +1,4 @@
-// q22-struct v1
+//--q22-struct v1
 //
 //  elf.struct
 //
@@ -279,6 +279,7 @@ typedef struct _Elf64_Sym
     export,
     description("Executable and Linkable Format (ELF)"),
     assoc(".elf", ".so", ".o"),
+    magic(0, { 0x7F, 'E', 'L', 'F' }),
     offset(0),
     endian(e_ident[EI_DATA] == ELFDATA2MSB),
     view("elf.sections")

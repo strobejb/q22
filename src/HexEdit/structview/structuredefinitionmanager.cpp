@@ -7,6 +7,8 @@
 #include <QSettings>
 #include <QStandardPaths>
 
+#include <cstring>
+
 namespace
 {
 void collectAssocExtensions(ExprNode *expr, QStringList *extensions)
@@ -28,6 +30,82 @@ void collectAssocExtensions(ExprNode *expr, QStringList *extensions)
             ext.prepend(QLatin1Char('.'));
         if (!ext.isEmpty() && !extensions->contains(ext))
             extensions->push_back(ext);
+    }
+}
+
+bool appendMagicBytes(ExprNode *expr, QByteArray *bytes)
+{
+    if (!expr || !bytes)
+        return false;
+
+    if (expr->type == EXPR_COMMA)
+    {
+        if (!appendMagicBytes(expr->left, bytes))
+            return false;
+        return expr->right ? appendMagicBytes(expr->right, bytes) : true;
+    }
+
+    if (expr->type == EXPR_STRINGBUF && expr->str)
+    {
+        bytes->append(expr->str, int(strlen(expr->str)));
+        return true;
+    }
+
+    if (expr->type == EXPR_NUMBER)
+    {
+        const INUMTYPE value = Evaluate(expr);
+        if (value < 0 || value > 0xff)
+            return false;
+        bytes->append(char(value & 0xff));
+        return true;
+    }
+
+    return false;
+}
+
+void collectMagicSignatures(Tag *tagList, QList<StructureMagicSignature> *signatures)
+{
+    if (!signatures)
+        return;
+
+    for (Tag *tag = tagList; tag; tag = tag->link)
+    {
+        if (tag->tok != TOK_MAGIC || !tag->expr)
+            continue;
+
+        ExprNode *offsetExpr = tag->expr;
+        ExprNode *bytesExpr = nullptr;
+        if (tag->byteSequence.empty())
+        {
+            if (tag->expr->type != EXPR_COMMA)
+                continue;
+            offsetExpr = tag->expr->left;
+            bytesExpr = tag->expr->right;
+        }
+
+        if (!offsetExpr)
+            continue;
+
+        const INUMTYPE offset = Evaluate(offsetExpr);
+        if (offset < 0)
+            continue;
+
+        StructureMagicSignature signature;
+        signature.offset = static_cast<uint64_t>(offset);
+        if (!tag->byteSequence.empty())
+        {
+            for (const uint8_t byte : tag->byteSequence)
+                signature.bytes.append(char(byte));
+        }
+        else
+        {
+            if (!bytesExpr)
+                continue;
+            appendMagicBytes(bytesExpr, &signature.bytes);
+        }
+
+        if (!signature.bytes.isEmpty())
+            signatures->push_back(signature);
     }
 }
 
@@ -85,11 +163,11 @@ StructureDefinitionManager::StructureDefinitionManager(QObject *parent)
     m_reloadTimer.setInterval(200);
 
     connect(&m_reloadTimer, &QTimer::timeout,
-            this, &StructureDefinitionManager::reload);
+            this, &StructureDefinitionManager::definitionFilesChanged);
     connect(m_watcher, &QFileSystemWatcher::directoryChanged,
-            this, [this](const QString &) { scheduleReload(); });
+            this, [this](const QString &) { scheduleChangeNotification(); });
     connect(m_watcher, &QFileSystemWatcher::fileChanged,
-            this, [this](const QString &) { scheduleReload(); });
+            this, [this](const QString &) { scheduleChangeNotification(); });
 }
 
 TypeLibrary *StructureDefinitionManager::library() const
@@ -126,6 +204,7 @@ QList<ExportedStructureType> StructureDefinitionManager::exportedTypes() const
         ExprNode *assocExpr = nullptr;
         if (FindTag(decl->tagList, TOK_ASSOC, &assocExpr))
             collectAssocExtensions(assocExpr, &type.assocExtensions);
+        collectMagicSignatures(decl->tagList, &type.magicSignatures);
         types.push_back(type);
     }
 
@@ -197,14 +276,17 @@ bool StructureDefinitionManager::reload()
         m_loadLog.push_back(tr("  %1").arg(QDir::toNativeSeparators(file)));
 
     auto              nextLibrary = std::make_unique<TypeLibrary>();
-    QString           errorMessage;
-    if (!parseFiles(files, nextLibrary.get(), &errorMessage))
+    QString           errorSummary;
+    QString           errorDiagnostic;
+    if (!parseFiles(files, nextLibrary.get(), &errorSummary, &errorDiagnostic))
     {
         m_loaded = true;
-        m_lastError = errorMessage;
-        m_loadLog.push_back(tr("Failed: %1").arg(errorMessage));
+        m_lastError = errorSummary;
+        m_loadLog.push_back(errorSummary);
+        if (!errorDiagnostic.isEmpty())
+            m_loadLog.push_back(errorDiagnostic);
         updateWatchedFiles(files);
-        emit reloadFailed(errorMessage);
+        emit reloadFailed(errorSummary);
         return false;
     }
 
@@ -240,7 +322,10 @@ QStringList StructureDefinitionManager::discoverDefinitionFiles() const
     return files;
 }
 
-bool StructureDefinitionManager::parseFiles(const QStringList &files, TypeLibrary *library, QString *errorMessage) const
+bool StructureDefinitionManager::parseFiles(const QStringList &files,
+                                            TypeLibrary *library,
+                                            QString *errorSummary,
+                                            QString *errorDiagnostic) const
 {
     for (const QString &file : files)
     {
@@ -248,13 +333,11 @@ bool StructureDefinitionManager::parseFiles(const QStringList &files, TypeLibrar
         const QByteArray nativePath = QDir::toNativeSeparators(file).toLocal8Bit();
         if (!parser.Ooof(nativePath.constData()))
         {
-            if (errorMessage)
-            {
-                const QString detail = QString::fromLocal8Bit(parser.LastErrStr());
-                *errorMessage = detail.isEmpty()
-                                    ? tr("Failed to parse %1").arg(QFileInfo(file).fileName())
-                                    : tr("%1: %2").arg(QFileInfo(file).fileName(), detail);
-            }
+            const QString fileName = QFileInfo(file).fileName();
+            if (errorSummary)
+                *errorSummary = tr("Failed: %1").arg(fileName);
+            if (errorDiagnostic)
+                *errorDiagnostic = QString::fromLocal8Bit(parser.LastErrStr()).trimmed();
             return false;
         }
     }
@@ -272,22 +355,37 @@ void StructureDefinitionManager::updateWatchedFiles(const QStringList &files)
     if (!watchedDirs.isEmpty())
         m_watcher->removePaths(watchedDirs);
 
-    const QString userDir = userStructsDir();
-    QDir().mkpath(userDir);
-    m_watcher->addPath(userDir);
+    QStringList dirs;
+    for (const QString &dir : builtinStructDirs())
+        if (QFileInfo::exists(dir))
+            dirs.push_back(QFileInfo(dir).absoluteFilePath());
 
-    QStringList userFiles;
-    const QString userDirAbs = QFileInfo(userDir).absoluteFilePath();
+    const QString userDir = QFileInfo(userStructsDir()).absoluteFilePath();
+    QDir().mkpath(userDir);
+    dirs.push_back(userDir);
+
+    QStringList watchedDefinitionFiles;
     for (const QString &file : files)
     {
-        if (QFileInfo(file).absolutePath() == userDirAbs)
-            userFiles.push_back(file);
+        const QFileInfo info(file);
+        if (!info.exists())
+            continue;
+        const QString absolutePath = info.absoluteFilePath();
+        const QString absoluteDir = info.absolutePath();
+        if (!watchedDefinitionFiles.contains(absolutePath))
+            watchedDefinitionFiles.push_back(absolutePath);
+        if (!dirs.contains(absoluteDir))
+            dirs.push_back(absoluteDir);
     }
-    if (!userFiles.isEmpty())
-        m_watcher->addPaths(userFiles);
+
+    dirs.removeDuplicates();
+    if (!dirs.isEmpty())
+        m_watcher->addPaths(dirs);
+    if (!watchedDefinitionFiles.isEmpty())
+        m_watcher->addPaths(watchedDefinitionFiles);
 }
 
-void StructureDefinitionManager::scheduleReload()
+void StructureDefinitionManager::scheduleChangeNotification()
 {
     m_reloadTimer.start();
 }

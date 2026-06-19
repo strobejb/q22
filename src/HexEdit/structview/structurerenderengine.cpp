@@ -279,6 +279,9 @@ uint64_t StructureRenderEngine::appendTypeDecl(StructureRow *parent, TypeDecl *t
         return 0;
 
     const uint64_t originalOffset = offset;
+    if (declarationIsOptionalAndAbsent(typeDecl, parent, parent ? parent->type : nullptr, offset))
+        return 0;
+
     ExprNode *offsetExpr = nullptr;
     if (FindTag(typeDecl->tagList, TOK_OFFSET, &offsetExpr))
     {
@@ -307,6 +310,7 @@ uint64_t StructureRenderEngine::appendTypeDecl(StructureRow *parent, TypeDecl *t
     {
         AlignmentScope alignment(this, childAlignment);
         length = recurseType(parent, typeDecl->baseType, typeDecl, offset);
+        length = declarationExtent(typeDecl, parent, parent ? parent->type : nullptr, offset, length);
         return offset >= originalOffset ? (offset - originalOffset) + length : length;
     }
 
@@ -314,6 +318,7 @@ uint64_t StructureRenderEngine::appendTypeDecl(StructureRow *parent, TypeDecl *t
     for (Type *type : typeDecl->declList)
         length += recurseType(parent, type, typeDecl, offset + length);
 
+    length = declarationExtent(typeDecl, parent, parent ? parent->type : nullptr, offset, length);
     return offset >= originalOffset ? (offset - originalOffset) + length : length;
 }
 
@@ -438,8 +443,10 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
 
         INUMTYPE switchValue = 0;
         ExprNode *switchExpr = nullptr;
-        const bool hasSwitch = FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_SWITCHIS, &switchExpr)
-                               && evaluate(EvalContext{ parent, type, offset }, switchExpr, &switchValue);
+        const bool hasSwitchTag = FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_SWITCHIS, &switchExpr);
+        const bool hasSwitch = hasSwitchTag && evaluate(EvalContext{ parent, type, offset }, switchExpr, &switchValue);
+        if (hasSwitchTag && !hasSwitch)
+            return 0;
 
         uint64_t length = 0;
         for (TypeDecl *childDecl : type->sptr->typeDeclList)
@@ -744,9 +751,78 @@ bool StructureRenderEngine::evaluate(const EvalContext &context, ExprNode *expr,
         if (!evaluate(context, expr->cond, &cond))
             return false;
         return evaluate(context, cond ? expr->left : expr->right, result);
+    case EXPR_SIZEOF:
+    {
+        if (!expr->left || expr->left->type != EXPR_IDENTIFIER || !expr->left->str)
+            return false;
+
+        const uint64_t size = scalarSizeOfName(expr->left->str);
+        if (size == 0)
+            return false;
+
+        *result = static_cast<INUMTYPE>(size);
+        return true;
+    }
     default:
         return false;
     }
+}
+
+uint64_t StructureRenderEngine::scalarSizeOfName(const char *name) const
+{
+    if (!name)
+        return 0;
+
+    struct BuiltIn
+    {
+        const char *name;
+        TYPE type;
+    };
+
+    static constexpr BuiltIn builtIns[] =
+    {
+        { "char", typeCHAR },
+        { "wchar_t", typeWCHAR },
+        { "byte", typeBYTE },
+        { "word", typeWORD },
+        { "dword", typeDWORD },
+        { "qword", typeQWORD },
+        { "float", typeFLOAT },
+        { "double", typeDOUBLE },
+    };
+
+    for (const BuiltIn &builtIn : builtIns)
+        if (std::strcmp(name, builtIn.name) == 0)
+            return scalarSize(builtIn.type);
+
+    if (!m_library)
+        return 0;
+
+    Symbol *sym = LookupSymbol(m_library->globalIdentifierList, const_cast<char *>(name));
+    return sym ? scalarSizeOfType(sym->type) : 0;
+}
+
+uint64_t StructureRenderEngine::scalarSizeOfType(Type *type) const
+{
+    if (!type)
+        return 0;
+
+    for (Type *cursor = type; cursor; cursor = cursor->link)
+    {
+        switch (cursor->ty)
+        {
+        case typeTYPEDEF:
+        case typeCONST:
+        case typeSIGNED:
+        case typeUNSIGNED:
+            continue;
+
+        default:
+            return scalarSize(cursor->ty);
+        }
+    }
+
+    return 0;
 }
 
 StructureRow *StructureRenderEngine::findFieldRow(StructureRow *scope, ExprNode *expr)
@@ -1259,6 +1335,36 @@ uint64_t StructureRenderEngine::declarationAlignment(TypeDecl *typeDecl,
         return fallback > 0 ? fallback : 1;
 
     return static_cast<uint64_t>(value);
+}
+
+uint64_t StructureRenderEngine::declarationExtent(TypeDecl *typeDecl,
+                                                  StructureRow *scope,
+                                                  Type *scopeType,
+                                                  uint64_t scopeOffset,
+                                                  uint64_t fallback)
+{
+    ExprNode *expr = nullptr;
+    if (!FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_EXTENT, &expr) || !expr)
+        return fallback;
+
+    INUMTYPE value = 0;
+    if (!evaluate(EvalContext{ scope, scopeType, scopeOffset }, expr, &value) || value <= 0)
+        return fallback;
+
+    return static_cast<uint64_t>(value);
+}
+
+bool StructureRenderEngine::declarationIsOptionalAndAbsent(TypeDecl *typeDecl,
+                                                           StructureRow *scope,
+                                                           Type *scopeType,
+                                                           uint64_t scopeOffset)
+{
+    ExprNode *expr = nullptr;
+    if (!FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_OPTIONAL, &expr) || !expr)
+        return false;
+
+    INUMTYPE value = 0;
+    return !evaluate(EvalContext{ scope, scopeType, scopeOffset }, expr, &value) || value == 0;
 }
 
 bool StructureRenderEngine::declarationBigEndian(TypeDecl *typeDecl,

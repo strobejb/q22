@@ -372,6 +372,7 @@ public:
     };
 
 signals:
+    void fileOpened(const QString &path);
     void cursorChanged(size_w offset);
     void selectionChanged(size_w start, size_w end);
     void editModeChanged(uint mode);

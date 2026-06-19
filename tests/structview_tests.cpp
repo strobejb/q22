@@ -20,9 +20,11 @@ private slots:
     void managerCreatesUserStructsDirectory();
     void managerDiscoversBuiltinAndUserDefinitionFiles();
     void reloadSwapsInParsedTypeLibrary();
+    void managerReportsChangedDefinitionsWithoutAutoReload();
     void failedReloadPreservesPreviousLibrary();
     void exportedTypesUseExplicitExportTagsOnly();
     void exportedTypesExposeAssocExtensions();
+    void exportedTypesExposeMagicSignatures();
     void exportedTypesExposeDescriptions();
     void builderFormatsScalarsAndEndian();
     void builderFormatsCharacterArraysAsStrings();
@@ -32,6 +34,8 @@ private slots:
     void builderAppliesStructAndFieldAlignment();
     void builderLetsOffsetOverrideAlignment();
     void builderKeepsUnionMembersAtAlignedBase();
+    void builderUsesExtentToAdvancePastRenderedUnionSize();
+    void builderSkipsAbsentOptionalDeclarations();
     void builderUsesSizeIsForUnsizedArrays();
     void builderEvaluatesTernaryExpressions();
     void builderUsesCommonUnionPrefixForSizeIs();
@@ -254,7 +258,7 @@ void StructViewTests::managerDiscoversBuiltinAndUserDefinitionFiles()
 
 void StructViewTests::reloadSwapsInParsedTypeLibrary()
 {
-    // Scenario: the watcher notices a valid definition set and triggers reload.
+    // Scenario: the user accepts a valid definition set by reloading it.
     // Expected: the manager publishes a fresh TypeLibrary containing parsed
     // declarations from that definition set.
     // Regression guard: reload must not merely rescan filenames while leaving
@@ -273,6 +277,38 @@ void StructViewTests::reloadSwapsInParsedTypeLibrary()
     QVERIFY2(manager.reload(), qPrintable(manager.lastError()));
     QVERIFY(manager.library());
     QCOMPARE(manager.library()->globalTypeDeclList.size(), size_t(1));
+}
+
+void StructViewTests::managerReportsChangedDefinitionsWithoutAutoReload()
+{
+    // Scenario: a watched .struct file is saved while the Structure View is open.
+    // Expected: the manager reports that definitions changed, but leaves the
+    // active TypeLibrary alone until the user explicitly clicks Reload.
+    // Regression guard: file watching used to auto-reload immediately, which
+    // could surprise users while they were still editing a broken definition.
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+
+    const QString userDir = temp.filePath(QStringLiteral("structs"));
+    QVERIFY(QDir().mkpath(userDir));
+    const QString filePath = QDir(userDir).filePath(QStringLiteral("types.struct"));
+    writeTextFile(filePath, "typedef dword FirstType;\n");
+
+    StructureDefinitionManager manager;
+    manager.setBuiltinStructDirsForTests({});
+    manager.setUserStructsDirForTests(userDir);
+
+    QVERIFY2(manager.reload(), qPrintable(manager.lastError()));
+    TypeLibrary *activeLibrary = manager.library();
+    QVERIFY(activeLibrary);
+
+    QSignalSpy changedSpy(&manager, &StructureDefinitionManager::definitionFilesChanged);
+    QSignalSpy reloadedSpy(&manager, &StructureDefinitionManager::definitionsReloaded);
+    writeTextFile(filePath, "typedef byte SecondType;\n");
+
+    QTRY_VERIFY_WITH_TIMEOUT(!changedSpy.isEmpty(), 3000);
+    QCOMPARE(reloadedSpy.size(), 0);
+    QCOMPARE(manager.library(), activeLibrary);
 }
 
 void StructViewTests::failedReloadPreservesPreviousLibrary()
@@ -304,6 +340,10 @@ void StructViewTests::failedReloadPreservesPreviousLibrary()
     QCOMPARE(manager.library(), stableLibrary);
     QCOMPARE(manager.library()->globalTypeDeclList.size(), size_t(1));
     QVERIFY(!manager.lastError().isEmpty());
+    QCOMPARE(manager.lastError(), QStringLiteral("Failed: types.txt"));
+    const QString log = manager.loadLog();
+    QVERIFY(log.contains(QStringLiteral("Failed: types.txt\n")));
+    QVERIFY(log.contains(QStringLiteral("types.txt(1) : error")));
 }
 
 void StructViewTests::exportedTypesUseExplicitExportTagsOnly()
@@ -357,6 +397,37 @@ void StructViewTests::exportedTypesExposeAssocExtensions()
     const QList<ExportedStructureType> exported = manager.exportedTypes();
     QCOMPARE(exported.size(), 1);
     QCOMPARE(exported[0].assocExtensions, QStringList({ QStringLiteral(".exe"), QStringLiteral(".dll") }));
+}
+
+void StructViewTests::exportedTypesExposeMagicSignatures()
+{
+    // Scenario: an exported Structure View root declares byte signatures for
+    // files that may not have a useful extension.
+    // Expected: the manager exposes normalized magic bytes, including numeric
+    // byte fragments, without asking the panel to understand TypeLib syntax.
+    // Regression guard: auto-selection for extensionless ELF-style binaries
+    // should be data-driven by definitions rather than hard-coded in the UI.
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+
+    const QString userDir = temp.filePath(QStringLiteral("structs"));
+    QVERIFY(QDir().mkpath(userDir));
+    writeTextFile(QDir(userDir).filePath(QStringLiteral("types.txt")),
+                  "[export, magic(2, { 'A', 'B' }), magic(4, { 0x7F, 'E', 'L', 'F' })]\n"
+                  "struct Root { byte magic; } root;\n");
+
+    StructureDefinitionManager manager;
+    manager.setBuiltinStructDirsForTests({});
+    manager.setUserStructsDirForTests(userDir);
+
+    QVERIFY2(manager.reload(), qPrintable(manager.lastError()));
+    const QList<ExportedStructureType> exported = manager.exportedTypes();
+    QCOMPARE(exported.size(), 1);
+    QCOMPARE(exported[0].magicSignatures.size(), 2);
+    QCOMPARE(exported[0].magicSignatures[0].offset, uint64_t(4));
+    QCOMPARE(exported[0].magicSignatures[0].bytes, QByteArray("\x7f""ELF", 4));
+    QCOMPARE(exported[0].magicSignatures[1].offset, uint64_t(2));
+    QCOMPARE(exported[0].magicSignatures[1].bytes, QByteArray("AB", 2));
 }
 
 void StructViewTests::exportedTypesExposeDescriptions()
@@ -594,6 +665,79 @@ void StructViewTests::builderKeepsUnionMembersAtAlignedBase()
     QCOMPARE(u->children[0]->absoluteOffset, uint64_t(4));
     QCOMPARE(u->children[1]->absoluteOffset, uint64_t(4));
     QCOMPARE(rows[0]->children[2]->absoluteOffset, uint64_t(8));
+}
+
+void StructViewTests::builderUsesExtentToAdvancePastRenderedUnionSize()
+{
+    // Scenario: a PE-style optional-header union renders one compact branch, but
+    // the file header says the optional-header area consumes a larger byte span.
+    // Expected: the union's visible child still renders at the union offset, and
+    // the following field naturally starts after extent(expr), including scalar
+    // sizeof(...) terms used inside that expression.
+    // Regression guard: section-header style arrays should not need explicit
+    // offset arithmetic just because the selected union member is shorter than
+    // the on-disk reserved area.
+    Parser parser;
+    QVERIFY(parseBuffer(parser,
+                        "typedef dword DWORD;\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  byte span;\n"
+                        "  [extent(span + sizeof(byte) + sizeof(DWORD))]\n"
+                        "  union { byte tiny; };\n"
+                        "  byte after;\n"
+                        "} root;\n"));
+
+    auto rows = buildRows(parser.GetTypeLibrary(),
+                          firstExported(parser.GetTypeLibrary()),
+                          QByteArray::fromHex("03AA000000000000000B"));
+
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(3));
+    QCOMPARE(rows[0]->children[1]->absoluteOffset, uint64_t(1));
+    QCOMPARE(rows[0]->children[2]->name, QStringLiteral("byte after"));
+    QCOMPARE(rows[0]->children[2]->absoluteOffset, uint64_t(9));
+    QCOMPARE(rows[0]->children[2]->value, QStringLiteral("11"));
+}
+
+void StructViewTests::builderSkipsAbsentOptionalDeclarations()
+{
+    // Scenario: a PE-style NT header reports no optional-header bytes.
+    // Expected: optional(expr) suppresses the optional-header union entirely, so
+    // the section array starts naturally after the fixed signature/file-header
+    // prefix instead of rendering both union branches or relying on extent(0).
+    // Regression guard: a missing switch selector must not make a switched union
+    // render every possible branch.
+    Parser parser;
+    QVERIFY(parseBuffer(parser,
+                        "typedef struct _FileHeader { byte NumberOfSections; byte SizeOfOptionalHeader; } FileHeader;\n"
+                        "typedef struct _Optional32 { word Magic; byte marker32; } Optional32;\n"
+                        "typedef struct _Optional64 { word Magic; dword marker64; } Optional64;\n"
+                        "typedef struct _Section { byte value; } Section;\n"
+                        "typedef struct _NtHeaders {\n"
+                        "  dword Signature;\n"
+                        "  FileHeader FileHeader;\n"
+                        "  [optional(FileHeader.SizeOfOptionalHeader != 0), switch_is(OptionalHeader32.Magic), extent(FileHeader.SizeOfOptionalHeader)]\n"
+                        "  union {\n"
+                        "    [case(0x10b)] Optional32 OptionalHeader32;\n"
+                        "    [case(0x20b)] Optional64 OptionalHeader64;\n"
+                        "  };\n"
+                        "} NtHeaders;\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  NtHeaders ntHeaders;\n"
+                        "  [size_is(ntHeaders.FileHeader.NumberOfSections)] Section sections[];\n"
+                        "} root;\n"));
+
+    auto rows = buildRows(parser.GetTypeLibrary(),
+                          firstExported(parser.GetTypeLibrary()),
+                          QByteArray::fromHex("00000000" "02" "00" "0A0B"));
+
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children[0]->children.size(), size_t(2));
+    QCOMPARE(rows[0]->children[1]->absoluteOffset, uint64_t(6));
+    QCOMPARE(rows[0]->children[1]->children.size(), size_t(2));
+    QCOMPARE(rows[0]->children[1]->children[1]->children[0]->value, QStringLiteral("11"));
 }
 
 void StructViewTests::builderUsesSizeIsForUnsizedArrays()
@@ -1708,6 +1852,8 @@ void StructViewTests::modelSupportsHierarchyAndEditableCells()
     auto child = std::make_unique<StructureRow>(parent.get());
     child->name = QStringLiteral("word Machine");
     child->value = QStringLiteral("0x8664");
+    child->valueChoices = { QStringLiteral("IMAGE_FILE_MACHINE_I386"),
+                            QStringLiteral("IMAGE_FILE_MACHINE_AMD64") };
     child->offset = QStringLiteral("00000004");
     parent->children.push_back(std::move(child));
 
@@ -1724,8 +1870,12 @@ void StructViewTests::modelSupportsHierarchyAndEditableCells()
     const QModelIndex childValue = model.index(0, StructureTreeModel::ValueColumn, parentIndex);
     QVERIFY(childValue.isValid());
     QVERIFY(model.flags(childValue) & Qt::ItemIsEditable);
-    QVERIFY(model.setData(childValue, QStringLiteral("0x14C")));
-    QCOMPARE(model.data(childValue).toString(), QStringLiteral("0x14C"));
+    QVERIFY(model.data(childValue, StructureTreeModel::HasValueChoicesRole).toBool());
+    QVERIFY(model.setData(childValue, QStringLiteral("IMAGE_FILE_MACHINE_I386")));
+    QCOMPARE(model.data(childValue).toString(), QStringLiteral("IMAGE_FILE_MACHINE_I386"));
+    QCOMPARE(model.data(childValue, StructureTreeModel::ValueChoicesRole).toStringList(),
+             QStringList({ QStringLiteral("IMAGE_FILE_MACHINE_I386"),
+                           QStringLiteral("IMAGE_FILE_MACHINE_AMD64") }));
 
     const QModelIndex childOffset = model.index(0, StructureTreeModel::OffsetColumn, parentIndex);
     QVERIFY(childOffset.isValid());

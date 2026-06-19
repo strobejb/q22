@@ -96,7 +96,77 @@ static Tag *CloneTagList(Tag *tag, Tag *tail = 0)
 	if(!tag)
 		return tail;
 
-	return new Tag(tag->tok, CloneTagList(tag->link, tail), CopyExpr(tag->expr));
+	Tag *copy = new Tag(tag->tok, CloneTagList(tag->link, tail), CopyExpr(tag->expr));
+	copy->byteSequence = tag->byteSequence;
+	return copy;
+}
+
+static bool MagicByteValue(ExprNode *expr, uint8_t *byte)
+{
+	if(!expr || !byte)
+		return false;
+
+	switch(expr->type)
+	{
+	case EXPR_NUMBER:
+	case EXPR_UNARY:
+		break;
+	default:
+		return false;
+	}
+
+	const INUMTYPE value = Evaluate(expr);
+	if(value > 0xff)
+		return false;
+
+	*byte = static_cast<uint8_t>(value);
+	return true;
+}
+
+bool Parser::ParseByteSequence(vector<uint8_t> *bytes)
+{
+	if(!bytes)
+		return false;
+
+	if(!Expected('{'))
+		return false;
+
+	if(t == '}')
+	{
+		Error(ERROR_SYNTAX_ERROR, inenglish(t));
+		return false;
+	}
+
+	for(;;)
+	{
+		ExprNode *item = ConditionalExpression();
+		uint8_t byte = 0;
+		if(!MagicByteValue(item, &byte))
+		{
+			delete item;
+			Error(ERROR_OVERFLOW);
+			return false;
+		}
+
+		delete item;
+		bytes->push_back(byte);
+
+		if(t == ',')
+		{
+			Advance();
+			if(t == '}')
+				break;
+			continue;
+		}
+
+		if(t == '}')
+			break;
+
+		Expected(',');
+		return false;
+	}
+
+	return Expected('}');
 }
 
 //
@@ -191,6 +261,27 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 			break;
 		}
 
+		case TOK_MAGIC:
+		{
+			tmp = t;
+			Advance();
+
+			if(!Expected('('))
+				return false;
+
+			if((expr = Expression(TOKEN(','))) == 0)
+				return false;
+
+			tag = new Tag(tmp, tag, expr);
+			if(!ParseByteSequence(&tag->byteSequence))
+				return false;
+
+			if(!Expected(')'))
+				return false;
+
+			break;
+		}
+
 		// TAGS which take expression-parameters
 		case TOK_OFFSET:	case TOK_ALIGN:	 
 		case TOK_BITFLAG:	case TOK_ENDIAN:
@@ -200,7 +291,10 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 		case TOK_DISPLAY:
 		case TOK_NAME:		case TOK_ENUM:
 		case TOK_ENTRYPOINT:
-		case TOK_ASSOC:		case TOK_OFFSETMAP:
+		case TOK_EXTENT:
+		case TOK_OPTIONAL:
+		case TOK_ASSOC:
+		case TOK_OFFSETMAP:
 		case TOK_DYNAMICCONTAINER:
 		case TOK_DYNAMICSTRUCT:
 		case TOK_VIEW:
@@ -356,7 +450,7 @@ TagSet * Parser::ParseTagSet(FILEREF fileRef)
 		TOK_OFFSET, TOK_ALIGN, TOK_BITFLAG, TOK_STYLE, TOK_DESCRIPTION,
 		TOK_DISPLAY,
 		TOK_ENDIAN, TOK_SWITCHIS, TOK_CASE, TOK_NAME,
-		TOK_ENUM, TOK_ENTRYPOINT, TOK_EXPORT, TOK_ASSOC, TOK_OFFSETMAP,
+		TOK_ENUM, TOK_ENTRYPOINT, TOK_EXTENT, TOK_OPTIONAL, TOK_EXPORT, TOK_ASSOC, TOK_MAGIC, TOK_OFFSETMAP,
 		TOK_DYNAMICCONTAINER, TOK_DYNAMICSTRUCT, TOK_VIEW,
 		TOK_NULL
 	};
@@ -504,7 +598,7 @@ int Parser::Parse()
 			TOK_OFFSET, TOK_ALIGN, TOK_BITFLAG, TOK_STYLE, TOK_DESCRIPTION,
 			TOK_DISPLAY,
 			TOK_ENDIAN,	TOK_SWITCHIS, TOK_CASE, TOK_NAME, 
-			TOK_ENUM, TOK_ENTRYPOINT, TOK_EXPORT, TOK_ASSOC, TOK_OFFSETMAP,
+			TOK_ENUM, TOK_ENTRYPOINT, TOK_EXTENT, TOK_OPTIONAL, TOK_EXPORT, TOK_ASSOC, TOK_MAGIC, TOK_OFFSETMAP,
 			TOK_DYNAMICCONTAINER, TOK_DYNAMICSTRUCT, TOK_VIEW, TOK_TAGS,
 			TOK_NULL 
 

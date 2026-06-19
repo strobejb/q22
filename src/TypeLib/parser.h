@@ -94,6 +94,7 @@ private:
 
 	// parser
 	bool		ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse = true);
+	bool		ParseByteSequence(vector<uint8_t> *bytes);
 	Statement * ParseInclude();
 	TagSet   * ParseTagSet(FILEREF fileRef);
 	void		ExportStructs();

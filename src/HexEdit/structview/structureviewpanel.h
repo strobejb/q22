@@ -23,8 +23,14 @@ class StructureContentFrame;
 class StructureDefinitionManager;
 class StructureTreeModel;
 struct ExportedStructureType;
+struct StructureMagicSignature;
 struct StructureRow;
 struct TypeDecl;
+
+namespace filestats
+{
+class ActionBanner;
+}
 
 class StructureViewPanel : public QWidget
 {
@@ -43,6 +49,7 @@ protected:
     void showEvent(QShowEvent *event) override;
     void hideEvent(QHideEvent *event) override;
     void changeEvent(QEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     void buildUi();
@@ -63,8 +70,11 @@ private:
     void showLogPage();
     void updateContentFramePage();
     void locateIndexInSource(const QModelIndex &index);
+    bool locateLogDiagnosticAt(const QPoint &viewportPos);
+    bool logDiagnosticAt(const QPoint &viewportPos, QString *path, int *lineNo) const;
     bool loadSourceFile(const QString &path, int line);
     StructureRow *sourceRowForIndex(const QModelIndex &index) const;
+    void setStatusLabelError(bool error);
     StructureDisplayOptions displayOptions() const;
     void applyDisplayOptions();
     void setUseDefinedTypeNames(bool enabled);
@@ -75,13 +85,17 @@ private:
     void clearHexViewOverlay();
     void setHexViewSelectionFromStructure(size_w start, size_w end);
     bool explicitRootOffset(TypeDecl *rootType, uint64_t *offset) const;
-    void selectAssociatedRootType(const QList<ExportedStructureType> &exportedTypes);
+    bool magicSignatureMatches(const StructureMagicSignature &signature) const;
+    int associatedRootTypeIndex(const QList<ExportedStructureType> &exportedTypes) const;
+    bool selectAssociatedRootType(const QList<ExportedStructureType> &exportedTypes);
+    void refreshForCurrentFileAssociation();
     TypeDecl *selectedRootType() const;
     QString displayNameForTypeDecl(TypeDecl *decl) const;
 
     HexView                    *m_hv = nullptr;
     StructureDefinitionManager *m_definitions = nullptr;
     StructureTreeModel         *m_model = nullptr;
+    filestats::ActionBanner    *m_reloadBanner = nullptr;
     MenuComboBox               *m_rootCombo = nullptr;
     QLineEdit                  *m_offsetEdit = nullptr;
     QAction                    *m_pinAction = nullptr;

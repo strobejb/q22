@@ -327,7 +327,6 @@ void StructureTreeModel::setCellText(StructureRow *row, int column, const QStrin
         row->value = text;
         row->valueKind = StructureRowValueKind::Custom;
         row->scalarCharacterSuffix.clear();
-        row->valueChoices.clear();
         break;
     case OffsetColumn:
         row->offset = text;

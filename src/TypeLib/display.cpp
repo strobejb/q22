@@ -144,7 +144,36 @@ size_t DisplayTags(FILE *fp, Tag *tagList)
 		{
 			len += fprintf(fp, "%s", Parser::inenglish(tag->tok));
 
-			if(tag->expr)
+			if(tag->tok == TOK_MAGIC && tag->expr && !tag->byteSequence.empty())
+			{
+				len += fprintf(fp, "(");
+				len += Flatten(fp, tag->expr);
+				len += fprintf(fp, ", { ");
+				for(size_t i = 0; i < tag->byteSequence.size(); i++)
+				{
+					const uint8_t byte = tag->byteSequence[i];
+					if(i > 0)
+						len += fprintf(fp, ", ");
+
+					switch(byte)
+					{
+					case '\'':
+						len += fprintf(fp, "'\\''");
+						break;
+					case '\\':
+						len += fprintf(fp, "'\\\\'");
+						break;
+					default:
+						if(byte >= 32 && byte < 127)
+							len += fprintf(fp, "'%c'", byte);
+						else
+							len += fprintf(fp, "0x%02X", byte);
+						break;
+					}
+				}
+				len += fprintf(fp, " })");
+			}
+			else if(tag->expr)
 			{
 				len += fprintf(fp, "(");
 				len += Flatten(fp, tag->expr);
@@ -627,5 +656,4 @@ void Parser::Dump2(FILE *fp)
 
 	printf("\n\n");
 }
-
 

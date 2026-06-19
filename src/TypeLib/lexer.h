@@ -287,6 +287,7 @@ public:
 	Token Next();
 
 	int parse_identifier();
+	TOKEN parse_char();
 	int parse_string(int term);
 	int backslash();
 	TOKEN parse_number();

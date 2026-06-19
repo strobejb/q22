@@ -152,6 +152,7 @@ struct Tag
 	TOKEN			tok;
 	Tag			*	link;
 	ExprNode	*	expr;
+	vector<uint8_t>	byteSequence;
 };
 
 struct TagSet
