@@ -92,6 +92,7 @@ private:
     QString stringArrayValue(StructureRow *scope, Type *type, TypeDecl *typeDecl, uint64_t offset);
     QString scalarArrayValue(StructureRow *scope, Type *type) const;
     QString fieldNameValue(StructureRow *scope, Type *scopeType, ExprNode *expr, uint64_t scopeOffset);
+    QString dynamicContainerAlias(StructureRow *row);
     QString quoteString(const QString &text) const;
 
     TypeLibrary *m_library = nullptr;

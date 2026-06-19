@@ -91,6 +91,17 @@ QString arrayAliasPrefix()
     return kPrefixArrayAliasesWithDash ? QStringLiteral(" - ") : QString();
 }
 
+QString cleanDynamicAlias(QString alias)
+{
+    alias = rowNameFragment(alias).trimmed();
+
+    const QString prefix = arrayAliasPrefix();
+    if (!prefix.isEmpty() && alias.startsWith(prefix))
+        alias = alias.mid(prefix.size()).trimmed();
+
+    return alias;
+}
+
 void appendCommaArgs(ExprNode *expr, std::vector<ExprNode *> *args)
 {
     if (!expr || !args)
@@ -956,7 +967,7 @@ void StructureRenderEngine::collectDynamicContainer(StructureRow *row)
 
     DynamicContainer container;
     container.typeDecl = containerType;
-    container.alias = row->nameIdentifier;
+    container.alias = dynamicContainerAlias(row);
 
     for (Tag *tag = row->typeDecl->tagList; tag; tag = tag->link)
     {
@@ -1476,6 +1487,22 @@ QString StructureRenderEngine::fieldNameValue(StructureRow *scope, Type *scopeTy
         return {};
 
     return QString::number(value);
+}
+
+QString StructureRenderEngine::dynamicContainerAlias(StructureRow *row)
+{
+    if (!row)
+        return {};
+
+    QString alias = cleanDynamicAlias(row->nameIdentifier);
+    if (!alias.isEmpty())
+        return alias;
+
+    ExprNode *nameExpr = nullptr;
+    if (FindTag(row->typeDecl ? row->typeDecl->tagList : nullptr, TOK_NAME, &nameExpr))
+        alias = cleanDynamicAlias(fieldNameValue(row, row->type, nameExpr, row->absoluteOffset));
+
+    return alias;
 }
 
 QString StructureRenderEngine::quoteString(const QString &text) const

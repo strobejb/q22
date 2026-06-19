@@ -1324,9 +1324,11 @@ void StructViewTests::builderPlacesDynamicStructsUnderNamedDynamicContainers()
     QCOMPARE(sections->children[1]->name, QStringLiteral("[1].idata"));
     QCOMPARE(sections->children[1]->children.size(), size_t(4));
     QCOMPARE(rows[0]->children[2]->name, QStringLiteral("SECTION .text"));
+    QVERIFY(!rows[0]->children[2]->name.startsWith(QStringLiteral("SECTION - ")));
     verifyBranchIconsPresent(rows[0]->children[2].get());
     QCOMPARE(rows[0]->children[2]->children.size(), size_t(0));
     QCOMPARE(rows[0]->children[3]->name, QStringLiteral("SECTION .idata"));
+    QVERIFY(!rows[0]->children[3]->name.startsWith(QStringLiteral("SECTION - ")));
     verifyBranchIconsPresent(rows[0]->children[3].get());
     QCOMPARE(rows[0]->children[3]->offset, QStringLiteral("00000080"));
 
