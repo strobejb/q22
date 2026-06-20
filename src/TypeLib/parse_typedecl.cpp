@@ -217,6 +217,27 @@ Type * Parser::PrefixDecl(SymbolTable &symTable)
 
 	FILEREF fileref(lexer.CurrentFile());
 
+	if(IsSoftIdentifier(t.kind))
+	{
+		if((sym = LookupSymbol(symTable, t.str)) == 0)
+		{
+			sym = InstallSymbol(symTable, t.str);
+			sym->fileRef = FILEREF(lexer.CurrentFile());
+		}
+		else
+		{
+			Error(ERROR_TYPE_REDEFINITION, t.str);
+		}
+
+		Advance();
+		tptr = new Type(typeIDENTIFIER);
+		tptr->sym = sym;
+		sym->type = tptr;
+		tptr = PostfixDecl(tptr);
+		tptr->fileRef = fileref;
+		return tptr;
+	}
+
 	switch(t.kind)
 	{
 	case '*': 
@@ -445,7 +466,7 @@ Type * Parser::ParseStructBody(Symbol *sym, TYPE ty)
 			TOK_DISPLAY,
 			TOK_ENDIAN,	TOK_SWITCHIS, TOK_CASE, TOK_NAME, 
 			TOK_ENUM, TOK_ENTRYPOINT, TOK_EXTENT, TOK_OPTIONAL, TOK_BITFLAG, TOK_MAGIC, TOK_OFFSETMAP,
-			TOK_DYNAMICCONTAINER, TOK_DYNAMICSTRUCT, TOK_VIEW, TOK_TAGS,
+			TOK_DYNAMICARRAY, TOK_DYNAMICCONTAINER, TOK_DYNAMICSTRUCT, TOK_TERMINATEDBY, TOK_VIEW, TOK_TAGS,
 			TOK_NULL 
 
 		};

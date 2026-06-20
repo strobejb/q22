@@ -6,8 +6,12 @@
 #include "structview/structuretypenameformatter.h"
 
 #include <QByteArray>
+#include <QDebug>
+#include <QElapsedTimer>
+#include <QFile>
 #include <QLatin1String>
 #include <QStringList>
+#include <QTextStream>
 
 #include <algorithm>
 #include <cstring>
@@ -135,6 +139,36 @@ bool arrayIndexFromRow(const StructureRow *row, INUMTYPE *index)
     *index = static_cast<INUMTYPE>(value);
     return true;
 }
+
+bool structureProfileEnabled()
+{
+    return qEnvironmentVariableIntValue("QEXED_STRUCTURE_PROFILE") != 0;
+}
+
+void structureProfileLog(const QString &message)
+{
+    qInfo().noquote() << message;
+
+    const QString path = qEnvironmentVariable("QEXED_STRUCTURE_PROFILE_LOG",
+                                              QStringLiteral("structure-profile.log"));
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
+        return;
+
+    QTextStream stream(&file);
+    stream << message << Qt::endl;
+}
+
+size_t structureRowCount(const StructureRow *row)
+{
+    if (!row)
+        return 0;
+
+    size_t count = 1;
+    for (const auto &child : row->children)
+        count += structureRowCount(child.get());
+    return count;
+}
 }
 
 struct StructureRenderEngine::ResolvedField
@@ -212,6 +246,15 @@ std::vector<std::unique_ptr<StructureRow>> StructureRenderEngine::build()
     if (!m_rootType)
         return rows;
 
+    const bool profile = structureProfileEnabled();
+    QElapsedTimer totalTimer;
+    QElapsedTimer phaseTimer;
+    if (profile)
+    {
+        totalTimer.start();
+        phaseTimer.start();
+    }
+
     auto root = makeRow(nullptr, m_rootType->declList.empty() ? m_rootType->baseType : m_rootType->declList[0],
                         m_rootType, m_baseOffset);
     root->parent = nullptr;
@@ -232,10 +275,37 @@ std::vector<std::unique_ptr<StructureRow>> StructureRenderEngine::build()
         appendTypeDecl(root.get(), m_rootType, m_baseOffset);
         root->byteLength = sizeOf(root->type, m_baseOffset);
     }
+    if (profile)
+    {
+        structureProfileLog(QStringLiteral("[StructureProfile] engine raw rows=%1 ms=%2")
+                                .arg(structureRowCount(root.get()))
+                                .arg(phaseTimer.restart()));
+    }
     collectDynamicRows();
     collectDynamicRows(root.get());
     appendDynamicRows(root.get());
+    if (profile)
+    {
+        structureProfileLog(QStringLiteral("[StructureProfile] engine dynamic_struct rows=%1 containers=%2 ms=%3")
+                                .arg(structureRowCount(root.get()))
+                                .arg(m_dynamicContainers.size())
+                                .arg(phaseTimer.restart()));
+    }
+    collectDynamicArrayRequests(root.get());
+    appendDynamicArrayRows(root.get());
+    if (profile)
+    {
+        structureProfileLog(QStringLiteral("[StructureProfile] engine dynamic_array rows=%1 requests=%2 ms=%3")
+                                .arg(structureRowCount(root.get()))
+                                .arg(m_dynamicArrayRequests.size())
+                                .arg(phaseTimer.restart()));
+    }
     resolveEntryPointRows(root.get());
+    if (profile)
+    {
+        structureProfileLog(QStringLiteral("[StructureProfile] engine entrypoints ms=%1")
+                                .arg(phaseTimer.restart()));
+    }
 
     std::vector<StructureOffsetMap> semanticOffsetMaps;
     for (const DynamicContainer &container : m_dynamicContainers)
@@ -244,6 +314,14 @@ std::vector<std::unique_ptr<StructureRow>> StructureRenderEngine::build()
             semanticOffsetMaps.push_back(StructureOffsetMap{ map.logicalStart, map.logicalSize, map.fileOffset });
     }
     runStructureSemanticViews(m_library, root.get(), m_baseOffset, m_reader, semanticOffsetMaps);
+    if (profile)
+    {
+        structureProfileLog(QStringLiteral("[StructureProfile] engine semantic rows=%1 maps=%2 ms=%3 total=%4")
+                                .arg(structureRowCount(root.get()))
+                                .arg(semanticOffsetMaps.size())
+                                .arg(phaseTimer.restart())
+                                .arg(totalTimer.elapsed()));
+    }
 
     rows.push_back(std::move(root));
     return rows;
@@ -386,6 +464,8 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
 
         const uint64_t boundedCount = std::min<uint64_t>(count, kMaxArrayElements);
         uint64_t length = 0;
+        ExprNode *terminatorExpr = nullptr;
+        FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_TERMINATEDBY, &terminatorExpr);
         Enum *nameEnum = nullptr;
         ExprNode *nameExpr = nullptr;
         if (FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_NAME, &nameExpr) && m_library && nameExpr && nameExpr->str)
@@ -401,6 +481,7 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
             const QString indexLabel = QStringLiteral("[%1]").arg(i);
             row->name = indexLabel;
             row->nameTypePrefix = indexLabel;
+            row->suppressSemanticViews = true;
             const QString enumLabel = enumNameForValue(nameEnum, i);
             if (!enumLabel.isEmpty())
             {
@@ -410,6 +491,7 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
 
             const uint64_t elementLength = formatType(row.get(), type->link, typeDecl, offset + length);
             row->byteLength = elementLength;
+            const bool terminates = elementMatchesTerminator(row.get(), type->link, terminatorExpr, offset + length);
             if (!nameEnum && nameExpr)
             {
                 const QString fieldName = rowNameFragment(fieldNameValue(row.get(), type->link, nameExpr, offset + length));
@@ -420,6 +502,9 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
                 }
             }
             length += elementLength;
+            if (terminates)
+                break;
+
             parent->children.push_back(std::move(row));
         }
         return length;
@@ -756,7 +841,7 @@ bool StructureRenderEngine::evaluate(const EvalContext &context, ExprNode *expr,
         if (!expr->left || expr->left->type != EXPR_IDENTIFIER || !expr->left->str)
             return false;
 
-        const uint64_t size = scalarSizeOfName(expr->left->str);
+        const uint64_t size = staticSizeOfName(expr->left->str);
         if (size == 0)
             return false;
 
@@ -768,7 +853,7 @@ bool StructureRenderEngine::evaluate(const EvalContext &context, ExprNode *expr,
     }
 }
 
-uint64_t StructureRenderEngine::scalarSizeOfName(const char *name) const
+uint64_t StructureRenderEngine::staticSizeOfName(const char *name)
 {
     if (!name)
         return 0;
@@ -798,11 +883,36 @@ uint64_t StructureRenderEngine::scalarSizeOfName(const char *name) const
     if (!m_library)
         return 0;
 
-    Symbol *sym = LookupSymbol(m_library->globalIdentifierList, const_cast<char *>(name));
-    return sym ? scalarSizeOfType(sym->type) : 0;
+    if (Symbol *sym = LookupSymbol(m_library->globalIdentifierList, const_cast<char *>(name)))
+        if (const uint64_t size = staticSizeOfType(sym->type))
+            return size;
+
+    for (TypeDecl *decl : m_library->globalTypeDeclList)
+    {
+        if (!decl)
+            continue;
+
+        for (Type *type : decl->declList)
+        {
+            if ((type->ty == typeTYPEDEF || type->ty == typeIDENTIFIER) && type->sym
+                && std::strcmp(type->sym->name, name) == 0)
+            {
+                return staticSizeOfType(type);
+            }
+        }
+
+        Type *base = BaseNode(decl->baseType);
+        if (base && (base->ty == typeSTRUCT || base->ty == typeUNION) && base->sptr
+            && base->sptr->symbol && std::strcmp(base->sptr->symbol->name, name) == 0)
+        {
+            return sizeOf(base, m_baseOffset);
+        }
+    }
+
+    return 0;
 }
 
-uint64_t StructureRenderEngine::scalarSizeOfType(Type *type) const
+uint64_t StructureRenderEngine::staticSizeOfType(Type *type)
 {
     if (!type)
         return 0;
@@ -816,6 +926,12 @@ uint64_t StructureRenderEngine::scalarSizeOfType(Type *type) const
         case typeSIGNED:
         case typeUNSIGNED:
             continue;
+
+        case typeSTRUCT:
+        case typeUNION:
+        case typeARRAY:
+        case typeIDENTIFIER:
+            return sizeOf(cursor, m_baseOffset);
 
         default:
             return scalarSize(cursor->ty);
@@ -1005,6 +1121,7 @@ void StructureRenderEngine::collectDynamicRows()
 {
     m_dynamicContainers.clear();
     m_dynamicRequests.clear();
+    m_dynamicArrayRequests.clear();
 }
 
 void StructureRenderEngine::collectDynamicRows(StructureRow *row)
@@ -1122,6 +1239,97 @@ void StructureRenderEngine::collectDynamicRequests(StructureRow *row)
     }
 }
 
+void StructureRenderEngine::collectDynamicArrayRequests(StructureRow *row)
+{
+    if (!row || !row->typeDecl)
+        return;
+
+    INUMTYPE probeArrayIndex = 0;
+    const bool rowIsArrayElement = arrayIndexFromRow(row, &probeArrayIndex);
+
+    for (Tag *tag = row->typeDecl->tagList; tag; tag = tag->link)
+    {
+        if (tag->tok != TOK_DYNAMICARRAY)
+            continue;
+
+        ExprNode *selectorOrLabelExpr = nullptr;
+        ExprNode *typeNameExpr = nullptr;
+        ExprNode *logicalOffsetExpr = nullptr;
+        ExprNode *countExpr = nullptr;
+        ExprNode *stopExpr = nullptr;
+        ExprNode *conditionExpr = nullptr;
+        if (!dynamicArrayArgs(tag->expr,
+                              &selectorOrLabelExpr,
+                              &typeNameExpr,
+                              &logicalOffsetExpr,
+                              &countExpr,
+                              &stopExpr,
+                              &conditionExpr))
+            continue;
+
+        // dynamic_array mirrors dynamic_struct for directory arrays: when the
+        // owner row is itself an array element, the first argument can select
+        // which element emits the referenced table.  On ordinary rows the same
+        // argument is only a display label for the generated array.
+        bool attachToMappedContainer = false;
+        if (rowIsArrayElement)
+        {
+            INUMTYPE arrayIndex = 0;
+            INUMTYPE selector = 0;
+            if (arrayIndexFromRow(row, &arrayIndex)
+                && evaluate(row, selectorOrLabelExpr, &selector, row->absoluteOffset))
+            {
+                if (selector != arrayIndex)
+                    continue;
+                attachToMappedContainer = true;
+            }
+        }
+
+        if (!typeNameExpr || typeNameExpr->type != EXPR_IDENTIFIER || !typeNameExpr->str)
+            continue;
+
+        TypeDecl *targetType = findTypeDecl(typeNameExpr->str);
+        Type *renderType = typeInDecl(targetType, typeNameExpr->str);
+        if (!targetType || !renderType)
+            continue;
+
+        INUMTYPE logicalOffset = 0;
+        INUMTYPE count = 0;
+        INUMTYPE condition = 1;
+        if (!evaluate(row, logicalOffsetExpr, &logicalOffset, row->absoluteOffset)
+            || !evaluate(row, countExpr, &count, row->absoluteOffset)
+            || (conditionExpr && (!evaluate(row, conditionExpr, &condition, row->absoluteOffset) || condition == 0))
+            || count <= 0)
+        {
+            continue;
+        }
+
+        QString label;
+        if (!rowIsArrayElement)
+        {
+            if (selectorOrLabelExpr && selectorOrLabelExpr->type == EXPR_IDENTIFIER && selectorOrLabelExpr->str)
+                label = QString::fromLocal8Bit(selectorOrLabelExpr->str);
+            else if (selectorOrLabelExpr && selectorOrLabelExpr->type == EXPR_STRINGBUF && selectorOrLabelExpr->str)
+                label = QString::fromLocal8Bit(selectorOrLabelExpr->str);
+        }
+
+        m_dynamicArrayRequests.push_back(DynamicArrayRequest{
+            row,
+            targetType,
+            renderType,
+            label,
+            uint64_t(logicalOffset),
+            uint64_t(count),
+            stopExpr,
+            conditionExpr,
+            attachToMappedContainer
+        });
+    }
+
+    for (const auto &child : row->children)
+        collectDynamicArrayRequests(child.get());
+}
+
 void StructureRenderEngine::appendDynamicRows(StructureRow *parent)
 {
     if (!parent)
@@ -1173,6 +1381,69 @@ void StructureRenderEngine::appendDynamicRows(StructureRow *parent)
     }
 }
 
+void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
+{
+    if (!row)
+        return;
+
+    for (const DynamicArrayRequest &request : m_dynamicArrayRequests)
+    {
+        if (request.owner != row || !request.renderType)
+            continue;
+
+        uint64_t fileOffset = 0;
+        DynamicContainer *container = mapLogicalOffset(request.logicalOffset, &fileOffset);
+        if (!container)
+            continue;
+
+        StructureRow *parentRow = request.attachToMappedContainer && container->row ? container->row : row;
+
+        auto arrayRow = makeRow(parentRow, request.renderType, request.typeDecl, m_baseOffset + fileOffset);
+        const QString elementTypeName = typeName(request.renderType);
+        const QString label = request.label.isEmpty() ? elementTypeName : request.label;
+        arrayRow->setNameParts(elementTypeName + QStringLiteral("[]"), label);
+        arrayRow->value = QStringLiteral("{...}");
+        arrayRow->kind = StructureRowKind::Dynamic;
+        arrayRow->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueDoubleClosed),
+                                 QString::fromLatin1(StructureBranchIcons::kBlueDoubleOpen),
+                                 QString::fromLatin1(StructureBranchIcons::kGrayDoubleClosed));
+
+        uint64_t length = 0;
+        const uint64_t boundedCount = std::min<uint64_t>(request.maxCount, kMaxArrayElements);
+        for (uint64_t i = 0; i < boundedCount; ++i)
+        {
+            auto elementRow = makeRow(arrayRow.get(), request.renderType, request.typeDecl, m_baseOffset + fileOffset + length);
+            const QString indexLabel = QStringLiteral("[%1]").arg(i);
+            elementRow->name = indexLabel;
+            elementRow->nameTypePrefix = indexLabel;
+            elementRow->kind = StructureRowKind::Dynamic;
+            elementRow->suppressSemanticViews = true;
+            elementRow->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueDoubleClosed),
+                                       QString::fromLatin1(StructureBranchIcons::kBlueDoubleOpen),
+                                       QString::fromLatin1(StructureBranchIcons::kGrayDoubleClosed));
+
+            const uint64_t elementLength = formatType(elementRow.get(), request.renderType, request.typeDecl, m_baseOffset + fileOffset + length);
+            elementRow->byteLength = elementLength;
+            const bool terminates = elementMatchesTerminator(elementRow.get(),
+                                                             request.renderType,
+                                                             request.stopExpr,
+                                                             m_baseOffset + fileOffset + length);
+            length += elementLength;
+            if (terminates)
+                break;
+
+            arrayRow->children.push_back(std::move(elementRow));
+        }
+
+        arrayRow->byteLength = length;
+        if (!arrayRow->children.empty())
+            parentRow->children.push_back(std::move(arrayRow));
+    }
+
+    for (const auto &child : row->children)
+        appendDynamicArrayRows(child.get());
+}
+
 bool StructureRenderEngine::dynamicTagArgs(ExprNode *expr,
                                            ExprNode **selector,
                                            ExprNode **typeName,
@@ -1192,6 +1463,34 @@ bool StructureRenderEngine::dynamicTagArgs(ExprNode *expr,
         *logicalOffset = args[2];
     if (condition)
         *condition = args[3];
+    return true;
+}
+
+bool StructureRenderEngine::dynamicArrayArgs(ExprNode *expr,
+                                             ExprNode **selectorOrLabel,
+                                             ExprNode **typeName,
+                                             ExprNode **logicalOffset,
+                                             ExprNode **count,
+                                             ExprNode **stop,
+                                             ExprNode **condition) const
+{
+    std::vector<ExprNode *> args;
+    appendCommaArgs(expr, &args);
+    if (args.size() != 4 && args.size() != 5 && args.size() != 6)
+        return false;
+
+    if (selectorOrLabel)
+        *selectorOrLabel = args[0];
+    if (typeName)
+        *typeName = args[1];
+    if (logicalOffset)
+        *logicalOffset = args[2];
+    if (count)
+        *count = args[3];
+    if (stop)
+        *stop = args.size() >= 5 ? args[4] : nullptr;
+    if (condition)
+        *condition = args.size() == 6 ? args[5] : nullptr;
     return true;
 }
 
@@ -1254,6 +1553,26 @@ TypeDecl *StructureRenderEngine::findTypeDecl(const char *name) const
     }
 
     return nullptr;
+}
+
+Type *StructureRenderEngine::typeInDecl(TypeDecl *decl, const char *name) const
+{
+    if (!decl)
+        return nullptr;
+
+    if (name)
+    {
+        for (Type *type : decl->declList)
+        {
+            if ((type->ty == typeTYPEDEF || type->ty == typeIDENTIFIER) && type->sym
+                && std::strcmp(type->sym->name, name) == 0)
+            {
+                return type;
+            }
+        }
+    }
+
+    return decl->declList.empty() ? decl->baseType : decl->declList[0];
 }
 
 StructureRenderEngine::DynamicContainer *StructureRenderEngine::mapLogicalOffset(uint64_t logicalOffset,
@@ -1563,6 +1882,34 @@ QString StructureRenderEngine::scalarArrayValue(StructureRow *scope, Type *type)
         values.push_back(QStringLiteral("..."));
 
     return QStringLiteral("{ %1 }").arg(values.join(QStringLiteral(", ")));
+}
+
+bool StructureRenderEngine::elementMatchesTerminator(StructureRow *row,
+                                                     Type *elementType,
+                                                     ExprNode *stopExpr,
+                                                     uint64_t offset)
+{
+    if (!row || !elementType || !stopExpr)
+        return false;
+
+    // terminated_by(0) is the common C-string/table-sentinel form. Treat a
+    // constant stop expression as an element-value comparison; richer
+    // expressions are evaluated as booleans against the formatted element row.
+    if (stopExpr->type == EXPR_NUMBER)
+    {
+        Type *base = BaseNode(elementType);
+        if (!base || !isScalar(base->ty))
+            return false;
+
+        INUMTYPE elementValue = 0;
+        INUMTYPE terminatorValue = 0;
+        return readInteger(offset, row->byteLength, &elementValue, row->bigEndian)
+            && evaluate(row, stopExpr, &terminatorValue, offset)
+            && elementValue == terminatorValue;
+    }
+
+    INUMTYPE value = 0;
+    return evaluate(row, stopExpr, &value, offset) && value != 0;
 }
 
 QString StructureRenderEngine::fieldNameValue(StructureRow *scope, Type *scopeType, ExprNode *expr, uint64_t scopeOffset)

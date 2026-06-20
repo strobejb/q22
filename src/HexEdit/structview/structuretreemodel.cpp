@@ -107,7 +107,7 @@ bool StructureTreeModel::hasChildren(const QModelIndex &parent) const
     if (!row)
         return false;
 
-    return !row->children.empty() || !row->branchIconPath.isEmpty();
+    return !row->children.empty() || row->lazyChildLoader || !row->branchIconPath.isEmpty();
 }
 
 QVariant StructureTreeModel::data(const QModelIndex &index, int role) const
@@ -219,6 +219,46 @@ bool StructureTreeModel::setData(const QModelIndex &index, const QVariant &value
     return true;
 }
 
+bool StructureTreeModel::canFetchMore(const QModelIndex &parent) const
+{
+    if (parent.isValid() && parent.column() != 0)
+        return false;
+
+    const StructureRow *row = rowForIndex(parent);
+    return row && row->lazyChildLoader && !row->lazyChildrenLoaded;
+}
+
+void StructureTreeModel::fetchMore(const QModelIndex &parent)
+{
+    if (!canFetchMore(parent))
+        return;
+
+    StructureRow *row = rowForIndex(parent);
+    if (!row)
+        return;
+
+    StructureLazyChildLoader loader = std::move(row->lazyChildLoader);
+    row->lazyChildLoader = {};
+    row->lazyChildrenLoaded = true;
+
+    std::vector<std::unique_ptr<StructureRow>> children = loader ? loader() : std::vector<std::unique_ptr<StructureRow>>();
+    if (children.empty())
+        return;
+
+    for (auto &child : children)
+    {
+        child->parent = row;
+        applyDisplayOptionsToRow(child.get(), m_displayOptions, QModelIndex());
+    }
+
+    const int first = static_cast<int>(row->children.size());
+    const int last = first + static_cast<int>(children.size()) - 1;
+    beginInsertRows(parent, first, last);
+    for (auto &child : children)
+        row->children.push_back(std::move(child));
+    endInsertRows();
+}
+
 void StructureTreeModel::clear()
 {
     beginResetModel();
@@ -275,6 +315,7 @@ void StructureTreeModel::setRowsForTests(std::vector<std::unique_ptr<StructureRo
 
 void StructureTreeModel::applyDisplayOptions(const StructureDisplayOptions &options)
 {
+    m_displayOptions = options;
     for (int row = 0; row < m_root->children.size(); ++row)
         applyDisplayOptionsToRow(m_root->children[row].get(),
                                  options,

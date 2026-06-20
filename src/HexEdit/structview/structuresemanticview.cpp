@@ -4,8 +4,10 @@
 #include "structview/pesemanticview.h"
 #include "structview/structurebranchicons.h"
 
+#include <QByteArray>
 #include <QLatin1Char>
 
+#include <algorithm>
 #include <cstring>
 
 StructureSemanticContext::StructureSemanticContext(TypeLibrary *library,
@@ -41,6 +43,16 @@ StructureRow *StructureSemanticContext::currentRow() const
 uint64_t StructureSemanticContext::baseOffset() const
 {
     return m_baseOffset;
+}
+
+const StructureValueBuilder::ByteReader &StructureSemanticContext::byteReader() const
+{
+    return m_reader;
+}
+
+std::vector<StructureOffsetMap> StructureSemanticContext::offsetMaps() const
+{
+    return m_offsetMaps ? *m_offsetMaps : std::vector<StructureOffsetMap>();
 }
 
 bool StructureSemanticContext::mapLogicalOffset(uint64_t logicalOffset, uint64_t *fileOffset) const
@@ -104,18 +116,35 @@ bool StructureSemanticContext::readUInt64(uint64_t absoluteOffset, uint64_t *val
 QString StructureSemanticContext::readAsciiString(uint64_t absoluteOffset, size_t maxLength) const
 {
     QString text;
-    for (size_t i = 0; i < maxLength; ++i)
+    static constexpr size_t kStringReadChunk = 256;
+
+    for (size_t offset = 0; offset < maxLength; offset += kStringReadChunk)
     {
-        uint8_t ch = 0;
-        if (!readBytes(absoluteOffset + i, &ch, 1))
+        const size_t wanted = std::min(kStringReadChunk, maxLength - offset);
+        QByteArray bytes(static_cast<qsizetype>(wanted), Qt::Uninitialized);
+        const size_t got = m_reader ? m_reader(absoluteOffset + offset,
+                                               reinterpret_cast<uint8_t *>(bytes.data()),
+                                               wanted)
+                                    : 0;
+        if (got == 0)
             break;
-        if (ch == 0)
-            return text;
-        if (ch < 0x20)
-            text += QLatin1Char('.');
-        else
-            text += QLatin1Char(char(ch));
+        bytes.truncate(static_cast<qsizetype>(got));
+
+        for (char byte : bytes)
+        {
+            const uint8_t ch = static_cast<uint8_t>(byte);
+            if (ch == 0)
+                return text;
+            if (ch < 0x20)
+                text += QLatin1Char('.');
+            else
+                text += QLatin1Char(char(ch));
+        }
+
+        if (got < wanted)
+            break;
     }
+
     return QString();
 }
 
@@ -128,6 +157,18 @@ StructureRow *StructureSemanticContext::appendSemanticRow(StructureRow *parent,
     if (!parent)
         return nullptr;
 
+    auto row = createSemanticRow(parent, name, value, absoluteOffset, byteLength);
+    StructureRow *raw = row.get();
+    parent->children.push_back(std::move(row));
+    return raw;
+}
+
+std::unique_ptr<StructureRow> StructureSemanticContext::createSemanticRow(StructureRow *parent,
+                                                                          const QString &name,
+                                                                          const QString &value,
+                                                                          uint64_t absoluteOffset,
+                                                                          uint64_t byteLength) const
+{
     auto row = std::make_unique<StructureRow>(parent);
     row->kind = StructureRowKind::Semantic;
     row->name = name;
@@ -144,9 +185,7 @@ StructureRow *StructureSemanticContext::appendSemanticRow(StructureRow *parent,
                             QString::fromLatin1(StructureBranchIcons::kGrayDoubleClosed));
     }
 
-    StructureRow *raw = row.get();
-    parent->children.push_back(std::move(row));
-    return raw;
+    return row;
 }
 
 QString StructureSemanticContext::formatOffset(uint64_t offset) const
@@ -200,7 +239,7 @@ void runSemanticViewsForRow(StructureRow *rootRow,
     if (!row)
         return;
 
-    if (row->kind != StructureRowKind::Semantic && row->typeDecl)
+    if (row->kind != StructureRowKind::Semantic && !row->suppressSemanticViews && row->typeDecl)
     {
         for (Tag *tag = row->typeDecl->tagList; tag; tag = tag->link)
         {

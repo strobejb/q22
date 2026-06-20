@@ -11,6 +11,7 @@
 #include <QtTest/QtTest>
 
 #include <cstring>
+#include <memory>
 
 class StructViewTests : public QObject
 {
@@ -55,13 +56,19 @@ private slots:
     void builderUsesSimpleRootNamesForBuiltinTypedefRoots();
     void builderRendersElf32AndElf64Tables();
     void builderPlacesDynamicStructsUnderNamedDynamicContainers();
+    void builderRendersDynamicArraysAtReferencedOffsets();
+    void builderStopsDynamicAndInlineArraysAtTerminators();
+    void builderRunsSemanticViewsOnceForDynamicArrayTables();
     void builderNamesPeDynamicSectionsFromStandardDefinition();
     void semanticRegistryRunsKnownViewsAndIgnoresUnknownViews();
     void builderRunsSemanticViewsAfterDynamicPlacement();
     void builderKeepsRawDynamicRowsWhenSemanticImportDataIsTruncated();
+    void semanticPeImportsWalksPe32PlusThunkTables();
+    void semanticPeImportsRespectDynamicArrayDescriptorCount();
     void builderAddsElfSectionAndSymbolSemanticRows();
     void builderKeepsRawElfRowsWhenSemanticDataIsTruncated();
     void modelHeadersMatchStructureGridColumns();
+    void modelFetchesLazyChildrenOnceAndFormatsOffsets();
     void modelSupportsHierarchyAndEditableCells();
     void modelAppliesTypeDisplayOptionsWithoutResettingRows();
     void modelBuildsExpandableRowsForStructFields();
@@ -1504,6 +1511,166 @@ void StructViewTests::builderPlacesDynamicStructsUnderNamedDynamicContainers()
     QVERIFY(!(model.flags(dynamicIndex) & Qt::ItemIsEditable));
 }
 
+void StructViewTests::builderRendersDynamicArraysAtReferencedOffsets()
+{
+    // Scenario: a rendered directory row points at a table elsewhere in the
+    // mapped file image, just like PE export address/name/ordinal tables.
+    // Expected: the raw table is displayed beneath the owning row without
+    // pretending it is an inline field of the C structure.
+    // Regression guard: dynamic_array must stay generic and reuse offset_map,
+    // not rely on PE-specific semantic interpreter code.
+    TypeLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef dword Entry;\n"
+                        "typedef struct _Section { char Name[8]; dword VirtualAddress; dword SizeOfRawData; dword PointerToRawData; } Section;\n"
+                        "typedef struct _Directory {\n"
+                        "  dword AddressOfEntries;\n"
+                        "  dword NumberOfEntries;\n"
+                        "} Directory;\n"
+                        "typedef struct _SectionBucket { } SECTION;\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  [dynamic_array(Entries, Entry, AddressOfEntries, NumberOfEntries)] Directory dir;\n"
+                        "  [dynamic_container(SECTION), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section section[1];\n"
+                        "} root;\n"));
+
+    QByteArray bytes(0x80, '\0');
+    writeLe32(&bytes, 0, 0x1020);
+    writeLe32(&bytes, 4, 2);
+    writeLe32(&bytes, 16, 0x1000);
+    writeLe32(&bytes, 20, 0x80);
+    writeLe32(&bytes, 24, 0x40);
+    writeLe32(&bytes, 0x60, 0x11111111);
+    writeLe32(&bytes, 0x64, 0x22222222);
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+
+    StructureRow *dir = findChildNamed(rows[0].get(), QStringLiteral("Directory dir"));
+    QVERIFY(dir);
+    StructureRow *entries = findChildNamed(dir, QStringLiteral("Entry[] Entries"));
+    QVERIFY(entries);
+    QCOMPARE(static_cast<int>(entries->kind), static_cast<int>(StructureRowKind::Dynamic));
+    QCOMPARE(entries->offset, QStringLiteral("00000060"));
+    QCOMPARE(entries->children.size(), size_t(2));
+    QCOMPARE(entries->children[0]->name, QStringLiteral("[0]"));
+    QCOMPARE(entries->children[0]->value, QStringLiteral("286331153"));
+    QCOMPARE(entries->children[1]->value, QStringLiteral("572662306"));
+}
+
+void StructViewTests::builderStopsDynamicAndInlineArraysAtTerminators()
+{
+    // Scenario: binary formats often use sentinel-terminated arrays for strings
+    // and descriptor tables, with size_is acting only as the safety cap.
+    // Expected: terminated_by hides the terminator element, but still consumes
+    // it for layout so the following field appears at the correct offset.
+    // Regression guard: C strings and null descriptor arrays should not require
+    // one-off PE/import semantic code just to stop at zero.
+    TypeLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef struct _Desc { dword Value; } Desc;\n"
+                        "typedef struct _Section { char Name[8]; dword VirtualAddress; dword SizeOfRawData; dword PointerToRawData; } Section;\n"
+                        "typedef struct _SectionBucket { } SECTION;\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  [size_is(8), terminated_by(0)] char title[];\n"
+                        "  byte afterTitle;\n"
+                        "  [dynamic_array(Descs, Desc, tableRva, 4, Value == 0)] dword tableRva;\n"
+                        "  [dynamic_container(SECTION), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section section[1];\n"
+                        "} root;\n"));
+
+    QByteArray bytes(0x90, '\0');
+    writeAscii(&bytes, 0, "ABC");
+    bytes[4] = char(0x7f);
+    writeLe32(&bytes, 5, 0x1040);
+    writeLe32(&bytes, 17, 0x1000);
+    writeLe32(&bytes, 21, 0x80);
+    writeLe32(&bytes, 25, 0x40);
+    writeLe32(&bytes, 0x80, 7);
+    writeLe32(&bytes, 0x84, 0);
+    writeLe32(&bytes, 0x88, 9);
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+
+    StructureRow *title = findChildNamed(rows[0].get(), QStringLiteral("char title[]"));
+    QVERIFY(title);
+    QCOMPARE(title->value, QStringLiteral("\"ABC\""));
+    QCOMPARE(title->children.size(), size_t(3));
+
+    StructureRow *afterTitle = findChildNamed(rows[0].get(), QStringLiteral("byte afterTitle"));
+    QVERIFY(afterTitle);
+    QCOMPARE(afterTitle->offset, QStringLiteral("00000004"));
+    QCOMPARE(afterTitle->value, QStringLiteral("127"));
+
+    StructureRow *table = findChildNamed(rows[0].get(), QStringLiteral("dword tableRva"));
+    QVERIFY(table);
+    StructureRow *descs = findChildNamed(table, QStringLiteral("Desc[] Descs"));
+    QVERIFY(descs);
+    QCOMPARE(descs->children.size(), size_t(1));
+    QCOMPARE(descs->children[0]->children[0]->value, QStringLiteral("7"));
+}
+
+void StructViewTests::builderRunsSemanticViewsOnceForDynamicArrayTables()
+{
+    // Scenario: PE import descriptors are now rendered as a raw dynamic array,
+    // while their type still carries a semantic view hook for the friendly
+    // import-name overlay.
+    // Expected: the semantic view runs once on the generated table row, not on
+    // every generated [0], [1], ... descriptor element.
+    // Regression guard: running pe.imports per descriptor made real PE files
+    // effectively hang by repeatedly walking the same import table.
+    auto runCount = std::make_shared<int>(0);
+    StructureSemanticViewRegistry::instance().registerInterpreter(QStringLiteral("test.dynamic_array.once"),
+                                                                  [runCount](StructureSemanticContext &context) {
+                                                                      ++(*runCount);
+                                                                      context.appendSemanticRow(context.currentRow(), QStringLiteral("semantic marker"), QString());
+                                                                  });
+
+    TypeLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "[view(\"test.dynamic_array.once\")]\n"
+                        "typedef struct _Viewed { dword Value; } Viewed;\n"
+                        "typedef struct _Section { char Name[8]; dword VirtualAddress; dword SizeOfRawData; dword PointerToRawData; } Section;\n"
+                        "typedef struct _SectionBucket { } SECTION;\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  [dynamic_array(Entries, Viewed, tableRva, 4, Value == 0)] dword tableRva;\n"
+                        "  [dynamic_container(SECTION), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section section[1];\n"
+                        "} root;\n"));
+
+    QByteArray bytes(0x90, '\0');
+    writeLe32(&bytes, 0, 0x1040);
+    writeAscii(&bytes, 4, ".idata");
+    writeLe32(&bytes, 12, 0x1000);
+    writeLe32(&bytes, 16, 0x80);
+    writeLe32(&bytes, 20, 0x40);
+    writeLe32(&bytes, 0x80, 7);
+    writeLe32(&bytes, 0x84, 8);
+    writeLe32(&bytes, 0x88, 0);
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(*runCount, 1);
+
+    StructureRow *tableRva = findChildNamed(rows[0].get(), QStringLiteral("dword tableRva"));
+    QVERIFY(tableRva);
+    StructureRow *entries = findChildNamed(tableRva, QStringLiteral("Viewed[] Entries"));
+    QVERIFY(entries);
+    QCOMPARE(entries->children.size(), size_t(3));
+    QCOMPARE(entries->children[0]->name, QStringLiteral("[0]"));
+    QCOMPARE(entries->children[1]->name, QStringLiteral("[1]"));
+    QCOMPARE(static_cast<int>(entries->children[2]->kind), static_cast<int>(StructureRowKind::Semantic));
+    QCOMPARE(entries->children[2]->name, QStringLiteral("semantic marker"));
+    QCOMPARE(entries->children[0]->children.size(), size_t(1));
+    QCOMPARE(entries->children[1]->children.size(), size_t(1));
+    QCOMPARE(static_cast<int>(entries->children[0]->children[0]->kind), static_cast<int>(StructureRowKind::Raw));
+    QCOMPARE(static_cast<int>(entries->children[1]->children[0]->kind), static_cast<int>(StructureRowKind::Raw));
+}
+
 void StructViewTests::builderNamesPeDynamicSectionsFromStandardDefinition()
 {
     // Scenario: the shipped PE definition renders dynamic SECTION rows from the
@@ -1644,10 +1811,8 @@ void StructViewTests::builderRunsSemanticViewsAfterDynamicPlacement()
     QCOMPARE(static_cast<int>(dllRow->kind), static_cast<int>(StructureRowKind::Semantic));
     QCOMPARE(dllRow->name, QStringLiteral("KERNEL32.dll"));
     verifyBranchIconsPresent(dllRow);
-    QCOMPARE(dllRow->children.size(), size_t(1));
-    QCOMPARE(static_cast<int>(dllRow->children[0]->kind), static_cast<int>(StructureRowKind::Semantic));
-    QCOMPARE(dllRow->children[0]->name, QStringLiteral("Import CreateFileW"));
-    QCOMPARE(dllRow->children[0]->value, QStringLiteral("hint 4660"));
+    QCOMPARE(dllRow->children.size(), size_t(0));
+    QVERIFY(dllRow->lazyChildLoader);
 
     std::vector<std::unique_ptr<StructureRow>> modelRows;
     modelRows.push_back(std::move(rows[0]));
@@ -1659,6 +1824,14 @@ void StructViewTests::builderRunsSemanticViewsAfterDynamicPlacement()
     const QModelIndex dllIndex = model.index(5, StructureTreeModel::NameColumn, importIndex);
     QVERIFY(dllIndex.isValid());
     QVERIFY(!(model.flags(dllIndex) & Qt::ItemIsEditable));
+    QVERIFY(model.canFetchMore(dllIndex));
+    model.fetchMore(dllIndex);
+    QCOMPARE(model.rowCount(dllIndex), 1);
+    const QModelIndex importNameIndex = model.index(0, StructureTreeModel::NameColumn, dllIndex);
+    const QModelIndex importValueIndex = model.index(0, StructureTreeModel::ValueColumn, dllIndex);
+    QCOMPARE(model.data(importNameIndex).toString(), QStringLiteral("Import CreateFileW"));
+    QCOMPARE(model.data(importValueIndex).toString(), QStringLiteral("hint 4660"));
+    QVERIFY(!model.canFetchMore(dllIndex));
 }
 
 void StructViewTests::builderKeepsRawDynamicRowsWhenSemanticImportDataIsTruncated()
@@ -1706,6 +1879,112 @@ void StructViewTests::builderKeepsRawDynamicRowsWhenSemanticImportDataIsTruncate
     QCOMPARE(dynamicImport->children[0]->name, QStringLiteral("dword OriginalFirstThunk"));
     QCOMPARE(dynamicImport->children[0]->value, QStringLiteral("4672"));
     QCOMPARE(static_cast<int>(dynamicImport->children[0]->kind), static_cast<int>(StructureRowKind::Raw));
+}
+
+void StructViewTests::semanticPeImportsWalksPe32PlusThunkTables()
+{
+    // Scenario: PE32+ import lookup/address tables use 8-byte thunk entries.
+    // Expected: the semantic import view advances by 8 bytes and resolves every
+    // function name before the zero thunk terminator.
+    // Regression guard: the first semantic importer treated all thunks as
+    // 32-bit entries, which made 64-bit import tables unreliable.
+    registerBuiltInStructureSemanticViews();
+
+    QByteArray bytes(0x240, '\0');
+    writeLe32(&bytes, 0x3c, 0x80);
+    writeLe16(&bytes, 0x80 + 24, 0x20b);
+
+    writeLe32(&bytes, 0x90, 0x1240);
+    writeLe32(&bytes, 0x9c, 0x1260);
+    writeLe32(&bytes, 0xa0, 0x1240);
+
+    writeLe64(&bytes, 0xd0, 0x1270);
+    writeLe64(&bytes, 0xd8, 0x1280);
+    writeLe64(&bytes, 0xe0, 0);
+    writeAscii(&bytes, 0xf0, "KERNEL64.dll");
+    writeLe16(&bytes, 0x100, 1);
+    writeAscii(&bytes, 0x102, "CreateFileW");
+    writeLe16(&bytes, 0x110, 2);
+    writeAscii(&bytes, 0x112, "CloseHandle");
+
+    StructureRow root;
+    StructureRow importRow(&root);
+    importRow.absoluteOffset = 0x90;
+    importRow.name = QStringLiteral("ImportDesc");
+    root.children.push_back(std::make_unique<StructureRow>(&root));
+
+    std::vector<StructureOffsetMap> maps = { StructureOffsetMap{ 0x1200, 0x200, 0x90 } };
+    StructureSemanticContext context(nullptr,
+                                     &root,
+                                     &importRow,
+                                     0,
+                                     [&bytes](uint64_t offset, uint8_t *buffer, size_t length) -> size_t {
+                                         if (offset >= static_cast<uint64_t>(bytes.size()))
+                                             return 0;
+                                         const size_t available = static_cast<size_t>(bytes.size() - static_cast<qsizetype>(offset));
+                                         const size_t got = std::min(length, available);
+                                         std::memcpy(buffer, bytes.constData() + offset, got);
+                                         return got;
+                                     },
+                                     maps);
+
+    QVERIFY(StructureSemanticViewRegistry::instance().run(QStringLiteral("pe.imports"), context));
+    QCOMPARE(importRow.children.size(), size_t(1));
+    QCOMPARE(importRow.children[0]->name, QStringLiteral("KERNEL64.dll"));
+    QCOMPARE(importRow.children[0]->children.size(), size_t(0));
+    QVERIFY(importRow.children[0]->lazyChildLoader);
+    auto imports = importRow.children[0]->lazyChildLoader();
+    QCOMPARE(imports.size(), size_t(2));
+    QCOMPARE(imports[0]->name, QStringLiteral("Import CreateFileW"));
+    QCOMPARE(imports[1]->name, QStringLiteral("Import CloseHandle"));
+}
+
+void StructViewTests::semanticPeImportsRespectDynamicArrayDescriptorCount()
+{
+    // Scenario: a dynamic_array import table has already rendered two descriptor
+    // elements, but the following bytes happen to look like another descriptor.
+    // Expected: the semantic overlay stops at the rendered table boundary
+    // instead of reading into thunk/name data and flooding the tree.
+    // Regression guard: real PE files were producing tens of thousands of
+    // semantic rows because pe.imports ignored the dynamic-array extent.
+    registerBuiltInStructureSemanticViews();
+
+    QByteArray bytes(0x260, '\0');
+    writeLe32(&bytes, 0x80 + 12, 0x1300);
+    writeLe32(&bytes, 0x94 + 12, 0x1320);
+    writeLe32(&bytes, 0xa8 + 12, 0x1340);
+    writeAscii(&bytes, 0x180, "FIRST.dll");
+    writeAscii(&bytes, 0x1a0, "SECOND.dll");
+    writeAscii(&bytes, 0x1c0, "THIRD.dll");
+
+    StructureRow root;
+    StructureRow importTable(&root);
+    importTable.absoluteOffset = 0x80;
+    importTable.name = QStringLiteral("IMAGE_IMPORT_DESCRIPTOR[] Imports");
+    importTable.nameTypePrefix = QStringLiteral("IMAGE_IMPORT_DESCRIPTOR[]");
+    importTable.children.push_back(std::make_unique<StructureRow>(&importTable));
+    importTable.children.push_back(std::make_unique<StructureRow>(&importTable));
+
+    std::vector<StructureOffsetMap> maps = { StructureOffsetMap{ 0x1200, 0x300, 0x80 } };
+    StructureSemanticContext context(nullptr,
+                                     &root,
+                                     &importTable,
+                                     0,
+                                     [&bytes](uint64_t offset, uint8_t *buffer, size_t length) -> size_t {
+                                         if (offset >= static_cast<uint64_t>(bytes.size()))
+                                             return 0;
+                                         const size_t available = static_cast<size_t>(bytes.size() - static_cast<qsizetype>(offset));
+                                         const size_t got = std::min(length, available);
+                                         std::memcpy(buffer, bytes.constData() + offset, got);
+                                         return got;
+                                     },
+                                     maps);
+
+    QVERIFY(StructureSemanticViewRegistry::instance().run(QStringLiteral("pe.imports"), context));
+    QCOMPARE(importTable.children.size(), size_t(4));
+    QCOMPARE(importTable.children[2]->name, QStringLiteral("FIRST.dll"));
+    QCOMPARE(importTable.children[3]->name, QStringLiteral("SECOND.dll"));
+    QVERIFY(!findChildNamed(&importTable, QStringLiteral("THIRD.dll")));
 }
 
 void StructViewTests::builderAddsElfSectionAndSymbolSemanticRows()
@@ -1834,6 +2113,70 @@ void StructViewTests::modelHeadersMatchStructureGridColumns()
     QCOMPARE(model.headerData(StructureTreeModel::ValueColumn, Qt::Horizontal).toString(), QStringLiteral("Value"));
     QCOMPARE(model.headerData(StructureTreeModel::OffsetColumn, Qt::Horizontal).toString(), QStringLiteral("Offset"));
     QCOMPARE(model.headerData(StructureTreeModel::CommentColumn, Qt::Horizontal).toString(), QStringLiteral("Comment"));
+}
+
+void StructViewTests::modelFetchesLazyChildrenOnceAndFormatsOffsets()
+{
+    // Scenario: semantic rows can defer expensive child creation until the user
+    // expands that row in the tree.
+    // Expected: the model advertises fetchable children, inserts them once with
+    // correct parent links, and applies the current offset display options.
+    // Regression guard: lazy semantic import functions must look like normal
+    // model rows without forcing the whole PE import tree to materialise.
+    auto root = std::make_unique<StructureRow>();
+    root->name = QStringLiteral("root");
+    root->value = QStringLiteral("{...}");
+    root->kind = StructureRowKind::Semantic;
+    root->absoluteOffset = 0x1000;
+    root->relativeOffset = 0;
+    root->byteLength = 0x100;
+    int loadCount = 0;
+    root->lazyChildLoader = [&loadCount]() {
+        ++loadCount;
+        std::vector<std::unique_ptr<StructureRow>> rows;
+        auto child = std::make_unique<StructureRow>();
+        child->name = QStringLiteral("lazy child");
+        child->kind = StructureRowKind::Semantic;
+        child->absoluteOffset = 0x1010;
+        child->relativeOffset = 0x10;
+        child->byteLength = 4;
+        child->offset = QStringLiteral("00001010");
+        child->generatedOffset = true;
+        rows.push_back(std::move(child));
+        return rows;
+    };
+
+    std::vector<std::unique_ptr<StructureRow>> rows;
+    rows.push_back(std::move(root));
+
+    StructureTreeModel model;
+    model.setRowsForTests(std::move(rows));
+    StructureDisplayOptions options;
+    options.hexadecimalOffsets = true;
+    options.relativeOffsets = true;
+    model.applyDisplayOptions(options);
+
+    const QModelIndex rootIndex = model.index(0, StructureTreeModel::NameColumn);
+    QVERIFY(rootIndex.isValid());
+    QVERIFY(model.hasChildren(rootIndex));
+    QVERIFY(model.canFetchMore(rootIndex));
+    QCOMPARE(model.rowCount(rootIndex), 0);
+
+    model.fetchMore(rootIndex);
+    QCOMPARE(loadCount, 1);
+    QVERIFY(!model.canFetchMore(rootIndex));
+    QCOMPARE(model.rowCount(rootIndex), 1);
+
+    const QModelIndex childName = model.index(0, StructureTreeModel::NameColumn, rootIndex);
+    const QModelIndex childOffset = model.index(0, StructureTreeModel::OffsetColumn, rootIndex);
+    QVERIFY(childName.isValid());
+    QCOMPARE(model.data(childName).toString(), QStringLiteral("lazy child"));
+    QCOMPARE(model.data(childOffset).toString(), QStringLiteral("+0010"));
+    QCOMPARE(model.rowForIndex(childName)->parent, model.rowForIndex(rootIndex));
+
+    model.fetchMore(rootIndex);
+    QCOMPARE(loadCount, 1);
+    QCOMPARE(model.rowCount(rootIndex), 1);
 }
 
 void StructViewTests::modelSupportsHierarchyAndEditableCells()

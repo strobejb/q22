@@ -305,8 +305,9 @@ void TypeLibTests::dynamicPlacementTagsParse()
 						"typedef struct _Import { dword value; } ImportDesc;\n"
 						"[export]\n"
 						"struct Root {\n"
-						"  [dynamic_struct(ImportEntry, ImportDesc, VirtualAddress, Size != 0)] DataDir dirs[2];\n"
+						"  [dynamic_struct(ImportEntry, ImportDesc, VirtualAddress, Size != 0), dynamic_array(ImportEntry, ImportDesc, VirtualAddress, Size / sizeof(ImportDesc), value == 0)] DataDir dirs[2];\n"
 						"  [dynamic_container(SectionBucket), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section sections[2];\n"
+						"  [size_is(16), terminated_by(0)] char name[];\n"
 						"} root;\n"));
 
 	TypeDecl *root = nullptr;
@@ -322,10 +323,12 @@ void TypeLibTests::dynamicPlacementTagsParse()
 	QVERIFY(root);
 	QVERIFY(root->baseType);
 	QVERIFY(root->baseType->sptr);
-	QCOMPARE(root->baseType->sptr->typeDeclList.size(), size_t(2));
+	QCOMPARE(root->baseType->sptr->typeDeclList.size(), size_t(3));
 	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[0]->tagList, TOK_DYNAMICSTRUCT, nullptr));
+	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[0]->tagList, TOK_DYNAMICARRAY, nullptr));
 	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[1]->tagList, TOK_DYNAMICCONTAINER, nullptr));
 	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[1]->tagList, TOK_OFFSETMAP, nullptr));
+	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[2]->tagList, TOK_TERMINATEDBY, nullptr));
 }
 
 void TypeLibTests::viewTagsParse()

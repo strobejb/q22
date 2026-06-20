@@ -33,7 +33,8 @@ tagset PE_DATA_DIRECTORY_TAGS
 [
   name(IMAGE_DIRECTORY),
   dynamic_struct(IMAGE_DIRECTORY_ENTRY_EXPORT, IMAGE_EXPORT_DIRECTORY, VirtualAddress, Size != 0),
-  dynamic_struct(IMAGE_DIRECTORY_ENTRY_IMPORT, IMAGE_IMPORT_DESCRIPTOR, VirtualAddress, Size != 0)
+  dynamic_array(IMAGE_DIRECTORY_ENTRY_IMPORT, IMAGE_IMPORT_DESCRIPTOR, VirtualAddress, Size / sizeof(IMAGE_IMPORT_DESCRIPTOR),
+                OriginalFirstThunk == 0 && TimeDateStamp == 0 && ForwarderChain == 0 && Name == 0 && FirstThunk == 0)
 ];
 
 
@@ -228,6 +229,18 @@ typedef struct _IMAGE_SECTION_HEADER
     dword   Characteristics;
 } IMAGE_SECTION_HEADER, *PIMAGE_SECTION_HEADER;
 
+typedef DWORD IMAGE_EXPORT_ADDRESS_TABLE_ENTRY;
+typedef DWORD IMAGE_EXPORT_NAME_POINTER;
+typedef WORD IMAGE_EXPORT_ORDINAL;
+
+// The export directory points at three parallel RVA tables rather than owning
+// them inline.  dynamic_array keeps the C struct honest while rendering those
+// related raw tables under the directory row.
+[
+    dynamic_array(ExportFunctions, IMAGE_EXPORT_ADDRESS_TABLE_ENTRY, AddressOfFunctions, NumberOfFunctions),
+    dynamic_array(ExportNames, IMAGE_EXPORT_NAME_POINTER, AddressOfNames, NumberOfNames),
+    dynamic_array(ExportOrdinals, IMAGE_EXPORT_ORDINAL, AddressOfNameOrdinals, NumberOfNames)
+]
 typedef struct _IMAGE_EXPORT_DIRECTORY
 {
     dword   Characteristics;
@@ -243,7 +256,41 @@ typedef struct _IMAGE_EXPORT_DIRECTORY
     dword   AddressOfNameOrdinals;
 } IMAGE_EXPORT_DIRECTORY, *PIMAGE_EXPORT_DIRECTORY;
 
-[view("pe.imports")]
+typedef union _IMAGE_THUNK_DATA32
+{
+    DWORD ForwarderString;
+    DWORD Function;
+    DWORD Ordinal;
+    DWORD AddressOfData;
+} IMAGE_THUNK_DATA32, *PIMAGE_THUNK_DATA32;
+
+typedef union _IMAGE_THUNK_DATA64
+{
+    ULONGLONG ForwarderString;
+    ULONGLONG Function;
+    ULONGLONG Ordinal;
+    ULONGLONG AddressOfData;
+} IMAGE_THUNK_DATA64, *PIMAGE_THUNK_DATA64;
+
+typedef struct _IMAGE_IMPORT_BY_NAME
+{
+    WORD Hint;
+
+    [size_is(4096), terminated_by(0)]
+    CHAR Name[];
+} IMAGE_IMPORT_BY_NAME, *PIMAGE_IMPORT_BY_NAME;
+
+// Import descriptors similarly point at DLL names and thunk tables.  The raw
+// tables are rendered here, while view("pe.imports") is kept as a friendly
+// semantic overlay for correlating DLL/function names.
+[
+    dynamic_array(DllName, CHAR, Name, 4096, 0),
+    dynamic_array(ImportLookup32, IMAGE_THUNK_DATA32, OriginalFirstThunk, 512, Function == 0, ntHeaders.OptionalHeader32.Magic == 0x10b),
+    dynamic_array(ImportAddress32, IMAGE_THUNK_DATA32, FirstThunk, 512, Function == 0, ntHeaders.OptionalHeader32.Magic == 0x10b),
+    dynamic_array(ImportLookup64, IMAGE_THUNK_DATA64, OriginalFirstThunk, 512, Function == 0, ntHeaders.OptionalHeader64.Magic == 0x20b),
+    dynamic_array(ImportAddress64, IMAGE_THUNK_DATA64, FirstThunk, 512, Function == 0, ntHeaders.OptionalHeader64.Magic == 0x20b),
+    view("pe.imports")
+]
 typedef struct _IMAGE_IMPORT_DESCRIPTOR
 {
     dword   OriginalFirstThunk;

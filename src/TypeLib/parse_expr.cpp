@@ -59,7 +59,6 @@ static int Precedence(int t)
 	}
 }
 
-
 //
 //	primary:	<number>
 //				<identifier>
@@ -68,6 +67,14 @@ static int Precedence(int t)
 ExprNode * Parser::PrimaryExpression()
 {
 	ExprNode *p = 0;
+
+	if(IsSoftIdentifier(t.kind))
+	{
+		p = new ExprNode(EXPR_IDENTIFIER, t);
+		p->str = _strdup(t.str);
+		Advance();
+		return p;
+	}
 
 	switch(t.kind)
 	{

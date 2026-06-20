@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <vector>
 
 struct StructureOffsetMap
@@ -31,6 +32,8 @@ public:
     StructureRow *rootRow() const;
     StructureRow *currentRow() const;
     uint64_t baseOffset() const;
+    const StructureValueBuilder::ByteReader &byteReader() const;
+    std::vector<StructureOffsetMap> offsetMaps() const;
 
     bool mapLogicalOffset(uint64_t logicalOffset, uint64_t *fileOffset) const;
     bool readBytes(uint64_t absoluteOffset, uint8_t *buffer, size_t length) const;
@@ -44,6 +47,11 @@ public:
                                     const QString &value = QString(),
                                     uint64_t absoluteOffset = 0,
                                     uint64_t byteLength = 0) const;
+    std::unique_ptr<StructureRow> createSemanticRow(StructureRow *parent,
+                                                    const QString &name,
+                                                    const QString &value = QString(),
+                                                    uint64_t absoluteOffset = 0,
+                                                    uint64_t byteLength = 0) const;
 
 private:
     QString formatOffset(uint64_t offset) const;

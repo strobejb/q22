@@ -71,6 +71,7 @@ public:
 
 	
 	static const char *inenglish(TOKEN t);
+	static bool IsSoftIdentifier(TOKEN t);
 
 	ERROR LastErr();
 	const char *LastErrStr();

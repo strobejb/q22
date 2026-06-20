@@ -101,6 +101,48 @@ static Tag *CloneTagList(Tag *tag, Tag *tail = 0)
 	return copy;
 }
 
+bool Parser::IsSoftIdentifier(TOKEN tok)
+{
+	// TypeLib tags are keywords inside [...] but real binary formats commonly
+	// use the same words as field names, e.g. Magic, Name, Offset. Treat those
+	// metadata words as identifiers where the grammar is already expecting a
+	// declaration/expression name; C/C++ structural keywords remain reserved.
+	switch(tok)
+	{
+	case TOK_ALIGN:
+	case TOK_ASSOC:
+	case TOK_BITFLAG:
+	case TOK_DESCRIPTION:
+	case TOK_DISPLAY:
+	case TOK_DYNAMICARRAY:
+	case TOK_DYNAMICCONTAINER:
+	case TOK_DYNAMICSTRUCT:
+	case TOK_ENDIAN:
+	case TOK_ENTRYPOINT:
+	case TOK_EXPORT:
+	case TOK_EXTENT:
+	case TOK_IGNORE:
+	case TOK_LENGTHIS:
+	case TOK_MAGIC:
+	case TOK_NAME:
+	case TOK_OFFSET:
+	case TOK_OFFSETMAP:
+	case TOK_OPTIONAL:
+	case TOK_SIZEIS:
+	case TOK_STRING:
+	case TOK_STYLE:
+	case TOK_SWITCHIS:
+	case TOK_TAGS:
+	case TOK_TAGSET:
+	case TOK_TERMINATEDBY:
+	case TOK_VIEW:
+		return true;
+
+	default:
+		return false;
+	}
+}
+
 static bool MagicByteValue(ExprNode *expr, uint8_t *byte)
 {
 	if(!expr || !byte)
@@ -293,8 +335,10 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 		case TOK_ENTRYPOINT:
 		case TOK_EXTENT:
 		case TOK_OPTIONAL:
+		case TOK_TERMINATEDBY:
 		case TOK_ASSOC:
 		case TOK_OFFSETMAP:
+		case TOK_DYNAMICARRAY:
 		case TOK_DYNAMICCONTAINER:
 		case TOK_DYNAMICSTRUCT:
 		case TOK_VIEW:
@@ -307,7 +351,7 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 				return false;
 
 			if(tmp == TOK_SIZEIS || tmp == TOK_ASSOC
-				|| tmp == TOK_OFFSETMAP || tmp == TOK_DYNAMICCONTAINER || tmp == TOK_DYNAMICSTRUCT)
+				|| tmp == TOK_OFFSETMAP || tmp == TOK_DYNAMICARRAY || tmp == TOK_DYNAMICCONTAINER || tmp == TOK_DYNAMICSTRUCT)
 			{
 				// full comma-separated expression 
 				if((expr = CommaExpression(TOK_NULL)) == 0)
@@ -451,7 +495,7 @@ TagSet * Parser::ParseTagSet(FILEREF fileRef)
 		TOK_DISPLAY,
 		TOK_ENDIAN, TOK_SWITCHIS, TOK_CASE, TOK_NAME,
 		TOK_ENUM, TOK_ENTRYPOINT, TOK_EXTENT, TOK_OPTIONAL, TOK_EXPORT, TOK_ASSOC, TOK_MAGIC, TOK_OFFSETMAP,
-		TOK_DYNAMICCONTAINER, TOK_DYNAMICSTRUCT, TOK_VIEW,
+		TOK_DYNAMICARRAY, TOK_DYNAMICCONTAINER, TOK_DYNAMICSTRUCT, TOK_TERMINATEDBY, TOK_VIEW,
 		TOK_NULL
 	};
 
@@ -599,7 +643,7 @@ int Parser::Parse()
 			TOK_DISPLAY,
 			TOK_ENDIAN,	TOK_SWITCHIS, TOK_CASE, TOK_NAME, 
 			TOK_ENUM, TOK_ENTRYPOINT, TOK_EXTENT, TOK_OPTIONAL, TOK_EXPORT, TOK_ASSOC, TOK_MAGIC, TOK_OFFSETMAP,
-			TOK_DYNAMICCONTAINER, TOK_DYNAMICSTRUCT, TOK_VIEW, TOK_TAGS,
+			TOK_DYNAMICARRAY, TOK_DYNAMICCONTAINER, TOK_DYNAMICSTRUCT, TOK_TERMINATEDBY, TOK_VIEW, TOK_TAGS,
 			TOK_NULL 
 
 		};

@@ -13,6 +13,8 @@
 #include <QApplication>
 #include <QAction>
 #include <QComboBox>
+#include <QDebug>
+#include <QElapsedTimer>
 #include <QEvent>
 #include <QDir>
 #include <QFile>
@@ -41,6 +43,7 @@
 #include <QTextCharFormat>
 #include <QTextCursor>
 #include <QTextDocument>
+#include <QTextStream>
 #include <QTreeView>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -48,6 +51,7 @@
 #include <cmath>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <utility>
 
 namespace
@@ -65,6 +69,44 @@ enum class InitialStructureExpansion
 static constexpr InitialStructureExpansion kInitialStructureExpansion =
     InitialStructureExpansion::FirstLevelAndFirstField;
 static constexpr int kBranchIconSize = 16;
+
+static bool structureProfileEnabled()
+{
+    return qEnvironmentVariableIntValue("QEXED_STRUCTURE_PROFILE") != 0;
+}
+
+static void structureProfileLog(const QString &message)
+{
+    qInfo().noquote() << message;
+
+    const QString path = qEnvironmentVariable("QEXED_STRUCTURE_PROFILE_LOG",
+                                              QStringLiteral("structure-profile.log"));
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
+        return;
+
+    QTextStream stream(&file);
+    stream << message << Qt::endl;
+}
+
+static size_t structureRowCount(const StructureRow *row)
+{
+    if (!row)
+        return 0;
+
+    size_t count = 1;
+    for (const auto &child : row->children)
+        count += structureRowCount(child.get());
+    return count;
+}
+
+static size_t structureRowCount(const std::vector<std::unique_ptr<StructureRow>> &rows)
+{
+    size_t count = 0;
+    for (const auto &row : rows)
+        count += structureRowCount(row.get());
+    return count;
+}
 
 static QFont structureSourceViewFont(const QFont &hexViewFont)
 {
@@ -1897,6 +1939,15 @@ void StructureViewPanel::rebuildRows()
     if (!m_model || !m_hv || !m_definitions || !m_definitions->library())
         return;
 
+    const bool profile = structureProfileEnabled();
+    QElapsedTimer totalTimer;
+    QElapsedTimer phaseTimer;
+    if (profile)
+    {
+        totalTimer.start();
+        phaseTimer.start();
+    }
+
     TypeDecl *rootType = selectedRootType();
     if (!rootType)
     {
@@ -1918,17 +1969,45 @@ void StructureViewPanel::rebuildRows()
     StructureValueBuilder builder;
     const StructureDisplayOptions options = displayOptions();
     m_rebuildingRows = true;
-    m_model->setRows(builder.build(m_definitions->library(),
-                                   rootType,
-                                   baseOffset,
-                                   [this](uint64_t offset, uint8_t *buffer, size_t length) -> size_t {
-                                       return m_hv ? m_hv->getData(static_cast<size_w>(offset), buffer, length) : 0;
-                                   },
-                                   options));
+    auto rows = builder.build(m_definitions->library(),
+                              rootType,
+                              baseOffset,
+                              [this](uint64_t offset, uint8_t *buffer, size_t length) -> size_t {
+                                  return m_hv ? m_hv->getData(static_cast<size_w>(offset), buffer, length) : 0;
+                              },
+                              options);
+    const size_t rowCount = profile ? structureRowCount(rows) : 0;
+    if (profile)
+    {
+        structureProfileLog(QStringLiteral("[StructureProfile] panel build rows=%1 ms=%2")
+                                .arg(rowCount)
+                                .arg(phaseTimer.restart()));
+    }
+    m_model->setRows(std::move(rows));
+    if (profile)
+    {
+        structureProfileLog(QStringLiteral("[StructureProfile] panel model reset ms=%1")
+                                .arg(phaseTimer.restart()));
+    }
     m_model->applyDisplayOptions(options);
+    if (profile)
+    {
+        structureProfileLog(QStringLiteral("[StructureProfile] panel display options ms=%1")
+                                .arg(phaseTimer.restart()));
+    }
     applyInitialExpansion();
+    if (profile)
+    {
+        structureProfileLog(QStringLiteral("[StructureProfile] panel expansion ms=%1")
+                                .arg(phaseTimer.restart()));
+    }
     m_rebuildingRows = false;
     clearHexViewOverlay();
+    if (profile)
+    {
+        structureProfileLog(QStringLiteral("[StructureProfile] panel total ms=%1")
+                                .arg(totalTimer.elapsed()));
+    }
 }
 
 void StructureViewPanel::applyInitialExpansion()
@@ -2073,6 +2152,9 @@ void StructureViewPanel::showOptionsContextMenu(int column, const QPoint &global
 void StructureViewPanel::expandSubtree(const QModelIndex &index)
 {
     if (!m_tree || !m_model || !index.isValid())
+        return;
+
+    if (m_model->canFetchMore(index))
         return;
 
     m_tree->expand(index);

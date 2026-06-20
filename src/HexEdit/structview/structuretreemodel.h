@@ -9,6 +9,7 @@
 #include <QString>
 #include <QStringList>
 
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -25,6 +26,9 @@ enum class StructureRowValueKind
     ScalarInteger,
     ScalarArrayPreview
 };
+
+struct StructureRow;
+using StructureLazyChildLoader = std::function<std::vector<std::unique_ptr<StructureRow>>()>;
 
 struct StructureRow
 {
@@ -63,6 +67,7 @@ struct StructureRow
     QString sourcePath;
     int sourceLine = 0;
     StructureRowKind kind = StructureRowKind::Raw;
+    bool suppressSemanticViews = false;
     bool bigEndian = false;
     bool hasCodeTarget = false;
     uint64_t codeLogicalOffset = 0;
@@ -72,6 +77,8 @@ struct StructureRow
     uint64_t byteLength = 0;
     StructureRow *parent = nullptr;
     std::vector<std::unique_ptr<StructureRow>> children;
+    StructureLazyChildLoader lazyChildLoader;
+    bool lazyChildrenLoaded = false;
 };
 
 class StructureTreeModel : public QAbstractItemModel
@@ -112,6 +119,8 @@ public:
     QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const override;
     Qt::ItemFlags flags(const QModelIndex &index) const override;
     bool setData(const QModelIndex &index, const QVariant &value, int role = Qt::EditRole) override;
+    bool canFetchMore(const QModelIndex &parent) const override;
+    void fetchMore(const QModelIndex &parent) override;
 
     void clear();
     void setTypeLibrary(TypeLibrary *library);
@@ -135,6 +144,7 @@ private:
     QString typeName(Type *type) const;
 
     std::unique_ptr<StructureRow> m_root;
+    StructureDisplayOptions m_displayOptions;
 };
 
 #endif // STRUCTVIEW_STRUCTURETREEMODEL_H

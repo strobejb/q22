@@ -27,8 +27,8 @@ private:
     uint64_t formatType(StructureRow *row, Type *type, TypeDecl *typeDecl, uint64_t offset);
     uint64_t formatScalar(StructureRow *row, Type *type, TypeDecl *typeDecl, uint64_t offset);
     uint64_t sizeOf(Type *type, uint64_t offset);
-    uint64_t scalarSizeOfName(const char *name) const;
-    uint64_t scalarSizeOfType(Type *type) const;
+    uint64_t staticSizeOfName(const char *name);
+    uint64_t staticSizeOfType(Type *type);
 
     struct EvalContext;
     struct EndianScope;
@@ -55,6 +55,23 @@ private:
         TypeDecl *typeDecl = nullptr;
         uint64_t logicalOffset = 0;
     };
+
+    // Referenced PE/ELF-style tables are not inline C fields: a row contains an
+    // RVA/file offset and count, and the actual array lives elsewhere. Dynamic
+    // arrays preserve the honest raw structure while rendering that related
+    // table beneath the row that owns the relationship.
+    struct DynamicArrayRequest
+    {
+        StructureRow *owner = nullptr;
+        TypeDecl *typeDecl = nullptr;
+        Type *renderType = nullptr;
+        QString label;
+        uint64_t logicalOffset = 0;
+        uint64_t maxCount = 0;
+        ExprNode *stopExpr = nullptr;
+        ExprNode *conditionExpr = nullptr;
+        bool attachToMappedContainer = false;
+    };
     bool evaluate(const EvalContext &context, ExprNode *expr, INUMTYPE *result);
     bool evaluate(StructureRow *scope, ExprNode *expr, INUMTYPE *result, uint64_t scopeOffset);
     bool evaluate(Type *scopeType, ExprNode *expr, INUMTYPE *result, uint64_t scopeOffset);
@@ -69,11 +86,21 @@ private:
     void collectDynamicRows(StructureRow *row);
     void collectDynamicContainer(StructureRow *row);
     void collectDynamicRequests(StructureRow *row);
+    void collectDynamicArrayRequests(StructureRow *row);
     void appendDynamicRows(StructureRow *parent);
+    void appendDynamicArrayRows(StructureRow *row);
     bool dynamicTagArgs(ExprNode *expr, ExprNode **selector, ExprNode **typeName, ExprNode **logicalOffset, ExprNode **condition) const;
+    bool dynamicArrayArgs(ExprNode *expr,
+                          ExprNode **selectorOrLabel,
+                          ExprNode **typeName,
+                          ExprNode **logicalOffset,
+                          ExprNode **count,
+                          ExprNode **stop,
+                          ExprNode **condition) const;
     bool dynamicContainerArgs(ExprNode *expr, ExprNode **typeName) const;
     bool offsetMapArgs(ExprNode *expr, ExprNode **logicalStart, ExprNode **logicalSize, ExprNode **fileOffset) const;
     TypeDecl *findTypeDecl(const char *name) const;
+    Type *typeInDecl(TypeDecl *decl, const char *name) const;
     DynamicContainer *mapLogicalOffset(uint64_t logicalOffset, uint64_t *fileOffset);
     void resolveEntryPointRows(StructureRow *row);
 
@@ -102,6 +129,7 @@ private:
     void applyDeclarationName(StructureRow *row, Type *type) const;
     QString stringArrayValue(StructureRow *scope, Type *type, TypeDecl *typeDecl, uint64_t offset);
     QString scalarArrayValue(StructureRow *scope, Type *type) const;
+    bool elementMatchesTerminator(StructureRow *row, Type *elementType, ExprNode *stopExpr, uint64_t offset);
     QString fieldNameValue(StructureRow *scope, Type *scopeType, ExprNode *expr, uint64_t scopeOffset);
     QString dynamicContainerAlias(StructureRow *row);
     QString quoteString(const QString &text) const;
@@ -116,6 +144,7 @@ private:
     StructureValueBuilder::ByteReader m_reader;
     std::vector<DynamicContainer> m_dynamicContainers;
     std::vector<DynamicRequest> m_dynamicRequests;
+    std::vector<DynamicArrayRequest> m_dynamicArrayRequests;
 };
 
 #endif // STRUCTVIEW_STRUCTURERENDERENGINE_H
