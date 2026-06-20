@@ -15,6 +15,6 @@ std::vector<std::unique_ptr<StructureRow>> StructureValueBuilder::build(TypeLibr
                                                                         const ByteReader &reader,
                                                                         const StructureDisplayOptions &options) const
 {
-    StructureRenderEngine engine(library, rootType, baseOffset, reader, options);
-    return engine.build();
+    auto engine = std::make_shared<StructureRenderEngine>(library, rootType, baseOffset, reader, options);
+    return engine->build();
 }

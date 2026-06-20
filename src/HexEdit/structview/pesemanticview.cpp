@@ -80,7 +80,7 @@ size_t descriptorLimitForRow(const StructureRow *importRow)
     // dynamic_array creates a parent row whose displayed children are the
     // descriptor elements accepted by the raw renderer. Reuse that count so the
     // semantic overlay cannot run past the rendered table into thunk/name data.
-    if (importRow->nameTypePrefix.endsWith(QStringLiteral("[]")) && !importRow->children.empty())
+    if (importRow->kind == StructureRowKind::Dynamic && !importRow->children.empty())
         return std::min(importRow->children.size(), kMaxImportDescriptors);
 
     return kMaxImportDescriptors;
@@ -176,6 +176,114 @@ std::vector<std::unique_ptr<StructureRow>> importRowsForDescriptor(StructureSema
     return rows;
 }
 
+static constexpr size_t kMaxExportEntries = 16384;
+
+struct ExportDirectory
+{
+    uint32_t base = 0;
+    uint32_t numberOfFunctions = 0;
+    uint32_t numberOfNames = 0;
+    uint32_t addressOfFunctions = 0;
+    uint32_t addressOfNames = 0;
+    uint32_t addressOfNameOrdinals = 0;
+};
+
+bool readExportDirectory(StructureSemanticContext &context, uint64_t offset, ExportDirectory &dir)
+{
+    return context.readUInt32(offset + 16, &dir.base)
+        && context.readUInt32(offset + 20, &dir.numberOfFunctions)
+        && context.readUInt32(offset + 24, &dir.numberOfNames)
+        && context.readUInt32(offset + 28, &dir.addressOfFunctions)
+        && context.readUInt32(offset + 32, &dir.addressOfNames)
+        && context.readUInt32(offset + 36, &dir.addressOfNameOrdinals);
+}
+
+void interpretPeExports(StructureSemanticContext &context)
+{
+    StructureRow *exportRow = context.currentRow();
+    if (!exportRow)
+        return;
+
+    ExportDirectory dir;
+    if (!readExportDirectory(context, exportRow->absoluteOffset, dir))
+        return;
+
+    const size_t numNames     = std::min<size_t>(dir.numberOfNames,     kMaxExportEntries);
+    const size_t numFunctions = std::min<size_t>(dir.numberOfFunctions, kMaxExportEntries);
+
+    uint64_t namesTableOffset     = 0;
+    uint64_t ordinalsTableOffset  = 0;
+    uint64_t functionsTableOffset = 0;
+
+    if (numFunctions == 0 || !context.mapLogicalOffset(dir.addressOfFunctions, &functionsTableOffset))
+        return;
+
+    const bool haveNameTables = numNames > 0
+        && context.mapLogicalOffset(dir.addressOfNames,         &namesTableOffset)
+        && context.mapLogicalOffset(dir.addressOfNameOrdinals,  &ordinalsTableOffset);
+
+    StructureRow *listRow = context.appendSemanticRow(exportRow,
+                                                      QStringLiteral("Exports"),
+                                                      QStringLiteral("{...}"),
+                                                      exportRow->absoluteOffset);
+    if (!listRow)
+        return;
+
+    std::vector<bool> namedFunctions(numFunctions, false);
+
+    if (haveNameTables)
+    {
+        for (size_t i = 0; i < numNames; ++i)
+        {
+            uint32_t nameRva    = 0;
+            uint16_t ordinalIdx = 0;
+            if (!context.readUInt32(context.baseOffset() + namesTableOffset    + i * 4, &nameRva)
+             || !context.readUInt16(context.baseOffset() + ordinalsTableOffset + i * 2, &ordinalIdx))
+                break;
+
+            uint64_t nameFileOffset = 0;
+            const QString name = context.mapLogicalOffset(nameRva, &nameFileOffset)
+                ? context.readAsciiString(context.baseOffset() + nameFileOffset)
+                : QStringLiteral("(invalid)");
+
+            uint32_t funcRva = 0;
+            if (ordinalIdx < numFunctions)
+            {
+                context.readUInt32(context.baseOffset() + functionsTableOffset + ordinalIdx * 4, &funcRva);
+                namedFunctions[ordinalIdx] = true;
+            }
+
+            const uint32_t ordinal = ordinalIdx + dir.base;
+            const uint64_t nameLen = name.isEmpty() ? 0 : static_cast<uint64_t>(name.size()) + 1;
+
+            context.appendSemanticRow(listRow,
+                                      name.isEmpty() ? QStringLiteral("(unnamed)") : name,
+                                      QStringLiteral("ordinal %1  0x%2")
+                                          .arg(ordinal)
+                                          .arg(funcRva, 8, 16, QLatin1Char('0')).toUpper(),
+                                      context.baseOffset() + nameFileOffset,
+                                      nameLen);
+        }
+    }
+
+    for (size_t i = 0; i < numFunctions; ++i)
+    {
+        if (i < namedFunctions.size() && namedFunctions[i])
+            continue;
+
+        uint32_t funcRva = 0;
+        if (!context.readUInt32(context.baseOffset() + functionsTableOffset + i * 4, &funcRva) || funcRva == 0)
+            continue;
+
+        const uint32_t ordinal = static_cast<uint32_t>(i) + dir.base;
+        context.appendSemanticRow(listRow,
+                                  QStringLiteral("Ordinal %1").arg(ordinal),
+                                  QStringLiteral("0x%1").arg(funcRva, 8, 16, QLatin1Char('0')).toUpper(),
+                                  context.baseOffset() + functionsTableOffset + i * 4,
+                                  4);
+    }
+}
+
 void interpretPeImports(StructureSemanticContext &context)
 {
     StructureRow *importRow = context.currentRow();
@@ -184,10 +292,22 @@ void interpretPeImports(StructureSemanticContext &context)
 
     const bool pe32Plus = isPe32PlusImage(context);
     size_t remainingRows = kMaxSemanticImportRows;
+    // Capture limit before appending listRow so the semantic child isn't counted.
     const size_t descriptorLimit = descriptorLimitForRow(importRow);
     const uint64_t baseOffset = context.baseOffset();
     const StructureValueBuilder::ByteReader reader = context.byteReader();
     const std::vector<StructureOffsetMap> offsetMaps = context.offsetMaps();
+
+    // Append "Imports" as a sibling of the raw descriptor array, both under
+    // DataDirectory[1] — that entry is the closest PE analog to a root import
+    // directory, since no IMAGE_IMPORT_DIRECTORY struct exists.
+    StructureRow *containerRow = importRow->parent ? importRow->parent : importRow;
+    StructureRow *listRow = context.appendSemanticRow(containerRow,
+                                                      QStringLiteral("Imports"),
+                                                      QStringLiteral("{...}"),
+                                                      importRow->absoluteOffset);
+    if (!listRow)
+        return;
 
     for (size_t descriptorIndex = 0; descriptorIndex < descriptorLimit; ++descriptorIndex)
     {
@@ -203,11 +323,11 @@ void interpretPeImports(StructureSemanticContext &context)
 
         if (!consumeSemanticRowBudget(&remainingRows))
         {
-            appendImportLimitRow(context, importRow);
+            appendImportLimitRow(context, listRow);
             return;
         }
 
-        StructureRow *dllRow = context.appendSemanticRow(importRow,
+        StructureRow *dllRow = context.appendSemanticRow(listRow,
                                                          dllDisplayName(dllName),
                                                          QStringLiteral("{...}"),
                                                          descriptorOffset,
@@ -215,9 +335,10 @@ void interpretPeImports(StructureSemanticContext &context)
 
         if (dllRow)
         {
+            // Use blue for the unloaded state too — we know every DLL row has children.
             dllRow->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueSingleClosed),
                                    QString::fromLatin1(StructureBranchIcons::kBlueSingleOpen),
-                                   QString::fromLatin1(StructureBranchIcons::kGraySingleClosed));
+                                   QString::fromLatin1(StructureBranchIcons::kBlueSingleClosed));
             dllRow->lazyChildLoader = [baseOffset, reader, offsetMaps, descriptor, pe32Plus]() {
                 StructureSemanticContext lazyContext(nullptr,
                                                      nullptr,
@@ -234,5 +355,6 @@ void interpretPeImports(StructureSemanticContext &context)
 
 void registerPeSemanticViews(StructureSemanticViewRegistry &registry)
 {
+    registry.registerInterpreter(QStringLiteral("pe.exports"), interpretPeExports);
     registry.registerInterpreter(QStringLiteral("pe.imports"), interpretPeImports);
 }

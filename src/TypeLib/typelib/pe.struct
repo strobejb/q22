@@ -229,17 +229,14 @@ typedef struct _IMAGE_SECTION_HEADER
     dword   Characteristics;
 } IMAGE_SECTION_HEADER, *PIMAGE_SECTION_HEADER;
 
-typedef DWORD IMAGE_EXPORT_ADDRESS_TABLE_ENTRY;
-typedef DWORD IMAGE_EXPORT_NAME_POINTER;
-typedef WORD IMAGE_EXPORT_ORDINAL;
-
 // The export directory points at three parallel RVA tables rather than owning
 // them inline.  dynamic_array keeps the C struct honest while rendering those
 // related raw tables under the directory row.
 [
-    dynamic_array(ExportFunctions, IMAGE_EXPORT_ADDRESS_TABLE_ENTRY, AddressOfFunctions, NumberOfFunctions),
-    dynamic_array(ExportNames, IMAGE_EXPORT_NAME_POINTER, AddressOfNames, NumberOfNames),
-    dynamic_array(ExportOrdinals, IMAGE_EXPORT_ORDINAL, AddressOfNameOrdinals, NumberOfNames)
+    dynamic_array(ExportFunctions, DWORD, AddressOfFunctions, NumberOfFunctions),
+    dynamic_array(ExportNames, DWORD, AddressOfNames, NumberOfNames),
+    dynamic_array(ExportOrdinals, WORD, AddressOfNameOrdinals, NumberOfNames),
+    view("pe.exports")
 ]
 typedef struct _IMAGE_EXPORT_DIRECTORY
 {

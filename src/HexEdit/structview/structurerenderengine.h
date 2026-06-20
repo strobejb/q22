@@ -6,7 +6,7 @@
 #include <memory>
 #include <vector>
 
-class StructureRenderEngine
+class StructureRenderEngine : public std::enable_shared_from_this<StructureRenderEngine>
 {
 public:
     StructureRenderEngine(TypeLibrary *library,
@@ -89,6 +89,8 @@ private:
     void collectDynamicArrayRequests(StructureRow *row);
     void appendDynamicRows(StructureRow *parent);
     void appendDynamicArrayRows(StructureRow *row);
+    std::vector<RowPtr> buildSubArraysForElement(StructureRow *elementRow,
+                                                 std::vector<DynamicArrayRequest> subRequests);
     bool dynamicTagArgs(ExprNode *expr, ExprNode **selector, ExprNode **typeName, ExprNode **logicalOffset, ExprNode **condition) const;
     bool dynamicArrayArgs(ExprNode *expr,
                           ExprNode **selectorOrLabel,

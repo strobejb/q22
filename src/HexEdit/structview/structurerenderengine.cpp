@@ -1305,12 +1305,10 @@ void StructureRenderEngine::collectDynamicArrayRequests(StructureRow *row)
         }
 
         QString label;
-        if (!rowIsArrayElement)
+        if (selectorOrLabelExpr && selectorOrLabelExpr->str
+            && (selectorOrLabelExpr->type == EXPR_IDENTIFIER || selectorOrLabelExpr->type == EXPR_STRINGBUF))
         {
-            if (selectorOrLabelExpr && selectorOrLabelExpr->type == EXPR_IDENTIFIER && selectorOrLabelExpr->str)
-                label = QString::fromLocal8Bit(selectorOrLabelExpr->str);
-            else if (selectorOrLabelExpr && selectorOrLabelExpr->type == EXPR_STRINGBUF && selectorOrLabelExpr->str)
-                label = QString::fromLocal8Bit(selectorOrLabelExpr->str);
+            label = QString::fromLocal8Bit(selectorOrLabelExpr->str);
         }
 
         m_dynamicArrayRequests.push_back(DynamicArrayRequest{
@@ -1386,8 +1384,12 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
     if (!row)
         return;
 
-    for (const DynamicArrayRequest &request : m_dynamicArrayRequests)
+    // Index-based iteration: collectDynamicArrayRequests called inside this loop
+    // may push new entries (sub-array requests for element rows), which is safe
+    // because we re-evaluate .size() each iteration and copy requests by value.
+    for (size_t ri = 0; ri < m_dynamicArrayRequests.size(); ++ri)
     {
+        const DynamicArrayRequest request = m_dynamicArrayRequests[ri];
         if (request.owner != row || !request.renderType)
             continue;
 
@@ -1401,12 +1403,20 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
         auto arrayRow = makeRow(parentRow, request.renderType, request.typeDecl, m_baseOffset + fileOffset);
         const QString elementTypeName = typeName(request.renderType);
         const QString label = request.label.isEmpty() ? elementTypeName : request.label;
-        arrayRow->setNameParts(elementTypeName + QStringLiteral("[]"), label);
+        arrayRow->setNameParts(elementTypeName, label, QStringLiteral("[]"));
         arrayRow->value = QStringLiteral("{...}");
         arrayRow->kind = StructureRowKind::Dynamic;
-        arrayRow->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueDoubleClosed),
-                                 QString::fromLatin1(StructureBranchIcons::kBlueDoubleOpen),
-                                 QString::fromLatin1(StructureBranchIcons::kGrayDoubleClosed));
+        arrayRow->generatedName = true;
+
+        // Check once whether the element type declares sub-arrays.  Primitive
+        // element types (DWORD, WORD, CHAR, thunk unions, …) never do, so we
+        // avoid calling collectDynamicArrayRequests for every element of the
+        // large export/import raw-data arrays.
+        bool elementTypeHasSubArrays = false;
+        for (Tag *tag = request.typeDecl ? request.typeDecl->tagList : nullptr; tag; tag = tag->link)
+        {
+            if (tag->tok == TOK_DYNAMICARRAY) { elementTypeHasSubArrays = true; break; }
+        }
 
         uint64_t length = 0;
         const uint64_t boundedCount = std::min<uint64_t>(request.maxCount, kMaxArrayElements);
@@ -1418,12 +1428,36 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
             elementRow->nameTypePrefix = indexLabel;
             elementRow->kind = StructureRowKind::Dynamic;
             elementRow->suppressSemanticViews = true;
-            elementRow->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueDoubleClosed),
-                                       QString::fromLatin1(StructureBranchIcons::kBlueDoubleOpen),
-                                       QString::fromLatin1(StructureBranchIcons::kGrayDoubleClosed));
 
             const uint64_t elementLength = formatType(elementRow.get(), request.renderType, request.typeDecl, m_baseOffset + fileOffset + length);
             elementRow->byteLength = elementLength;
+
+            // For compound element types, collect the sub-array requests that
+            // reference this element's fields (e.g. DllName RVA, thunk RVAs) while
+            // the element's children are live, then defer the actual array building
+            // to a lazy loader so the initial tree open stays fast.
+            if (elementTypeHasSubArrays)
+            {
+                const size_t requestsBefore = m_dynamicArrayRequests.size();
+                collectDynamicArrayRequests(elementRow.get());
+
+                if (m_dynamicArrayRequests.size() > requestsBefore)
+                {
+                    std::vector<DynamicArrayRequest> subRequests(
+                        m_dynamicArrayRequests.begin() + static_cast<ptrdiff_t>(requestsBefore),
+                        m_dynamicArrayRequests.end());
+                    m_dynamicArrayRequests.erase(
+                        m_dynamicArrayRequests.begin() + static_cast<ptrdiff_t>(requestsBefore),
+                        m_dynamicArrayRequests.end());
+
+                    StructureRow *elemPtr = elementRow.get();
+                    auto self = shared_from_this();
+                    elementRow->lazyChildLoader = [self, elemPtr, reqs = std::move(subRequests)]() mutable {
+                        return self->buildSubArraysForElement(elemPtr, std::move(reqs));
+                    };
+                }
+            }
+
             const bool terminates = elementMatchesTerminator(elementRow.get(),
                                                              request.renderType,
                                                              request.stopExpr,
@@ -1442,6 +1476,30 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
 
     for (const auto &child : row->children)
         appendDynamicArrayRows(child.get());
+}
+
+std::vector<StructureRenderEngine::RowPtr> StructureRenderEngine::buildSubArraysForElement(
+    StructureRow *elementRow,
+    std::vector<DynamicArrayRequest> subRequests)
+{
+    const size_t childrenBefore = elementRow->children.size();
+
+    auto savedRequests = std::move(m_dynamicArrayRequests);
+    m_dynamicArrayRequests = std::move(subRequests);
+
+    appendDynamicArrayRows(elementRow);
+
+    m_dynamicArrayRequests = std::move(savedRequests);
+
+    const size_t childrenAfter = elementRow->children.size();
+    std::vector<RowPtr> result;
+    result.reserve(childrenAfter - childrenBefore);
+    for (size_t i = childrenBefore; i < childrenAfter; ++i)
+        result.push_back(std::move(elementRow->children[i]));
+    elementRow->children.erase(
+        elementRow->children.begin() + static_cast<ptrdiff_t>(childrenBefore),
+        elementRow->children.end());
+    return result;
 }
 
 bool StructureRenderEngine::dynamicTagArgs(ExprNode *expr,

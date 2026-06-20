@@ -40,9 +40,8 @@ QString StructureTypeNameFormatter::definedTypeName(Type *type) const
     case typePOINTER:
         return definedTypeName(type->link) + QStringLiteral(" *");
     case typeSIGNED:
-        return QStringLiteral("signed %1").arg(definedTypeName(type->link));
     case typeUNSIGNED:
-        return QStringLiteral("unsigned %1").arg(definedTypeName(type->link));
+        return definedTypeName(type->link);
     case typeCHAR: return QStringLiteral("char");
     case typeWCHAR: return QStringLiteral("wchar_t");
     case typeBYTE: return QStringLiteral("byte");
@@ -81,9 +80,8 @@ QString StructureTypeNameFormatter::storageTypeName(Type *type) const
     case typePOINTER:
         return storageTypeName(type->link) + QStringLiteral(" *");
     case typeSIGNED:
-        return QStringLiteral("signed %1").arg(storageTypeName(type->link));
     case typeUNSIGNED:
-        return QStringLiteral("unsigned %1").arg(storageTypeName(type->link));
+        return storageTypeName(type->link);
     case typeCHAR: return QStringLiteral("char");
     case typeWCHAR: return QStringLiteral("wchar_t");
     case typeBYTE: return QStringLiteral("byte");
