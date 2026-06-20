@@ -217,7 +217,7 @@ Type * Parser::PrefixDecl(SymbolTable &symTable)
 
 	FILEREF fileref(lexer.CurrentFile());
 
-	if(IsSoftIdentifier(t.kind))
+	if(IsContextualKeyword(t.kind))
 	{
 		if((sym = LookupSymbol(symTable, t.str)) == 0)
 		{

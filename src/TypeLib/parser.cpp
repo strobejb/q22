@@ -101,43 +101,16 @@ static Tag *CloneTagList(Tag *tag, Tag *tail = 0)
 	return copy;
 }
 
-bool Parser::IsSoftIdentifier(TOKEN tok)
+bool Parser::IsContextualKeyword(TOKEN tok)
 {
-	// TypeLib tags are keywords inside [...] but real binary formats commonly
-	// use the same words as field names, e.g. Magic, Name, Offset. Treat those
-	// metadata words as identifiers where the grammar is already expecting a
-	// declaration/expression name; C/C++ structural keywords remain reserved.
+	// DEFINE_KEYWORD = usable as field names; DEFINE_RESERVED_KEYWORD = always reserved.
 	switch(tok)
 	{
-	case TOK_ALIGN:
-	case TOK_ASSOC:
-	case TOK_BITFLAG:
-	case TOK_DESCRIPTION:
-	case TOK_DISPLAY:
-	case TOK_DYNAMICARRAY:
-	case TOK_DYNAMICCONTAINER:
-	case TOK_DYNAMICSTRUCT:
-	case TOK_ENDIAN:
-	case TOK_ENTRYPOINT:
-	case TOK_EXPORT:
-	case TOK_EXTENT:
-	case TOK_IGNORE:
-	case TOK_LENGTHIS:
-	case TOK_MAGIC:
-	case TOK_NAME:
-	case TOK_OFFSET:
-	case TOK_OFFSETMAP:
-	case TOK_OPTIONAL:
-	case TOK_SIZEIS:
-	case TOK_STRING:
-	case TOK_STYLE:
-	case TOK_SWITCHIS:
-	case TOK_TAGS:
-	case TOK_TAGSET:
-	case TOK_TERMINATEDBY:
-	case TOK_VIEW:
+#define DEFINE_KEYWORD(t, s) case t:
+#define DEFINE_RESERVED_KEYWORD(t, s)
+#include "keywords.h"
+#undef DEFINE_KEYWORD
 		return true;
-
 	default:
 		return false;
 	}

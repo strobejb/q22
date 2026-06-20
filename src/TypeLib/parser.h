@@ -71,7 +71,7 @@ public:
 
 	
 	static const char *inenglish(TOKEN t);
-	static bool IsSoftIdentifier(TOKEN t);
+	static bool IsContextualKeyword(TOKEN t);
 
 	ERROR LastErr();
 	const char *LastErrStr();

@@ -68,7 +68,7 @@ ExprNode * Parser::PrimaryExpression()
 {
 	ExprNode *p = 0;
 
-	if(IsSoftIdentifier(t.kind))
+	if(IsContextualKeyword(t.kind))
 	{
 		p = new ExprNode(EXPR_IDENTIFIER, t);
 		p->str = _strdup(t.str);
