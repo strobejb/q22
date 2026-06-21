@@ -107,7 +107,7 @@ bool StructureTreeModel::hasChildren(const QModelIndex &parent) const
     if (!row)
         return false;
 
-    return !row->children.empty() || row->lazyChildLoader || !row->branchIconPath.isEmpty();
+    return !row->children.empty() || row->lazyChildLoader;
 }
 
 QVariant StructureTreeModel::data(const QModelIndex &index, int role) const

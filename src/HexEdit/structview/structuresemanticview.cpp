@@ -184,6 +184,12 @@ std::unique_ptr<StructureRow> StructureSemanticContext::createSemanticRow(Struct
                             QString::fromLatin1(StructureBranchIcons::kBlueDoubleOpen),
                             QString::fromLatin1(StructureBranchIcons::kGrayDoubleClosed));
     }
+    else
+    {
+        row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueFace),
+                            QString::fromLatin1(StructureBranchIcons::kBlueFace),
+                            QString::fromLatin1(StructureBranchIcons::kBlueFace));
+    }
 
     return row;
 }

@@ -866,6 +866,8 @@ protected:
                     m_resizeStartWidth = header()->sectionSize(m_resizeSection);
                     return true;
                 }
+                if (handleIndicatorClick(mouse->pos()))
+                    return true;
             }
             break;
         }
@@ -887,6 +889,7 @@ protected:
                 return true;
             }
             viewport()->setCursor(resizeSectionAt(mouse->pos()) >= 0 ? Qt::SplitHCursor : Qt::ArrowCursor);
+            updateHoverIndex(indexAt(mouse->pos()));
             break;
         }
         case QEvent::MouseButtonRelease:
@@ -903,6 +906,7 @@ protected:
         case QEvent::Leave:
             if (m_resizeSection < 0)
                 viewport()->unsetCursor();
+            updateHoverIndex(QModelIndex());
             break;
         default:
             break;
@@ -960,6 +964,37 @@ protected:
                            iconRect,
                            Qt::AlignCenter,
                            isEnabled() ? QIcon::Normal : QIcon::Disabled);
+
+                // Draw a '+' (closed) or '−' (open) left of the icon on hover/select.
+                const bool canExpand = model()
+                    && (model()->rowCount(index) > 0 || model()->canFetchMore(index));
+                const bool expanded = isExpanded(index);
+                if (canExpand || expanded)
+                {
+                    const bool hovered = m_hoverIndex.isValid()
+                        && m_hoverIndex.parent() == index.parent()
+                        && m_hoverIndex.row() == index.row();
+                    const bool selected = selectionModel()
+                        && selectionModel()->isSelected(index);
+                    if (hovered || selected)
+                    {
+                        constexpr qreal arm = 3.0;
+                        const qreal cx = branchSlot.left() - indentation() / 2.0;
+                        const qreal cy = rect.top() + rect.height() * 0.5;
+                        if (cx - arm >= rect.left())
+                        {
+                            QColor c = palette().color(QPalette::WindowText);
+                            c.setAlphaF(c.alphaF() * 0.5);
+                            painter->save();
+                            painter->setRenderHint(QPainter::Antialiasing, true);
+                            painter->setPen(QPen(c, 1.5, Qt::SolidLine, Qt::RoundCap));
+                            painter->drawLine(QLineF(cx - arm, cy, cx + arm, cy));
+                            if (!expanded)
+                                painter->drawLine(QLineF(cx, cy - arm, cx, cy + arm));
+                            painter->restore();
+                        }
+                    }
+                }
             }
             return;
         }
@@ -1040,9 +1075,60 @@ private:
         return -1;
     }
 
+    bool handleIndicatorClick(const QPoint &pos)
+    {
+        const QModelIndex idx = indexAt(pos);
+        if (!idx.isValid() || idx.data(StructureTreeModel::BranchIconPathRole).toString().isEmpty())
+            return false;
+
+        // Compute item depth to find the indicator's centre x.
+        int depth = 0;
+        for (QModelIndex p = idx.parent(); p.isValid(); p = p.parent())
+            ++depth;
+        if (depth == 0)
+            return false;
+
+        // The indicator is centred at branchSlot.left() - indentation()/2,
+        // where branchSlot.left() = depth * indentation() in viewport x.
+        constexpr int arm = 3;
+        constexpr int tolerance = 5;
+        const int cx = depth * indentation() - indentation() / 2;
+        if (pos.x() < cx - arm - tolerance || pos.x() > cx + arm + tolerance)
+            return false;
+
+        const bool canExpand = model()
+            && (model()->rowCount(idx) > 0 || model()->canFetchMore(idx));
+        if (!canExpand && !isExpanded(idx))
+            return false;
+
+        const QModelIndex nameIdx = idx.sibling(idx.row(), 0);
+        setExpanded(nameIdx, !isExpanded(nameIdx));
+        return true;
+    }
+
+    void updateHoverIndex(const QModelIndex &newIndex)
+    {
+        const QModelIndex normalised = newIndex.sibling(newIndex.row(), 0);
+        if (normalised == m_hoverIndex)
+            return;
+        repaintRowBranchArea(m_hoverIndex);
+        m_hoverIndex = QPersistentModelIndex(normalised);
+        repaintRowBranchArea(m_hoverIndex);
+    }
+
+    void repaintRowBranchArea(const QModelIndex &index)
+    {
+        if (!index.isValid())
+            return;
+        const QRect r = visualRect(index);
+        if (r.isValid())
+            viewport()->update(QRect(0, r.top(), viewport()->width(), r.height()));
+    }
+
     int m_resizeSection = -1;
     qreal m_resizeStartX = 0.0;
     int m_resizeStartWidth = 0;
+    QPersistentModelIndex m_hoverIndex;
 };
 }
 

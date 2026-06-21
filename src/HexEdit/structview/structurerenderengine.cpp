@@ -1407,6 +1407,9 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
         arrayRow->value = QStringLiteral("{...}");
         arrayRow->kind = StructureRowKind::Dynamic;
         arrayRow->generatedName = true;
+        arrayRow->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueDoubleClosed),
+                                 QString::fromLatin1(StructureBranchIcons::kBlueDoubleOpen),
+                                 QString::fromLatin1(StructureBranchIcons::kGrayDoubleClosed));
 
         // Check once whether the element type declares sub-arrays.  Primitive
         // element types (DWORD, WORD, CHAR, thunk unions, …) never do, so we
