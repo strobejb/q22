@@ -2329,7 +2329,22 @@ void StructureViewPanel::locateIndexInSource(const QModelIndex &index)
     if (!row)
         return;
 
-    if (loadSourceFile(row->sourcePath, row->sourceLine) && m_viewStack && m_sourceView)
+    int selStart = -1;
+    int selEnd = -1;
+    if (const TypeDecl *decl = row->typeDecl)
+    {
+        // fileRef.wspEnd: for nested fields this is already post-tags (the field keyword).
+        // For top-level decls tagRef is unset, so fileRef.wspEnd is pre-tags — handled
+        // in loadSourceFile by scanning past @-tag lines.
+        if (decl->fileRef.fileDesc && decl->fileRef.wspEnd > 0)
+            selStart = static_cast<int>(decl->fileRef.wspEnd);
+        // postRef.wspStart is the byte offset immediately after the closing ';'
+        if (decl->postRef.fileDesc)
+            selEnd = static_cast<int>(decl->postRef.wspStart);
+    }
+
+    if (loadSourceFile(row->sourcePath, row->sourceLine, selStart, selEnd)
+        && m_viewStack && m_sourceView)
     {
         m_viewStack->setCurrentWidget(m_sourceView);
         updateContentFramePage();
@@ -2376,20 +2391,77 @@ bool StructureViewPanel::logDiagnosticAt(const QPoint &viewportPos, QString *pat
     return true;
 }
 
-bool StructureViewPanel::loadSourceFile(const QString &path, int line)
+bool StructureViewPanel::loadSourceFile(const QString &path, int line, int selStart, int selEnd)
 {
     if (!m_sourceView || path.isEmpty())
         return false;
 
     QFile file(path);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+    // Read in binary mode so byte offsets from the parser (which also reads binary)
+    // correspond 1-to-1 with positions in the raw buffer.
+    if (!file.open(QIODevice::ReadOnly))
     {
         m_sourceView->setPlainText(tr("Unable to open %1").arg(QDir::toNativeSeparators(path)));
         return true;
     }
 
-    m_sourceView->setPlainText(QString::fromUtf8(file.readAll()));
-    if (line > 0)
+    const QByteArray raw = file.readAll();
+    m_sourceView->setPlainText(QString::fromUtf8(raw));
+
+    // Map a raw byte offset to a QTextDocument character position, accounting for
+    // \r\n → \n normalisation performed by setPlainText (each \r is dropped).
+    const auto byteToDocPos = [&raw](int byteOffset) -> int {
+        const int limit = qMin(byteOffset, static_cast<int>(raw.size()));
+        int crCount = 0;
+        for (int i = 0; i < limit; ++i)
+            if (raw[i] == '\r')
+                ++crCount;
+        return byteOffset - crCount;
+    };
+
+    // If we have a valid selection range, advance selStart past any leading @tag lines
+    // (needed for top-level declarations where fileRef.wspEnd still precedes the tags).
+    if (selStart >= 0 && selEnd > selStart)
+    {
+        int pos = selStart;
+        while (pos < selEnd && pos < static_cast<int>(raw.size()))
+        {
+            int lineStart = pos;
+            // Skip horizontal whitespace
+            while (lineStart < static_cast<int>(raw.size())
+                   && (raw[lineStart] == ' ' || raw[lineStart] == '\t'))
+                ++lineStart;
+            if (lineStart < static_cast<int>(raw.size()) && raw[lineStart] == '@')
+            {
+                // Skip to the end of this @tag line
+                pos = lineStart;
+                while (pos < static_cast<int>(raw.size())
+                       && raw[pos] != '\n' && raw[pos] != '\r')
+                    ++pos;
+                if (pos < static_cast<int>(raw.size()) && raw[pos] == '\r')
+                    ++pos;
+                if (pos < static_cast<int>(raw.size()) && raw[pos] == '\n')
+                    ++pos;
+            }
+            else
+            {
+                pos = lineStart;
+                break;
+            }
+        }
+        selStart = pos;
+    }
+
+    // Apply the selection first so centerCursor scrolls to it.
+    if (selStart >= 0 && selEnd > selStart)
+    {
+        QTextCursor cursor = m_sourceView->textCursor();
+        cursor.setPosition(byteToDocPos(selStart));
+        cursor.setPosition(byteToDocPos(selEnd), QTextCursor::KeepAnchor);
+        m_sourceView->setTextCursor(cursor);
+        m_sourceView->centerCursor();
+    }
+    else if (line > 0)
     {
         QTextBlock block = m_sourceView->document()->findBlockByNumber(line - 1);
         if (block.isValid())
