@@ -2,7 +2,7 @@
 #define STRUCTVIEW_STRUCTURETYPENAMEFORMATTER_H
 
 #include "structview/structuredisplayoptions.h"
-#include "TypeLib/parser.h"
+#include "Causeway/parser.h"
 
 #include <QString>
 

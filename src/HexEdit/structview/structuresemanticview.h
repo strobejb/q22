@@ -21,14 +21,14 @@ struct StructureOffsetMap
 class StructureSemanticContext
 {
 public:
-    StructureSemanticContext(TypeLibrary *library,
+    StructureSemanticContext(StrataLibrary *library,
                              StructureRow *rootRow,
                              StructureRow *currentRow,
                              uint64_t baseOffset,
                              const StructureValueBuilder::ByteReader &reader,
                              const std::vector<StructureOffsetMap> &offsetMaps);
 
-    TypeLibrary *library() const;
+    StrataLibrary *library() const;
     StructureRow *rootRow() const;
     StructureRow *currentRow() const;
     uint64_t baseOffset() const;
@@ -56,7 +56,7 @@ public:
 private:
     QString formatOffset(uint64_t offset) const;
 
-    TypeLibrary *m_library = nullptr;
+    StrataLibrary *m_library = nullptr;
     StructureRow *m_rootRow = nullptr;
     StructureRow *m_currentRow = nullptr;
     uint64_t m_baseOffset = 0;
@@ -79,7 +79,7 @@ private:
 };
 
 void registerBuiltInStructureSemanticViews();
-void runStructureSemanticViews(TypeLibrary *library,
+void runStructureSemanticViews(StrataLibrary *library,
                                StructureRow *rootRow,
                                uint64_t baseOffset,
                                const StructureValueBuilder::ByteReader &reader,

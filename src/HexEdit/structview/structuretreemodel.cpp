@@ -266,7 +266,7 @@ void StructureTreeModel::clear()
     endResetModel();
 }
 
-void StructureTreeModel::setTypeLibrary(TypeLibrary *library)
+void StructureTreeModel::setStrataLibrary(StrataLibrary *library)
 {
     QList<TypeDecl *> typeDecls;
     if (library)

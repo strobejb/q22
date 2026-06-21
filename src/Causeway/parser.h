@@ -28,10 +28,10 @@ bool LocateComment(FILEREF *fileRef, char **s, char **cs, char **ce, char **e);
 //#include "expr.h"
 //#include "types.h"
 
-struct TypeLibrary
+struct StrataLibrary
 {
-	TypeLibrary();
-	~TypeLibrary();
+	StrataLibrary();
+	~StrataLibrary();
 
 	void Cleanup();
 
@@ -51,7 +51,7 @@ class Parser
 {
 public:
 	Parser();
-	Parser(TypeLibrary *typeLibrary);
+	Parser(StrataLibrary *typeLibrary);
 	~Parser();
 
 	bool Ooof(const char *file);
@@ -75,7 +75,7 @@ public:
 
 	ERROR LastErr();
 	const char *LastErrStr();
-	TypeLibrary *GetTypeLibrary();
+	StrataLibrary *GetStrataLibrary();
 	void Dump(FILE *fp);
 	void Dump2(FILE *fp);
 
@@ -145,8 +145,8 @@ private:
 
 	// parser
 	Parser		*	parent;
-	TypeLibrary *	typeLibrary;
-	bool			ownsTypeLibrary;
+	StrataLibrary *	typeLibrary;
+	bool			ownsStrataLibrary;
 
 	// errors
 	int				errcount;

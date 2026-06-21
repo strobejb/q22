@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"
+ fill="none" color="currentColor" stroke="currentColor" stroke-width="2.15"
+ stroke-linecap="round" stroke-linejoin="round" shape-rendering="geometricPrecision"
+ role="img" aria-labelledby="title desc">
+<title id="title">Single folder box, open</title>
+<desc id="desc">Symbolic isometric box with the top face removed.</desc>
+<path d="M14 21 32 34.5 32 52 14 38.5Z" fill="currentColor" fill-opacity=".06"/>
+<path d="M32 34.5 50 21 50 38.5 32 52Z" fill="currentColor" fill-opacity=".14"/>
+<path d="M14 21V38.5L32 52 50 38.5V21"/>
+<path d="M14 21 32 34.5 50 21"/>
+<path d="M32 34.5V52"/>
+</svg>

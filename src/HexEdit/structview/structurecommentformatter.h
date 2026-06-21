@@ -1,7 +1,7 @@
 #ifndef STRUCTVIEW_STRUCTURECOMMENTFORMATTER_H
 #define STRUCTVIEW_STRUCTURECOMMENTFORMATTER_H
 
-#include "TypeLib/parser.h"
+#include "Causeway/parser.h"
 
 #include <QString>
 

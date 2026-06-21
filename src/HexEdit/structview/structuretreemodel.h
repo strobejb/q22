@@ -2,7 +2,7 @@
 #define STRUCTVIEW_STRUCTURETREEMODEL_H
 
 #include "structview/structuredisplayoptions.h"
-#include "TypeLib/parser.h"
+#include "Causeway/parser.h"
 
 #include <QAbstractItemModel>
 #include <QList>
@@ -123,7 +123,7 @@ public:
     void fetchMore(const QModelIndex &parent) override;
 
     void clear();
-    void setTypeLibrary(TypeLibrary *library);
+    void setStrataLibrary(StrataLibrary *library);
     void setTypeDecls(const QList<TypeDecl *> &typeDecls);
     void setRows(std::vector<std::unique_ptr<StructureRow>> rows);
     void setRowsForTests(std::vector<std::unique_ptr<StructureRow>> rows);

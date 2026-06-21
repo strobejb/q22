@@ -14,11 +14,11 @@ class StructureValueBuilder
 public:
     using ByteReader = std::function<size_t(uint64_t offset, uint8_t *buffer, size_t length)>;
 
-    std::vector<std::unique_ptr<StructureRow>> build(TypeLibrary *library,
+    std::vector<std::unique_ptr<StructureRow>> build(StrataLibrary *library,
                                                      TypeDecl *rootType,
                                                      uint64_t baseOffset,
                                                      const ByteReader &reader) const;
-    std::vector<std::unique_ptr<StructureRow>> build(TypeLibrary *library,
+    std::vector<std::unique_ptr<StructureRow>> build(StrataLibrary *library,
                                                      TypeDecl *rootType,
                                                      uint64_t baseOffset,
                                                      const ByteReader &reader,

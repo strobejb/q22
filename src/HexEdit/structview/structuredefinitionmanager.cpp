@@ -170,7 +170,7 @@ StructureDefinitionManager::StructureDefinitionManager(QObject *parent)
             this, [this](const QString &) { scheduleChangeNotification(); });
 }
 
-TypeLibrary *StructureDefinitionManager::library() const
+StrataLibrary *StructureDefinitionManager::library() const
 {
     return m_library.get();
 }
@@ -242,11 +242,11 @@ QStringList StructureDefinitionManager::builtinStructDirs() const
     QStringList dirs;
     const QString appDir = QCoreApplication::applicationDirPath();
     if (!appDir.isEmpty())
-        dirs.push_back(QDir(appDir).filePath(QStringLiteral("typelib")));
+        dirs.push_back(QDir(appDir).filePath(QStringLiteral("strata")));
 
     const QStringList dataDirs = QStandardPaths::locateAll(
         QStandardPaths::GenericDataLocation,
-        QStringLiteral("hexedit/typelib"),
+        QStringLiteral("hexedit/strata"),
         QStandardPaths::LocateDirectory);
     for (const QString &dir : dataDirs)
         if (!dirs.contains(dir))
@@ -275,7 +275,7 @@ bool StructureDefinitionManager::reload()
     for (const QString &file : files)
         m_loadLog.push_back(tr("  %1").arg(QDir::toNativeSeparators(file)));
 
-    auto              nextLibrary = std::make_unique<TypeLibrary>();
+    auto              nextLibrary = std::make_unique<StrataLibrary>();
     QString           errorSummary;
     QString           errorDiagnostic;
     if (!parseFiles(files, nextLibrary.get(), &errorSummary, &errorDiagnostic))
@@ -323,7 +323,7 @@ QStringList StructureDefinitionManager::discoverDefinitionFiles() const
 }
 
 bool StructureDefinitionManager::parseFiles(const QStringList &files,
-                                            TypeLibrary *library,
+                                            StrataLibrary *library,
                                             QString *errorSummary,
                                             QString *errorDiagnostic) const
 {

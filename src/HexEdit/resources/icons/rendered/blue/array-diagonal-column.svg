@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"
+ fill="none" shape-rendering="geometricPrecision" role="img">
+<defs>
+<linearGradient id="top" gradientUnits="userSpaceOnUse" x1="12" y1="10" x2="52" y2="50">
+<stop offset="0%" stop-color="#91C7EF"/><stop offset="58%" stop-color="#62A4DD"/><stop offset="100%" stop-color="#3E84C5"/>
+</linearGradient>
+<linearGradient id="left" gradientUnits="userSpaceOnUse" x1="12" y1="26" x2="36" y2="52">
+<stop offset="0%" stop-color="#5C9FD7"/><stop offset="100%" stop-color="#347FBE"/>
+</linearGradient>
+<linearGradient id="right" gradientUnits="userSpaceOnUse" x1="30" y1="26" x2="52" y2="52">
+<stop offset="0%" stop-color="#2C67B8"/><stop offset="100%" stop-color="#0A409F"/>
+</linearGradient>
+<linearGradient id="rear" gradientUnits="userSpaceOnUse" x1="10" y1="10" x2="52" y2="46">
+<stop offset="0%" stop-color="#C4E1F7"/><stop offset="100%" stop-color="#6FA8D5"/>
+</linearGradient>
+</defs>
+<title>Blue array diagonal column</title>
+<g opacity="0.72">
+<polygon points="20,10.95 29.4,18 20,25.05 10.6,18" fill="url(#rear)"/>
+<polygon points="10.6,18 20,25.05 20,27.150000000000002 10.6,20.1" fill="url(#left)"/>
+<polygon points="20,25.05 29.4,18 29.4,20.1 20,27.150000000000002" fill="url(#right)"/>
+<polygon points="20,11.5 28.599999999999998,18 20,24.5 11.4,18" fill="#FFFFFF" opacity=".10"/>
+<path d="M20 10.95L10.6 18" stroke="#FFFFFF" stroke-opacity=".28" stroke-width=".6" stroke-linecap="round"/>
+<path d="M20 10.95L29.4 18" stroke="#FFFFFF" stroke-opacity=".15" stroke-width=".5" stroke-linecap="round"/>
+</g><g opacity="0.86">
+<polygon points="32,24.45 41.4,31.5 32,38.55 22.6,31.5" fill="url(#rear)"/>
+<polygon points="22.6,31.5 32,38.55 32,40.65 22.6,33.6" fill="url(#left)"/>
+<polygon points="32,38.55 41.4,31.5 41.4,33.6 32,40.65" fill="url(#right)"/>
+<polygon points="32,25.0 40.6,31.5 32,38.0 23.400000000000002,31.5" fill="#FFFFFF" opacity=".10"/>
+<path d="M32 24.45L22.6 31.5" stroke="#FFFFFF" stroke-opacity=".28" stroke-width=".6" stroke-linecap="round"/>
+<path d="M32 24.45L41.4 31.5" stroke="#FFFFFF" stroke-opacity=".15" stroke-width=".5" stroke-linecap="round"/>
+</g><g opacity="1.0">
+<polygon points="44,37.95 53.4,45 44,52.05 34.6,45" fill="url(#top)"/>
+<polygon points="34.6,45 44,52.05 44,54.15 34.6,47.1" fill="url(#left)"/>
+<polygon points="44,52.05 53.4,45 53.4,47.1 44,54.15" fill="url(#right)"/>
+<polygon points="44,38.5 52.6,45 44,51.5 35.4,45" fill="#FFFFFF" opacity=".10"/>
+<path d="M44 37.95L34.6 45" stroke="#FFFFFF" stroke-opacity=".28" stroke-width=".6" stroke-linecap="round"/>
+<path d="M44 37.95L53.4 45" stroke="#FFFFFF" stroke-opacity=".15" stroke-width=".5" stroke-linecap="round"/>
+</g></svg>

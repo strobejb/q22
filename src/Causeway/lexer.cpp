@@ -88,7 +88,7 @@ Lexer::Lexer()
 	errorContext = 0;
 }
 
-void Lexer::SetTypeLibrary(TypeLibrary *lib)
+void Lexer::SetStrataLibrary(StrataLibrary *lib)
 {
 	typeLibrary = lib;
 }

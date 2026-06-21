@@ -54,24 +54,24 @@ set_tests_properties(findpanel_tests PROPERTIES
         "PATH=path_list_prepend:${QT_RUNTIME_BIN_DIR}"
 )
 
-add_executable(typelib_tests
-    typelib_tests.cpp
+add_executable(causeway_tests
+    causeway_tests.cpp
 )
 
-target_link_libraries(typelib_tests PRIVATE
-    TypeLib
+target_link_libraries(causeway_tests PRIVATE
+    Causeway
     Qt${QT_VERSION_MAJOR}::Core
     Qt${QT_VERSION_MAJOR}::Test
 )
-target_compile_definitions(typelib_tests PRIVATE
-    TYPELIB_TEST_DATA_DIR="${TYPELIB_DATA_BINARY_DIR}"
+target_compile_definitions(causeway_tests PRIVATE
+    CAUSEWAY_TEST_DATA_DIR="${CAUSEWAY_DATA_BINARY_DIR}"
 )
-if(TARGET TypeLibData)
-    add_dependencies(typelib_tests TypeLibData)
+if(TARGET CausewayData)
+    add_dependencies(causeway_tests CausewayData)
 endif()
 
-add_test(NAME typelib_tests COMMAND typelib_tests)
-set_tests_properties(typelib_tests PROPERTIES
+add_test(NAME causeway_tests COMMAND causeway_tests)
+set_tests_properties(causeway_tests PROPERTIES
     ENVIRONMENT_MODIFICATION
         "PATH=path_list_prepend:${QT_RUNTIME_BIN_DIR}"
 )
@@ -94,15 +94,15 @@ target_include_directories(structview_tests PRIVATE
 )
 
 target_link_libraries(structview_tests PRIVATE
-    TypeLib
+    Causeway
     Qt${QT_VERSION_MAJOR}::Core
     Qt${QT_VERSION_MAJOR}::Test
 )
 target_compile_definitions(structview_tests PRIVATE
-    TYPELIB_TEST_DATA_DIR="${TYPELIB_DATA_BINARY_DIR}"
+    CAUSEWAY_TEST_DATA_DIR="${CAUSEWAY_DATA_BINARY_DIR}"
 )
-if(TARGET TypeLibData)
-    add_dependencies(structview_tests TypeLibData)
+if(TARGET CausewayData)
+    add_dependencies(structview_tests CausewayData)
 endif()
 
 add_test(NAME structview_tests COMMAND structview_tests)

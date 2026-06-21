@@ -47,7 +47,7 @@ static inline void strncpy_s(char *dest, size_t destsz, const char *src, size_t 
 using std::vector;
 
 struct Statement;
-struct TypeLibrary;
+struct StrataLibrary;
 typedef vector<Statement *> StatementList;
 
 #endif
@@ -273,7 +273,7 @@ class Lexer
 public:
 	Lexer();
 
-	void SetTypeLibrary(TypeLibrary *lib);
+	void SetStrataLibrary(StrataLibrary *lib);
 	void SetParentLexer(Lexer *parent);
 	void SetErrorCallback(void (*callback)(void *, ERROR, va_list), void *context);
 
@@ -308,7 +308,7 @@ private:
 
 	FILE_DESC	*	curFile;
 	Lexer		*	parentLexer;
-	TypeLibrary *	typeLibrary;
+	StrataLibrary *	typeLibrary;
 	void		(*errorCallback)(void *, ERROR, va_list);
 	void		*	errorContext;
 };

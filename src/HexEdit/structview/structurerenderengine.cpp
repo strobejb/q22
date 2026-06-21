@@ -227,7 +227,7 @@ struct StructureRenderEngine::AlignmentScope
     uint64_t previous = 1;
 };
 
-StructureRenderEngine::StructureRenderEngine(TypeLibrary *library,
+StructureRenderEngine::StructureRenderEngine(StrataLibrary *library,
                                              TypeDecl *rootType,
                                              uint64_t baseOffset,
                                              const StructureValueBuilder::ByteReader &reader,

@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <cstring>
 
-StructureSemanticContext::StructureSemanticContext(TypeLibrary *library,
+StructureSemanticContext::StructureSemanticContext(StrataLibrary *library,
                                                    StructureRow *rootRow,
                                                    StructureRow *currentRow,
                                                    uint64_t baseOffset,
@@ -25,7 +25,7 @@ StructureSemanticContext::StructureSemanticContext(TypeLibrary *library,
 {
 }
 
-TypeLibrary *StructureSemanticContext::library() const
+StrataLibrary *StructureSemanticContext::library() const
 {
     return m_library;
 }
@@ -237,7 +237,7 @@ namespace
 {
 void runSemanticViewsForRow(StructureRow *rootRow,
                             StructureRow *row,
-                            TypeLibrary *library,
+                            StrataLibrary *library,
                             uint64_t baseOffset,
                             const StructureValueBuilder::ByteReader &reader,
                             const std::vector<StructureOffsetMap> &offsetMaps)
@@ -262,7 +262,7 @@ void runSemanticViewsForRow(StructureRow *rootRow,
 }
 }
 
-void runStructureSemanticViews(TypeLibrary *library,
+void runStructureSemanticViews(StrataLibrary *library,
                                StructureRow *rootRow,
                                uint64_t baseOffset,
                                const StructureValueBuilder::ByteReader &reader,

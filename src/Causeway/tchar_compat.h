@@ -1,7 +1,7 @@
 //
 //  tchar_compat.h
 //
-//  Minimal TCHAR compatibility for non-Windows builds. TypeLib still uses the
+//  Minimal TCHAR compatibility for non-Windows builds. Causeway still uses the
 //  old TCHAR spelling in rendering helpers, but the parser stores source text
 //  as narrow strings.
 //

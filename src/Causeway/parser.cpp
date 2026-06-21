@@ -14,17 +14,17 @@
 TypeDecl * ParseTypeDecl(Tag *tagList, SymbolTable &table, bool nested = false, bool allowMultiDecl = true);
 const char *inenglish(TYPE ty);
 
-TypeLibrary::TypeLibrary()
+StrataLibrary::StrataLibrary()
 {
 	aliasesInstalled = false;
 }
 
-TypeLibrary::~TypeLibrary()
+StrataLibrary::~StrataLibrary()
 {
 	Cleanup();
 }
 
-void TypeLibrary::Cleanup()
+void StrataLibrary::Cleanup()
 {
 	size_t i;
 
@@ -743,7 +743,7 @@ void Parser::ExportStructs()
 
 void Parser::Cleanup()
 {
-	if(ownsTypeLibrary)
+	if(ownsStrataLibrary)
 		typeLibrary->Cleanup();
 
 	/*for(i = 0; i < 100; i++)
@@ -770,9 +770,9 @@ Parser::Parser()
 {
 	fperr		= stderr;
 	parent		= 0;
-	typeLibrary = new TypeLibrary();
-	ownsTypeLibrary = true;
-	lexer.SetTypeLibrary(typeLibrary);
+	typeLibrary = new StrataLibrary();
+	ownsStrataLibrary = true;
+	lexer.SetStrataLibrary(typeLibrary);
 	lexer.SetErrorCallback(LexerError, this);
 	errcount = 0;
 	errstr[0] = '\0';
@@ -782,13 +782,13 @@ Parser::Parser()
 	Initialize();
 }
 
-Parser::Parser(TypeLibrary *lib)
+Parser::Parser(StrataLibrary *lib)
 {
 	fperr		= stderr;
 	parent		= 0;
-	typeLibrary = lib ? lib : new TypeLibrary();
-	ownsTypeLibrary = lib ? false : true;
-	lexer.SetTypeLibrary(typeLibrary);
+	typeLibrary = lib ? lib : new StrataLibrary();
+	ownsStrataLibrary = lib ? false : true;
+	lexer.SetStrataLibrary(typeLibrary);
 	lexer.SetErrorCallback(LexerError, this);
 	errcount = 0;
 	errstr[0] = '\0';
@@ -803,8 +803,8 @@ Parser::Parser(Parser *p)
 	fperr		= stderr;
 	parent		= p;
 	typeLibrary = p->typeLibrary;
-	ownsTypeLibrary = false;
-	lexer.SetTypeLibrary(typeLibrary);
+	ownsStrataLibrary = false;
+	lexer.SetStrataLibrary(typeLibrary);
 	lexer.SetParentLexer(&p->lexer);
 	lexer.SetErrorCallback(LexerError, this);
 	errcount = 0;
@@ -816,11 +816,11 @@ Parser::Parser(Parser *p)
 
 Parser::~Parser()
 {
-	if(ownsTypeLibrary)
+	if(ownsStrataLibrary)
 		delete typeLibrary;
 }
 
-TypeLibrary * Parser::GetTypeLibrary()
+StrataLibrary * Parser::GetStrataLibrary()
 {
 	return typeLibrary;
 }

@@ -1,7 +1,7 @@
 #ifndef STRUCTVIEW_STRUCTUREDEFINITIONMANAGER_H
 #define STRUCTVIEW_STRUCTUREDEFINITIONMANAGER_H
 
-#include "TypeLib/parser.h"
+#include "Causeway/parser.h"
 
 #include <QByteArray>
 #include <QObject>
@@ -37,7 +37,7 @@ class StructureDefinitionManager : public QObject
 public:
     explicit StructureDefinitionManager(QObject *parent = nullptr);
 
-    TypeLibrary *library() const;
+    StrataLibrary *library() const;
     QStringList definitionFiles() const;
     QList<ExportedStructureType> exportedTypes() const;
     QString lastError() const;
@@ -62,13 +62,13 @@ signals:
 private:
     QStringList discoverDefinitionFiles() const;
     bool parseFiles(const QStringList &files,
-                    TypeLibrary *library,
+                    StrataLibrary *library,
                     QString *errorSummary,
                     QString *errorDiagnostic) const;
     void updateWatchedFiles(const QStringList &files);
     void scheduleChangeNotification();
 
-    std::unique_ptr<TypeLibrary> m_library;
+    std::unique_ptr<StrataLibrary> m_library;
     QFileSystemWatcher          *m_watcher = nullptr;
     QTimer                       m_reloadTimer;
     QStringList                  m_definitionFiles;

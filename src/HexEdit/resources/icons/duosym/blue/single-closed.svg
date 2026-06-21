@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"
+ fill="none" color="#2563EB" stroke="currentColor" stroke-width="2.15"
+ stroke-linecap="round" stroke-linejoin="round" shape-rendering="geometricPrecision"
+ role="img" aria-labelledby="title desc">
+<title id="title">Single folder box, closed</title>
+<desc id="desc">Blue symbolic duotone variant. Symbolic isometric box with a complete top face.</desc>
+<path d="M32 7.5 50 21 32 34.5 14 21Z" fill="currentColor" fill-opacity=".10"/>
+<path d="M14 21 32 34.5 32 52 14 38.5Z" fill="currentColor" fill-opacity=".06"/>
+<path d="M32 34.5 50 21 50 38.5 32 52Z" fill="currentColor" fill-opacity=".14"/>
+<path d="M32 7.5 50 21 32 34.5 14 21Z"/>
+<path d="M14 21V38.5L32 52 50 38.5V21"/>
+<path d="M32 34.5V52"/>
+</svg>

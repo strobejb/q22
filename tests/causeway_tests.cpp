@@ -4,16 +4,16 @@
 
 #include <cstdio>
 
-class TypeLibTests : public QObject
+class CausewayTests : public QObject
 {
 	Q_OBJECT
 
 private slots:
 	void defaultParsersDoNotShareTypes();
-	void sharedTypeLibraryPoolsTypesAcrossParsers();
-	void includeParserUsesTheSameTypeLibrary();
+	void sharedStrataLibraryPoolsTypesAcrossParsers();
+	void includeParserUsesTheSameStrataLibrary();
 	void fileRefsRemainValidForSharedLibraryAfterParserDies();
-	void cleanupBelongsToTheTypeLibrary();
+	void cleanupBelongsToTheStrataLibrary();
 	void tagsetsParseAndExpand();
 	void tagsetErrorsArePrecise();
 	void includeDefinedTagsetsCanBeUsedByParent();
@@ -47,7 +47,7 @@ static int countTags(Tag *tag, TOKEN tok)
 	return count;
 }
 
-void TypeLibTests::defaultParsersDoNotShareTypes()
+void CausewayTests::defaultParsersDoNotShareTypes()
 {
 	// Scenario: two callers create ordinary Parser instances in the same process.
 	// Expected: a typedef parsed by the first parser is invisible to the second.
@@ -55,20 +55,20 @@ void TypeLibTests::defaultParsersDoNotShareTypes()
 	// between unrelated parser uses.
 	Parser first;
 	QVERIFY(parseBuffer(first, "typedef dword LocalOnly;\n"));
-	QCOMPARE(first.GetTypeLibrary()->globalTypeDeclList.size(), size_t(1));
+	QCOMPARE(first.GetStrataLibrary()->globalTypeDeclList.size(), size_t(1));
 
 	Parser second;
 	QVERIFY(!parseBuffer(second, "LocalOnly value;\n"));
-	QCOMPARE(second.GetTypeLibrary()->globalTypeDeclList.size(), size_t(0));
+	QCOMPARE(second.GetStrataLibrary()->globalTypeDeclList.size(), size_t(0));
 }
 
-void TypeLibTests::sharedTypeLibraryPoolsTypesAcrossParsers()
+void CausewayTests::sharedStrataLibraryPoolsTypesAcrossParsers()
 {
 	// Scenario: a caller deliberately parses multiple buffers into one library.
 	// Expected: the second parser can use a typedef produced by the first parser.
 	// Regression guard: moving globals into Parser must not remove the original
 	// ability to pool type declarations across related parses.
-	TypeLibrary library;
+	StrataLibrary library;
 
 	Parser first(&library);
 	QVERIFY(parseBuffer(first, "typedef dword SharedType;\n"));
@@ -80,10 +80,10 @@ void TypeLibTests::sharedTypeLibraryPoolsTypesAcrossParsers()
 	QCOMPARE(library.globalFileHistory.size(), size_t(2));
 }
 
-void TypeLibTests::includeParserUsesTheSameTypeLibrary()
+void CausewayTests::includeParserUsesTheSameStrataLibrary()
 {
 	// Scenario: a source file includes another source file which defines a type.
-	// Expected: the include-child parser contributes to the same TypeLibrary, and
+	// Expected: the include-child parser contributes to the same StrataLibrary, and
 	// the parent file can use the included typedef immediately afterwards.
 	// Regression guard: include parsers must not get an isolated library or clean
 	// up file buffers owned by the parent parse.
@@ -100,7 +100,7 @@ void TypeLibTests::includeParserUsesTheSameTypeLibrary()
 	QVERIFY(mainFile.write("include \"inc.tl\";\nIncludedType value;\n") > 0);
 	mainFile.close();
 
-	TypeLibrary library;
+	StrataLibrary library;
 	Parser parser(&library);
 	QVERIFY(parser.Ooof(qPrintable(mainFile.fileName())));
 
@@ -108,14 +108,14 @@ void TypeLibTests::includeParserUsesTheSameTypeLibrary()
 	QCOMPARE(library.globalTypeDeclList.size(), size_t(2));
 }
 
-void TypeLibTests::fileRefsRemainValidForSharedLibraryAfterParserDies()
+void CausewayTests::fileRefsRemainValidForSharedLibraryAfterParserDies()
 {
 	// Scenario: qexed keeps parsed declarations after the parser object is gone.
-	// Expected: FILEREF still points into FILE_DESC storage owned by TypeLibrary,
+	// Expected: FILEREF still points into FILE_DESC storage owned by StrataLibrary,
 	// so diagnostics and round-tripping can inspect the original source buffer.
 	// Regression guard: FILE_DESC lifetime used to be implicit process-global
 	// state; it must not become tied to a temporary Parser cursor.
-	TypeLibrary library;
+	StrataLibrary library;
 
 	{
 		Parser parser(&library);
@@ -129,14 +129,14 @@ void TypeLibTests::fileRefsRemainValidForSharedLibraryAfterParserDies()
 	QVERIFY(QByteArray(decl->fileRef.fileDesc->buf).contains("PersistedType"));
 }
 
-void TypeLibTests::cleanupBelongsToTheTypeLibrary()
+void CausewayTests::cleanupBelongsToTheStrataLibrary()
 {
-	// Scenario: callers own a shared TypeLibrary and decide when to discard it.
+	// Scenario: callers own a shared StrataLibrary and decide when to discard it.
 	// Expected: cleanup empties declarations and file buffers once at the library
 	// boundary; non-owning parsers do not delete shared state on destruction.
 	// Regression guard: moving lexer cleanup out of Parser must not leave stale
 	// FILE_DESC entries or double-delete include/parser state.
-	TypeLibrary library;
+	StrataLibrary library;
 
 	{
 		Parser parser(&library);
@@ -152,11 +152,11 @@ void TypeLibTests::cleanupBelongsToTheTypeLibrary()
 	QVERIFY(library.globalFileHistory.empty());
 }
 
-void TypeLibTests::tagsetsParseAndExpand()
+void CausewayTests::tagsetsParseAndExpand()
 {
-	// Scenario: a TypeLib file declares a reusable annotation block for repeated
+	// Scenario: a Strata file declares a reusable annotation block for repeated
 	// structure members.
-	// Expected: the tagset is stored on the TypeLibrary, while tags(NAME) expands
+	// Expected: the tagset is stored on the StrataLibrary, while tags(NAME) expands
 	// to ordinary cloned tags on the target declaration.
 	// Regression guard: PE data-directory rules should be declared once without
 	// teaching Structure View about a separate runtime tagset concept.
@@ -178,11 +178,11 @@ void TypeLibTests::tagsetsParseAndExpand()
 						"  [tags(DIRECTORY_TAGS)] DataDir dirs[2];\n"
 						"} root;\n"));
 
-	QCOMPARE(parser.GetTypeLibrary()->globalTagSetList.size(), size_t(1));
-	QCOMPARE(QString::fromLocal8Bit(parser.GetTypeLibrary()->globalTagSetList[0]->name), QStringLiteral("DIRECTORY_TAGS"));
+	QCOMPARE(parser.GetStrataLibrary()->globalTagSetList.size(), size_t(1));
+	QCOMPARE(QString::fromLocal8Bit(parser.GetStrataLibrary()->globalTagSetList[0]->name), QStringLiteral("DIRECTORY_TAGS"));
 
 	TypeDecl *root = nullptr;
-	for(TypeDecl *decl : parser.GetTypeLibrary()->globalTypeDeclList)
+	for(TypeDecl *decl : parser.GetStrataLibrary()->globalTypeDeclList)
 		if(decl && FindTag(decl->tagList, TOK_EXPORT, nullptr))
 			root = decl;
 
@@ -197,7 +197,7 @@ void TypeLibTests::tagsetsParseAndExpand()
 	QVERIFY(!FindTag(expanded, TOK_TAGS, nullptr));
 }
 
-void TypeLibTests::tagsetErrorsArePrecise()
+void CausewayTests::tagsetErrorsArePrecise()
 {
 	// Scenario: tagsets are a simple alias feature, not a macro language with
 	// forward references or composition.
@@ -224,9 +224,9 @@ void TypeLibTests::tagsetErrorsArePrecise()
 	QCOMPARE(nested.LastErr(), ERROR_TAGS_NOT_ALLOWED_IN_TAGSET);
 }
 
-void TypeLibTests::includeDefinedTagsetsCanBeUsedByParent()
+void CausewayTests::includeDefinedTagsetsCanBeUsedByParent()
 {
-	// Scenario: a shared TypeLibrary parses an included file that defines a
+	// Scenario: a shared StrataLibrary parses an included file that defines a
 	// reusable tagset, then the parent file consumes it.
 	// Expected: tagsets live in the same library-level result state as types, so
 	// includes can provide common annotation blocks.
@@ -244,7 +244,7 @@ void TypeLibTests::includeDefinedTagsetsCanBeUsedByParent()
 	QVERIFY(mainFile.write("include \"common.tl\";\nstruct Root { [tags(COMMON)] byte value; } root;\n") > 0);
 	mainFile.close();
 
-	TypeLibrary library;
+	StrataLibrary library;
 	Parser parser(&library);
 	QVERIFY(parser.Ooof(qPrintable(mainFile.fileName())));
 	QCOMPARE(library.globalTagSetList.size(), size_t(1));
@@ -256,9 +256,9 @@ void TypeLibTests::includeDefinedTagsetsCanBeUsedByParent()
 	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[0]->tagList, TOK_OFFSET, nullptr));
 }
 
-void TypeLibTests::tagsetsDumpInSourceOrder()
+void CausewayTests::tagsetsDumpInSourceOrder()
 {
-	// Scenario: TypeLib round-tripping emits the durable parse result back to a
+	// Scenario: Strata round-tripping emits the durable parse result back to a
 	// text file.
 	// Expected: tagset declarations remain ordinary source-order statements,
 	// while tagset uses have already expanded to normal tags.
@@ -288,11 +288,11 @@ void TypeLibTests::tagsetsDumpInSourceOrder()
 	QVERIFY(!dumped.contains("tags(COMMON)"));
 }
 
-void TypeLibTests::dynamicPlacementTagsParse()
+void CausewayTests::dynamicPlacementTagsParse()
 {
 	// Scenario: a structure definition uses the dynamic placement tags consumed
 	// by Structure View, including repeated dynamic_struct entries.
-	// Expected: TypeLib treats them as ordinary parsed tags with expression
+	// Expected: Strata treats them as ordinary parsed tags with expression
 	// payloads, so they can be round-tripped and interpreted by the renderer.
 	// Regression guard: dynamic PE placement must live in definition files, not
 	// in hard-coded C++ parser branches.
@@ -311,7 +311,7 @@ void TypeLibTests::dynamicPlacementTagsParse()
 						"} root;\n"));
 
 	TypeDecl *root = nullptr;
-	for(TypeDecl *decl : parser.GetTypeLibrary()->globalTypeDeclList)
+	for(TypeDecl *decl : parser.GetStrataLibrary()->globalTypeDeclList)
 	{
 		if(decl && FindTag(decl->tagList, TOK_EXPORT, nullptr))
 		{
@@ -331,28 +331,28 @@ void TypeLibTests::dynamicPlacementTagsParse()
 	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[2]->tagList, TOK_TERMINATEDBY, nullptr));
 }
 
-void TypeLibTests::viewTagsParse()
+void CausewayTests::viewTagsParse()
 {
-	// Scenario: a TypeLib declaration opts into a C++ semantic interpreter with
+	// Scenario: a Strata declaration opts into a C++ semantic interpreter with
 	// a compact view("id") hook.
 	// Expected: the parser preserves the string expression on the TypeDecl, so
 	// Structure View can run optional interpreters after raw rendering.
-	// Regression guard: semantic interpretation must remain declarative TypeLib
+	// Regression guard: semantic interpretation must remain declarative Strata
 	// metadata, not a hard-coded type-name check in the renderer.
 	Parser parser;
 	QVERIFY(parseBuffer(parser,
 						"[view(\"pe.imports\")]\n"
 						"typedef struct _Import { dword thunk; } ImportDesc;\n"));
 
-	QCOMPARE(parser.GetTypeLibrary()->globalTypeDeclList.size(), size_t(1));
+	QCOMPARE(parser.GetStrataLibrary()->globalTypeDeclList.size(), size_t(1));
 	ExprNode *expr = nullptr;
-	QVERIFY(FindTag(parser.GetTypeLibrary()->globalTypeDeclList[0]->tagList, TOK_VIEW, &expr));
+	QVERIFY(FindTag(parser.GetStrataLibrary()->globalTypeDeclList[0]->tagList, TOK_VIEW, &expr));
 	QVERIFY(expr);
 	QCOMPARE(expr->type, EXPR_STRINGBUF);
 	QCOMPARE(QString::fromLocal8Bit(expr->str), QStringLiteral("pe.imports"));
 }
 
-void TypeLibTests::descriptionTagsParseAndDisplayRemainsSeparate()
+void CausewayTests::descriptionTagsParseAndDisplayRemainsSeparate()
 {
 	// Scenario: an exported Structure View root declares a friendly UI label.
 	// Expected: description("...") is preserved as a normal string tag, while
@@ -364,8 +364,8 @@ void TypeLibTests::descriptionTagsParseAndDisplayRemainsSeparate()
 						"[export, description(\"Portable Executable (PE)\"), display(\"legacy\")]\n"
 						"struct Root { dword magic; } root;\n"));
 
-	QCOMPARE(parser.GetTypeLibrary()->globalTypeDeclList.size(), size_t(1));
-	TypeDecl *root = parser.GetTypeLibrary()->globalTypeDeclList[0];
+	QCOMPARE(parser.GetStrataLibrary()->globalTypeDeclList.size(), size_t(1));
+	TypeDecl *root = parser.GetStrataLibrary()->globalTypeDeclList[0];
 
 	ExprNode *description = nullptr;
 	QVERIFY(FindTag(root->tagList, TOK_DESCRIPTION, &description));
@@ -380,7 +380,7 @@ void TypeLibTests::descriptionTagsParseAndDisplayRemainsSeparate()
 	QCOMPARE(QString::fromLocal8Bit(display->str), QStringLiteral("legacy"));
 }
 
-void TypeLibTests::magicTagsParse()
+void CausewayTests::magicTagsParse()
 {
 	// Scenario: an exported root declares byte signatures for extensionless
 	// binary files, including a non-printable leading byte.
@@ -393,7 +393,7 @@ void TypeLibTests::magicTagsParse()
 						"[export, magic(0, { 'M', 'Z' }), magic(4, { 0x7F, 'E', 'L', 'F' })]\n"
 						"struct Root { byte value; } root;\n"));
 
-	TypeDecl *root = parser.GetTypeLibrary()->globalTypeDeclList[0];
+	TypeDecl *root = parser.GetStrataLibrary()->globalTypeDeclList[0];
 	QCOMPARE(countTags(root->tagList, TOK_MAGIC), 2);
 
 	Tag *magic = FindTag(root->tagList, TOK_MAGIC, nullptr);
@@ -421,7 +421,7 @@ void TypeLibTests::magicTagsParse()
 	QVERIFY(dumped.contains("magic(4, { 0x7F, 'E', 'L', 'F' })"));
 }
 
-void TypeLibTests::alignAndEntrypointTagsParse()
+void CausewayTests::alignAndEntrypointTagsParse()
 {
 	// Scenario: Structure View definitions annotate both layout and a field that
 	// identifies executable code.
@@ -439,7 +439,7 @@ void TypeLibTests::alignAndEntrypointTagsParse()
 						"} root;\n"));
 
 	TypeDecl *root = nullptr;
-	for(TypeDecl *decl : parser.GetTypeLibrary()->globalTypeDeclList)
+	for(TypeDecl *decl : parser.GetStrataLibrary()->globalTypeDeclList)
 		if(decl && FindTag(decl->tagList, TOK_EXPORT, nullptr))
 			root = decl;
 
@@ -452,10 +452,10 @@ void TypeLibTests::alignAndEntrypointTagsParse()
 	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[1]->tagList, TOK_ENTRYPOINT, nullptr));
 }
 
-void TypeLibTests::extentTagsAndScalarSizeofParse()
+void CausewayTests::extentTagsAndScalarSizeofParse()
 {
 	// Scenario: a binary format has a declaration whose file span is stored in
-	// the data rather than implied by the selected TypeLib branch, and expressions
+	// the data rather than implied by the selected Strata branch, and expressions
 	// occasionally need small static scalar sizes.
 	// Expected: extent(expr) is preserved as a normal tag, while sizeof(name) is
 	// accepted only for a single scalar type name or scalar typedef alias.
@@ -472,7 +472,7 @@ void TypeLibTests::extentTagsAndScalarSizeofParse()
 						"} root;\n"));
 
 	TypeDecl *root = nullptr;
-	for(TypeDecl *decl : parser.GetTypeLibrary()->globalTypeDeclList)
+	for(TypeDecl *decl : parser.GetStrataLibrary()->globalTypeDeclList)
 		if(decl && FindTag(decl->tagList, TOK_EXPORT, nullptr))
 			root = decl;
 
@@ -498,7 +498,7 @@ void TypeLibTests::extentTagsAndScalarSizeofParse()
 	QCOMPARE(fieldSizeof.LastErr(), ERROR_SIZEOF_SCALAR_ONLY);
 }
 
-void TypeLibTests::endianExpressionTagsParse()
+void CausewayTests::endianExpressionTagsParse()
 {
 	// Scenario: a binary format declares its byte order inside an already
 	// addressable field rather than as a fixed string in the definition file.
@@ -513,7 +513,7 @@ void TypeLibTests::endianExpressionTagsParse()
 						"struct Root { byte header[1]; word value; } root;\n"));
 
 	TypeDecl *root = nullptr;
-	for(TypeDecl *decl : parser.GetTypeLibrary()->globalTypeDeclList)
+	for(TypeDecl *decl : parser.GetStrataLibrary()->globalTypeDeclList)
 		if(decl && FindTag(decl->tagList, TOK_EXPORT, nullptr))
 			root = decl;
 
@@ -524,11 +524,11 @@ void TypeLibTests::endianExpressionTagsParse()
 	QCOMPARE(expr->type, EXPR_BINARY);
 }
 
-void TypeLibTests::ternaryExpressionTagsParse()
+void CausewayTests::ternaryExpressionTagsParse()
 {
 	// Scenario: a definition chooses a render-time count from file data using
 	// C-style conditional syntax.
-	// Expected: TypeLib preserves the ternary expression as the size_is payload,
+	// Expected: Strata preserves the ternary expression as the size_is payload,
 	// so the renderer can evaluate the selected branch later.
 	// Regression guard: conditional expressions should remain part of the small
 	// expression language instead of forcing format-specific C++ for simple
@@ -542,7 +542,7 @@ void TypeLibTests::ternaryExpressionTagsParse()
 						"} root;\n"));
 
 	TypeDecl *root = nullptr;
-	for(TypeDecl *decl : parser.GetTypeLibrary()->globalTypeDeclList)
+	for(TypeDecl *decl : parser.GetStrataLibrary()->globalTypeDeclList)
 		if(decl && FindTag(decl->tagList, TOK_EXPORT, nullptr))
 			root = decl;
 
@@ -559,9 +559,9 @@ void TypeLibTests::ternaryExpressionTagsParse()
 	QCOMPARE(expr->left->type, EXPR_TERTIARY);
 }
 
-void TypeLibTests::lengthIsIsReserved()
+void CausewayTests::lengthIsIsReserved()
 {
-	// Scenario: TypeLib knows the IDL-flavoured length_is keyword, but qexed
+	// Scenario: Strata knows the IDL-flavoured length_is keyword, but qexed
 	// does not implement its rendering semantics.
 	// Expected: the parser rejects it with a deliberate reserved-keyword error
 	// instead of accepting a tag that Structure View will ignore later.
@@ -576,10 +576,10 @@ void TypeLibTests::lengthIsIsReserved()
 	QCOMPARE(parser.LastErr(), ERROR_RESERVED_KEYWORD);
 }
 
-void TypeLibTests::unsizedArraysRequireSizeIs()
+void CausewayTests::unsizedArraysRequireSizeIs()
 {
 	// Scenario: a definition declares a flexible array member with [] but gives
-	// no TypeLib count tag.
+	// no Strata count tag.
 	// Expected: the parser rejects the declaration because Structure View cannot
 	// safely infer how many elements to render.
 	// Regression guard: empty arrays should not silently render as zero elements
@@ -599,20 +599,20 @@ void TypeLibTests::unsizedArraysRequireSizeIs()
 						"} root;\n"));
 }
 
-void TypeLibTests::elfRootIsExportedAndAssociated()
+void CausewayTests::elfRootIsExportedAndAssociated()
 {
 	// Scenario: qexed ships ELF as a real Structure View root definition.
 	// Expected: elf.struct parses to an exported root with common ELF suffix
 	// associations, so the UI can list and auto-select it like PE.
 	// Regression guard: ELF support should not remain a stale standalone header
 	// typedef that never appears in the Structure View picker.
-	const QDir typeLibDir(QStringLiteral(TYPELIB_TEST_DATA_DIR));
+	const QDir typeLibDir(QStringLiteral(CAUSEWAY_TEST_DATA_DIR));
 	const QString path = typeLibDir.filePath(QStringLiteral("elf.struct"));
 	Parser parser;
 	QVERIFY2(parser.Ooof(qPrintable(path)), qPrintable(parser.LastErrStr()));
 
 	TypeDecl *elf = nullptr;
-	for(TypeDecl *decl : parser.GetTypeLibrary()->globalTypeDeclList)
+	for(TypeDecl *decl : parser.GetStrataLibrary()->globalTypeDeclList)
 		if(decl && FindTag(decl->tagList, TOK_EXPORT, nullptr))
 			elf = decl;
 
@@ -645,13 +645,13 @@ void TypeLibTests::elfRootIsExportedAndAssociated()
 	QVERIFY(containsAssoc(containsAssoc, assoc, QStringLiteral(".o")));
 }
 
-void TypeLibTests::standardTypelibFilesParse()
+void CausewayTests::standardTypelibFilesParse()
 {
-	// Scenario: qexed ships real TypeLib definition files for users and tests.
+	// Scenario: qexed ships real Strata definition files for users and tests.
 	// Expected: every shipped example parses from the runtime data directory, and
 	// relative includes such as elf.struct -> basetypes.struct resolve naturally.
 	// Regression guard: the examples must not drift into stale, untested app data.
-	const QDir typeLibDir(QStringLiteral(TYPELIB_TEST_DATA_DIR));
+	const QDir typeLibDir(QStringLiteral(CAUSEWAY_TEST_DATA_DIR));
 	QVERIFY2(typeLibDir.exists(), qPrintable(typeLibDir.absolutePath()));
 
 	const QStringList files = {
@@ -672,12 +672,12 @@ void TypeLibTests::standardTypelibFilesParse()
 
 		Parser parser;
 		QVERIFY2(parser.Ooof(qPrintable(path)), qPrintable(parser.LastErrStr()));
-		QVERIFY2(!parser.GetTypeLibrary()->globalTypeDeclList.empty(), qPrintable(file));
+		QVERIFY2(!parser.GetStrataLibrary()->globalTypeDeclList.empty(), qPrintable(file));
 
 		if(file == QStringLiteral("pe.struct"))
 		{
 			TypeDecl *pe = nullptr;
-			for(TypeDecl *decl : parser.GetTypeLibrary()->globalTypeDeclList)
+			for(TypeDecl *decl : parser.GetStrataLibrary()->globalTypeDeclList)
 				if(decl && FindTag(decl->tagList, TOK_EXPORT, nullptr))
 					pe = decl;
 
@@ -692,5 +692,5 @@ void TypeLibTests::standardTypelibFilesParse()
 	}
 }
 
-QTEST_MAIN(TypeLibTests)
-#include "typelib_tests.moc"
+QTEST_MAIN(CausewayTests)
+#include "causeway_tests.moc"

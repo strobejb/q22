@@ -20,7 +20,7 @@ class StructViewTests : public QObject
 private slots:
     void managerCreatesUserStructsDirectory();
     void managerDiscoversBuiltinAndUserDefinitionFiles();
-    void reloadSwapsInParsedTypeLibrary();
+    void reloadSwapsInParsedStrataLibrary();
     void managerReportsChangedDefinitionsWithoutAutoReload();
     void failedReloadPreservesPreviousLibrary();
     void exportedTypesUseExplicitExportTagsOnly();
@@ -87,7 +87,7 @@ static bool parseBuffer(Parser &parser, const char *text)
     return parser.Parse() != 0;
 }
 
-static TypeDecl *firstExported(TypeLibrary *library)
+static TypeDecl *firstExported(StrataLibrary *library)
 {
     if (!library)
         return nullptr;
@@ -99,7 +99,7 @@ static TypeDecl *firstExported(TypeLibrary *library)
     return nullptr;
 }
 
-static std::vector<std::unique_ptr<StructureRow>> buildRows(TypeLibrary *library,
+static std::vector<std::unique_ptr<StructureRow>> buildRows(StrataLibrary *library,
                                                             TypeDecl *root,
                                                             const QByteArray &bytes,
                                                             uint64_t baseOffset = 0)
@@ -119,23 +119,23 @@ static std::vector<std::unique_ptr<StructureRow>> buildRows(TypeLibrary *library
                          });
 }
 
-static bool parseStandardElfDefinition(TypeLibrary *library)
+static bool parseStandardElfDefinition(StrataLibrary *library)
 {
     if (!library)
         return false;
 
     Parser parser(library);
-    const QString path = QDir(QStringLiteral(TYPELIB_TEST_DATA_DIR)).filePath(QStringLiteral("elf.struct"));
+    const QString path = QDir(QStringLiteral(CAUSEWAY_TEST_DATA_DIR)).filePath(QStringLiteral("elf.struct"));
     return parser.Ooof(qPrintable(path));
 }
 
-static bool parseStandardDefinition(TypeLibrary *library, const QString &fileName)
+static bool parseStandardDefinition(StrataLibrary *library, const QString &fileName)
 {
     if (!library)
         return false;
 
     Parser parser(library);
-    const QString path = QDir(QStringLiteral(TYPELIB_TEST_DATA_DIR)).filePath(fileName);
+    const QString path = QDir(QStringLiteral(CAUSEWAY_TEST_DATA_DIR)).filePath(fileName);
     return parser.Ooof(qPrintable(path));
 }
 
@@ -247,7 +247,7 @@ void StructViewTests::managerDiscoversBuiltinAndUserDefinitionFiles()
     QTemporaryDir temp;
     QVERIFY(temp.isValid());
 
-    const QString builtinDir = temp.filePath(QStringLiteral("typelib"));
+    const QString builtinDir = temp.filePath(QStringLiteral("strata"));
     const QString userDir = temp.filePath(QStringLiteral("structs"));
     QVERIFY(QDir().mkpath(builtinDir));
     QVERIFY(QDir().mkpath(userDir));
@@ -263,10 +263,10 @@ void StructViewTests::managerDiscoversBuiltinAndUserDefinitionFiles()
     QCOMPARE(manager.definitionFiles().size(), 3);
 }
 
-void StructViewTests::reloadSwapsInParsedTypeLibrary()
+void StructViewTests::reloadSwapsInParsedStrataLibrary()
 {
     // Scenario: the user accepts a valid definition set by reloading it.
-    // Expected: the manager publishes a fresh TypeLibrary containing parsed
+    // Expected: the manager publishes a fresh StrataLibrary containing parsed
     // declarations from that definition set.
     // Regression guard: reload must not merely rescan filenames while leaving
     // the old parser result in place.
@@ -290,7 +290,7 @@ void StructViewTests::managerReportsChangedDefinitionsWithoutAutoReload()
 {
     // Scenario: a watched .struct file is saved while the Structure View is open.
     // Expected: the manager reports that definitions changed, but leaves the
-    // active TypeLibrary alone until the user explicitly clicks Reload.
+    // active StrataLibrary alone until the user explicitly clicks Reload.
     // Regression guard: file watching used to auto-reload immediately, which
     // could surprise users while they were still editing a broken definition.
     QTemporaryDir temp;
@@ -306,7 +306,7 @@ void StructViewTests::managerReportsChangedDefinitionsWithoutAutoReload()
     manager.setUserStructsDirForTests(userDir);
 
     QVERIFY2(manager.reload(), qPrintable(manager.lastError()));
-    TypeLibrary *activeLibrary = manager.library();
+    StrataLibrary *activeLibrary = manager.library();
     QVERIFY(activeLibrary);
 
     QSignalSpy changedSpy(&manager, &StructureDefinitionManager::definitionFilesChanged);
@@ -321,7 +321,7 @@ void StructViewTests::managerReportsChangedDefinitionsWithoutAutoReload()
 void StructViewTests::failedReloadPreservesPreviousLibrary()
 {
     // Scenario: a user saves a broken definition while the panel is open.
-    // Expected: the error is reported, but the previous valid TypeLibrary stays
+    // Expected: the error is reported, but the previous valid StrataLibrary stays
     // alive so the Structure View does not blank itself during an editing typo.
     // Regression guard: failed reloads must not replace good parse results with
     // an empty or half-built library.
@@ -338,11 +338,11 @@ void StructViewTests::failedReloadPreservesPreviousLibrary()
     manager.setUserStructsDirForTests(userDir);
 
     QVERIFY(manager.reload());
-    TypeLibrary *stableLibrary = manager.library();
+    StrataLibrary *stableLibrary = manager.library();
     QVERIFY(stableLibrary);
     QCOMPARE(stableLibrary->globalTypeDeclList.size(), size_t(1));
 
-    writeTextFile(filePath, "this is not valid TypeLib syntax\n");
+    writeTextFile(filePath, "this is not valid Strata syntax\n");
     QVERIFY(!manager.reload());
     QCOMPARE(manager.library(), stableLibrary);
     QCOMPARE(manager.library()->globalTypeDeclList.size(), size_t(1));
@@ -356,7 +356,7 @@ void StructViewTests::failedReloadPreservesPreviousLibrary()
 void StructViewTests::exportedTypesUseExplicitExportTagsOnly()
 {
     // Scenario: a definition file contains many parseable declarations, but only
-    // one is marked as user-facing with the TypeLib [export] tag.
+    // one is marked as user-facing with the Strata [export] tag.
     // Expected: the Structure View root selector lists only the tagged type.
     // Regression guard: Parser::exported remains intentionally permissive for
     // round-tripping, so the UI must filter on the real TOK_EXPORT tag instead.
@@ -382,7 +382,7 @@ void StructViewTests::exportedTypesUseExplicitExportTagsOnly()
 
 void StructViewTests::exportedTypesExposeAssocExtensions()
 {
-    // Scenario: an exported TypeLib declaration declares file associations.
+    // Scenario: an exported Strata declaration declares file associations.
     // Expected: the Structure View loader exposes normalized lowercase suffixes
     // so the panel can auto-select the matching root type for the current file.
     // Regression guard: PE/ELF-style definitions should not require the user to
@@ -411,7 +411,7 @@ void StructViewTests::exportedTypesExposeMagicSignatures()
     // Scenario: an exported Structure View root declares byte signatures for
     // files that may not have a useful extension.
     // Expected: the manager exposes normalized magic bytes, including numeric
-    // byte fragments, without asking the panel to understand TypeLib syntax.
+    // byte fragments, without asking the panel to understand Strata syntax.
     // Regression guard: auto-selection for extensionless ELF-style binaries
     // should be data-driven by definitions rather than hard-coded in the UI.
     QTemporaryDir temp;
@@ -443,7 +443,7 @@ void StructViewTests::exportedTypesExposeDescriptions()
     // Structure View dropdown, while older definitions may omit it.
     // Expected: the manager exposes the string description when present and an
     // empty string when absent, leaving the panel to use its existing fallback.
-    // Regression guard: root labels should be TypeLib metadata, not hard-coded
+    // Regression guard: root labels should be Strata metadata, not hard-coded
     // PE/ELF special cases in the combo box.
     QTemporaryDir temp;
     QVERIFY(temp.isValid());
@@ -475,7 +475,7 @@ void StructViewTests::builderFormatsScalarsAndEndian()
     // the default, and [endian("big")] only changes the tagged declaration.
     // Regression guard: the Structure View grid must show file data, not just
     // the parsed type outline.
-    TypeLibrary library;
+    StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
                         "[export]\n"
@@ -500,7 +500,7 @@ void StructViewTests::builderFormatsCharacterArraysAsStrings()
     // gives the useful quoted string preview instead of a generic {...}.
     // Regression guard: strings are a common binary-structure case and should be
     // readable without expanding every character cell.
-    TypeLibrary library;
+    StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
                         "[export]\n"
@@ -526,7 +526,7 @@ void StructViewTests::builderFormatsScalarArraysAsPreviewLists()
     // the first scalar elements and adds an ellipsis when the array is longer.
     // Regression guard: scalar arrays should be quickly readable without opening
     // every child row, while char/wchar arrays keep their string-specific path.
-    TypeLibrary library;
+    StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
                         "[export]\n"
@@ -548,14 +548,14 @@ void StructViewTests::builderFormatsScalarArraysAsPreviewLists()
 
 void StructViewTests::builderPopulatesCommentsFromTypeDeclarations()
 {
-    // Scenario: TypeLib definitions use ordinary C/C++ trailing comments to
+    // Scenario: Strata definitions use ordinary C/C++ trailing comments to
     // document fields and structures.
     // Expected: Structure View displays a trimmed copy of those comments in the
     // Comment column, while the parser keeps the original whitespace refs for
     // round-tripping.
     // Regression guard: comments used to be captured in source whitespace only,
     // leaving rendered structure rows with an empty Comment column.
-    TypeLibrary library;
+    StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
                         "[export]\n"
@@ -579,7 +579,7 @@ void StructViewTests::builderUsesPackedLayoutByDefault()
     // default for this IDL dialect.
     // Regression guard: adding align support must not silently switch existing
     // definitions to compiler-like natural alignment.
-    TypeLibrary library;
+    StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
                         "[export]\n"
@@ -602,7 +602,7 @@ void StructViewTests::builderAppliesStructAndFieldAlignment()
     // field-level align overrides it for that member only.
     // Regression guard: align tags should work both as compound layout policy
     // and as a local field placement override.
-    TypeLibrary library;
+    StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
                         "[export, align(4)]\n"
@@ -631,7 +631,7 @@ void StructViewTests::builderLetsOffsetOverrideAlignment()
     // rounded by align.
     // Regression guard: PE/ELF definitions use offset for exact locations; align
     // must not move those fields.
-    TypeLibrary library;
+    StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
                         "[export, align(8)]\n"
@@ -652,7 +652,7 @@ void StructViewTests::builderKeepsUnionMembersAtAlignedBase()
     // starts at the same base offset.
     // Regression guard: alignment must not accidentally serialize union members
     // as if they were struct fields.
-    TypeLibrary library;
+    StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
                         "[export, align(4)]\n"
@@ -695,8 +695,8 @@ void StructViewTests::builderUsesExtentToAdvancePastRenderedUnionSize()
                         "  byte after;\n"
                         "} root;\n"));
 
-    auto rows = buildRows(parser.GetTypeLibrary(),
-                          firstExported(parser.GetTypeLibrary()),
+    auto rows = buildRows(parser.GetStrataLibrary(),
+                          firstExported(parser.GetStrataLibrary()),
                           QByteArray::fromHex("03AA000000000000000B"));
 
     QCOMPARE(rows.size(), size_t(1));
@@ -736,8 +736,8 @@ void StructViewTests::builderSkipsAbsentOptionalDeclarations()
                         "  [size_is(ntHeaders.FileHeader.NumberOfSections)] Section sections[];\n"
                         "} root;\n"));
 
-    auto rows = buildRows(parser.GetTypeLibrary(),
-                          firstExported(parser.GetTypeLibrary()),
+    auto rows = buildRows(parser.GetStrataLibrary(),
+                          firstExported(parser.GetStrataLibrary()),
                           QByteArray::fromHex("00000000" "02" "00" "0A0B"));
 
     QCOMPARE(rows.size(), size_t(1));
@@ -750,13 +750,13 @@ void StructViewTests::builderSkipsAbsentOptionalDeclarations()
 void StructViewTests::builderUsesSizeIsForUnsizedArrays()
 {
     // Scenario: a file format stores an array count in an earlier field, and
-    // the TypeLib declaration uses [] plus [size_is(...)] rather than a fixed
+    // the Strata declaration uses [] plus [size_is(...)] rather than a fixed
     // declarator bound.
     // Expected: the parser accepts the unsized array syntax and the renderer
     // expands exactly the count read from the already-rendered structure data.
     // Regression guard: PE section headers must not be capped by a placeholder
     // array size in pe.struct just because the count is data-driven.
-    TypeLibrary library;
+    StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
                         "typedef struct _Header { byte count; } Header;\n"
@@ -793,7 +793,7 @@ void StructViewTests::builderEvaluatesTernaryExpressions()
         "} root;\n";
 
     auto render = [definition](const QByteArray &bytes) {
-        auto library = std::make_unique<TypeLibrary>();
+        auto library = std::make_unique<StrataLibrary>();
         Parser parser(library.get());
         if (!parseBuffer(parser, definition))
             return std::vector<std::unique_ptr<StructureRow>>();
@@ -840,7 +840,7 @@ void StructViewTests::builderUsesCommonUnionPrefixForSizeIs()
         "} root;\n";
 
     auto render = [definition](const QByteArray &bytes) {
-        auto library = std::make_unique<TypeLibrary>();
+        auto library = std::make_unique<StrataLibrary>();
         Parser parser(library.get());
         if (!parseBuffer(parser, definition))
             return std::vector<std::unique_ptr<StructureRow>>();
@@ -886,7 +886,7 @@ void StructViewTests::builderEvaluatesTernaryUnionMemberSizeAndOffset()
         "} root;\n";
 
     auto render = [definition](const QByteArray &bytes) {
-        auto library = std::make_unique<TypeLibrary>();
+        auto library = std::make_unique<StrataLibrary>();
         Parser parser(library.get());
         if (!parseBuffer(parser, definition))
             return std::vector<std::unique_ptr<StructureRow>>();
@@ -929,7 +929,7 @@ void StructViewTests::builderEvaluatesEndianAwareUnionMembers()
         "} root;\n";
 
     auto render = [definition](const QByteArray &bytes) {
-        auto library = std::make_unique<TypeLibrary>();
+        auto library = std::make_unique<StrataLibrary>();
         Parser parser(library.get());
         if (!parseBuffer(parser, definition))
             return std::vector<std::unique_ptr<StructureRow>>();
@@ -955,7 +955,7 @@ void StructViewTests::builderEvaluatesArrayIndexedUnionMembers()
     // the final field value.
     // Regression guard: offset/size/name expressions often grow from simple
     // fields into paths like header64.entries[1].count as format support matures.
-    TypeLibrary library;
+    StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
                         "typedef struct _Entry { byte count; byte marker; } Entry;\n"
@@ -983,7 +983,7 @@ void StructViewTests::builderUsesNameFieldForStructArrayElements()
     // child field value to each element row, giving labels like "[0].text".
     // Regression guard: name tags used to work only for enum-indexed arrays, so
     // section headers could not surface their embedded Name field in the grid.
-    TypeLibrary library;
+    StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
                         "typedef struct _Section { char Name[8]; dword size; } Section;\n"
@@ -1016,7 +1016,7 @@ void StructViewTests::builderAlignsFieldNamesWithinCompoundTypes()
     // pieces, letting the delegate align identifiers with font metrics.
     // Regression guard: visual alignment must not be faked with spaces because
     // proportional UI fonts make character-count padding visibly wrong.
-    TypeLibrary library;
+    StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
                         "[export]\n"
@@ -1041,7 +1041,7 @@ void StructViewTests::builderBuildsNestedStructRowsAndOffsets()
     // and offsets are displayed as zero-padded absolute hex addresses.
     // Regression guard: recursive rendering must not collapse nested structs
     // into a flat definition list or lose byte positions.
-    TypeLibrary library;
+    StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
                         "struct Inner { byte x; word y; };\n"
@@ -1061,13 +1061,13 @@ void StructViewTests::builderBuildsNestedStructRowsAndOffsets()
 
 void StructViewTests::builderSupportsArraysOffsetsEnumsAndSwitchCases()
 {
-    // Scenario: TypeLib tags drive the visual interpretation: an offset jumps to
+    // Scenario: Strata tags drive the visual interpretation: an offset jumps to
     // a later byte, enum values display labels, arrays use evaluated counts, and
     // a switch_is union chooses the matching case.
     // Expected: each of those legacy-core tags affects only the relevant rows.
     // Regression guard: the new engine must preserve the useful old TypeView
     // behaviour without keeping the Win32 grid dependency.
-    TypeLibrary library;
+    StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
                         "enum Kind { One = 1, Two = 2 };\n"
@@ -1103,7 +1103,7 @@ void StructViewTests::builderExposesEnumChoicesAndEntrypoints()
     // and the entrypoint row exposes a concrete file offset for UI integration.
     // Regression guard: dropdown editing and disassembler handoff should be
     // driven by renderer metadata, not by parsing display text in the delegate.
-    TypeLibrary library;
+    StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
                         "enum Kind { One = 1, Two = 2 };\n"
@@ -1135,7 +1135,7 @@ void StructViewTests::builderEvaluatesUnionSwitchSelectorsFromTypedLayout()
     // the union offset, then render only the matching case.
     // Regression guard: PE uses ntHeaders32.OptionalHeader.Magic this way, so
     // row-context-only evaluation cannot decide the union case.
-    TypeLibrary library;
+    StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
                         "[export]\n"
@@ -1164,8 +1164,8 @@ void StructViewTests::builderEvaluatesFieldsAndCorrectedExpressions()
     // Expected: field lookup reads from the row context rather than from UI text
     // or a process-global grid item.
     // Regression guard: expression evaluation is the most important separation
-    // point between TypeLib syntax and file-data rendering.
-    TypeLibrary library;
+    // point between Strata syntax and file-data rendering.
+    StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
                         "[export]\n"
@@ -1190,13 +1190,13 @@ void StructViewTests::builderUsesDynamicEndianExpressions()
     // Expected: the same definition renders big-endian and little-endian inputs
     // differently, and expression reads inherit that byte order too.
     // Regression guard: ELF must not require hard-coded C++ endian knowledge for
-    // ordinary raw fields declared in TypeLib.
+    // ordinary raw fields declared in Strata.
     const char *definition =
         "[export, endian(marker == 2)]\n"
         "struct Root { byte marker; word value; dword count; byte items[count]; } root;\n";
 
     auto render = [definition](const QByteArray &bytes) {
-        auto library = std::make_unique<TypeLibrary>();
+        auto library = std::make_unique<StrataLibrary>();
         Parser parser(library.get());
         if (!parseBuffer(parser, definition))
             return std::vector<std::unique_ptr<StructureRow>>();
@@ -1233,7 +1233,7 @@ void StructViewTests::builderEvaluatesEnumIndexedArraysInExpressions()
         "} root;\n";
 
     auto render = [definition](const QByteArray &bytes) {
-        auto library = std::make_unique<TypeLibrary>();
+        auto library = std::make_unique<StrataLibrary>();
         Parser parser(library.get());
         if (!parseBuffer(parser, definition))
             return std::vector<std::unique_ptr<StructureRow>>();
@@ -1272,7 +1272,7 @@ void StructViewTests::builderEvaluatesEnumIndexedUnionMembersInExpressions()
         "} root;\n";
 
     auto render = [definition](const QByteArray &bytes) {
-        auto library = std::make_unique<TypeLibrary>();
+        auto library = std::make_unique<StrataLibrary>();
         Parser parser(library.get());
         if (!parseBuffer(parser, definition))
             return std::vector<std::unique_ptr<StructureRow>>();
@@ -1298,13 +1298,13 @@ void StructViewTests::builderUsesSimpleRootNamesForBuiltinTypedefRoots()
     // users, matching PE's long-standing "PE" display.
     // Regression guard: moving tags between typedefs and variable declarations
     // should not reintroduce noisy root labels like "ELF elf".
-    TypeLibrary peLibrary;
+    StrataLibrary peLibrary;
     QVERIFY2(parseStandardDefinition(&peLibrary, QStringLiteral("pe.struct")), "pe.struct failed to parse");
     auto peRows = buildRows(&peLibrary, firstExported(&peLibrary), QByteArray(512, '\0'));
     QCOMPARE(peRows.size(), size_t(1));
     QCOMPARE(peRows[0]->name, QStringLiteral("PE"));
 
-    TypeLibrary elfLibrary;
+    StrataLibrary elfLibrary;
     QVERIFY2(parseStandardDefinition(&elfLibrary, QStringLiteral("elf.struct")), "elf.struct failed to parse");
     QByteArray elfBytes(128, '\0');
     elfBytes[0] = char(0x7f);
@@ -1321,11 +1321,11 @@ void StructViewTests::builderUsesSimpleRootNamesForBuiltinTypedefRoots()
 void StructViewTests::builderRendersElf32AndElf64Tables()
 {
     // Scenario: ELF stores the 32/64-bit layout choice in e_ident[EI_CLASS].
-    // Expected: TypeLib switch_is selects the matching header branch, and the
+    // Expected: Strata switch_is selects the matching header branch, and the
     // program/section table arrays use offsets and counts from that branch.
     // Regression guard: ELF support must not assume PE-like fixed offsets or a
     // single word size.
-    TypeLibrary library32;
+    StrataLibrary library32;
     QVERIFY2(parseStandardElfDefinition(&library32), "elf.struct failed to parse");
     QByteArray elf32(0x180, '\0');
     elf32[0] = char(0x7f);
@@ -1362,7 +1362,7 @@ void StructViewTests::builderRendersElf32AndElf64Tables()
     QCOMPARE(sections32->children.size(), size_t(2));
     QCOMPARE(header32->children[3]->value, QStringLiteral("305419896"));
 
-    TypeLibrary library32be;
+    StrataLibrary library32be;
     QVERIFY2(parseStandardElfDefinition(&library32be), "elf.struct failed to parse");
     QByteArray elf32be(0x180, '\0');
     elf32be[0] = char(0x7f);
@@ -1389,7 +1389,7 @@ void StructViewTests::builderRendersElf32AndElf64Tables()
     QVERIFY(header32be);
     QCOMPARE(header32be->children[3]->value, QStringLiteral("16909060"));
 
-    TypeLibrary library64;
+    StrataLibrary library64;
     QVERIFY2(parseStandardElfDefinition(&library64), "elf.struct failed to parse");
     QByteArray elf64(0x180, '\0');
     elf64[0] = char(0x7f);
@@ -1425,9 +1425,9 @@ void StructViewTests::builderPlacesDynamicStructsUnderNamedDynamicContainers()
     // section-header array declares named dynamic containers and RVA mapping.
     // Expected: SECTION rows are rendered at the root using [name] aliases, and
     // the dynamic structure appears under the SECTION whose range contains it.
-    // Regression guard: optional PE structures must be declared in TypeLib data,
+    // Regression guard: optional PE structures must be declared in Strata data,
     // not hard-coded into the Structure View renderer.
-    TypeLibrary library;
+    StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
                         "enum Dir { Export = 0, Import = 1 };\n"
@@ -1519,7 +1519,7 @@ void StructViewTests::builderRendersDynamicArraysAtReferencedOffsets()
     // pretending it is an inline field of the C structure.
     // Regression guard: dynamic_array must stay generic and reuse offset_map,
     // not rely on PE-specific semantic interpreter code.
-    TypeLibrary library;
+    StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
                         "typedef dword Entry;\n"
@@ -1567,7 +1567,7 @@ void StructViewTests::builderStopsDynamicAndInlineArraysAtTerminators()
     // it for layout so the following field appears at the correct offset.
     // Regression guard: C strings and null descriptor arrays should not require
     // one-off PE/import semantic code just to stop at zero.
-    TypeLibrary library;
+    StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
                         "typedef struct _Desc { dword Value; } Desc;\n"
@@ -1629,7 +1629,7 @@ void StructViewTests::builderRunsSemanticViewsOnceForDynamicArrayTables()
                                                                       context.appendSemanticRow(context.currentRow(), QStringLiteral("semantic marker"), QString());
                                                                   });
 
-    TypeLibrary library;
+    StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
                         "[view(\"test.dynamic_array.once\")]\n"
@@ -1679,7 +1679,7 @@ void StructViewTests::builderNamesPeDynamicSectionsFromStandardDefinition()
     // section header, producing user-visible names such as SECTION .text.
     // Regression guard: fixed-width PE section names must survive the generic
     // dynamic_container handoff instead of falling back to a bare SECTION node.
-    TypeLibrary library;
+    StrataLibrary library;
     QVERIFY2(parseStandardDefinition(&library, QStringLiteral("pe.struct")), "pe.struct failed to parse");
 
     QByteArray bytes(0x300, '\0');
@@ -1734,7 +1734,7 @@ void StructViewTests::builderNamesPeDynamicSectionsFromStandardDefinition()
 void StructViewTests::semanticRegistryRunsKnownViewsAndIgnoresUnknownViews()
 {
     // Scenario: semantic rendering is an optional interpreter layer selected by
-    // string ids in TypeLib definitions.
+    // string ids in Strata definitions.
     // Expected: known ids can append semantic rows through the shared context,
     // while unknown ids are ignored without affecting the raw row tree.
     // Regression guard: new semantic views must be pluggable and safe, not a
@@ -1765,8 +1765,8 @@ void StructViewTests::builderRunsSemanticViewsAfterDynamicPlacement()
     // Expected: raw IMAGE_IMPORT_DESCRIPTOR fields stay visible, then semantic
     // DLL/function rows are appended beneath the dynamically placed import row.
     // Regression guard: PE knowledge must augment dynamic rows after RVA mapping
-    // has found the containing section, not replace the raw TypeLib rendering.
-    TypeLibrary library;
+    // has found the containing section, not replace the raw Strata rendering.
+    StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
                         "enum Dir { Import = 0 };\n"
@@ -1842,7 +1842,7 @@ void StructViewTests::builderKeepsRawDynamicRowsWhenSemanticImportDataIsTruncate
     // IMAGE_IMPORT_DESCRIPTOR row and its fields remain available.
     // Regression guard: educational views must never make the base structure
     // renderer brittle when a file is malformed or partially loaded.
-    TypeLibrary library;
+    StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
                         "enum Dir { Import = 0 };\n"
@@ -1991,11 +1991,11 @@ void StructViewTests::builderAddsElfSectionAndSymbolSemanticRows()
 {
     // Scenario: an ELF file has a section-header string table plus a symbol
     // table linked to its own string table.
-    // Expected: the raw TypeLib tables remain visible, and the semantic pass
+    // Expected: the raw Strata tables remain visible, and the semantic pass
     // appends named SECTION rows with resolved SYMBOL children.
     // Regression guard: ELF domain knowledge belongs in elfsemanticview.cpp,
     // augmenting the declarative structs rather than replacing them.
-    TypeLibrary library;
+    StrataLibrary library;
     QVERIFY2(parseStandardElfDefinition(&library), "elf.struct failed to parse");
 
     QByteArray bytes(0x320, '\0');
@@ -2067,10 +2067,10 @@ void StructViewTests::builderKeepsRawElfRowsWhenSemanticDataIsTruncated()
     // Scenario: an ELF header points at a section table, but the string table
     // data needed by the educational semantic pass is missing.
     // Expected: semantic rows are skipped quietly while raw header/table rows
-    // from TypeLib remain available.
+    // from Strata remain available.
     // Regression guard: malformed ELF files must not make Structure View blank
     // or fail just because name resolution cannot complete.
-    TypeLibrary library;
+    StrataLibrary library;
     QVERIFY2(parseStandardElfDefinition(&library), "elf.struct failed to parse");
 
     QByteArray bytes(0x160, '\0');
@@ -2228,7 +2228,7 @@ void StructViewTests::modelSupportsHierarchyAndEditableCells()
 void StructViewTests::modelAppliesTypeDisplayOptionsWithoutResettingRows()
 {
     // Scenario: the user right-clicks Structure View and changes only the type
-    // display lens, for example from TypeLib aliases to primitive storage types.
+    // display lens, for example from Strata aliases to primitive storage types.
     // Expected: visible name text updates in place, preserving the existing row
     // objects so expansion, scroll position, and selection do not jump.
     // Regression guard: the first implementation rebuilt the whole tree for a
@@ -2238,10 +2238,10 @@ void StructViewTests::modelAppliesTypeDisplayOptionsWithoutResettingRows()
                         "typedef dword e32_addr;\n"
                         "[export]\n"
                         "struct Root { byte pad[4]; e32_addr entry; } root;\n"));
-    TypeDecl *root = firstExported(parser.GetTypeLibrary());
+    TypeDecl *root = firstExported(parser.GetStrataLibrary());
     QVERIFY(root != nullptr);
 
-    auto rows = buildRows(parser.GetTypeLibrary(), root, QByteArray(32, '\0'), 0x10);
+    auto rows = buildRows(parser.GetStrataLibrary(), root, QByteArray(32, '\0'), 0x10);
     StructureTreeModel model;
     model.setRowsForTests(std::move(rows));
 

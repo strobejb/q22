@@ -9,7 +9,7 @@
 class StructureRenderEngine : public std::enable_shared_from_this<StructureRenderEngine>
 {
 public:
-    StructureRenderEngine(TypeLibrary *library,
+    StructureRenderEngine(StrataLibrary *library,
                           TypeDecl *rootType,
                           uint64_t baseOffset,
                           const StructureValueBuilder::ByteReader &reader,
@@ -136,7 +136,7 @@ private:
     QString dynamicContainerAlias(StructureRow *row);
     QString quoteString(const QString &text) const;
 
-    TypeLibrary *m_library = nullptr;
+    StrataLibrary *m_library = nullptr;
     TypeDecl *m_rootType = nullptr;
     uint64_t m_baseOffset = 0;
     bool m_bigEndian = false;
