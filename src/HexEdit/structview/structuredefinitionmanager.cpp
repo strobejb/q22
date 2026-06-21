@@ -112,7 +112,7 @@ void collectMagicSignatures(Tag *tagList, QList<StructureMagicSignature> *signat
 QString descriptionFromTags(Tag *tagList)
 {
     ExprNode *expr = nullptr;
-    if (!FindTag(tagList, TOK_DESCRIPTION, &expr)
+    if (!FindTag(tagList, TOK_EXPORT, &expr)
         || !expr
         || expr->type != EXPR_STRINGBUF
         || !expr->str)

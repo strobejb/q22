@@ -309,8 +309,7 @@ typedef struct _SECTION
 
 
 [
-  export,
-  description("Portable Executable (PE)"),
+  export("Portable Executable (PE)"),
   assoc(".exe", ".sys", ".dll"),
   magic(0, { 'M', 'Z' }),
   offset(0)

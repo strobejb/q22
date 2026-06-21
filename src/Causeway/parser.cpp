@@ -244,9 +244,28 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 		switch(t.kind)
 		{
 		// TAGS which don't take any parameters
-		case TOK_IGNORE:	case TOK_STRING:	case TOK_EXPORT:
+		case TOK_IGNORE:	case TOK_STRING:
 			tag = new Tag(t, tag);
 			Advance();
+			break;
+
+		// export optionally takes a description string: export or export("name")
+		case TOK_EXPORT:
+			tmp = t;
+			Advance();
+			if(t == TOKEN('('))
+			{
+				Advance();
+				if((expr = Expression(TOK_NULL)) == 0)
+					return false;
+				tag = new Tag(tmp, tag, expr);
+				if(!Expected(')'))
+					return false;
+			}
+			else
+			{
+				tag = new Tag(tmp, tag);
+			}
 			break;
 
 		case TOK_TAGS:
@@ -298,11 +317,11 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 		}
 
 		// TAGS which take expression-parameters
-		case TOK_OFFSET:	case TOK_ALIGN:	 
+		case TOK_OFFSET:	case TOK_ALIGN:
 		case TOK_BITFLAG:	case TOK_ENDIAN:
 		case TOK_SIZEIS:
 		case TOK_STYLE:		case TOK_SWITCHIS:
-		case TOK_CASE:		case TOK_DESCRIPTION:
+		case TOK_CASE:
 		case TOK_DISPLAY:
 		case TOK_NAME:		case TOK_ENUM:
 		case TOK_ENTRYPOINT:
@@ -464,7 +483,7 @@ TagSet * Parser::ParseTagSet(FILEREF fileRef)
 	TOKEN allowed[] =
 	{
 		TOK_SIZEIS, TOK_IGNORE, TOK_STRING,
-		TOK_OFFSET, TOK_ALIGN, TOK_BITFLAG, TOK_STYLE, TOK_DESCRIPTION,
+		TOK_OFFSET, TOK_ALIGN, TOK_BITFLAG, TOK_STYLE,
 		TOK_DISPLAY,
 		TOK_ENDIAN, TOK_SWITCHIS, TOK_CASE, TOK_NAME,
 		TOK_ENUM, TOK_ENTRYPOINT, TOK_EXTENT, TOK_OPTIONAL, TOK_EXPORT, TOK_ASSOC, TOK_MAGIC, TOK_OFFSETMAP,

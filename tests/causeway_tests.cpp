@@ -354,21 +354,18 @@ void CausewayTests::viewTagsParse()
 
 void CausewayTests::descriptionTagsParseAndDisplayRemainsSeparate()
 {
-	// Scenario: an exported Structure View root declares a friendly UI label.
-	// Expected: description("...") is preserved as a normal string tag, while
-	// the older display("...") tag remains separate legacy metadata.
-	// Regression guard: the root dropdown should not overload TOK_DISPLAY or
-	// require special parser-side storage for a simple UI description.
+	// Scenario: export("name") carries the description as the export tag's
+	// own expression. display() is unrelated legacy metadata and stays separate.
 	Parser parser;
 	QVERIFY(parseBuffer(parser,
-						"[export, description(\"Portable Executable (PE)\"), display(\"legacy\")]\n"
+						"[export(\"Portable Executable (PE)\"), display(\"legacy\")]\n"
 						"struct Root { dword magic; } root;\n"));
 
 	QCOMPARE(parser.GetStrataLibrary()->globalTypeDeclList.size(), size_t(1));
 	TypeDecl *root = parser.GetStrataLibrary()->globalTypeDeclList[0];
 
 	ExprNode *description = nullptr;
-	QVERIFY(FindTag(root->tagList, TOK_DESCRIPTION, &description));
+	QVERIFY(FindTag(root->tagList, TOK_EXPORT, &description));
 	QVERIFY(description);
 	QCOMPARE(description->type, EXPR_STRINGBUF);
 	QCOMPARE(QString::fromLocal8Bit(description->str), QStringLiteral("Portable Executable (PE)"));
@@ -621,7 +618,7 @@ void CausewayTests::elfRootIsExportedAndAssociated()
 	QVERIFY(FindTag(elf->tagList, TOK_VIEW, nullptr));
 
 	ExprNode *description = nullptr;
-	QVERIFY(FindTag(elf->tagList, TOK_DESCRIPTION, &description));
+	QVERIFY(FindTag(elf->tagList, TOK_EXPORT, &description));
 	QVERIFY(description);
 	QCOMPARE(description->type, EXPR_STRINGBUF);
 	QCOMPARE(QString::fromLocal8Bit(description->str), QStringLiteral("Executable and Linkable Format (ELF)"));
@@ -684,7 +681,7 @@ void CausewayTests::standardTypelibFilesParse()
 			QVERIFY(pe);
 			QVERIFY(FindTag(pe->tagList, TOK_MAGIC, nullptr));
 			ExprNode *description = nullptr;
-			QVERIFY(FindTag(pe->tagList, TOK_DESCRIPTION, &description));
+			QVERIFY(FindTag(pe->tagList, TOK_EXPORT, &description));
 			QVERIFY(description);
 			QCOMPARE(description->type, EXPR_STRINGBUF);
 			QCOMPARE(QString::fromLocal8Bit(description->str), QStringLiteral("Portable Executable (PE)"));
