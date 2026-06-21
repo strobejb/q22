@@ -9,7 +9,8 @@ static constexpr const char kGrayDoubleClosed[] = ":/icons/rendered/gray/double-
 static constexpr const char kBlueSingleClosed[] = ":/icons/rendered/blue/single-closed.svg";
 static constexpr const char kBlueSingleOpen[] = ":/icons/rendered/blue/single-open.svg";
 static constexpr const char kGraySingleClosed[] = ":/icons/rendered/gray/single-closed.svg";
-static constexpr const char kBlueFace[] = ":/icons/rendered/blue/face.svg";
+static constexpr const char kBlueFace[]  = ":/icons/rendered/blue/face.svg";
+static constexpr const char kBlueTriad[] = ":/icons/rendered/blue/array-diagonal-column.svg";
 }
 
 #endif // STRUCTVIEW_STRUCTUREBRANCHICONS_H

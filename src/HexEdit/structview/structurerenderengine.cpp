@@ -1402,13 +1402,31 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
 
         auto arrayRow = makeRow(parentRow, request.renderType, request.typeDecl, m_baseOffset + fileOffset);
         const QString elementTypeName = typeName(request.renderType);
-        const QString label = request.label.isEmpty() ? elementTypeName : request.label;
-        arrayRow->setNameParts(elementTypeName, label, QStringLiteral("[]"));
+        // Name the array container row. generatedName is set only when a separate
+        // label is present (e.g. "CHAR DllName[]") so applyDisplayOptions can
+        // reformat the type-name prefix when the user switches type-name modes.
+        // When there is no label — either the name() tag supplies the full string
+        // or the type name is used alone — the row name is fixed and generatedName
+        // stays false so applyDisplayOptions does not reintroduce a redundant prefix.
+        ExprNode *nameTagExpr = nullptr;
+        if (FindTag(request.typeDecl ? request.typeDecl->tagList : nullptr, TOK_NAME, &nameTagExpr)
+            && nameTagExpr && nameTagExpr->type == EXPR_STRINGBUF && nameTagExpr->str)
+        {
+            arrayRow->setNameParts(QString(), QString::fromLocal8Bit(nameTagExpr->str), QString());
+        }
+        else if (request.label.isEmpty())
+        {
+            arrayRow->setNameParts(QString(), elementTypeName, QStringLiteral("[]"));
+        }
+        else
+        {
+            arrayRow->setNameParts(elementTypeName, request.label, QStringLiteral("[]"));
+            arrayRow->generatedName = true;
+        }
         arrayRow->value = QStringLiteral("{...}");
         arrayRow->kind = StructureRowKind::Dynamic;
-        arrayRow->generatedName = true;
-        arrayRow->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueDoubleClosed),
-                                 QString::fromLatin1(StructureBranchIcons::kBlueDoubleOpen),
+        arrayRow->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueTriad),
+                                 QString::fromLatin1(StructureBranchIcons::kBlueTriad),
                                  QString::fromLatin1(StructureBranchIcons::kGrayDoubleClosed));
 
         // Check once whether the element type declares sub-arrays.  Primitive

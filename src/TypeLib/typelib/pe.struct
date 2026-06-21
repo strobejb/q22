@@ -286,7 +286,8 @@ typedef struct _IMAGE_IMPORT_BY_NAME
     dynamic_array(ImportAddress32, IMAGE_THUNK_DATA32, FirstThunk, 512, Function == 0, ntHeaders.OptionalHeader32.Magic == 0x10b),
     dynamic_array(ImportLookup64, IMAGE_THUNK_DATA64, OriginalFirstThunk, 512, Function == 0, ntHeaders.OptionalHeader64.Magic == 0x20b),
     dynamic_array(ImportAddress64, IMAGE_THUNK_DATA64, FirstThunk, 512, Function == 0, ntHeaders.OptionalHeader64.Magic == 0x20b),
-    view("pe.imports")
+    view("pe.imports"),
+    name("IMAGE_IMPORT_DESCRIPTOR[]")
 ]
 typedef struct _IMAGE_IMPORT_DESCRIPTOR
 {
@@ -297,6 +298,11 @@ typedef struct _IMAGE_IMPORT_DESCRIPTOR
     dword   FirstThunk;
 } IMAGE_IMPORT_DESCRIPTOR, *PIMAGE_IMPORT_DESCRIPTOR;
 
+// Marker type for dynamic_container(SECTION). The render engine creates one
+// container instance per IMAGE_SECTION_HEADER entry; other declarations resolve
+// their RVA-based offsets against these containers to attach into the correct
+// section. The struct is intentionally empty — section content is heterogeneous
+// and is described by whichever dynamic_array/dynamic_struct tags reference it.
 typedef struct _SECTION
 {
 } SECTION, *PSECTION;

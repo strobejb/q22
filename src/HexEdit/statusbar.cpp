@@ -181,7 +181,7 @@ StatusBar::StatusBar(HexView *hv, QStatusBar *bar, bool showPanelToggles,
 
     //m_typesBtn = makeToggleButton("statusTypesBtn", "actions/binstruct0101", "T");
     m_typesBtn = makeToggleButton("statusTypesBtn", "actions/cube", "T");
-    connect(m_typesBtn, &QToolButton::toggled, this, &StatusBar::typesToggled);
+    connect(m_typesBtn, &QToolButton::clicked, this, &StatusBar::typesToggled);
 
     m_codeBtn = makeToggleButton("statusCodeBtn", "actions/chip", "D");
     connect(m_codeBtn, &QToolButton::clicked, this, &StatusBar::codeToggled);
