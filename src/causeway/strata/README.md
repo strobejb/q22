@@ -68,9 +68,7 @@ Built-in special types: `DOSTIME`, `DOSDATE`, `FILETIME`, `time_t`.
 
 ### Structs
 
-Fields are laid out sequentially in file order with no implicit padding — layout
-is always byte-packed. Structs can be nested and may carry tag blocks on
-individual fields or on the typedef itself.
+Structure fields are laid out sequentially in file order with no implicit padding - layout is always byte-packed. Various alignment and formatting options are available with Strata tags. Structs can be nested and may carry tag blocks on individual fields or on the typedef itself.
 
 ```c
 typedef struct _IMAGE_FILE_HEADER {
@@ -84,7 +82,7 @@ typedef struct _IMAGE_FILE_HEADER {
 } IMAGE_FILE_HEADER, *PIMAGE_FILE_HEADER;
 ```
 
-`typedef` can introduce multiple name aliases in one declaration:
+Just like C, the `typedef` keyword can introduce multiple name aliases in one declaration:
 
 ```c
 typedef dword OFFSET32, RVA, VA;
@@ -122,10 +120,11 @@ union {
 };
 ```
 
-If `switch_is` cannot be evaluated (the discriminator field hasn't been read
+If `select` cannot be evaluated (the discriminator field hasn't been read
 yet), the entire union is skipped.
 
 ### Enums
+
 
 ```c
 enum COLOR { Red = 0, Green = 1, Blue = 2 };
@@ -141,6 +140,8 @@ frequently used as `case` values and tag arguments without needing a type name.
 
 ### Fixed-size arrays
 
+Standard fixed-sized arrays work identically to C:
+
 ```c
 byte  Data[16];
 char  Name[8];
@@ -148,7 +149,7 @@ char  Name[8];
 
 ### Flexible arrays
 
-Declare with `[]` and supply the bound via a tag:
+Variable-sized arrays can be defined with an empty `[]` with the array bounds specified via a tag instead:
 
 ```c
 [count(Header.Count)]           dword Entries[];
@@ -157,25 +158,28 @@ Declare with `[]` and supply the bound via a tag:
 
 ---
 
+### Pointer access
+
+Pointer access to array & memory locations is not supported in this version of the Strata language.
+
 ## Tags
 
-Tags annotate a field or type with metadata. They appear in `[...]` immediately
-before the declaration they modify, and are comma-separated:
+Tags are used to annotate a field or type with metadata with a structured notation. They appear in `[...]` immediately before the declaration they modify, and are comma-separated:
 
 ```c
 [enum(MY_ENUM), offset(Base + RelOffset)]
 dword EntryPoint;
 ```
 
-A tag block before a `typedef` applies to the type as a whole.
+A tag block before a `typedef` applies to the type as a whole. 
 
-### Tagsets
+### Tag Sets
 
 A tagset is a named, reusable block of tags, defined at the top level and applied
-to a field with `tags(Name)`. The tags are expanded inline as if written directly
-on the field.
+to a field with the `tags(Name)` keyword. The tags are expanded inline as if written directly on the field.
 
 ```c
+// define a set of reusable tags
 tagset PE_DATA_DIRECTORY_TAGS
 [
     name(IMAGE_DIRECTORY),
@@ -186,6 +190,7 @@ tagset PE_DATA_DIRECTORY_TAGS
                   OriginalFirstThunk == 0 && FirstThunk == 0)
 ];
 
+// apply the tags to a declaration
 [tags(PE_DATA_DIRECTORY_TAGS)]
 IMAGE_DATA_DIRECTORY DataDirectory[16];
 ```
@@ -196,6 +201,8 @@ IMAGE_DATA_DIRECTORY DataDirectory[16];
 
 ### Display
 
+The following 'display' tags can be used to alter the rendered value or name of a field in the structure view:
+
 | Tag | Effect |
 |-----|--------|
 | `enum(Name)` | Show the value as a named enum constant |
@@ -205,13 +212,16 @@ IMAGE_DATA_DIRECTORY DataDirectory[16];
 ```c
 [enum(ELF_TYPE)] e16 e_type;
 [name(SectionName)] dword Offset;
+[name("Alternative name")] dword Offset;
 ```
 
 ### Layout
 
+Layout tag affect the alignment and positioning of fields:
+
 | Tag | Effect |
 |-----|--------|
-| `offset(expr)` | Pin this field or type to a logical offset within the current container (added to the container's base file offset) |
+| `offset(expr)` | Pin the field or type to a logical offset within the current container (added to the container's base file offset) |
 | `align(n)` | Align to an n-byte boundary before this field |
 | `extent(bytes)` | Limit parsing of this field to `bytes` bytes |
 | `optional(cond)` | Skip this field when `cond` is false |
@@ -228,7 +238,7 @@ IMAGE_OPTIONAL_HEADER OptionalHeader;
 
 ### Byte order
 
-```
+```c
 endian("big") | endian("little") | endian(expr)
 ```
 
@@ -277,7 +287,7 @@ attaching additional structures, arrays, or named overlays beyond the raw field 
 
 Renders a single struct at an offset field, guarded by a condition:
 
-```
+```c
 dynamic_struct(selector, Type, offset_field, condition)
 ```
 
@@ -295,7 +305,7 @@ dynamic_struct(IMAGE_DIRECTORY_ENTRY_EXPORT, IMAGE_EXPORT_DIRECTORY,
 
 Renders a variable-length array at an offset field:
 
-```
+```c
 dynamic_array(label_or_selector, ElemType, offset_field, count
               [, stop_cond [, condition]])
 ```
@@ -336,10 +346,9 @@ IMAGE_SECTION_HEADER sectionHeader[];
 ### `offset_map`
 
 Declares how virtual addresses within a container map to raw file offsets.
-Required when `dynamic_array` / `dynamic_struct` targets use virtual addresses
-rather than direct file offsets (e.g. PE sections).
+Required when `dynamic_array` / `dynamic_struct` targets alternative address schemes rather than direct file offsets (e.g. PE sections using Relative Virtual Addresses ).
 
-```
+```c
 offset_map(va_base, size, file_offset)
 ```
 
@@ -390,7 +399,7 @@ typedef struct _PE { ... } PE;
 ## Expressions
 
 Tags accept C-like expressions. Fields of the enclosing struct are in scope
-by name. Nested fields are accessed with `.`:
+by name. Nested fields are accessed with `.` (dot) notation. Pointer dereferencing is not supported:
 
 ```
 ntHeaders.FileHeader.NumberOfSections
@@ -416,8 +425,7 @@ terminated_by(0)
 
 ## Reserved keywords
 
-These are parsed without error but are not yet implemented — they have no effect
-on rendering:
+Certain reserved keywords are parsed without error but are not yet implemented — they have no effect on rendering:
 
 | Keyword | Intended purpose |
 |---------|-----------------|
@@ -428,4 +436,3 @@ on rendering:
 | `string` | Render bytes as a character string |
 | `style(...)` | Rendering style hint |
 
-> None of these are implemented — they parse without error but have no effect.
