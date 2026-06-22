@@ -7,6 +7,17 @@
 //  Please refer to the file LICENCE.TXT for copying permission
 //
 
+// This is an X-macro fragment, not a standalone header: includers #define
+// DEFINE_ERR(err, msg) (e.g. to generate ERROR enum entries or a message
+// lookup table) before #including this file. Opened directly -- e.g. an IDE
+// parsing it as its own translation unit -- that macro is undefined, which is
+// what produces the "type specifier required"/"undefined identifier" noise.
+// The fallback below is a harmless no-op purely to keep that quiet; real
+// includers always define their own first and are unaffected.
+#ifndef DEFINE_ERR
+#define DEFINE_ERR(err, msg)
+#define ERRORDEF_H_UNDEF_DEFINE_ERR
+#endif
 
 DEFINE_ERR(	ERROR_EXPECTED_TYPENAME,	"Expected a typename"	)
 DEFINE_ERR(	ERROR_NOT_TYPENAME,			"'%s' is not a type name"	)
@@ -18,7 +29,7 @@ DEFINE_ERR(	ERROR_TYPE_REDEFINITION,	"Redefinition of type '%s'"	)
 DEFINE_ERR(	ERROR_EXPECTED_TOKEN,		"Expected '%s', found '%s'" )
 DEFINE_ERR(	ERROR_SYNTAX_ERROR,			"Syntax error : '%s'" )
 DEFINE_ERR(	ERROR_ILLEGAL_TAG,			"Tag '%s' cannot be used in this context" )
-DEFINE_ERR(	ERROR_NOTA_TAG,			"Identifier '%s' is invalid in context" )
+DEFINE_ERR(	ERROR_NOTA_TAG,             "Identifier '%s' is invalid in context" )
 DEFINE_ERR(	ERROR_UNEXPECTED,			"Unexpected: '%s'" )
 DEFINE_ERR(	ERROR_NOFUNCPTR,			"Function pointers not supported")
 DEFINE_ERR( ERROR_OVERFLOW,				"Overflow in constant value")
@@ -35,7 +46,12 @@ DEFINE_ERR( ERROR_UNSIZED_ARRAY_REQUIRES_SIZEIS, "Unsized array declaration requ
 DEFINE_ERR( ERROR_UNKNOWN_TAGSET,		"Unknown tagset '%s'")
 DEFINE_ERR( ERROR_TAGSET_REDEFINITION,	"Redefinition of tagset '%s'")
 DEFINE_ERR( ERROR_TAGS_NOT_ALLOWED_IN_TAGSET, "tags(...) cannot be used inside a tagset")
-DEFINE_ERR( ERROR_SIZEOF_SCALAR_ONLY, "sizeof(...) only supports scalar type names")
+DEFINE_ERR( ERROR_SIZEOF_SCALAR_ONLY,   "sizeof(...) only supports scalar type names")
 DEFINE_ERR( ERROR_FILENOTFOUND,			"Failed to open '%s'")
 DEFINE_ERR( ERROR_NOSUCHFILE,			"Filename '%s' does not exist")
 DEFINE_ERR(	ERROR_UNKNOWN,				"Unknown error" )
+
+#ifdef ERRORDEF_H_UNDEF_DEFINE_ERR
+#undef DEFINE_ERR
+#undef ERRORDEF_H_UNDEF_DEFINE_ERR
+#endif

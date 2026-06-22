@@ -11,6 +11,19 @@
 // keywords
 //
 
+// This is an X-macro fragment, not a standalone header: includers #define
+// DEFINE_KEYWORD(tok, str) (and optionally DEFINE_RESERVED_KEYWORD) before
+// #including this file to generate enum entries, table rows or switch cases.
+// Opened directly -- e.g. an IDE parsing it as its own translation unit --
+// neither macro is defined, which is what produces the "type specifier
+// required"/"undefined identifier" noise. The fallback below is a harmless
+// no-op purely to keep that quiet; real includers always define their own
+// first and are unaffected.
+#ifndef DEFINE_KEYWORD
+#define DEFINE_KEYWORD(tok, str)
+#define KEYWORDS_H_UNDEF_DEFINE_KEYWORD
+#endif
+
 #ifndef DEFINE_RESERVED_KEYWORD
 #define DEFINE_RESERVED_KEYWORD DEFINE_KEYWORD
 #endif
@@ -56,3 +69,7 @@ DEFINE_RESERVED_KEYWORD ( TOK_UNSIGNED,         "unsigned" )
 DEFINE_KEYWORD          ( TOK_VIEW,             "view" )
 
 #undef DEFINE_RESERVED_KEYWORD
+#ifdef KEYWORDS_H_UNDEF_DEFINE_KEYWORD
+#undef DEFINE_KEYWORD
+#undef KEYWORDS_H_UNDEF_DEFINE_KEYWORD
+#endif
