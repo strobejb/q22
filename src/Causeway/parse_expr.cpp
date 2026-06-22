@@ -71,7 +71,7 @@ ExprNode * Parser::PrimaryExpression()
 	if(IsContextualKeyword(t.kind))
 	{
 		p = new ExprNode(EXPR_IDENTIFIER, t);
-		p->str = _strdup(t.str);
+        p->str = strdup(t.str);
 		Advance();
 		return p;
 	}
@@ -100,7 +100,7 @@ ExprNode * Parser::PrimaryExpression()
 	case TOK_IDENTIFIER: 
 
 		p = new ExprNode(EXPR_IDENTIFIER, t);
-		p->str = _strdup(t.str);
+        p->str = strdup(t.str);
 		Advance();
 		break;
 
@@ -108,7 +108,7 @@ ExprNode * Parser::PrimaryExpression()
 	case TOK_STRINGBUF: 
 
 		p = new ExprNode(EXPR_STRINGBUF, t);
-		p->str = _strdup(t.str);
+        p->str = strdup(t.str);
 		Advance();
 		break;
 
@@ -241,7 +241,7 @@ ExprNode * Parser::UnaryExpression(void)
 		{
 			TOKEN nameTok = t;
 			p = new ExprNode(EXPR_IDENTIFIER, nameTok);
-			p->str = _strdup(inenglish(nameTok));
+            p->str = strdup(inenglish(nameTok));
 			Advance();
 			break;
 		}
@@ -723,7 +723,7 @@ ExprNode * CopyExpr(ExprNode *expr)
 	{
 	case EXPR_IDENTIFIER:
 	case EXPR_STRINGBUF:
-		expr2->str = expr->str ? _strdup(expr->str) : 0;
+        expr2->str = expr->str ? strdup(expr->str) : 0;
 		break;
 
 	case EXPR_NUMBER:
