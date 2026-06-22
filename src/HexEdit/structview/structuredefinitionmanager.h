@@ -1,7 +1,7 @@
 #ifndef STRUCTVIEW_STRUCTUREDEFINITIONMANAGER_H
 #define STRUCTVIEW_STRUCTUREDEFINITIONMANAGER_H
 
-#include "Causeway/parser.h"
+#include "causeway/parser.h"
 
 #include <QByteArray>
 #include <QObject>

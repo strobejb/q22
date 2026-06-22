@@ -55,6 +55,6 @@ find_package(Qt${QT_VERSION_MAJOR} OPTIONAL_COMPONENTS DBus)
 enable_testing()
 
 add_subdirectory(src/HexView)
-add_subdirectory(src/Causeway)
+add_subdirectory(src/causeway)
 add_subdirectory(src/HexEdit)
 add_subdirectory(tests)

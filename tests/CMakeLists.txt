@@ -59,15 +59,15 @@ add_executable(causeway_tests
 )
 
 target_link_libraries(causeway_tests PRIVATE
-    Causeway
+    causeway
     Qt${QT_VERSION_MAJOR}::Core
     Qt${QT_VERSION_MAJOR}::Test
 )
 target_compile_definitions(causeway_tests PRIVATE
     CAUSEWAY_TEST_DATA_DIR="${CAUSEWAY_DATA_BINARY_DIR}"
 )
-if(TARGET CausewayData)
-    add_dependencies(causeway_tests CausewayData)
+if(TARGET causewayData)
+    add_dependencies(causeway_tests causewayData)
 endif()
 
 add_test(NAME causeway_tests COMMAND causeway_tests)
@@ -94,15 +94,15 @@ target_include_directories(structview_tests PRIVATE
 )
 
 target_link_libraries(structview_tests PRIVATE
-    Causeway
+    causeway
     Qt${QT_VERSION_MAJOR}::Core
     Qt${QT_VERSION_MAJOR}::Test
 )
 target_compile_definitions(structview_tests PRIVATE
     CAUSEWAY_TEST_DATA_DIR="${CAUSEWAY_DATA_BINARY_DIR}"
 )
-if(TARGET CausewayData)
-    add_dependencies(structview_tests CausewayData)
+if(TARGET causewayData)
+    add_dependencies(structview_tests causewayData)
 endif()
 
 add_test(NAME structview_tests COMMAND structview_tests)

@@ -209,12 +209,12 @@ qt_add_resources(hexedit "app_resources"
 )
 
 set_source_files_properties(
-    "${CMAKE_SOURCE_DIR}/src/Causeway/strata/README.md"
+    "${CMAKE_SOURCE_DIR}/src/causeway/strata/README.md"
     PROPERTIES QT_RESOURCE_ALIAS "README.md"
 )
 qt_add_resources(hexedit "strata_docs"
     PREFIX "/docs"
-    FILES "${CMAKE_SOURCE_DIR}/src/Causeway/strata/README.md"
+    FILES "${CMAKE_SOURCE_DIR}/src/causeway/strata/README.md"
 )
 
 target_include_directories(hexedit PRIVATE
@@ -224,7 +224,7 @@ target_include_directories(hexedit PRIVATE
 set_target_properties(hexedit PROPERTIES
     AUTOUIC_SEARCH_PATHS "${HEXEDIT_SOURCE_DIR};${HEXEDIT_SOURCE_DIR}/bookmarks"
 )
-target_link_libraries(hexedit PRIVATE Qt${QT_VERSION_MAJOR}::Widgets HexView Causeway capstone)
+target_link_libraries(hexedit PRIVATE Qt${QT_VERSION_MAJOR}::Widgets HexView causeway capstone)
 if(TARGET Qt${QT_VERSION_MAJOR}::DBus)
     target_link_libraries(hexedit PRIVATE Qt${QT_VERSION_MAJOR}::DBus)
     target_compile_definitions(hexedit PRIVATE HEXEDIT_HAVE_DBUS)
@@ -237,8 +237,8 @@ if(WIN32)
     target_link_libraries(hexedit PRIVATE dwmapi advapi32)
 endif()
 
-if(TARGET CausewayData)
-    add_dependencies(hexedit CausewayData)
+if(TARGET causewayData)
+    add_dependencies(hexedit causewayData)
 endif()
 
 find_file(ADWAITA_QT6_PLUGIN adwaita.so

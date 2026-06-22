@@ -1,4 +1,4 @@
-add_library(Causeway STATIC
+add_library(causeway STATIC
     display.cpp
     error.cpp
     lexer.cpp
@@ -18,7 +18,7 @@ add_library(Causeway STATIC
     types.h
 )
 
-target_include_directories(Causeway PUBLIC
+target_include_directories(causeway PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
@@ -28,7 +28,7 @@ file(GLOB CAUSEWAY_STANDARD_FILES CONFIGURE_DEPENDS
     "${CAUSEWAY_DATA_SOURCE_DIR}/*.struct"
 )
 
-add_custom_target(CausewayData ALL
+add_custom_target(causewayData ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CAUSEWAY_DATA_BINARY_DIR}"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CAUSEWAY_STANDARD_FILES}

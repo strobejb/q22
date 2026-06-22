@@ -2,7 +2,7 @@
 #define STRUCTVIEW_STRUCTURETREEMODEL_H
 
 #include "structview/structuredisplayoptions.h"
-#include "Causeway/parser.h"
+#include "causeway/parser.h"
 
 #include <QAbstractItemModel>
 #include <QList>
