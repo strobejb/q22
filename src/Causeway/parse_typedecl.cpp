@@ -32,7 +32,7 @@ static bool HasUnsizedArray(Type *type)
 	return false;
 }
 
-Symbol *InstallSymbol(SymbolTable &table, char *name)
+Symbol *InstallSymbol(SymbolTable &table, const char *name)
 {
 	Symbol *sym = new Symbol;
 	
@@ -45,7 +45,7 @@ Symbol *InstallSymbol(SymbolTable &table, char *name)
 	return sym;
 }
 
-Symbol *LookupSymbol(SymbolTable &table, char *name)
+Symbol *LookupSymbol(SymbolTable &table, const char *name)
 {
 	Symbol *sym = 0;
 
@@ -61,7 +61,7 @@ Symbol *LookupSymbol(SymbolTable &table, char *name)
 	return sym;
 }
 
-TypeDecl * Parser::LookupTypeDecl(char *name)
+TypeDecl * Parser::LookupTypeDecl(const char *name)
 {
 	TypeDeclList &table = typeLibrary->globalTypeDeclList;
 	TypeDecl *decl = 0;
@@ -162,7 +162,7 @@ Type * Parser::PostfixDecl(Type *tptr)
 		ExprNode *elements = 0;
 		FILEREF fileref(lexer.CurrentFile());
 
-		switch(t.kind)
+        switch((int)t.kind)
 		{
 		// array bounds
 		case '[':
@@ -238,7 +238,7 @@ Type * Parser::PrefixDecl(SymbolTable &symTable)
 		return tptr;
 	}
 
-	switch(t.kind)
+    switch((int)t.kind)
 	{
 	case '*': 
 
@@ -321,7 +321,7 @@ Type * Parser::Decl(TOKEN term, SymbolTable &symTable)
 	return type;
 }
 
-EnumField * Parser::AddEnumField(Enum *enumPtr, char *name, ExprNode *expr, unsigned val)
+EnumField * Parser::AddEnumField(Enum *enumPtr, const char *name, ExprNode *expr, unsigned val)
 {
 	Symbol *sym;
 	EnumField *field = 0;

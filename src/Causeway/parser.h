@@ -12,6 +12,11 @@
 
 #define _CRT_SECURE_NO_DEPRECATE
 
+#include <stdio.h>
+
+// Safe strcpy: truncates to fit, always null-terminates. dst must be an array.
+#define safe_strcpy(dst, src)  snprintf((dst), sizeof(dst), "%s", (src))
+
 #include "lexer.h"
 
 #ifdef __cplusplus
@@ -101,16 +106,16 @@ private:
 	void		ExportStructs();
 	void		Cleanup();
 	void		InstallTypeAliases();
-	TypeDecl *	LookupTypeDecl(char *name);
-	TagSet   *  LookupTagSet(char *name);
-	Type	 *	MakeTypeDef(TYPE base, char *name, TYPE base2 = typeNULL);
-	Enum	 *	FindEnum(char *enumName);
+    TypeDecl *	LookupTypeDecl(const char *name);
+    TagSet   *  LookupTagSet(const char *name);
+    Type	 *	MakeTypeDef(TYPE base, const char *name, TYPE base2 = typeNULL);
+    Enum	 *	FindEnum(const char *enumName);
 
 	// typedecls
 	Type	 * ParseBaseType(TypeDecl *typeDecl, bool nested);
 	Type	 * ParseStructBody(Symbol *sym, TYPE ty);
 	Type	 * ParseEnumBody(Symbol *sym);
-	EnumField* AddEnumField(Enum *enumPtr, char *name, ExprNode *expr, unsigned val);
+    EnumField* AddEnumField(Enum *enumPtr, const char *name, ExprNode *expr, unsigned val);
 	Type	 * Decl(TOKEN term, SymbolTable &symTable);
 	Type	 * PrefixDecl(SymbolTable &symTable);
 	Type	 * PostfixDecl(Type *tptr);

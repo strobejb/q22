@@ -70,13 +70,13 @@ bool LocateComment(FILEREF *fileRef, char **s, char **cs, char **ce, char **e)
 	return true;
 }
 
-int DisplayWhitespace(FILE *fp, FILEREF *fileRef, char *newcomment)
+int DisplayWhitespace(FILE *fp, FILEREF *fileRef, const char *newcomment)
 {
 	char *s, *cs, *ce, *e;
 	if(LocateComment(fileRef, &s, &cs, &ce, &e))
 	{
 		fprintf(fp, "%.*s", (int)(cs-s), s);
-		fprintf(fp, newcomment);
+        fprintf(fp, "%s", newcomment);
 		fprintf(fp, "%.*s", (int)(e-ce), ce);
 	}
 
@@ -209,8 +209,9 @@ void PrintType(Type *type)
 		case typeCHAR:		case typeWCHAR: 
 		case typeBYTE:		case typeWORD:
 		case typeDWORD:		case typeQWORD:
+        case typeFLOAT:     case typeDOUBLE:
 			printf("%s ", Parser::inenglish(TypeToToken(type->ty))); 
-			break;
+			break;                    
 
 		case typeUNSIGNED:	printf(" UNSIGNED -> "); break;
 		case typeSIGNED:	printf(" SIGNED -> "); break;
@@ -220,6 +221,8 @@ void PrintType(Type *type)
 			//printf("%s ", type->var->varName);
 			//printf("ID(%s) > ", type->sym->name);
 			break;
+        default:
+            break;
 		}
 
 		type = type->link;

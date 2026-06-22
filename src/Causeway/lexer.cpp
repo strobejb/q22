@@ -114,7 +114,10 @@ void Lexer::Error(ERROR err, ...)
 		return;
 
 	va_list vargs;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wvarargs"
 	va_start(vargs, err);
+#pragma clang diagnostic pop
 	errorCallback(errorContext, err, vargs);
 	va_end(vargs);
 }

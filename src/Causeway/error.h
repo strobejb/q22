@@ -23,8 +23,8 @@ enum ERROR
 
 struct ERROR_LOOKUP 
 {
-	ERROR	err;
-	char	*fmt;
+    ERROR	     err;
+    const char	*fmt;
 };
 
 typedef void (* ERROR_CALLBACK)(ERROR err, char *errstr, void *param);

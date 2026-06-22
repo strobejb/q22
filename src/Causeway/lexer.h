@@ -145,7 +145,7 @@ typedef enum TOKEN
 struct TOKEN_LOOKUP
 {
 	TOKEN tok;
-	char *str;
+    const char *str;
 };
 
 // file-descriptor

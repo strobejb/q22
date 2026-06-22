@@ -28,12 +28,19 @@ void StrataLibrary::Cleanup()
 {
 	size_t i;
 
+	// Symbol objects in both lists are referenced by sym pointers inside Type
+	// nodes owned by globalTypeDeclList. They must outlive the TypeDecl pass
+	// below and are freed last. (Known leak: Symbol wrappers themselves are not
+	// freed because no safe deletion order exists without a two-pass approach.)
 	for(i = 0; i < globalIdentifierList.size(); i++)
 	{
-		Symbol *s = globalIdentifierList[i];
-//		delete s;
+		// Symbol wrapper not deleted — referenced from Type::sym nodes in TypeDecls
+		(void)globalIdentifierList[i];
 	}
 
+	// sptr/eptr are not freed by Type::~Type(), so this is the only place they
+	// are released. Must run before globalTypeDeclList is deleted because the
+	// Type nodes (and their sym pointers back to these Symbols) are still live.
 	for(i = globalTagSymbolList.size(); i > 0; i--)
 	{
 		Symbol *s = globalTagSymbolList[i - 1];
@@ -41,14 +48,15 @@ void StrataLibrary::Cleanup()
 		if(s->type)
 		{
 			if(s->type->ty == typeENUM)
-				delete s->type->eptr;
+				delete s->type->eptr;   // Enum* owned here
 			else
-				delete s->type->sptr;
+				delete s->type->sptr;   // Structure* owned here
 		}
 
-//		delete s;
+		// Symbol wrapper not deleted — referenced from Type::sym nodes in TypeDecls
 	}
 
+	// TypeDecl destructor frees the Type chain (but not sptr/eptr — done above).
 	for(i = 0; i < globalTypeDeclList.size(); i++)
 	{
 		delete globalTypeDeclList[i];
@@ -106,6 +114,7 @@ bool Parser::IsContextualKeyword(TOKEN tok)
 	// DEFINE_KEYWORD = usable as field names; DEFINE_RESERVED_KEYWORD = always reserved.
 	switch(tok)
 	{
+#undef DEFINE_KEYWORD
 #define DEFINE_KEYWORD(t, s) case t:
 #define DEFINE_RESERVED_KEYWORD(t, s)
 #include "keywords.h"
@@ -276,7 +285,7 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 			if(!Expected('('))
 				return false;
 
-			strcpy(tagSetName, t.str);
+			safe_strcpy(tagSetName, t.str);
 			if(!Expected(TOK_IDENTIFIER))
 				return false;
 
@@ -392,7 +401,7 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 	return true;
 }
 
-TagSet * Parser::LookupTagSet(char *name)
+TagSet * Parser::LookupTagSet(const char *name)
 {
 	for(size_t i = 0; i < typeLibrary->globalTagSetList.size(); i++)
 	{
@@ -416,7 +425,7 @@ Statement * Parser::ParseInclude()
 		return 0;
 
 	// "filename"
-	strcpy(fileName, t.str);
+    safe_strcpy(fileName, t.str);
 	if(!Expected(TOK_STRINGBUF))
 		return 0;
 
@@ -433,7 +442,7 @@ Statement * Parser::ParseInclude()
 			{
 				errcount += p.errcount;
 				lasterr   =  p.lasterr;
-				strcpy(errstr, p.errstr);
+                safe_strcpy(errstr, p.errstr);
 				return 0;
 			}
 		}
@@ -459,7 +468,7 @@ TagSet * Parser::ParseTagSet(FILEREF fileRef)
 	if(!Expected(TOK_TAGSET))
 		return 0;
 
-	strcpy(tagSetName, t.str);
+    safe_strcpy(tagSetName, t.str);
 	if(!Expected(TOK_IDENTIFIER))
 		return 0;
 

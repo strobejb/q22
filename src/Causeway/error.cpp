@@ -79,7 +79,7 @@ const char * Parser::inenglish(TOKEN t)
 			return toklook[i].str;
 	}
 
-	switch(t)
+    switch((int)t)
 	{
 	case TOK_IDENTIFIER:	return "Identifier";
 	case TOK_STRINGBUF:		return "String";
@@ -202,26 +202,32 @@ ERROR Parser::LastErr()
 void Parser::Error(ERROR err, ...)
 {
 	va_list vargs;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wvarargs"
 	va_start(vargs, err);
+#pragma clang diagnostic pop
 	ErrorV(err, vargs);
 	va_end(vargs);
 }
 
 void Parser::ErrorV(ERROR err, va_list vargs)
 {
-	char *e = errstr;
+	char *e   = errstr;
+	int   rem = sizeof(errstr);
+	int   n;
 
 	if(lexer.CurrentFile()->filePath[0])
-		e += sprintf(e, "%s(%d) : ", lexer.CurrentFile()->filePath, (int)lexer.CurrentFile()->curLine);
+	{
+		n = snprintf(e, rem, "%s(%d) : ", lexer.CurrentFile()->filePath, (int)lexer.CurrentFile()->curLine);
+		e += n; rem -= n;
+	}
 
-	e += sprintf(e, "error E%d : ", err);
-	
-	e += vsprintf(e, LookupError(err)->fmt, vargs);
-
-	e += sprintf(e, "\n");
+	n  = snprintf (e, rem, "error E%d : ", err);          e += n; rem -= n;
+	n  = vsnprintf(e, rem, LookupError(err)->fmt, vargs); e += n; rem -= n;
+         snprintf (e, rem, "\n");
 	errcount++;
 
-	fprintf(fperr, errstr);
+    fprintf(fperr, "%s", errstr);
 	lasterr = err;
 
 	if(errcallback)

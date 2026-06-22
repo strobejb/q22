@@ -33,7 +33,7 @@
 //
 static int Precedence(int t)
 {
-	switch(t)
+	switch((int)t)
 	{
 	// unary operators at 14+
 	// '++', '--', '*', '&', '+', '-', '~', '!'
@@ -132,7 +132,7 @@ ExprNode * Parser::PostfixExpression(ExprNode *p)
 	{
 		TOKEN op = t;
 
-		switch(op)
+        switch((int)op)
 		{
 		// array bounds
 		case '[':
@@ -195,7 +195,7 @@ ExprNode * Parser::UnaryExpression(void)
 	ExprNode *p = 0;
 	TOKEN op = t;
 
-	switch(op)
+    switch((int)op)
 	{
 	// pointer dereference / address-of
 	case '*':	
@@ -457,7 +457,7 @@ ExprNode * Parser::FullExpression(TOKEN term)
 }
 
 
-int PrintCppString(stringprint &sbuf, char *buf)
+int PrintCppString(stringprint &sbuf, const char *buf)
 {
 	int ch = *buf;
 
@@ -471,7 +471,7 @@ int PrintCppString(stringprint &sbuf, char *buf)
 		}
 		else
 		{
-			TCHAR hex[10], *str = 0;
+			TCHAR hex[10]; const TCHAR *str = 0;
 
 			switch(ch)
 			{
@@ -593,7 +593,12 @@ int RecurseFlatten(stringprint &sbuf, ExprNode *expr)
 		RecurseFlatten(sbuf, expr->left);
 		sbuf._stprintf(TEXT(")"));
 		break;
-	}
+
+    // unimplemented; ignore
+    case EXPR_FUNCTION: case EXPR_ASSIGN: case EXPR_NULL:
+        break;
+    }
+
 
 	if(expr->brackets)
 		sbuf._stprintf(TEXT(")"));
@@ -638,7 +643,7 @@ INUMTYPE Evaluate(ExprNode *expr)
 
 		left = Evaluate(expr->left);
 
-		switch(expr->tok)
+        switch((int)expr->tok)
 		{
 		case '+':			return left;//+left;
 		case '-':			return -left;
@@ -662,8 +667,8 @@ INUMTYPE Evaluate(ExprNode *expr)
 			
 			left  = Evaluate(expr->left);
 			right = Evaluate(expr->right);
-			
-			switch(expr->tok)
+
+            switch((int)expr->tok)
 			{
 			case '+':			return left +  right;
 			case '-':			return left -  right;

@@ -132,7 +132,7 @@ void FreeType(Type *type, Type *term = 0)
 	}
 }
 
-Type * Parser::MakeTypeDef(TYPE base, char *name, TYPE base2/* = typeNULL*/)
+Type * Parser::MakeTypeDef(TYPE base, const char *name, TYPE base2/* = typeNULL*/)
 {
 	Symbol *sym;
 	Type *type;
@@ -546,7 +546,7 @@ bool IsExportedStruct(Type *type)
 	return IsStruct(BaseType(type)) && type->sptr->exported;
 }
 
-Enum * Parser::FindEnum(char *enumName)
+Enum * Parser::FindEnum(const char *enumName)
 {
 	Symbol *sym;
 

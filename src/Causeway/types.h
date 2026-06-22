@@ -71,8 +71,8 @@ typedef vector<Type *> TypeList;
 typedef vector<TypeDecl *> TypeDeclList;
 typedef vector<TagSet *> TagSetList;
 
-Symbol *InstallSymbol(SymbolTable &table, char *name);
-Symbol *LookupSymbol(SymbolTable &table, char *name);
+Symbol *InstallSymbol(SymbolTable &table, const char *name);
+Symbol *LookupSymbol(SymbolTable &table, const char *name);
 
 Type *BreakLink(Type *type, Type *term);
 
@@ -189,6 +189,8 @@ struct Type
 	{
 		if(ty == typeARRAY)
 			delete elements;
+		// sptr/eptr/fptr are NOT freed here — owned by StrataLibrary::Cleanup()
+		// via globalTagSymbolList. sym is also not freed (owned by symbol tables).
 
 		//extern Type *smegHead[];
 		//smegHead[id]=0;
