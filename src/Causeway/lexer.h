@@ -57,6 +57,16 @@ typedef enum TOKEN
 	TOK_NULL	= 0,
 	TOK_ILLEGAL = -1,
 
+	// Single-character ASCII tokens — value equals the character code.
+	// Defined here so casts like TOKEN('/') are in-range for static analysis.
+	// Use character literals directly in code; these names are rarely needed.
+	TOK_EXCL = '!', TOK_PERCENT = '%', TOK_AMP  = '&', TOK_LPAREN = '(',
+	TOK_RPAREN=')', TOK_STAR   = '*', TOK_PLUS  = '+', TOK_COMMA  = ',',
+	TOK_MINUS= '-', TOK_DOT    = '.', TOK_SLASH = '/', TOK_COLON  = ':',
+	TOK_LT   = '<', TOK_EQ     = '=', TOK_GT    = '>', TOK_QUEST  = '?',
+	TOK_LBRACK='[', TOK_RBRACK = ']', TOK_CARET = '^', TOK_PIPE   = '|',
+	TOK_TILDE= '~', TOK_SEMI   = ';', TOK_LBRACE= '{', TOK_RBRACE = '}',
+
 	// basic tokens
 	TOK_IDENTIFIER = 1000,
 	TOK_STRINGBUF,

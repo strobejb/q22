@@ -172,17 +172,11 @@ static void fullpath(char *dest, const char *name, size_t destlen)
 #endif
 }
 
-static void joinpath(char *dest, const char *dir, const char *name)
+static void joinpath(char *dest, size_t destlen, const char *dir, const char *name)
 {
-	size_t len;
-	strcpy(dest, dir);
-		
-	len = strlen(dest);
-	
-	if(len > 0 && dest[len-1] != '/' && dest[len-1] != '\\')
-		strcat(dest, "/");
-
-	strcat(dest, name);
+	size_t len    = strlen(dir);
+	bool   needSep = len > 0 && dir[len-1] != '/' && dir[len-1] != '\\';
+	snprintf(dest, destlen, "%s%s%s", dir, needSep ? "/" : "", name);
 }
 
 //
@@ -195,19 +189,18 @@ static bool searchenv(const char *envname, const char *name, char *fullname, siz
 	if((includePaths = getenv(envname)) != 0)
 	{
 		char *pathDup = _strdup(includePaths);
-		char *tok;
+		char *tok     = strtok(pathDup, PATHSEP);
+		bool  found   = false;
 
-		tok = strtok(pathDup, PATHSEP);
-		
-		while(tok)
+		while(tok && !found)
 		{
-			joinpath(fullname, tok, name);
-
-			if((fullname))
-				return true;
-
-			tok = strtok(NULL, PATHSEP);
+			joinpath(fullname, fullnamelen, tok, name);
+			found = exists(fullname);
+			tok   = strtok(NULL, PATHSEP);
 		}
+
+		free(pathDup);
+		return found;
 	}
 
 	return false;
@@ -274,7 +267,7 @@ static bool getfullname(const char *curpath, const char *name, char *fullname, s
 			}
 
 			//printf("searching in %s\n", opt);
-			joinpath(fullname, opt, name);
+			joinpath(fullname, fullnamelen, opt, name);
 
 			if(exists(fullname))
 				return true;
@@ -286,7 +279,7 @@ static bool getfullname(const char *curpath, const char *name, char *fullname, s
 		return true;
 
 	// couldn't find it...
-	strcpy(fullname, name);
+	snprintf(fullname, fullnamelen, "%s", name);
 	return false;
 }
 
@@ -351,9 +344,6 @@ bool Lexer::FileIncluded(const char *filename)
 
 bool Lexer::InitFile(const char *filename)
 {
-	char   buf[100];
-	size_t len;
-
 	char fullpath[_MAX_PATH];
 	FILE *fp;
 
@@ -370,38 +360,36 @@ bool Lexer::InitFile(const char *filename)
 		return false;
 	}
 
-	if((curFile = new FILE_DESC(fullpath, filename)) == 0)
-		return false;
-	
-	typeLibrary->globalFileHistory.push_back(curFile);
+	fseek(fp, 0, SEEK_END);
+	long filesize = ftell(fp);
+	rewind(fp);
 
-
-	// read the file into FILE_DESC::buf
-	while(!feof(fp))
+	if(filesize < 0)
 	{
-		char *tmp;
-
-		len = fread(buf, 1, sizeof(buf), fp);
-
-		// reallocate the buffer as necessary (+1 for null-terminator)
-		tmp = (char *)realloc(curFile->buf, curFile->len + len + 1);
-
-		if(tmp == 0)
-		{
-			// error!
-			break;
-		}
-		else
-		{
-			curFile->buf = tmp;
-			memcpy(curFile->buf + curFile->len, buf, len);
-			curFile->len += len;
-		}
+		int saved = errno;
+		fclose(fp);
+		errno = saved;
+		return false;
 	}
 
-	// null-terminate the buffer
-	curFile->buf[curFile->len] = '\0';
+	if((curFile = new FILE_DESC(fullpath, filename)) == 0)
+	{
+		fclose(fp);
+		return false;
+	}
+
+	curFile->buf = (char *)malloc((size_t)filesize + 1);
+	if(curFile->buf == 0)
+	{
+		fclose(fp);
+		return false;
+	}
+
+	curFile->len          = fread(curFile->buf, 1, (size_t)filesize, fp);
+	curFile->buf[filesize] = '\0'; // NOLINT(clang-analyzer-security.ArrayBound) -- filesize is from ftell, bounded by malloc above
 	fclose(fp);
+
+	typeLibrary->globalFileHistory.push_back(curFile);
 		
 	token	 = Token();
 	ch		 = ' ';
@@ -728,7 +716,6 @@ TOKEN Lexer::parse_number()
 
 		// token type = FLOAT
 		token.fnum = strtod(numstr, &ep);
-		int e = errno;
 		return TOK_FNUMBER;
 	}
 	else
@@ -746,13 +733,10 @@ TOKEN Lexer::parse_number()
 		{
 			Error(ERROR_ILLEGAL_DIGIT, *ep, base[token.base]);
 		}
+
 		if(errno)
 		{
-			int e = errno;
 			Error(ERROR_OVERFLOW);
-			//if(ep)
-		//		printf("%s\n", ep);
-			//return TOK_NULL;
 		}
 
 		return TOK_INUMBER;
@@ -1055,7 +1039,6 @@ Token Lexer::Next()
 		else
 		{
 			// error, invalid character encountered
-			tmp = TOKEN(ch);
 			ch = nextch();
 			return Token(TOK_ILLEGAL);
 		}
