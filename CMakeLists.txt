@@ -13,6 +13,7 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/capstone-engine/capstone.git
     GIT_TAG        5.0.3
     GIT_SHALLOW    TRUE
+    SOURCE_DIR     ${CMAKE_SOURCE_DIR}/src/capstone
 )
 FetchContent_MakeAvailable(capstone)
 if(TARGET capstone)

@@ -1,5 +1,8 @@
 # Build directories
 build/
+
+# FetchContent dependencies populated into the source tree by CMake
+src/capstone/
 out/
 cmake-build-*/
 
