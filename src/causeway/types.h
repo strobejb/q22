@@ -179,10 +179,8 @@ struct Type
 {
 	Type(TYPE t, Type *l=0) : ty(t), link(l), brackets(false), elements(0), parent(0), offset(0)
 	{
-		static int i;
+        static int i=0;
 		id=i++;
-		//extern Type *smegHead[];
-		//smegHead[id]=this;
 	}
 
 	~Type()
@@ -191,9 +189,6 @@ struct Type
 			delete elements;
 		// sptr/eptr/fptr are NOT freed here — owned by StrataLibrary::Cleanup()
 		// via globalTagSymbolList. sym is also not freed (owned by symbol tables).
-
-		//extern Type *smegHead[];
-		//smegHead[id]=0;
 
 		//if(ty == typeIDENTIFIER || ty == typeTYPEDEF)
 		//	printf("**del** %d %s\n", id, sym->name);

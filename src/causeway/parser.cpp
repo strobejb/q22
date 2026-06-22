@@ -771,25 +771,6 @@ void Parser::Cleanup()
 {
 	if(ownsStrataLibrary)
 		typeLibrary->Cleanup();
-
-	/*for(i = 0; i < 100; i++)
-	{
-		Type *type = smegHead[i];
-		if(type)
-		{
-			printf("[%d] %s", i, ::inenglish(type->ty));
-
-			if(type->ty == typeIDENTIFIER || type->ty == typeTYPEDEF)
-			{
-				printf("   %s\n", type->sym->name);
-			}
-			else
-			{
-				printf("\n");
-			}
-		}
-	}*/
-
 }
 
 Parser::Parser()
