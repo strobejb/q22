@@ -457,7 +457,7 @@ Statement * Parser::ParseInclude()
 
 	// start parsing!
 	//Advance();
-	return new Statement(_strdup(fileName));
+    return new Statement(strdup(fileName));
 }
 
 TagSet * Parser::ParseTagSet(FILEREF fileRef)
