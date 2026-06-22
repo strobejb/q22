@@ -208,6 +208,15 @@ qt_add_resources(hexedit "app_resources"
     FILES ${HEXEDIT_RESOURCES}
 )
 
+set_source_files_properties(
+    "${CMAKE_SOURCE_DIR}/src/Causeway/strata/README.md"
+    PROPERTIES QT_RESOURCE_ALIAS "README.md"
+)
+qt_add_resources(hexedit "strata_docs"
+    PREFIX "/docs"
+    FILES "${CMAKE_SOURCE_DIR}/src/Causeway/strata/README.md"
+)
+
 target_include_directories(hexedit PRIVATE
     ${HEXEDIT_SOURCE_DIR}
     ${PROJECT_SOURCE_DIR}/src

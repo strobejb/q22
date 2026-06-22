@@ -385,7 +385,17 @@ void StructureDefinitionManager::updateWatchedFiles(const QStringList &files)
         m_watcher->addPaths(watchedDefinitionFiles);
 }
 
+void StructureDefinitionManager::suppressNextChangeNotification()
+{
+    m_suppressNextChange = true;
+}
+
 void StructureDefinitionManager::scheduleChangeNotification()
 {
+    if (m_suppressNextChange)
+    {
+        m_suppressNextChange = false;
+        return;
+    }
     m_reloadTimer.start();
 }

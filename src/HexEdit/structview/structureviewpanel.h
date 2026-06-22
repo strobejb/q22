@@ -12,6 +12,7 @@
 
 class HexView;
 class QAction;
+class QDialog;
 class QLabel;
 class QLineEdit;
 class QPlainTextEdit;
@@ -19,6 +20,7 @@ class QStackedWidget;
 class QToolButton;
 class QTreeView;
 class MenuComboBox;
+class SourceViewButton;
 class StructureContentFrame;
 class StructureDefinitionManager;
 class StructureTreeModel;
@@ -92,6 +94,8 @@ private:
     TypeDecl *selectedRootType() const;
     QString displayNameForTypeDecl(TypeDecl *decl) const;
 
+    void repositionSourceViewButtons();
+
     HexView                    *m_hv = nullptr;
     StructureDefinitionManager *m_definitions = nullptr;
     StructureTreeModel         *m_model = nullptr;
@@ -106,6 +110,10 @@ private:
     QPlainTextEdit             *m_sourceView = nullptr;
     QPlainTextEdit             *m_logView = nullptr;
     QLabel                     *m_statusLabel = nullptr;
+    SourceViewButton           *m_sourceSaveButton = nullptr;
+    SourceViewButton           *m_sourceHelpButton = nullptr;
+    QString                     m_currentSourceFilePath;
+    QDialog                    *m_helpWindow = nullptr;
     int                         m_treeItemLeftPad = 6;
     bool                        m_pinned = false;
     bool                        m_useDefinedTypeNames = false;

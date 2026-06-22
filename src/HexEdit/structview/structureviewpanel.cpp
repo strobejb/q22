@@ -13,6 +13,8 @@
 #include <QApplication>
 #include <QAction>
 #include <QComboBox>
+#include <QDialog>
+#include <QTextEdit>
 #include <QDebug>
 #include <QElapsedTimer>
 #include <QEvent>
@@ -40,10 +42,14 @@
 #include <QStringList>
 #include <QSyntaxHighlighter>
 #include <QTextBlock>
+#include <QTextBlockFormat>
 #include <QTextCharFormat>
 #include <QTextCursor>
 #include <QTextDocument>
+#include <QTextFrame>
 #include <QTextStream>
+#include <QTextTable>
+#include <QTimer>
 #include <QTreeView>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -149,6 +155,163 @@ static void applyStructureTextViewPalette(QPlainTextEdit *edit, HexView *hv)
             .arg(edit->objectName(),
                  filestats::cssColor(selBgColor),
                  filestats::cssColor(selFgColor)));
+}
+
+// Each line of a fenced code block is its own QTextBlock; setMarkdown() tags
+// it with this property (the fence character) but otherwise leaves it as a
+// plain paragraph, so we use it to find code lines for styling/highlighting.
+static bool isMarkdownCodeBlock(const QTextBlock &block)
+{
+    return block.blockFormat().hasProperty(QTextFormat::BlockCodeFence);
+}
+
+static QColor markdownCodeBackground()
+{
+    return QColor(0xf2, 0xf2, 0xf2);
+}
+
+// Qt's own markdown heading scale (relative to a 9pt body font: 18/13.5/10.8/9/7.2/6.3
+// for h1..h6) makes h4 render at the exact same size as body text and h5/h6 *smaller*
+// than body text — those headings are easy to mistake for plain bold text. Replace it
+// with a scale that's always larger than body text and clearly stepped.
+static qreal markdownHeadingScale(int headingLevel)
+{
+    switch (headingLevel)
+    {
+    case 1: return 1.8;
+    case 2: return 1.5;
+    case 3: return 1.3;
+    case 4: return 1.15;
+    case 5: return 1.05;
+    default: return 1.0;
+    }
+}
+
+// QTextDocument::setMarkdown() builds blocks directly rather than via HTML/CSS,
+// so heading/paragraph spacing has to be applied per-block after the fact.
+// Code-block lines are left alone here; wrapMarkdownCodeBlocks() below handles
+// their background/spacing via a QTextFrame instead.
+static void styleMarkdownBlocks(QTextDocument *doc)
+{
+    const QFont baseFont = doc->defaultFont();
+    QTextCursor cursor(doc);
+    for (QTextBlock block = doc->begin(); block.isValid(); block = block.next())
+    {
+        if (isMarkdownCodeBlock(block))
+            continue;
+
+        QTextBlockFormat format = block.blockFormat();
+        const int headingLevel = format.headingLevel();
+        if (headingLevel > 0)
+        {
+            format.setTopMargin(headingLevel <= 2 ? 22 : 16);
+            format.setBottomMargin(10);
+        }
+        else
+        {
+            format.setTopMargin(0);
+            format.setBottomMargin(12);
+        }
+        cursor.setPosition(block.position());
+        cursor.setBlockFormat(format);
+
+        if (headingLevel > 0)
+        {
+            QFont headingFont = baseFont;
+            headingFont.setBold(true);
+            headingFont.setPointSizeF(baseFont.pointSizeF() * markdownHeadingScale(headingLevel));
+            QTextCharFormat headingCharFormat;
+            headingCharFormat.setFont(headingFont);
+            cursor.setPosition(block.position());
+            cursor.setPosition(block.position() + block.length() - 1, QTextCursor::KeepAnchor);
+            cursor.mergeCharFormat(headingCharFormat);
+        }
+    }
+}
+
+// QTextBlockFormat margins shift the background along with the text, so they
+// can't create a gap between the text and the box edge. A QTextFrame can:
+// QTextFrameFormat::setPadding() insets the content from the frame's own
+// background/border, giving each fenced code sample a real padded card.
+static void wrapMarkdownCodeBlocks(QTextDocument *doc)
+{
+    QTextBlock block = doc->begin();
+    while (block.isValid())
+    {
+        if (!isMarkdownCodeBlock(block))
+        {
+            block = block.next();
+            continue;
+        }
+
+        QTextBlock lastLine = block;
+        while (isMarkdownCodeBlock(lastLine.next()))
+            lastLine = lastLine.next();
+
+        QTextFrameFormat frameFormat;
+        frameFormat.setBackground(markdownCodeBackground());
+        frameFormat.setBorderStyle(QTextFrameFormat::BorderStyle_None);
+        frameFormat.setPadding(12);
+        frameFormat.setTopMargin(14);
+        frameFormat.setBottomMargin(14);
+        frameFormat.setLeftMargin(0);
+        frameFormat.setRightMargin(0);
+
+        QTextCursor selection(doc);
+        selection.setPosition(block.position());
+        selection.setPosition(lastLine.position() + lastLine.length() - 1, QTextCursor::KeepAnchor);
+        QTextFrame *frame = selection.insertFrame(frameFormat);
+
+        // insertFrame() splits the first line of the selection into an empty
+        // block left outside the frame and a fresh block holding the text
+        // inside it; that fresh block doesn't inherit BlockCodeFence, so
+        // restore it on every child block to keep isMarkdownCodeBlock() true.
+        QTextCursor fix(doc);
+        for (auto it = frame->begin(); !it.atEnd(); ++it)
+        {
+            const QTextBlock child = it.currentBlock();
+            if (!child.isValid() || isMarkdownCodeBlock(child))
+                continue;
+            QTextBlockFormat childFormat = child.blockFormat();
+            childFormat.setProperty(QTextFormat::BlockCodeFence, QStringLiteral("`"));
+            fix.setPosition(child.position());
+            fix.setBlockFormat(childFormat);
+        }
+
+        block = doc->findBlock(frame->lastPosition() + 1);
+    }
+}
+
+// setMarkdown()'s GFM tables come with Qt's default border/padding; restyle them
+// to a flatter, lighter look and shade the header row to set it off from the body.
+static void styleMarkdownTables(QTextDocument *doc)
+{
+    QList<QTextTable *> seen;
+    for (QTextBlock block = doc->begin(); block.isValid(); block = block.next())
+    {
+        QTextTable *table = QTextCursor(block).currentTable();
+        if (!table || seen.contains(table))
+            continue;
+        seen.append(table);
+
+        QTextTableFormat format = table->format();
+        format.setBorder(1);
+        format.setBorderStyle(QTextFrameFormat::BorderStyle_Solid);
+        format.setBorderBrush(QColor(0xd0, 0xd0, 0xd0));
+        format.setCellPadding(10);
+        format.setCellSpacing(0);
+        format.setTopMargin(10);
+        format.setBottomMargin(10);
+        table->setFormat(format);
+
+        for (int col = 0; col < table->columns(); ++col)
+        {
+            QTextTableCell cell = table->cellAt(0, col);
+            QTextCharFormat cellFormat = cell.format();
+            cellFormat.setBackground(QColor(0xf0, 0xf0, 0xf0));
+            cell.setFormat(cellFormat);
+        }
+    }
 }
 
 static QString typeLibKeywordPattern()
@@ -269,8 +432,10 @@ struct StructureSourceHighlightColors
 class StructureSourceHighlighter : public QSyntaxHighlighter
 {
 public:
-    explicit StructureSourceHighlighter(QTextDocument *document, const QPalette &palette, HexView *hv)
+    explicit StructureSourceHighlighter(QTextDocument *document, const QPalette &palette, HexView *hv,
+                                         std::function<bool(const QTextBlock &)> blockFilter = nullptr)
         : QSyntaxHighlighter(document)
+        , m_blockFilter(std::move(blockFilter))
     {
         const StructureSourceHighlightColors colors = StructureSourceHighlightColors::fromPalette(palette, hv);
 
@@ -304,6 +469,9 @@ public:
 protected:
     void highlightBlock(const QString &text) override
     {
+        if (m_blockFilter && !m_blockFilter(currentBlock()))
+            return;
+
         applyMatches(text, m_keywordPattern, m_keywordFormat);
         applyMatches(text, m_typeKeywordPattern, m_typeKeywordFormat);
         applyMatches(text, m_numberPattern, m_numberFormat);
@@ -638,6 +806,7 @@ private:
     QTextCharFormat m_tagPunctuationFormat;
     QTextCharFormat m_outerBracketFormat;
     QTextCharFormat m_commentFormat;
+    std::function<bool(const QTextBlock &)> m_blockFilter;
 };
 
 struct LogDiagnosticLink
@@ -1546,6 +1715,118 @@ private:
     std::function<void(Page)> m_tabChangedCallback;
 };
 
+class SourceViewButton : public QWidget
+{
+public:
+    static constexpr int kBtnSz = 40;
+
+    explicit SourceViewButton(const QString &iconName, const QString &tooltip,
+                               std::function<void()> onClick, QWidget *parent = nullptr)
+        : QWidget(parent)
+        , m_iconName(iconName)
+        , m_onClick(std::move(onClick))
+    {
+        setFixedSize(kBtnSz, kBtnSz);
+        setToolTip(tooltip);
+        setCursor(Qt::PointingHandCursor);
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+
+        // Fill widget background to match editor so corners outside the circle are invisible.
+        painter.fillRect(rect(), palette().color(QPalette::Base));
+
+        const bool direct = m_hovered || m_pressed;
+        QColor circleColor = palette().color(direct ? QPalette::Mid : QPalette::Window);
+        if (direct)
+            circleColor = circleColor.darker(125);
+        const QColor iconColor = direct ? QColor(Qt::white) : QColor(188, 188, 188);
+
+        const QRectF circle = QRectF(rect()).adjusted(2.5, 2.5, -2.5, -2.5);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(circleColor);
+        painter.drawEllipse(circle);
+
+        static constexpr int kIconSz = 20;
+        const QRect iconRect(width() / 2 - kIconSz / 2, height() / 2 - kIconSz / 2, kIconSz, kIconSz);
+        QIcon icon(QStringLiteral(":/icons/actions/") + m_iconName + QStringLiteral(".svg"));
+        if (icon.isNull())
+            icon = QIcon::fromTheme(m_iconName);
+        if (!icon.isNull())
+        {
+            const QPixmap src = icon.pixmap(iconRect.size());
+            if (!src.isNull())
+            {
+                QPixmap tinted(src.size());
+                tinted.setDevicePixelRatio(src.devicePixelRatio());
+                tinted.fill(Qt::transparent);
+                QPainter p2(&tinted);
+                p2.drawPixmap(0, 0, src);
+                p2.setCompositionMode(QPainter::CompositionMode_SourceIn);
+                p2.fillRect(tinted.rect(), iconColor);
+                p2.end();
+                painter.drawPixmap(iconRect, tinted);
+            }
+        }
+    }
+
+    void enterEvent(QEnterEvent *event) override
+    {
+        m_hovered = true;
+        update();
+        QWidget::enterEvent(event);
+    }
+
+    void leaveEvent(QEvent *event) override
+    {
+        m_hovered = false;
+        m_pressed = false;
+        update();
+        QWidget::leaveEvent(event);
+    }
+
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton)
+        {
+            m_pressed = true;
+            update();
+            event->accept();
+        }
+        else
+        {
+            QWidget::mousePressEvent(event);
+        }
+    }
+
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton)
+        {
+            const bool wasPressed = m_pressed;
+            m_pressed = false;
+            update();
+            if (wasPressed && rect().contains(event->position().toPoint()) && m_onClick)
+                m_onClick();
+            event->accept();
+        }
+        else
+        {
+            QWidget::mouseReleaseEvent(event);
+        }
+    }
+
+private:
+    QString m_iconName;
+    std::function<void()> m_onClick;
+    bool m_hovered = false;
+    bool m_pressed = false;
+};
+
 StructureViewPanel::StructureViewPanel(HexView *hv, QWidget *parent)
     : QWidget(parent)
     , m_hv(hv)
@@ -1592,7 +1873,12 @@ void StructureViewPanel::changeEvent(QEvent *event)
 
 bool StructureViewPanel::eventFilter(QObject *watched, QEvent *event)
 {
-    if (m_logView && watched == m_logView->viewport())
+    if (m_sourceView && (watched == m_sourceView || watched == m_sourceView->viewport()))
+    {
+        if (event->type() == QEvent::Resize)
+            repositionSourceViewButtons();
+    }
+    else if (m_logView && watched == m_logView->viewport())
     {
         if (event->type() == QEvent::MouseMove)
         {
@@ -1764,6 +2050,140 @@ void StructureViewPanel::buildUi()
     m_sourceView->setObjectName(QStringLiteral("structureSourceView"));
     applyStructureTextViewPalette(m_sourceView, m_hv);
     new StructureSourceHighlighter(m_sourceView->document(), m_sourceView->palette(), m_hv);
+
+    m_sourceSaveButton = new SourceViewButton(
+        QStringLiteral("document-save-symbolic"),
+        tr("Save structure definition"),
+        [this]() {
+            if (m_currentSourceFilePath.isEmpty() || !m_sourceView || !m_definitions)
+                return;
+
+            QFile file(m_currentSourceFilePath);
+            if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+            {
+                setStatusLabelError(true);
+                m_statusLabel->setText(
+                    tr("Failed to save %1").arg(QFileInfo(m_currentSourceFilePath).fileName()));
+                return;
+            }
+            file.write(m_sourceView->toPlainText().toUtf8());
+            file.close();
+
+            // Suppress the file-watcher notification that would otherwise re-raise
+            // the "definitions changed" banner immediately after our own reload.
+            m_definitions->suppressNextChangeNotification();
+
+            if (!m_definitions->reload())
+            {
+                // Parse error: reload() already updated the status label via reloadFailed.
+                showLogPage();
+            }
+            else
+            {
+                setStatusLabelError(false);
+                m_statusLabel->setText(
+                    tr("%1 saved").arg(QFileInfo(m_currentSourceFilePath).fileName()));
+            }
+        },
+        m_sourceView);
+    m_sourceHelpButton = new SourceViewButton(
+        QStringLiteral("question"),
+        tr("Strata language reference"),
+        [this]() {
+            if (m_helpWindow)
+            {
+                m_helpWindow->raise();
+                m_helpWindow->activateWindow();
+                return;
+            }
+
+            auto *dlg = new QDialog(window());
+            dlg->setWindowTitle(tr("Strata Language Reference"));
+            dlg->setAttribute(Qt::WA_DeleteOnClose);
+            dlg->resize(780, 640);
+
+            QPalette dlgPalette = dlg->palette();
+            dlgPalette.setColor(QPalette::Window, Qt::white);
+            dlg->setPalette(dlgPalette);
+
+            auto *vl = new QVBoxLayout(dlg);
+            vl->setContentsMargins(0, 0, 0, 0);
+
+            auto *view = new QTextEdit(dlg);
+            view->setObjectName(QStringLiteral("strataHelpView"));
+            view->setReadOnly(true);
+            view->setFrameShape(QFrame::NoFrame);
+
+            QPalette viewPalette = view->palette();
+            viewPalette.setColor(QPalette::Base, Qt::white);
+            viewPalette.setColor(QPalette::Text, Qt::black);
+            viewPalette.setColor(QPalette::WindowText, Qt::black);
+            viewPalette.setColor(QPalette::Mid, QColor(0xb0, 0xb0, 0xb0));
+            view->setPalette(viewPalette);
+            // theme.cpp's app-wide "QWidget { color: palette(window-text); }" rule beats the
+            // palette set above for any text without its own QTextCharFormat foreground (i.e.
+            // every heading/paragraph outside the highlighted code blocks), washing them out
+            // in dark mode. A literal colour in a widget-scoped sheet overrides it; a
+            // palette() reference here would not, since the app sheet's polish already
+            // baked its colour into the role this widget would otherwise resolve. The
+            // scrollbar's track and the scroll area's corner widget have the same problem
+            // (they inherit the app's default window colour, not this view's white), and the
+            // scrollbar's bottom margin is bumped past the global default so the dialog's
+            // rounded corner doesn't clip the thumb.
+            view->setStyleSheet(QStringLiteral(
+                "QTextEdit#strataHelpView { color: black; }"
+                "QTextEdit#strataHelpView QScrollBar:vertical { background: white; }"
+                "QTextEdit#strataHelpView QScrollBar::handle:vertical { margin: 0px 4px 16px 3px; }"
+                "QTextEdit#strataHelpView QScrollBar::add-page:vertical,"
+                "QTextEdit#strataHelpView QScrollBar::sub-page:vertical { background: white; }"
+                "QTextEdit#strataHelpView QScrollBar:horizontal { background: white; }"
+                "QTextEdit#strataHelpView QScrollBar::handle:horizontal { margin: 3px 16px 4px 0px; }"
+                "QTextEdit#strataHelpView QScrollBar::add-page:horizontal,"
+                "QTextEdit#strataHelpView QScrollBar::sub-page:horizontal { background: white; }"
+                "QTextEdit#strataHelpView::corner { background: white; }"));
+
+            QFile f(QStringLiteral(":/docs/README.md"));
+            if (f.open(QIODevice::ReadOnly))
+                view->setMarkdown(QString::fromUtf8(f.readAll()));
+            else
+                view->setPlainText(tr("Strata language documentation not available."));
+
+            view->document()->setDocumentMargin(24);
+            styleMarkdownBlocks(view->document());
+            styleMarkdownTables(view->document());
+            // Wrap code blocks into frames before attaching the highlighter: insertFrame()
+            // cuts and reinserts the selected text, and the highlighter's incremental
+            // contentsChange-driven reformat misses the frame's first line if it's already
+            // attached when that happens. Attaching afterwards makes its initial highlight
+            // pass run once over the final, settled block structure.
+            wrapMarkdownCodeBlocks(view->document());
+            // Reuses the same highlighter (and q22-struct.xml colors) as the live
+            // source editor, scoped to fenced code blocks via isMarkdownCodeBlock.
+            new StructureSourceHighlighter(view->document(), viewPalette, nullptr, isMarkdownCodeBlock);
+
+            vl->addWidget(view);
+
+            // QSyntaxHighlighter's initial rehighlight pass, combined with the QTextFrames
+            // just inserted above, corrupts Qt's block layout: many blocks right after a
+            // frame get laid out with zero height and visually vanish/overlap (this is what
+            // made headings and paragraphs appear "missing" -- they're in the document, just
+            // laid out with no height). The corruption only resolves on a *second* layout
+            // pass, so defer a full re-dirty to the next event-loop turn, after the dialog's
+            // first (corrupting) layout has already happened.
+            QTextDocument *helpDoc = view->document();
+            QTimer::singleShot(0, view, [helpDoc]() {
+                helpDoc->markContentsDirty(0, helpDoc->characterCount());
+            });
+
+            m_helpWindow = dlg;
+            connect(dlg, &QDialog::destroyed, this, [this]() { m_helpWindow = nullptr; });
+            dlg->show();
+        },
+        m_sourceView);
+    m_sourceSaveButton->hide();
+    m_sourceHelpButton->hide();
+    m_sourceView->installEventFilter(this);
+    m_sourceView->viewport()->installEventFilter(this);
 
     m_logView = new QPlainTextEdit(m_viewStack);
     m_logView->setReadOnly(true);
@@ -2260,6 +2680,32 @@ void StructureViewPanel::collapseSubtree(const QModelIndex &index)
     m_tree->collapse(index);
 }
 
+void StructureViewPanel::repositionSourceViewButtons()
+{
+    if (!m_sourceSaveButton || !m_sourceHelpButton || !m_sourceView)
+        return;
+
+    const QWidget *vp = m_sourceView->viewport();
+    if (!vp)
+        return;
+
+    // Buttons are children of m_sourceView; position them relative to the
+    // viewport's rect mapped into m_sourceView's coordinate space so they
+    // stay pinned to the viewport's bottom-right corner regardless of scrolling
+    // or whether the scrollbars are shown.
+    constexpr int margin = 8;
+    constexpr int gap = 6;
+    constexpr int btnSz = SourceViewButton::kBtnSz;
+
+    const QPoint vpOrigin = vp->mapTo(m_sourceView, QPoint(0, 0));
+    const int x = vpOrigin.x() + vp->width() - margin - btnSz;
+    const int bottomY = vpOrigin.y() + vp->height() - margin - btnSz;
+    const int topY    = bottomY - gap - btnSz;
+
+    m_sourceSaveButton->move(x, topY);
+    m_sourceHelpButton->move(x, bottomY);
+}
+
 void StructureViewPanel::showGridPage()
 {
     if (m_viewStack && m_tree)
@@ -2291,6 +2737,17 @@ void StructureViewPanel::showSourcePage(TypeDecl *typeDecl)
         {
             m_contentFrame->setCurrentPage(StructureContentFrame::Page::Source);
             m_contentFrame->setLogActive(false);
+        }
+        repositionSourceViewButtons();
+        if (m_sourceSaveButton)
+        {
+            m_sourceSaveButton->show();
+            m_sourceSaveButton->raise();
+        }
+        if (m_sourceHelpButton)
+        {
+            m_sourceHelpButton->show();
+            m_sourceHelpButton->raise();
         }
     }
 }
@@ -2401,10 +2858,12 @@ bool StructureViewPanel::loadSourceFile(const QString &path, int line, int selSt
     // correspond 1-to-1 with positions in the raw buffer.
     if (!file.open(QIODevice::ReadOnly))
     {
+        m_currentSourceFilePath.clear();
         m_sourceView->setPlainText(tr("Unable to open %1").arg(QDir::toNativeSeparators(path)));
         return true;
     }
 
+    m_currentSourceFilePath = path;
     const QByteArray raw = file.readAll();
     m_sourceView->setPlainText(QString::fromUtf8(raw));
 

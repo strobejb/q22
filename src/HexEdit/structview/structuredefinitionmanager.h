@@ -50,6 +50,8 @@ public:
     void setBuiltinStructDirsForTests(const QStringList &dirs);
     void setUserStructsDirForTests(const QString &dir);
 
+    void suppressNextChangeNotification();
+
 public slots:
     bool reload();
     void ensureLoaded();
@@ -77,6 +79,7 @@ private:
     QString                      m_lastError;
     QStringList                  m_loadLog;
     bool                         m_loaded = false;
+    bool                         m_suppressNextChange = false;
 };
 
 #endif // STRUCTVIEW_STRUCTUREDEFINITIONMANAGER_H
