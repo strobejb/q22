@@ -451,9 +451,14 @@ ExprNode * Parser::FullExpression(TOKEN term)
 	}
 
 	if(term && !Test(term))
+    {
+        delete p;
 		return 0;
+    }
 	else
+    {
 		return p;
+    }
 }
 
 
@@ -673,8 +678,8 @@ INUMTYPE Evaluate(ExprNode *expr)
 			case '+':			return left +  right;
 			case '-':			return left -  right;
 			case '*':			return left *  right;
-			case '%':			return left %  right;
-			case '/':			return left /  right;
+            case '%':			return right != 0 ? left %  right : 0;
+            case '/':			return right != 0 ? left /  right : 0;
 			case '|':			return left |  right;
 			case '&':			return left &  right;
 			case '^':			return left ^  right;

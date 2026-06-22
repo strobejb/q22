@@ -36,7 +36,7 @@ Symbol *InstallSymbol(SymbolTable &table, const char *name)
 {
 	Symbol *sym = new Symbol;
 	
-	strcpy(sym->name, name);
+    safe_strcpy(sym->name, MAX_STRING_LEN, name);
 	table.push_back(sym);
 
 	sym->anonymous	= name[0] == '$' ? true : false;
@@ -380,7 +380,7 @@ Type * Parser::ParseEnumBody(Symbol *sym)
 		ExprNode *expr = 0;
 		EnumField *field;
 
-		strcpy(fieldName, t.str);
+        safe_strcpy(fieldName, MAX_STRING_LEN, t.str);
 
 		FILEREF fileRef1(lexer.CurrentFile());
 
@@ -558,7 +558,7 @@ Type * Parser::ParseBaseType(TypeDecl *typeDecl, bool nested)
 		// type aliases
 		case TOK_IDENTIFIER:
 
-			strcpy(typeName, t.str);
+            safe_strcpy(typeName, MAX_STRING_LEN, t.str);
 			if(!Expected(TOK_IDENTIFIER))
 				return 0;
 
@@ -584,7 +584,7 @@ Type * Parser::ParseBaseType(TypeDecl *typeDecl, bool nested)
 
 			if(t == TOK_IDENTIFIER)
 			{
-				strcpy(typeName, t.str);
+                safe_strcpy(typeName, MAX_STRING_LEN, t.str);
 				Advance();
 			}
 			else
@@ -637,7 +637,7 @@ Type * Parser::ParseBaseType(TypeDecl *typeDecl, bool nested)
 
 			if(t == TOK_IDENTIFIER)
 			{
-				strcpy(typeName, t.str);
+                safe_strcpy(typeName, MAX_STRING_LEN, t.str);
 				Advance();
 			}
 			else

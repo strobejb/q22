@@ -371,9 +371,6 @@ size_t RecurseDisplayType(FILE *fp, TypeDecl *typeDecl, Type *type, int indent, 
 			
 			sptr = type->sptr;
 
-			FILE_DESC *fileDesc;
-			fileDesc = sptr->symbol->fileRef.fileDesc;
-
 			if(type->ty == typeUNION)
 				len += fprintf(fp, "union");
 			else
@@ -490,7 +487,7 @@ size_t RecurseDisplayType(FILE *fp, TypeDecl *typeDecl, Type *type, int indent, 
 		if(type->brackets) 
 			len += fprintf(fp, ")");
 		
-		type = type->link;
+        // type = type->link;
 	}
 
 	return len;
@@ -501,7 +498,7 @@ bool NeedsBrackets(Type *type)
 	type = type->link;
 
 	bool foundArray = false;
-	bool foundPtr   = false;
+    //bool foundPtr   = false;
 	bool complex	= false;
 
 	while(type)
@@ -512,7 +509,7 @@ bool NeedsBrackets(Type *type)
 		if(type->ty == typePOINTER)
 		{
 			complex = foundArray ? true : complex;
-			foundPtr = true;
+            //foundPtr = true;
 		}
 
 		type = type->link;
@@ -525,12 +522,9 @@ size_t DisplayType(FILE *fp, TypeDecl *typeDecl, Type *type, int indent)
 {
 	size_t len = 0;
 
-	type = InvertType(type);
-	
-	//len += print_indent(fp, indent);
-	len += RecurseDisplayType(fp, typeDecl, type, indent, false);
-
-	type = InvertType(type);
+    type   =    InvertType(type);
+    len   +=    RecurseDisplayType(fp, typeDecl, type, indent, false);
+    /*type =*/  InvertType(type);
 	
 	return len;
 }
@@ -571,7 +565,7 @@ size_t DisplayTypeDecl(FILE *fp, TypeDecl *typeDecl, int indent)
 		if(i < typeDecl->declList.size() - 1)
 			len += fprintf(fp, ",");
 
-		type = InvertType(type);
+        /*type =*/ InvertType(type);
 		RestoreLink(restore, typeDecl->baseType);
 	}
 

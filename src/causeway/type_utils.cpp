@@ -276,7 +276,7 @@ bool AppendTypeDecl(Type *parent, TypeDecl *child, int pos)
 		TypeDeclList::iterator itor;// = parent->sptr->typeDeclList(;
 		
 		size_t i = 0;
-		size_t s = tdl.size();
+        //size_t s = tdl.size();
 		for(itor = tdl.begin(); itor != tdl.end(); itor++)
 		{
 			// not taking the declList into account
@@ -491,9 +491,9 @@ void RenderType(TCHAR *buf, int len, Type *type)
 		}
 	}
 
-	type = InvertType(type);
+    type     = InvertType(type);
 	RecurseRenderType(sbuf, type);
-	type = InvertType(type);
+    /*type =*/ InvertType(type);
 
 	if(restore)
 		RestoreLink(restore, tptr);

@@ -15,7 +15,8 @@
 #include <stdio.h>
 
 // Safe strcpy: truncates to fit, always null-terminates. dst must be an array.
-#define safe_strcpy(dst, src)  snprintf((dst), sizeof(dst), "%s", (src))
+#define safe_strcpy_a(dst, src)    snprintf((dst), sizeof(dst), "%s", (src))
+#define safe_strcpy(dst, dstsize, src) snprintf((dst), dstsize, "%s", (src))
 
 #include "lexer.h"
 

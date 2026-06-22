@@ -214,8 +214,6 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 
 	while(t != ']')
 	{
-		foundtag = true;
-
 		if(t == TOK_LENGTHIS)
 		{
 			Error(ERROR_RESERVED_KEYWORD, inenglish(t));
@@ -285,7 +283,7 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 			if(!Expected('('))
 				return false;
 
-			safe_strcpy(tagSetName, t.str);
+            safe_strcpy(tagSetName, MAX_STRING_LEN, t.str);
 			if(!Expected(TOK_IDENTIFIER))
 				return false;
 
@@ -425,7 +423,7 @@ Statement * Parser::ParseInclude()
 		return 0;
 
 	// "filename"
-    safe_strcpy(fileName, t.str);
+    safe_strcpy(fileName, MAX_STRING_LEN, t.str);
 	if(!Expected(TOK_STRINGBUF))
 		return 0;
 
@@ -442,7 +440,7 @@ Statement * Parser::ParseInclude()
 			{
 				errcount += p.errcount;
 				lasterr   =  p.lasterr;
-                safe_strcpy(errstr, p.errstr);
+                safe_strcpy(errstr, MAX_STRING_LEN, p.errstr);
 				return 0;
 			}
 		}
@@ -468,7 +466,7 @@ TagSet * Parser::ParseTagSet(FILEREF fileRef)
 	if(!Expected(TOK_TAGSET))
 		return 0;
 
-    safe_strcpy(tagSetName, t.str);
+    safe_strcpy(tagSetName, MAX_STRING_LEN, t.str);
 	if(!Expected(TOK_IDENTIFIER))
 		return 0;
 
