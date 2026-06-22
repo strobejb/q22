@@ -31,6 +31,13 @@ struct ExportedStructureType
     QList<StructureMagicSignature> magicSignatures;
 };
 
+struct FailedStructureFile
+{
+    QString filePath;
+    QString fileName;
+    QString message;
+};
+
 class StructureDefinitionManager : public QObject
 {
     Q_OBJECT
@@ -40,6 +47,7 @@ public:
     StrataLibrary *library() const;
     QStringList definitionFiles() const;
     QList<ExportedStructureType> exportedTypes() const;
+    QList<FailedStructureFile> failedFiles() const;
     QString lastError() const;
     QString loadLog() const;
     bool isLoaded() const;
@@ -58,15 +66,13 @@ public slots:
 
 signals:
     void definitionsReloaded();
-    void reloadFailed(const QString &message);
     void definitionFilesChanged();
 
 private:
     QStringList discoverDefinitionFiles() const;
     bool parseFiles(const QStringList &files,
                     StrataLibrary *library,
-                    QString *errorSummary,
-                    QString *errorDiagnostic) const;
+                    QList<FailedStructureFile> *failures) const;
     void updateWatchedFiles(const QStringList &files);
     void scheduleChangeNotification();
 
@@ -78,6 +84,7 @@ private:
     QString                      m_userDirOverride;
     QString                      m_lastError;
     QStringList                  m_loadLog;
+    QList<FailedStructureFile>   m_failedFiles;
     bool                         m_loaded = false;
     bool                         m_suppressNextChange = false;
 };

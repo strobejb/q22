@@ -93,6 +93,8 @@ private:
     void refreshForCurrentFileAssociation();
     TypeDecl *selectedRootType() const;
     QString displayNameForTypeDecl(TypeDecl *decl) const;
+    bool selectedRootHasLoadError(QString *filePath, QString *message) const;
+    void updateLoadErrorView();
 
     void repositionSourceViewButtons();
 
@@ -109,6 +111,7 @@ private:
     QTreeView                  *m_tree = nullptr;
     QPlainTextEdit             *m_sourceView = nullptr;
     QPlainTextEdit             *m_logView = nullptr;
+    QLabel                     *m_loadErrorView = nullptr;
     QLabel                     *m_statusLabel = nullptr;
     SourceViewButton           *m_sourceSaveButton = nullptr;
     SourceViewButton           *m_sourceHelpButton = nullptr;

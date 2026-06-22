@@ -76,6 +76,12 @@ static constexpr InitialStructureExpansion kInitialStructureExpansion =
     InitialStructureExpansion::FirstLevelAndFirstField;
 static constexpr int kBranchIconSize = 16;
 
+// m_rootCombo item data roles used to mark an entry as a definition file that
+// failed to parse: kRootComboFilePathRole holds the source path (empty for a
+// normal, successfully-parsed type), kRootComboErrorRole the parser diagnostic.
+static constexpr int kRootComboFilePathRole = Qt::UserRole + 1;
+static constexpr int kRootComboErrorRole    = Qt::UserRole + 2;
+
 static bool structureProfileEnabled()
 {
     return qEnvironmentVariableIntValue("QEXED_STRUCTURE_PROFILE") != 0;
@@ -2069,20 +2075,35 @@ void StructureViewPanel::buildUi()
             file.write(m_sourceView->toPlainText().toUtf8());
             file.close();
 
+            const QString savedPath = m_currentSourceFilePath;
+
             // Suppress the file-watcher notification that would otherwise re-raise
             // the "definitions changed" banner immediately after our own reload.
             m_definitions->suppressNextChangeNotification();
+            m_definitions->reload();
 
-            if (!m_definitions->reload())
+            // Other, unrelated definition files can fail independently of the one we
+            // just saved, so check specifically for the saved file rather than the
+            // overall reload() result: reload() already updated the status label/
+            // dropdown for the batch as a whole via definitionsReloaded.
+            bool savedFileFailed = false;
+            for (const FailedStructureFile &failure : m_definitions->failedFiles())
             {
-                // Parse error: reload() already updated the status label via reloadFailed.
+                if (failure.filePath == savedPath)
+                {
+                    savedFileFailed = true;
+                    break;
+                }
+            }
+
+            if (savedFileFailed)
+            {
                 showLogPage();
             }
             else
             {
                 setStatusLabelError(false);
-                m_statusLabel->setText(
-                    tr("%1 saved").arg(QFileInfo(m_currentSourceFilePath).fileName()));
+                m_statusLabel->setText(tr("%1 saved").arg(QFileInfo(savedPath).fileName()));
             }
         },
         m_sourceView);
@@ -2195,9 +2216,22 @@ void StructureViewPanel::buildUi()
     new StructureLogHighlighter(m_logView->document());
     m_logView->viewport()->installEventFilter(this);
 
+    m_loadErrorView = new QLabel(m_viewStack);
+    m_loadErrorView->setObjectName(QStringLiteral("structureLoadErrorView"));
+    m_loadErrorView->setAlignment(Qt::AlignCenter);
+    m_loadErrorView->setWordWrap(true);
+    m_loadErrorView->setTextFormat(Qt::RichText);
+    m_loadErrorView->setOpenExternalLinks(false);
+    m_loadErrorView->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    m_loadErrorView->setStyleSheet(QStringLiteral(
+        "QLabel#structureLoadErrorView { background: palette(base); }"));
+    connect(m_loadErrorView, &QLabel::linkActivated,
+            this, [this](const QString &) { showSourcePage(nullptr); });
+
     m_viewStack->addWidget(m_tree);
     m_viewStack->addWidget(m_sourceView);
     m_viewStack->addWidget(m_logView);
+    m_viewStack->addWidget(m_loadErrorView);
 
     m_contentFrame->setContentWidget(m_viewStack);
 
@@ -2255,14 +2289,6 @@ void StructureViewPanel::buildUi()
                 updateDefinitionsUi();
                 showGridPage();
             });
-    connect(m_definitions, &StructureDefinitionManager::reloadFailed,
-            this, [this](const QString &message) {
-                if (m_reloadBanner)
-                    m_reloadBanner->hide();
-                setStatusLabelError(true);
-                m_statusLabel->setText(message);
-                updateDefinitionsUi();
-            });
     connect(m_definitions, &StructureDefinitionManager::definitionFilesChanged,
             this, [this]() {
                 if (m_reloadBanner)
@@ -2302,7 +2328,15 @@ void StructureViewPanel::buildUi()
                 }
             });
     connect(m_rootCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, [this](int) { rebuildRows(); });
+            this, [this](int) {
+                rebuildRows();
+                // Refresh which widget occupies the Struct slot (tree vs. load-error
+                // message) if that's what's currently showing; leave Source/Log alone.
+                if (m_viewStack
+                    && (m_viewStack->currentWidget() == m_tree
+                        || m_viewStack->currentWidget() == m_loadErrorView))
+                    showGridPage();
+            });
 }
 
 void StructureViewPanel::updateTreeSelectionPalette()
@@ -2369,6 +2403,7 @@ void StructureViewPanel::updateTreeSelectionPalette()
 void StructureViewPanel::updateDefinitionsUi()
 {
     const QList<ExportedStructureType> exportedTypes = m_definitions->exportedTypes();
+    const QList<FailedStructureFile> failedFiles = m_definitions->failedFiles();
 
     {
         const QSignalBlocker blocker(m_rootCombo);
@@ -2381,6 +2416,16 @@ void StructureViewPanel::updateDefinitionsUi()
             m_rootCombo->addItem(displayName,
                                  QVariant::fromValue<qulonglong>(reinterpret_cast<qulonglong>(type.typeDecl)));
         }
+        // Files that failed to parse still get an entry (by filename, since we never
+        // got far enough to read an @export description) so they aren't silently
+        // dropped from the list; selecting one shows an error in place of the grid.
+        for (const FailedStructureFile &failure : failedFiles)
+        {
+            const int index = m_rootCombo->count();
+            m_rootCombo->addItem(failure.fileName, QVariant::fromValue<qulonglong>(0));
+            m_rootCombo->setItemData(index, failure.filePath, kRootComboFilePathRole);
+            m_rootCombo->setItemData(index, failure.message, kRootComboErrorRole);
+        }
 
         const int associatedIndex = associatedRootTypeIndex(exportedTypes);
         if (associatedIndex >= 0)
@@ -2389,18 +2434,14 @@ void StructureViewPanel::updateDefinitionsUi()
             m_rootCombo->setCurrentIndex(-1);
     }
 
-    if (!m_definitions->lastError().isEmpty())
-    {
-        setStatusLabelError(true);
+    setStatusLabelError(!failedFiles.isEmpty());
+    if (!failedFiles.isEmpty())
         m_statusLabel->setText(m_definitions->lastError());
-        m_model->clear();
-        clearHexViewOverlay();
-        return;
-    }
+    else
+        m_statusLabel->setText(tr("%1 definition file(s), %2 exported type(s)")
+                                    .arg(m_definitions->definitionFiles().size())
+                                    .arg(exportedTypes.size()));
 
-    const int fileCount = m_definitions->definitionFiles().size();
-    setStatusLabelError(false);
-    m_statusLabel->setText(tr("%1 definition file(s), %2 exported type(s)").arg(fileCount).arg(exportedTypes.size()));
     rebuildRows();
 }
 
@@ -2709,7 +2750,17 @@ void StructureViewPanel::repositionSourceViewButtons()
 void StructureViewPanel::showGridPage()
 {
     if (m_viewStack && m_tree)
-        m_viewStack->setCurrentWidget(m_tree);
+    {
+        if (m_loadErrorView && selectedRootHasLoadError(nullptr, nullptr))
+        {
+            updateLoadErrorView();
+            m_viewStack->setCurrentWidget(m_loadErrorView);
+        }
+        else
+        {
+            m_viewStack->setCurrentWidget(m_tree);
+        }
+    }
     if (m_contentFrame)
     {
         m_contentFrame->setCurrentPage(StructureContentFrame::Page::Struct);
@@ -2728,6 +2779,15 @@ void StructureViewPanel::showSourcePage(TypeDecl *typeDecl)
     {
         path = QString::fromLocal8Bit(typeDecl->fileRef.fileDesc->filePath);
         line = static_cast<int>(typeDecl->fileRef.lineNo);
+    }
+    else
+    {
+        // No TypeDecl to source from (e.g. a definition file that failed to parse):
+        // fall back to whatever the combo's current entry has on file, so "View
+        // source" and the Source tab still work for it.
+        QString message;
+        if (selectedRootHasLoadError(&path, &message))
+            line = parseLogDiagnosticLine(message).lineNo;
     }
 
     if (loadSourceFile(path, line))
@@ -3218,6 +3278,36 @@ QString StructureViewPanel::displayNameForTypeDecl(TypeDecl *decl) const
         return tr("struct %1").arg(QString::fromLocal8Bit(decl->baseType->sptr->symbol->name));
 
     return tr("(anonymous type)");
+}
+
+bool StructureViewPanel::selectedRootHasLoadError(QString *filePath, QString *message) const
+{
+    if (!m_rootCombo || m_rootCombo->currentIndex() < 0)
+        return false;
+
+    const QString path = m_rootCombo->currentData(kRootComboFilePathRole).toString();
+    if (path.isEmpty())
+        return false;
+
+    if (filePath)
+        *filePath = path;
+    if (message)
+        *message = m_rootCombo->currentData(kRootComboErrorRole).toString();
+    return true;
+}
+
+void StructureViewPanel::updateLoadErrorView()
+{
+    if (!m_loadErrorView)
+        return;
+
+    QString filePath;
+    if (!selectedRootHasLoadError(&filePath, nullptr))
+        return;
+
+    m_loadErrorView->setText(
+        tr("<div align='center'>Error loading %1<br><br><a href=\"#\">View source</a></div>")
+            .arg(QFileInfo(filePath).fileName().toHtmlEscaped()));
 }
 
 StructureViewPanelHost::StructureViewPanelHost(HexView *hv, QWidget *parent)

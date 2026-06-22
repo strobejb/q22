@@ -22,7 +22,9 @@ private slots:
     void managerDiscoversBuiltinAndUserDefinitionFiles();
     void reloadSwapsInParsedStrataLibrary();
     void managerReportsChangedDefinitionsWithoutAutoReload();
-    void failedReloadPreservesPreviousLibrary();
+    void brokenDefinitionFileIsReportedWithoutDroppingValidOnes();
+    void fixingABrokenDefinitionFileRestoresItsTypes();
+    void partiallyParsedFileDoesNotExposeStaleExportedType();
     void exportedTypesUseExplicitExportTagsOnly();
     void exportedTypesExposeAssocExtensions();
     void exportedTypesExposeMagicSignatures();
@@ -318,39 +320,106 @@ void StructViewTests::managerReportsChangedDefinitionsWithoutAutoReload()
     QCOMPARE(manager.library(), activeLibrary);
 }
 
-void StructViewTests::failedReloadPreservesPreviousLibrary()
+void StructViewTests::brokenDefinitionFileIsReportedWithoutDroppingValidOnes()
 {
-    // Scenario: a user saves a broken definition while the panel is open.
-    // Expected: the error is reported, but the previous valid StrataLibrary stays
-    // alive so the Structure View does not blank itself during an editing typo.
-    // Regression guard: failed reloads must not replace good parse results with
-    // an empty or half-built library.
+    // Scenario: one definition file has a syntax error (e.g. the user just saved a
+    // typo) while a sibling file is perfectly valid.
+    // Expected: reload() still parses the valid file into the library and exposes
+    // the broken one via failedFiles(), instead of discarding everything.
+    // Regression guard: a single broken file used to abort the whole batch, so even
+    // unrelated, already-valid files vanished from the dropdown until fixed.
     QTemporaryDir temp;
     QVERIFY(temp.isValid());
 
     const QString userDir = temp.filePath(QStringLiteral("structs"));
     QVERIFY(QDir().mkpath(userDir));
-    const QString filePath = QDir(userDir).filePath(QStringLiteral("types.txt"));
-    writeTextFile(filePath, "typedef dword StableType;\n");
+    const QString stableFilePath = QDir(userDir).filePath(QStringLiteral("stable.struct"));
+    const QString brokenFilePath = QDir(userDir).filePath(QStringLiteral("broken.struct"));
+    writeTextFile(stableFilePath, "typedef dword StableType;\n");
+    writeTextFile(brokenFilePath, "this is not valid Strata syntax\n");
 
     StructureDefinitionManager manager;
     manager.setBuiltinStructDirsForTests({});
     manager.setUserStructsDirForTests(userDir);
 
-    QVERIFY(manager.reload());
-    StrataLibrary *stableLibrary = manager.library();
-    QVERIFY(stableLibrary);
-    QCOMPARE(stableLibrary->globalTypeDeclList.size(), size_t(1));
-
-    writeTextFile(filePath, "this is not valid Strata syntax\n");
     QVERIFY(!manager.reload());
-    QCOMPARE(manager.library(), stableLibrary);
+    QVERIFY(manager.library());
     QCOMPARE(manager.library()->globalTypeDeclList.size(), size_t(1));
+
+    const QList<FailedStructureFile> failures = manager.failedFiles();
+    QCOMPARE(failures.size(), 1);
+    QCOMPARE(failures.first().fileName, QStringLiteral("broken.struct"));
+    QCOMPARE(failures.first().filePath, brokenFilePath);
+    QVERIFY(failures.first().message.contains(QStringLiteral("broken.struct(1) : error")));
+
     QVERIFY(!manager.lastError().isEmpty());
-    QCOMPARE(manager.lastError(), QStringLiteral("Failed: types.txt"));
+    QCOMPARE(manager.lastError(), QStringLiteral("Failed: broken.struct"));
+
     const QString log = manager.loadLog();
-    QVERIFY(log.contains(QStringLiteral("Failed: types.txt\n")));
-    QVERIFY(log.contains(QStringLiteral("types.txt(1) : error")));
+    QVERIFY(log.contains(QStringLiteral("Failed: broken.struct")));
+    QVERIFY(log.contains(QStringLiteral("broken.struct(1) : error")));
+}
+
+void StructViewTests::fixingABrokenDefinitionFileRestoresItsTypes()
+{
+    // Scenario: the user corrects the syntax error and saves again.
+    // Expected: the next reload() picks the file back up and its type reappears,
+    // with no leftover entry in failedFiles().
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+
+    const QString userDir = temp.filePath(QStringLiteral("structs"));
+    QVERIFY(QDir().mkpath(userDir));
+    const QString filePath = QDir(userDir).filePath(QStringLiteral("types.struct"));
+    writeTextFile(filePath, "this is not valid Strata syntax\n");
+
+    StructureDefinitionManager manager;
+    manager.setBuiltinStructDirsForTests({});
+    manager.setUserStructsDirForTests(userDir);
+
+    QVERIFY(!manager.reload());
+    QCOMPARE(manager.failedFiles().size(), 1);
+    QCOMPARE(manager.library()->globalTypeDeclList.size(), size_t(0));
+
+    writeTextFile(filePath, "typedef dword FixedType;\n");
+    QVERIFY(manager.reload());
+    QVERIFY(manager.failedFiles().isEmpty());
+    QCOMPARE(manager.library()->globalTypeDeclList.size(), size_t(1));
+}
+
+void StructViewTests::partiallyParsedFileDoesNotExposeStaleExportedType()
+{
+    // Scenario: a file exports a type, then the user introduces a syntax error
+    // further down (e.g. while adding a second struct) and saves. The declaration
+    // before the error still parses fine and stays in the shared library.
+    // Expected: exportedTypes() does not keep listing that now-stale declaration --
+    // the file shows up only via failedFiles(), not as a confusing extra "good"
+    // entry alongside its own "failed to load" entry.
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+
+    const QString userDir = temp.filePath(QStringLiteral("structs"));
+    QVERIFY(QDir().mkpath(userDir));
+    const QString filePath = QDir(userDir).filePath(QStringLiteral("types.struct"));
+    writeTextFile(filePath,
+                  "[export]\n"
+                  "struct Good { byte b; } good;\n");
+
+    StructureDefinitionManager manager;
+    manager.setBuiltinStructDirsForTests({});
+    manager.setUserStructsDirForTests(userDir);
+
+    QVERIFY2(manager.reload(), qPrintable(manager.lastError()));
+    QCOMPARE(manager.exportedTypes().size(), 1);
+
+    writeTextFile(filePath,
+                  "[export]\n"
+                  "struct Good { byte b; } good;\n"
+                  "this is not valid Strata syntax\n");
+    QVERIFY(!manager.reload());
+    QCOMPARE(manager.failedFiles().size(), 1);
+    QCOMPARE(manager.library()->globalTypeDeclList.size(), size_t(1));
+    QVERIFY(manager.exportedTypes().isEmpty());
 }
 
 void StructViewTests::exportedTypesUseExplicitExportTagsOnly()

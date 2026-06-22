@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
+#include <QSet>
 #include <QSettings>
 #include <QStandardPaths>
 
@@ -186,12 +187,23 @@ QList<ExportedStructureType> StructureDefinitionManager::exportedTypes() const
     if (!m_library)
         return types;
 
+    // A file that fails partway through can still have left some declarations
+    // parsed (whatever came before the syntax error) in the shared library. Treat
+    // the whole file as failed for listing purposes so the dropdown doesn't show a
+    // stale/partial type alongside its own "failed to load" entry.
+    QSet<QString> failedFilePaths;
+    for (const FailedStructureFile &failure : m_failedFiles)
+        failedFilePaths.insert(QDir::toNativeSeparators(failure.filePath));
+
     for (TypeDecl *decl : m_library->globalTypeDeclList)
     {
         if (!decl || !FindTag(decl->tagList, TOK_EXPORT, nullptr))
             continue;
 
         FILE_DESC *fileDesc = decl->fileRef.fileDesc;
+        if (fileDesc && failedFilePaths.contains(QString::fromLocal8Bit(fileDesc->filePath)))
+            continue;
+
         ExportedStructureType type;
         type.typeDecl = decl;
         if (fileDesc)
@@ -209,6 +221,11 @@ QList<ExportedStructureType> StructureDefinitionManager::exportedTypes() const
     }
 
     return types;
+}
+
+QList<FailedStructureFile> StructureDefinitionManager::failedFiles() const
+{
+    return m_failedFiles;
 }
 
 QString StructureDefinitionManager::lastError() const
@@ -275,30 +292,40 @@ bool StructureDefinitionManager::reload()
     for (const QString &file : files)
         m_loadLog.push_back(tr("  %1").arg(QDir::toNativeSeparators(file)));
 
-    auto              nextLibrary = std::make_unique<StrataLibrary>();
-    QString           errorSummary;
-    QString           errorDiagnostic;
-    if (!parseFiles(files, nextLibrary.get(), &errorSummary, &errorDiagnostic))
-    {
-        m_loaded = true;
-        m_lastError = errorSummary;
-        m_loadLog.push_back(errorSummary);
-        if (!errorDiagnostic.isEmpty())
-            m_loadLog.push_back(errorDiagnostic);
-        updateWatchedFiles(files);
-        emit reloadFailed(errorSummary);
-        return false;
-    }
+    // Each file is parsed independently into the same shared library: a broken
+    // file is skipped (and reported via m_failedFiles) rather than discarding the
+    // declarations already parsed from every other, perfectly valid file.
+    auto                        nextLibrary = std::make_unique<StrataLibrary>();
+    QList<FailedStructureFile>  failures;
+    const bool                  allOk = parseFiles(files, nextLibrary.get(), &failures);
 
     m_library = std::move(nextLibrary);
     m_definitionFiles = files;
-    m_lastError.clear();
+    m_failedFiles = failures;
+
+    if (!failures.isEmpty())
+    {
+        m_lastError = failures.size() == 1
+            ? tr("Failed: %1").arg(failures.first().fileName)
+            : tr("%1 of %2 definition files failed to load").arg(failures.size()).arg(files.size());
+        for (const FailedStructureFile &failure : failures)
+        {
+            m_loadLog.push_back(tr("Failed: %1").arg(failure.fileName));
+            if (!failure.message.isEmpty())
+                m_loadLog.push_back(failure.message);
+        }
+    }
+    else
+    {
+        m_lastError.clear();
+    }
+
     m_loadLog.push_back(tr("Loaded %1 definition file(s)").arg(files.size()));
     m_loadLog.push_back(tr("Exported type(s): %1").arg(exportedTypes().size()));
     m_loaded = true;
     updateWatchedFiles(files);
     emit definitionsReloaded();
-    return true;
+    return allOk;
 }
 
 void StructureDefinitionManager::ensureLoaded()
@@ -324,25 +351,28 @@ QStringList StructureDefinitionManager::discoverDefinitionFiles() const
 
 bool StructureDefinitionManager::parseFiles(const QStringList &files,
                                             StrataLibrary *library,
-                                            QString *errorSummary,
-                                            QString *errorDiagnostic) const
+                                            QList<FailedStructureFile> *failures) const
 {
+    bool allOk = true;
     for (const QString &file : files)
     {
         Parser parser(library);
         const QByteArray nativePath = QDir::toNativeSeparators(file).toLocal8Bit();
         if (!parser.Ooof(nativePath.constData()))
         {
-            const QString fileName = QFileInfo(file).fileName();
-            if (errorSummary)
-                *errorSummary = tr("Failed: %1").arg(fileName);
-            if (errorDiagnostic)
-                *errorDiagnostic = QString::fromLocal8Bit(parser.LastErrStr()).trimmed();
-            return false;
+            allOk = false;
+            if (failures)
+            {
+                FailedStructureFile failure;
+                failure.filePath = file;
+                failure.fileName = QFileInfo(file).fileName();
+                failure.message = QString::fromLocal8Bit(parser.LastErrStr()).trimmed();
+                failures->push_back(failure);
+            }
         }
     }
 
-    return true;
+    return allOk;
 }
 
 void StructureDefinitionManager::updateWatchedFiles(const QStringList &files)
