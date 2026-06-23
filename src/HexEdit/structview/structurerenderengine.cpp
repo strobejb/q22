@@ -1580,14 +1580,21 @@ bool StructureRenderEngine::dynamicTagArgs(ExprNode *expr,
     if (args.size() != 4)
         return false;
 
+    // arg[0] may be wrapped as case(...) (selector role made explicit) and
+    // arg[3] as optional(...) (gating-condition role made explicit); unwrap
+    // both so bare and wrapped forms evaluate identically.
+    ExprNode *selectorInner = nullptr;
+    unwrapTagArg(args[0], &selectorInner);
     if (selector)
-        *selector = args[0];
+        *selector = selectorInner;
     if (typeName)
         *typeName = args[1];
     if (logicalOffset)
         *logicalOffset = args[2];
+    ExprNode *conditionInner = nullptr;
+    unwrapTagArg(args[3], &conditionInner);
     if (condition)
-        *condition = args[3];
+        *condition = conditionInner;
     return true;
 }
 
@@ -1622,10 +1629,45 @@ bool StructureRenderEngine::dynamicArrayArgs(ExprNode *expr,
         *logicalOffset = args[2];
     if (count)
         *count = args[3];
+
+    // Trailing arguments (5th, 6th) are stop and condition respectively when
+    // bare, for backward compatibility with .struct files written before
+    // these wrappers existed. Either may instead be written explicitly as
+    // terminated_by(...) / optional(...), in which case position no longer
+    // matters and either one may be supplied without the other.
+    ExprNode *stopExpr = nullptr;
+    ExprNode *conditionExpr = nullptr;
+    bool stopAssigned = false;
+    bool conditionAssigned = false;
+    for (size_t i = 4; i < args.size(); ++i)
+    {
+        ExprNode *inner = nullptr;
+        const TOKEN argWrapTok = unwrapTagArg(args[i], &inner);
+        if (argWrapTok == TOK_TERMINATEDBY)
+        {
+            stopExpr = inner;
+            stopAssigned = true;
+        }
+        else if (argWrapTok == TOK_OPTIONAL)
+        {
+            conditionExpr = inner;
+            conditionAssigned = true;
+        }
+        else if (!stopAssigned)
+        {
+            stopExpr = inner;
+            stopAssigned = true;
+        }
+        else if (!conditionAssigned)
+        {
+            conditionExpr = inner;
+            conditionAssigned = true;
+        }
+    }
     if (stop)
-        *stop = args.size() >= 5 ? args[4] : nullptr;
+        *stop = stopExpr;
     if (condition)
-        *condition = args.size() == 6 ? args[5] : nullptr;
+        *condition = conditionExpr;
     return true;
 }
 

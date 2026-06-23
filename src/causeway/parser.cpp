@@ -197,9 +197,14 @@ bool Parser::ParseByteSequence(vector<uint8_t> *bytes)
 //	Parse any IDL-style tags, return into the Tag* linked-list
 //
 // Tag keywords allowed to wrap an individual argument of dynamic_array's,
-// dynamic_struct's, or dynamic_container's parameter list (e.g. name(DllName)).
+// dynamic_struct's, or dynamic_container's parameter list, to flag that
+// argument's role explicitly instead of leaving it implied by position:
+//   name(x)          -- per-element name source / display label
+//   case(x)          -- selector matched against the owning array index
+//   terminated_by(x) -- per-element stop condition
+//   optional(x)      -- whole-tag gating condition
 // Add more here -- TOK_NULL-terminated -- as more wrapped roles are needed.
-static TOKEN kDynamicTagValueWrappers[] = { TOK_NAME, TOK_NULL };
+static TOKEN kDynamicTagValueWrappers[] = { TOK_NAME, TOK_CASE, TOK_TERMINATEDBY, TOK_OPTIONAL, TOK_NULL };
 
 bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 {

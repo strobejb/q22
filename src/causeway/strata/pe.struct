@@ -32,9 +32,9 @@ enum IMAGE_DIRECTORY
 tagset PE_DATA_DIRECTORY_TAGS
 [
   name(IMAGE_DIRECTORY),
-  dynamic_struct(IMAGE_DIRECTORY_ENTRY_EXPORT, IMAGE_EXPORT_DIRECTORY, VirtualAddress, Size != 0),
-  dynamic_array(IMAGE_DIRECTORY_ENTRY_IMPORT, IMAGE_IMPORT_DESCRIPTOR, VirtualAddress, Size / sizeof(IMAGE_IMPORT_DESCRIPTOR),
-                OriginalFirstThunk == 0 && TimeDateStamp == 0 && ForwarderChain == 0 && Name == 0 && FirstThunk == 0)
+  dynamic_struct(case(IMAGE_DIRECTORY_ENTRY_EXPORT), IMAGE_EXPORT_DIRECTORY, VirtualAddress, optional(Size != 0)),
+  dynamic_array(case(IMAGE_DIRECTORY_ENTRY_IMPORT), IMAGE_IMPORT_DESCRIPTOR, VirtualAddress, Size / sizeof(IMAGE_IMPORT_DESCRIPTOR),
+                terminated_by(OriginalFirstThunk == 0 && TimeDateStamp == 0 && ForwarderChain == 0 && Name == 0 && FirstThunk == 0))
 ];
 
 
@@ -283,11 +283,11 @@ typedef struct _IMAGE_IMPORT_BY_NAME
 // tables are rendered here, while view("pe.imports") is kept as a friendly
 // semantic overlay for correlating DLL/function names.
 [
-    dynamic_array(name(DllName), CHAR, Name, 4096, 0),
-    dynamic_array(ImportLookup32, IMAGE_THUNK_DATA32, OriginalFirstThunk, 512, Function == 0, ntHeaders.OptionalHeader32.Magic == 0x10b),
-    dynamic_array(ImportAddress32, IMAGE_THUNK_DATA32, FirstThunk, 512, Function == 0, ntHeaders.OptionalHeader32.Magic == 0x10b),
-    dynamic_array(ImportLookup64, IMAGE_THUNK_DATA64, OriginalFirstThunk, 512, Function == 0, ntHeaders.OptionalHeader64.Magic == 0x20b),
-    dynamic_array(ImportAddress64, IMAGE_THUNK_DATA64, FirstThunk, 512, Function == 0, ntHeaders.OptionalHeader64.Magic == 0x20b),
+    dynamic_array(name(DllName), CHAR, Name, 4096, terminated_by(0)),
+    dynamic_array(ImportLookup32, IMAGE_THUNK_DATA32, OriginalFirstThunk, 512, terminated_by(Function == 0), optional(ntHeaders.OptionalHeader32.Magic == 0x10b)),
+    dynamic_array(ImportAddress32, IMAGE_THUNK_DATA32, FirstThunk, 512, terminated_by(Function == 0), optional(ntHeaders.OptionalHeader32.Magic == 0x10b)),
+    dynamic_array(ImportLookup64, IMAGE_THUNK_DATA64, OriginalFirstThunk, 512, terminated_by(Function == 0), optional(ntHeaders.OptionalHeader64.Magic == 0x20b)),
+    dynamic_array(ImportAddress64, IMAGE_THUNK_DATA64, FirstThunk, 512, terminated_by(Function == 0), optional(ntHeaders.OptionalHeader64.Magic == 0x20b)),
     view("pe.imports"),
     name("IMAGE_IMPORT_DESCRIPTOR[]")
 ]
