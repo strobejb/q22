@@ -415,6 +415,63 @@ ExprNode *Parser::CommaExpression(TOKEN tok)
 	return new ExprNode(EXPR_COMMA, TOKEN(','), left, right);
 }
 
+//
+//	tag-wrapped argument: wrapperKeyword '(' expr ')'  |  expr
+//
+//	Lets one argument of a tag's parameter list be written as e.g. name(DllName)
+//	instead of a plain value, to explicitly mark what role it plays -- without
+//	teaching the general expression grammar a call syntax. 'wrappers' is a
+//	TOK_NULL-terminated list of the tag keywords allowed to wrap an argument
+//	in this position; anything else falls through to a normal expression.
+//
+ExprNode *Parser::TagWrappedArg(TOKEN wrappers[])
+{
+	for(int i = 0; wrappers[i] != TOK_NULL; i++)
+	{
+		if(t != wrappers[i])
+			continue;
+
+		TOKEN wrapTok = t;
+		Advance();
+
+		if(!Expected('('))
+			return 0;
+
+		ExprNode *inner = AssignmentExpression(TOK_NULL);
+		if(!inner)
+			return 0;
+
+		if(!Expected(')'))
+		{
+			delete inner;
+			return 0;
+		}
+
+		return new ExprNode(EXPR_TAGWRAP, wrapTok, inner);
+	}
+
+	return AssignmentExpression(TOK_NULL);
+}
+
+//
+//	tag-argument list: tagWrappedArg [',' tagArgList]
+//
+//	Same shape as CommaExpression, but every argument position accepts the
+//	wrapped form via TagWrappedArg() instead of a plain AssignmentExpression.
+//
+ExprNode *Parser::TagArgList(TOKEN wrappers[])
+{
+	ExprNode *left = TagWrappedArg(wrappers);
+	ExprNode *right = 0;
+	if(t == ',')
+	{
+		Advance();
+		right = TagArgList(wrappers);
+	}
+
+	return new ExprNode(EXPR_COMMA, TOKEN(','), left, right);
+}
+
 ExprNode * Parser::Expression(TOKEN term)
 {
 	ExprNode *p;
@@ -595,6 +652,12 @@ int RecurseFlatten(stringprint &sbuf, ExprNode *expr)
 
 	case EXPR_SIZEOF:
 		sbuf._stprintf(TEXT("sizeof("));
+		RecurseFlatten(sbuf, expr->left);
+		sbuf._stprintf(TEXT(")"));
+		break;
+
+	case EXPR_TAGWRAP:
+		sbuf._stprintf(TEXT("%hs("), Parser::inenglish(expr->tok));
 		RecurseFlatten(sbuf, expr->left);
 		sbuf._stprintf(TEXT(")"));
 		break;

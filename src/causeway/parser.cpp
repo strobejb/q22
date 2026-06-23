@@ -196,6 +196,11 @@ bool Parser::ParseByteSequence(vector<uint8_t> *bytes)
 //
 //	Parse any IDL-style tags, return into the Tag* linked-list
 //
+// Tag keywords allowed to wrap an individual argument of dynamic_array's,
+// dynamic_struct's, or dynamic_container's parameter list (e.g. name(DllName)).
+// Add more here -- TOK_NULL-terminated -- as more wrapped roles are needed.
+static TOKEN kDynamicTagValueWrappers[] = { TOK_NAME, TOK_NULL };
+
 bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 {
 	Tag *	tag = 0;
@@ -349,8 +354,17 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 			if(!Expected('('))
 				return false;
 
-			if(tmp == TOK_SIZEIS || tmp == TOK_ASSOC
-				|| tmp == TOK_OFFSETMAP || tmp == TOK_DYNAMICARRAY || tmp == TOK_DYNAMICCONTAINER || tmp == TOK_DYNAMICSTRUCT)
+			if(tmp == TOK_DYNAMICARRAY || tmp == TOK_DYNAMICCONTAINER || tmp == TOK_DYNAMICSTRUCT)
+			{
+				// comma-separated, each argument optionally wrapped as e.g.
+				// name(DllName) to mark its role explicitly -- see TagArgList().
+				if((expr = TagArgList(kDynamicTagValueWrappers)) == 0)
+				{
+					Error(ERROR_SYNTAX_ERROR, inenglish(t));
+					return false;
+				}
+			}
+			else if(tmp == TOK_SIZEIS || tmp == TOK_ASSOC || tmp == TOK_OFFSETMAP)
 			{
 				// full comma-separated expression 
 				if((expr = CommaExpression(TOK_NULL)) == 0)

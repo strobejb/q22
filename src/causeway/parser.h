@@ -133,6 +133,15 @@ private:
 	ExprNode * FullExpression(TOKEN term);
 	ExprNode * CommaExpression(TOKEN tok);
 
+	// Tag-parameter argument lists, e.g. dynamic_array(...)'s comma-separated
+	// arguments. Like CommaExpression, but each argument may optionally be
+	// written as wrapperKeyword(value) -- one of 'wrappers' (TOK_NULL-terminated)
+	// -- producing an EXPR_TAGWRAP node instead of a plain expression. Parsed
+	// directly here, not via the expression grammar, so this stays scoped to
+	// tag-parameter position only.
+	ExprNode * TagWrappedArg(TOKEN wrappers[]);
+	ExprNode * TagArgList(TOKEN wrappers[]);
+
 
 	// error handling
 	const char *inenglish(TOKEN t, bool use_t_state);

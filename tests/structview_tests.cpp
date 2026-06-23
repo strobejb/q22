@@ -62,6 +62,7 @@ private slots:
     void builderStopsDynamicAndInlineArraysAtTerminators();
     void builderRunsSemanticViewsOnceForDynamicArrayTables();
     void builderNamesPeDynamicSectionsFromStandardDefinition();
+    void builderNamesPeImportDescriptorsFromStandardDefinition();
     void semanticRegistryRunsKnownViewsAndIgnoresUnknownViews();
     void builderRunsSemanticViewsAfterDynamicPlacement();
     void builderKeepsRawDynamicRowsWhenSemanticImportDataIsTruncated();
@@ -149,6 +150,20 @@ static StructureRow *findChildNamed(StructureRow *parent, const QString &name)
     for (const auto &child : parent->children)
         if (child->name == name)
             return child.get();
+
+    return nullptr;
+}
+
+static StructureRow *findDescendantNamed(StructureRow *parent, const QString &name)
+{
+    if (!parent)
+        return nullptr;
+    if (parent->name == name)
+        return parent;
+
+    for (const auto &child : parent->children)
+        if (StructureRow *found = findDescendantNamed(child.get(), name))
+            return found;
 
     return nullptr;
 }
@@ -1798,6 +1813,60 @@ void StructViewTests::builderNamesPeDynamicSectionsFromStandardDefinition()
              qPrintable(QStringLiteral("SECTION .text missing after display option pass: %1").arg(visibleNames.join(QStringLiteral(", ")))));
     QVERIFY2(visibleNames.contains(QStringLiteral("SECTION .idata")),
              qPrintable(QStringLiteral("SECTION .idata missing after display option pass: %1").arg(visibleNames.join(QStringLiteral(", ")))));
+}
+
+void StructViewTests::builderNamesPeImportDescriptorsFromStandardDefinition()
+{
+    // Scenario: the shipped PE definition's _IMAGE_IMPORT_DESCRIPTOR carries
+    // dynamic_array(name(DllName), CHAR, Name, 4096, 0) -- an explicit marker
+    // that this RVA-redirected sub-array is the per-element name source for
+    // whichever array contains IMAGE_IMPORT_DESCRIPTOR elements.
+    // Expected: each descriptor's "[i]" tree label gets the resolved DLL name
+    // appended, resolved eagerly without requiring the lazily-built DllName
+    // child row to be expanded first.
+    // Regression guard: name()'s wrapped-argument form inside dynamic_array(...)
+    // must resolve end-to-end through the real PE definition, not just in a
+    // synthetic test-only struct.
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("pe.struct")), "pe.struct failed to parse");
+
+    QByteArray bytes(0x300, '\0');
+    writeLe32(&bytes, 0x3c, 0x80);
+    writeLe16(&bytes, 0x86, 2);
+    writeLe16(&bytes, 0x94, 256);
+    writeLe16(&bytes, 0x98, 0x10b);
+    writeLe32(&bytes, 0x98 + 92, 16);
+
+    // DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT] -> VA 0x2000, one descriptor.
+    const qsizetype importDirEntry = 0x98 + 96 + 1 * 8;
+    writeLe32(&bytes, importDirEntry, 0x2000);
+    writeLe32(&bytes, importDirEntry + 4, 20);
+
+    const qsizetype sectionTable = 0x80 + 4 + 20 + 256;
+    writeAscii(&bytes, sectionTable, ".text");
+    writeLe32(&bytes, sectionTable + 12, 0x1000);
+    writeLe32(&bytes, sectionTable + 16, 0x100);
+    writeLe32(&bytes, sectionTable + 20, 0x200);
+
+    const qsizetype secondSection = sectionTable + 40;
+    writeAscii(&bytes, secondSection, ".idata");
+    writeLe32(&bytes, secondSection + 12, 0x2000);
+    writeLe32(&bytes, secondSection + 16, 0x80);
+    writeLe32(&bytes, secondSection + 20, 0x280);
+
+    // One IMAGE_IMPORT_DESCRIPTOR at VA 0x2000 (file 0x280); only Name is set,
+    // pointing at "KERNEL32.dll" placed right after it at VA 0x2014 (file 0x294).
+    writeLe32(&bytes, 0x28c, 0x2014);
+    writeAscii(&bytes, 0x294, "KERNEL32.dll");
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+
+    StructureRow *descriptors = findDescendantNamed(rows[0].get(), QStringLiteral("IMAGE_IMPORT_DESCRIPTOR[]"));
+    QVERIFY2(descriptors, "IMAGE_IMPORT_DESCRIPTOR[] container not found in rendered tree");
+    QCOMPARE(descriptors->children.size(), size_t(1));
+    QVERIFY2(descriptors->children[0]->name.contains(QStringLiteral("KERNEL32.dll")),
+             qPrintable(QStringLiteral("descriptor[0] name missing DLL hint: %1").arg(descriptors->children[0]->name)));
 }
 
 void StructViewTests::semanticRegistryRunsKnownViewsAndIgnoresUnknownViews()

@@ -98,7 +98,8 @@ private:
                           ExprNode **logicalOffset,
                           ExprNode **count,
                           ExprNode **stop,
-                          ExprNode **condition) const;
+                          ExprNode **condition,
+                          bool *isNameSource) const;
     bool dynamicContainerArgs(ExprNode *expr, ExprNode **typeName) const;
     bool offsetMapArgs(ExprNode *expr, ExprNode **logicalStart, ExprNode **logicalSize, ExprNode **fileOffset) const;
     TypeDecl *findTypeDecl(const char *name) const;
@@ -134,6 +135,8 @@ private:
     bool elementMatchesTerminator(StructureRow *row, Type *elementType, ExprNode *stopExpr, uint64_t offset);
     QString fieldNameValue(StructureRow *scope, Type *scopeType, ExprNode *expr, uint64_t scopeOffset);
     QString dynamicContainerAlias(StructureRow *row);
+    QString dynamicArrayNameString(StructureRow *elementRow, ExprNode *dynamicArrayTagExpr);
+    QString decodeNulTerminatedText(const QByteArray &bytes, bool wide) const;
     QString quoteString(const QString &text) const;
 
     StrataLibrary *m_library = nullptr;

@@ -283,7 +283,7 @@ typedef struct _IMAGE_IMPORT_BY_NAME
 // tables are rendered here, while view("pe.imports") is kept as a friendly
 // semantic overlay for correlating DLL/function names.
 [
-    dynamic_array(DllName, CHAR, Name, 4096, 0),
+    dynamic_array(name(DllName), CHAR, Name, 4096, 0),
     dynamic_array(ImportLookup32, IMAGE_THUNK_DATA32, OriginalFirstThunk, 512, Function == 0, ntHeaders.OptionalHeader32.Magic == 0x10b),
     dynamic_array(ImportAddress32, IMAGE_THUNK_DATA32, FirstThunk, 512, Function == 0, ntHeaders.OptionalHeader32.Magic == 0x10b),
     dynamic_array(ImportLookup64, IMAGE_THUNK_DATA64, OriginalFirstThunk, 512, Function == 0, ntHeaders.OptionalHeader64.Magic == 0x20b),

@@ -169,6 +169,24 @@ size_t structureRowCount(const StructureRow *row)
         count += structureRowCount(child.get());
     return count;
 }
+
+// If 'arg' was written as wrapperKeyword(value) inside a tag's parameter list
+// (e.g. name(DllName) inside dynamic_array(name(DllName), CHAR, Name, 4096, 0)),
+// return the wrapping token and set *inner to the wrapped value. Otherwise
+// return TOK_NULL and set *inner to 'arg' unchanged, so callers can use *inner
+// exactly as before regardless of whether the argument was wrapped.
+TOKEN unwrapTagArg(ExprNode *arg, ExprNode **inner)
+{
+    if (arg && arg->type == EXPR_TAGWRAP)
+    {
+        if (inner)
+            *inner = arg->left;
+        return arg->tok;
+    }
+    if (inner)
+        *inner = arg;
+    return TOK_NULL;
+}
 }
 
 struct StructureRenderEngine::ResolvedField
@@ -1264,7 +1282,8 @@ void StructureRenderEngine::collectDynamicArrayRequests(StructureRow *row)
                               &logicalOffsetExpr,
                               &countExpr,
                               &stopExpr,
-                              &conditionExpr))
+                              &conditionExpr,
+                              nullptr))
             continue;
 
         // dynamic_array mirrors dynamic_struct for directory arrays: when the
@@ -1432,11 +1451,28 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
         // Check once whether the element type declares sub-arrays.  Primitive
         // element types (DWORD, WORD, CHAR, thunk unions, …) never do, so we
         // avoid calling collectDynamicArrayRequests for every element of the
-        // large export/import raw-data arrays.
+        // large export/import raw-data arrays. While we're scanning anyway,
+        // also look for a dynamic_array tag whose label argument was written
+        // as name(...) (e.g. dynamic_array(name(DllName), CHAR, Name, 4096, 0)):
+        // that explicitly marks itself as the per-element name source for
+        // whichever array contains elements of this type.
         bool elementTypeHasSubArrays = false;
+        ExprNode *nameSourceTagExpr = nullptr;
         for (Tag *tag = request.typeDecl ? request.typeDecl->tagList : nullptr; tag; tag = tag->link)
         {
-            if (tag->tok == TOK_DYNAMICARRAY) { elementTypeHasSubArrays = true; break; }
+            if (tag->tok != TOK_DYNAMICARRAY)
+                continue;
+            elementTypeHasSubArrays = true;
+
+            if (!nameSourceTagExpr)
+            {
+                bool isNameSource = false;
+                if (dynamicArrayArgs(tag->expr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &isNameSource)
+                    && isNameSource)
+                {
+                    nameSourceTagExpr = tag->expr;
+                }
+            }
         }
 
         uint64_t length = 0;
@@ -1452,6 +1488,16 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
 
             const uint64_t elementLength = formatType(elementRow.get(), request.renderType, request.typeDecl, m_baseOffset + fileOffset + length);
             elementRow->byteLength = elementLength;
+
+            if (nameSourceTagExpr)
+            {
+                const QString fieldName = dynamicArrayNameString(elementRow.get(), nameSourceTagExpr);
+                if (!fieldName.isEmpty())
+                {
+                    elementRow->nameIdentifier = arrayAliasPrefix() + fieldName;
+                    elementRow->name += elementRow->nameIdentifier;
+                }
+            }
 
             // For compound element types, collect the sub-array requests that
             // reference this element's fields (e.g. DllName RVA, thunk RVAs) while
@@ -1551,15 +1597,25 @@ bool StructureRenderEngine::dynamicArrayArgs(ExprNode *expr,
                                              ExprNode **logicalOffset,
                                              ExprNode **count,
                                              ExprNode **stop,
-                                             ExprNode **condition) const
+                                             ExprNode **condition,
+                                             bool *isNameSource) const
 {
     std::vector<ExprNode *> args;
     appendCommaArgs(expr, &args);
     if (args.size() != 4 && args.size() != 5 && args.size() != 6)
         return false;
 
+    // The first argument may be wrapped, e.g. name(DllName) instead of plain
+    // DllName, to explicitly flag this dynamic_array as the per-element name
+    // source for whichever array contains elements of this type. Unwrap it
+    // here so every existing consumer of *selectorOrLabel keeps working
+    // unchanged, whether or not the argument was wrapped.
+    ExprNode *selector = nullptr;
+    const TOKEN wrapTok = unwrapTagArg(args[0], &selector);
     if (selectorOrLabel)
-        *selectorOrLabel = args[0];
+        *selectorOrLabel = selector;
+    if (isNameSource)
+        *isNameSource = (wrapTok == TOK_NAME);
     if (typeName)
         *typeName = args[1];
     if (logicalOffset)
@@ -1909,13 +1965,18 @@ QString StructureRenderEngine::stringArrayValue(StructureRow *scope, Type *type,
                                 : 0;
     bytes.truncate(static_cast<int>(got));
 
+    return quoteString(decodeNulTerminatedText(bytes, elementType->ty == typeWCHAR));
+}
+
+// Shared by stringArrayValue() and dynamicArrayNameString(): truncate raw bytes
+// at the first NUL (8- or 16-bit, depending on element width) and decode the rest.
+QString StructureRenderEngine::decodeNulTerminatedText(const QByteArray &bytes, bool wide) const
+{
     QString text;
-    if (elementType->ty == typeCHAR)
+    if (!wide)
     {
         const int nul = bytes.indexOf('\0');
-        if (nul >= 0)
-            bytes.truncate(nul);
-        text = QString::fromLatin1(bytes);
+        text = QString::fromLatin1(nul >= 0 ? bytes.left(nul) : bytes);
     }
     else
     {
@@ -1929,8 +1990,59 @@ QString StructureRenderEngine::stringArrayValue(StructureRow *scope, Type *type,
             text.append(QChar(ch));
         }
     }
+    return text;
+}
 
-    return quoteString(text);
+// Resolve the display text for a dynamic_array tag explicitly marked as a name
+// source via name(...) on its label argument (e.g. dynamic_array(name(DllName),
+// CHAR, Name, 4096, 0) -- see the nameSourceTagExpr scan in
+// appendDynamicArrayRows()). The referenced field is an RVA/offset, not inline
+// data, so this re-derives the same offset + read that the dynamic_array would
+// use for its own child row, without requiring that lazily-built child to
+// exist yet.
+QString StructureRenderEngine::dynamicArrayNameString(StructureRow *elementRow, ExprNode *dynamicArrayTagExpr)
+{
+    if (!elementRow || !dynamicArrayTagExpr)
+        return {};
+
+    ExprNode *typeNameExpr = nullptr;
+    ExprNode *logicalOffsetExpr = nullptr;
+    ExprNode *countExpr = nullptr;
+    if (!dynamicArrayArgs(dynamicArrayTagExpr, nullptr, &typeNameExpr, &logicalOffsetExpr,
+                          &countExpr, nullptr, nullptr, nullptr))
+        return {};
+
+    Type *renderType = typeNameExpr && typeNameExpr->str
+        ? typeInDecl(findTypeDecl(typeNameExpr->str), typeNameExpr->str)
+        : nullptr;
+    Type *base = BaseNode(renderType);
+    if (!base || (base->ty != typeCHAR && base->ty != typeWCHAR))
+        return {};
+
+    INUMTYPE logicalOffset = 0;
+    INUMTYPE count = 0;
+    if (!evaluate(elementRow, logicalOffsetExpr, &logicalOffset, elementRow->absoluteOffset)
+        || !evaluate(elementRow, countExpr, &count, elementRow->absoluteOffset)
+        || count <= 0)
+        return {};
+
+    uint64_t fileOffset = 0;
+    if (!mapLogicalOffset(uint64_t(logicalOffset), &fileOffset))
+        return {};
+
+    const uint64_t unitSize = base->ty == typeWCHAR ? 2 : 1;
+    // Cap independently of kMaxArrayElements: that constant bounds how many
+    // *rows* a real array build creates, not how many bytes a single name
+    // lookup may read — names are short, so a generous fixed cap is enough.
+    const uint64_t boundedCount = std::min<uint64_t>(uint64_t(count), 260);
+    QByteArray bytes(static_cast<int>(boundedCount * unitSize), Qt::Uninitialized);
+    const size_t got = m_reader ? m_reader(m_baseOffset + fileOffset,
+                                           reinterpret_cast<uint8_t *>(bytes.data()),
+                                           static_cast<size_t>(bytes.size()))
+                                : 0;
+    bytes.truncate(static_cast<int>(got));
+
+    return decodeNulTerminatedText(bytes, base->ty == typeWCHAR);
 }
 
 QString StructureRenderEngine::scalarArrayValue(StructureRow *scope, Type *type) const
