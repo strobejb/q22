@@ -387,8 +387,14 @@ signals:
     void bookmarkContextRequested(int idx, QRect globalRect); // right-click on bookmark/editor
     void bookmarkAreaContextRequested(size_w referenceOffset, QRect globalRect); // bookmark-area popup button
     void bookmarkSettingsRequested(int idx, QRect btnGlobal); // bookmark tool button
+    void structureEntryPointChanged(bool valid, uint64_t fileOffset);
 
 public:
+    // Structure-view entrypoint: set by the structure panel after each parse; read by the disassembler.
+    void notifyStructureEntryPoint(bool valid, uint64_t fileOffset);
+    bool     hasStructureEntryPoint() const { return m_structureEntryPointValid; }
+    uint64_t structureEntryPoint()    const { return m_structureEntryPoint; }
+
     // Mark a bookmark's gear button as "popup open" so it stays visually pressed.
     // Pass -1 to clear.  Safe to call from outside HexView (e.g. MainWindow).
     void setBookmarkPopupIdx(int idx) { m_bookmarkPopupIdx = idx; viewport()->update(); }
@@ -563,6 +569,9 @@ private:
     QMenu      *m_contextMenu   = nullptr;  // nullptr → use built-in menu
     sequence    *m_pDataSeq     = nullptr;
     QString      m_filePath;
+
+    bool     m_structureEntryPointValid  = false;
+    uint64_t m_structureEntryPoint       = 0;
 
     uint    m_nControlStyles    = 0;
     uint    m_nEditMode         = HVMODE_OVERWRITE;

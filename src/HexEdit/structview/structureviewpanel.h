@@ -43,6 +43,7 @@ public:
 
 signals:
     void closeRequested();
+    void openDisassemblerRequested();
 
 public slots:
     void refresh();
@@ -133,6 +134,9 @@ class StructureViewPanelHost : public SidePanelHostBase
     Q_OBJECT
 public:
     explicit StructureViewPanelHost(HexView *hv, QWidget *parent = nullptr);
+
+signals:
+    void openDisassemblerRequested();
 
 protected:
     QWidget *createPanelWidget() override;

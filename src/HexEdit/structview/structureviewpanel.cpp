@@ -120,6 +120,27 @@ static size_t structureRowCount(const std::vector<std::unique_ptr<StructureRow>>
     return count;
 }
 
+// DFS walk of eagerly-loaded rows (no lazy-load trigger) to find the first code target.
+static bool findFirstCodeTarget(StructureTreeModel *model, const QModelIndex &parent, uint64_t *result)
+{
+    const int n = model->rowCount(parent);
+    for (int r = 0; r < n; ++r)
+    {
+        const QModelIndex idx = model->index(r, 0, parent);
+        if (const StructureRow *row = model->rowForIndex(idx))
+        {
+            if (row->hasCodeTarget)
+            {
+                *result = row->codeTargetOffset;
+                return true;
+            }
+        }
+        if (findFirstCodeTarget(model, idx, result))
+            return true;
+    }
+    return false;
+}
+
 static QFont structureSourceViewFont(const QFont &hexViewFont)
 {
     QFont font = hexViewFont;
@@ -2500,6 +2521,8 @@ void StructureViewPanel::rebuildRows()
     {
         m_model->clear();
         clearHexViewOverlay();
+        if (m_hv)
+            m_hv->notifyStructureEntryPoint(false, 0);
         return;
     }
 
@@ -2550,6 +2573,13 @@ void StructureViewPanel::rebuildRows()
     }
     m_rebuildingRows = false;
     clearHexViewOverlay();
+
+    if (m_hv)
+    {
+        uint64_t ep = 0;
+        m_hv->notifyStructureEntryPoint(findFirstCodeTarget(m_model, QModelIndex(), &ep), ep);
+    }
+
     if (profile)
     {
         structureProfileLog(QStringLiteral("[StructureProfile] panel total ms=%1")
@@ -2641,17 +2671,20 @@ void StructureViewPanel::showOptionsContextMenu(int column, const QPoint &global
                 this, [this, rowIndex]() { locateIndexInSource(rowIndex); });
     }
 
-    if (StructureRow *row = m_model && rowIndex.isValid() ? m_model->rowForIndex(rowIndex) : nullptr)
     {
-        if (row->hasCodeTarget && m_hv)
+        StructureRow *row = m_model && rowIndex.isValid() ? m_model->rowForIndex(rowIndex) : nullptr;
+        addSeparatorIfNeeded();
+        QAction *openCode = menu.addAction(tr("Open in Disassembler"));
+        const bool hasTarget = row && row->hasCodeTarget && m_hv;
+        openCode->setEnabled(hasTarget);
+        if (hasTarget)
         {
-            addSeparatorIfNeeded();
-            QAction *openCode = menu.addAction(tr("Open in Disassembler"));
             connect(openCode, &QAction::triggered,
                     this, [this, row]() {
                         const size_w offset = static_cast<size_w>(row->codeTargetOffset);
                         m_hv->setCurSel(offset, offset, true);
                         m_hv->scrollCenterIfOffScreen(offset, 1);
+                        emit openDisassemblerRequested();
                     });
         }
     }
@@ -3321,5 +3354,7 @@ QWidget *StructureViewPanelHost::createPanelWidget()
     auto *panel = new StructureViewPanel(m_hv);
     connect(panel, &StructureViewPanel::closeRequested,
             this, &StructureViewPanelHost::closePanel);
+    connect(panel, &StructureViewPanel::openDisassemblerRequested,
+            this, &StructureViewPanelHost::openDisassemblerRequested);
     return panel;
 }

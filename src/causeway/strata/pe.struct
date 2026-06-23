@@ -124,6 +124,7 @@ typedef struct _IMAGE_OPTIONAL_HEADER {
     dword   SizeOfCode;
     dword   SizeOfInitializedData;
     dword   SizeOfUninitializedData;
+    [entrypoint(AddressOfEntryPoint)]
     dword   AddressOfEntryPoint;
     dword   BaseOfCode;
     dword   BaseOfData;
@@ -166,6 +167,7 @@ typedef struct _IMAGE_OPTIONAL_HEADER64 {
     DWORD       SizeOfCode;
     DWORD       SizeOfInitializedData;
     DWORD       SizeOfUninitializedData;
+    [entrypoint(AddressOfEntryPoint)]
     DWORD       AddressOfEntryPoint;
     DWORD       BaseOfCode;
     ULONG64     ImageBase;

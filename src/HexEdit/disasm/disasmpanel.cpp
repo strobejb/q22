@@ -18,6 +18,7 @@
 #include <QTextEdit>
 #include <QToolButton>
 #include <QStyle>
+#include <QCursor>
 #include <QTextCharFormat>
 #include <QTextCursor>
 #include <QVBoxLayout>
@@ -151,10 +152,31 @@ void DisassemblerPanel::buildUi()
                         + 16 + 8; // icon + Qt's action button right margin
     m_offsetEdit->setFixedWidth(offsetW);
 
+    // Entry-point jump button — flat, only shows a rounded background on hover/press.
+    m_entryPointButton = new QToolButton(content);
+    m_entryPointButton->setAutoRaise(true);
+    m_entryPointButton->setIcon(recoloredIcon(QStringLiteral("actions/entry-point"),
+                                              filestats::subduedTextColor(palette()), 16));
+    m_entryPointButton->setToolTip(tr("Jump to entry point"));
+    m_entryPointButton->setFixedSize(comboH, comboH);
+    m_entryPointButton->setCursor(Qt::PointingHandCursor);
+    m_entryPointButton->setEnabled(m_hv && m_hv->hasStructureEntryPoint());
+    {
+        const bool    dark    = palette().window().color().lightness() < 128;
+        const QString hover   = dark ? QStringLiteral("rgba(255,255,255,0.15)") : QStringLiteral("rgba(0,0,0,0.10)");
+        const QString pressed = dark ? QStringLiteral("rgba(255,255,255,0.25)") : QStringLiteral("rgba(0,0,0,0.18)");
+        m_entryPointButton->setStyleSheet(
+            QStringLiteral("QToolButton { border: none; border-radius: 6px; background: transparent; }"
+                           "QToolButton:hover { background: %1; }"
+                           "QToolButton:pressed { background: %2; }")
+            .arg(hover, pressed));
+    }
+
     optLay->addWidget(m_archCombo, 1);
-    optLay->addSpacing(4);
-    optLay->addWidget(m_offsetEdit);
     optLay->addStretch(1);
+    optLay->addWidget(m_entryPointButton);
+    optLay->addSpacing(2);
+    optLay->addWidget(m_offsetEdit);
     contentLay->addLayout(optLay);
     contentLay->addSpacing(4);
 
@@ -209,6 +231,21 @@ void DisassemblerPanel::buildUi()
 
     connect(m_pinAction, &QAction::triggered,
             this, [this]() { setPinned(!m_pinned); });
+
+    connect(m_hv, &HexView::structureEntryPointChanged,
+            this, [this](bool valid, uint64_t) {
+                if (m_entryPointButton)
+                    m_entryPointButton->setEnabled(valid);
+            });
+
+    connect(m_entryPointButton, &QToolButton::clicked,
+            this, [this]() {
+                if (!m_hv || !m_hv->hasStructureEntryPoint())
+                    return;
+                const size_w offset = static_cast<size_w>(m_hv->structureEntryPoint());
+                m_hv->setCurSel(offset, offset, true);
+                m_hv->scrollCenterIfOffScreen(offset, 1);
+            });
 }
 
 void DisassemblerPanel::openCapstone()

@@ -342,6 +342,15 @@ void HexView::clearOverlayRanges(OverlayLayer layer)
     setOverlayRanges(layer, {});
 }
 
+void HexView::notifyStructureEntryPoint(bool valid, uint64_t fileOffset)
+{
+    if (m_structureEntryPointValid == valid && m_structureEntryPoint == fileOffset)
+        return;
+    m_structureEntryPointValid = valid;
+    m_structureEntryPoint      = fileOffset;
+    emit structureEntryPointChanged(valid, fileOffset);
+}
+
 uint HexView::setStyle(uint mask, uint styles)
 {
     uint old = m_nControlStyles;

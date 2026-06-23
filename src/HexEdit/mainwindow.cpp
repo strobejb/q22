@@ -906,6 +906,8 @@ MainWindow::MainWindow(QWidget *parent)
         if (m_disasmPanelHost && m_disasmPanelHost->isOpen())
             m_disasmPanelHost->closePanel();
     });
+    connect(m_structurePanelHost, &StructureViewPanelHost::openDisassemblerRequested,
+            this, &MainWindow::toggleDisassemblerPanel);
 
     // ── Edit menu ─────────────────────────────────────────────────────────────
     // Shortcuts not set in the .ui file are assigned here so they are also
