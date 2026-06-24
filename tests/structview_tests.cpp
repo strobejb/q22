@@ -48,6 +48,7 @@ private slots:
     void builderEvaluatesArrayIndexedUnionMembers();
     void builderUsesNameFieldForStructArrayElements();
     void builderAlignsFieldNamesWithinCompoundTypes();
+    void builderKeepsSignedPrimitiveTypedefNamesInStorageMode();
     void builderBuildsNestedStructRowsAndOffsets();
     void builderSupportsArraysOffsetsEnumsAndSwitchCases();
     void builderExposesEnumChoicesAndEntrypoints();
@@ -539,7 +540,7 @@ void StructViewTests::exportedTypesExposeDescriptions()
     const QString userDir = temp.filePath(QStringLiteral("structs"));
     QVERIFY(QDir().mkpath(userDir));
     writeTextFile(QDir(userDir).filePath(QStringLiteral("types.txt")),
-                  "[export, description(\"Friendly Root\")]\n"
+                  "[export(\"Friendly Root\")]\n"
                   "struct Friendly { byte magic; } friendly;\n"
                   "[export]\n"
                   "struct Plain { word flags; } plain;\n");
@@ -1122,6 +1123,47 @@ void StructViewTests::builderAlignsFieldNamesWithinCompoundTypes()
     QCOMPARE(rows[0]->children[1]->nameIdentifier, QStringLiteral("b"));
 }
 
+void StructViewTests::builderKeepsSignedPrimitiveTypedefNamesInStorageMode()
+{
+    // Scenario: basetypes.struct defines "short"/"int"/"long"/etc. as ordinary
+    // typedefs of a signed/unsigned primitive (e.g. typedef signed word short;)
+    // -- there is no built-in TYPE for them, they are ordinary user-level
+    // typedefs exactly like e32/DOSTIME.
+    // Expected: "Storage type" display mode still unwraps a plain typedef of a
+    // bare primitive (e.g. e32 -> dword), but a typedef of a signed/unsigned
+    // primitive keeps its own name instead of unwrapping to "signed word".
+    // Regression guard: short/int/long must not render as "signed word"/
+    // "signed dword" once Storage mode is enabled (the panel's default).
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef signed word short;\n"
+                        "typedef dword e32;\n"
+                        "[export]\n"
+                        "struct Root { short a; e32 b; } root;\n"));
+
+    const QByteArray bytes = QByteArray::fromHex("0100020000000000");
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(2));
+    QCOMPARE(rows[0]->children[0]->name, QStringLiteral("short a"));
+    QCOMPARE(rows[0]->children[1]->name, QStringLiteral("e32 b"));
+
+    StructureRow *rootRow = rows[0].get();
+    std::vector<std::unique_ptr<StructureRow>> modelRows;
+    modelRows.push_back(std::move(rows[0]));
+    StructureTreeModel model;
+    model.setRowsForTests(std::move(modelRows));
+    StructureDisplayOptions storageOptions;
+    storageOptions.typeNameMode = StructureTypeNameMode::Storage;
+    model.applyDisplayOptions(storageOptions);
+
+    QCOMPARE(rootRow->children[0]->name, QStringLiteral("short a"));
+    QCOMPARE(rootRow->children[0]->nameTypePrefix, QStringLiteral("short"));
+    QCOMPARE(rootRow->children[1]->name, QStringLiteral("dword b"));
+    QCOMPARE(rootRow->children[1]->nameTypePrefix, QStringLiteral("dword"));
+}
+
 void StructViewTests::builderBuildsNestedStructRowsAndOffsets()
 {
     // Scenario: a root structure contains a nested structure value.
@@ -1640,7 +1682,7 @@ void StructViewTests::builderRendersDynamicArraysAtReferencedOffsets()
 
     StructureRow *dir = findChildNamed(rows[0].get(), QStringLiteral("Directory dir"));
     QVERIFY(dir);
-    StructureRow *entries = findChildNamed(dir, QStringLiteral("Entry[] Entries"));
+    StructureRow *entries = findChildNamed(dir, QStringLiteral("Entry Entries[]"));
     QVERIFY(entries);
     QCOMPARE(static_cast<int>(entries->kind), static_cast<int>(StructureRowKind::Dynamic));
     QCOMPARE(entries->offset, QStringLiteral("00000060"));
@@ -1698,7 +1740,7 @@ void StructViewTests::builderStopsDynamicAndInlineArraysAtTerminators()
 
     StructureRow *table = findChildNamed(rows[0].get(), QStringLiteral("dword tableRva"));
     QVERIFY(table);
-    StructureRow *descs = findChildNamed(table, QStringLiteral("Desc[] Descs"));
+    StructureRow *descs = findChildNamed(table, QStringLiteral("Desc Descs[]"));
     QVERIFY(descs);
     QCOMPARE(descs->children.size(), size_t(1));
     QCOMPARE(descs->children[0]->children[0]->value, QStringLiteral("7"));
@@ -1749,7 +1791,7 @@ void StructViewTests::builderRunsSemanticViewsOnceForDynamicArrayTables()
 
     StructureRow *tableRva = findChildNamed(rows[0].get(), QStringLiteral("dword tableRva"));
     QVERIFY(tableRva);
-    StructureRow *entries = findChildNamed(tableRva, QStringLiteral("Viewed[] Entries"));
+    StructureRow *entries = findChildNamed(tableRva, QStringLiteral("Viewed Entries[]"));
     QVERIFY(entries);
     QCOMPARE(entries->children.size(), size_t(3));
     QCOMPARE(entries->children[0]->name, QStringLiteral("[0]"));
@@ -2084,14 +2126,23 @@ void StructViewTests::builderRunsSemanticViewsAfterDynamicPlacement()
     QCOMPARE(rows.size(), size_t(1));
     QCOMPARE(rows[0]->children.size(), size_t(3));
     QCOMPARE(rows[0]->children[2]->name, QStringLiteral("SECTION .idata"));
+    QCOMPARE(rows[0]->children[2]->children.size(), size_t(2));
 
     StructureRow *dynamicImport = rows[0]->children[2]->children[0].get();
     QCOMPARE(dynamicImport->name, QStringLiteral("ImportDesc"));
-    QCOMPARE(dynamicImport->children.size(), size_t(6));
+    QCOMPARE(dynamicImport->children.size(), size_t(5));
     QCOMPARE(dynamicImport->children[0]->name, QStringLiteral("dword OriginalFirstThunk"));
     QCOMPARE(static_cast<int>(dynamicImport->children[0]->kind), static_cast<int>(StructureRowKind::Raw));
 
-    StructureRow *dllRow = dynamicImport->children[5].get();
+    // "Imports" is appended as a sibling of the raw descriptor row, under the
+    // same SECTION container, rather than nested inside it -- see
+    // interpretPeImports()'s containerRow handling in pesemanticview.cpp.
+    StructureRow *importsRow = rows[0]->children[2]->children[1].get();
+    QCOMPARE(static_cast<int>(importsRow->kind), static_cast<int>(StructureRowKind::Semantic));
+    QCOMPARE(importsRow->name, QStringLiteral("Imports"));
+    QCOMPARE(importsRow->children.size(), size_t(1));
+
+    StructureRow *dllRow = importsRow->children[0].get();
     QCOMPARE(static_cast<int>(dllRow->kind), static_cast<int>(StructureRowKind::Semantic));
     QCOMPARE(dllRow->name, QStringLiteral("KERNEL32.dll"));
     verifyBranchIconsPresent(dllRow);
@@ -2104,8 +2155,8 @@ void StructViewTests::builderRunsSemanticViewsAfterDynamicPlacement()
     model.setRowsForTests(std::move(modelRows));
     const QModelIndex rootIndex = model.index(0, StructureTreeModel::NameColumn);
     const QModelIndex sectionIndex = model.index(2, StructureTreeModel::NameColumn, rootIndex);
-    const QModelIndex importIndex = model.index(0, StructureTreeModel::NameColumn, sectionIndex);
-    const QModelIndex dllIndex = model.index(5, StructureTreeModel::NameColumn, importIndex);
+    const QModelIndex importsIndex = model.index(1, StructureTreeModel::NameColumn, sectionIndex);
+    const QModelIndex dllIndex = model.index(0, StructureTreeModel::NameColumn, importsIndex);
     QVERIFY(dllIndex.isValid());
     QVERIFY(!(model.flags(dllIndex) & Qt::ItemIsEditable));
     QVERIFY(model.canFetchMore(dllIndex));
@@ -2213,11 +2264,17 @@ void StructViewTests::semanticPeImportsWalksPe32PlusThunkTables()
                                      maps);
 
     QVERIFY(StructureSemanticViewRegistry::instance().run(QStringLiteral("pe.imports"), context));
-    QCOMPARE(importRow.children.size(), size_t(1));
-    QCOMPARE(importRow.children[0]->name, QStringLiteral("KERNEL64.dll"));
-    QCOMPARE(importRow.children[0]->children.size(), size_t(0));
-    QVERIFY(importRow.children[0]->lazyChildLoader);
-    auto imports = importRow.children[0]->lazyChildLoader();
+
+    // "Imports" is appended as a sibling of the raw descriptor row (a child of
+    // importRow's parent), not nested inside importRow itself -- see
+    // interpretPeImports()'s containerRow handling in pesemanticview.cpp.
+    StructureRow *importsRow = findChildNamed(&root, QStringLiteral("Imports"));
+    QVERIFY(importsRow);
+    QCOMPARE(importsRow->children.size(), size_t(1));
+    QCOMPARE(importsRow->children[0]->name, QStringLiteral("KERNEL64.dll"));
+    QCOMPARE(importsRow->children[0]->children.size(), size_t(0));
+    QVERIFY(importsRow->children[0]->lazyChildLoader);
+    auto imports = importsRow->children[0]->lazyChildLoader();
     QCOMPARE(imports.size(), size_t(2));
     QCOMPARE(imports[0]->name, QStringLiteral("Import CreateFileW"));
     QCOMPARE(imports[1]->name, QStringLiteral("Import CloseHandle"));
@@ -2244,8 +2301,9 @@ void StructViewTests::semanticPeImportsRespectDynamicArrayDescriptorCount()
     StructureRow root;
     StructureRow importTable(&root);
     importTable.absoluteOffset = 0x80;
-    importTable.name = QStringLiteral("IMAGE_IMPORT_DESCRIPTOR[] Imports");
-    importTable.nameTypePrefix = QStringLiteral("IMAGE_IMPORT_DESCRIPTOR[]");
+    importTable.name = QStringLiteral("IMAGE_IMPORT_DESCRIPTOR Imports[]");
+    importTable.nameTypePrefix = QStringLiteral("IMAGE_IMPORT_DESCRIPTOR");
+    importTable.kind = StructureRowKind::Dynamic;
     importTable.children.push_back(std::make_unique<StructureRow>(&importTable));
     importTable.children.push_back(std::make_unique<StructureRow>(&importTable));
 
@@ -2265,10 +2323,17 @@ void StructViewTests::semanticPeImportsRespectDynamicArrayDescriptorCount()
                                      maps);
 
     QVERIFY(StructureSemanticViewRegistry::instance().run(QStringLiteral("pe.imports"), context));
-    QCOMPARE(importTable.children.size(), size_t(4));
-    QCOMPARE(importTable.children[2]->name, QStringLiteral("FIRST.dll"));
-    QCOMPARE(importTable.children[3]->name, QStringLiteral("SECOND.dll"));
-    QVERIFY(!findChildNamed(&importTable, QStringLiteral("THIRD.dll")));
+
+    // "Imports" is appended as a sibling of the raw descriptor table (a child
+    // of importTable's parent), not nested inside importTable itself -- see
+    // interpretPeImports()'s containerRow handling in pesemanticview.cpp.
+    QCOMPARE(importTable.children.size(), size_t(2));
+    StructureRow *importsRow = findChildNamed(&root, QStringLiteral("Imports"));
+    QVERIFY(importsRow);
+    QCOMPARE(importsRow->children.size(), size_t(2));
+    QCOMPARE(importsRow->children[0]->name, QStringLiteral("FIRST.dll"));
+    QCOMPARE(importsRow->children[1]->name, QStringLiteral("SECOND.dll"));
+    QVERIFY(!findChildNamed(importsRow, QStringLiteral("THIRD.dll")));
 }
 
 void StructViewTests::builderAddsElfSectionAndSymbolSemanticRows()
