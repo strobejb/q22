@@ -204,7 +204,7 @@ typedef struct _IMAGE_NT_HEADERS {
     [
       optional(FileHeader.SizeOfOptionalHeader != 0),
       extent(FileHeader.SizeOfOptionalHeader),
-      switch_is(OptionalHeader32.Magic),
+      select(OptionalHeader32.Magic),
     ]
     union
     {
@@ -275,7 +275,7 @@ typedef struct _IMAGE_IMPORT_BY_NAME
 {
     WORD Hint;
 
-    [size_is(4096), terminated_by(0)]
+    [count(4096), terminated_by(0)]
     CHAR Name[];
 } IMAGE_IMPORT_BY_NAME, *PIMAGE_IMPORT_BY_NAME;
 
@@ -328,7 +328,7 @@ typedef struct _PE
     dynamic_container(SECTION),
 
     name(Name),
-    size_is(ntHeaders.FileHeader.NumberOfSections)
+    count(ntHeaders.FileHeader.NumberOfSections)
   ]
   IMAGE_SECTION_HEADER sectionHeader[];
 
