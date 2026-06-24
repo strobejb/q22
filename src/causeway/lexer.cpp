@@ -55,11 +55,8 @@ TOKEN_LOOKUP toklook[] =
 
 #undef DEFINE_KEYWORD
 #define DEFINE_KEYWORD(tok,str) {tok, str},
+#define DEFINE_KEYWORD_ALIAS(tok,str) {tok, str},
 #include "keywords.h"
-
-	// aliases for IDL-derived names
-	{	TOK_SIZEIS,		"count"			},
-	{	TOK_SWITCHIS,	"select"		},
 
 	{	TOK_NULL,		0				}
 };

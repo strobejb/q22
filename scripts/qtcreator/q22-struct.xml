@@ -19,6 +19,7 @@
     <item>enum</item>
     <item>ignore</item>
     <item>include</item>
+    <item>select_offset</item>
     <item>sizeof</item>
     <item>string</item>
     <item>struct</item>
@@ -49,8 +50,10 @@
     <item>assoc</item>
     <item>bitflag</item>
     <item>case</item>
+    <item>count</item>
     <item>description</item>
     <item>display</item>
+    <item>dynamic_array</item>
     <item>dynamic_container</item>
     <item>dynamic_struct</item>
     <item>endian</item>
@@ -64,9 +67,11 @@
     <item>offset</item>
     <item>offset_map</item>
     <item>optional</item>
+    <item>select</item>
     <item>size_is</item>
     <item>switch_is</item>
     <item>tags</item>
+    <item>terminated_by</item>
     <item>view</item>
 </list>
 

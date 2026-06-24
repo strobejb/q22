@@ -28,6 +28,19 @@
 #define DEFINE_RESERVED_KEYWORD DEFINE_KEYWORD
 #endif
 
+// An alternative spelling of an existing keyword (e.g. "count" for size_is,
+// "select" for switch_is) that maps to the SAME token. Consumers that build
+// an enum or a switch over distinct tokens (lexer.h's TOKEN enum,
+// parser.cpp's IsContextualKeyword) must leave this undefined/a no-op --
+// defining it as DEFINE_KEYWORD would redeclare the enumerator or duplicate
+// the switch case. Consumers that just want every valid spelling as a flat
+// list (the lexer's keyword table, syntax highlighters) define this the
+// same as DEFINE_KEYWORD before including this file.
+#ifndef DEFINE_KEYWORD_ALIAS
+#define DEFINE_KEYWORD_ALIAS(tok, str)
+#define KEYWORDS_H_UNDEF_DEFINE_KEYWORD_ALIAS
+#endif
+
 DEFINE_KEYWORD          ( TOK_ALIGN,            "align" )
 DEFINE_KEYWORD          ( TOK_ASSOC,            "assoc" )
 DEFINE_KEYWORD          ( TOK_BITFLAG,          "bitflag" )
@@ -69,7 +82,15 @@ DEFINE_RESERVED_KEYWORD ( TOK_UNION,			"union" )
 DEFINE_RESERVED_KEYWORD ( TOK_UNSIGNED,         "unsigned" )
 DEFINE_KEYWORD          ( TOK_VIEW,             "view" )
 
+// IDL-derived alternative spellings -- see DEFINE_KEYWORD_ALIAS above.
+DEFINE_KEYWORD_ALIAS    ( TOK_SIZEIS,           "count" )
+DEFINE_KEYWORD_ALIAS    ( TOK_SWITCHIS,         "select" )
+
 #undef DEFINE_RESERVED_KEYWORD
+#ifdef KEYWORDS_H_UNDEF_DEFINE_KEYWORD_ALIAS
+#undef DEFINE_KEYWORD_ALIAS
+#undef KEYWORDS_H_UNDEF_DEFINE_KEYWORD_ALIAS
+#endif
 #ifdef KEYWORDS_H_UNDEF_DEFINE_KEYWORD
 #undef DEFINE_KEYWORD
 #undef KEYWORDS_H_UNDEF_DEFINE_KEYWORD

@@ -358,14 +358,25 @@ static QString typeLibKeywordPattern()
 #undef DEFINE_KEYWORD
 #define QEXED_RESTORE_DEFINE_KEYWORD
 #endif
+#ifdef DEFINE_KEYWORD_ALIAS
+#pragma push_macro("DEFINE_KEYWORD_ALIAS")
+#undef DEFINE_KEYWORD_ALIAS
+#define QEXED_RESTORE_DEFINE_KEYWORD_ALIAS
+#endif
 
 #define DEFINE_KEYWORD(tok, str) words.append(QStringLiteral(str));
+#define DEFINE_KEYWORD_ALIAS(tok, str) words.append(QStringLiteral(str));
 #include "keywords.h"
 #undef DEFINE_KEYWORD
+#undef DEFINE_KEYWORD_ALIAS
 
 #ifdef QEXED_RESTORE_DEFINE_KEYWORD
 #pragma pop_macro("DEFINE_KEYWORD")
 #undef QEXED_RESTORE_DEFINE_KEYWORD
+#endif
+#ifdef QEXED_RESTORE_DEFINE_KEYWORD_ALIAS
+#pragma pop_macro("DEFINE_KEYWORD_ALIAS")
+#undef QEXED_RESTORE_DEFINE_KEYWORD_ALIAS
 #endif
 
     words.removeDuplicates();
