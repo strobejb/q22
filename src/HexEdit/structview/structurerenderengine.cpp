@@ -430,7 +430,7 @@ uint64_t StructureRenderEngine::appendIdentifierRow(StructureRow *parent,
 
     const uint64_t length = recurseType(row.get(), type ? type->link : nullptr, typeDecl, offset);
     row->byteLength = length;
-    applyEntryPointTag(row.get(), typeDecl, type ? type->link : nullptr, offset);
+    applyEntryPointTag(row.get(), typeDecl);
     const QString stringValue = stringArrayValue(row.get(), type ? type->link : nullptr, typeDecl, offset);
     if (!stringValue.isNull())
         row->value = stringValue;
@@ -1936,32 +1936,17 @@ QStringList StructureRenderEngine::enumChoiceLabels(Enum *eptr) const
     return labels;
 }
 
-void StructureRenderEngine::applyEntryPointTag(StructureRow *row, TypeDecl *typeDecl, Type *scopeType, uint64_t scopeOffset)
+void StructureRenderEngine::applyEntryPointTag(StructureRow *row, TypeDecl *typeDecl)
 {
-    ExprNode *expr = nullptr;
-    if (!row || !FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_ENTRYPOINT, &expr) || !expr)
+    if (!row || !FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_ENTRYPOINT, nullptr))
         return;
 
-    INUMTYPE value = 0;
-    const bool selfField = expr->type == EXPR_IDENTIFIER
-        && expr->str
-        && row->type
-        && row->type->sym
-        && std::strcmp(expr->str, row->type->sym->name) == 0
-        && row->valueKind == StructureRowValueKind::ScalarInteger;
-    if (selfField)
-    {
-        value = static_cast<INUMTYPE>(row->scalarRawValue);
-    }
-    else if (!evaluate(row, expr, &value, scopeOffset) && !evaluate(row->parent, expr, &value, scopeOffset))
-    {
+    if (row->valueKind != StructureRowValueKind::ScalarInteger)
         return;
-    }
 
     row->hasCodeTarget = true;
-    row->codeLogicalOffset = static_cast<uint64_t>(value);
+    row->codeLogicalOffset = static_cast<uint64_t>(row->scalarRawValue);
     row->codeTargetOffset = m_baseOffset + row->codeLogicalOffset;
-    Q_UNUSED(scopeType);
 }
 
 void StructureRenderEngine::applyDeclarationName(StructureRow *row, Type *type) const

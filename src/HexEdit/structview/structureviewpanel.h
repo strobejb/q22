@@ -34,6 +34,15 @@ namespace filestats
 class ActionBanner;
 }
 
+// Detects which exported Strata type matches hv's currently open file (by
+// assoc extension, then magic signature) and locates that type's first
+// [entrypoint]-tagged field. Self-contained -- does not require a
+// StructureViewPanel to exist, so the disassembler's entry point stays
+// correct even when the structure view panel is closed or was never opened
+// for this file (HexView's cached entry point otherwise only gets updated as
+// a side effect of that panel rebuilding).
+bool detectStructureEntryPoint(HexView *hv, uint64_t *fileOffset);
+
 class StructureViewPanel : public QWidget
 {
     Q_OBJECT
@@ -43,10 +52,16 @@ public:
 
 signals:
     void closeRequested();
-    void openDisassemblerRequested();
+    void openDisassemblerRequested(uint64_t offset);
+    void selectionIdentityChanged(const QString &name, uint64_t offset);
 
 public slots:
     void refresh();
+    // Re-selects the row matching (name, offset) once rows are available.
+    // Used by the host to restore the selection after the panel is recreated
+    // (it's destroyed/rebuilt on close, like the other side panels), so e.g.
+    // switching to the disassembler and back doesn't drop the selected row.
+    void restoreSelection(const QString &name, uint64_t offset);
 
 protected:
     void showEvent(QShowEvent *event) override;
@@ -85,6 +100,8 @@ private:
     void setUseHexadecimalOffsets(bool enabled);
     void setUseRelativeOffsets(bool enabled);
     void updateHexViewSelection(const QModelIndex &current);
+    void applyPendingRestore();
+    QModelIndex findIndexByIdentity(const QModelIndex &parent, const QString &name, uint64_t offset) const;
     void clearHexViewOverlay();
     void setHexViewSelectionFromStructure(size_w start, size_w end);
     bool explicitRootOffset(TypeDecl *rootType, uint64_t *offset) const;
@@ -127,6 +144,9 @@ private:
     bool                        m_updatingHexViewFromStructure = false;
     bool                        m_rebuildingRows = false;
     uint64_t                    m_pinnedOffset = 0;
+    QString                     m_pendingRestoreName;
+    uint64_t                    m_pendingRestoreOffset = 0;
+    bool                        m_hasPendingRestore = false;
 };
 
 class StructureViewPanelHost : public SidePanelHostBase
@@ -136,13 +156,16 @@ public:
     explicit StructureViewPanelHost(HexView *hv, QWidget *parent = nullptr);
 
 signals:
-    void openDisassemblerRequested();
+    void openDisassemblerRequested(uint64_t offset);
 
 protected:
     QWidget *createPanelWidget() override;
 
 private:
     HexView *m_hv = nullptr;
+    QString  m_pendingSelectionName;
+    uint64_t m_pendingSelectionOffset = 0;
+    bool     m_hasPendingSelection = false;
 };
 
 #endif // STRUCTVIEW_STRUCTUREVIEWPANEL_H

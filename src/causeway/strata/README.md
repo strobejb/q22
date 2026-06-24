@@ -225,7 +225,7 @@ Layout tag affect the alignment and positioning of fields:
 | `align(n)` | Align to an n-byte boundary before this field |
 | `extent(bytes)` | Limit parsing of this field to `bytes` bytes |
 | `optional(cond)` | Skip this field when `cond` is false |
-| `entrypoint(expr)` | Mark the evaluated expression as a code entry point address for disassembly |
+| `entrypoint` | Mark this scalar field's own value as a code entry point address for disassembly |
 
 ```c
 [offset(dosHeader.e_lfanew)]

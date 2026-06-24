@@ -907,7 +907,7 @@ MainWindow::MainWindow(QWidget *parent)
             m_disasmPanelHost->closePanel();
     });
     connect(m_structurePanelHost, &StructureViewPanelHost::openDisassemblerRequested,
-            this, &MainWindow::toggleDisassemblerPanel);
+            this, &MainWindow::openDisassemblerAtOffset);
 
     // ── Edit menu ─────────────────────────────────────────────────────────────
     // Shortcuts not set in the .ui file are assigned here so they are also
@@ -1145,6 +1145,7 @@ MainWindow::MainWindow(QWidget *parent)
         setWindowTitle(QApplication::applicationDisplayName());
         updateWatchedFile(this, QString());
         resetSidePanel();
+        m_hv->notifyStructureEntryPoint(false, 0);
     });
 
     connect(ui->actionOpen, &QAction::triggered, this, [this]() {
@@ -1504,6 +1505,13 @@ void MainWindow::openFile(const QString &path) {
     setWindowTitle(QFileInfo(path).fileName() + " \u2013 " + QApplication::applicationDisplayName());
     updateWatchedFile(this, path);
     resetSidePanel();
+
+    // Independent of whether the structure view panel is open -- that panel
+    // only updates HexView's cached entry point as a side effect of its own
+    // rebuild, so without this, switching files while it's closed leaves the
+    // disassembler's "jump to entry point" pointing at the previous file.
+    uint64_t entryOffset = 0;
+    m_hv->notifyStructureEntryPoint(detectStructureEntryPoint(m_hv, &entryOffset), entryOffset);
 }
 
 void MainWindow::toggleSidePanel()
@@ -1524,6 +1532,19 @@ void MainWindow::toggleDisassemblerPanel()
     if (!m_disasmPanelHost->isOpen() && m_structurePanelHost && m_structurePanelHost->isOpen())
         m_structurePanelHost->closePanel();
     m_disasmPanelHost->toggle();
+}
+
+void MainWindow::openDisassemblerAtOffset(uint64_t offset)
+{
+    if (!m_disasmPanelHost) return;
+    if (!m_disasmPanelHost->isOpen())
+    {
+        if (m_sidePanelHost && m_sidePanelHost->isOpen())
+            m_sidePanelHost->closePanel();
+        if (m_structurePanelHost && m_structurePanelHost->isOpen())
+            m_structurePanelHost->closePanel();
+    }
+    m_disasmPanelHost->openAtOffset(offset);
 }
 
 void MainWindow::toggleStructurePanel()

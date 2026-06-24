@@ -128,7 +128,7 @@ private:
     Enum *tagEnum(TypeDecl *typeDecl) const;
     QString enumNameForValue(Enum *eptr, INUMTYPE value) const;
     QStringList enumChoiceLabels(Enum *eptr) const;
-    void applyEntryPointTag(StructureRow *row, TypeDecl *typeDecl, Type *scopeType, uint64_t scopeOffset);
+    void applyEntryPointTag(StructureRow *row, TypeDecl *typeDecl);
     void applyDeclarationName(StructureRow *row, Type *type) const;
     QString stringArrayValue(StructureRow *scope, Type *type, TypeDecl *typeDecl, uint64_t offset);
     QString scalarArrayValue(StructureRow *scope, Type *type) const;

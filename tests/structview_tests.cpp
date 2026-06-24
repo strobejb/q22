@@ -63,6 +63,7 @@ private slots:
     void builderRunsSemanticViewsOnceForDynamicArrayTables();
     void builderNamesPeDynamicSectionsFromStandardDefinition();
     void builderNamesPeImportDescriptorsFromStandardDefinition();
+    void builderResolvesEntryPointRvaThroughSectionOffsetMap();
     void semanticRegistryRunsKnownViewsAndIgnoresUnknownViews();
     void builderRunsSemanticViewsAfterDynamicPlacement();
     void builderKeepsRawDynamicRowsWhenSemanticImportDataIsTruncated();
@@ -1194,7 +1195,7 @@ void StructViewTests::builderExposesEnumChoicesAndEntrypoints()
                         "[export]\n"
                         "struct Root {\n"
                         "  [enum(\"Kind\")] byte kind;\n"
-                        "  [entrypoint(entryRva)] dword entryRva;\n"
+                        "  [entrypoint] dword entryRva;\n"
                         "} root;\n"));
 
     const QByteArray bytes = QByteArray(4, '\0') + QByteArray::fromHex("02" "10000000");
@@ -1867,6 +1868,51 @@ void StructViewTests::builderNamesPeImportDescriptorsFromStandardDefinition()
     QCOMPARE(descriptors->children.size(), size_t(1));
     QVERIFY2(descriptors->children[0]->name.contains(QStringLiteral("KERNEL32.dll")),
              qPrintable(QStringLiteral("descriptor[0] name missing DLL hint: %1").arg(descriptors->children[0]->name)));
+}
+
+void StructViewTests::builderResolvesEntryPointRvaThroughSectionOffsetMap()
+{
+    // Scenario: AddressOfEntryPoint is a relative virtual address (RVA), not a
+    // file offset -- it must be translated through the section table's
+    // offset_map before it can be used to seek the hex view / disassembler.
+    // Expected: codeTargetOffset lands at the mapped file offset inside the
+    // owning section, not at baseOffset + the raw RVA.
+    // Regression guard: resolveEntryPointRows must run after the section
+    // dynamic_container/offset_map has been collected, using the real PE
+    // definition (a synthetic struct with no sections can't exercise this).
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("pe.struct")), "pe.struct failed to parse");
+
+    QByteArray bytes(0x300, '\0');
+    writeLe32(&bytes, 0x3c, 0x80);
+    writeLe16(&bytes, 0x86, 2);
+    writeLe16(&bytes, 0x94, 256);
+    writeLe16(&bytes, 0x98, 0x10b);
+    writeLe32(&bytes, 0x98 + 92, 16);
+
+    // AddressOfEntryPoint = 0x1050, an RVA inside the .text section below.
+    writeLe32(&bytes, 0x98 + 16, 0x1050);
+
+    const qsizetype sectionTable = 0x80 + 4 + 20 + 256;
+    writeAscii(&bytes, sectionTable, ".text");
+    writeLe32(&bytes, sectionTable + 12, 0x1000);
+    writeLe32(&bytes, sectionTable + 16, 0x100);
+    writeLe32(&bytes, sectionTable + 20, 0x200);
+
+    const qsizetype secondSection = sectionTable + 40;
+    writeAscii(&bytes, secondSection, ".idata");
+    writeLe32(&bytes, secondSection + 12, 0x2000);
+    writeLe32(&bytes, secondSection + 16, 0x80);
+    writeLe32(&bytes, secondSection + 20, 0x280);
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+
+    StructureRow *entry = findDescendantNamed(rows[0].get(), QStringLiteral("dword AddressOfEntryPoint"));
+    QVERIFY2(entry, "AddressOfEntryPoint row not found in rendered tree");
+    QVERIFY(entry->hasCodeTarget);
+    QCOMPARE(entry->codeLogicalOffset, uint64_t(0x1050));
+    QCOMPARE(entry->codeTargetOffset, uint64_t(0x250));
 }
 
 void StructViewTests::semanticRegistryRunsKnownViewsAndIgnoresUnknownViews()

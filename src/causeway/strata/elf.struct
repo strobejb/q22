@@ -129,6 +129,7 @@ typedef struct _Elf32_Ehdr
     [enum(ELF_MACHINE)]
     e16      e_machine;                 // Architecture
     e32      e_version;                 // Object file version
+    [entrypoint]
     e32_addr e_entry;                   // Entry point virtual address
     e32_off  e_phoff;                   // Program header table file offset
     e32_off  e_shoff;                   // Section header table file offset

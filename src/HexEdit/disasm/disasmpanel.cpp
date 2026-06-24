@@ -242,9 +242,7 @@ void DisassemblerPanel::buildUi()
             this, [this]() {
                 if (!m_hv || !m_hv->hasStructureEntryPoint())
                     return;
-                const size_w offset = static_cast<size_w>(m_hv->structureEntryPoint());
-                m_hv->setCurSel(offset, offset, true);
-                m_hv->scrollCenterIfOffScreen(offset, 1);
+                goToOffset(m_hv->structureEntryPoint());
             });
 }
 
@@ -474,6 +472,23 @@ void DisassemblerPanel::updateOffsetDisplay()
     m_offsetEdit->setText(QString::number(offset, 16).toUpper().rightJustified(8, QLatin1Char('0')));
 }
 
+void DisassemblerPanel::goToOffset(uint64_t offset)
+{
+    if (!m_hv)
+        return;
+    // An explicit "go to" should actually land where it's pointed -- pin is
+    // for freezing the view while browsing elsewhere, not for blocking a
+    // deliberate jump, so unpin rather than just bypassing it for one update.
+    if (m_pinned)
+        setPinned(false);
+    const size_w off = static_cast<size_w>(offset);
+    // preserveCursor=false: the cursor (which disassemble() reads via
+    // cursorOffset()) must actually move, not just the highlighted selection.
+    m_hv->setCurSel(off, off, false);
+    m_hv->scrollCenterIfOffScreen(off, 1);
+    disassemble();
+}
+
 void DisassemblerPanel::setPinned(bool pinned)
 {
     m_pinned = pinned;
@@ -500,4 +515,12 @@ QWidget *DisassemblerPanelHost::createPanelWidget()
     connect(panel, &DisassemblerPanel::closeRequested,
             this, &DisassemblerPanelHost::closePanel);
     return panel;
+}
+
+void DisassemblerPanelHost::openAtOffset(uint64_t offset)
+{
+    if (!isOpen())
+        openPanel();
+    if (auto *panel = qobject_cast<DisassemblerPanel *>(panelWidget()))
+        panel->goToOffset(offset);
 }

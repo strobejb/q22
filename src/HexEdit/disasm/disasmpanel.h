@@ -26,6 +26,7 @@ signals:
 
 public slots:
     void refresh();
+    void goToOffset(uint64_t offset);
 
 private:
     void buildUi();
@@ -56,6 +57,11 @@ class DisassemblerPanelHost : public SidePanelHostBase
     Q_OBJECT
 public:
     explicit DisassemblerPanelHost(HexView *hv, QWidget *parent = nullptr);
+
+    // Ensures the panel is open (without closing it if already open, unlike
+    // toggle()) and jumps it to offset, bypassing "pin" since this is an
+    // explicit navigation request rather than incidental cursor movement.
+    void openAtOffset(uint64_t offset);
 
 protected:
     QWidget *createPanelWidget() override;

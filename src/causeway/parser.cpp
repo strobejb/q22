@@ -262,6 +262,7 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 		{
 		// TAGS which don't take any parameters
 		case TOK_IGNORE:	case TOK_STRING:
+		case TOK_ENTRYPOINT:
 			tag = new Tag(t, tag);
 			Advance();
 			break;
@@ -341,7 +342,6 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 		case TOK_CASE:
 		case TOK_DISPLAY:
 		case TOK_NAME:		case TOK_ENUM:
-		case TOK_ENTRYPOINT:
 		case TOK_EXTENT:
 		case TOK_OPTIONAL:
 		case TOK_TERMINATEDBY:

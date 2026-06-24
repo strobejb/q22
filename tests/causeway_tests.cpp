@@ -423,8 +423,8 @@ void CausewayTests::alignAndEntrypointTagsParse()
 	// Scenario: Structure View definitions annotate both layout and a field that
 	// identifies executable code.
 	// Expected: align works on the exported compound declaration and on an
-	// individual field, while entrypoint survives as a normal expression tag for
-	// the renderer to resolve later.
+	// individual field, while entrypoint -- a parameterless tag, since it only
+	// ever marks the field it is attached to -- survives alongside it.
 	// Regression guard: align existed as a keyword long before the renderer used
 	// it, so adding entrypoint must not disturb existing tag parsing.
 	Parser parser;
@@ -432,7 +432,7 @@ void CausewayTests::alignAndEntrypointTagsParse()
 						"[export, align(4)]\n"
 						"struct Root {\n"
 						"  byte magic;\n"
-						"  [align(8), entrypoint(codeRva)] dword codeRva;\n"
+						"  [align(8), entrypoint] dword codeRva;\n"
 						"} root;\n"));
 
 	TypeDecl *root = nullptr;

@@ -61,6 +61,7 @@ private:
     void toggleSidePanel();
     void toggleDisassemblerPanel();
     void toggleStructurePanel();
+    void openDisassemblerAtOffset(uint64_t offset);
     void openSidePanelSection(FilePropertiesPanel::SectionId section);
     void refreshSidePanel();
     void resetSidePanel();

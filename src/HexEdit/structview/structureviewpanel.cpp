@@ -68,12 +68,11 @@ enum class InitialStructureExpansion
 {
     Collapsed,
     FirstLevel,
-    FirstLevelAndFirstField,
     All,
 };
 
 static constexpr InitialStructureExpansion kInitialStructureExpansion =
-    InitialStructureExpansion::FirstLevelAndFirstField;
+    InitialStructureExpansion::FirstLevel;
 static constexpr int kBranchIconSize = 16;
 
 // m_rootCombo item data roles used to mark an entry as a definition file that
@@ -1854,6 +1853,114 @@ private:
     bool m_pressed = false;
 };
 
+namespace
+{
+
+bool magicSignatureMatchesFile(HexView *hv, const StructureMagicSignature &signature)
+{
+    if (!hv || signature.bytes.isEmpty())
+        return false;
+
+    QByteArray fileBytes(signature.bytes.size(), Qt::Uninitialized);
+    const size_t bytesRead = hv->getData(static_cast<size_w>(signature.offset),
+                                         reinterpret_cast<uint8_t *>(fileBytes.data()),
+                                         static_cast<size_t>(fileBytes.size()));
+    return bytesRead == static_cast<size_t>(fileBytes.size()) && fileBytes == signature.bytes;
+}
+
+TypeDecl *detectAssociatedRootType(const QList<ExportedStructureType> &exportedTypes, HexView *hv)
+{
+    if (!hv || exportedTypes.isEmpty())
+        return nullptr;
+
+    const QString fileName = QFileInfo(hv->filePath()).fileName().toLower();
+    if (!fileName.isEmpty())
+    {
+        for (const ExportedStructureType &exported : exportedTypes)
+        {
+            for (QString ext : exported.assocExtensions)
+            {
+                ext = ext.trimmed().toLower();
+                if (ext.isEmpty())
+                    continue;
+                if (!ext.startsWith(QLatin1Char('.')))
+                    ext.prepend(QLatin1Char('.'));
+
+                if (fileName.endsWith(ext) || fileName.contains(ext + QLatin1Char('.')))
+                    return exported.typeDecl;
+            }
+        }
+    }
+
+    for (const ExportedStructureType &exported : exportedTypes)
+        for (const StructureMagicSignature &signature : exported.magicSignatures)
+            if (magicSignatureMatchesFile(hv, signature))
+                return exported.typeDecl;
+
+    return nullptr;
+}
+
+bool findFirstCodeTargetRow(StructureRow *row, uint64_t *result)
+{
+    if (!row)
+        return false;
+    if (row->hasCodeTarget)
+    {
+        *result = row->codeTargetOffset;
+        return true;
+    }
+    for (const auto &child : row->children)
+        if (findFirstCodeTargetRow(child.get(), result))
+            return true;
+    return false;
+}
+
+} // namespace
+
+bool detectStructureEntryPoint(HexView *hv, uint64_t *fileOffset)
+{
+    if (!hv || !fileOffset)
+        return false;
+
+    StructureDefinitionManager definitions;
+    definitions.ensureLoaded();
+
+    TypeDecl *rootType = detectAssociatedRootType(definitions.exportedTypes(), hv);
+    if (!rootType)
+        return false;
+
+    uint64_t baseOffset = 0;
+    ExprNode *offsetExpr = nullptr;
+    if (FindTag(rootType->tagList, TOK_OFFSET, &offsetExpr) && offsetExpr)
+    {
+        switch (offsetExpr->type)
+        {
+        case EXPR_NUMBER:
+        case EXPR_UNARY:
+        case EXPR_BINARY:
+        case EXPR_TERTIARY:
+            baseOffset = static_cast<uint64_t>(Evaluate(offsetExpr));
+            break;
+        default:
+            break;
+        }
+    }
+
+    StructureValueBuilder builder;
+    auto rows = builder.build(definitions.library(),
+                              rootType,
+                              baseOffset,
+                              [hv](uint64_t offset, uint8_t *buffer, size_t length) -> size_t {
+                                  return hv->getData(static_cast<size_w>(offset), buffer, length);
+                              });
+
+    for (const auto &row : rows)
+        if (findFirstCodeTargetRow(row.get(), fileOffset))
+            return true;
+
+    return false;
+}
+
 StructureViewPanel::StructureViewPanel(HexView *hv, QWidget *parent)
     : QWidget(parent)
     , m_hv(hv)
@@ -2573,6 +2680,7 @@ void StructureViewPanel::rebuildRows()
     }
     m_rebuildingRows = false;
     clearHexViewOverlay();
+    applyPendingRestore();
 
     if (m_hv)
     {
@@ -2602,7 +2710,6 @@ void StructureViewPanel::applyInitialExpansion()
         m_tree->expandAll();
         return;
     case InitialStructureExpansion::FirstLevel:
-    case InitialStructureExpansion::FirstLevelAndFirstField:
         break;
     }
 
@@ -2610,17 +2717,8 @@ void StructureViewPanel::applyInitialExpansion()
     for (int row = 0; row < rootRows; ++row)
     {
         const QModelIndex rootIndex = m_model->index(row, StructureTreeModel::NameColumn);
-        if (!rootIndex.isValid())
-            continue;
-
-        m_tree->expand(rootIndex);
-
-        if (kInitialStructureExpansion == InitialStructureExpansion::FirstLevelAndFirstField)
-        {
-            const QModelIndex firstField = m_model->index(0, StructureTreeModel::NameColumn, rootIndex);
-            if (firstField.isValid())
-                m_tree->expand(firstField);
-        }
+        if (rootIndex.isValid())
+            m_tree->expand(rootIndex);
     }
 }
 
@@ -2682,9 +2780,11 @@ void StructureViewPanel::showOptionsContextMenu(int column, const QPoint &global
             connect(openCode, &QAction::triggered,
                     this, [this, row]() {
                         const size_w offset = static_cast<size_w>(row->codeTargetOffset);
-                        m_hv->setCurSel(offset, offset, true);
+                        // preserveCursor=false: this is an explicit "go to", the
+                        // disassembler reads the cursor, not just the selection.
+                        m_hv->setCurSel(offset, offset, false);
                         m_hv->scrollCenterIfOffScreen(offset, 1);
-                        emit openDisassemblerRequested();
+                        emit openDisassemblerRequested(row->codeTargetOffset);
                     });
         }
     }
@@ -3112,6 +3212,53 @@ void StructureViewPanel::setUseRelativeOffsets(bool enabled)
     applyDisplayOptions();
 }
 
+void StructureViewPanel::restoreSelection(const QString &name, uint64_t offset)
+{
+    m_pendingRestoreName = name;
+    m_pendingRestoreOffset = offset;
+    m_hasPendingRestore = true;
+}
+
+void StructureViewPanel::applyPendingRestore()
+{
+    if (!m_hasPendingRestore || !m_tree || !m_model)
+        return;
+
+    m_hasPendingRestore = false;
+
+    const QModelIndex found = findIndexByIdentity(QModelIndex(), m_pendingRestoreName, m_pendingRestoreOffset);
+    if (!found.isValid())
+        return;
+
+    for (QModelIndex ancestor = m_model->parent(found); ancestor.isValid(); ancestor = m_model->parent(ancestor))
+        m_tree->expand(ancestor);
+
+    m_tree->selectionModel()->setCurrentIndex(
+        found, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+    m_tree->scrollTo(found);
+}
+
+// DFS walk of eagerly-loaded rows (no lazy-load trigger) for the first row
+// whose name and absolute file offset match -- used to re-find the
+// previously selected row after the model has been rebuilt from scratch.
+QModelIndex StructureViewPanel::findIndexByIdentity(const QModelIndex &parent, const QString &name, uint64_t offset) const
+{
+    const int n = m_model->rowCount(parent);
+    for (int r = 0; r < n; ++r)
+    {
+        const QModelIndex idx = m_model->index(r, StructureTreeModel::NameColumn, parent);
+        if (const StructureRow *row = m_model->rowForIndex(idx))
+        {
+            if (row->name == name && row->absoluteOffset == offset)
+                return idx;
+        }
+        const QModelIndex found = findIndexByIdentity(idx, name, offset);
+        if (found.isValid())
+            return found;
+    }
+    return QModelIndex();
+}
+
 void StructureViewPanel::updateHexViewSelection(const QModelIndex &current)
 {
     if (!m_hv || !m_model || m_rebuildingRows)
@@ -3123,6 +3270,8 @@ void StructureViewPanel::updateHexViewSelection(const QModelIndex &current)
         clearHexViewOverlay();
         return;
     }
+
+    emit selectionIdentityChanged(row->name, row->absoluteOffset);
 
     if (row->byteLength > 0 && row->absoluteOffset < m_hv->size())
     {
@@ -3356,5 +3505,13 @@ QWidget *StructureViewPanelHost::createPanelWidget()
             this, &StructureViewPanelHost::closePanel);
     connect(panel, &StructureViewPanel::openDisassemblerRequested,
             this, &StructureViewPanelHost::openDisassemblerRequested);
+    connect(panel, &StructureViewPanel::selectionIdentityChanged,
+            this, [this](const QString &name, uint64_t offset) {
+                m_pendingSelectionName = name;
+                m_pendingSelectionOffset = offset;
+                m_hasPendingSelection = true;
+            });
+    if (m_hasPendingSelection)
+        panel->restoreSelection(m_pendingSelectionName, m_pendingSelectionOffset);
     return panel;
 }
