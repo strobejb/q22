@@ -866,6 +866,32 @@ bool StructureRenderEngine::evaluate(const EvalContext &context, ExprNode *expr,
         *result = static_cast<INUMTYPE>(size);
         return true;
     }
+    case EXPR_RAWOFFSET:
+    {
+        // select_offset(byteOffset): read 1 raw byte at
+        // [enclosing struct/union's own base offset] + byteOffset, bypassing
+        // field lookup entirely. Deliberately NOT context.offset -- that's
+        // the running cursor for whichever specific field is currently being
+        // positioned, which drifts as later sibling fields are processed
+        // (e.g. by the time programHeaders32[]'s own offset(...) tag runs,
+        // context.offset has already advanced past the union). What stays
+        // constant regardless of which field's tag triggered this evaluate()
+        // call is context.row itself: it's always the StructureRow of the
+        // struct/union whose fields are being declared (_ELF, in ELF's case),
+        // and StructureRow::absoluteOffset is that struct's own fixed base.
+        //
+        // This reaches a discriminator/marker byte that lives inside a
+        // not-yet-selected union candidate (e.g. ELF's e_ident[EI_CLASS],
+        // which is part of each per-bitness header struct, not a sibling
+        // field -- see expr.h's EXPR_RAWOFFSET comment for the full story
+        // and the Option 3 generalization this is a stand-in for).
+        const uint64_t base = context.row ? context.row->absoluteOffset : context.offset;
+        INUMTYPE relOffset = 0;
+        if (!expr->left || !evaluate(context, expr->left, &relOffset))
+            return false;
+
+        return readInteger(base + static_cast<uint64_t>(relOffset), 1, result, false);
+    }
     default:
         return false;
     }

@@ -1437,15 +1437,18 @@ void StructViewTests::builderRendersElf32AndElf64Tables()
     for (const auto &child : rows32[0]->children)
         childNames32.push_back(child->name);
     const QByteArray childNames32Message = childNames32.join(QStringLiteral(", ")).toLocal8Bit();
-    StructureRow *header32 = findChildNamed(rows32[0].get(), QStringLiteral("Elf32_EhdrTail header32"));
+    StructureRow *header32 = findChildNamed(rows32[0].get(), QStringLiteral("Elf32_Ehdr header32"));
     QVERIFY2(header32, childNames32Message.constData());
-    QCOMPARE(header32->children[9]->value, QStringLiteral("1"));
+    // children[0] is now e_ident (Elf32_Ehdr matches the real upstream
+    // layout, e_ident included), shifting every later field by one versus
+    // the old e_ident-hoisted-out Elf32_EhdrTail: children[10] is e_phnum.
+    QCOMPARE(header32->children[10]->value, QStringLiteral("1"));
     QVERIFY2(findChildNamed(rows32[0].get(), QStringLiteral("Elf32_Phdr programHeaders32[]")),
              childNames32Message.constData());
     StructureRow *sections32 = findChildNamed(rows32[0].get(), QStringLiteral("Elf32_Shdr sectionHeaders32[]"));
     QVERIFY2(sections32, childNames32Message.constData());
     QCOMPARE(sections32->children.size(), size_t(2));
-    QCOMPARE(header32->children[3]->value, QStringLiteral("305419896"));
+    QCOMPARE(header32->children[4]->value, QStringLiteral("305419896"));
 
     StrataLibrary library32be;
     QVERIFY2(parseStandardElfDefinition(&library32be), "elf.struct failed to parse");
@@ -1470,9 +1473,9 @@ void StructViewTests::builderRendersElf32AndElf64Tables()
 
     auto rows32be = buildRows(&library32be, firstExported(&library32be), elf32be);
     QCOMPARE(rows32be.size(), size_t(1));
-    StructureRow *header32be = findChildNamed(rows32be[0].get(), QStringLiteral("Elf32_EhdrTail header32"));
+    StructureRow *header32be = findChildNamed(rows32be[0].get(), QStringLiteral("Elf32_Ehdr header32"));
     QVERIFY(header32be);
-    QCOMPARE(header32be->children[3]->value, QStringLiteral("16909060"));
+    QCOMPARE(header32be->children[4]->value, QStringLiteral("16909060"));
 
     StrataLibrary library64;
     QVERIFY2(parseStandardElfDefinition(&library64), "elf.struct failed to parse");
@@ -1497,7 +1500,7 @@ void StructViewTests::builderRendersElf32AndElf64Tables()
 
     auto rows64 = buildRows(&library64, firstExported(&library64), elf64);
     QCOMPARE(rows64.size(), size_t(1));
-    QVERIFY(findChildNamed(rows64[0].get(), QStringLiteral("Elf64_EhdrTail header64")));
+    QVERIFY(findChildNamed(rows64[0].get(), QStringLiteral("Elf64_Ehdr header64")));
     QVERIFY(findChildNamed(rows64[0].get(), QStringLiteral("Elf64_Phdr programHeaders64[]")));
     StructureRow *sections64 = findChildNamed(rows64[0].get(), QStringLiteral("Elf64_Shdr sectionHeaders64[]"));
     QVERIFY(sections64);
@@ -2279,7 +2282,7 @@ void StructViewTests::builderKeepsRawElfRowsWhenSemanticDataIsTruncated()
 
     auto rows = buildRows(&library, firstExported(&library), bytes);
     QCOMPARE(rows.size(), size_t(1));
-    QVERIFY(findChildNamed(rows[0].get(), QStringLiteral("Elf32_EhdrTail header32")));
+    QVERIFY(findChildNamed(rows[0].get(), QStringLiteral("Elf32_Ehdr header32")));
     QVERIFY(findChildNamed(rows[0].get(), QStringLiteral("Elf32_Shdr sectionHeaders32[]")));
     QVERIFY(!findChildNamed(rows[0].get(), QStringLiteral("SECTION .text")));
 }

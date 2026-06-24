@@ -123,7 +123,7 @@ typedef qword e64_addr, e64_off;
 
 typedef struct _Elf32_Ehdr
 {
-    byte       e_ident[EI_NIDENT];      // Magic number and other info
+    byte     e_ident[EI_NIDENT];        // Magic number and other info
     [enum(ELF_TYPE)]
     e16      e_type;                    // Object file type
     [enum(ELF_MACHINE)]
@@ -144,12 +144,13 @@ typedef struct _Elf32_Ehdr
 
 typedef struct _Elf64_Ehdr
 {
-    byte       e_ident[EI_NIDENT];      // Magic number and other info
+    byte     e_ident[EI_NIDENT];        // Magic number and other info
     [enum(ELF_TYPE)]
     e16      e_type;                    // Object file type
     [enum(ELF_MACHINE)]
     e16      e_machine;                 // Architecture
     e32      e_version;                 // Object file version
+    [entrypoint]
     e64_addr e_entry;                   // Entry point virtual address
     e64_off  e_phoff;                   // Program header table file offset
     e64_off  e_shoff;                   // Section header table file offset
@@ -161,44 +162,6 @@ typedef struct _Elf64_Ehdr
     e16      e_shnum;                   // Section header table entry count
     e16      e_shstrndx;                // Section-header string table index
 } Elf64_Ehdr;
-
-typedef struct _Elf32_EhdrTail
-{
-    [enum(ELF_TYPE)]
-    e16      e_type;                    // Object file type
-    [enum(ELF_MACHINE)]
-    e16      e_machine;                 // Architecture
-    e32      e_version;                 // Object file version
-    e32_addr e_entry;                   // Entry point virtual address
-    e32_off  e_phoff;                   // Program header table file offset
-    e32_off  e_shoff;                   // Section header table file offset
-    e32      e_flags;                   // Processor-specific flags
-    e16      e_ehsize;                  // ELF header size in bytes
-    e16      e_phentsize;               // Program header table entry size
-    e16      e_phnum;                   // Program header table entry count
-    e16      e_shentsize;               // Section header table entry size
-    e16      e_shnum;                   // Section header table entry count
-    e16      e_shstrndx;                // Section-header string table index
-} Elf32_EhdrTail;
-
-typedef struct _Elf64_EhdrTail
-{
-    [enum(ELF_TYPE)]
-    e16      e_type;                    // Object file type
-    [enum(ELF_MACHINE)]
-    e16      e_machine;                 // Architecture
-    e32      e_version;                 // Object file version
-    e64_addr e_entry;                   // Entry point virtual address
-    e64_off  e_phoff;                   // Program header table file offset
-    e64_off  e_shoff;                   // Section header table file offset
-    e32      e_flags;                   // Processor-specific flags
-    e16      e_ehsize;                  // ELF header size in bytes
-    e16      e_phentsize;               // Program header table entry size
-    e16      e_phnum;                   // Program header table entry count
-    e16      e_shentsize;               // Section header table entry size
-    e16      e_shnum;                   // Section header table entry count
-    e16      e_shstrndx;                // Section-header string table index
-} Elf64_EhdrTail;
 
 typedef struct _Elf32_Phdr
 {
@@ -281,44 +244,59 @@ typedef struct _Elf64_Sym
     assoc(".elf", ".so", ".o"),
     magic(0, { 0x7F, 'E', 'L', 'F' }),
     offset(0),
-    endian(e_ident[EI_DATA] == ELFDATA2MSB),
+    // e_ident[EI_DATA] lives inside whichever of Elf32_Ehdr/Elf64_Ehdr gets
+    // selected below, not in a sibling field -- byte-order has to be known
+    // before that selection happens (it's evaluated for _ELF itself, before
+    // any child, including the union, is read), so select_offset(...) reads
+    // the byte directly instead of going through a field reference. See
+    // EXPR_RAWOFFSET in causeway/expr.h for the full story.
+    endian(select_offset(EI_DATA) == ELFDATA2MSB),
     view("elf.sections")
 ]
 typedef struct _ELF
 {
-    byte e_ident[EI_NIDENT];            // ELF identification bytes
-
-    [switch_is(e_ident[EI_CLASS])]
+    // Same problem as endian(...) above: e_ident[EI_CLASS] is part of each
+    // candidate header struct, not a field of _ELF, so the discriminator
+    // can't be reached by name until *after* a candidate is picked --
+    // select_offset(...) reads the byte directly to break that
+    // chicken-and-egg.
+    [select(select_offset(EI_CLASS))]
     union
     {
-        [case(ELFCLASS32)] Elf32_EhdrTail header32;
-        [case(ELFCLASS64)] Elf64_EhdrTail header64;
+        [case(ELFCLASS32)] Elf32_Ehdr header32;
+        [case(ELFCLASS64)] Elf64_Ehdr header64;
     };
 
+    // Still need select_offset(...) here, not header32.e_ident/
+    // header64.e_ident: only the *selected* union member is ever built as a
+    // row, so the other one's fields don't exist to reference -- e.g. on a
+    // 32-bit file, header64.e_ident would fail to resolve at all, even
+    // inside the false branch of a ?: whose condition is what's deciding 32
+    // vs 64. Reading the byte directly works unconditionally either way.
     [
-        offset(e_ident[EI_CLASS] == ELFCLASS32 ? header32.e_phoff : 0),
-        size_is(e_ident[EI_CLASS] == ELFCLASS32 ? header32.e_phnum : 0),
+        offset(select_offset(EI_CLASS) == ELFCLASS32 ? header32.e_phoff : 0),
+        size_is(select_offset(EI_CLASS) == ELFCLASS32 ? header32.e_phnum : 0),
         name(p_type)
     ]
     Elf32_Phdr programHeaders32[];
 
     [
-        offset(e_ident[EI_CLASS] == ELFCLASS64 ? header64.e_phoff : 0),
-        size_is(e_ident[EI_CLASS] == ELFCLASS64 ? header64.e_phnum : 0),
+        offset(select_offset(EI_CLASS) == ELFCLASS64 ? header64.e_phoff : 0),
+        size_is(select_offset(EI_CLASS) == ELFCLASS64 ? header64.e_phnum : 0),
         name(p_type)
     ]
     Elf64_Phdr programHeaders64[];
 
     [
-        offset(e_ident[EI_CLASS] == ELFCLASS32 ? header32.e_shoff : 0),
-        size_is(e_ident[EI_CLASS] == ELFCLASS32 ? header32.e_shnum : 0),
+        offset(select_offset(EI_CLASS) == ELFCLASS32 ? header32.e_shoff : 0),
+        size_is(select_offset(EI_CLASS) == ELFCLASS32 ? header32.e_shnum : 0),
         name(sh_type)
     ]
     Elf32_Shdr sectionHeaders32[];
 
     [
-        offset(e_ident[EI_CLASS] == ELFCLASS64 ? header64.e_shoff : 0),
-        size_is(e_ident[EI_CLASS] == ELFCLASS64 ? header64.e_shnum : 0),
+        offset(select_offset(EI_CLASS) == ELFCLASS64 ? header64.e_shoff : 0),
+        size_is(select_offset(EI_CLASS) == ELFCLASS64 ? header64.e_shnum : 0),
         name(sh_type)
     ]
     Elf64_Shdr sectionHeaders64[];

@@ -274,6 +274,30 @@ ExprNode * Parser::UnaryExpression(void)
 		break;
 	}
 
+	// select_offset(byteOffset) -- see EXPR_RAWOFFSET in expr.h for why this
+	// exists. Only meaningful as a sub-expression inside another tag's
+	// argument (e.g. select(select_offset(EI_CLASS)),
+	// endian(select_offset(EI_DATA) == ELFDATA2MSB)); evaluates to 0 wherever
+	// there's no file-backed render context (see Evaluate()'s
+	// EXPR_RAWOFFSET case). Reserved-word only (see keywords.h) -- it's not
+	// a tag in its own right, so [select_offset(...)] alone isn't valid.
+	case TOK_SELECTOFFSET:
+	{
+		Advance();
+		if(!Expected('('))
+			return new ExprNode(EXPR_NULL, TOK_NULL);
+
+		// FullExpression consumes the closing ')' itself (via Test()), so
+		// no separate Expected(')') here -- unlike sizeof's case above,
+		// which parses its inner content without FullExpression.
+		p = FullExpression(TOKEN(')'));
+		if(!p)
+			return new ExprNode(EXPR_NULL, TOK_NULL);
+
+		p = new ExprNode(EXPR_RAWOFFSET, TOKEN(TOK_SELECTOFFSET), p);
+		break;
+	}
+
 	// pre-increment & pre-decrement operators
 	case TOK_INC: case TOK_DEC:		
 #ifdef INCDEC_SUPPORTED
@@ -657,6 +681,7 @@ int RecurseFlatten(stringprint &sbuf, ExprNode *expr)
 		break;
 
 	case EXPR_TAGWRAP:
+	case EXPR_RAWOFFSET:
 		sbuf._stprintf(TEXT("%hs("), Parser::inenglish(expr->tok));
 		RecurseFlatten(sbuf, expr->left);
 		sbuf._stprintf(TEXT(")"));
@@ -764,6 +789,11 @@ INUMTYPE Evaluate(ExprNode *expr)
 			return Evaluate(expr->right);
 
 	case EXPR_SIZEOF:
+		return 0;
+
+	// Needs a file-backed render context (see structurerenderengine.cpp's
+	// evaluate()) to know which byte to read; not constant-foldable here.
+	case EXPR_RAWOFFSET:
 		return 0;
 
 	default:
