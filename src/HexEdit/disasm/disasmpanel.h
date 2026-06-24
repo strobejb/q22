@@ -3,6 +3,7 @@
 
 #include "filestats/sidepanel.h"
 
+#include <QTextEdit>
 #include <QWidget>
 #include <capstone/capstone.h>
 
@@ -52,6 +53,10 @@ private:
     // explicit jump (goToOffset) or a line click, never passive navigation.
     void syncDisasmHighlightFromHexView();
     void applyLineSelection(int firstLine, int lastLine);
+    // Merges the current line-selection highlight(s) with the hover-underline
+    // (if any) into one ExtraSelection list -- the two are tracked separately
+    // but QPlainTextEdit only accepts a single combined list per call.
+    void updateExtraSelections();
 
     HexView        *m_hv               = nullptr;
     MenuComboBox   *m_archCombo        = nullptr;
@@ -66,6 +71,25 @@ private:
     std::vector<std::pair<uint64_t, uint64_t>> m_instructionRanges;
     bool            m_syncingDisasmSelection   = false;
     bool            m_updatingHexViewFromDisasm = false;
+
+    // A JMP/Jcc/CALL operand that resolves to a static in-file target address
+    // -- [startPos, endPos) are QTextDocument-global character positions,
+    // rebuilt every disassemble() call alongside m_instructionRanges.
+    struct BranchSpan { int startPos; int endPos; uint64_t targetOffset; };
+    std::vector<BranchSpan> m_branchSpans;
+    int             m_hoveredSpanIndex  = -1;
+    // Per-line [startPos, endPos) of just the address-column text, index ==
+    // text block number -- rebuilt every disassemble() call alongside
+    // m_instructionRanges, used to highlight only the address (not the whole
+    // line) when previewing a hovered branch's target.
+    std::vector<std::pair<int, int>> m_addressSpans;
+    // Line index (into m_instructionRanges) that m_hoveredSpanIndex's target
+    // address falls within, or -1 if the hovered branch's target isn't among
+    // the currently-displayed instructions -- previewed with a temporary
+    // highlight while hovering, separate from m_lineHighlights' persistent
+    // selection highlight.
+    int             m_hoveredTargetLine = -1;
+    QList<QTextEdit::ExtraSelection> m_lineHighlights;
 
     cs_arch m_csArch   = CS_ARCH_X86;
     cs_mode m_csMode   = (cs_mode)CS_MODE_64;

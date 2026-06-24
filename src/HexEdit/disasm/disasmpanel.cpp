@@ -16,6 +16,7 @@
 #include <QKeySequence>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMouseEvent>
 #include <QPlainTextEdit>
 #include <QRegularExpression>
 #include <QTextBlock>
@@ -27,6 +28,8 @@
 #include <QTextCharFormat>
 #include <QTextCursor>
 #include <QVBoxLayout>
+
+#include <optional>
 
 
 // ── arch table ────────────────────────────────────────────────────────────────
@@ -50,6 +53,37 @@ static const ArchEntry kArchEntries[] = {
 static constexpr int kArchCount = (int)(sizeof(kArchEntries) / sizeof(kArchEntries[0]));
 
 static constexpr bool kHighlightCurrentLine = false; // tint the line under the cursor
+
+// Resolves a JMP/Jcc/CALL's static target address, or nullopt for anything
+// indirect (register/memory operand, e.g. "jmp eax" or an IAT thunk) or with
+// no operand (e.g. "ret") -- those have no statically-known destination.
+// Capstone has already folded any relative displacement into operands[0].imm,
+// so no manual address math is needed here.
+static std::optional<uint64_t> branchTargetForInstruction(csh handle, const cs_insn &insn, cs_arch arch)
+{
+    if (!insn.detail)
+        return std::nullopt;
+    if (!cs_insn_group(handle, &insn, CS_GRP_JUMP) && !cs_insn_group(handle, &insn, CS_GRP_CALL))
+        return std::nullopt;
+
+    switch (arch) {
+    case CS_ARCH_X86:
+        if (insn.detail->x86.op_count == 1 && insn.detail->x86.operands[0].type == X86_OP_IMM)
+            return static_cast<uint64_t>(insn.detail->x86.operands[0].imm);
+        break;
+    case CS_ARCH_ARM:
+        if (insn.detail->arm.op_count == 1 && insn.detail->arm.operands[0].type == ARM_OP_IMM)
+            return static_cast<uint64_t>(insn.detail->arm.operands[0].imm);
+        break;
+    case CS_ARCH_ARM64:
+        if (insn.detail->arm64.op_count == 1 && insn.detail->arm64.operands[0].type == ARM64_OP_IMM)
+            return static_cast<uint64_t>(insn.detail->arm64.operands[0].imm);
+        break;
+    default:
+        break;
+    }
+    return std::nullopt;
+}
 
 static QFont disassemblyViewFont(const QFont &hexViewFont)
 {
@@ -224,6 +258,7 @@ void DisassemblerPanel::buildUi()
 
     contentLay->addWidget(m_view, 1);
     m_view->viewport()->installEventFilter(this);
+    m_view->viewport()->setMouseTracking(true);
 
     // Status row
     m_statusLabel = new QLabel(content);
@@ -276,7 +311,10 @@ void DisassemblerPanel::openCapstone()
     m_csMode = kArchEntries[idx].mode;
     m_csOpen = (cs_open(m_csArch, m_csMode, &m_csHandle) == CS_ERR_OK);
     if (m_csOpen)
+    {
         cs_option(m_csHandle, CS_OPT_SYNTAX, CS_OPT_SYNTAX_INTEL);
+        cs_option(m_csHandle, CS_OPT_DETAIL, CS_OPT_ON);
+    }
 }
 
 void DisassemblerPanel::highlightCurrentLine()
@@ -293,7 +331,8 @@ void DisassemblerPanel::highlightCurrentLine()
     hl.format.setProperty(QTextFormat::FullWidthSelection, true);
     hl.cursor = m_view->textCursor();
     hl.cursor.clearSelection();
-    m_view->setExtraSelections({hl});
+    m_lineHighlights = {hl};
+    updateExtraSelections();
 }
 
 void DisassemblerPanel::closeCapstone()
@@ -309,8 +348,61 @@ bool DisassemblerPanel::eventFilter(QObject *watched, QEvent *event)
 {
     if (m_view && watched == m_view->viewport() && event->type() == QEvent::MouseButtonRelease)
     {
+        auto *me = static_cast<QMouseEvent *>(event);
+        // A click landing on a branch/call target navigates there instead of
+        // the usual click-selects-this-line behaviour -- but only for a plain
+        // click, not the release that ends a drag-selection (which may well
+        // end on top of a link's text without meaning to follow it).
+        if (me->button() == Qt::LeftButton && !m_view->textCursor().hasSelection() && m_hoveredSpanIndex >= 0)
+        {
+            goToOffset(m_branchSpans[m_hoveredSpanIndex].targetOffset);
+            m_view->setFocus();
+            return true;
+        }
         m_view->setFocus();
         syncSelectionWithHexView();
+    }
+    else if (m_view && watched == m_view->viewport() &&
+             (event->type() == QEvent::MouseMove || event->type() == QEvent::Leave))
+    {
+        int hitIndex = -1;
+        if (event->type() == QEvent::MouseMove)
+        {
+            auto *me = static_cast<QMouseEvent *>(event);
+            const int pos = m_view->cursorForPosition(me->pos()).position();
+            for (int i = 0; i < static_cast<int>(m_branchSpans.size()); ++i)
+            {
+                if (pos >= m_branchSpans[i].startPos && pos < m_branchSpans[i].endPos)
+                {
+                    hitIndex = i;
+                    break;
+                }
+            }
+        }
+        if (hitIndex != m_hoveredSpanIndex)
+        {
+            m_hoveredSpanIndex = hitIndex;
+
+            // If the hovered branch's target is one of the instructions
+            // already shown, preview it with a temporary highlight so the
+            // user can see where the jump lands without clicking it.
+            m_hoveredTargetLine = -1;
+            if (hitIndex >= 0)
+            {
+                const uint64_t target = m_branchSpans[hitIndex].targetOffset;
+                for (int i = 0; i < static_cast<int>(m_instructionRanges.size()); ++i)
+                {
+                    if (m_instructionRanges[i].first <= target && target < m_instructionRanges[i].second)
+                    {
+                        m_hoveredTargetLine = i;
+                        break;
+                    }
+                }
+            }
+
+            updateExtraSelections();
+            m_view->viewport()->setCursor(hitIndex >= 0 ? Qt::PointingHandCursor : Qt::IBeamCursor);
+        }
     }
     else if (m_view && watched == m_view && event->type() == QEvent::KeyPress)
     {
@@ -370,7 +462,44 @@ void DisassemblerPanel::applyLineSelection(int firstLine, int lastLine)
         hl.cursor = QTextCursor(block);
         highlights.push_back(hl);
     }
-    m_view->setExtraSelections(highlights);
+    m_lineHighlights = highlights;
+    updateExtraSelections();
+}
+
+void DisassemblerPanel::updateExtraSelections()
+{
+    QList<QTextEdit::ExtraSelection> all = m_lineHighlights;
+
+    static const QColor kHoverYellow(255, 213, 0, 90); // translucent yellow, shared by both ends of the link
+
+    // Target preview: just the address-column text of the destination line,
+    // not the whole row -- pairs visually with the hovered operand below
+    // without competing with the persistent (full-width) selection highlight.
+    if (m_hoveredTargetLine >= 0 && m_hoveredTargetLine < static_cast<int>(m_addressSpans.size()))
+    {
+        const auto &addrSpan = m_addressSpans[m_hoveredTargetLine];
+        QTextEdit::ExtraSelection hl;
+        hl.cursor = QTextCursor(m_view->document());
+        hl.cursor.setPosition(addrSpan.first);
+        hl.cursor.setPosition(addrSpan.second, QTextCursor::KeepAnchor);
+        hl.format.setBackground(kHoverYellow);
+        all.push_back(hl);
+    }
+
+    // Hovered operand itself: same yellow background, plus an underline.
+    if (m_hoveredSpanIndex >= 0 && m_hoveredSpanIndex < static_cast<int>(m_branchSpans.size()))
+    {
+        const BranchSpan &span = m_branchSpans[m_hoveredSpanIndex];
+        QTextEdit::ExtraSelection hl;
+        hl.cursor = QTextCursor(m_view->document());
+        hl.cursor.setPosition(span.startPos);
+        hl.cursor.setPosition(span.endPos, QTextCursor::KeepAnchor);
+        hl.format.setBackground(kHoverYellow);
+        hl.format.setFontUnderline(true);
+        hl.format.setUnderlineStyle(QTextCharFormat::SingleUnderline);
+        all.push_back(hl);
+    }
+    m_view->setExtraSelections(all);
 }
 
 void DisassemblerPanel::syncSelectionWithHexView()
@@ -402,6 +531,7 @@ void DisassemblerPanel::syncSelectionWithHexView()
     // re-disassemble at the new position (that would scramble what's shown).
     m_updatingHexViewFromDisasm = true;
     m_hv->setCurSel(static_cast<size_w>(startOffset), static_cast<size_w>(endOffset), false);
+    m_hv->scrollCenter(static_cast<size_w>(startOffset));
     m_updatingHexViewFromDisasm = false;
     updateOffsetDisplay();
 }
@@ -437,7 +567,8 @@ void DisassemblerPanel::syncDisasmHighlightFromHexView()
         cleared.clearSelection();
         m_view->setTextCursor(cleared);
         m_syncingDisasmSelection = false;
-        m_view->setExtraSelections({});
+        m_lineHighlights.clear();
+        updateExtraSelections();
         return;
     }
 
@@ -446,10 +577,17 @@ void DisassemblerPanel::syncDisasmHighlightFromHexView()
 
 void DisassemblerPanel::disassemble()
 {
+    m_branchSpans.clear();
+    m_hoveredSpanIndex = -1;
+    m_hoveredTargetLine = -1;
+    if (m_view)
+        m_view->viewport()->setCursor(Qt::IBeamCursor);
+
     if (!m_csOpen || !m_hv)
     {
         m_view->clear();
-        m_view->setExtraSelections({});
+        m_lineHighlights.clear();
+        updateExtraSelections();
         m_statusLabel->clear();
         return;
     }
@@ -458,7 +596,8 @@ void DisassemblerPanel::disassemble()
     if (fileSize == 0)
     {
         m_view->clear();
-        m_view->setExtraSelections({});
+        m_lineHighlights.clear();
+        updateExtraSelections();
         m_statusLabel->clear();
         return;
     }
@@ -571,9 +710,12 @@ void DisassemblerPanel::disassemble()
 
     // ── build document ─────────────────────────────────────────────────────────
     m_view->clear();
-    m_view->setExtraSelections({});
+    m_lineHighlights.clear();
+    updateExtraSelections();
     m_instructionRanges.clear();
     m_instructionRanges.reserve(count);
+    m_addressSpans.clear();
+    m_addressSpans.reserve(count);
     QTextCursor cur(m_view->document());
     cur.beginEditBlock();
 
@@ -586,10 +728,11 @@ void DisassemblerPanel::disassemble()
         m_instructionRanges.push_back({ in.address, in.address + in.size });
 
         // Address (no 0x prefix)
-        cur.insertText(
-            QString::number(in.address, 16).rightJustified(addrWidth, QLatin1Char('0')) +
-            QLatin1Char(' '),
-            fmtGrey);
+        const int addrStart = cur.position();
+        const QString addrText = QString::number(in.address, 16).rightJustified(addrWidth, QLatin1Char('0'));
+        cur.insertText(addrText, fmtGrey);
+        m_addressSpans.push_back({ addrStart, cur.position() });
+        cur.insertText(QLatin1String(" "), fmtGrey);
 
         // Hex bytes (up to kMaxShowBytes, ".." if truncated) – dark grey
         const int showBytes = qMin((int)in.size, kMaxShowBytes);
@@ -612,7 +755,13 @@ void DisassemblerPanel::disassemble()
 
         // Operands (numbers coloured red within them)
         if (in.op_str[0])
+        {
+            const int opStart = cur.position();
             insertOperands(cur, QLatin1String(in.op_str));
+            if (auto target = branchTargetForInstruction(m_csHandle, in, m_csArch))
+                if (*target < static_cast<uint64_t>(fileSize))
+                    m_branchSpans.push_back({ opStart, cur.position(), *target });
+        }
     }
 
     cur.endEditBlock();
@@ -652,8 +801,20 @@ void DisassemblerPanel::goToOffset(uint64_t offset)
     // preserveCursor=false: the cursor (which disassemble() reads via
     // cursorOffset()) must actually move, not just the highlighted selection.
     m_hv->setCurSel(off, off, false);
-    m_hv->scrollCenterIfOffScreen(off, 1);
     disassemble();
+    // Disassembly always starts at cursorOffset(), so the instruction now
+    // sitting at the jumped-to address is line 0 -- select/highlight it so
+    // the jump's destination is visually obvious, not just scrolled-to, and
+    // mirror that same instruction's full byte range (not just a zero-length
+    // cursor at its first byte) onto the hex view, centered.
+    if (!m_instructionRanges.empty())
+    {
+        applyLineSelection(0, 0);
+        const uint64_t startOffset = m_instructionRanges[0].first;
+        const uint64_t endOffset = m_instructionRanges[0].second;
+        m_hv->setCurSel(static_cast<size_w>(startOffset), static_cast<size_w>(endOffset), false);
+        m_hv->scrollCenter(static_cast<size_w>(startOffset));
+    }
 }
 
 void DisassemblerPanel::setPinned(bool pinned)
