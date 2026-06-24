@@ -1090,6 +1090,14 @@ bool StructureRenderEngine::resolveDirectField(Type *scopeType, const char *name
 
     uint64_t cursor = scopeOffset;
     uint64_t unionSize = 0;
+    // Named, [case(...)]-tagged union members that might declare `name`
+    // themselves (e.g. ELF's e_ident is part of each per-bitness Elf32_Ehdr/
+    // Elf64_Ehdr candidate, not a sibling field) -- collected rather than
+    // tried eagerly, since a later candidate might also declare `name` and
+    // disagree; resolved after the scan below once nothing else matches.
+    struct UnionCandidate { Type *type; uint64_t offset; };
+    std::vector<UnionCandidate> unionCandidates;
+
     for (TypeDecl *decl : base->sptr->typeDeclList)
     {
         if (!decl || decl->typeAlias)
@@ -1138,6 +1146,10 @@ bool StructureRenderEngine::resolveDirectField(Type *scopeType, const char *name
             }
             declLength = sizeOf(decl->baseType, declOffset);
         }
+        else if (base->ty == typeUNION && decl->baseType && FindTag(decl->tagList, TOK_CASE, nullptr))
+        {
+            unionCandidates.push_back(UnionCandidate{ decl->baseType, declOffset });
+        }
 
         if (base->ty == typeSTRUCT)
             cursor = declOffset;
@@ -1146,7 +1158,216 @@ bool StructureRenderEngine::resolveDirectField(Type *scopeType, const char *name
     }
 
     Q_UNUSED(unionSize);
+
+    // Try the collected candidates only once nothing in this scope matched
+    // `name` directly. Require every candidate that does declare `name` to
+    // agree on where and how big it is -- this only makes sense for fields
+    // that are identical across every bitness/variant by construction (like
+    // e_ident); divergence means the caller's expression is ambiguous before
+    // a branch has actually been selected, so fail rather than guess.
+    bool found = false;
+    ResolvedField agreed;
+    for (const UnionCandidate &candidate : unionCandidates)
+    {
+        ResolvedField nested;
+        if (!resolveDirectField(candidate.type, name, candidate.offset, &nested))
+            continue;
+
+        if (!found)
+        {
+            agreed = nested;
+            found = true;
+        }
+        else if (nested.offset != agreed.offset || nested.length != agreed.length)
+        {
+            return false;
+        }
+    }
+
+    if (found)
+    {
+        *field = agreed;
+        return true;
+    }
+
     return false;
+}
+
+bool StructureRenderEngine::isKnownEnumConstant(const char *name) const
+{
+    if (!name || !m_library)
+        return false;
+
+    if (Symbol *sym = LookupSymbol(m_library->globalIdentifierList, name))
+    {
+        if (sym->type && sym->type->ty == typeENUMVALUE)
+            return true;
+    }
+
+    for (Symbol *sym : m_library->globalTagSymbolList)
+    {
+        if (!sym || !sym->type || sym->type->ty != typeENUM || !sym->type->eptr)
+            continue;
+
+        for (EnumField *field : sym->type->eptr->fieldList)
+            if (field && field->name && std::strcmp(field->name->name, name) == 0)
+                return true;
+    }
+
+    return false;
+}
+
+namespace
+{
+
+// Field references that a select/switch_is/endian/offset/size_is/optional/
+// extent tag's expression might make: bare identifiers, possibly array-
+// indexed, composed with the usual operators. Dotted field.access chains
+// (EXPR_FIELD) are deliberately left alone -- they name their own scope
+// explicitly, so there's nothing ambiguous to validate.
+void collectFieldReferenceRoots(ExprNode *expr, std::vector<ExprNode *> *roots)
+{
+    if (!expr || !roots)
+        return;
+
+    switch (expr->type)
+    {
+    case EXPR_IDENTIFIER:
+        roots->push_back(expr);
+        return;
+    case EXPR_ARRAY:
+        collectFieldReferenceRoots(expr->left, roots);
+        collectFieldReferenceRoots(expr->right, roots);
+        return;
+    case EXPR_UNARY:
+        collectFieldReferenceRoots(expr->left, roots);
+        return;
+    case EXPR_BINARY:
+    case EXPR_COMMA:
+        collectFieldReferenceRoots(expr->left, roots);
+        collectFieldReferenceRoots(expr->right, roots);
+        return;
+    case EXPR_TERTIARY:
+        collectFieldReferenceRoots(expr->cond, roots);
+        collectFieldReferenceRoots(expr->left, roots);
+        collectFieldReferenceRoots(expr->right, roots);
+        return;
+    default:
+        // EXPR_FIELD (see above), EXPR_NUMBER, EXPR_STRINGBUF, EXPR_SIZEOF,
+        // EXPR_RAWOFFSET, EXPR_TAGWRAP, etc: nothing to validate.
+        return;
+    }
+}
+
+} // namespace
+
+namespace
+{
+
+QString tagLocationPrefix(TypeDecl *decl)
+{
+    if (!decl)
+        return QString();
+
+    const FILEREF &ref = decl->tagRef.fileDesc ? decl->tagRef : decl->fileRef;
+    if (!ref.fileDesc)
+        return QString();
+
+    return QStringLiteral("%1(%2) : ")
+        .arg(QString::fromLocal8Bit(ref.fileDesc->filePath))
+        .arg(static_cast<qulonglong>(ref.lineNo));
+}
+
+} // namespace
+
+void StructureRenderEngine::validateFieldTagExpressions(Type *enclosingScope, ExprNode *expr,
+                                                         TypeDecl *owner, TOKEN tagTok, QStringList *errors)
+{
+    if (!errors)
+        return;
+
+    std::vector<ExprNode *> roots;
+    collectFieldReferenceRoots(expr, &roots);
+
+    for (ExprNode *root : roots)
+    {
+        if (!root || root->type != EXPR_IDENTIFIER || !root->str)
+            continue;
+        if (isKnownEnumConstant(root->str))
+            continue;
+
+        ResolvedField dummy;
+        if (enclosingScope && resolveDirectField(enclosingScope, root->str, 0, &dummy))
+            continue;
+
+        errors->push_back(tagLocationPrefix(owner)
+                           + QStringLiteral("%1(...) references '%2', which cannot be resolved without "
+                                            "a live file open (it isn't a sibling field, and isn't "
+                                            "declared identically by every case(...) candidate of an "
+                                            "enclosing union)")
+                                 .arg(QString::fromLocal8Bit(Parser::inenglish(tagTok)))
+                                 .arg(QString::fromLocal8Bit(root->str)));
+    }
+}
+
+void StructureRenderEngine::validateStructTags(Type *structType, QStringList *errors)
+{
+    Type *base = BaseNode(structType);
+    if (!base || (base->ty != typeSTRUCT && base->ty != typeUNION) || !base->sptr)
+        return;
+
+    static constexpr TOKEN kValidatedTags[] = {
+        TOK_SWITCHIS, TOK_ENDIAN, TOK_OFFSET, TOK_SIZEIS, TOK_OPTIONAL, TOK_EXTENT
+    };
+
+    for (TypeDecl *decl : base->sptr->typeDeclList)
+    {
+        if (!decl || decl->typeAlias)
+            continue;
+
+        for (TOKEN tagTok : kValidatedTags)
+        {
+            ExprNode *tagExpr = nullptr;
+            if (FindTag(decl->tagList, tagTok, &tagExpr) && tagExpr)
+                validateFieldTagExpressions(structType, tagExpr, decl, tagTok, errors);
+        }
+
+        if (decl->baseType)
+            validateStructTags(decl->baseType, errors);
+    }
+}
+
+QStringList StructureRenderEngine::validateStaticFieldReferences(StrataLibrary *library)
+{
+    QStringList errors;
+    if (!library)
+        return errors;
+
+    static constexpr TOKEN kValidatedTags[] = {
+        TOK_SWITCHIS, TOK_ENDIAN, TOK_OFFSET, TOK_SIZEIS, TOK_OPTIONAL, TOK_EXTENT
+    };
+
+    StructureRenderEngine scratch(library, nullptr, 0, StructureValueBuilder::ByteReader{}, StructureDisplayOptions{});
+
+    for (TypeDecl *typeDecl : library->globalTypeDeclList)
+    {
+        if (!typeDecl || typeDecl->typeAlias || !typeDecl->baseType)
+            continue;
+
+        // The typedecl's own tags (e.g. _ELF's endian(...)) are scoped to its
+        // own type, the same rule declarationBigEndian uses at the render-time
+        // root (root->type, not root->parent).
+        for (TOKEN tagTok : kValidatedTags)
+        {
+            ExprNode *tagExpr = nullptr;
+            if (FindTag(typeDecl->tagList, tagTok, &tagExpr) && tagExpr)
+                scratch.validateFieldTagExpressions(typeDecl->baseType, tagExpr, typeDecl, tagTok, &errors);
+        }
+
+        scratch.validateStructTags(typeDecl->baseType, &errors);
+    }
+
+    return errors;
 }
 
 bool StructureRenderEngine::readInteger(uint64_t offset, uint64_t length, INUMTYPE *result, bool bigEndian) const

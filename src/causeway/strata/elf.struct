@@ -245,58 +245,49 @@ typedef struct _Elf64_Sym
     magic(0, { 0x7F, 'E', 'L', 'F' }),
     offset(0),
     // e_ident[EI_DATA] lives inside whichever of Elf32_Ehdr/Elf64_Ehdr gets
-    // selected below, not in a sibling field -- byte-order has to be known
-    // before that selection happens (it's evaluated for _ELF itself, before
-    // any child, including the union, is read), so select_offset(...) reads
-    // the byte directly instead of going through a field reference. See
-    // EXPR_RAWOFFSET in causeway/expr.h for the full story.
-    endian(select_offset(EI_DATA) == ELFDATA2MSB),
+    // selected below, not in a sibling field of _ELF -- resolveDirectField's
+    // union-candidate fallback finds it anyway, by checking that every
+    // case(...) candidate of the union below declares e_ident identically.
+    endian(e_ident[EI_DATA] == ELFDATA2MSB),
     view("elf.sections")
 ]
 typedef struct _ELF
 {
-    // Same problem as endian(...) above: e_ident[EI_CLASS] is part of each
-    // candidate header struct, not a field of _ELF, so the discriminator
-    // can't be reached by name until *after* a candidate is picked --
-    // select_offset(...) reads the byte directly to break that
-    // chicken-and-egg.
-    [select(select_offset(EI_CLASS))]
+    // Same as endian(...) above: e_ident[EI_CLASS] is part of each candidate
+    // header struct, not a field of _ELF, so this only resolves via the
+    // union-candidate fallback (see resolveDirectField in
+    // structurerenderengine.cpp).
+    [select(e_ident[EI_CLASS])]
     union
     {
         [case(ELFCLASS32)] Elf32_Ehdr header32;
         [case(ELFCLASS64)] Elf64_Ehdr header64;
     };
 
-    // Still need select_offset(...) here, not header32.e_ident/
-    // header64.e_ident: only the *selected* union member is ever built as a
-    // row, so the other one's fields don't exist to reference -- e.g. on a
-    // 32-bit file, header64.e_ident would fail to resolve at all, even
-    // inside the false branch of a ?: whose condition is what's deciding 32
-    // vs 64. Reading the byte directly works unconditionally either way.
     [
-        offset(select_offset(EI_CLASS) == ELFCLASS32 ? header32.e_phoff : 0),
-        size_is(select_offset(EI_CLASS) == ELFCLASS32 ? header32.e_phnum : 0),
+        offset(e_ident[EI_CLASS] == ELFCLASS32 ? header32.e_phoff : 0),
+        size_is(e_ident[EI_CLASS] == ELFCLASS32 ? header32.e_phnum : 0),
         name(p_type)
     ]
     Elf32_Phdr programHeaders32[];
 
     [
-        offset(select_offset(EI_CLASS) == ELFCLASS64 ? header64.e_phoff : 0),
-        size_is(select_offset(EI_CLASS) == ELFCLASS64 ? header64.e_phnum : 0),
+        offset(e_ident[EI_CLASS] == ELFCLASS64 ? header64.e_phoff : 0),
+        size_is(e_ident[EI_CLASS] == ELFCLASS64 ? header64.e_phnum : 0),
         name(p_type)
     ]
     Elf64_Phdr programHeaders64[];
 
     [
-        offset(select_offset(EI_CLASS) == ELFCLASS32 ? header32.e_shoff : 0),
-        size_is(select_offset(EI_CLASS) == ELFCLASS32 ? header32.e_shnum : 0),
+        offset(e_ident[EI_CLASS] == ELFCLASS32 ? header32.e_shoff : 0),
+        size_is(e_ident[EI_CLASS] == ELFCLASS32 ? header32.e_shnum : 0),
         name(sh_type)
     ]
     Elf32_Shdr sectionHeaders32[];
 
     [
-        offset(select_offset(EI_CLASS) == ELFCLASS64 ? header64.e_shoff : 0),
-        size_is(select_offset(EI_CLASS) == ELFCLASS64 ? header64.e_shnum : 0),
+        offset(e_ident[EI_CLASS] == ELFCLASS64 ? header64.e_shoff : 0),
+        size_is(e_ident[EI_CLASS] == ELFCLASS64 ? header64.e_shnum : 0),
         name(sh_type)
     ]
     Elf64_Shdr sectionHeaders64[];

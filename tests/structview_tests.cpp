@@ -1,4 +1,5 @@
 #include "structview/structuredefinitionmanager.h"
+#include "structview/structurerenderengine.h"
 #include "structview/structuresemanticview.h"
 #include "structview/structuretreemodel.h"
 #include "structview/structurevaluebuilder.h"
@@ -64,6 +65,8 @@ private slots:
     void builderNamesPeDynamicSectionsFromStandardDefinition();
     void builderNamesPeImportDescriptorsFromStandardDefinition();
     void builderResolvesEntryPointRvaThroughSectionOffsetMap();
+    void builderResolvesUnionDiscriminatorFromCandidateOnlyField();
+    void definitionManagerFlagsNonStaticFieldReferences();
     void semanticRegistryRunsKnownViewsAndIgnoresUnknownViews();
     void builderRunsSemanticViewsAfterDynamicPlacement();
     void builderKeepsRawDynamicRowsWhenSemanticImportDataIsTruncated();
@@ -1916,6 +1919,100 @@ void StructViewTests::builderResolvesEntryPointRvaThroughSectionOffsetMap()
     QVERIFY(entry->hasCodeTarget);
     QCOMPARE(entry->codeLogicalOffset, uint64_t(0x1050));
     QCOMPARE(entry->codeTargetOffset, uint64_t(0x250));
+}
+
+void StructViewTests::builderResolvesUnionDiscriminatorFromCandidateOnlyField()
+{
+    // Scenario: a discriminated union's selector field exists only inside
+    // each [case(...)] candidate's own struct (e.g. ELF's e_ident pattern),
+    // not as a sibling field of the enclosing struct.
+    // Expected: resolveDirectField's union-candidate fallback finds it by
+    // trying every case(...) candidate and requiring them to agree, so plain
+    // field syntax works without needing select_offset(...).
+    // Regression guard: Option 3 of the select_offset design (see
+    // EXPR_RAWOFFSET in causeway/expr.h) -- the generalization meant to make
+    // select_offset unnecessary for fields that really are identical across
+    // every candidate.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "enum Sel { A = 1, B = 2 };\n"
+                        "typedef struct _CandA { byte ident[4]; word valueA; } CandA;\n"
+                        "typedef struct _CandB { byte ident[4]; dword valueB; } CandB;\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  [select(ident[0])]\n"
+                        "  union {\n"
+                        "    [case(A)] CandA candA;\n"
+                        "    [case(B)] CandB candB;\n"
+                        "  };\n"
+                        "} root;\n"));
+
+    QByteArray bytes(16, '\0');
+    bytes[0] = char(1);
+    writeLe16(&bytes, 4, 0x1234);
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+    StructureRow *valueA = findDescendantNamed(rows[0].get(), QStringLiteral("word valueA"));
+    QVERIFY2(valueA, "candA branch (selected via the union-candidate discriminator fallback) not found");
+    QCOMPARE(valueA->value, QStringLiteral("4660"));
+}
+
+void StructViewTests::definitionManagerFlagsNonStaticFieldReferences()
+{
+    // Scenario: a select/switch_is/endian/offset/size_is/optional/extent
+    // expression references a field that cannot be resolved without a live
+    // file -- neither a sibling field nor declared identically by every
+    // case(...) candidate of an enclosing union.
+    // Expected: validateStaticFieldReferences reports it with a message
+    // naming the bad reference; well-formed definitions (the real elf.struct
+    // and pe.struct, and an equivalent valid synthetic struct) produce no
+    // false positives.
+    // Regression guard: this is meant to catch the exact ELF e_ident mistake
+    // this session kept hitting as a silent render-time failure, at
+    // definition-load time instead.
+    StrataLibrary goodLibrary;
+    Parser goodParser(&goodLibrary);
+    QVERIFY(parseBuffer(goodParser,
+                        "enum Sel { A = 1, B = 2 };\n"
+                        "typedef struct _CandA { byte ident[4]; word valueA; } CandA;\n"
+                        "typedef struct _CandB { byte ident[4]; dword valueB; } CandB;\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  [select(ident[0])]\n"
+                        "  union {\n"
+                        "    [case(A)] CandA candA;\n"
+                        "    [case(B)] CandB candB;\n"
+                        "  };\n"
+                        "} root;\n"));
+    QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&goodLibrary).isEmpty());
+
+    StrataLibrary badLibrary;
+    Parser badParser(&badLibrary);
+    QVERIFY(parseBuffer(badParser,
+                        "enum Sel { A = 1, B = 2 };\n"
+                        "typedef struct _CandA { byte ident[4]; word valueA; } CandA;\n"
+                        "typedef struct _CandB { byte ident[4]; dword valueB; } CandB;\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  [select(nope[0])]\n"
+                        "  union {\n"
+                        "    [case(A)] CandA candA;\n"
+                        "    [case(B)] CandB candB;\n"
+                        "  };\n"
+                        "} root;\n"));
+    const QStringList badErrors = StructureRenderEngine::validateStaticFieldReferences(&badLibrary);
+    QCOMPARE(badErrors.size(), 1);
+    QVERIFY2(badErrors.first().contains(QStringLiteral("nope")), qPrintable(badErrors.first()));
+
+    StrataLibrary elfLibrary;
+    QVERIFY2(parseStandardElfDefinition(&elfLibrary), "elf.struct failed to parse");
+    QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&elfLibrary).isEmpty());
+
+    StrataLibrary peLibrary;
+    QVERIFY2(parseStandardDefinition(&peLibrary, QStringLiteral("pe.struct")), "pe.struct failed to parse");
+    QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&peLibrary).isEmpty());
 }
 
 void StructViewTests::semanticRegistryRunsKnownViewsAndIgnoresUnknownViews()

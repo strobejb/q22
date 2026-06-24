@@ -17,8 +17,9 @@ displayed. Files use the `.struct` extension.
 | Layout | [`offset`](#layout) · [`align`](#layout) · [`endian`](#byte-order) · [`entrypoint`](#layout) · [`extent`](#layout) · [`optional`](#layout) |
 | Arrays | [`count`](#arrays) · [`terminated_by`](#arrays) |
 | Unions | [`select`](#discriminated-unions) · [`case`](#discriminated-unions) |
-| Semantic views | [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) · [`view`](#view) |
+| Semantic views | [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) · [`view`](#view) · [tag-argument wrapping](#tag-argument-wrapping) |
 | Export | [`export`](#export-metadata) · [`assoc`](#export-metadata) · [`magic`](#export-metadata) |
+| Expressions | [`sizeof`](#expressions) · [`select_offset`](#select_offset) |
 
 ---
 
@@ -122,6 +123,50 @@ union {
 
 If `select` cannot be evaluated (the discriminator field hasn't been read
 yet), the entire union is skipped.
+
+#### Discriminators that live inside the candidates themselves
+
+`select(expr)` normally names a field that's already a sibling of the union
+(or an ancestor's field) — something readable before the union is reached.
+Some formats don't offer that: ELF's class byte (`e_ident[EI_CLASS]`) is part
+of *each* per-bitness header struct, not a separate field declared ahead of
+the union.
+
+For exactly that shape — the same field, declared identically by every
+`case(...)` candidate — a field reference also resolves by checking each
+candidate directly, as long as every candidate that declares it agrees on
+its position and size. This applies anywhere a field reference is evaluated
+this way, not just `select`/`switch_is`: `endian(expr)`, `offset(expr)`,
+`size_is(expr)`, `optional(expr)` and `extent(expr)` all get it too.
+
+```c
+[endian(e_ident[EI_DATA] == ELFDATA2MSB)]
+typedef struct _ELF
+{
+    [select(e_ident[EI_CLASS])]
+    union {
+        [case(ELFCLASS32)] Elf32_Ehdr header32;
+        [case(ELFCLASS64)] Elf64_Ehdr header64;
+    };
+};
+```
+
+Here `Elf32_Ehdr` and `Elf64_Ehdr` each declare `byte e_ident[EI_NIDENT];` as
+their own first field — `e_ident` is never hoisted out to `_ELF` itself.
+`select(e_ident[EI_CLASS])` still resolves, by trying `header32`/`header64`
+in turn and confirming they agree on where `e_ident` is and how big it is.
+
+If the candidates disagree — different offset or size for the same field
+name — the reference fails to resolve rather than guessing. For anything
+that doesn't fit this shape (not a field shared identically across
+candidates), `select_offset(byteOffset)` — see [Expressions](#expressions) —
+reads a byte directly by position instead, with no field lookup at all.
+
+A reference that resolves neither way — not a sibling, not a consistent
+union-candidate field, and not wrapped in `select_offset` — is caught when
+the `.struct` file is loaded, not silently at render time: the structure
+view's definitions manager reports it as a load error naming the field and
+the tag that referenced it.
 
 ### Enums
 
@@ -261,6 +306,11 @@ typedef struct _ELF { ... } ELF;
 [endian("little")] dword LittleField;
 ```
 
+In real `elf.struct`, `e_ident` is actually declared only inside each
+per-bitness header candidate, not as a field of `_ELF` itself — see
+[Discriminators that live inside the candidates themselves](#discriminators-that-live-inside-the-candidates-themselves)
+for how that still resolves.
+
 ### Arrays
 
 | Tag | Effect |
@@ -301,6 +351,16 @@ dynamic_struct(IMAGE_DIRECTORY_ENTRY_EXPORT, IMAGE_EXPORT_DIRECTORY,
                VirtualAddress, Size != 0)
 ```
 
+`selector` and `condition` can also be written wrapped — `case(selector)`,
+`optional(condition)` — to make which is which explicit rather than relying
+on position. Both forms behave identically; wrapping is purely about
+readability. See [Tag-argument wrapping](#tag-argument-wrapping) below.
+
+```c
+dynamic_struct(case(IMAGE_DIRECTORY_ENTRY_EXPORT), IMAGE_EXPORT_DIRECTORY,
+               VirtualAddress, optional(Size != 0))
+```
+
 ### `dynamic_array`
 
 Renders a variable-length array at an offset field:
@@ -331,6 +391,52 @@ dynamic_array(IMAGE_DIRECTORY_ENTRY_IMPORT, IMAGE_IMPORT_DESCRIPTOR,
 dynamic_array(ImportLookup32, IMAGE_THUNK_DATA32, OriginalFirstThunk, 512,
               Function == 0, ntHeaders.OptionalHeader32.Magic == 0x10b)
 ```
+
+`dynamic_array` has more positional ambiguity than `dynamic_struct` — the
+first argument is either a label *or* a selector depending on context, and
+the trailing arguments are either `stop_cond` or `condition` depending on
+how many are present. Each can be wrapped to say which it is, in any order,
+and any subset of them — wrapping `terminated_by(...)`/`optional(...)` lets
+you supply a condition without a stop condition, which bare positional args
+can't express:
+
+```c
+dynamic_array(case(IMAGE_DIRECTORY_ENTRY_IMPORT), IMAGE_IMPORT_DESCRIPTOR,
+              VirtualAddress, Size / sizeof(IMAGE_IMPORT_DESCRIPTOR),
+              terminated_by(OriginalFirstThunk == 0 && FirstThunk == 0))
+
+dynamic_array(ImportLookup32, IMAGE_THUNK_DATA32, OriginalFirstThunk, 512,
+              terminated_by(Function == 0),
+              optional(ntHeaders.OptionalHeader32.Magic == 0x10b))
+```
+
+`name(...)` wrapping the first argument has a second meaning specific to
+`dynamic_array`: it marks *that* array as the per-element name source for
+whichever array contains elements of this type. When the structure view
+renders such an element, it resolves this array's RVA-redirected content
+(eagerly, without needing the array's own row built first) and appends it
+to the element's tree label — e.g. `[0] - KERNEL32.dll` instead of just
+`[0]`:
+
+```c
+[
+    dynamic_array(name(DllName), CHAR, Name, 4096, terminated_by(0)),
+    ...
+]
+typedef struct _IMAGE_IMPORT_DESCRIPTOR { ... } IMAGE_IMPORT_DESCRIPTOR;
+```
+
+#### Tag-argument wrapping
+
+`name(...)`, `case(...)`, `terminated_by(...)` and `optional(...)` can wrap a
+single argument inside `dynamic_array`/`dynamic_struct`/`dynamic_container`'s
+own argument list, written as `wrapperKeyword(value)` in place of a bare
+value. This is parsed directly as part of the tag's argument list — it does
+not make `name(...)` etc. into general call-expressions usable anywhere in
+the language, only inside these specific tags' own arguments, where the
+position of a bare value would otherwise be ambiguous. Wrapping is always
+optional: every example above also works with plain positional arguments,
+and existing `.struct` files using bare arguments don't need to change.
 
 ### `dynamic_container`
 
@@ -414,12 +520,36 @@ dosHeader.e_lfanew
 | Logical | `&& \|\|` |
 | Conditional | `? :` |
 | Size | `sizeof(Type)` |
+| Raw read | `select_offset(byteOffset)` |
 
 ```c
 size_is(Header.Count * sizeof(DWORD))
 optional(Signature == 0x00004550)
 terminated_by(0)
 ```
+
+### `select_offset`
+
+`select_offset(byteOffset)` reads one raw byte at `byteOffset`, relative to
+the current struct/union's own base file offset — no field lookup at all.
+
+This exists for the case the [union-candidate fallback](#discriminators-that-live-inside-the-candidates-themselves)
+can't cover: a discriminator that isn't a field shared identically across
+every `case(...)` candidate. It bypasses field resolution entirely, so it
+always works, at the cost of referring to a byte position instead of a
+named field:
+
+```c
+select(select_offset(4))
+endian(select_offset(5) == 2)
+```
+
+Prefer a plain field reference (and the union-candidate fallback) whenever
+the discriminator genuinely is the same field in every candidate — it's more
+readable, and `select_offset` won't catch a typo'd field name the way a
+real field reference will. Reach for `select_offset` only when that
+shape doesn't apply. A reserved word, not a tag — `select_offset(...)` only
+means something as a sub-expression inside another tag's expression.
 
 ---
 

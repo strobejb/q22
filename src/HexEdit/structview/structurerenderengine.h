@@ -3,6 +3,8 @@
 
 #include "structview/structurevaluebuilder.h"
 
+#include <QStringList>
+
 #include <memory>
 #include <vector>
 
@@ -16,6 +18,18 @@ public:
                           const StructureDisplayOptions &options);
 
     std::vector<std::unique_ptr<StructureRow>> build();
+
+    // Strata-language static analysis, not rendering: every select/
+    // switch_is/endian/offset/size_is/optional/extent tag expression in
+    // `library` is checked for field references that resolveDirectField
+    // (including its union-candidate fallback) cannot resolve without a
+    // live file open -- e.g. a discriminator that only some union
+    // candidates declare, or whose position depends on a data-dependent
+    // array size earlier in the same struct. One message per problem
+    // found, empty if none. Used by StructureDefinitionManager to catch
+    // ELF-e_ident-style mistakes when a .struct file is loaded, instead of
+    // them silently failing the first time a real file is opened.
+    static QStringList validateStaticFieldReferences(StrataLibrary *library);
 
 private:
     using RowPtr = std::unique_ptr<StructureRow>;
@@ -82,6 +96,10 @@ private:
     struct ResolvedField;
     bool resolveField(Type *scopeType, ExprNode *expr, uint64_t scopeOffset, ResolvedField *field);
     bool resolveDirectField(Type *scopeType, const char *name, uint64_t scopeOffset, ResolvedField *field);
+    bool isKnownEnumConstant(const char *name) const;
+    void validateFieldTagExpressions(Type *enclosingScope, ExprNode *expr,
+                                     TypeDecl *owner, TOKEN tagTok, QStringList *errors);
+    void validateStructTags(Type *structType, QStringList *errors);
     void collectDynamicRows();
     void collectDynamicRows(StructureRow *row);
     void collectDynamicContainer(StructureRow *row);

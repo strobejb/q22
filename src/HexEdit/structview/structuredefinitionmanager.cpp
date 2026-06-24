@@ -1,4 +1,5 @@
 #include "structview/structuredefinitionmanager.h"
+#include "structview/structurerenderengine.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -303,6 +304,15 @@ bool StructureDefinitionManager::reload()
     m_definitionFiles = files;
     m_failedFiles = failures;
 
+    // Catches the class of mistake that only fails silently at render time
+    // otherwise: a select/switch_is/endian/offset/size_is/optional/extent
+    // expression referencing a field that doesn't exist as a sibling and
+    // isn't declared identically by every case(...) candidate of an
+    // enclosing union (e.g. forgetting select_offset(...) -- or the
+    // fallback it stands in for not applying -- for a discriminator that
+    // lives inside a not-yet-selected union member).
+    const QStringList staticFieldErrors = StructureRenderEngine::validateStaticFieldReferences(m_library.get());
+
     if (!failures.isEmpty())
     {
         m_lastError = failures.size() == 1
@@ -315,9 +325,22 @@ bool StructureDefinitionManager::reload()
                 m_loadLog.push_back(failure.message);
         }
     }
+    else if (!staticFieldErrors.isEmpty())
+    {
+        m_lastError = staticFieldErrors.size() == 1
+            ? staticFieldErrors.first()
+            : tr("%1 unresolvable field reference(s) in loaded definitions").arg(staticFieldErrors.size());
+    }
     else
     {
         m_lastError.clear();
+    }
+
+    if (!staticFieldErrors.isEmpty())
+    {
+        m_loadLog.push_back(tr("%1 unresolvable field reference(s):").arg(staticFieldErrors.size()));
+        for (const QString &message : staticFieldErrors)
+            m_loadLog.push_back(QStringLiteral("  ") + message);
     }
 
     m_loadLog.push_back(tr("Loaded %1 definition file(s)").arg(files.size()));
@@ -325,7 +348,7 @@ bool StructureDefinitionManager::reload()
     m_loaded = true;
     updateWatchedFiles(files);
     emit definitionsReloaded();
-    return allOk;
+    return allOk && staticFieldErrors.isEmpty();
 }
 
 void StructureDefinitionManager::ensureLoaded()
