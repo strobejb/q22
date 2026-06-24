@@ -7,14 +7,19 @@
 
 #include <QApplication>
 #include <QComboBox>
+#include <QEvent>
 #include <QFont>
 #include <QFontMetrics>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QKeyEvent>
+#include <QKeySequence>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QRegularExpression>
+#include <QTextBlock>
+#include <QTextDocument>
 #include <QTextEdit>
 #include <QToolButton>
 #include <QStyle>
@@ -140,7 +145,7 @@ void DisassemblerPanel::buildUi()
     m_offsetEdit->setPlaceholderText(tr("Offset"));
     const auto existingBtns = m_offsetEdit->findChildren<QToolButton *>();
     m_pinAction = m_offsetEdit->addAction(
-        recoloredIcon(QStringLiteral("actions/pin1"),
+        recoloredIcon(QStringLiteral("actions/pin0"),
                       palette().color(QPalette::WindowText), 16),
         QLineEdit::TrailingPosition);
     m_pinAction->setToolTip(tr("Pin offset"));
@@ -182,7 +187,18 @@ void DisassemblerPanel::buildUi()
 
     // Instruction view
     m_view = new QPlainTextEdit(content);
-    m_view->setReadOnly(true);
+    // Qt suppresses the blinking text caret entirely in read-only mode, even
+    // with keyboard-selectable interaction flags -- so editing is blocked via
+    // the keyPressEvent filter below instead, leaving the caret visible.
+    m_view->setReadOnly(false);
+    m_view->setAcceptDrops(false);
+    // Not read-only's default context menu offers Cut/Paste/Delete/Undo/Redo,
+    // which would bypass the keyPressEvent filter below -- drop it entirely;
+    // copying still works via Ctrl+C.
+    m_view->setContextMenuPolicy(Qt::NoContextMenu);
+    m_view->setFocusPolicy(Qt::StrongFocus);
+    m_view->setCursorWidth(1);
+    m_view->installEventFilter(this);
     m_view->setLineWrapMode(QPlainTextEdit::NoWrap);
     m_view->setFrameShape(QFrame::NoFrame);
     m_view->document()->setDocumentMargin(6.0);
@@ -207,6 +223,7 @@ void DisassemblerPanel::buildUi()
         .arg(filestats::cssColor(selBgColor), filestats::cssColor(selFgColor)));
 
     contentLay->addWidget(m_view, 1);
+    m_view->viewport()->installEventFilter(this);
 
     // Status row
     m_statusLabel = new QLabel(content);
@@ -223,11 +240,16 @@ void DisassemblerPanel::buildUi()
     connect(m_archCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, [this](int) { openCapstone(); disassemble(); });
 
+    // Hex view navigation never re-disassembles (that would silently move
+    // the listing's start offset out from under the user) -- it only
+    // highlights whichever already-shown instruction line the new position
+    // falls within. The listing itself only moves via an explicit jump
+    // (goToOffset) or clicking a line in the disassembler.
     connect(m_hv, &HexView::cursorChanged,
-            this, [this](size_w) { if (!m_pinned) disassemble(); });
+            this, [this](size_w) { if (!m_pinned && !m_updatingHexViewFromDisasm) syncDisasmHighlightFromHexView(); });
 
     connect(m_hv, &HexView::contentChanged,
-            this, [this](size_w, size_w, uint) { if (!m_pinned) disassemble(); });
+            this, [this](size_w, size_w, uint) { if (!m_pinned && !m_updatingHexViewFromDisasm) disassemble(); });
 
     connect(m_pinAction, &QAction::triggered,
             this, [this]() { setPinned(!m_pinned); });
@@ -283,11 +305,151 @@ void DisassemblerPanel::closeCapstone()
     }
 }
 
+bool DisassemblerPanel::eventFilter(QObject *watched, QEvent *event)
+{
+    if (m_view && watched == m_view->viewport() && event->type() == QEvent::MouseButtonRelease)
+    {
+        m_view->setFocus();
+        syncSelectionWithHexView();
+    }
+    else if (m_view && watched == m_view && event->type() == QEvent::KeyPress)
+    {
+        // m_view isn't setReadOnly() (that hides the caret), so block anything
+        // that could modify the text here instead; allow navigation, selection,
+        // and copy through to QPlainTextEdit's normal handling.
+        auto *keyEvent = static_cast<QKeyEvent *>(event);
+        if (keyEvent->matches(QKeySequence::Copy) || keyEvent->matches(QKeySequence::SelectAll))
+            return false;
+
+        switch (keyEvent->key())
+        {
+        case Qt::Key_Left:
+        case Qt::Key_Right:
+        case Qt::Key_Up:
+        case Qt::Key_Down:
+        case Qt::Key_Home:
+        case Qt::Key_End:
+        case Qt::Key_PageUp:
+        case Qt::Key_PageDown:
+            return false;
+        default:
+            return true;
+        }
+    }
+    return QWidget::eventFilter(watched, event);
+}
+
+void DisassemblerPanel::applyLineSelection(int firstLine, int lastLine)
+{
+    QTextDocument *doc = m_view->document();
+    const QTextBlock firstBlock = doc->findBlockByNumber(firstLine);
+    const QTextBlock lastBlock = doc->findBlockByNumber(lastLine);
+    if (!firstBlock.isValid() || !lastBlock.isValid())
+        return;
+
+    // Snap the text selection to whole instruction lines: a plain click
+    // (empty selection) becomes a one-line selection, a drag expands to
+    // cover every instruction it touches.
+    QTextCursor snapped(doc);
+    snapped.setPosition(firstBlock.position());
+    snapped.setPosition(lastBlock.position() + lastBlock.length() - 1, QTextCursor::KeepAnchor);
+    m_syncingDisasmSelection = true;
+    m_view->setTextCursor(snapped);
+    m_syncingDisasmSelection = false;
+
+    // The plain text selection only paints behind the characters; extend the
+    // highlight to the full line width (same colour) so it reaches the
+    // right-hand edge of the view, same as a current-line highlight would.
+    const QColor selColor = QColor(m_hv->getHexColour(HVC_SELECTION));
+    QList<QTextEdit::ExtraSelection> highlights;
+    for (QTextBlock block = firstBlock; block.isValid() && block.blockNumber() <= lastLine; block = block.next())
+    {
+        QTextEdit::ExtraSelection hl;
+        hl.format.setBackground(selColor);
+        hl.format.setProperty(QTextFormat::FullWidthSelection, true);
+        hl.cursor = QTextCursor(block);
+        highlights.push_back(hl);
+    }
+    m_view->setExtraSelections(highlights);
+}
+
+void DisassemblerPanel::syncSelectionWithHexView()
+{
+    if (m_syncingDisasmSelection || !m_view || !m_hv || m_instructionRanges.empty())
+        return;
+
+    QTextCursor cursor = m_view->textCursor();
+    const int selStart = qMin(cursor.selectionStart(), cursor.selectionEnd());
+    const int selEnd = qMax(cursor.selectionStart(), cursor.selectionEnd());
+
+    QTextDocument *doc = m_view->document();
+    const QTextBlock firstBlock = doc->findBlock(selStart);
+    const QTextBlock lastBlock = doc->findBlock(selEnd > selStart ? selEnd - 1 : selEnd);
+    if (!firstBlock.isValid() || !lastBlock.isValid())
+        return;
+
+    const int firstLine = firstBlock.blockNumber();
+    const int lastLine = lastBlock.blockNumber();
+    if (firstLine < 0 || lastLine < firstLine || lastLine >= static_cast<int>(m_instructionRanges.size()))
+        return;
+
+    applyLineSelection(firstLine, lastLine);
+
+    const uint64_t startOffset = m_instructionRanges[firstLine].first;
+    const uint64_t endOffset = m_instructionRanges[lastLine].second;
+
+    // Move the hex view's cursor/selection to match, without retriggering a
+    // re-disassemble at the new position (that would scramble what's shown).
+    m_updatingHexViewFromDisasm = true;
+    m_hv->setCurSel(static_cast<size_w>(startOffset), static_cast<size_w>(endOffset), false);
+    m_updatingHexViewFromDisasm = false;
+    updateOffsetDisplay();
+}
+
+void DisassemblerPanel::syncDisasmHighlightFromHexView()
+{
+    if (!m_view || !m_hv || m_instructionRanges.empty())
+        return;
+
+    uint64_t rangeStart = static_cast<uint64_t>(m_hv->selectionStart());
+    uint64_t rangeEnd = static_cast<uint64_t>(m_hv->selectionEnd());
+    if (rangeEnd <= rangeStart)
+        rangeEnd = rangeStart + 1;
+
+    int firstLine = -1;
+    int lastLine = -1;
+    for (int i = 0; i < static_cast<int>(m_instructionRanges.size()); ++i)
+    {
+        if (m_instructionRanges[i].first < rangeEnd && m_instructionRanges[i].second > rangeStart)
+        {
+            if (firstLine < 0)
+                firstLine = i;
+            lastLine = i;
+        }
+    }
+
+    if (firstLine < 0)
+    {
+        // Hex selection falls outside the currently displayed instructions --
+        // nothing to highlight, but don't touch what's already shown.
+        m_syncingDisasmSelection = true;
+        QTextCursor cleared = m_view->textCursor();
+        cleared.clearSelection();
+        m_view->setTextCursor(cleared);
+        m_syncingDisasmSelection = false;
+        m_view->setExtraSelections({});
+        return;
+    }
+
+    applyLineSelection(firstLine, lastLine);
+}
+
 void DisassemblerPanel::disassemble()
 {
     if (!m_csOpen || !m_hv)
     {
         m_view->clear();
+        m_view->setExtraSelections({});
         m_statusLabel->clear();
         return;
     }
@@ -296,6 +458,7 @@ void DisassemblerPanel::disassemble()
     if (fileSize == 0)
     {
         m_view->clear();
+        m_view->setExtraSelections({});
         m_statusLabel->clear();
         return;
     }
@@ -408,6 +571,9 @@ void DisassemblerPanel::disassemble()
 
     // ── build document ─────────────────────────────────────────────────────────
     m_view->clear();
+    m_view->setExtraSelections({});
+    m_instructionRanges.clear();
+    m_instructionRanges.reserve(count);
     QTextCursor cur(m_view->document());
     cur.beginEditBlock();
 
@@ -417,6 +583,7 @@ void DisassemblerPanel::disassemble()
             cur.insertText(QStringLiteral("\n"), fmtGrey);
 
         const cs_insn &in = insn[i];
+        m_instructionRanges.push_back({ in.address, in.address + in.size });
 
         // Address (no 0x prefix)
         cur.insertText(
@@ -492,7 +659,9 @@ void DisassemblerPanel::goToOffset(uint64_t offset)
 void DisassemblerPanel::setPinned(bool pinned)
 {
     m_pinned = pinned;
-    const QString iconName  = pinned ? QStringLiteral("actions/pin0") : QStringLiteral("actions/pin1");
+    // pin1 is the "planted" look (solid pin + base/shadow); pin0 is the
+    // plain floating marker -- pinned should look planted, not the reverse.
+    const QString iconName  = pinned ? QStringLiteral("actions/pin1") : QStringLiteral("actions/pin0");
     const QColor  iconColor = pinned
         ? filestats::subduedTextColor(m_offsetEdit->palette())
         : m_offsetEdit->palette().color(QPalette::WindowText);

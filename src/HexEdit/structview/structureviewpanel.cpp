@@ -2106,7 +2106,7 @@ void StructureViewPanel::buildUi()
     m_offsetEdit->setPlaceholderText(tr("Offset"));
     const auto existingBtns = m_offsetEdit->findChildren<QToolButton *>();
     m_pinAction = m_offsetEdit->addAction(
-        recoloredIcon(QStringLiteral("actions/pin1"),
+        recoloredIcon(QStringLiteral("actions/pin0"),
                       palette().color(QPalette::WindowText), 16),
         QLineEdit::TrailingPosition);
     m_pinAction->setToolTip(tr("Pin offset"));
@@ -2590,7 +2590,9 @@ void StructureViewPanel::updatePinAction()
     if (!m_pinAction || !m_offsetEdit)
         return;
 
-    const QString iconName = m_pinned ? QStringLiteral("actions/pin0") : QStringLiteral("actions/pin1");
+    // pin1 is the "planted" look (solid pin + base/shadow); pin0 is the
+    // plain floating marker -- pinned should look planted, not the reverse.
+    const QString iconName = m_pinned ? QStringLiteral("actions/pin1") : QStringLiteral("actions/pin0");
     const QColor iconColor = m_pinned
         ? filestats::subduedTextColor(m_offsetEdit->palette())
         : m_offsetEdit->palette().color(QPalette::WindowText);
