@@ -11,6 +11,7 @@
 #include "dialogs/dlgexport.h"
 #include "dialogs/dlgimport.h"
 #include "dialogs/dlgpastespecial.h"
+#include "disasm/codediscovery.h"
 #include "disasm/disasmpanel.h"
 #include "fileproperties.h"
 #include "filestats/banner.h"
@@ -93,6 +94,7 @@ static QKeySequence structurePanelShortcut()
 {
     return QKeySequence(QStringLiteral("Ctrl+T"));
 }
+
 
 static QString shortcutLabel(const QKeySequence &shortcut)
 {
@@ -691,6 +693,16 @@ MainWindow::MainWindow(QWidget *parent)
     panelSlot->addHost(m_structurePanelHost);
     contentLay->addWidget(panelSlot, 0);
 
+    // Owns the cancel-flag/worklist for the current recursive-descent scan;
+    // results are forwarded to DisassemblerPanelHost (which owns the
+    // long-lived cache -- the panel widget itself is destroyed/recreated
+    // each close/reopen) for its "Functions" tab.
+    m_codeDiscoveryEngine = new CodeDiscoveryEngine(this);
+    connect(m_codeDiscoveryEngine, &CodeDiscoveryEngine::finished, this, [this](QList<DiscoveredFunction> functions) {
+        if (m_disasmPanelHost)
+            m_disasmPanelHost->setDiscoveredFunctions(std::move(functions));
+    });
+
     vlay->addWidget(contentRow, 1);
     m_bookmarkDialog = new BookmarkDialog(this);
     auto *dockPanelHost = new DockPanelHost(m_hv, central);
@@ -741,6 +753,7 @@ MainWindow::MainWindow(QWidget *parent)
     auto *structureShortcut = new QShortcut(structurePanelShortcut(), this);
     connect(structureShortcut, &QShortcut::activated,
             this, &MainWindow::toggleStructurePanel);
+
     ui->actionChecksum->setEnabled(true);
     connect(ui->actionChecksum, &QAction::triggered,
             this, [this]() { openSidePanelSection(FilePropertiesPanel::SectionId::Checksums); });
@@ -1146,6 +1159,10 @@ MainWindow::MainWindow(QWidget *parent)
         updateWatchedFile(this, QString());
         resetSidePanel();
         m_hv->notifyStructureEntryPoint(false, 0);
+        if (m_codeDiscoveryEngine)
+            m_codeDiscoveryEngine->scan(nullptr); // cancels any in-flight scan for the old file
+        if (m_disasmPanelHost)
+            m_disasmPanelHost->setDiscoveredFunctions({});
     });
 
     connect(ui->actionOpen, &QAction::triggered, this, [this]() {
@@ -1512,6 +1529,18 @@ void MainWindow::openFile(const QString &path) {
     // disassembler's "jump to entry point" pointing at the previous file.
     uint64_t entryOffset = 0;
     m_hv->notifyStructureEntryPoint(detectStructureEntryPoint(m_hv, &entryOffset), entryOffset);
+
+    // Clear immediately rather than leaving the previous file's functions
+    // visible while the new scan runs; scan() cancels that previous scan
+    // itself, so its (now-stale) result can't land after this clear.
+    if (m_disasmPanelHost)
+        m_disasmPanelHost->setDiscoveredFunctions({});
+    if (m_codeDiscoveryEngine)
+    {
+        if (m_disasmPanelHost)
+            m_disasmPanelHost->setFunctionsScanInProgress(true);
+        m_codeDiscoveryEngine->scan(m_hv);
+    }
 }
 
 void MainWindow::toggleSidePanel()

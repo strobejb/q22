@@ -2,6 +2,7 @@
 
 #include "HexView/hexview.h"
 #include "combos/menucombobox.h"
+#include "disasm/branchtarget.h"
 #include "filestats/widgets.h"
 #include "theme.h"
 
@@ -12,6 +13,7 @@
 #include <QFontMetrics>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QHeaderView>
 #include <QKeyEvent>
 #include <QKeySequence>
 #include <QLabel>
@@ -19,6 +21,7 @@
 #include <QMouseEvent>
 #include <QPlainTextEdit>
 #include <QRegularExpression>
+#include <QStackedWidget>
 #include <QTextBlock>
 #include <QTextDocument>
 #include <QTextEdit>
@@ -27,6 +30,8 @@
 #include <QCursor>
 #include <QTextCharFormat>
 #include <QTextCursor>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
 #include <QVBoxLayout>
 
 #include <optional>
@@ -53,37 +58,6 @@ static const ArchEntry kArchEntries[] = {
 static constexpr int kArchCount = (int)(sizeof(kArchEntries) / sizeof(kArchEntries[0]));
 
 static constexpr bool kHighlightCurrentLine = false; // tint the line under the cursor
-
-// Resolves a JMP/Jcc/CALL's static target address, or nullopt for anything
-// indirect (register/memory operand, e.g. "jmp eax" or an IAT thunk) or with
-// no operand (e.g. "ret") -- those have no statically-known destination.
-// Capstone has already folded any relative displacement into operands[0].imm,
-// so no manual address math is needed here.
-static std::optional<uint64_t> branchTargetForInstruction(csh handle, const cs_insn &insn, cs_arch arch)
-{
-    if (!insn.detail)
-        return std::nullopt;
-    if (!cs_insn_group(handle, &insn, CS_GRP_JUMP) && !cs_insn_group(handle, &insn, CS_GRP_CALL))
-        return std::nullopt;
-
-    switch (arch) {
-    case CS_ARCH_X86:
-        if (insn.detail->x86.op_count == 1 && insn.detail->x86.operands[0].type == X86_OP_IMM)
-            return static_cast<uint64_t>(insn.detail->x86.operands[0].imm);
-        break;
-    case CS_ARCH_ARM:
-        if (insn.detail->arm.op_count == 1 && insn.detail->arm.operands[0].type == ARM_OP_IMM)
-            return static_cast<uint64_t>(insn.detail->arm.operands[0].imm);
-        break;
-    case CS_ARCH_ARM64:
-        if (insn.detail->arm64.op_count == 1 && insn.detail->arm64.operands[0].type == ARM64_OP_IMM)
-            return static_cast<uint64_t>(insn.detail->arm64.operands[0].imm);
-        break;
-    default:
-        break;
-    }
-    return std::nullopt;
-}
 
 static QFont disassemblyViewFont(const QFont &hexViewFont)
 {
@@ -145,7 +119,6 @@ void DisassemblerPanel::buildUi()
     headerRow->addWidget(header);
     rootLay->addLayout(headerRow);
 
-    // Content area
     auto *content = new QWidget(this);
     auto *contentLay = new QVBoxLayout(content);
     // Right margin = kContentMargin + 7 to compensate for the 7-px resize grip
@@ -219,8 +192,17 @@ void DisassemblerPanel::buildUi()
     contentLay->addLayout(optLay);
     contentLay->addSpacing(4);
 
+    // Tabbed content area: "Disassembly" + "Functions" -- wraps ONLY the
+    // text control / list for each page (same as structview's Structure/
+    // Source tabs, which wrap only the tree/text view, not its own toolbar
+    // row above them).
+    m_tabFrame = new filestats::TabbedContentFrame(content);
+    m_tabFrame->setTabs({tr("Disassembly"), tr("Functions")});
+
+    m_pageStack = new QStackedWidget(m_tabFrame);
+
     // Instruction view
-    m_view = new QPlainTextEdit(content);
+    m_view = new QPlainTextEdit(m_pageStack);
     // Qt suppresses the blinking text caret entirely in read-only mode, even
     // with keyboard-selectable interaction flags -- so editing is blocked via
     // the keyPressEvent filter below instead, leaving the caret visible.
@@ -250,22 +232,145 @@ void DisassemblerPanel::buildUi()
     vp.setColor(QPalette::Base, bgColor);
     m_view->setPalette(vp);
 
+    // The outer TabbedContentFrame paints the visible rounded border+fill;
+    // this inner control is flush with it (1px inset, same Base fill colour)
+    // and stays plain-rectangular with no border-radius of its own -- exactly
+    // structview's applyStructureTextViewPalette() recipe for its source/log
+    // QPlainTextEdits, which likewise have no rounding of their own.
     m_view->setStyleSheet(
-        QStringLiteral("QPlainTextEdit { border: 1px solid palette(mid); border-radius: 6px;"
-                       " padding: 0;"
+        QStringLiteral("QPlainTextEdit { border: none; padding: 0;"
                        " selection-background-color: %1; selection-color: %2; }")
         .arg(filestats::cssColor(selBgColor), filestats::cssColor(selFgColor)));
 
-    contentLay->addWidget(m_view, 1);
     m_view->viewport()->installEventFilter(this);
     m_view->viewport()->setMouseTracking(true);
 
-    // Status row
-    m_statusLabel = new QLabel(content);
-    m_statusLabel->setTextFormat(Qt::PlainText);
-    contentLay->addWidget(m_statusLabel);
+    // Functions page: lists recursive-descent-discovered functions; a row
+    // click jumps the Disassembly page there directly (same panel, no
+    // cross-panel wiring needed). Styled identically to structview's own
+    // tree (m_tree/"structureGrid") -- that one carries its own border-radius
+    // (both on itself and its ::viewport) because its header bar's distinct
+    // background would otherwise break the illusion of the outer frame's
+    // rounded corners; a plain QPlainTextEdit with no header doesn't need it.
+    m_functionsList = new QTreeWidget(m_pageStack);
+    m_functionsList->setObjectName(QStringLiteral("disasmFunctionsList"));
+    m_functionsList->setColumnCount(3);
+    m_functionsList->setHeaderLabels({tr("Address"), tr("Name"), tr("Source")});
+    m_functionsList->setRootIsDecorated(false);
+    m_functionsList->setAlternatingRowColors(false);
+    m_functionsList->setUniformRowHeights(true);
+    m_functionsList->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_functionsList->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_functionsList->setContextMenuPolicy(Qt::NoContextMenu);
+    m_functionsList->header()->setStretchLastSection(false);
+    m_functionsList->header()->setSectionResizeMode(0, QHeaderView::Interactive);
+    m_functionsList->header()->setSectionResizeMode(1, QHeaderView::Stretch);
+    m_functionsList->header()->setSectionResizeMode(2, QHeaderView::Interactive);
+    m_functionsList->header()->resizeSection(0, 84);
+    m_functionsList->header()->resizeSection(2, 90);
+    m_functionsList->setSortingEnabled(true);
+    m_functionsList->sortByColumn(0, Qt::AscendingOrder);
+    m_functionsList->setFrameShape(QFrame::NoFrame);
 
+    const QColor activeSelection   = QColor(m_hv->getHexColour(HVC_SELECTION));
+    const QColor activeText        = QColor(m_hv->getHexColour(HVC_SELTEXT));
+    const QColor inactiveSelection = QColor(m_hv->getHexColour(HVC_SELECTION_INACTIVE));
+    const QColor inactiveText      = QColor(m_hv->getHexColour(HVC_SELTEXT_INACTIVE));
+    {
+        QPalette fp = m_functionsList->palette();
+        fp.setColor(QPalette::Base, bgColor);
+        fp.setColor(QPalette::Active, QPalette::Highlight, activeSelection);
+        fp.setColor(QPalette::Active, QPalette::HighlightedText, activeText);
+        fp.setColor(QPalette::Inactive, QPalette::Highlight, inactiveSelection);
+        fp.setColor(QPalette::Inactive, QPalette::HighlightedText, inactiveText);
+        m_functionsList->setPalette(fp);
+        if (m_functionsList->viewport())
+            m_functionsList->viewport()->setPalette(fp);
+    }
+
+    int functionsItemLeftPad = 0;
+    {
+        QFont headerFont = m_functionsList->header()->font();
+        if (headerFont.pointSizeF() > 0)
+            headerFont.setPointSizeF(qMax(1.0, headerFont.pointSizeF() - 1.0));
+        else if (headerFont.pixelSize() > 0)
+            headerFont.setPixelSize(qMax(1, headerFont.pixelSize() - 1));
+        headerFont.setWeight(QFont::DemiBold);
+        m_functionsList->header()->setFont(headerFont);
+        const QFontMetrics headerMetrics(headerFont);
+        const int headerPad = filestats::stringsHeaderPadding(headerMetrics);
+        constexpr int kItemCellInset = 3;
+        constexpr int kHeaderBottomGap = 3;
+        functionsItemLeftPad = qMax(0, headerPad - kItemCellInset);
+        m_functionsList->header()->setFixedHeight(headerMetrics.height() + 2 * headerPad + kHeaderBottomGap);
+    }
+
+    m_functionsList->setStyleSheet(
+        QStringLiteral(R"(
+        QTreeWidget#disasmFunctionsList {
+            background: palette(base);
+            border: none;
+            border-radius: 5px;
+            padding: 0px;
+            outline: none;
+        }
+        QTreeWidget#disasmFunctionsList::viewport {
+            background: palette(base);
+            border-radius: 5px;
+        }
+        QTreeWidget#disasmFunctionsList QHeaderView::section {
+            background: palette(base);
+            border: none;
+            padding: 4px 6px;
+        }
+        QTreeWidget#disasmFunctionsList QHeaderView::section:hover {
+            background: palette(button);
+        }
+        QTreeWidget#disasmFunctionsList::item {
+            padding: 3px 6px 3px %1px;
+        }
+        QTreeWidget#disasmFunctionsList::item:hover {
+            background: palette(button);
+        }
+        QTreeWidget#disasmFunctionsList::item:selected {
+            background: %2;
+            color: %3;
+        }
+        QTreeWidget#disasmFunctionsList::item:selected:!active {
+            background: %4;
+            color: %5;
+        }
+    )").arg(functionsItemLeftPad)
+            .arg(filestats::cssColor(activeSelection),
+                 filestats::cssColor(activeText),
+                 filestats::cssColor(inactiveSelection),
+                 filestats::cssColor(inactiveText)));
+
+    connect(m_functionsList, &QTreeWidget::itemActivated, this, &DisassemblerPanel::onFunctionItemActivated);
+    connect(m_functionsList, &QTreeWidget::itemClicked, this, &DisassemblerPanel::onFunctionItemActivated);
+
+    m_pageStack->addWidget(m_view);
+    m_pageStack->addWidget(m_functionsList);
+    m_tabFrame->setContentWidget(m_pageStack);
+
+    // Single shared status label in the tab frame's footer (next to the
+    // tabs), same as structview -- text is page-specific, refreshed by
+    // updateStatusLabelForCurrentTab() whenever the active tab or its data
+    // changes, never both pages' text wrestling over the same label.
+    m_statusLabel = new QLabel(m_tabFrame);
+    m_statusLabel->setTextFormat(Qt::PlainText);
+    m_tabFrame->setStatusLabel(m_statusLabel);
+
+    m_tabFrame->setTabChangedCallback([this](int index) {
+        m_pageStack->setCurrentIndex(index);
+        m_tabFrame->setCurrentIndex(index);
+        updateStatusLabelForCurrentTab();
+    });
+
+    contentLay->addWidget(m_tabFrame, 1);
     rootLay->addWidget(content, 1);
+
+    rebuildFunctionsList();
 
     // Connections
     if constexpr (kHighlightCurrentLine)
@@ -588,7 +693,8 @@ void DisassemblerPanel::disassemble()
         m_view->clear();
         m_lineHighlights.clear();
         updateExtraSelections();
-        m_statusLabel->clear();
+        m_disasmStatusText.clear();
+        updateStatusLabelForCurrentTab();
         return;
     }
 
@@ -598,13 +704,29 @@ void DisassemblerPanel::disassemble()
         m_view->clear();
         m_lineHighlights.clear();
         updateExtraSelections();
-        m_statusLabel->clear();
+        m_disasmStatusText.clear();
+        updateStatusLabelForCurrentTab();
         return;
     }
 
     const size_w offset      = m_hv->cursorOffset();
     const size_w remaining   = fileSize - offset;
-    const size_t bytesToRead = (size_t)qMin((size_w)512, remaining);
+    size_w desiredLength     = qMin((size_w)512, remaining);
+
+    // If the cursor falls inside a function found by recursive-descent code
+    // discovery, show that function's full extent instead of an arbitrary
+    // 512-byte slice -- still capped, in case discovery's own bookkeeping
+    // ever produces something pathological.
+    static constexpr size_w kMaxFunctionWindow = 8192;
+    for (const DiscoveredFunction &fn : m_discoveredFunctions)
+    {
+        if (offset >= fn.startOffset && offset < fn.endOffset)
+        {
+            desiredLength = qMin(qMin(fn.endOffset - offset, kMaxFunctionWindow), remaining);
+            break;
+        }
+    }
+    const size_t bytesToRead = (size_t)desiredLength;
 
     QByteArray buf(static_cast<int>(bytesToRead), '\0');
     const size_t got = m_hv->getData(offset,
@@ -613,7 +735,8 @@ void DisassemblerPanel::disassemble()
     if (got == 0)
     {
         m_view->setPlainText(tr("(no data at cursor)"));
-        m_statusLabel->clear();
+        m_disasmStatusText.clear();
+        updateStatusLabelForCurrentTab();
         return;
     }
 
@@ -628,7 +751,8 @@ void DisassemblerPanel::disassemble()
     if (count == 0)
     {
         m_view->setPlainText(tr("(no instructions decoded)"));
-        m_statusLabel->clear();
+        m_disasmStatusText.clear();
+        updateStatusLabelForCurrentTab();
         return;
     }
 
@@ -771,10 +895,10 @@ void DisassemblerPanel::disassemble()
     // Status line
     const size_t coveredBytes = static_cast<size_t>(
         insn[count - 1].address + insn[count - 1].size - offset);
-    m_statusLabel->setText(
-        tr("%1 instructions · %2 bytes")
-            .arg(count)
-            .arg(coveredBytes));
+    m_disasmStatusText = tr("%1 instructions · %2 bytes")
+        .arg(count)
+        .arg(coveredBytes);
+    updateStatusLabelForCurrentTab();
 
     cs_free(insn, count);
     updateOffsetDisplay();
@@ -817,6 +941,91 @@ void DisassemblerPanel::goToOffset(uint64_t offset)
     }
 }
 
+namespace {
+QString functionSourceLabel(FunctionSource source)
+{
+    switch (source)
+    {
+    case FunctionSource::EntryPoint: return QObject::tr("Entry point");
+    case FunctionSource::Export:     return QObject::tr("Export");
+    case FunctionSource::CallTarget: return QObject::tr("Call target");
+    }
+    return {};
+}
+} // namespace
+
+void DisassemblerPanel::setDiscoveredFunctions(QList<DiscoveredFunction> functions)
+{
+    m_discoveredFunctions = std::move(functions);
+    m_functionsScanInProgress = false;
+    rebuildFunctionsList();
+    disassemble(); // re-check whether the cursor now falls within a known function
+}
+
+void DisassemblerPanel::setFunctionsScanInProgress(bool inProgress)
+{
+    m_functionsScanInProgress = inProgress;
+    updateStatusLabelForCurrentTab();
+}
+
+void DisassemblerPanel::rebuildFunctionsList()
+{
+    if (!m_functionsList)
+        return;
+
+    m_functionsList->clear();
+
+    for (const DiscoveredFunction &fn : m_discoveredFunctions)
+    {
+        auto *item = new QTreeWidgetItem(m_functionsList);
+        item->setText(0, QString::number(fn.startOffset, 16).toUpper().rightJustified(8, QLatin1Char('0')));
+        item->setText(1, fn.name.isEmpty() ? QStringLiteral("sub_%1").arg(fn.startOffset, 0, 16) : fn.name);
+        item->setText(2, functionSourceLabel(fn.source));
+        item->setData(0, Qt::UserRole, static_cast<qulonglong>(fn.startOffset));
+        item->setData(0, Qt::UserRole + 1, static_cast<qulonglong>(fn.endOffset));
+    }
+
+    updateStatusLabelForCurrentTab();
+}
+
+void DisassemblerPanel::updateStatusLabelForCurrentTab()
+{
+    if (!m_statusLabel || !m_pageStack)
+        return;
+
+    if (m_pageStack->currentIndex() == 1)
+    {
+        m_statusLabel->setText(m_functionsScanInProgress
+            ? tr("Scanning...")
+            : m_discoveredFunctions.isEmpty() ? tr("No functions discovered")
+                                               : tr("%1 functions").arg(m_discoveredFunctions.size()));
+    }
+    else
+    {
+        m_statusLabel->setText(m_disasmStatusText);
+    }
+}
+
+void DisassemblerPanel::onFunctionItemActivated(QTreeWidgetItem *item, int /*column*/)
+{
+    if (!item || !m_hv)
+        return;
+
+    const uint64_t start = item->data(0, Qt::UserRole).toULongLong();
+    const uint64_t end   = item->data(0, Qt::UserRole + 1).toULongLong();
+
+    goToOffset(start);
+    // goToOffset() only selects/centers line 0's own instruction range;
+    // override with the function's full extent now that we have it.
+    m_hv->setCurSel(static_cast<size_w>(start), qMin(static_cast<size_w>(end), m_hv->size()), false);
+    m_hv->scrollCenter(static_cast<size_w>(start));
+
+    if (m_pageStack)
+        m_pageStack->setCurrentIndex(0);
+    if (m_tabFrame)
+        m_tabFrame->setCurrentIndex(0);
+}
+
 void DisassemblerPanel::setPinned(bool pinned)
 {
     m_pinned = pinned;
@@ -844,6 +1053,11 @@ QWidget *DisassemblerPanelHost::createPanelWidget()
     auto *panel = new DisassemblerPanel(m_hv, this);
     connect(panel, &DisassemblerPanel::closeRequested,
             this, &DisassemblerPanelHost::closePanel);
+    // Replay whatever CodeDiscoveryEngine has already produced -- the panel
+    // is destroyed/recreated each close/reopen, so it has no memory of its
+    // own; this host is the long-lived side that does.
+    panel->setDiscoveredFunctions(m_discoveredFunctions);
+    panel->setFunctionsScanInProgress(m_functionsScanInProgress);
     return panel;
 }
 
@@ -853,4 +1067,19 @@ void DisassemblerPanelHost::openAtOffset(uint64_t offset)
         openPanel();
     if (auto *panel = qobject_cast<DisassemblerPanel *>(panelWidget()))
         panel->goToOffset(offset);
+}
+
+void DisassemblerPanelHost::setDiscoveredFunctions(QList<DiscoveredFunction> functions)
+{
+    m_discoveredFunctions = std::move(functions);
+    m_functionsScanInProgress = false;
+    if (auto *panel = qobject_cast<DisassemblerPanel *>(panelWidget()))
+        panel->setDiscoveredFunctions(m_discoveredFunctions);
+}
+
+void DisassemblerPanelHost::setFunctionsScanInProgress(bool inProgress)
+{
+    m_functionsScanInProgress = inProgress;
+    if (auto *panel = qobject_cast<DisassemblerPanel *>(panelWidget()))
+        panel->setFunctionsScanInProgress(inProgress);
 }

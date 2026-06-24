@@ -1,6 +1,7 @@
 #ifndef DISASM_DISASMPANEL_H
 #define DISASM_DISASMPANEL_H
 
+#include "disasm/codediscovery.h"
 #include "filestats/sidepanel.h"
 
 #include <QTextEdit>
@@ -16,7 +17,11 @@ class QAction;
 class QLabel;
 class QLineEdit;
 class QPlainTextEdit;
+class QStackedWidget;
 class QToolButton;
+class QTreeWidget;
+class QTreeWidgetItem;
+namespace filestats { class TabbedContentFrame; }
 
 class DisassemblerPanel : public QWidget
 {
@@ -31,6 +36,11 @@ signals:
 public slots:
     void refresh();
     void goToOffset(uint64_t offset);
+    // Pushed in by DisassemblerPanelHost (which owns the long-lived cache,
+    // since this panel itself is destroyed/recreated each time it's
+    // closed/reopened) whenever CodeDiscoveryEngine's results change.
+    void setDiscoveredFunctions(QList<DiscoveredFunction> functions);
+    void setFunctionsScanInProgress(bool inProgress);
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
@@ -57,14 +67,32 @@ private:
     // (if any) into one ExtraSelection list -- the two are tracked separately
     // but QPlainTextEdit only accepts a single combined list per call.
     void updateExtraSelections();
+    // "Functions" tab: lists recursive-descent-discovered functions (see
+    // HexEdit/disasm/codediscovery.h). Lives in this same panel (rather than
+    // a separate side panel) so a row click can jump the Disassembly tab
+    // directly via goToOffset(), with no cross-panel wiring needed.
+    void rebuildFunctionsList();
+    void onFunctionItemActivated(QTreeWidgetItem *item, int column);
+    // The footer status label is shared by both tabs (mirroring structview's
+    // single status label) -- refreshes its text from whichever page is
+    // currently showing, so a background disassemble()/rebuildFunctionsList()
+    // while the *other* tab is active doesn't overwrite text the user isn't
+    // looking at with text that doesn't match what they are looking at.
+    void updateStatusLabelForCurrentTab();
 
     HexView        *m_hv               = nullptr;
+    filestats::TabbedContentFrame *m_tabFrame   = nullptr;
+    QStackedWidget *m_pageStack         = nullptr;
+    QTreeWidget    *m_functionsList     = nullptr;
     MenuComboBox   *m_archCombo        = nullptr;
     QToolButton    *m_entryPointButton = nullptr;
     QLineEdit      *m_offsetEdit       = nullptr;
     QAction        *m_pinAction        = nullptr;
     QPlainTextEdit *m_view             = nullptr;
     QLabel         *m_statusLabel      = nullptr;
+    QString         m_disasmStatusText;
+    QList<DiscoveredFunction> m_discoveredFunctions;
+    bool            m_functionsScanInProgress = false;
     bool            m_pinned           = false;
     // Per-line (one per disassembled instruction) [start, end) file offsets,
     // rebuilt every disassemble() call; index == text block number.
@@ -108,11 +136,20 @@ public:
     // explicit navigation request rather than incidental cursor movement.
     void openAtOffset(uint64_t offset);
 
+    // The host outlives the panel widget (which is destroyed/recreated each
+    // close/reopen), so it -- not HexView, not the panel -- is where
+    // CodeDiscoveryEngine's results actually live; forwarded into the panel
+    // live if it currently exists, and replayed into it on (re)creation.
+    void setDiscoveredFunctions(QList<DiscoveredFunction> functions);
+    void setFunctionsScanInProgress(bool inProgress);
+
 protected:
     QWidget *createPanelWidget() override;
 
 private:
     HexView *m_hv = nullptr;
+    QList<DiscoveredFunction> m_discoveredFunctions;
+    bool m_functionsScanInProgress = false;
 };
 
 #endif // DISASM_DISASMPANEL_H

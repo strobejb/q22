@@ -4,10 +4,13 @@
 #include <QColor>
 #include <QFontMetrics>
 #include <QFrame>
+#include <QList>
 #include <QPalette>
 #include <QPoint>
+#include <QRect>
 #include <QSize>
 #include <QString>
+#include <QStringList>
 #include <QTreeWidgetItem>
 #include <QWidget>
 
@@ -20,12 +23,14 @@ class QGraphicsOpacityEffect;
 class QHideEvent;
 class QLabel;
 class QMouseEvent;
+class QPainter;
 class QPaintEvent;
 class QProgressBar;
 class QPropertyAnimation;
 class QResizeEvent;
 class QToolButton;
 class QTreeWidget;
+class QVBoxLayout;
 
 namespace filestats
 {
@@ -248,6 +253,59 @@ class StringListFrame : public QFrame
     QWidget             *m_footerWidget = nullptr;
     QLabel              *m_footerLabel  = nullptr;
     QString              m_footerText;
+};
+
+// Rounded content area with a row of pill-shaped tabs connecting to its top
+// edge -- same visual language as structview's StructureContentFrame
+// (rounded body with a "notch" in the border where the active tab meets it),
+// generalized here to an arbitrary list of plain text tabs so other panels
+// can reuse the look without duplicating the paint/hit-test code.
+class TabbedContentFrame : public QWidget
+{
+  public:
+    explicit TabbedContentFrame(QWidget *parent = nullptr);
+
+    void setTabs(const QStringList &labels);
+    void setContentWidget(QWidget *widget);
+    void setStatusLabel(QLabel *label);
+    void setTabChangedCallback(std::function<void(int)> callback);
+    void setCurrentIndex(int index);
+    int  currentIndex() const { return m_currentIndex; }
+
+    QSize sizeHint() const override;
+
+  protected:
+    void paintEvent(QPaintEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void leaveEvent(QEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+
+  private:
+    int     tabTop() const;
+    QRectF  contentBodyRect() const;
+    void    updateTabRects();
+    QRect   tabGroupRect() const;
+    void    updateFooterChildren();
+    int     tabAt(const QPoint &pos) const;
+    void    paintContentBody(QPainter *painter, const QColor &base, const QColor &border);
+    QRect   activeTabRect() const;
+    void    paintTabChrome(QPainter *painter, const QRect &rect, const QColor &fill, bool active);
+    void    paintTab(QPainter *painter, const QRect &rect, const QString &text, int index);
+
+    static constexpr int kRadius      = 6;
+    static constexpr int kBorderWidth = 1;
+    static constexpr int kTabHeight   = 24;
+    static constexpr int kTabHorzPad  = 14;
+    static constexpr int kFooterPad   = 6;
+
+    QVBoxLayout              *m_contentLayout = nullptr;
+    QLabel                   *m_statusLabel   = nullptr;
+    QStringList               m_tabLabels;
+    QList<QRect>               m_tabRects;
+    int                        m_currentIndex = 0;
+    int                        m_hoverTab     = -1;
+    std::function<void(int)>   m_tabChangedCallback;
 };
 
 class PropertyRow : public QWidget

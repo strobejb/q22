@@ -17,6 +17,7 @@
 #include <QLinearGradient>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPen>
 #include <QProgressBar>
 #include <QPropertyAnimation>
@@ -742,6 +743,313 @@ void StringListFrame::positionList()
 
     const QRect inner = rect().adjusted(kInset, kInset, -kInset, -kInset);
     m_list->setGeometry(inner.left(), inner.top(), inner.width(), inner.height());
+}
+
+TabbedContentFrame::TabbedContentFrame(QWidget *parent)
+    : QWidget(parent)
+{
+    setMouseTracking(true);
+
+    m_contentLayout = new QVBoxLayout(this);
+    m_contentLayout->setContentsMargins(kBorderWidth, kBorderWidth, kBorderWidth,
+                                        kTabHeight + kBorderWidth);
+    m_contentLayout->setSpacing(0);
+}
+
+void TabbedContentFrame::setTabs(const QStringList &labels)
+{
+    m_tabLabels = labels;
+    m_tabRects.clear();
+    m_tabRects.resize(labels.size());
+    updateTabRects();
+    updateFooterChildren();
+    update();
+}
+
+void TabbedContentFrame::setContentWidget(QWidget *widget)
+{
+    if (!widget)
+        return;
+    m_contentLayout->addWidget(widget);
+}
+
+void TabbedContentFrame::setStatusLabel(QLabel *label)
+{
+    m_statusLabel = label;
+    if (m_statusLabel)
+    {
+        m_statusLabel->setParent(this);
+        m_statusLabel->setWordWrap(false);
+    }
+    updateFooterChildren();
+}
+
+void TabbedContentFrame::setTabChangedCallback(std::function<void(int)> callback)
+{
+    m_tabChangedCallback = std::move(callback);
+}
+
+void TabbedContentFrame::setCurrentIndex(int index)
+{
+    if (m_currentIndex == index)
+        return;
+    m_currentIndex = index;
+    update();
+}
+
+QSize TabbedContentFrame::sizeHint() const
+{
+    return QSize(420, 320);
+}
+
+void TabbedContentFrame::paintEvent(QPaintEvent *)
+{
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+
+    updateTabRects();
+    const QColor border = palette().color(QPalette::Mid);
+    const QColor base = palette().color(QPalette::Base);
+    const QColor footer = palette().color(QPalette::Window);
+
+    painter.fillRect(rect(), footer);
+    paintContentBody(&painter, base, border);
+
+    for (int i = 0; i < m_tabRects.size(); ++i)
+        paintTab(&painter, m_tabRects[i], m_tabLabels.value(i), i);
+}
+
+void TabbedContentFrame::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    updateTabRects();
+    updateFooterChildren();
+}
+
+void TabbedContentFrame::mouseMoveEvent(QMouseEvent *event)
+{
+    const int hoverTab = tabAt(event->pos());
+    if (m_hoverTab != hoverTab)
+    {
+        m_hoverTab = hoverTab;
+        update();
+    }
+    setCursor(hoverTab >= 0 ? Qt::PointingHandCursor : Qt::ArrowCursor);
+    QWidget::mouseMoveEvent(event);
+}
+
+void TabbedContentFrame::leaveEvent(QEvent *event)
+{
+    m_hoverTab = -1;
+    unsetCursor();
+    update();
+    QWidget::leaveEvent(event);
+}
+
+void TabbedContentFrame::mousePressEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton)
+    {
+        const int tab = tabAt(event->pos());
+        if (tab >= 0)
+        {
+            if (tab != m_currentIndex)
+            {
+                m_currentIndex = tab;
+                update();
+            }
+            if (m_tabChangedCallback)
+                m_tabChangedCallback(tab);
+            event->accept();
+            return;
+        }
+    }
+
+    QWidget::mousePressEvent(event);
+}
+
+int TabbedContentFrame::tabTop() const
+{
+    return height() - kTabHeight;
+}
+
+QRectF TabbedContentFrame::contentBodyRect() const
+{
+    return QRectF(0.5, 0.5, qMax(0, width() - 1), qMax(0, tabTop()));
+}
+
+void TabbedContentFrame::updateTabRects()
+{
+    if (m_tabRects.size() != m_tabLabels.size())
+        m_tabRects.resize(m_tabLabels.size());
+
+    const QFontMetrics metrics(font());
+    const int y = tabTop();
+
+    // Right-aligned, growing leftward -- same layout structview uses.
+    int x = width() - kFooterPad;
+    for (int i = m_tabLabels.size() - 1; i >= 0; --i)
+    {
+        const int w = metrics.horizontalAdvance(m_tabLabels.at(i)) + 2 * kTabHorzPad;
+        x -= w;
+        m_tabRects[i] = QRect(x + 1, y, w, kTabHeight);
+        x += 1;
+    }
+}
+
+QRect TabbedContentFrame::tabGroupRect() const
+{
+    QRect group;
+    for (const QRect &r : m_tabRects)
+        group = group.united(r);
+    return group;
+}
+
+void TabbedContentFrame::updateFooterChildren()
+{
+    updateTabRects();
+
+    const QRect tabs = tabGroupRect();
+    const int footerTop = tabTop();
+    const QRect labelRect(kFooterPad, footerTop, qMax(0, tabs.left() - kFooterPad), kTabHeight);
+
+    if (m_statusLabel)
+        m_statusLabel->setGeometry(labelRect);
+}
+
+int TabbedContentFrame::tabAt(const QPoint &pos) const
+{
+    for (int i = 0; i < m_tabRects.size(); ++i)
+        if (m_tabRects[i].contains(pos))
+            return i;
+    return -1;
+}
+
+void TabbedContentFrame::paintContentBody(QPainter *painter, const QColor &base, const QColor &border)
+{
+    if (!painter)
+        return;
+
+    const QRectF body = contentBodyRect();
+    if (body.width() <= 0.0 || body.height() <= 0.0)
+        return;
+
+    QPainterPath fillPath;
+    fillPath.moveTo(body.left() + kRadius, body.top());
+    fillPath.lineTo(body.right() - kRadius, body.top());
+    fillPath.quadTo(body.right(), body.top(), body.right(), body.top() + kRadius);
+    fillPath.lineTo(body.right(), body.bottom());
+    fillPath.lineTo(body.left() + kRadius, body.bottom());
+    fillPath.quadTo(body.left(), body.bottom(), body.left(), body.bottom() - kRadius);
+    fillPath.lineTo(body.left(), body.top() + kRadius);
+    fillPath.quadTo(body.left(), body.top(), body.left() + kRadius, body.top());
+    fillPath.closeSubpath();
+    painter->fillPath(fillPath, base);
+
+    QPainterPath borderPath;
+    borderPath.moveTo(body.left() + kRadius, body.top());
+    borderPath.lineTo(body.right() - kRadius, body.top());
+    borderPath.quadTo(body.right(), body.top(), body.right(), body.top() + kRadius);
+    borderPath.lineTo(body.right(), body.bottom());
+
+    const QRect activeTab = activeTabRect();
+    if (!activeTab.isValid())
+    {
+        borderPath.lineTo(body.left() + kRadius, body.bottom());
+    }
+    else
+    {
+        borderPath.lineTo(activeTab.right() + 0.5, body.bottom());
+        borderPath.moveTo(activeTab.left() + 0.5, body.bottom());
+        borderPath.lineTo(body.left() + kRadius, body.bottom());
+    }
+
+    borderPath.quadTo(body.left(), body.bottom(), body.left(), body.bottom() - kRadius);
+    borderPath.lineTo(body.left(), body.top() + kRadius);
+    borderPath.quadTo(body.left(), body.top(), body.left() + kRadius, body.top());
+
+    painter->setPen(QPen(border, 1.0));
+    painter->setBrush(Qt::NoBrush);
+    painter->drawPath(borderPath);
+}
+
+QRect TabbedContentFrame::activeTabRect() const
+{
+    return m_currentIndex >= 0 && m_currentIndex < m_tabRects.size() ? m_tabRects[m_currentIndex] : QRect();
+}
+
+void TabbedContentFrame::paintTabChrome(QPainter *painter, const QRect &rect, const QColor &fill, bool active)
+{
+    if (!painter || !rect.isValid())
+        return;
+
+    const QColor border = palette().color(QPalette::Mid);
+    QRectF tabRect(rect);
+    tabRect.adjust(0.5, 0.5, -0.5, -0.5);
+
+    QPainterPath fillPath;
+    fillPath.moveTo(tabRect.left(), tabRect.top());
+    fillPath.lineTo(tabRect.right(), tabRect.top());
+    fillPath.lineTo(tabRect.right(), tabRect.bottom() - kRadius);
+    fillPath.quadTo(tabRect.right(), tabRect.bottom(),
+                    tabRect.right() - kRadius, tabRect.bottom());
+    fillPath.lineTo(tabRect.left() + kRadius, tabRect.bottom());
+    fillPath.quadTo(tabRect.left(), tabRect.bottom(),
+                    tabRect.left(), tabRect.bottom() - kRadius);
+    fillPath.lineTo(tabRect.left(), tabRect.top());
+    fillPath.closeSubpath();
+    painter->fillPath(fillPath, fill);
+
+    QPainterPath borderPath;
+    if (active)
+    {
+        borderPath.moveTo(tabRect.left(), tabRect.top());
+        borderPath.lineTo(tabRect.left(), tabRect.bottom() - kRadius);
+        borderPath.quadTo(tabRect.left(), tabRect.bottom(),
+                          tabRect.left() + kRadius, tabRect.bottom());
+        borderPath.lineTo(tabRect.right() - kRadius, tabRect.bottom());
+        borderPath.quadTo(tabRect.right(), tabRect.bottom(),
+                          tabRect.right(), tabRect.bottom() - kRadius);
+        borderPath.lineTo(tabRect.right(), tabRect.top());
+    }
+    else
+    {
+        borderPath.moveTo(tabRect.left(), tabRect.top());
+        borderPath.lineTo(tabRect.right(), tabRect.top());
+        borderPath.lineTo(tabRect.right(), tabRect.bottom() - kRadius);
+        borderPath.quadTo(tabRect.right(), tabRect.bottom(),
+                          tabRect.right() - kRadius, tabRect.bottom());
+        borderPath.lineTo(tabRect.left() + kRadius, tabRect.bottom());
+        borderPath.quadTo(tabRect.left(), tabRect.bottom(),
+                          tabRect.left(), tabRect.bottom() - kRadius);
+        borderPath.lineTo(tabRect.left(), tabRect.top());
+    }
+
+    painter->setPen(QPen(border, 1.0));
+    painter->setBrush(Qt::NoBrush);
+    painter->drawPath(borderPath);
+}
+
+void TabbedContentFrame::paintTab(QPainter *painter, const QRect &rect, const QString &text, int index)
+{
+    if (!painter || !rect.isValid())
+        return;
+
+    const bool active = m_currentIndex == index;
+    const bool hovered = m_hoverTab == index;
+    const QColor border = palette().color(QPalette::Mid);
+    const QColor fill = active ? palette().color(QPalette::Base)
+        : hovered ? palette().color(QPalette::Button).lighter(104)
+                  : palette().color(QPalette::Button);
+    const QColor textColor = active || hovered
+        ? palette().color(QPalette::WindowText)
+        : filestats::subduedTextColor(palette());
+
+    paintTabChrome(painter, rect, fill, active);
+
+    painter->setPen(textColor);
+    painter->drawText(rect.adjusted(kTabHorzPad, 0, -kTabHorzPad, -1),
+                      Qt::AlignCenter, text);
 }
 
 // â”€â”€ PropertyRow â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

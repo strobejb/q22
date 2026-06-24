@@ -8,6 +8,11 @@ set(PROJECT_SOURCES
         chrome/popupmenucallout.h
         disasm/disasmpanel.h
         disasm/disasmpanel.cpp
+        disasm/branchtarget.h
+        disasm/pemetadata.h
+        disasm/pemetadata.cpp
+        disasm/codediscovery.h
+        disasm/codediscovery.cpp
         fileproperties.h
         filestats/banner.cpp
         filestats/banner.h

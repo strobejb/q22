@@ -12,6 +12,7 @@ namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
 
 class BookmarkDialog;
+class CodeDiscoveryEngine;
 class DisassemblerPanelHost;
 class StructureViewPanelHost;
 class SidePanelHost;
@@ -86,6 +87,7 @@ private:
     SidePanelHost         *m_sidePanelHost  = nullptr;
     DisassemblerPanelHost *m_disasmPanelHost = nullptr;
     StructureViewPanelHost *m_structurePanelHost = nullptr;
+    CodeDiscoveryEngine   *m_codeDiscoveryEngine = nullptr;
     PreferencesDialog *m_prefsDialog    = nullptr;
     bool            m_useCustomTitleBar = true;
     bool            m_inResizeZone      = false;
