@@ -6,6 +6,7 @@
 
 #include <QByteArray>
 #include <QCoreApplication>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QPointer>
 #include <QThread>
@@ -135,6 +136,36 @@ void CodeDiscoveryEngine::scan(HexView *hv)
 
                 cs_insn *insn = cs_malloc(handle);
                 size_t worklistIndex = 0;
+
+                // Throttled (wall-clock, not per-item) so the UI gets
+                // periodic updates without the snapshot-and-marshal cost
+                // (sorting + copying the whole discovered list onto the
+                // main thread) running on every single iteration.
+                constexpr int kProgressEmitIntervalMs = 150;
+                QElapsedTimer progressTimer;
+                progressTimer.start();
+                const auto emitProgress = [&](bool force) {
+                    if (!force && progressTimer.elapsed() < kProgressEmitIntervalMs)
+                        return;
+                    progressTimer.restart();
+                    QList<DiscoveredFunction> snapshot;
+                    snapshot.reserve(static_cast<int>(discovered.size()));
+                    for (auto &entry : discovered)
+                        snapshot.push_back(entry.second);
+                    std::sort(snapshot.begin(), snapshot.end(), [](const DiscoveredFunction &a, const DiscoveredFunction &b) {
+                        return a.startOffset < b.startOffset;
+                    });
+                    const int discoveredCount = static_cast<int>(discovered.size());
+                    const int processed = static_cast<int>(worklistIndex);
+                    const int total = static_cast<int>(worklist.size());
+                    QMetaObject::invokeMethod(qApp, [guard, cancelFlag, snapshot, discoveredCount, processed, total]() {
+                        if (!guard || cancelFlag->load())
+                            return;
+                        emit guard->partialResults(snapshot);
+                        emit guard->scanProgress(discoveredCount, processed, total);
+                    }, Qt::QueuedConnection);
+                };
+
                 while (worklistIndex < worklist.size() && !cancelFlag->load()
                        && discovered.size() < static_cast<size_t>(kMaxFunctions))
                 {
@@ -185,6 +216,8 @@ void CodeDiscoveryEngine::scan(HexView *hv)
                         fn.source      = seed.source;
                         discovered.emplace(seed.offset, fn);
                     }
+
+                    emitProgress(/*force=*/false);
                 }
                 cs_free(insn, 1);
 

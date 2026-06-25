@@ -18,6 +18,7 @@ class QAction;
 class QLabel;
 class QLineEdit;
 class QPlainTextEdit;
+class QProgressBar;
 class QStackedWidget;
 class QTreeWidget;
 class QTreeWidgetItem;
@@ -41,6 +42,13 @@ public slots:
     // closed/reopened) whenever CodeDiscoveryEngine's results change.
     void setDiscoveredFunctions(QList<DiscoveredFunction> functions);
     void setFunctionsScanInProgress(bool inProgress);
+    // Periodic in-flight snapshots from CodeDiscoveryEngine::partialResults()
+    // -- repopulates the Functions tab/combo with whatever's been found so
+    // far without marking the scan finished (unlike setDiscoveredFunctions()).
+    void setPartialDiscoveredFunctions(QList<DiscoveredFunction> functions);
+    // CodeDiscoveryEngine::scanProgress(): drives the progress bar below the
+    // toolbar combos while a scan is running.
+    void setScanProgress(int discoveredCount, int worklistProcessed, int worklistTotal);
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
@@ -78,6 +86,11 @@ private:
     // found, a separator and the discovered functions -- called whenever
     // m_discoveredFunctions or the entry point changes.
     void populateFunctionsCombo();
+    // Shared by setDiscoveredFunctions() and setPartialDiscoveredFunctions()
+    // -- replaces m_discoveredFunctions and refreshes everything driven by
+    // it, without touching m_functionsScanInProgress (the caller decides
+    // that, since a partial update mid-scan must leave it alone).
+    void applyDiscoveredFunctions(QList<DiscoveredFunction> functions);
     // The footer status label is shared by both tabs (mirroring structview's
     // single status label) -- refreshes its text from whichever page is
     // currently showing, so a background disassemble()/rebuildFunctionsList()
@@ -89,6 +102,7 @@ private:
     filestats::TabbedContentFrame *m_tabFrame   = nullptr;
     QStackedWidget *m_pageStack         = nullptr;
     QTreeWidget    *m_functionsList     = nullptr;
+    QProgressBar   *m_scanProgressBar   = nullptr;
     MenuComboBox   *m_archCombo        = nullptr;
     DataTypeComboBox *m_functionsCombo = nullptr;
     QLineEdit      *m_offsetEdit       = nullptr;
@@ -147,6 +161,8 @@ public:
     // live if it currently exists, and replayed into it on (re)creation.
     void setDiscoveredFunctions(QList<DiscoveredFunction> functions);
     void setFunctionsScanInProgress(bool inProgress);
+    void setPartialDiscoveredFunctions(QList<DiscoveredFunction> functions);
+    void setScanProgress(int discoveredCount, int worklistProcessed, int worklistTotal);
 
 protected:
     QWidget *createPanelWidget() override;
@@ -155,6 +171,9 @@ private:
     HexView *m_hv = nullptr;
     QList<DiscoveredFunction> m_discoveredFunctions;
     bool m_functionsScanInProgress = false;
+    int m_scanProgressDiscovered = 0;
+    int m_scanProgressProcessed  = 0;
+    int m_scanProgressTotal      = 0;
 };
 
 #endif // DISASM_DISASMPANEL_H

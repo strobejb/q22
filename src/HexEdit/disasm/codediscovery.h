@@ -41,6 +41,17 @@ public:
 
 signals:
     void finished(QList<DiscoveredFunction> functions);
+    // Emitted periodically (throttled, not per-item) while a scan is in
+    // flight so the UI can populate incrementally instead of staying empty
+    // for the whole run -- the full snapshot discovered so far, not just
+    // what's new since the last emission, so a slot can just replace its
+    // current list each time without tracking deltas itself.
+    void partialResults(QList<DiscoveredFunction> functionsSoFar);
+    // worklistTotal grows as new call/jmp targets are discovered, so this
+    // percentage isn't perfectly monotonic, but it trends upward and always
+    // reaches 100% at completion, since worklistTotal stops growing once no
+    // further new targets are found.
+    void scanProgress(int discoveredCount, int worklistProcessed, int worklistTotal);
 
 private:
     std::shared_ptr<std::atomic_bool> m_cancelFlag;

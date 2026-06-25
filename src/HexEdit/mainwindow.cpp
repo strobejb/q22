@@ -702,6 +702,15 @@ MainWindow::MainWindow(QWidget *parent)
         if (m_disasmPanelHost)
             m_disasmPanelHost->setDiscoveredFunctions(std::move(functions));
     });
+    connect(m_codeDiscoveryEngine, &CodeDiscoveryEngine::partialResults, this, [this](QList<DiscoveredFunction> functions) {
+        if (m_disasmPanelHost)
+            m_disasmPanelHost->setPartialDiscoveredFunctions(std::move(functions));
+    });
+    connect(m_codeDiscoveryEngine, &CodeDiscoveryEngine::scanProgress, this,
+            [this](int discoveredCount, int worklistProcessed, int worklistTotal) {
+        if (m_disasmPanelHost)
+            m_disasmPanelHost->setScanProgress(discoveredCount, worklistProcessed, worklistTotal);
+    });
 
     vlay->addWidget(contentRow, 1);
     m_bookmarkDialog = new BookmarkDialog(this);

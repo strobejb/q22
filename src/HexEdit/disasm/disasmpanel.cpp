@@ -21,6 +21,7 @@
 #include <QLineEdit>
 #include <QMouseEvent>
 #include <QPlainTextEdit>
+#include <QProgressBar>
 #include <QRegularExpression>
 #include <QStackedWidget>
 #include <QStringList>
@@ -202,6 +203,18 @@ void DisassemblerPanel::buildUi()
     optLay->addSpacing(2);
     optLay->addWidget(m_offsetEdit);
     contentLay->addLayout(optLay);
+    contentLay->addSpacing(4);
+
+    // Function-discovery scan progress -- hidden once no scan is running
+    // (the common case: most files load instantly). setFunctionsScanInProgress()
+    // shows/hides it; setScanProgress() drives its value.
+    m_scanProgressBar = new QProgressBar(content);
+    m_scanProgressBar->setFixedHeight(4);
+    m_scanProgressBar->setTextVisible(false);
+    m_scanProgressBar->setRange(0, 1);
+    m_scanProgressBar->setValue(0);
+    m_scanProgressBar->setVisible(false);
+    contentLay->addWidget(m_scanProgressBar);
     contentLay->addSpacing(4);
 
     // Tabbed content area: "Disassembly" + "Functions" -- wraps ONLY the
@@ -960,8 +973,23 @@ QString functionSourceLabel(FunctionSource source)
 
 void DisassemblerPanel::setDiscoveredFunctions(QList<DiscoveredFunction> functions)
 {
-    m_discoveredFunctions = std::move(functions);
     m_functionsScanInProgress = false;
+    if (m_scanProgressBar)
+        m_scanProgressBar->setVisible(false);
+    applyDiscoveredFunctions(std::move(functions));
+}
+
+void DisassemblerPanel::setPartialDiscoveredFunctions(QList<DiscoveredFunction> functions)
+{
+    // Scan is still running -- m_functionsScanInProgress and the progress
+    // bar's visibility are left alone, driven by setFunctionsScanInProgress()/
+    // setScanProgress() instead.
+    applyDiscoveredFunctions(std::move(functions));
+}
+
+void DisassemblerPanel::applyDiscoveredFunctions(QList<DiscoveredFunction> functions)
+{
+    m_discoveredFunctions = std::move(functions);
     rebuildFunctionsList();
     populateFunctionsCombo();
     disassemble(); // re-check whether the cursor now falls within a known function
@@ -970,6 +998,32 @@ void DisassemblerPanel::setDiscoveredFunctions(QList<DiscoveredFunction> functio
 void DisassemblerPanel::setFunctionsScanInProgress(bool inProgress)
 {
     m_functionsScanInProgress = inProgress;
+    if (m_scanProgressBar)
+    {
+        m_scanProgressBar->setVisible(inProgress);
+        if (inProgress)
+        {
+            m_scanProgressBar->setRange(0, 1);
+            m_scanProgressBar->setValue(0);
+        }
+    }
+    updateStatusLabelForCurrentTab();
+}
+
+void DisassemblerPanel::setScanProgress(int discoveredCount, int worklistProcessed, int worklistTotal)
+{
+    if (!m_scanProgressBar)
+        return;
+    // worklistTotal grows as the scan discovers new call/jmp targets, so
+    // this isn't a strictly monotonic percentage -- it can dip slightly
+    // when a burst of new targets is queued -- but it trends upward and
+    // reaches 100% at completion, since worklistTotal stops growing once no
+    // further new targets are found. Good enough for a progress bar; an
+    // indeterminate/busy style would hide the (real, if imperfect) signal
+    // that this gives about how much work is actually left.
+    m_scanProgressBar->setRange(0, qMax(1, worklistTotal));
+    m_scanProgressBar->setValue(qBound(0, worklistProcessed, worklistTotal));
+    Q_UNUSED(discoveredCount); // surfaced via updateStatusLabelForCurrentTab() instead
     updateStatusLabelForCurrentTab();
 }
 
@@ -1048,7 +1102,7 @@ void DisassemblerPanel::updateStatusLabelForCurrentTab()
     if (m_pageStack->currentIndex() == 1)
     {
         m_statusLabel->setText(m_functionsScanInProgress
-            ? tr("Scanning...")
+            ? tr("Scanning... %1 found so far").arg(m_discoveredFunctions.size())
             : m_discoveredFunctions.isEmpty() ? tr("No functions discovered")
                                                : tr("%1 functions").arg(m_discoveredFunctions.size()));
     }
@@ -1107,9 +1161,13 @@ QWidget *DisassemblerPanelHost::createPanelWidget()
             this, &DisassemblerPanelHost::closePanel);
     // Replay whatever CodeDiscoveryEngine has already produced -- the panel
     // is destroyed/recreated each close/reopen, so it has no memory of its
-    // own; this host is the long-lived side that does.
+    // own; this host is the long-lived side that does. Order matters:
+    // setDiscoveredFunctions() always clears "scan in progress", so the
+    // scan-state calls have to come after it to correctly restore an
+    // in-flight scan's state if one is still running.
     panel->setDiscoveredFunctions(m_discoveredFunctions);
     panel->setFunctionsScanInProgress(m_functionsScanInProgress);
+    panel->setScanProgress(m_scanProgressDiscovered, m_scanProgressProcessed, m_scanProgressTotal);
     return panel;
 }
 
@@ -1132,6 +1190,30 @@ void DisassemblerPanelHost::setDiscoveredFunctions(QList<DiscoveredFunction> fun
 void DisassemblerPanelHost::setFunctionsScanInProgress(bool inProgress)
 {
     m_functionsScanInProgress = inProgress;
+    if (inProgress)
+    {
+        // Fresh scan starting -- stale progress numbers from a previous run
+        // shouldn't be replayed into a panel reopened mid-scan.
+        m_scanProgressDiscovered = 0;
+        m_scanProgressProcessed  = 0;
+        m_scanProgressTotal      = 0;
+    }
     if (auto *panel = qobject_cast<DisassemblerPanel *>(panelWidget()))
         panel->setFunctionsScanInProgress(inProgress);
+}
+
+void DisassemblerPanelHost::setPartialDiscoveredFunctions(QList<DiscoveredFunction> functions)
+{
+    m_discoveredFunctions = std::move(functions);
+    if (auto *panel = qobject_cast<DisassemblerPanel *>(panelWidget()))
+        panel->setPartialDiscoveredFunctions(m_discoveredFunctions);
+}
+
+void DisassemblerPanelHost::setScanProgress(int discoveredCount, int worklistProcessed, int worklistTotal)
+{
+    m_scanProgressDiscovered = discoveredCount;
+    m_scanProgressProcessed  = worklistProcessed;
+    m_scanProgressTotal      = worklistTotal;
+    if (auto *panel = qobject_cast<DisassemblerPanel *>(panelWidget()))
+        panel->setScanProgress(discoveredCount, worklistProcessed, worklistTotal);
 }
