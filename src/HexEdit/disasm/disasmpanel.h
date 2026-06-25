@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+class DataTypeComboBox;
 class HexView;
 class MenuComboBox;
 class QAction;
@@ -18,7 +19,6 @@ class QLabel;
 class QLineEdit;
 class QPlainTextEdit;
 class QStackedWidget;
-class QToolButton;
 class QTreeWidget;
 class QTreeWidgetItem;
 namespace filestats { class TabbedContentFrame; }
@@ -73,6 +73,11 @@ private:
     // directly via goToOffset(), with no cross-panel wiring needed.
     void rebuildFunctionsList();
     void onFunctionItemActivated(QTreeWidgetItem *item, int column);
+    // Rebuilds the "jump to function" combo's item list: a permanent
+    // "Entrypoint" entry (enabled only once known) followed by, if any were
+    // found, a separator and the discovered functions -- called whenever
+    // m_discoveredFunctions or the entry point changes.
+    void populateFunctionsCombo();
     // The footer status label is shared by both tabs (mirroring structview's
     // single status label) -- refreshes its text from whichever page is
     // currently showing, so a background disassemble()/rebuildFunctionsList()
@@ -85,7 +90,7 @@ private:
     QStackedWidget *m_pageStack         = nullptr;
     QTreeWidget    *m_functionsList     = nullptr;
     MenuComboBox   *m_archCombo        = nullptr;
-    QToolButton    *m_entryPointButton = nullptr;
+    DataTypeComboBox *m_functionsCombo = nullptr;
     QLineEdit      *m_offsetEdit       = nullptr;
     QAction        *m_pinAction        = nullptr;
     QPlainTextEdit *m_view             = nullptr;

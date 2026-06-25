@@ -3,16 +3,22 @@
 #include <QAction>
 #include <QActionGroup>
 #include <QApplication>
+#include <QCoreApplication>
 #include <QGuiApplication>
 #include <QKeyEvent>
+#include <QLineEdit>
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QScreen>
 #include <QSet>
+#include <QStandardItemModel>
 #include <QStyleOptionComboBox>
 #include <QStyleOptionMenuItem>
 #include <QStylePainter>
+#include <QTimer>
+#include <QVBoxLayout>
+#include <QWidgetAction>
 
 // Transparent overlay that paints swatch circles on top of the QMenu's own
 // rendering.  QStyleSheetStyle owns the entire CE_MenuItem paint pass and
@@ -480,51 +486,93 @@ void DataTypeComboBox::setLeadingIcon(const QIcon &icon)
     addIconAction(icon, LeadingPosition);
 }
 
+QAction *DataTypeComboBox::createActionForItem(int index, QActionGroup *group, bool checkable)
+{
+    const int actionIndex = m_actions.size();
+    QAction *a = m_menu->addAction(itemText(index));
+    a->setData(itemData(index));
+    const QModelIndex mi = model()->index(index, modelColumn(), rootModelIndex());
+    if (!model()->flags(mi).testFlag(Qt::ItemIsEnabled))
+        a->setEnabled(false);
+
+    // If the item has a QColor stored as DecorationRole, attach it as a
+    // property so SwatchOverlay can paint a swatch circle for that item.
+    const QVariant decoVar = itemData(index, Qt::DecorationRole);
+    if (decoVar.canConvert<QColor>()) {
+        const QColor c = decoVar.value<QColor>();
+        if (c.isValid())
+            a->setProperty("swatchColor", c);
+    } else {
+        const QIcon itemIcon = qvariant_cast<QIcon>(decoVar);
+        if (!itemIcon.isNull())
+            a->setIcon(itemIcon);
+    }
+
+    if (checkable) {
+        a->setCheckable(true);
+        a->setChecked(actionIndex == m_selection);
+        if (group) group->addAction(a);
+        connect(a, &QAction::toggled, this, [this, actionIndex](bool checked) {
+            if (checked) { m_selection = actionIndex; emit selectionChanged(actionIndex); }
+        });
+    } else {
+        connect(a, &QAction::triggered, this, [this, actionIndex]() {
+            m_selection = actionIndex; emit selectionChanged(actionIndex);
+        });
+    }
+    m_actions.append(a);
+    return a;
+}
+
 void DataTypeComboBox::buildMenu(bool checkable)
 {
+    // Capture and suppress BEFORE m_menu->clear(): a populate-while-open call
+    // (e.g. a filter-enabled combo's backing data refreshing while the user
+    // has the dropdown open) clears the menu down to zero actions for a
+    // moment, and Qt can auto-close a popup that briefly has none -- if that
+    // happens, rebuildFilteredActions()'s own isVisible() check (run after
+    // clear()) would wrongly see the menu as never having been open and skip
+    // reopening it, leaving the user looking at a combo that silently closed
+    // out from under them.
+    const bool wasVisible = m_menu->isVisible();
+    const QPoint reopenPos = m_menu->pos();
+    if (wasVisible) {
+        m_suppressCloseHandling = true;
+        m_menu->hide();
+    }
+
     m_menu->clear();
     m_actions.clear();
     m_actionModifiers.clear();
     m_modifierState.clear();
     m_modifierLabels.clear();
     m_modifierOrder.clear();
+    m_filterEdit = nullptr; // owned by the menu; destroyed by clear() above
+    m_filteredSeparators.clear(); // ditto -- already destroyed by clear() above
+    m_lastCheckable = checkable;
 
-    QActionGroup *group = checkable ? new QActionGroup(m_menu) : nullptr;
-    if (group) group->setExclusive(true);
+    if (m_filterEnabled) {
+        buildFilterBox();
+        rebuildFilteredActions(QString());
+    } else {
+        QActionGroup *group = checkable ? new QActionGroup(m_menu) : nullptr;
+        if (group) group->setExclusive(true);
 
-    for (int i = 0; i < count(); ++i) {
-        const QString text = itemText(i);
-        if (text.isEmpty()) {
-            m_menu->addSeparator();
-            continue;
+        for (int i = 0; i < count(); ++i) {
+            if (itemText(i).isEmpty()) {
+                m_menu->addSeparator();
+                continue;
+            }
+            createActionForItem(i, group, checkable);
         }
-        const int actionIndex = m_actions.size();
-        QAction *a = m_menu->addAction(text);
-        // If the item has a QColor stored as DecorationRole, attach it as a
-        // property so SwatchOverlay can paint a swatch circle for that item.
-        const QVariant decoVar = itemData(i, Qt::DecorationRole);
-        if (decoVar.canConvert<QColor>()) {
-            const QColor c = decoVar.value<QColor>();
-            if (c.isValid())
-                a->setProperty("swatchColor", c);
-        } else {
-            const QIcon itemIcon = qvariant_cast<QIcon>(decoVar);
-            if (!itemIcon.isNull())
-                a->setIcon(itemIcon);
-        }
-        if (checkable) {
-            a->setCheckable(true);
-            a->setChecked(actionIndex == m_selection);
-            group->addAction(a);
-            connect(a, &QAction::toggled, this, [this, actionIndex](bool checked) {
-                if (checked) { m_selection = actionIndex; emit selectionChanged(actionIndex); }
-            });
-        } else {
-            connect(a, &QAction::triggered, this, [this, actionIndex]() {
-                m_selection = actionIndex; emit selectionChanged(actionIndex);
-            });
-        }
-        m_actions.append(a);
+    }
+
+    if (wasVisible) {
+        m_menu->popup(reopenPos);
+        if (m_filterEdit)
+            m_filterEdit->setFocus(Qt::PopupFocusReason);
+        m_suppressCloseHandling = false;
+        armCloseHandler();
     }
 }
 
@@ -539,6 +587,19 @@ void DataTypeComboBox::setActionData(const QString &text, const QVariant &data)
 {
     for (QAction *a : m_actions)
         if (a->text() == text) { a->setData(data); return; }
+}
+
+void DataTypeComboBox::setActionEnabled(const QString &text, bool enabled)
+{
+    for (QAction *a : m_actions)
+        if (a->text() == text) { a->setEnabled(enabled); return; }
+}
+
+void DataTypeComboBox::setItemEnabled(int index, bool enabled)
+{
+    if (auto *m = qobject_cast<QStandardItemModel *>(model()))
+        if (auto *it = m->item(index))
+            it->setEnabled(enabled);
 }
 
 QVariant DataTypeComboBox::selectionData() const
@@ -620,11 +681,24 @@ void DataTypeComboBox::updateMenuMinimumWidth()
     constexpr int kModifierGap = 6;
     constexpr int kSafetyGap = 14;
 
+    // Measuring every action's text here is O(n) in item count on top of
+    // whatever QMenu's own layout already does -- fine for a handful of
+    // items, but for a combo populated from an unbounded dataset (hundreds
+    // or thousands of entries) this loop alone is what hangs showPopup()
+    // solid, confirmed empirically (not QMenu's own sizing, not the themed
+    // popup chrome -- this specific scan). Sampling the first N is a
+    // reasonable approximation: it only sets a minimum-width floor, so an
+    // unsampled wider item still gets its own correct width from QMenu's
+    // normal layout regardless.
+    constexpr int kMaxMeasuredActions = 300;
     int maxTextWidth = 0;
+    int measured = 0;
     for (QAction *action : std::as_const(m_actions)) {
         if (!action || action->isSeparator())
             continue;
         maxTextWidth = qMax(maxTextWidth, fontMetrics().horizontalAdvance(action->text()));
+        if (++measured >= kMaxMeasuredActions)
+            break;
     }
 
     int modifierLaneWidth = 0;
@@ -766,6 +840,136 @@ void DataTypeComboBox::setActionCloseButtonsEnabled(bool enabled)
         m_swatchOverlay->update();
 }
 
+void DataTypeComboBox::setFilterEnabled(bool enabled)
+{
+    m_filterEnabled = enabled;
+    if (enabled && m_swatchOverlay) {
+        // MenuActionOverlay exists for swatch colors, inline modifiers, and
+        // action-close buttons -- a filter-enabled combo (built for a large,
+        // data-driven action list, not a small fixed set) uses none of
+        // those. It's not just dead weight: its eventFilter() repaints the
+        // overlay (looping over every action to check for a swatch color)
+        // on every single MouseMove inside the menu, and forces
+        // setActiveAction(nullptr) on every Leave -- real per-event
+        // overhead and an actual interference with the menu's own
+        // active-item tracking that's very plausibly part of why scrolling
+        // through ~300 actions felt so broken. Disable it outright.
+        m_menu->removeEventFilter(m_swatchOverlay);
+        m_swatchOverlay->hide();
+    }
+}
+
+void DataTypeComboBox::buildFilterBox()
+{
+    // Mirrors bookmarkpopup.cpp's QWidgetAction pattern: a transparent
+    // container so the menu's own background shows through, with the height
+    // pre-computed and pinned via setMinimumHeight() because QMenu queries a
+    // widget action's sizeHint() before it has a real width (width()==0 at
+    // that point), which otherwise comes up short.
+    auto *container = new QWidget;
+    container->setAutoFillBackground(false);
+    auto *lay = new QVBoxLayout(container);
+    lay->setContentsMargins(8, 6, 8, 6);
+    lay->setSpacing(0);
+
+    m_filterEdit = new QLineEdit(container);
+    m_filterEdit->setPlaceholderText(tr("Filter..."));
+    m_filterEdit->setClearButtonEnabled(true);
+    m_filterEdit->installEventFilter(this);
+    // sizeHint() comes up short here (the global QLineEdit QSS's
+    // padding/border doesn't appear to be reflected yet, since the widget
+    // is queried before it's ever shown/polished within the menu) -- giving
+    // the CONTAINER extra height around it doesn't help, since the line
+    // edit's own rect is still too short for its own border+padding+text,
+    // it just adds dead padding around a still-clipped field. Compute the
+    // line edit's own height directly from its font metrics plus the
+    // border+padding the global QSS applies (1px border + 6px padding, top
+    // and bottom, in QLineEdit's base rule in theme.cpp) and fix it there
+    // instead of trusting sizeHint().
+    constexpr int kLineEditVerticalChrome = 2 * (1 + 6); // border + padding, top+bottom
+    constexpr int kLineEditHeightSlack = 4;
+    m_filterEdit->setFixedHeight(m_filterEdit->fontMetrics().height()
+                                  + kLineEditVerticalChrome + kLineEditHeightSlack);
+    lay->addWidget(m_filterEdit);
+
+    const auto &cm = lay->contentsMargins();
+    container->setMinimumHeight(m_filterEdit->height() + cm.top() + cm.bottom());
+
+    auto *act = new QWidgetAction(m_menu);
+    act->setDefaultWidget(container);
+    m_menu->addAction(act);
+    m_menu->addSeparator();
+
+    connect(m_filterEdit, &QLineEdit::textChanged, this, &DataTypeComboBox::applyFilter);
+}
+
+void DataTypeComboBox::applyFilter(const QString &text)
+{
+    rebuildFilteredActions(text);
+}
+
+void DataTypeComboBox::rebuildFilteredActions(const QString &text)
+{
+    // Always rebuilt from scratch and capped, rather than toggling
+    // QAction::setVisible() on whatever's already there: confirmed
+    // empirically that toggling visibility on thousands of live actions in
+    // an open QMenu hangs for many seconds regardless (presumably an O(item
+    // count) internal layout recompute per call), independent of the
+    // showPopup() positioning fix above. Rebuilding bounded to a small
+    // count avoids the menu ever holding that many actions at once.
+    constexpr int kMaxFilteredActions = 300;
+
+    const bool wasVisible = m_menu->isVisible();
+    const QPoint reopenPos = m_menu->pos();
+    if (wasVisible) {
+        // hide() fires aboutToHide, which would otherwise consume and act on
+        // showPopup()/popupAbove()'s one-shot "real close" handler for what
+        // is actually just an internal cycle -- suppress it for the
+        // duration and re-arm a fresh one-shot handler below once the menu
+        // is back open.
+        m_suppressCloseHandling = true;
+        m_menu->hide();
+    }
+
+    for (QAction *a : std::as_const(m_actions)) {
+        m_menu->removeAction(a);
+        a->deleteLater();
+    }
+    m_actions.clear();
+    for (QAction *a : std::as_const(m_filteredSeparators)) {
+        m_menu->removeAction(a);
+        a->deleteLater();
+    }
+    m_filteredSeparators.clear();
+
+    QActionGroup *group = m_lastCheckable ? new QActionGroup(m_menu) : nullptr;
+    if (group) group->setExclusive(true);
+
+    int shown = 0;
+    for (int i = 0; i < count() && shown < kMaxFilteredActions; ++i) {
+        const QString itemTxt = itemText(i);
+        if (itemTxt.isEmpty()) {
+            m_filteredSeparators.append(m_menu->addSeparator());
+            continue;
+        }
+        if (!text.isEmpty() && !itemTxt.contains(text, Qt::CaseInsensitive))
+            continue;
+        createActionForItem(i, group, m_lastCheckable);
+        ++shown;
+    }
+
+    if (wasVisible) {
+        m_menu->popup(reopenPos);
+        // popup() grabs keyboard focus for the menu itself; claim it back
+        // for the filter box so subsequent typing keeps landing in the line
+        // edit instead of being swallowed as menu navigation.
+        if (m_filterEdit)
+            m_filterEdit->setFocus(Qt::PopupFocusReason);
+        m_suppressCloseHandling = false;
+        armCloseHandler(); // re-arm: the previous one-shot connection was consumed by hide() above
+    }
+}
+
 void DataTypeComboBox::appendAction(QAction *action)
 {
     const int idx = m_actions.size();
@@ -876,6 +1080,41 @@ void DataTypeComboBox::setPopupOpen(bool open)
     update();
 }
 
+bool DataTypeComboBox::eventFilter(QObject *obj, QEvent *e)
+{
+    // The filter box's QLineEdit normally owns key input while it has focus;
+    // forward navigation/activation/dismissal keys to the menu itself so
+    // arrow keys, Enter, and Escape behave exactly as if the menu had focus,
+    // while ordinary character keys still reach the line edit for typing.
+    if (obj == m_filterEdit && e->type() == QEvent::KeyPress) {
+        auto *ke = static_cast<QKeyEvent *>(e);
+        switch (ke->key()) {
+        case Qt::Key_Down:
+        case Qt::Key_Up:
+        case Qt::Key_Return:
+        case Qt::Key_Enter:
+        case Qt::Key_Escape:
+            QCoreApplication::sendEvent(m_menu, ke);
+            return true;
+        default:
+            break;
+        }
+    }
+    return ValueComboBox::eventFilter(obj, e);
+}
+
+void DataTypeComboBox::armCloseHandler()
+{
+    connect(m_menu, &QMenu::aboutToHide, this, [this]() {
+        if (m_suppressCloseHandling)
+            return;
+        recordMenuClose();
+        setPopupOpen(false);
+        if (m_emitPopupClosedOnHide)
+            emit popupClosed();
+    }, Qt::SingleShotConnection);
+}
+
 void DataTypeComboBox::showPopup()
 {
     if (m_menu->isVisible()) { m_menu->hide(); return; }
@@ -883,22 +1122,88 @@ void DataTypeComboBox::showPopup()
 
     updateMenuMinimumWidth();
 
-    connect(m_menu, &QMenu::aboutToHide, this,
-            [this]() { recordMenuClose(); setPopupOpen(false); },
-            Qt::SingleShotConnection);
+    m_emitPopupClosedOnHide = false;
+    armCloseHandler();
 
-    QPoint pos = smartMenuPos(this, m_menu, /*rightAlign=*/false);
-#ifndef Q_OS_WIN
-    constexpr int kMenuShadowMargin = 8;
-    const QRect anchorGlobal(mapToGlobal(QPoint(0, 0)), size());
-    if (pos.y() >= anchorGlobal.bottom())
-        pos.ry() += kMenuShadowMargin;
+    // Fresh search every time the popup opens, rather than carrying over
+    // whatever was typed the last time it was shown.
+    if (m_filterEdit)
+        m_filterEdit->clear();
+
+    // smartMenuPos() needs popup->sizeHint() to position the menu -- but
+    // querying sizeHint() on a QMenu BEFORE it's actually shown picks a
+    // multi-column layout sized for "infinite" height instead of the
+    // single-column-with-scroll-arrows layout QMenu correctly picks once
+    // it's actually popped up on a real, bounded screen. This isn't just a
+    // huge-list problem: ANY list too tall to fit one column on screen
+    // triggers it (confirmed: even just 300 items fills the screen with
+    // multiple wide columns instead of staying a normal scrollable single
+    // column). A filter-enabled combo's item count is data-driven and
+    // routinely exceeds one column, so it always skips the pre-sized smart
+    // positioning and lets popup() size itself from a clean slate against
+    // the real screen instead -- exactly like when nothing ever queries
+    // sizeHint() up front.
+    if (m_filterEnabled)
+    {
+        // SH_Menu_Scrollable now keeps this single-column, but with nothing
+        // capping height it still grows to use the entire available screen
+        // height -- a reasonable number of visible rows is plenty; the rest
+        // is a scroll away.
+        constexpr int kFilteredMenuMaxHeight = 420;
+        m_menu->setMaximumHeight(kFilteredMenuMaxHeight);
+
+        // Anchor below the combo the same way smartMenuPos() does for every
+        // other menu (prefer below, fall back above, clamp to the screen)
+        // -- but WITHOUT letting it call popup->sizeHint() itself, which is
+        // what triggers the multi-column blowup in the first place. Feed it
+        // a known-safe size instead: minimumWidth() only ever measures a
+        // capped sample of actions (see updateMenuMinimumWidth()), and the
+        // height matches the cap just applied above.
+        const QRect anchorGlobal(mapToGlobal(QPoint(0, 0)), size());
+        const QSize safeSize(qMax(m_menu->minimumWidth(), width()), kFilteredMenuMaxHeight);
+        // Neither setMaximumHeight() nor resize() before popup() changes
+        // anything: QMenu::popup()'s own internal "where do I fit" decision
+        // for scrollable content pins it to the top of the screen regardless
+        // of the position passed in. Let popup() do its own thing first,
+        // then relocate the now-already-correctly-sized-and-scrollable
+        // window to where it actually belongs.
+        //
+        // This is a one-time correction on open only, not a standing lock:
+        // QMenu implements scrolling for tall content by moving the entire
+        // top-level window itself, using its screen position AS the scroll
+        // offset rather than scrolling content within a fixed frame --
+        // reasserting this position on every subsequent scroll-driven Move
+        // was tried and reverted, since it doesn't just look janky, it
+        // cancels the scroll itself (confirmed: scrolling stopped working
+        // entirely with that in place). The popup will drift back toward
+        // the top of the screen as the user scrolls; that's a real
+        // constraint of QMenu's native scrollable-menu mechanism, not
+        // something fixable without replacing it with a custom popup.
+        m_menu->popup(QPoint(0, 0));
+        m_menu->move(smartMenuPos(anchorGlobal, m_menu->size(), /*rightAlign=*/false));
+    }
     else
-        pos.ry() -= kMenuShadowMargin;
-    m_ignoreOpeningMouseRelease = true;
+    {
+        QPoint pos = smartMenuPos(this, m_menu, /*rightAlign=*/false);
+#ifndef Q_OS_WIN
+        constexpr int kMenuShadowMargin = 8;
+        const QRect anchorGlobal(mapToGlobal(QPoint(0, 0)), size());
+        if (pos.y() >= anchorGlobal.bottom())
+            pos.ry() += kMenuShadowMargin;
+        else
+            pos.ry() -= kMenuShadowMargin;
+        m_ignoreOpeningMouseRelease = true;
 #endif
-    m_menu->popup(pos);
+        m_menu->popup(pos);
+    }
     setPopupOpen(true);
+
+    // Focus has to be set after popup() actually shows the menu's native
+    // window, not before.
+    if (m_filterEdit)
+        QTimer::singleShot(0, m_filterEdit, [this]() {
+            if (m_filterEdit) m_filterEdit->setFocus(Qt::PopupFocusReason);
+        });
 }
 
 void DataTypeComboBox::popupAbove(const QRect &anchorGlobal)
@@ -908,9 +1213,8 @@ void DataTypeComboBox::popupAbove(const QRect &anchorGlobal)
         return;
     }
 
-    connect(m_menu, &QMenu::aboutToHide, this,
-            [this]() { recordMenuClose(); setPopupOpen(false); emit popupClosed(); },
-            Qt::SingleShotConnection);
+    m_emitPopupClosedOnHide = true;
+    armCloseHandler();
 
     updateMenuMinimumWidth();
     const QSize popupSize = m_menu->sizeHint();

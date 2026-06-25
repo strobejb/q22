@@ -532,8 +532,14 @@ QPoint smartMenuPos(QRect ag, QSize sz, bool rightAlign)
     const QRect avail = screen->availableGeometry();
 
     // Horizontal: align left or right edge to anchor, then clamp to screen.
+    // qBound() asserts min <= max; if the popup is wider than the available
+    // screen space (a long-item-name menu can be), avail.right() - sz.width()
+    // goes negative and falls below avail.left(), crashing outright instead
+    // of just clamping -- qMax() floors the upper bound at avail.left() so
+    // the popup is pinned to the screen's left edge in that case rather than
+    // violating qBound()'s precondition.
     int x = rightAlign ? ag.right() - sz.width() + 1 : ag.left();
-    x = qBound(avail.left(), x, avail.right() - sz.width());
+    x = qBound(avail.left(), x, qMax(avail.left(), avail.right() - sz.width()));
 
     // Vertical: prefer immediately below; fall back to immediately above.
     // If neither fits fully, pick whichever side has the most space.
@@ -1716,6 +1722,20 @@ struct TightMenuStyle : public QProxyStyle
         QProxyStyle::drawPrimitive(pe, opt, p, w);
     }
 
+    int styleHint(StyleHint hint, const QStyleOption *opt = nullptr,
+                  const QWidget *w = nullptr, QStyleHintReturn *shret = nullptr) const override
+    {
+        // The base style this wraps (windows11/windowsvista/Fusion) reports
+        // SH_Menu_Scrollable=false, so QMenu falls back to multi-column
+        // tear-off layout for any menu taller than the screen instead of a
+        // normal single-column, scroll-arrow-overflow menu -- confirmed
+        // empirically: even a modest 300-item list ends up multiple columns
+        // wide, clamped to fill the entire screen width. Force it on for
+        // every themed menu in the app so long lists scroll instead.
+        if (hint == SH_Menu_Scrollable)
+            return 1;
+        return QProxyStyle::styleHint(hint, opt, w, shret);
+    }
 };
 } // namespace
 

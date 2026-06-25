@@ -1,6 +1,7 @@
 #include "disasm/disasmpanel.h"
 
 #include "HexView/hexview.h"
+#include "combos/datatypecombobox.h"
 #include "combos/menucombobox.h"
 #include "disasm/branchtarget.h"
 #include "filestats/widgets.h"
@@ -22,6 +23,7 @@
 #include <QPlainTextEdit>
 #include <QRegularExpression>
 #include <QStackedWidget>
+#include <QStringList>
 #include <QTextBlock>
 #include <QTextDocument>
 #include <QTextEdit>
@@ -31,6 +33,7 @@
 #include <QTextCharFormat>
 #include <QTextCursor>
 #include <QTreeWidget>
+#include <QVariant>
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
 
@@ -145,6 +148,36 @@ void DisassemblerPanel::buildUi()
     m_archCombo->setMaximumWidth(qRound(static_cast<QComboBox *>(m_archCombo)->sizeHint().width() * 1.7));
     m_archCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
+    // "Jump to function" combo -- replaces the old standalone entry-point
+    // button (its icon becomes this combo's leading icon); lists the entry
+    // point plus every recursive-descent-discovered function, formatted
+    // exactly like the bookmarks combo (BookmarkCombo::populate(): "name\thex"
+    // text, relying on QMenu's built-in tab-aligned shortcut-hint column to
+    // right-align the offset -- no custom item delegate needed). This list's
+    // size isn't UI-bounded (a real binary can have thousands of functions);
+    // see DataTypeComboBox::showPopup()'s large-menu path for how that's kept
+    // fast regardless of count.
+    m_functionsCombo = new DataTypeComboBox(content);
+    // A real binary can have thousands of functions -- a flat scrolling menu
+    // of that many is unusable to search by scrolling, so a filter box pinned
+    // above the list lets you type a few letters instead.
+    m_functionsCombo->setFilterEnabled(true);
+    m_functionsCombo->setToolTip(tr("Jump to function"));
+    m_functionsCombo->setLeadingIcon(
+        recoloredIcon(QStringLiteral("actions/entry-point"),
+                      filestats::subduedTextColor(palette()), 16));
+    m_functionsCombo->setFixedHeight(comboH);
+    m_functionsCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    // Offset travels as each item's data (set via addItem(text, data) in
+    // populateFunctionsCombo()), read back here via selectionData() -- safe
+    // regardless of which subset of a filtered, capped action set is
+    // currently instantiated, unlike an index into the live action list.
+    connect(m_functionsCombo, &DataTypeComboBox::selectionChanged, this, [this](int) {
+        const QVariant data = m_functionsCombo->selectionData();
+        if (!data.isNull())
+            goToOffset(data.toULongLong());
+    });
+
     // Read-only offset display with trailing pin toggle.
     m_offsetEdit = new QLineEdit(content);
     m_offsetEdit->setReadOnly(true);
@@ -164,29 +197,8 @@ void DisassemblerPanel::buildUi()
                         + 16 + 8; // icon + Qt's action button right margin
     m_offsetEdit->setFixedWidth(offsetW);
 
-    // Entry-point jump button — flat, only shows a rounded background on hover/press.
-    m_entryPointButton = new QToolButton(content);
-    m_entryPointButton->setAutoRaise(true);
-    m_entryPointButton->setIcon(recoloredIcon(QStringLiteral("actions/entry-point"),
-                                              filestats::subduedTextColor(palette()), 16));
-    m_entryPointButton->setToolTip(tr("Jump to entry point"));
-    m_entryPointButton->setFixedSize(comboH, comboH);
-    m_entryPointButton->setCursor(Qt::PointingHandCursor);
-    m_entryPointButton->setEnabled(m_hv && m_hv->hasStructureEntryPoint());
-    {
-        const bool    dark    = palette().window().color().lightness() < 128;
-        const QString hover   = dark ? QStringLiteral("rgba(255,255,255,0.15)") : QStringLiteral("rgba(0,0,0,0.10)");
-        const QString pressed = dark ? QStringLiteral("rgba(255,255,255,0.25)") : QStringLiteral("rgba(0,0,0,0.18)");
-        m_entryPointButton->setStyleSheet(
-            QStringLiteral("QToolButton { border: none; border-radius: 6px; background: transparent; }"
-                           "QToolButton:hover { background: %1; }"
-                           "QToolButton:pressed { background: %2; }")
-            .arg(hover, pressed));
-    }
-
     optLay->addWidget(m_archCombo, 1);
-    optLay->addStretch(1);
-    optLay->addWidget(m_entryPointButton);
+    optLay->addWidget(m_functionsCombo, 1);
     optLay->addSpacing(2);
     optLay->addWidget(m_offsetEdit);
     contentLay->addLayout(optLay);
@@ -395,17 +407,9 @@ void DisassemblerPanel::buildUi()
             this, [this]() { setPinned(!m_pinned); });
 
     connect(m_hv, &HexView::structureEntryPointChanged,
-            this, [this](bool valid, uint64_t) {
-                if (m_entryPointButton)
-                    m_entryPointButton->setEnabled(valid);
-            });
+            this, [this](bool, uint64_t) { populateFunctionsCombo(); });
 
-    connect(m_entryPointButton, &QToolButton::clicked,
-            this, [this]() {
-                if (!m_hv || !m_hv->hasStructureEntryPoint())
-                    return;
-                goToOffset(m_hv->structureEntryPoint());
-            });
+    populateFunctionsCombo();
 }
 
 void DisassemblerPanel::openCapstone()
@@ -959,6 +963,7 @@ void DisassemblerPanel::setDiscoveredFunctions(QList<DiscoveredFunction> functio
     m_discoveredFunctions = std::move(functions);
     m_functionsScanInProgress = false;
     rebuildFunctionsList();
+    populateFunctionsCombo();
     disassemble(); // re-check whether the cursor now falls within a known function
 }
 
@@ -986,6 +991,53 @@ void DisassemblerPanel::rebuildFunctionsList()
     }
 
     updateStatusLabelForCurrentTab();
+}
+
+void DisassemblerPanel::populateFunctionsCombo()
+{
+    if (!m_functionsCombo)
+        return;
+
+    m_functionsCombo->clear();
+
+    // Entrypoint is always present so the combo's shape never jumps around
+    // as a file loads; only enabled (and only given a real offset to show)
+    // once the entry point is actually known.
+    const bool entryKnown = m_hv && m_hv->hasStructureEntryPoint();
+    const uint64_t entryOffset = entryKnown ? m_hv->structureEntryPoint() : 0;
+    const QString entryLabel = entryKnown
+        ? QStringLiteral("Entrypoint\t0x%1").arg(QString::number(entryOffset, 16).toUpper().rightJustified(8, QLatin1Char('0')))
+        : tr("Entrypoint");
+    m_functionsCombo->addItem(entryLabel, QVariant::fromValue<qulonglong>(entryOffset));
+
+    if (!m_discoveredFunctions.isEmpty())
+        m_functionsCombo->addItem(QString()); // separator
+
+    // The full, uncapped list is added to the combo's underlying item model
+    // -- cheap, since it's just QComboBox's own model, not live QActions/
+    // QMenu content. The filter box (enabled above) is what keeps the
+    // *menu's* actual action count bounded regardless of how many items are
+    // in the model; see DataTypeComboBox::rebuildFilteredActions(). Names
+    // are elided here for two reasons now: a 256-char mangled C++ symbol is
+    // unreadable garbage in a dropdown regardless, AND the longest visible
+    // name directly drives the menu's width (DataTypeComboBox::
+    // updateMenuMinimumWidth()) -- keep it short enough that the popup
+    // stays a reasonable width even when populated with real export names.
+    static constexpr int kMaxNameLength = 40;
+
+    for (const DiscoveredFunction &fn : m_discoveredFunctions)
+    {
+        QString name = fn.name.isEmpty() ? QStringLiteral("sub_%1").arg(fn.startOffset, 0, 16) : fn.name;
+        if (name.size() > kMaxNameLength)
+            name = name.left(kMaxNameLength) + QStringLiteral("...");
+        const QString hex = QStringLiteral("0x%1").arg(QString::number(fn.startOffset, 16).toUpper().rightJustified(8, QLatin1Char('0')));
+        m_functionsCombo->addItem(name + QLatin1Char('\t') + hex,
+                                   QVariant::fromValue<qulonglong>(fn.startOffset));
+    }
+
+    m_functionsCombo->buildMenu(/*checkable=*/false);
+    m_functionsCombo->setDisplayText(tr("Functions..."));
+    m_functionsCombo->setItemEnabled(0, entryKnown); // "Entrypoint" is always item 0
 }
 
 void DisassemblerPanel::updateStatusLabelForCurrentTab()
