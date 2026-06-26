@@ -112,10 +112,24 @@ private:
     QString         m_disasmStatusText;
     QList<DiscoveredFunction> m_discoveredFunctions;
     bool            m_functionsScanInProgress = false;
+    // While the user has m_functionsCombo's dropdown open, populateFunctionsCombo()
+    // skips rebuilding it -- a scan in progress calls it every ~150ms via
+    // setPartialDiscoveredFunctions(), and DataTypeComboBox::buildMenu()'s
+    // open-popup path hides+reshows the menu each time, flickering wildly if
+    // that happens repeatedly while it's open. Set instead of rebuilding;
+    // popupClosed() catches up once the user closes it.
+    bool            m_functionsComboNeedsRefresh = false;
     bool            m_pinned           = false;
     // Per-line (one per disassembled instruction) [start, end) file offsets,
-    // rebuilt every disassemble() call; index == text block number.
+    // rebuilt every disassemble() call; index + m_headerLineCount == text
+    // block number (NOT index alone -- see m_headerLineCount).
     std::vector<std::pair<uint64_t, uint64_t>> m_instructionRanges;
+    // Number of non-instruction lines disassemble() inserted above the
+    // first real instruction this call (0, or 1 for a function-header
+    // comment line) -- every place that converts between "instruction
+    // index into m_instructionRanges" and "QTextDocument block number" has
+    // to account for this offset.
+    int             m_headerLineCount  = 0;
     bool            m_syncingDisasmSelection   = false;
     bool            m_updatingHexViewFromDisasm = false;
 

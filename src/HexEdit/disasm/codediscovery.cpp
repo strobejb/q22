@@ -124,17 +124,57 @@ void CodeDiscoveryEngine::scan(HexView *hv)
                     return reader(offset, dst, len);
                 };
 
-                std::vector<Seed> worklist;
-                if (auto entryOffset = rvaToFileOffset(pe, pe.entryPointRva))
-                    worklist.push_back({*entryOffset, true, FunctionSource::EntryPoint, QString()});
-                for (const PeExport &exp : pe.exports)
-                    if (auto exportOffset = rvaToFileOffset(pe, exp.rva))
-                        worklist.push_back({*exportOffset, true, FunctionSource::Export, exp.name});
-
                 std::unordered_set<uint64_t> visited;
                 std::unordered_map<uint64_t, DiscoveredFunction> discovered;
 
                 cs_insn *insn = cs_malloc(handle);
+
+                // MSVC's incremental-linking table ("/INCREMENTAL", the
+                // default for many non-LTCG builds): every function's real
+                // body is placed wherever the linker likes, and a stable
+                // thunk -- the *entire* function body is just "jmp
+                // realBody", nothing else -- sits at the address the export
+                // table/entry point actually point to, so relinking only
+                // has to patch the thunk table, not every caller. Without
+                // resolving this, every export/entry-point-derived
+                // "function" is a single misleading jmp instruction instead
+                // of real code. Peek-decodes one instruction at a time
+                // (independent of `visited`/the main walk below) and
+                // follows a chain of these, bounded against the degenerate
+                // case of a cycle or unusually long chain.
+                constexpr int kMaxThunkChainHops = 8;
+                const auto resolveThunkTarget = [&](uint64_t startAddr) -> uint64_t {
+                    uint64_t resolvedAddr = startAddr;
+                    for (int hop = 0; hop < kMaxThunkChainHops; ++hop)
+                    {
+                        if (!insideExecutableSection(resolvedAddr))
+                            break;
+                        uint8_t peekBuf[16] = {0}; // longest possible x86 instruction
+                        const size_t peekGot = cachedRead(resolvedAddr, peekBuf, sizeof(peekBuf));
+                        if (peekGot == 0)
+                            break;
+                        const uint8_t *peekCode = peekBuf;
+                        size_t peekSize = peekGot;
+                        uint64_t peekAddr = resolvedAddr;
+                        if (!cs_disasm_iter(handle, &peekCode, &peekSize, &peekAddr, insn))
+                            break;
+                        if (insn->id != X86_INS_JMP)
+                            break;
+                        const auto target = branchTargetForInstruction(handle, *insn, arch);
+                        if (!target)
+                            break;
+                        resolvedAddr = *target;
+                    }
+                    return resolvedAddr;
+                };
+
+                std::vector<Seed> worklist;
+                if (auto entryOffset = rvaToFileOffset(pe, pe.entryPointRva))
+                    worklist.push_back({resolveThunkTarget(*entryOffset), true, FunctionSource::EntryPoint, QString()});
+                for (const PeExport &exp : pe.exports)
+                    if (auto exportOffset = rvaToFileOffset(pe, exp.rva))
+                        worklist.push_back({resolveThunkTarget(*exportOffset), true, FunctionSource::Export, exp.name});
+
                 size_t worklistIndex = 0;
 
                 // Throttled (wall-clock, not per-item) so the UI gets
@@ -200,10 +240,26 @@ void CodeDiscoveryEngine::scan(HexView *hv)
                         runEnd = insn->address + insn->size;
 
                         if (auto target = branchTargetForInstruction(handle, *insn, arch))
-                            if (insideExecutableSection(*target) && !visited.count(*target))
-                                worklist.push_back({*target, cs_insn_group(handle, insn, CS_GRP_CALL) != 0,
-                                                     FunctionSource::CallTarget, QString()});
+                        {
+                            const bool isCall = cs_insn_group(handle, insn, CS_GRP_CALL) != 0;
+                            // Internal calls don't normally go through the
+                            // incremental-linking table (that's for
+                            // externally-visible export/entry addresses
+                            // that have to stay stable across relinks), but
+                            // resolve anyway for correctness/consistency --
+                            // the chain-following is cheap and bounded.
+                            const uint64_t resolved = isCall ? resolveThunkTarget(*target) : *target;
+                            if (insideExecutableSection(resolved) && !visited.count(resolved))
+                                worklist.push_back({resolved, isCall, FunctionSource::CallTarget, QString()});
+                        }
                         if (cs_insn_group(handle, insn, CS_GRP_RET))
+                            break;
+                        // Execution never falls through an unconditional
+                        // jump -- whatever bytes physically follow it belong
+                        // to a different thunk or unrelated data, not this
+                        // run. (Conditional Jcc isn't covered by this check:
+                        // X86_INS_JMP specifically means unconditional.)
+                        if (insn->id == X86_INS_JMP)
                             break;
                     }
 

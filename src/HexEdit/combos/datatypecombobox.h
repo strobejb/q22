@@ -46,6 +46,7 @@ public:
     void     popupAbove(const QRect &anchorGlobal);
     void     setActionCloseButtonsEnabled(bool enabled);
     bool     actionCloseButtonsEnabled() const { return m_actionCloseButtonsEnabled; }
+    bool     isPopupOpen() const;
 
     // Append a pre-built action (e.g. QWidgetAction) directly to the menu and
     // m_actions list.  Call after buildMenu().  The caller is responsible for
@@ -141,10 +142,6 @@ private:
     // a Qt::SingleShotConnection meant to fire once on a real close, not on
     // this internal hide/reshow cycle.
     bool            m_suppressCloseHandling = false;
-    // Whether the currently-armed close handler should emit popupClosed()
-    // (popupAbove()'s behavior) -- remembered so rebuildFilteredActions()
-    // can re-arm the same flavor of handler after its internal hide/reshow.
-    bool            m_emitPopupClosedOnHide = false;
 };
 
 #endif // DATATYPECOMBOBOX_H

@@ -13,6 +13,8 @@ set(PROJECT_SOURCES
         disasm/pemetadata.cpp
         disasm/codediscovery.h
         disasm/codediscovery.cpp
+        disasm/demangle.h
+        disasm/demangle.cpp
         fileproperties.h
         filestats/banner.cpp
         filestats/banner.h
@@ -239,7 +241,7 @@ set_target_properties(hexedit PROPERTIES
 )
 
 if(WIN32)
-    target_link_libraries(hexedit PRIVATE dwmapi advapi32)
+    target_link_libraries(hexedit PRIVATE dwmapi advapi32 dbghelp)
 endif()
 
 if(TARGET causewayData)

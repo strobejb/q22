@@ -4,6 +4,7 @@
 #include "combos/datatypecombobox.h"
 #include "combos/menucombobox.h"
 #include "disasm/branchtarget.h"
+#include "disasm/demangle.h"
 #include "filestats/widgets.h"
 #include "theme.h"
 
@@ -177,6 +178,15 @@ void DisassemblerPanel::buildUi()
         const QVariant data = m_functionsCombo->selectionData();
         if (!data.isNull())
             goToOffset(data.toULongLong());
+    });
+    // Catches up on whatever populateFunctionsCombo() skipped while the
+    // dropdown was open (see m_functionsComboNeedsRefresh).
+    connect(m_functionsCombo, &DataTypeComboBox::popupClosed, this, [this]() {
+        if (m_functionsComboNeedsRefresh)
+        {
+            m_functionsComboNeedsRefresh = false;
+            populateFunctionsCombo();
+        }
     });
 
     // Read-only offset display with trailing pin toggle.
@@ -641,13 +651,19 @@ void DisassemblerPanel::syncSelectionWithHexView()
 
     const int firstLine = firstBlock.blockNumber();
     const int lastLine = lastBlock.blockNumber();
-    if (firstLine < 0 || lastLine < firstLine || lastLine >= static_cast<int>(m_instructionRanges.size()))
+    // Block numbers include any header line(s) above the first instruction;
+    // m_instructionRanges doesn't, so translate before indexing it. A
+    // selection that falls within the header itself (firstInsnIdx < 0) has
+    // no instruction to sync -- leave the hex view alone rather than guess.
+    const int firstInsnIdx = firstLine - m_headerLineCount;
+    const int lastInsnIdx = lastLine - m_headerLineCount;
+    if (firstInsnIdx < 0 || lastInsnIdx < firstInsnIdx || lastInsnIdx >= static_cast<int>(m_instructionRanges.size()))
         return;
 
     applyLineSelection(firstLine, lastLine);
 
-    const uint64_t startOffset = m_instructionRanges[firstLine].first;
-    const uint64_t endOffset = m_instructionRanges[lastLine].second;
+    const uint64_t startOffset = m_instructionRanges[firstInsnIdx].first;
+    const uint64_t endOffset = m_instructionRanges[lastInsnIdx].second;
 
     // Move the hex view's cursor/selection to match, without retriggering a
     // re-disassemble at the new position (that would scramble what's shown).
@@ -668,19 +684,19 @@ void DisassemblerPanel::syncDisasmHighlightFromHexView()
     if (rangeEnd <= rangeStart)
         rangeEnd = rangeStart + 1;
 
-    int firstLine = -1;
-    int lastLine = -1;
+    int firstInsnIdx = -1;
+    int lastInsnIdx = -1;
     for (int i = 0; i < static_cast<int>(m_instructionRanges.size()); ++i)
     {
         if (m_instructionRanges[i].first < rangeEnd && m_instructionRanges[i].second > rangeStart)
         {
-            if (firstLine < 0)
-                firstLine = i;
-            lastLine = i;
+            if (firstInsnIdx < 0)
+                firstInsnIdx = i;
+            lastInsnIdx = i;
         }
     }
 
-    if (firstLine < 0)
+    if (firstInsnIdx < 0)
     {
         // Hex selection falls outside the currently displayed instructions --
         // nothing to highlight, but don't touch what's already shown.
@@ -694,7 +710,9 @@ void DisassemblerPanel::syncDisasmHighlightFromHexView()
         return;
     }
 
-    applyLineSelection(firstLine, lastLine);
+    // applyLineSelection() wants real block numbers; m_instructionRanges
+    // indices don't include any header line(s) above the first instruction.
+    applyLineSelection(firstInsnIdx + m_headerLineCount, lastInsnIdx + m_headerLineCount);
 }
 
 void DisassemblerPanel::disassemble()
@@ -735,11 +753,13 @@ void DisassemblerPanel::disassemble()
     // 512-byte slice -- still capped, in case discovery's own bookkeeping
     // ever produces something pathological.
     static constexpr size_w kMaxFunctionWindow = 8192;
+    const DiscoveredFunction *containingFn = nullptr;
     for (const DiscoveredFunction &fn : m_discoveredFunctions)
     {
         if (offset >= fn.startOffset && offset < fn.endOffset)
         {
             desiredLength = qMin(qMin(fn.endOffset - offset, kMaxFunctionWindow), remaining);
+            containingFn = &fn;
             break;
         }
     }
@@ -860,6 +880,70 @@ void DisassemblerPanel::disassemble()
     QTextCursor cur(m_view->document());
     cur.beginEditBlock();
 
+    // Header when the cursor falls inside a known function, anchored at its
+    // start address (same address-column styling as a real instruction
+    // line, so it reads as "this is where the function begins" rather than
+    // a stray comment). A real demangled signature splits across up to
+    // three lines -- [access/storage/return type], [Class::method]
+    // (indented), [(parameters)] (indented) -- found by diffing the Full
+    // and NameOnly demangle styles rather than parsing C++ syntax: NameOnly
+    // gives just the qualified name, so wherever that substring sits inside
+    // Full marks the boundary between the prefix and the parameter-list
+    // suffix. A synthesized "sub_X" name (no real symbol) or a plain
+    // unmangled name (prefix and suffix both empty) collapses to one line.
+    // Dimmed/italicized so it's visually distinct from actual code.
+    // m_headerLineCount has to track however many lines this turns out to
+    // be: every place that converts between an instruction's index into
+    // m_instructionRanges and its QTextDocument block number needs to
+    // account for these lines sitting above instruction 0.
+    m_headerLineCount = 0;
+    if (containingFn)
+    {
+        const QString headerAddrText = QString::number(containingFn->startOffset, 16)
+                                            .rightJustified(addrWidth, QLatin1Char('0'));
+        const QString indent(addrWidth + 2, QLatin1Char(' '));
+
+        QTextCharFormat fmtHeaderName;
+        fmtHeaderName.setForeground(blend(wt, m_hv->getHexColour(HVC_BACKGROUND), 0.55));
+        fmtHeaderName.setFontItalic(true);
+
+        QString prefix, name, suffix;
+        if (containingFn->name.isEmpty())
+        {
+            name = QStringLiteral("sub_%1").arg(containingFn->startOffset, 0, 16);
+        }
+        else
+        {
+            const QString full = demangleSymbolName(containingFn->name, DemangleStyle::Full);
+            name = demangleSymbolName(containingFn->name, DemangleStyle::NameOnly);
+            const int nameIdx = full.indexOf(name);
+            if (nameIdx >= 0)
+            {
+                prefix = full.left(nameIdx).trimmed();
+                suffix = full.mid(nameIdx + name.size()).trimmed();
+            }
+            else
+            {
+                // Demangling didn't recognize this as mangled at all (plain
+                // C export) -- full == name already, nothing to split out.
+                name = full;
+            }
+        }
+
+        auto insertHeaderLine = [&](const QString &addrText, const QString &text) {
+            cur.insertText(addrText, fmtGrey);
+            cur.insertText(text, fmtHeaderName);
+            cur.insertText(QStringLiteral("\n"), fmtGrey);
+            ++m_headerLineCount;
+        };
+
+        if (!prefix.isEmpty())
+            insertHeaderLine(headerAddrText + QStringLiteral("  "), prefix);
+        insertHeaderLine(m_headerLineCount == 0 ? headerAddrText + QStringLiteral("  ") : indent, name);
+        if (!suffix.isEmpty())
+            insertHeaderLine(indent, suffix);
+    }
+
     for (size_t i = 0; i < count; ++i)
     {
         if (i > 0)
@@ -944,13 +1028,15 @@ void DisassemblerPanel::goToOffset(uint64_t offset)
     m_hv->setCurSel(off, off, false);
     disassemble();
     // Disassembly always starts at cursorOffset(), so the instruction now
-    // sitting at the jumped-to address is line 0 -- select/highlight it so
-    // the jump's destination is visually obvious, not just scrolled-to, and
-    // mirror that same instruction's full byte range (not just a zero-length
-    // cursor at its first byte) onto the hex view, centered.
+    // sitting at the jumped-to address is the first one -- select/highlight
+    // it so the jump's destination is visually obvious, not just scrolled-to,
+    // and mirror that same instruction's full byte range (not just a
+    // zero-length cursor at its first byte) onto the hex view, centered.
+    // Its block number is m_headerLineCount, not always 0: disassemble() may
+    // have inserted a function-header line above it.
     if (!m_instructionRanges.empty())
     {
-        applyLineSelection(0, 0);
+        applyLineSelection(m_headerLineCount, m_headerLineCount);
         const uint64_t startOffset = m_instructionRanges[0].first;
         const uint64_t endOffset = m_instructionRanges[0].second;
         m_hv->setCurSel(static_cast<size_w>(startOffset), static_cast<size_w>(endOffset), false);
@@ -1038,7 +1124,8 @@ void DisassemblerPanel::rebuildFunctionsList()
     {
         auto *item = new QTreeWidgetItem(m_functionsList);
         item->setText(0, QString::number(fn.startOffset, 16).toUpper().rightJustified(8, QLatin1Char('0')));
-        item->setText(1, fn.name.isEmpty() ? QStringLiteral("sub_%1").arg(fn.startOffset, 0, 16) : fn.name);
+        item->setText(1, fn.name.isEmpty() ? QStringLiteral("sub_%1").arg(fn.startOffset, 0, 16)
+                                            : demangleSymbolName(fn.name, DemangleStyle::NameOnly));
         item->setText(2, functionSourceLabel(fn.source));
         item->setData(0, Qt::UserRole, static_cast<qulonglong>(fn.startOffset));
         item->setData(0, Qt::UserRole + 1, static_cast<qulonglong>(fn.endOffset));
@@ -1051,6 +1138,15 @@ void DisassemblerPanel::populateFunctionsCombo()
 {
     if (!m_functionsCombo)
         return;
+
+    // Don't disrupt the user's open dropdown -- a scan in progress calls
+    // this every ~150ms, and rebuilding while open flickers wildly (see
+    // m_functionsComboNeedsRefresh's declaration). Catch up via popupClosed().
+    if (m_functionsCombo->isPopupOpen())
+    {
+        m_functionsComboNeedsRefresh = true;
+        return;
+    }
 
     m_functionsCombo->clear();
 
@@ -1081,7 +1177,8 @@ void DisassemblerPanel::populateFunctionsCombo()
 
     for (const DiscoveredFunction &fn : m_discoveredFunctions)
     {
-        QString name = fn.name.isEmpty() ? QStringLiteral("sub_%1").arg(fn.startOffset, 0, 16) : fn.name;
+        QString name = fn.name.isEmpty() ? QStringLiteral("sub_%1").arg(fn.startOffset, 0, 16)
+                                          : demangleSymbolName(fn.name, DemangleStyle::NameOnly);
         if (name.size() > kMaxNameLength)
             name = name.left(kMaxNameLength) + QStringLiteral("...");
         const QString hex = QStringLiteral("0x%1").arg(QString::number(fn.startOffset, 16).toUpper().rightJustified(8, QLatin1Char('0')));

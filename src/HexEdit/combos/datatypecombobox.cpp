@@ -840,6 +840,11 @@ void DataTypeComboBox::setActionCloseButtonsEnabled(bool enabled)
         m_swatchOverlay->update();
 }
 
+bool DataTypeComboBox::isPopupOpen() const
+{
+    return m_menu->isVisible();
+}
+
 void DataTypeComboBox::setFilterEnabled(bool enabled)
 {
     m_filterEnabled = enabled;
@@ -1110,8 +1115,7 @@ void DataTypeComboBox::armCloseHandler()
             return;
         recordMenuClose();
         setPopupOpen(false);
-        if (m_emitPopupClosedOnHide)
-            emit popupClosed();
+        emit popupClosed();
     }, Qt::SingleShotConnection);
 }
 
@@ -1122,7 +1126,6 @@ void DataTypeComboBox::showPopup()
 
     updateMenuMinimumWidth();
 
-    m_emitPopupClosedOnHide = false;
     armCloseHandler();
 
     // Fresh search every time the popup opens, rather than carrying over
@@ -1213,7 +1216,6 @@ void DataTypeComboBox::popupAbove(const QRect &anchorGlobal)
         return;
     }
 
-    m_emitPopupClosedOnHide = true;
     armCloseHandler();
 
     updateMenuMinimumWidth();
