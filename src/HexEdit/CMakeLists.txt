@@ -11,6 +11,8 @@ set(PROJECT_SOURCES
         disasm/branchtarget.h
         disasm/pemetadata.h
         disasm/pemetadata.cpp
+        disasm/elfmetadata.h
+        disasm/elfmetadata.cpp
         disasm/codediscovery.h
         disasm/codediscovery.cpp
         disasm/demangle.h

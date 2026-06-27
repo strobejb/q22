@@ -17,6 +17,13 @@ class MenuComboBox : public QComboBox
 public:
     explicit MenuComboBox(QWidget *parent = nullptr);
 
+    // Optional inline detail text shown after a tab following the item's
+    // label in the popup menu. Deliberately a separate role from
+    // Qt::UserRole/UserRole+1 (the conventional addItem(text, data) payload
+    // slot, e.g. a pointer or offset a caller needs back via currentData())
+    // so storing payload data never leaks into the visible menu label.
+    static constexpr int DetailRole = Qt::UserRole + 100;
+
     void setLeadingIcon(const QIcon &icon);
 
 protected:

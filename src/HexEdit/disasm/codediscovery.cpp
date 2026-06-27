@@ -2,6 +2,7 @@
 
 #include "HexView/hexview.h"
 #include "disasm/branchtarget.h"
+#include "disasm/elfmetadata.h"
 #include "disasm/pemetadata.h"
 
 #include <QByteArray>
@@ -35,6 +36,20 @@ struct Seed
     FunctionSource source;
     QString        name;
 };
+
+// Format-agnostic view of "the bits the scanner actually needs", built from
+// either PeMetadata or ElfMetadata below so the rest of scan() doesn't care
+// which file format it's looking at.
+struct ExecSection { uint64_t fileOffset; uint64_t fileSize; };
+struct SeedExport  { QString name; uint64_t fileOffset; };
+
+// ELF_MACHINE values (see causeway/strata/elf.struct) this engine knows how
+// to point Capstone at. Other e_machine values are left unhandled -- the
+// scan simply finds nothing for that file rather than guessing wrong.
+constexpr uint16_t kElfMachineX86    = 3;
+constexpr uint16_t kElfMachineArm    = 40;
+constexpr uint16_t kElfMachineX86_64 = 62;
+constexpr uint16_t kElfMachineAarch64 = 183;
 
 } // namespace
 
@@ -76,21 +91,69 @@ void CodeDiscoveryEngine::scan(HexView *hv)
             return got > 0 ? static_cast<size_t>(got) : 0;
         };
 
+        // Format detection: try PE first (the common case for this app's
+        // usual Windows-binary targets), then ELF. Whichever succeeds feeds
+        // the same format-agnostic ExecSection/SeedExport lists below, so
+        // the actual recursive-descent walk has no format-specific code at
+        // all -- only the "how do I find entry point / exports / executable
+        // ranges" step differs.
+        bool imageValid = false;
+        cs_arch arch = CS_ARCH_X86;
+        cs_mode mode = CS_MODE_64;
+        std::optional<uint64_t> entryFileOffset;
+        std::vector<ExecSection> execSections;
+        std::vector<SeedExport> seedExports;
+
         const PeMetadata pe = readPeMetadata(reader, fileSize);
+        if (pe.isValid)
+        {
+            imageValid = true;
+            arch = CS_ARCH_X86;
+            mode = pe.is64Bit ? CS_MODE_64 : CS_MODE_32;
+            entryFileOffset = rvaToFileOffset(pe, pe.entryPointRva);
+            for (const PeSection &s : pe.sections)
+                if (s.executable && s.fileSize > 0)
+                    execSections.push_back({s.fileOffset, s.fileSize});
+            for (const PeExport &exp : pe.exports)
+                if (auto off = rvaToFileOffset(pe, exp.rva))
+                    seedExports.push_back({exp.name, *off});
+        }
+        else
+        {
+            const ElfMetadata elf = readElfMetadata(reader, fileSize);
+            bool archKnown = true;
+            switch (elf.machine) {
+            case kElfMachineX86:     arch = CS_ARCH_X86;   mode = CS_MODE_32;     break;
+            case kElfMachineX86_64:  arch = CS_ARCH_X86;   mode = CS_MODE_64;     break;
+            case kElfMachineArm:     arch = CS_ARCH_ARM;   mode = CS_MODE_ARM;    break;
+            case kElfMachineAarch64: arch = CS_ARCH_ARM64; mode = (cs_mode)0;     break;
+            default:                 archKnown = false;                          break;
+            }
+            if (elf.isValid && archKnown)
+            {
+                imageValid = true;
+                entryFileOffset = vaddrToFileOffset(elf, elf.entryVaddr);
+                for (const ElfSection &s : elf.sections)
+                    if (s.executable && s.fileSize > 0)
+                        execSections.push_back({s.fileOffset, s.fileSize});
+                for (const ElfExport &exp : elf.exports)
+                    if (auto off = vaddrToFileOffset(elf, exp.vaddr))
+                        seedExports.push_back({exp.name, *off});
+            }
+        }
+
         QList<DiscoveredFunction> results;
 
-        if (pe.isValid && !cancelFlag->load())
+        if (imageValid && !cancelFlag->load())
         {
-            constexpr cs_arch arch = CS_ARCH_X86;
-            const cs_mode mode = pe.is64Bit ? CS_MODE_64 : CS_MODE_32;
             csh handle = 0;
             if (cs_open(arch, mode, &handle) == CS_ERR_OK)
             {
                 cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON);
 
-                auto insideExecutableSection = [&pe](uint64_t offset) {
-                    for (const PeSection &s : pe.sections)
-                        if (s.executable && offset >= s.fileOffset && offset < s.fileOffset + s.fileSize)
+                auto insideExecutableSection = [&execSections](uint64_t offset) {
+                    for (const ExecSection &s : execSections)
+                        if (offset >= s.fileOffset && offset < s.fileOffset + s.fileSize)
                             return true;
                     return false;
                 };
@@ -101,8 +164,7 @@ void CodeDiscoveryEngine::scan(HexView *hv)
                 // I/O round-trip latency, not actual decode work.
                 struct CachedSection { uint64_t fileOffset; QByteArray data; };
                 std::vector<CachedSection> sectionCache;
-                for (const PeSection &s : pe.sections)
-                    if (s.executable && s.fileSize > 0)
+                for (const ExecSection &s : execSections)
                     {
                         QByteArray data(static_cast<int>(qMin<uint64_t>(s.fileSize, 64u * 1024 * 1024)), '\0');
                         const size_t got = reader(s.fileOffset, reinterpret_cast<uint8_t *>(data.data()),
@@ -158,7 +220,7 @@ void CodeDiscoveryEngine::scan(HexView *hv)
                         uint64_t peekAddr = resolvedAddr;
                         if (!cs_disasm_iter(handle, &peekCode, &peekSize, &peekAddr, insn))
                             break;
-                        if (insn->id != X86_INS_JMP)
+                        if (!isUnconditionalJump(handle, *insn, arch))
                             break;
                         const auto target = branchTargetForInstruction(handle, *insn, arch);
                         if (!target)
@@ -169,11 +231,10 @@ void CodeDiscoveryEngine::scan(HexView *hv)
                 };
 
                 std::vector<Seed> worklist;
-                if (auto entryOffset = rvaToFileOffset(pe, pe.entryPointRva))
-                    worklist.push_back({resolveThunkTarget(*entryOffset), true, FunctionSource::EntryPoint, QString()});
-                for (const PeExport &exp : pe.exports)
-                    if (auto exportOffset = rvaToFileOffset(pe, exp.rva))
-                        worklist.push_back({resolveThunkTarget(*exportOffset), true, FunctionSource::Export, exp.name});
+                if (entryFileOffset)
+                    worklist.push_back({resolveThunkTarget(*entryFileOffset), true, FunctionSource::EntryPoint, QString()});
+                for (const SeedExport &exp : seedExports)
+                    worklist.push_back({resolveThunkTarget(exp.fileOffset), true, FunctionSource::Export, exp.name});
 
                 size_t worklistIndex = 0;
 
@@ -257,9 +318,10 @@ void CodeDiscoveryEngine::scan(HexView *hv)
                         // Execution never falls through an unconditional
                         // jump -- whatever bytes physically follow it belong
                         // to a different thunk or unrelated data, not this
-                        // run. (Conditional Jcc isn't covered by this check:
-                        // X86_INS_JMP specifically means unconditional.)
-                        if (insn->id == X86_INS_JMP)
+                        // run. Conditional branches (Jcc/B.cond) aren't
+                        // covered by this check, since execution can fall
+                        // through those.
+                        if (isUnconditionalJump(handle, *insn, arch))
                             break;
                     }
 

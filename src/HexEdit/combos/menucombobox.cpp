@@ -273,7 +273,7 @@ void MenuComboBox::buildMenu()
             m_menu->addSeparator();
             continue;
         }
-        const QString detail = itemData(i, Qt::UserRole).toString();
+        const QString detail = itemData(i, DetailRole).toString();
         QAction *a = m_menu->addAction(detail.isEmpty() ? text : text + QLatin1Char('\t') + detail);
         a->setCheckable(true);
         a->setChecked(i == cur);

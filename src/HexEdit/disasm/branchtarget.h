@@ -37,4 +37,35 @@ inline std::optional<uint64_t> branchTargetForInstruction(csh handle, const cs_i
     return std::nullopt;
 }
 
+// True for a jump that is taken unconditionally -- execution never falls
+// through it, so a linear walk must stop there rather than decoding
+// whatever bytes happen to follow (which may belong to unrelated code, a
+// different thunk, or padding). Distinct from CS_GRP_JUMP, which also
+// covers conditional branches (Jcc/B.cond), and excludes CS_GRP_CALL
+// (BL/BLX -- those return, so a walk continues past them). Requires
+// CS_OPT_DETAIL to be on.
+inline bool isUnconditionalJump(csh handle, const cs_insn &insn, cs_arch arch)
+{
+    if (!insn.detail)
+        return false;
+    if (!cs_insn_group(handle, &insn, CS_GRP_JUMP))
+        return false;
+    if (cs_insn_group(handle, &insn, CS_GRP_CALL))
+        return false;
+
+    switch (arch) {
+    case CS_ARCH_X86:
+        return insn.id == X86_INS_JMP;
+    case CS_ARCH_ARM:
+        // Plain "B"/"BX" is encoded with cc == ARM_CC_AL ("always");
+        // B.<cond> carries one of the real condition codes instead.
+        return insn.detail->arm.cc == ARM_CC_AL;
+    case CS_ARCH_ARM64:
+        // Plain "B" has no condition field at all; "B.<cond>" does.
+        return insn.detail->arm64.cc == ARM64_CC_INVALID;
+    default:
+        return false;
+    }
+}
+
 #endif // DISASM_BRANCHTARGET_H
