@@ -21,6 +21,7 @@ set(PROJECT_SOURCES
         filestats/banner.cpp
         filestats/banner.h
         filestats/checksum.cpp
+        filestats/datainterpreter.cpp
         filestats/entropy.h
         filestats/entropy.cpp
         filestats/properties.cpp

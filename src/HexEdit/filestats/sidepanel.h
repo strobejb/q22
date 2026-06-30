@@ -82,6 +82,7 @@ class FilePropertiesPanel : public QDialog
     enum class SectionId
     {
         Properties,
+        DataInterpreter,
         Checksums,
         Strings,
         Entropy
@@ -147,6 +148,7 @@ class FilePropertiesPanel : public QDialog
     void           setChecksumRowsPending();
     void           updateChecksumProgress(int generation, int value);
     void           applyChecksumResults(int generation, const QHash<QString, QString> &results);
+    void           updateDataInterpreter();
     void           updateStringProgress(int generation, int value);
     void           appendStringResults(int generation, const QVector<QVariantMap> &results);
     void           sortStringResults(int column, Qt::SortOrder order);
@@ -256,19 +258,23 @@ class FilePropertiesPanel : public QDialog
     QScrollArea                      *m_scrollArea          = nullptr;
     QWidget                          *m_content             = nullptr;
     QWidget                          *m_fileSectionBody     = nullptr;
+    QWidget                          *m_dataInterpreterSectionBody = nullptr;
     QWidget                          *m_checksumSectionBody = nullptr;
     QWidget                          *m_stringsSectionBody  = nullptr;
     QSpacerItem                      *m_fileHeaderGap       = nullptr;
+    QSpacerItem                      *m_dataInterpreterHeaderGap = nullptr;
     QSpacerItem                      *m_checksumHeaderGap   = nullptr;
     QSpacerItem                      *m_stringsHeaderGap    = nullptr;
     QVector<QSpacerItem *>            m_interSectionGaps;
     filestats::SectionHeader         *m_fileHeader        = nullptr;
+    filestats::SectionHeader         *m_dataInterpreterHeader = nullptr;
     filestats::SectionHeader         *m_checksumHeader    = nullptr;
     filestats::SectionHeader         *m_stringsHeader     = nullptr;
     filestats::SectionHeader         *m_stickyHeader      = nullptr;
     QLabel                           *m_nameValue         = nullptr;
     QLabel                           *m_locationValue     = nullptr;
     QLabel                           *m_sizeValue         = nullptr;
+    QHash<QString, QWidget *>         m_dataInterpreterIntegerRows;
     filestats::SectionOperationStrip *m_checksumOperation = nullptr;
     QHash<QString, QLabel *>          m_checksumValues;
     QHash<QString, QCheckBox *>       m_checksumChecks;
@@ -317,6 +323,7 @@ class FilePropertiesPanel : public QDialog
     QAction                          *m_bcSchemeNibbleAction     = nullptr;
     QToolButton                      *m_entropyRotateButton = nullptr;
     void   buildPropertiesSection(QWidget *parent, QVBoxLayout *contentLayout);
+    void   buildDataInterpreterSection(QWidget *parent, QVBoxLayout *contentLayout);
     void   buildChecksumSection(QWidget *parent, QVBoxLayout *contentLayout);
     void   buildStringsSection(QWidget *parent, QVBoxLayout *contentLayout);
     void   buildEntropySection(QWidget *parent, QVBoxLayout *contentLayout);

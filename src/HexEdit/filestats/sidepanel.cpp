@@ -76,7 +76,8 @@ static constexpr int  kFileInfoPaneAnimMs           = 220;
 static constexpr bool kAutoStartPanelOperations     = true;
 FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QDialog(parent), m_hexView(hexView)
 {
-    m_sectionOrder = {SectionId::Properties, SectionId::Checksums, SectionId::Strings, SectionId::Entropy};
+    m_sectionOrder = {SectionId::Properties, SectionId::DataInterpreter, SectionId::Checksums,
+                      SectionId::Strings, SectionId::Entropy};
 
     setWindowTitle(tr("File Information"));
     setSizeGripEnabled(false);
@@ -116,6 +117,10 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     contentLayout->setSpacing(0);
 
     buildPropertiesSection(m_content, contentLayout);
+
+    m_interSectionGaps.append(new QSpacerItem(0, kGroupTopGap, QSizePolicy::Minimum, QSizePolicy::Fixed));
+    contentLayout->addSpacerItem(m_interSectionGaps.last());
+    buildDataInterpreterSection(m_content, contentLayout);
 
     m_interSectionGaps.append(new QSpacerItem(0, kGroupTopGap, QSizePolicy::Minimum, QSizePolicy::Fixed));
     contentLayout->addSpacerItem(m_interSectionGaps.last());
@@ -217,6 +222,14 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
             {
                 updateStickyHeader();
             });
+    if (m_hexView)
+    {
+        connect(m_hexView, &HexView::cursorChanged, this, [this](size_w) { updateDataInterpreter(); });
+        connect(m_hexView, &HexView::contentChanged, this,
+                [this](size_w, size_w, uint) { updateDataInterpreter(); });
+        connect(m_hexView, &HexView::lengthChanged, this, [this](size_w) { updateDataInterpreter(); });
+        connect(m_hexView, &HexView::fileOpened, this, [this](const QString &) { updateDataInterpreter(); });
+    }
     QTimer::singleShot(0, this, &FilePropertiesPanel::updateStickyHeader);
 
     setMinimumWidth(260);
@@ -225,8 +238,10 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     // animateSectionBody's isVisible() guard would bail out early and leave all
     // bodies visible when the panel first appears.
     setSectionCollapsed(SectionId::Properties, true, false);
+    setSectionCollapsed(SectionId::DataInterpreter, true, false);
     setSectionCollapsed(SectionId::Checksums, true, false);
     setSectionCollapsed(SectionId::Strings, true, false);
+    setSectionCollapsed(SectionId::Entropy, true, false);
 }
 
 FilePropertiesPanel::~FilePropertiesPanel()

@@ -22,6 +22,7 @@ typedef float 		FLOAT;
 typedef double		DOUBLE;
 
 /* head */
+[export]
 struct ALL
 {
   union {
