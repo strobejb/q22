@@ -1,10 +1,16 @@
 #include "dockpanelhost.h"
 
+#include "HexView/hexview.h"
+#include "panels/dockpanelrow.h"
+#include "panels/findpanel.h"
+#include "panels/gotopanel.h"
+
 #include <QApplication>
 #include <QChildEvent>
 #include <QEvent>
 #include <QKeyEvent>
 #include <QLineEdit>
+#include <QResizeEvent>
 #include <QSizePolicy>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -13,9 +19,9 @@
 // Dock/Panel host for Find & Goto panels
 //
 
-DockPanelHost::DockPanelHost(QWidget *escapeFocusWidget, QWidget *parent)
+DockPanelHost::DockPanelHost(HexView *hexView, QWidget *parent)
     : QWidget(parent)
-    , m_escapeFocusWidget(escapeFocusWidget)
+    , m_hexView(hexView)
 {
     setFocusPolicy(Qt::NoFocus);
     setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
@@ -23,6 +29,10 @@ DockPanelHost::DockPanelHost(QWidget *escapeFocusWidget, QWidget *parent)
     m_layout = new QVBoxLayout(this);
     m_layout->setContentsMargins(0, 0, 0, 0);
     m_layout->setSpacing(0);
+
+    if (m_hexView)
+        connect(m_hexView, &HexView::layoutChanged,
+                this, &DockPanelHost::updateRowWidthCaps);
 }
 
 void DockPanelHost::addPanel(QWidget *panel)
@@ -33,6 +43,7 @@ void DockPanelHost::addPanel(QWidget *panel)
     panel->setParent(this);
     m_layout->addWidget(panel);
     installPanelFilters(panel);
+    updateRowWidthCaps();
 }
 
 bool DockPanelHost::eventFilter(QObject *obj, QEvent *event)
@@ -76,8 +87,8 @@ bool DockPanelHost::focusNextPrevChild(bool next)
 bool DockPanelHost::handleTab(bool forward, bool controlDown)
 {
     if (controlDown) {
-        if (m_escapeFocusWidget) {
-            m_escapeFocusWidget->setFocus(Qt::TabFocusReason);
+        if (m_hexView) {
+            m_hexView->setFocus(Qt::TabFocusReason);
             return true;
         }
         return false;
@@ -95,6 +106,12 @@ bool DockPanelHost::handleTab(bool forward, bool controlDown)
         : (idx - 1 + widgets.size()) % widgets.size();
     widgets.at(nextIdx)->setFocus(forward ? Qt::TabFocusReason : Qt::BacktabFocusReason);
     return true;
+}
+
+void DockPanelHost::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    updateRowWidthCaps();
 }
 
 QList<QWidget *> DockPanelHost::focusablePanelWidgets() const
@@ -147,4 +164,42 @@ void DockPanelHost::installPanelFilters(QWidget *panel)
     const auto children = panel->findChildren<QWidget *>();
     for (QWidget *child : children)
         child->installEventFilter(this);
+}
+
+void DockPanelHost::updateRowWidthCaps()
+{
+    if (!m_hexView)
+        return;
+
+    const int cap = m_hexView->hexAsciiColumnsPixelWidth();
+    int gotoCap = 0;
+
+    for (int i = 0; i < m_layout->count(); ++i) {
+        auto *findPanel = qobject_cast<FindPanel *>(m_layout->itemAt(i)->widget());
+        if (!findPanel)
+            continue;
+
+        gotoCap = findPanel->editAndNavigationWidthForContentCap(cap);
+        break;
+    }
+
+    for (int i = 0; i < m_layout->count(); ++i) {
+        QWidget *panel = m_layout->itemAt(i)->widget();
+        if (!panel)
+            continue;
+
+        if (auto *gotoPanel = qobject_cast<GotoPanel *>(panel)) {
+            gotoPanel->setContentMaximumWidth(gotoCap);
+            continue;
+        }
+
+        const auto children = panel->findChildren<QWidget *>();
+        for (QWidget *child : children) {
+            auto *row = dynamic_cast<DockPanelRow *>(child);
+            if (!row)
+                continue;
+            row->setMaximumWidth(QWIDGETSIZE_MAX);
+            row->setContentMaximumWidth(cap);
+        }
+    }
 }

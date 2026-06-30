@@ -36,6 +36,7 @@ public:
     void    setSearchTextBigEndian(bool checked);
     void    setSearchIntegerBigEndian(bool checked);
     void    setSearchSigned(bool checked);
+    int     editAndNavigationWidthForContentCap(int contentCap) const;
 
 signals:
     void findPrevious();

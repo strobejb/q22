@@ -5,26 +5,29 @@
 #include <QWidget>
 
 class QVBoxLayout;
+class HexView;
 
 class DockPanelHost : public QWidget
 {
 public:
-    explicit DockPanelHost(QWidget *escapeFocusWidget, QWidget *parent = nullptr);
+    explicit DockPanelHost(HexView *hexView, QWidget *parent = nullptr);
 
     void addPanel(QWidget *panel);
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
     bool focusNextPrevChild(bool next) override;
+    void resizeEvent(QResizeEvent *event) override;
 
 private:
     bool handleTab(bool forward, bool controlDown);
     QList<QWidget *> focusablePanelWidgets() const;
     void focusPreferredVisiblePanel();
     void installPanelFilters(QWidget *panel);
+    void updateRowWidthCaps();
 
     QVBoxLayout *m_layout = nullptr;
-    QWidget *m_escapeFocusWidget = nullptr;
+    HexView *m_hexView = nullptr;
 };
 
 #endif // DOCKPANELHOST_H

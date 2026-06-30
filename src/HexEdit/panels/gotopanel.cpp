@@ -257,6 +257,11 @@ void GotoPanel::activate(const QString &initialText)
     ui->editOffset->selectAll();
 }
 
+void GotoPanel::setContentMaximumWidth(int width)
+{
+    if (m_row)
+        m_row->setContentMaximumWidth(width);
+}
 
 void GotoPanel::refreshBookmarks()
 {

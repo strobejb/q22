@@ -262,6 +262,7 @@ public:
     uint   setLineLen(uint len);
     uint   getLineLen() const   { return m_nBytesPerLine;  }
     void   setPadding(int left, int right);
+    int    hexAsciiColumnsPixelWidth() const;
 
 
     void   refreshWindow();

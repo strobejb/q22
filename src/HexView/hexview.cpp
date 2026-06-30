@@ -416,6 +416,17 @@ int HexView::calcTotalWidth()
 
     return width;
 }
+
+int HexView::hexAsciiColumnsPixelWidth() const
+{
+    int width = 0;
+    width += checkStyle(HVS_ADDR_INVISIBLE)  ? 0 : m_nAddressWidth;
+    width += checkStyle(HVS_HEX_INVISIBLE)   ? 0 : m_nHexPaddingLeft;
+    width += checkStyle(HVS_HEX_INVISIBLE)   ? 0 : m_nHexWidth;
+    width += checkStyle(HVS_ASCII_INVISIBLE) ? 0 : m_nHexPaddingRight;
+    width += checkStyle(HVS_ASCII_INVISIBLE) ? 0 : m_nBytesPerLine;
+    return width * m_nFontWidth;
+}
 uint HexView::setGrouping(uint bytes)
 {
     return setGrouping(bytes, true);

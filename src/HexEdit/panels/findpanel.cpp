@@ -325,6 +325,30 @@ bool    FindPanel::searchTextBigEndian() const { return m_comboDataType->inlineM
 bool    FindPanel::searchIntegerBigEndian() const { return m_comboDataType->inlineModifierChecked(QStringLiteral("integerBigEndian")); }
 bool    FindPanel::searchSigned() const { return m_comboDataType->inlineModifierChecked(QStringLiteral("signed")); }
 
+int FindPanel::editAndNavigationWidthForContentCap(int contentCap) const
+{
+    if (!m_row || contentCap <= 0)
+        return 0;
+
+    const int spacing = m_row->contentSpacing();
+    const int fixedOutsideSearch =
+        ui->btnOptions->sizeHint().width()
+        + spacing
+        + 16
+        + spacing
+        + spacing
+        + (m_comboDataType ? m_comboDataType->width() : ui->comboDataType->sizeHint().width());
+
+    const int minSearch =
+        ui->editFind->minimumSizeHint().width()
+        + spacing
+        + ui->btnFindPrev->sizeHint().width()
+        + spacing
+        + ui->btnFindNext->sizeHint().width();
+
+    return qMax(minSearch, contentCap - fixedOutsideSearch);
+}
+
 void FindPanel::setSearchTextBigEndian(bool checked)
 {
     m_comboDataType->setInlineModifierChecked(QStringLiteral("textBigEndian"), checked);

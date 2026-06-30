@@ -637,8 +637,8 @@ MainWindow::MainWindow(QWidget *parent)
     m_hv->setLineLen(AppSettings::prefBytesPerLine());
     m_hv->setPadding(3, 3);
     setAcceptDrops(true);
-    // Container: HexView fills available space; FindPanel sits flush above
-    // the status bar, hidden until activated.
+    // Container: HexView column owns the docked Find/Goto panels so side
+    // panels can occupy the full content height.
     auto *central = new QWidget(this);
     central->setAcceptDrops(true);
     auto *vlay    = new QVBoxLayout(central);
@@ -712,9 +712,8 @@ MainWindow::MainWindow(QWidget *parent)
             m_disasmPanelHost->setScanProgress(discoveredCount, worklistProcessed, worklistTotal);
     });
 
-    vlay->addWidget(contentRow, 1);
     m_bookmarkDialog = new BookmarkDialog(this);
-    auto *dockPanelHost = new DockPanelHost(m_hv, central);
+    auto *dockPanelHost = new DockPanelHost(m_hv, hexColumn);
     dockPanelHost->setCursor(Qt::ArrowCursor);
     dockPanelHost->setAcceptDrops(true);
     m_findDialog = new FindPanel(dockPanelHost);
@@ -729,10 +728,11 @@ MainWindow::MainWindow(QWidget *parent)
     m_gotoDialog->setWindowFlags(Qt::Widget); // embedded panel — no native QWidgetWindow
     dockPanelHost->addPanel(m_findDialog);
     dockPanelHost->addPanel(m_gotoDialog);
-    vlay->addWidget(dockPanelHost, 0);
+    hexColumnLay->addWidget(dockPanelHost, 0);
     auto *statusHairline = new Hairline(central);
     statusHairline->setCursor(Qt::ArrowCursor);
     statusHairline->setAcceptDrops(true);
+    vlay->addWidget(contentRow, 1);
     vlay->addWidget(statusHairline);  // separator between content and status bar
     setCentralWidget(central);
 

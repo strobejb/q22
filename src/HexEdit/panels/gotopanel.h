@@ -20,6 +20,7 @@ public:
     // Show the bar and give focus to the search field.
     // Pass initialText to pre-fill (e.g. from a selection).
     void activate(const QString &initialText = {});
+    void setContentMaximumWidth(int width);
 
     // Repopulate the bookmarks combo from the HexView's current bookmark list.
     void refreshBookmarks();
