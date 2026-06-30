@@ -20,7 +20,7 @@
      <x>0</x>
      <y>0</y>
      <width>800</width>
-     <height>21</height>
+     <height>24</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuFile">
@@ -117,6 +117,9 @@
     <addaction name="actionProperties"/>
     <addaction name="actionChecksum"/>
     <addaction name="actionStrings"/>
+    <addaction name="separator"/>
+    <addaction name="actionDisassemble"/>
+    <addaction name="actionStructureView"/>
     <addaction name="separator"/>
     <addaction name="actionFill"/>
     <addaction name="actionPreferences"/>
@@ -468,6 +471,22 @@
   <action name="actionStrings">
    <property name="text">
     <string>Strings...</string>
+   </property>
+  </action>
+  <action name="actionDisassemble">
+   <property name="text">
+    <string>Disassemble...</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+D</string>
+   </property>
+  </action>
+  <action name="actionStructureView">
+   <property name="text">
+    <string>Structure View...</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+T</string>
    </property>
   </action>
   <action name="action_Fill">

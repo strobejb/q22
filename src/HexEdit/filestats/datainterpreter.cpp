@@ -4,8 +4,12 @@
 #include "filestats/widgets.h"
 #include "settings/settingscard.h"
 
+#include <QDate>
+#include <QDateTime>
 #include <QLabel>
 #include <QHBoxLayout>
+#include <QTime>
+#include <QTimeZone>
 #include <QVBoxLayout>
 
 #include <cstring>
@@ -183,11 +187,76 @@ QString doubleText(const uint8_t *data, size_t available)
     return QString::number(value, 'g', 12);
 }
 
+QString formatUtcDateTime(const QDateTime &dateTime)
+{
+    if (!dateTime.isValid())
+        return FilePropertiesPanel::tr("Invalid");
+
+    return dateTime.toUTC().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss 'UTC'"));
+}
+
+QString unixTimeText(const uint8_t *data, size_t length, size_t available)
+{
+    if (available < length)
+        return notEnoughBytes();
+
+    const qint64 seconds = signedValue(littleEndianValue(data, length), length);
+    return formatUtcDateTime(QDateTime::fromSecsSinceEpoch(seconds, QTimeZone::UTC));
+}
+
+QString fileTimeText(const uint8_t *data, size_t available)
+{
+    if (available < 8)
+        return notEnoughBytes();
+
+    const uint64_t ticks = littleEndianValue(data, 8);
+    const QDateTime epoch(QDate(1601, 1, 1), QTime(0, 0), QTimeZone::UTC);
+    return formatUtcDateTime(epoch.addMSecs(qint64(ticks / 10000)));
+}
+
+QString dateTimeText(const uint8_t *data, size_t available)
+{
+    if (available < 8)
+        return notEnoughBytes();
+
+    const uint64_t ticks = littleEndianValue(data, 8);
+    const QDateTime epoch(QDate(1, 1, 1), QTime(0, 0), QTimeZone::UTC);
+    return formatUtcDateTime(epoch.addMSecs(qint64(ticks / 10000)));
+}
+
+QString dosDateText(const uint8_t *data, size_t available)
+{
+    if (available < 2)
+        return notEnoughBytes();
+
+    const uint16_t raw = static_cast<uint16_t>(littleEndianValue(data, 2));
+    const int year = 1980 + ((raw >> 9) & 0x7f);
+    const int month = (raw >> 5) & 0x0f;
+    const int day = raw & 0x1f;
+    const QDate date(year, month, day);
+    return date.isValid() ? date.toString(QStringLiteral("yyyy-MM-dd"))
+                          : FilePropertiesPanel::tr("Invalid");
+}
+
+QString dosTimeText(const uint8_t *data, size_t available)
+{
+    if (available < 2)
+        return notEnoughBytes();
+
+    const uint16_t raw = static_cast<uint16_t>(littleEndianValue(data, 2));
+    const int hour = (raw >> 11) & 0x1f;
+    const int minute = (raw >> 5) & 0x3f;
+    const int second = (raw & 0x1f) * 2;
+    const QTime time(hour, minute, second);
+    return time.isValid() ? time.toString(QStringLiteral("HH:mm:ss"))
+                          : FilePropertiesPanel::tr("Invalid");
+}
+
 } // namespace
 
 void FilePropertiesPanel::buildDataInterpreterSection(QWidget *parent, QVBoxLayout *contentLayout)
 {
-    m_dataInterpreterHeader = new SectionHeader(tr("Data Interpreter"), parent);
+    m_dataInterpreterHeader = new SectionHeader(tr("Data Inspector"), parent);
     m_dataInterpreterHeader->setClickedCallback(
         [this]() {
             setSectionCollapsed(SectionId::DataInterpreter,
@@ -207,7 +276,7 @@ void FilePropertiesPanel::buildDataInterpreterSection(QWidget *parent, QVBoxLayo
     bodyLayout->setSpacing(0);
 
     QList<QWidget *> rows;
-    rows.reserve(8);
+    rows.reserve(9);
 
     auto addTwoColumnRow = [this, &rows](const char *key, const QString &leftTitle,
                                          const QString &rightTitle) {
@@ -223,6 +292,9 @@ void FilePropertiesPanel::buildDataInterpreterSection(QWidget *parent, QVBoxLayo
     addTwoColumnRow("dword", tr("Dword"), tr("Dword (Signed)"));
     addTwoColumnRow("qword", tr("Qword"), tr("Qword (Signed)"));
     addTwoColumnRow("floats", tr("Float"), tr("Double"));
+    addTwoColumnRow("unixTimes", tr("time_t (32-bit)"), tr("time_t (64-bit)"));
+    addTwoColumnRow("windowsTimes", tr("FILETIME"), tr("DATETIME"));
+    addTwoColumnRow("dosTimes", tr("DOS Date"), tr("DOS Time"));
 
     auto *card = new SettingsCard(rows, SettingsCard::Style::Spaced, m_dataInterpreterSectionBody);
     card->setMinimumWidth(0);
@@ -231,7 +303,7 @@ void FilePropertiesPanel::buildDataInterpreterSection(QWidget *parent, QVBoxLayo
 
     registerPanelSection({
         SectionId::DataInterpreter,
-        tr("Data Interpreter"),
+        tr("Data Inspector"),
         m_dataInterpreterHeader,
         m_dataInterpreterSectionBody,
         m_dataInterpreterHeaderGap,
@@ -281,6 +353,18 @@ void FilePropertiesPanel::updateDataInterpreter()
     if (auto *row = dynamic_cast<TwoColumnInterpreterRow *>(
             m_dataInterpreterIntegerRows.value(QStringLiteral("floats"), nullptr)))
         row->setValues(floatText(data, available), doubleText(data, available));
+
+    if (auto *row = dynamic_cast<TwoColumnInterpreterRow *>(
+            m_dataInterpreterIntegerRows.value(QStringLiteral("unixTimes"), nullptr)))
+        row->setValues(unixTimeText(data, 4, available), unixTimeText(data, 8, available));
+
+    if (auto *row = dynamic_cast<TwoColumnInterpreterRow *>(
+            m_dataInterpreterIntegerRows.value(QStringLiteral("windowsTimes"), nullptr)))
+        row->setValues(fileTimeText(data, available), dateTimeText(data, available));
+
+    if (auto *row = dynamic_cast<TwoColumnInterpreterRow *>(
+            m_dataInterpreterIntegerRows.value(QStringLiteral("dosTimes"), nullptr)))
+        row->setValues(dosDateText(data, available), dosTimeText(data, available));
 
     requestSectionLayoutRefresh(SectionId::DataInterpreter);
 }

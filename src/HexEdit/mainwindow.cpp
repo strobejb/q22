@@ -755,12 +755,14 @@ MainWindow::MainWindow(QWidget *parent)
     addAction(ui->actionProperties);
     connect(ui->actionProperties, &QAction::triggered, this, &MainWindow::toggleSidePanel);
 
-    auto *disassemblerShortcut = new QShortcut(disassemblerPanelShortcut(), this);
-    connect(disassemblerShortcut, &QShortcut::activated,
+    ui->actionDisassemble->setShortcut(disassemblerPanelShortcut());
+    addAction(ui->actionDisassemble);
+    connect(ui->actionDisassemble, &QAction::triggered,
             this, &MainWindow::toggleDisassemblerPanel);
 
-    auto *structureShortcut = new QShortcut(structurePanelShortcut(), this);
-    connect(structureShortcut, &QShortcut::activated,
+    ui->actionStructureView->setShortcut(structurePanelShortcut());
+    addAction(ui->actionStructureView);
+    connect(ui->actionStructureView, &QAction::triggered,
             this, &MainWindow::toggleStructurePanel);
 
     ui->actionChecksum->setEnabled(true);
