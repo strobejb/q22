@@ -49,7 +49,8 @@ bool PanelStrip::eventFilter(QObject *obj, QEvent *e)
 {
     if (obj == m_overlapGuard) {
         const auto t = e->type();
-        if (t == QEvent::Show || t == QEvent::Hide || t == QEvent::Resize)
+        if (t == QEvent::Show || t == QEvent::Hide ||
+            t == QEvent::Move || t == QEvent::Resize)
             checkOverlap();
     }
     return QWidget::eventFilter(obj, e);
@@ -289,6 +290,9 @@ bool StatusBar::eventFilter(QObject *obj, QEvent *event)
             type == QEvent::ApplicationFontChange) {
             syncToggleButtonMetrics();
             refreshToggleIcons();
+            updateMessageOverlayGeometry();
+        } else if (type == QEvent::Resize || type == QEvent::LayoutRequest) {
+            updateMessageOverlayGeometry();
         }
     }
     return QObject::eventFilter(obj, event);
@@ -335,10 +339,10 @@ void StatusBar::rebuildLayout()
     if (!m_bar || !m_comboStrip || !m_toggleStrip)
         return;
 
+    const bool overlayMessage = messageOverlayMode();
     const bool searchVisible = m_searchWidget && m_searchWidget->isVisible();
     const bool searchSepVisible = m_searchSep && m_searchSep->isVisible();
     const bool patternVisible = m_patternLabel && m_patternLabel->isVisible();
-    const bool patternSepVisible = m_patternSep && m_patternSep->isVisible();
 
     m_bar->removeWidget(m_toggleStrip);
     m_bar->removeWidget(m_comboStrip);
@@ -367,12 +371,14 @@ void StatusBar::rebuildLayout()
     if (m_showPanelToggles && !m_toolsRight)
         m_bar->addWidget(m_toggleStrip);
     if (!m_infoRight)
-        m_bar->addWidget(m_comboStrip);
+        m_bar->addWidget(m_comboStrip, 1);
 
     m_bar->addWidget(m_searchWidget);
     m_bar->addWidget(m_searchSep);
-    m_bar->addWidget(m_patternLabel);
-    m_bar->addWidget(m_patternSep);
+    if (!overlayMessage) {
+        m_bar->addWidget(m_patternLabel);
+        m_bar->addWidget(m_patternSep);
+    }
 
     if (m_infoRight)
         m_bar->addPermanentWidget(m_comboStrip, 1);
@@ -384,7 +390,45 @@ void StatusBar::rebuildLayout()
     m_searchWidget->setVisible(searchVisible);
     m_searchSep->setVisible(searchSepVisible);
     m_patternLabel->setVisible(patternVisible);
-    m_patternSep->setVisible(patternSepVisible);
+    m_patternSep->setVisible(patternVisible && !overlayMessage);
+    updateMessageOverlayGeometry();
+}
+
+bool StatusBar::messageOverlayMode() const
+{
+    return !m_infoRight;
+}
+
+void StatusBar::updateMessageOverlayGeometry()
+{
+    if (!m_bar || !m_patternLabel || !m_patternSep)
+        return;
+
+    if (!messageOverlayMode()) {
+        m_patternLabel->updateGeometry();
+        return;
+    }
+
+    m_patternSep->hide();
+
+    if (!m_patternLabel->isVisible()) {
+        if (m_comboStrip)
+            m_comboStrip->update();
+        return;
+    }
+
+    const QRect cr = m_bar->contentsRect();
+    const QSize hint = m_patternLabel->sizeHint();
+    const int h = qMin(hint.height(), cr.height());
+    const int y = cr.top() + (cr.height() - h) / 2;
+    const int maxW = qMax(0, cr.width());
+    const int w = qMin(hint.width(), maxW);
+
+    m_patternLabel->setGeometry(cr.left(), y, w, h);
+    m_patternLabel->raise();
+
+    if (m_comboStrip)
+        m_comboStrip->update();
 }
 
 void StatusBar::setFileInfoPanelOpen(bool open)
@@ -499,6 +543,7 @@ void StatusBar::showSearchHex(const QString &hex)
     if (hex.isEmpty()) {
         m_patternLabel->hide();
         m_patternSep->hide();
+        updateMessageOverlayGeometry();
         return;
     }
     static const QRegularExpression rxHex("^[0-9A-Fa-f ]+$");
@@ -509,7 +554,8 @@ void StatusBar::showSearchHex(const QString &hex)
 
     m_patternLabel->setText(hex);
     m_patternLabel->show();
-    m_patternSep->show();
+    m_patternSep->setVisible(!messageOverlayMode());
+    updateMessageOverlayGeometry();
 }
 
 void StatusBar::showMessage(const QString &msg)
@@ -517,12 +563,14 @@ void StatusBar::showMessage(const QString &msg)
     if (msg.isEmpty()) {
         m_patternLabel->hide();
         m_patternSep->hide();
+        updateMessageOverlayGeometry();
         return;
     }
     m_patternLabel->setFont(QApplication::font());
     m_patternLabel->setText(msg);
     m_patternLabel->show();
-    m_patternSep->show();
+    m_patternSep->setVisible(!messageOverlayMode());
+    updateMessageOverlayGeometry();
 }
 
 void StatusBar::update()

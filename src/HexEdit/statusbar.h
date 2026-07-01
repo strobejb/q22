@@ -81,6 +81,8 @@ protected:
 private:
     QString computeValueText() const;
     void rebuildLayout();
+    bool messageOverlayMode() const;
+    void updateMessageOverlayGeometry();
     void refreshToggleIcons();
     void syncToggleButtonMetrics();
 
