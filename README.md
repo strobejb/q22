@@ -75,4 +75,9 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
+## License
+
+q22 is licensed under GPL-3.0-or-later. The full license text is included in
+[LICENSE](LICENSE).
+
 Releases are created manually from the GitHub Actions **Release** workflow using a `MAJOR.MINOR.PATCH` version.
