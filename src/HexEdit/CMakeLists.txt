@@ -188,6 +188,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         resources/icons/actions/bookmark-star-add.svg
         resources/icons/actions/hierarchy3.svg
         resources/icons/actions/object-flip-vertical-symbolic.svg resources/icons/actions/view-fullscreen-symbolic.svg
+        resources/q22-title.png
     )
 # Define target properties for Android with Qt 6 as:
 #    set_property(TARGET hexedit APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
@@ -210,7 +211,7 @@ endif()
 file(GLOB_RECURSE HEXEDIT_RESOURCES CONFIGURE_DEPENDS
     "${HEXEDIT_RESOURCE_DIR}/icons/*.svg"
     "${HEXEDIT_RESOURCE_DIR}/palettes/*.palette"
-    "${HEXEDIT_RESOURCE_DIR}/q22.png"
+    "${HEXEDIT_RESOURCE_DIR}/*.png"
 )
 qt_add_resources(hexedit "app_resources"
     PREFIX "/"
