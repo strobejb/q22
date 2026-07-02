@@ -210,7 +210,7 @@ endif()
 file(GLOB_RECURSE HEXEDIT_RESOURCES CONFIGURE_DEPENDS
     "${HEXEDIT_RESOURCE_DIR}/icons/*.svg"
     "${HEXEDIT_RESOURCE_DIR}/palettes/*.palette"
-    "${HEXEDIT_RESOURCE_DIR}/hexedit.png"
+    "${HEXEDIT_RESOURCE_DIR}/q22.png"
 )
 qt_add_resources(hexedit "app_resources"
     PREFIX "/"
@@ -241,6 +241,7 @@ if(TARGET Qt${QT_VERSION_MAJOR}::DBus)
 endif()
 set_target_properties(hexedit PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}"
+    OUTPUT_NAME q22
 )
 
 if(WIN32)
@@ -275,7 +276,7 @@ endif()
 # If you are developing for iOS or macOS you should consider setting an
 # explicit, fixed bundle identifier manually though.
 if(${QT_VERSION} VERSION_LESS 6.1.0)
-  set(BUNDLE_ID_OPTION MACOSX_BUNDLE_GUI_IDENTIFIER com.example.HexEdit)
+  set(BUNDLE_ID_OPTION MACOSX_BUNDLE_GUI_IDENTIFIER net.catch22.q22)
 endif()
 set_target_properties(hexedit PROPERTIES
     ${BUNDLE_ID_OPTION}
@@ -293,11 +294,12 @@ install(TARGETS hexedit
 )
 
 if(UNIX AND NOT APPLE)
-    install(FILES ${HEXEDIT_RESOURCE_DIR}/hexedit.desktop
+    install(FILES ${HEXEDIT_RESOURCE_DIR}/q22.desktop
         DESTINATION ${CMAKE_INSTALL_DATADIR}/applications
     )
-    install(FILES ${HEXEDIT_RESOURCE_DIR}/hexedit.png
+    install(FILES ${HEXEDIT_RESOURCE_DIR}/q22.png
         DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/256x256/apps
+        RENAME q22.png
     )
 endif()
 

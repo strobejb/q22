@@ -54,29 +54,29 @@ jobs:
       - name: Package (linuxdeploy)
         run: |
           sudo apt-get install -y imagemagick
-          convert src/HexEdit/resources/hexedit.png -resize 512x512! src/HexEdit/resources/hexedit.png
+          convert src/HexEdit/resources/q22.png -resize 512x512! src/HexEdit/resources/q22.png
           wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
           chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage
           mkdir -p AppDir/usr/bin
-          cp build/hexedit AppDir/usr/bin/
-          appimage="hexedit-${HEXEDIT_FILE_VERSION}-linux-x86_64.AppImage"
+          cp build/q22 AppDir/usr/bin/
+          appimage="q22-${HEXEDIT_FILE_VERSION}-linux-x86_64.AppImage"
           QMAKE="$QT_ROOT_DIR/bin/qmake" \
           LDAI_OUTPUT="${appimage}" \
           ./linuxdeploy-x86_64.AppImage \
             --appdir AppDir \
             --plugin qt \
             --output appimage \
-            --desktop-file src/HexEdit/resources/hexedit.desktop \
-            --icon-file src/HexEdit/resources/hexedit.png
+            --desktop-file src/HexEdit/resources/q22.desktop \
+            --icon-file src/HexEdit/resources/q22.png
           test -f "${appimage}"
           echo "Created AppImage: ${appimage}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: hexedit-linux
-          path: hexedit-*-linux-x86_64.AppImage
+          name: q22-linux
+          path: q22-*-linux-x86_64.AppImage
 
   build-windows:
     runs-on: windows-latest
@@ -99,7 +99,7 @@ jobs:
       - name: Convert PNG to ICO
         shell: pwsh
         run: |
-          magick src/HexEdit/resources/hexedit.png -define icon:auto-resize=256,128,64,48,32,16 src/HexEdit/resources/hexedit.ico
+          magick src/HexEdit/resources/q22.png -define icon:auto-resize=256,128,64,48,32,16 src/HexEdit/resources/q22.ico
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
@@ -123,11 +123,11 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist
-          Copy-Item build\Release\hexedit.exe dist\
-          windeployqt --release --no-translations dist\hexedit.exe
+          Copy-Item build\Release\q22.exe dist\
+          windeployqt --release --no-translations dist\q22.exe
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: hexedit-windows
+          name: q22-windows
           path: dist\

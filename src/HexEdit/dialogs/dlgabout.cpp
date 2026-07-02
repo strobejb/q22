@@ -32,13 +32,13 @@ void ShowAboutDlg(QWidget *parent)
 
     // ── Icon (192×192) ────────────────────────────────────────────────────────
     auto *iconLabel = new QLabel(&dlg);
-    QPixmap px(QLatin1String(":/hexedit.png"));
+    QPixmap px(QLatin1String(":/q22.png"));
     iconLabel->setPixmap(px.scaled(192, 192, Qt::KeepAspectRatio, Qt::SmoothTransformation));
     iconLabel->setFixedSize(192, 192);
     iconLabel->setAlignment(Qt::AlignCenter);
 
     // ── App name (bold, 1.5× base font size) ─────────────────────────────────
-    auto *nameLabel = new QLabel(QLatin1String("Catch22 HexEdit"), &dlg);
+    auto *nameLabel = new QLabel(QLatin1String("Catch22 Hex Editor"), &dlg);
     QFont nameFont = nameLabel->font();
     nameFont.setBold(true);
     nameFont.setPointSize(qRound(nameFont.pointSize() * 1.5));

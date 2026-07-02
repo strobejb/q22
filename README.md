@@ -1,10 +1,10 @@
-# HexEdit
+# q22
 
-[![Build and Test](https://github.com/strobejb/qexed/actions/workflows/build.yml/badge.svg)](https://github.com/strobejb/qexed/actions/workflows/build.yml)
-[![Release](https://github.com/strobejb/qexed/actions/workflows/release.yml/badge.svg)](https://github.com/strobejb/qexed/actions/workflows/release.yml)
+[![Build and Test](https://github.com/strobejb/q22/actions/workflows/build.yml/badge.svg)](https://github.com/strobejb/q22/actions/workflows/build.yml)
+[![Release](https://github.com/strobejb/q22/actions/workflows/release.yml/badge.svg)](https://github.com/strobejb/q22/actions/workflows/release.yml)
 
-HexEdit is a cross-platform Qt6 hex editor, and the spiritual successor to the original
-Catch22 HexEdit Win32 application.
+q22 is a cross-platform Qt 6 hex editor from Catch22, and the successor to the
+original Catch22 HexEdit Win32 application.
 
 The core file editing and hex view capabilities are carried forward from the
 legacy application, while the application UX has been largely
@@ -59,10 +59,13 @@ Qt 6 application shell:
 
 ## Status
 
-This repository is the active Qt 6 version of HexEdit. Some low-level editing
-and rendering code still reflects the legacy application's architecture; much of
-the application shell, dialogs, side panels, theming, and platform integration
-has been rebuilt around Qt.
+This repository is the active Qt 6 successor to Catch22 HexEdit. Some low-level
+editing and rendering code still reflects the legacy application's architecture;
+much of the application shell, dialogs, side panels, theming, and platform
+integration has been rebuilt around Qt.
+
+The application is named q22. "Catch22 Hex Editor" is the descriptive name used
+in packaging and metadata.
 
 ## Build
 

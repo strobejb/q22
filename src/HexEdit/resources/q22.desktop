@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=q22
+GenericName=Hex Editor
+Comment=Catch22 hex editor
+Exec=q22
+Icon=q22
+StartupWMClass=q22
+Categories=Utility;Development;

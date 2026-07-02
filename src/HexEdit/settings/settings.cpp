@@ -8,7 +8,7 @@
 #include <algorithm>
 
 //#define ORG "Catch22"
-//#define APP "HexEdit"
+//#define APP "q22"
 
 
 void AppSettings::ensureSettingsDir()

@@ -19,7 +19,7 @@ namespace BookmarkStore {
 static QString storePath()
 {
     // Derive the directory from a QSettings probe using the same org/app names
-    // as the rest of the app — this puts bookmarks.json alongside hexedit.ini
+    // as the rest of the app — this puts bookmarks.json alongside q22.ini
     // rather than in a deeper AppConfigLocation subdirectory.
     const QSettings probe(QSettings::IniFormat, QSettings::UserScope,
                           QCoreApplication::organizationName(),

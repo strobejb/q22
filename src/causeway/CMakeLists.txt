@@ -39,7 +39,7 @@ add_custom_target(causewayData ALL
 
 include(GNUInstallDirs)
 install(FILES ${CAUSEWAY_STANDARD_FILES}
-    DESTINATION "${CMAKE_INSTALL_DATADIR}/hexedit/strata"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/q22/strata"
 )
 
 set(CAUSEWAY_DATA_BINARY_DIR "${CAUSEWAY_DATA_BINARY_DIR}" PARENT_SCOPE)

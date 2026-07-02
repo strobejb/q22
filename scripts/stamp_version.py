@@ -64,7 +64,7 @@ def main() -> None:
             print(f"HEXEDIT_PRODUCT_VERSION={product_version}", file=env)
             print(f"HEXEDIT_FILE_VERSION={file_version}", file=env)
 
-    print(f"Stamped HexEdit version {file_version}")
+    print(f"Stamped q22 version {file_version}")
     print(f"Writing: {header}")
 
 

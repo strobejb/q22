@@ -262,13 +262,16 @@ QStringList StructureDefinitionManager::builtinStructDirs() const
     if (!appDir.isEmpty())
         dirs.push_back(QDir(appDir).filePath(QStringLiteral("strata")));
 
-    const QStringList dataDirs = QStandardPaths::locateAll(
-        QStandardPaths::GenericDataLocation,
-        QStringLiteral("hexedit/strata"),
-        QStandardPaths::LocateDirectory);
-    for (const QString &dir : dataDirs)
-        if (!dirs.contains(dir))
-            dirs.push_back(dir);
+    for (const QString &relativePath : {QStringLiteral("q22/strata"),
+                                        QStringLiteral("hexedit/strata")}) {
+        const QStringList dataDirs = QStandardPaths::locateAll(
+            QStandardPaths::GenericDataLocation,
+            relativePath,
+            QStandardPaths::LocateDirectory);
+        for (const QString &dir : dataDirs)
+            if (!dirs.contains(dir))
+                dirs.push_back(dir);
+    }
 
     return dirs;
 }

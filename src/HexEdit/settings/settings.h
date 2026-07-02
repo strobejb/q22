@@ -15,10 +15,10 @@ QSettings s(QSettings::IniFormat, QSettings::UserScope, QCoreApplication::organi
 // Typed accessors for persistent application preferences.
 // Data is stored as INI under the platform user-config location, using the
 // org/app names set in main() via QCoreApplication::setOrganizationName /
-// setApplicationName.  With org="catch22" and app="hexedit":
-//   Linux:   ~/.config/catch22/hexedit.ini
-//   Windows: %APPDATA%\catch22\hexedit.ini
-//   macOS:   ~/Library/Preferences/catch22/hexedit.ini
+// setApplicationName.  With org="catch22" and app="q22":
+//   Linux:   ~/.config/catch22/q22.ini
+//   Windows: %APPDATA%\catch22\q22.ini
+//   macOS:   ~/Library/Preferences/catch22/q22.ini
 namespace AppSettings {
 
 // Call once at startup (before any other AppSettings function) to guarantee

@@ -1,7 +1,7 @@
 #include <windows.h>
 #include "../version.h"
 
-IDI_ICON1 ICON "HexEdit.ico"
+IDI_ICON1 ICON "q22.ico"
 
 VS_VERSION_INFO VERSIONINFO
  FILEVERSION VERSION_MAJOR,VERSION_MINOR,VERSION_PATCH,VERSION_BUILD_COUNT
@@ -21,11 +21,11 @@ BEGIN
         BLOCK "040904B0"
         BEGIN
             VALUE "CompanyName", "catch22\0"
-            VALUE "FileDescription", "Catch22 HexEdit\0"
+            VALUE "FileDescription", "q22 - Catch22 Hex Editor\0"
             VALUE "FileVersion", FILE_VERSION_STRING "\0"
-            VALUE "InternalName", "hexedit\0"
-            VALUE "OriginalFilename", "hexedit.exe\0"
-            VALUE "ProductName", "Catch22 HexEdit\0"
+            VALUE "InternalName", "q22\0"
+            VALUE "OriginalFilename", "q22.exe\0"
+            VALUE "ProductName", "q22\0"
             VALUE "ProductVersion", PRODUCT_VERSION_STRING "\0"
         END
     END
