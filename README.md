@@ -1,21 +1,15 @@
-# q22
+# Q22
 
 [![Build and Test](https://github.com/strobejb/q22/actions/workflows/build.yml/badge.svg)](https://github.com/strobejb/q22/actions/workflows/build.yml)
 [![Release](https://github.com/strobejb/q22/actions/workflows/release.yml/badge.svg)](https://github.com/strobejb/q22/actions/workflows/release.yml)
 
-q22 is a cross-platform binary file editor from Catch22, and the successor to the
-original Catch22 HexEdit application for Windows.
+Q22 is a cross-platform binary file editor - the successor to the original Catch22 HexEdit application for Windows.
 
-The core file editing and hex view capabilities are carried forward from the
-legacy application, while the application UX has been largely
-rewritten in Qt6. The goal is to keep the direct, capable binary-editing model
-of the original HexEdit while modernising the UI, settings, theming, packaging,
-and cross-platform foundations.
+<p align="center">
+<img src="https://github.com/strobejb/q22/blob/assets/screenshot1.png" width="512px"/>
+</p>
 
-The original Catch22 HexEdit project lived at:
-
-- https://www.catch22.net/software
-- https://github.com/strobejb/HexEdit
+The core file editing and hex-view capabilities are carried forward from the original HexEdit, while the application UX has been largely rewritten in Qt6. The goal was to keep the direct, capable binary-editing model of the original HexEdit while modernising the UI, settings, theming, packaging, and cross-platform foundations.
 
 ## Features
 
@@ -29,8 +23,8 @@ Editing:
 
 Structure View:
 
-- Inspect files through named C-style structures instead of raw offsets.
-- Built-in views for PE and ELF files.
+- Inspect files through C-style structures.
+- Built-in support for PE and ELF files.
 - Expand headers, sections, imports, exports, symbols, and related tables.
 - Automatically choose known formats from file type or magic bytes.
 - Add custom `.struct` definitions using the Strata language.
@@ -39,13 +33,12 @@ Disassembly:
 
 - Disassemble code!
 - Supports x86 64-bit, x86 32-bit, ARM, ARM Thumb, and AArch64.
-- Detects PE and ELF entrypoints and follows reachable code.
+- Detects PE and ELF entrypoints automatically.
 - Browse discovered functions and jump between disassembly and bytes.
 
 Bookmarks and annotations:
 
 - Bookmarks and highlights within the hex display.
-- Annotate and highlight byte ranges.
 - Fast access to saved bookmarked positions through the bookmark viewer.
 - Bookmark state is persisted for future use.
 
@@ -69,16 +62,6 @@ UX:
   Windows, KDE/KWin, and GNOME/Mutter.
 - Windows and Linux build/release workflows.
 
-## Status
-
-This repository is the active Qt6 successor to Catch22 HexEdit. The core hex
-view/editor lineage is inherited from the legacy application, while the
-application shell, theming, docked panels, Structure View, Strata definitions,
-disassembler, and platform integration have been rebuilt around Qt.
-
-The application is named q22. "Catch22 Hex Editor" is the descriptive name used
-in packaging and metadata.
-
 ## Build
 
 ```sh
@@ -87,11 +70,18 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
+## Supported Platforms
+
+* Linux (Fedora currently)
+* Windows
+
+more to come!
+
 ## License
 
 Copyright (C) 2001-2026 James Brown.
 
-q22 is licensed under GPL-3.0-or-later. The full license text is included in
+Q22 is licensed under GPL-3.0-or-later. The full license text is included in
 [LICENSE](LICENSE).
 
 Releases are created manually from the GitHub Actions **Release** workflow using a `MAJOR.MINOR.PATCH` version.
