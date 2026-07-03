@@ -6,11 +6,11 @@
 
 #include <QDate>
 #include <QDateTime>
+#include <QFontMetrics>
 #include <QLabel>
 #include <QHBoxLayout>
 #include <QTime>
 #include <QTimeZone>
-#include <QVBoxLayout>
 
 #include <cstring>
 
@@ -28,41 +28,23 @@ public:
     {
         setMinimumWidth(0);
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        setFixedHeight(rowHeight());
 
         auto *layout = new QHBoxLayout(this);
-        layout->setContentsMargins(0, 2, 0, 2);
+        layout->setContentsMargins(0, 0, 0, 0);
         layout->setSpacing(16);
 
         auto makeColumn = [this](const QString &title, QLabel **valueOut)
         {
-            auto *column = new QWidget(this);
-            column->setMinimumWidth(0);
-            column->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-
-            auto *columnLayout = new QVBoxLayout(column);
-            columnLayout->setContentsMargins(0, 0, 0, 0);
-            columnLayout->setSpacing(3);
-
-            auto *name = new QLabel(title, column);
-            QFont labelFont = name->font();
-            if (labelFont.pointSizeF() > 0)
-                labelFont.setPointSizeF(qMax(1.0, labelFont.pointSizeF() - 1.0));
-            else if (labelFont.pixelSize() > 0)
-                labelFont.setPixelSize(qMax(1, labelFont.pixelSize() - 1));
-            name->setFont(labelFont);
-            name->setMinimumWidth(0);
-            name->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-            name->setStyleSheet(QStringLiteral("color: %1;").arg(cssColor(subduedTextColor(palette()))));
-
-            auto *value = new QLabel(column);
-            value->setMinimumWidth(0);
-            value->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-            value->setTextInteractionFlags(Qt::TextSelectableByMouse);
-            value->setWordWrap(true);
-
-            columnLayout->addWidget(name);
-            columnLayout->addWidget(value);
-            *valueOut = value;
+            auto *column = new PropertyRow(title, valueOut, this);
+            column->setFixedHeight(rowHeight());
+            if (auto *value = valueOut ? *valueOut : nullptr)
+            {
+                value->setFixedHeight(QFontMetrics(value->font()).height());
+                value->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+                value->setTextFormat(Qt::PlainText);
+                value->setWordWrap(false);
+            }
             return column;
         };
 
@@ -72,12 +54,12 @@ public:
 
     QSize sizeHint() const override
     {
-        const QFontMetrics fm(font());
-        return QSize(1, qMax(42, fm.height() * 2 + 16));
+        return QSize(1, rowHeight());
     }
 
     QSize minimumSizeHint() const override { return QSize(1, sizeHint().height()); }
 
+public:
     void setValues(const QString &leftText, const QString &rightText)
     {
         m_leftValue->setText(leftText);
@@ -85,6 +67,12 @@ public:
     }
 
 private:
+    int rowHeight() const
+    {
+        const QFontMetrics fm(font());
+        return qMax(42, fm.height() * 2 + 16);
+    }
+
     QLabel *m_leftValue = nullptr;
     QLabel *m_rightValue = nullptr;
 };
