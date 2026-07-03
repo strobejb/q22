@@ -107,6 +107,33 @@ static TypeDecl *firstExported(StrataLibrary *library)
     return nullptr;
 }
 
+static QString exportedName(TypeDecl *decl)
+{
+    if (!decl)
+        return {};
+
+    for (Type *type : decl->declList)
+        if (type && type->sym)
+            return QString::fromLocal8Bit(type->sym->name);
+
+    if (decl->baseType && decl->baseType->ty == typeSTRUCT && decl->baseType->sptr && decl->baseType->sptr->symbol)
+        return QString::fromLocal8Bit(decl->baseType->sptr->symbol->name);
+
+    return {};
+}
+
+static TypeDecl *exportedNamed(StrataLibrary *library, const QString &name)
+{
+    if (!library)
+        return nullptr;
+
+    for (TypeDecl *decl : library->globalTypeDeclList)
+        if (decl && FindTag(decl->tagList, TOK_EXPORT, nullptr) && exportedName(decl) == name)
+            return decl;
+
+    return nullptr;
+}
+
 static std::vector<std::unique_ptr<StructureRow>> buildRows(StrataLibrary *library,
                                                             TypeDecl *root,
                                                             const QByteArray &bytes,
@@ -1430,7 +1457,9 @@ void StructViewTests::builderUsesSimpleRootNamesForBuiltinTypedefRoots()
     // should not reintroduce noisy root labels like "ELF elf".
     StrataLibrary peLibrary;
     QVERIFY2(parseStandardDefinition(&peLibrary, QStringLiteral("pe.struct")), "pe.struct failed to parse");
-    auto peRows = buildRows(&peLibrary, firstExported(&peLibrary), QByteArray(512, '\0'));
+    TypeDecl *peRoot = exportedNamed(&peLibrary, QStringLiteral("PE"));
+    QVERIFY(peRoot);
+    auto peRows = buildRows(&peLibrary, peRoot, QByteArray(512, '\0'));
     QCOMPARE(peRows.size(), size_t(1));
     QCOMPARE(peRows[0]->name, QStringLiteral("PE"));
 
@@ -1443,7 +1472,9 @@ void StructViewTests::builderUsesSimpleRootNamesForBuiltinTypedefRoots()
     elfBytes[3] = 'F';
     elfBytes[4] = char(1);
     elfBytes[5] = char(1);
-    auto elfRows = buildRows(&elfLibrary, firstExported(&elfLibrary), elfBytes);
+    TypeDecl *elfRoot = exportedNamed(&elfLibrary, QStringLiteral("ELF"));
+    QVERIFY(elfRoot);
+    auto elfRows = buildRows(&elfLibrary, elfRoot, elfBytes);
     QCOMPARE(elfRows.size(), size_t(1));
     QCOMPARE(elfRows[0]->name, QStringLiteral("ELF"));
 }
@@ -1476,7 +1507,9 @@ void StructViewTests::builderRendersElf32AndElf64Tables()
     writeLe16(&elf32, 46, 40);
     writeLe16(&elf32, 48, 2);
 
-    auto rows32 = buildRows(&library32, firstExported(&library32), elf32);
+    TypeDecl *root32 = exportedNamed(&library32, QStringLiteral("ELF"));
+    QVERIFY(root32);
+    auto rows32 = buildRows(&library32, root32, elf32);
     QCOMPARE(rows32.size(), size_t(1));
     QStringList childNames32;
     for (const auto &child : rows32[0]->children)
@@ -1516,7 +1549,9 @@ void StructViewTests::builderRendersElf32AndElf64Tables()
     writeBe16(&elf32be, 46, 40);
     writeBe16(&elf32be, 48, 1);
 
-    auto rows32be = buildRows(&library32be, firstExported(&library32be), elf32be);
+    TypeDecl *root32be = exportedNamed(&library32be, QStringLiteral("ELF"));
+    QVERIFY(root32be);
+    auto rows32be = buildRows(&library32be, root32be, elf32be);
     QCOMPARE(rows32be.size(), size_t(1));
     StructureRow *header32be = findChildNamed(rows32be[0].get(), QStringLiteral("Elf32_Ehdr header32"));
     QVERIFY(header32be);
@@ -1543,7 +1578,9 @@ void StructViewTests::builderRendersElf32AndElf64Tables()
     writeLe16(&elf64, 58, 64);
     writeLe16(&elf64, 60, 1);
 
-    auto rows64 = buildRows(&library64, firstExported(&library64), elf64);
+    TypeDecl *root64 = exportedNamed(&library64, QStringLiteral("ELF"));
+    QVERIFY(root64);
+    auto rows64 = buildRows(&library64, root64, elf64);
     QCOMPARE(rows64.size(), size_t(1));
     QVERIFY(findChildNamed(rows64[0].get(), QStringLiteral("Elf64_Ehdr header64")));
     QVERIFY(findChildNamed(rows64[0].get(), QStringLiteral("Elf64_Phdr programHeaders64[]")));
@@ -1834,7 +1871,9 @@ void StructViewTests::builderNamesPeDynamicSectionsFromStandardDefinition()
     writeLe32(&bytes, secondSection + 16, 0x80);
     writeLe32(&bytes, secondSection + 20, 0x280);
 
-    auto rows = buildRows(&library, firstExported(&library), bytes);
+    TypeDecl *root = exportedNamed(&library, QStringLiteral("PE"));
+    QVERIFY(root);
+    auto rows = buildRows(&library, root, bytes);
     QCOMPARE(rows.size(), size_t(1));
 
     StructureRow *text = findChildNamed(rows[0].get(), QStringLiteral("SECTION .text"));
@@ -1908,7 +1947,9 @@ void StructViewTests::builderNamesPeImportDescriptorsFromStandardDefinition()
     writeLe32(&bytes, 0x28c, 0x2014);
     writeAscii(&bytes, 0x294, "KERNEL32.dll");
 
-    auto rows = buildRows(&library, firstExported(&library), bytes);
+    TypeDecl *root = exportedNamed(&library, QStringLiteral("PE"));
+    QVERIFY(root);
+    auto rows = buildRows(&library, root, bytes);
     QCOMPARE(rows.size(), size_t(1));
 
     StructureRow *descriptors = findDescendantNamed(rows[0].get(), QStringLiteral("IMAGE_IMPORT_DESCRIPTOR[]"));
@@ -1953,7 +1994,9 @@ void StructViewTests::builderResolvesEntryPointRvaThroughSectionOffsetMap()
     writeLe32(&bytes, secondSection + 16, 0x80);
     writeLe32(&bytes, secondSection + 20, 0x280);
 
-    auto rows = buildRows(&library, firstExported(&library), bytes);
+    TypeDecl *root = exportedNamed(&library, QStringLiteral("PE"));
+    QVERIFY(root);
+    auto rows = buildRows(&library, root, bytes);
     QCOMPARE(rows.size(), size_t(1));
 
     StructureRow *entry = findDescendantNamed(rows[0].get(), QStringLiteral("dword AddressOfEntryPoint"));
@@ -2395,7 +2438,9 @@ void StructViewTests::builderAddsElfSectionAndSymbolSemanticRows()
     bytes[0x220 + 28] = char(0x12);
     writeLe16(&bytes, 0x220 + 30, 1);
 
-    auto rows = buildRows(&library, firstExported(&library), bytes);
+    TypeDecl *root = exportedNamed(&library, QStringLiteral("ELF"));
+    QVERIFY(root);
+    auto rows = buildRows(&library, root, bytes);
     QCOMPARE(rows.size(), size_t(1));
     QVERIFY(findChildNamed(rows[0].get(), QStringLiteral("Elf32_Shdr sectionHeaders32[]")));
 
@@ -2442,7 +2487,9 @@ void StructViewTests::builderKeepsRawElfRowsWhenSemanticDataIsTruncated()
     writeLe32(&bytes, 0x100 + 40 + 16, 0x300);
     writeLe32(&bytes, 0x100 + 40 + 20, 0x20);
 
-    auto rows = buildRows(&library, firstExported(&library), bytes);
+    TypeDecl *root = exportedNamed(&library, QStringLiteral("ELF"));
+    QVERIFY(root);
+    auto rows = buildRows(&library, root, bytes);
     QCOMPARE(rows.size(), size_t(1));
     QVERIFY(findChildNamed(rows[0].get(), QStringLiteral("Elf32_Ehdr header32")));
     QVERIFY(findChildNamed(rows[0].get(), QStringLiteral("Elf32_Shdr sectionHeaders32[]")));
