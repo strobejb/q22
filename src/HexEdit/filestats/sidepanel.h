@@ -384,6 +384,7 @@ class SidePanelHostBase : public QWidget
     virtual QWidget *createPanelWidget()                = 0;
     virtual void    onPanelCreated(QWidget * /*panel*/) {}
     virtual void    onFullyOpenedChanged(bool /*open*/) {}
+    virtual void    onPaneWidthCommitted(int /*width*/) {}
 
     void resizeEvent(QResizeEvent *) override;
 
@@ -463,6 +464,7 @@ class SidePanelHost : public SidePanelHostBase
     QWidget *createPanelWidget() override;
     void     onPanelCreated(QWidget *panel) override;
     void     onFullyOpenedChanged(bool open) override;
+    void     onPaneWidthCommitted(int width) override;
 
   private:
     HexView *m_hexView = nullptr;

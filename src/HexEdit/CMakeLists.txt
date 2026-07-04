@@ -178,7 +178,6 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         resources/icons/actions/edit-copy-symbolic.svg resources/icons/actions/edit-cut-symbolic.svg resources/icons/actions/edit-delete-symbolic.svg
         resources/icons/actions/help-about-symbolic.svg
         resources/icons/actions/hierarchy1.svg
-        resources/icons/actions/hierarchy2.svg
         resources/icons/actions/bug.svg
         resources/icons/actions/media-playback-stop-symbolic.svg resources/icons/actions/media-playlist-repeat-symbolic.svg resources/icons/actions/stopcircle.svg
         resources/icons/actions/media-playback-start-symbolic.svg
@@ -186,7 +185,6 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         resources/icons/actions/downloads.svg
         resources/icons/actions/circle-repeat.svg
         resources/icons/actions/bookmark-star-add.svg
-        resources/icons/actions/hierarchy3.svg
         resources/icons/actions/object-flip-vertical-symbolic.svg resources/icons/actions/view-fullscreen-symbolic.svg
         resources/q22-title.png
     )

@@ -134,7 +134,29 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     contentLayout->addSpacerItem(m_interSectionGaps.last());
     buildEntropySection(m_content, contentLayout);
 
-    contentLayout->addStretch();
+    const QVector<SectionId> defaultOrder = m_sectionOrder;
+    QVector<SectionId> savedOrder;
+    bool restoredSectionOrder = false;
+    for (const QString &idText : AppSettings::sidePanelSectionOrder())
+    {
+        bool ok = false;
+        const int id = idText.toInt(&ok);
+        const SectionId section = static_cast<SectionId>(id);
+        if (ok && defaultOrder.contains(section) && !savedOrder.contains(section))
+            savedOrder.append(section);
+    }
+    for (SectionId section : defaultOrder)
+        if (!savedOrder.contains(section))
+            savedOrder.append(section);
+    if (savedOrder != defaultOrder)
+    {
+        m_sectionOrder = savedOrder;
+        rebuildSectionLayout();
+        restoredSectionOrder = true;
+    }
+
+    if (!restoredSectionOrder)
+        contentLayout->addStretch();
 
     m_scrollArea->setWidget(m_content);
     root->addWidget(m_scrollArea, 1);
@@ -972,6 +994,10 @@ void FilePropertiesPanel::onDragEnded(SectionId /*s*/, QPoint globalPos)
         // with every other item sliding to fill the gap — no explicit adjustment needed.
         m_sectionOrder.removeAt(di);
         m_sectionOrder.insert(ti, m_draggedSection);
+        QStringList savedOrder;
+        for (SectionId section : std::as_const(m_sectionOrder))
+            savedOrder.append(QString::number(static_cast<int>(section)));
+        AppSettings::setSidePanelSectionOrder(savedOrder);
         rebuildSectionLayout();
     }
 
@@ -1526,6 +1552,7 @@ bool SidePanelHostBase::eventFilter(QObject *obj, QEvent *event)
         if (m_resizeHandle)
             static_cast<SidePanelResizeGrip *>(m_resizeHandle)->setActive(false);
         m_resizing = false;
+        onPaneWidthCommitted(m_paneWidth);
         return type == QEvent::MouseButtonRelease;
     }
 
@@ -1712,7 +1739,8 @@ void SidePanelSlot::beginCollapse()
 // ── SidePanelHost ─────────────────────────────────────────────────────────────
 
 SidePanelHost::SidePanelHost(HexView *hexView, QWidget *parent)
-    : SidePanelHostBase(400, kFileInfoPaneMinWidth, kFileInfoPaneMaxWidth, /*gripOnLeft=*/true, parent)
+    : SidePanelHostBase(AppSettings::sidePanelWidth() > 0 ? AppSettings::sidePanelWidth() : 400,
+                        kFileInfoPaneMinWidth, kFileInfoPaneMaxWidth, /*gripOnLeft=*/true, parent)
     , m_hexView(hexView)
 {}
 
@@ -1733,6 +1761,11 @@ void SidePanelHost::onFullyOpenedChanged(bool open)
 {
     if (auto *p = qobject_cast<FilePropertiesPanel *>(panelWidget()))
         p->setPanelFullyOpened(open);
+}
+
+void SidePanelHost::onPaneWidthCommitted(int width)
+{
+    AppSettings::setSidePanelWidth(width);
 }
 
 void SidePanelHost::toggle()

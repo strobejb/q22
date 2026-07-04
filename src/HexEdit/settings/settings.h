@@ -89,6 +89,11 @@ void    setPrefBookmarkSelectionHighlights(bool on);
 bool    prefSectionHeaderDoubleClick();    // true = double-click section header triggers expand/scroll-to-top
 void    setPrefSectionHeaderDoubleClick(bool on);
 
+QStringList sidePanelSectionOrder();
+void        setSidePanelSectionOrder(const QStringList &order);
+int         sidePanelWidth();              // 0 = use default width
+void        setSidePanelWidth(int width);
+
 } // namespace AppSettings
 
 #endif // SETTINGS_H

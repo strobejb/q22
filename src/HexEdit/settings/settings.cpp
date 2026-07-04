@@ -382,3 +382,27 @@ void AppSettings::setPrefSectionHeaderDoubleClick(bool on)
     OPEN_SETTINGS;
     s.setValue("sidepanel/headerDoubleClick", on);
 }
+
+QStringList AppSettings::sidePanelSectionOrder()
+{
+    OPEN_SETTINGS;
+    return s.value("sidepanel/sectionOrder").toStringList();
+}
+
+void AppSettings::setSidePanelSectionOrder(const QStringList &order)
+{
+    OPEN_SETTINGS;
+    s.setValue("sidepanel/sectionOrder", order);
+}
+
+int AppSettings::sidePanelWidth()
+{
+    OPEN_SETTINGS;
+    return std::max(0, s.value("sidepanel/width", 0).toInt());
+}
+
+void AppSettings::setSidePanelWidth(int width)
+{
+    OPEN_SETTINGS;
+    s.setValue("sidepanel/width", std::max(0, width));
+}

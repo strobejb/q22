@@ -70,7 +70,7 @@ private:
     int rowHeight() const
     {
         const QFontMetrics fm(font());
-        return qMax(42, fm.height() * 2 + 16);
+        return qMax(36, fm.height() * 2 + 6);
     }
 
     QLabel *m_leftValue = nullptr;
