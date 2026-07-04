@@ -765,6 +765,9 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->actionStructureView, &QAction::triggered,
             this, &MainWindow::toggleStructurePanel);
 
+    ui->actionDataInspector->setEnabled(true);
+    connect(ui->actionDataInspector, &QAction::triggered,
+            this, [this]() { openSidePanelSection(FilePropertiesPanel::SectionId::DataInterpreter); });
     ui->actionChecksum->setEnabled(true);
     connect(ui->actionChecksum, &QAction::triggered,
             this, [this]() { openSidePanelSection(FilePropertiesPanel::SectionId::Checksums); });

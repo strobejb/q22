@@ -20,7 +20,7 @@
      <x>0</x>
      <y>0</y>
      <width>800</width>
-     <height>24</height>
+     <height>21</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuFile">
@@ -114,6 +114,7 @@
     <addaction name="separator"/>
     <addaction name="menuView_2"/>
     <addaction name="separator"/>
+    <addaction name="actionDataInspector"/>
     <addaction name="actionProperties"/>
     <addaction name="actionChecksum"/>
     <addaction name="actionStrings"/>
@@ -497,6 +498,11 @@
   <action name="actionReverse">
    <property name="text">
     <string>Reverse...</string>
+   </property>
+  </action>
+  <action name="actionDataInspector">
+   <property name="text">
+    <string>Data Inspector...</string>
    </property>
   </action>
  </widget>

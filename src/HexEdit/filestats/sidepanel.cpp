@@ -76,7 +76,7 @@ static constexpr int  kFileInfoPaneAnimMs           = 220;
 static constexpr bool kAutoStartPanelOperations     = true;
 FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QDialog(parent), m_hexView(hexView)
 {
-    m_sectionOrder = {SectionId::Properties, SectionId::DataInterpreter, SectionId::Checksums,
+    m_sectionOrder = {SectionId::DataInterpreter, SectionId::Properties, SectionId::Checksums,
                       SectionId::Strings, SectionId::Entropy};
 
     setWindowTitle(tr("File Information"));
@@ -116,11 +116,11 @@ FilePropertiesPanel::FilePropertiesPanel(HexView *hexView, QWidget *parent) : QD
     contentLayout->setContentsMargins(kSectionHeaderOuterMargin, kContentMargin, kSectionHeaderOuterMargin, 0);
     contentLayout->setSpacing(0);
 
-    buildPropertiesSection(m_content, contentLayout);
+    buildDataInterpreterSection(m_content, contentLayout);
 
     m_interSectionGaps.append(new QSpacerItem(0, kGroupTopGap, QSizePolicy::Minimum, QSizePolicy::Fixed));
     contentLayout->addSpacerItem(m_interSectionGaps.last());
-    buildDataInterpreterSection(m_content, contentLayout);
+    buildPropertiesSection(m_content, contentLayout);
 
     m_interSectionGaps.append(new QSpacerItem(0, kGroupTopGap, QSizePolicy::Minimum, QSizePolicy::Fixed));
     contentLayout->addSpacerItem(m_interSectionGaps.last());
