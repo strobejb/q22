@@ -12,7 +12,12 @@ UnDecorateSymbolName(const char *name, char *outputString,
                       unsigned long maxStringLength, unsigned long flags);
 #endif
 
+#if defined(__has_include)
+#if __has_include(<cxxabi.h>)
 #include <cxxabi.h>
+#define QEXED_HAVE_CXXABI 1
+#endif
+#endif
 
 #include <cstdlib>
 
@@ -45,6 +50,7 @@ QString demangleSymbolName(const QString &mangledName, DemangleStyle style)
     // Itanium C++ ABI mangling -- GCC/Clang/MinGW-built binaries.
     if (mangledName.startsWith(QStringLiteral("_Z")))
     {
+#ifdef QEXED_HAVE_CXXABI
         int status = 0;
         char *demangled = abi::__cxa_demangle(utf8.constData(), nullptr, nullptr, &status);
         QString result = (status == 0 && demangled) ? QString::fromUtf8(demangled) : mangledName;
@@ -63,6 +69,9 @@ QString demangleSymbolName(const QString &mangledName, DemangleStyle style)
                 result.truncate(paren);
         }
         return result;
+#else
+        return mangledName;
+#endif
     }
 
     return mangledName;

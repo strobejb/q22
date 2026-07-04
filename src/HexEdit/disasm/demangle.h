@@ -19,9 +19,8 @@ enum class DemangleStyle
 // Demangles a C++ export name for display -- MSVC mangling ("?"-prefixed,
 // the common case for Windows binaries) via dbghelp's UnDecorateSymbolName(),
 // Itanium ABI mangling ("_Z"-prefixed, GCC/Clang/MinGW-built binaries) via
-// __cxa_demangle(). Returns the input unchanged if it isn't recognized as
-// either (plain C exports, or anything the underlying demangler rejects as
-// malformed).
+// __cxa_demangle() when the toolchain provides <cxxabi.h>. Returns the input
+// unchanged if it isn't recognized or the relevant demangler is unavailable.
 QString demangleSymbolName(const QString &mangledName, DemangleStyle style = DemangleStyle::Full);
 
 #endif // DISASM_DEMANGLE_H
