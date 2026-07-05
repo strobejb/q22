@@ -485,6 +485,7 @@ bool DisassemblerPanel::eventFilter(QObject *watched, QEvent *event)
         // end on top of a link's text without meaning to follow it).
         if (me->button() == Qt::LeftButton && !m_view->textCursor().hasSelection() && m_hoveredSpanIndex >= 0)
         {
+            pushJumpSourceForSpan(m_hoveredSpanIndex);
             goToOffset(m_branchSpans[m_hoveredSpanIndex].targetOffset);
             m_view->setFocus();
             return true;
@@ -554,6 +555,9 @@ bool DisassemblerPanel::eventFilter(QObject *watched, QEvent *event)
         case Qt::Key_PageUp:
         case Qt::Key_PageDown:
             return false;
+        case Qt::Key_Escape:
+            jumpBack();
+            return true;
         default:
             return true;
         }
@@ -1009,6 +1013,80 @@ void DisassemblerPanel::updateOffsetDisplay()
         return;
     const size_w offset = m_hv->cursorOffset();
     m_offsetEdit->setText(QString::number(offset, 16).toUpper().rightJustified(8, QLatin1Char('0')));
+}
+
+bool DisassemblerPanel::pushJumpSourceForSpan(int spanIndex)
+{
+    if (!m_view || spanIndex < 0 || spanIndex >= static_cast<int>(m_branchSpans.size()))
+        return false;
+
+    const QTextBlock block = m_view->document()->findBlock(m_branchSpans[spanIndex].startPos);
+    if (!block.isValid())
+        return false;
+
+    const int instructionIndex = block.blockNumber() - m_headerLineCount;
+    if (instructionIndex < 0 || instructionIndex >= static_cast<int>(m_instructionRanges.size()))
+        return false;
+
+    const auto [instructionStart, instructionEnd] = m_instructionRanges[instructionIndex];
+    uint64_t functionOffset = instructionStart;
+    for (const DiscoveredFunction &fn : m_discoveredFunctions)
+    {
+        if (instructionStart >= fn.startOffset && instructionStart < fn.endOffset)
+        {
+            functionOffset = fn.startOffset;
+            break;
+        }
+    }
+
+    const JumpHistoryEntry entry{functionOffset, instructionStart, instructionEnd};
+    if (m_jumpHistory.empty()
+        || m_jumpHistory.back().functionOffset != entry.functionOffset
+        || m_jumpHistory.back().instructionStart != entry.instructionStart
+        || m_jumpHistory.back().instructionEnd != entry.instructionEnd)
+    {
+        m_jumpHistory.push_back(entry);
+    }
+    return true;
+}
+
+bool DisassemblerPanel::jumpBack()
+{
+    if (m_jumpHistory.empty())
+        return false;
+
+    const JumpHistoryEntry entry = m_jumpHistory.back();
+    m_jumpHistory.pop_back();
+
+    goToOffset(entry.functionOffset);
+
+    int sourceInstructionIndex = -1;
+    for (int i = 0; i < static_cast<int>(m_instructionRanges.size()); ++i)
+    {
+        if (m_instructionRanges[i].first < entry.instructionEnd
+            && m_instructionRanges[i].second > entry.instructionStart)
+        {
+            sourceInstructionIndex = i;
+            break;
+        }
+    }
+
+    if (sourceInstructionIndex >= 0 && m_hv)
+    {
+        applyLineSelection(sourceInstructionIndex + m_headerLineCount,
+                           sourceInstructionIndex + m_headerLineCount);
+        m_updatingHexViewFromDisasm = true;
+        m_hv->setCurSel(static_cast<size_w>(entry.instructionStart),
+                        static_cast<size_w>(entry.instructionEnd),
+                        false);
+        m_hv->scrollCenter(static_cast<size_w>(entry.instructionStart));
+        m_updatingHexViewFromDisasm = false;
+        updateOffsetDisplay();
+    }
+
+    if (m_view)
+        m_view->setFocus();
+    return true;
 }
 
 void DisassemblerPanel::goToOffset(uint64_t offset)

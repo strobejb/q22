@@ -81,6 +81,8 @@ private:
     // directly via goToOffset(), with no cross-panel wiring needed.
     void rebuildFunctionsList();
     void onFunctionItemActivated(QTreeWidgetItem *item, int column);
+    bool pushJumpSourceForSpan(int spanIndex);
+    bool jumpBack();
     // Rebuilds the "jump to function" combo's item list: a permanent
     // "Entrypoint" entry (enabled only once known) followed by, if any were
     // found, a separator and the discovered functions -- called whenever
@@ -151,6 +153,8 @@ private:
     // selection highlight.
     int             m_hoveredTargetLine = -1;
     QList<QTextEdit::ExtraSelection> m_lineHighlights;
+    struct JumpHistoryEntry { uint64_t functionOffset; uint64_t instructionStart; uint64_t instructionEnd; };
+    std::vector<JumpHistoryEntry> m_jumpHistory;
 
     cs_arch m_csArch   = CS_ARCH_X86;
     cs_mode m_csMode   = (cs_mode)CS_MODE_64;
