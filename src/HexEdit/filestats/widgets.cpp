@@ -24,6 +24,7 @@
 #include <QPushButton>
 #include <QResizeEvent>
 #include <QSizePolicy>
+#include <QStyleOptionHeader>
 #include <QTimer>
 #include <QToolButton>
 #include <QTreeWidget>
@@ -31,6 +32,9 @@
 
 namespace filestats
 {
+
+static constexpr int kStyledListHeaderBottomGap      = 3;
+static constexpr int kStyledListHeaderUnderlineWidth = 4;
 
 // â”€â”€ Internal helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -61,6 +65,175 @@ static QToolButton *createProgressToolButton(QWidget *parent, const QString &ico
                               .arg(hover, pressed));
     button->hide();
     return button;
+}
+
+QFont styledListHeaderFont(const QFont &baseFont)
+{
+    QFont headerFont = baseFont;
+    if (headerFont.pointSizeF() > 0)
+        headerFont.setPointSizeF(qMax(1.0, headerFont.pointSizeF() - 1.0));
+    else if (headerFont.pixelSize() > 0)
+        headerFont.setPixelSize(qMax(1, headerFont.pixelSize() - 1));
+    headerFont.setWeight(QFont::DemiBold);
+    return headerFont;
+}
+
+int styledListHeaderHeight(const QFont &baseFont)
+{
+    const QFontMetrics metrics(styledListHeaderFont(baseFont));
+    return metrics.height() + 2 * stringsHeaderPadding(metrics) + kStyledListHeaderBottomGap;
+}
+
+int styledListHeaderItemLeftPadding(const QFont &baseFont, int itemCellInset)
+{
+    return qMax(0, stringsHeaderPadding(QFontMetrics(styledListHeaderFont(baseFont))) - itemCellInset);
+}
+
+StyledListHeader::StyledListHeader(Qt::Orientation orientation, QWidget *parent)
+    : QHeaderView(orientation, parent)
+{
+    setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    setHighlightSections(false);
+    setMouseTracking(true);
+}
+
+void StyledListHeader::paintSection(QPainter *painter, const QRect &rect, int logicalIndex) const
+{
+    paintSectionBase(painter, rect, logicalIndex, styledListHeaderFont(font()),
+                     model() ? model()->headerData(logicalIndex, orientation(), Qt::DisplayRole).toString()
+                             : QString());
+}
+
+void StyledListHeader::mouseMoveEvent(QMouseEvent *event)
+{
+    QHeaderView::mouseMoveEvent(event);
+    const QPoint pos = event->position().toPoint();
+    const int hoveredSection = logicalIndexAt(pos);
+    if (m_hoveredSection != hoveredSection)
+    {
+        m_hoveredSection = hoveredSection;
+        viewport()->update();
+    }
+
+    if (nearSectionResizeHandle(pos))
+        viewport()->setCursor(Qt::SplitHCursor);
+    else if (hoveredSection >= 0)
+        viewport()->setCursor(Qt::PointingHandCursor);
+    else
+        viewport()->setCursor(Qt::ArrowCursor);
+}
+
+void StyledListHeader::leaveEvent(QEvent *event)
+{
+    QHeaderView::leaveEvent(event);
+    m_hoveredSection = -1;
+    viewport()->unsetCursor();
+    viewport()->update();
+}
+
+bool StyledListHeader::isSectionHovered(int logicalIndex) const
+{
+    return logicalIndex >= 0 && logicalIndex == m_hoveredSection;
+}
+
+bool StyledListHeader::nearSectionResizeHandle(const QPoint &pos) const
+{
+    constexpr int kResizeSlop = 4;
+    for (int visual = 0; visual < count() - 1; ++visual)
+    {
+        const int logical = logicalIndex(visual);
+        if (isSectionHidden(logical))
+            continue;
+
+        const int edgeX = sectionViewportPosition(logical) + sectionSize(logical);
+        if (qAbs(pos.x() - edgeX) <= kResizeSlop)
+            return true;
+    }
+    return false;
+}
+
+QRect StyledListHeader::sectionTextRect(const QRect &sectionRect, const QFontMetrics &metrics) const
+{
+    const int pad = stringsHeaderPadding(metrics);
+    return sectionRect.adjusted(pad, pad, -pad, -pad);
+}
+
+void StyledListHeader::paintSectionBase(QPainter *painter, const QRect &rect, int logicalIndex,
+                                        const QFont &headerFont, const QString &text,
+                                        bool drawNativeHeader) const
+{
+    if (!painter || !rect.isValid())
+        return;
+
+    painter->save();
+    const bool   hovered    = isSectionHovered(logicalIndex);
+    const QColor background = palette().color(QPalette::Base);
+    painter->fillRect(rect, background);
+
+    QStyleOptionHeader opt;
+    initStyleOption(&opt);
+    initStyleOptionForIndex(&opt, logicalIndex);
+    opt.rect          = rect.adjusted(0, 0, 0, -kStyledListHeaderBottomGap);
+    opt.fontMetrics   = QFontMetrics(headerFont);
+    opt.text.clear();
+    opt.sortIndicator = QStyleOptionHeader::None;
+    opt.palette.setColor(QPalette::Button, background);
+    opt.palette.setColor(QPalette::Window, background);
+    if (hovered)
+        opt.state |= QStyle::State_MouseOver;
+    if (drawNativeHeader)
+        style()->drawControl(QStyle::CE_Header, &opt, painter, this);
+
+    const QColor textColor = hovered ? palette().color(QPalette::WindowText) : stringsHeaderTextColor(palette());
+    painter->setFont(headerFont);
+    painter->setPen(textColor);
+    painter->drawText(sectionTextRect(opt.rect, opt.fontMetrics), Qt::AlignLeft | Qt::AlignVCenter, text);
+
+    if (hovered)
+    {
+        painter->fillRect(QRect(rect.left(), rect.bottom() - kStyledListHeaderUnderlineWidth + 1,
+                                rect.width(), kStyledListHeaderUnderlineWidth),
+                          palette().color(QPalette::Button));
+    }
+
+    painter->restore();
+}
+
+StyledSortHeader::StyledSortHeader(Qt::Orientation orientation, QWidget *parent)
+    : StyledListHeader(orientation, parent)
+{
+}
+
+void StyledSortHeader::paintSection(QPainter *painter, const QRect &rect, int logicalIndex) const
+{
+    if (!painter || !rect.isValid())
+        return;
+
+    const QFont        headerFont = styledListHeaderFont(font());
+    const QFontMetrics headerMetrics(headerFont);
+    const QString      text = model() ? model()->headerData(logicalIndex, orientation(), Qt::DisplayRole).toString()
+                                      : QString();
+    paintSectionBase(painter, rect, logicalIndex, headerFont, text);
+
+    if (logicalIndex != sortIndicatorSection())
+        return;
+
+    constexpr int kIconGap  = 4;
+    constexpr int kIconSize = 10;
+    const QRect   textRect  = sectionTextRect(rect, headerMetrics);
+    const QColor  iconColor = isSectionHovered(logicalIndex) ? palette().color(QPalette::WindowText)
+                                                             : stringsHeaderTextColor(palette());
+
+    painter->save();
+    painter->setFont(headerFont);
+    const int     textWidth = painter->fontMetrics().horizontalAdvance(text);
+    const int     x         = qMin(textRect.left() + textWidth + kIconGap, textRect.right() - kIconSize + 1);
+    const QRect   iconRect(x, textRect.top() + (textRect.height() - kIconSize) / 2, kIconSize, kIconSize);
+    const QString iconName = sortIndicatorOrder() == Qt::AscendingOrder
+                                 ? QStringLiteral("ui/go-up-symbolic")
+                                 : QStringLiteral("ui/go-down-symbolic");
+    recoloredIcon(iconName, iconColor, kIconSize).paint(painter, iconRect);
+    painter->restore();
 }
 
 static QToolButton *createProgressStopButton(QWidget *parent)

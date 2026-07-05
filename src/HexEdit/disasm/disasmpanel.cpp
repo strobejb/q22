@@ -287,8 +287,14 @@ void DisassemblerPanel::buildUi()
     // (both on itself and its ::viewport) because its header bar's distinct
     // background would otherwise break the illusion of the outer frame's
     // rounded corners; a plain QPlainTextEdit with no header doesn't need it.
-    m_functionsList = new QTreeWidget(m_pageStack);
+    auto *functionsPage = new QWidget(m_pageStack);
+    auto *functionsPageLayout = new QVBoxLayout(functionsPage);
+    functionsPageLayout->setContentsMargins(2, 2, 2, 2);
+    functionsPageLayout->setSpacing(0);
+
+    m_functionsList = new QTreeWidget(functionsPage);
     m_functionsList->setObjectName(QStringLiteral("disasmFunctionsList"));
+    m_functionsList->setHeader(new filestats::StyledSortHeader(Qt::Horizontal, m_functionsList));
     m_functionsList->setColumnCount(3);
     m_functionsList->setHeaderLabels({tr("Address"), tr("Name"), tr("Source")});
     m_functionsList->setRootIsDecorated(false);
@@ -325,19 +331,9 @@ void DisassemblerPanel::buildUi()
 
     int functionsItemLeftPad = 0;
     {
-        QFont headerFont = m_functionsList->header()->font();
-        if (headerFont.pointSizeF() > 0)
-            headerFont.setPointSizeF(qMax(1.0, headerFont.pointSizeF() - 1.0));
-        else if (headerFont.pixelSize() > 0)
-            headerFont.setPixelSize(qMax(1, headerFont.pixelSize() - 1));
-        headerFont.setWeight(QFont::DemiBold);
-        m_functionsList->header()->setFont(headerFont);
-        const QFontMetrics headerMetrics(headerFont);
-        const int headerPad = filestats::stringsHeaderPadding(headerMetrics);
         constexpr int kItemCellInset = 3;
-        constexpr int kHeaderBottomGap = 3;
-        functionsItemLeftPad = qMax(0, headerPad - kItemCellInset);
-        m_functionsList->header()->setFixedHeight(headerMetrics.height() + 2 * headerPad + kHeaderBottomGap);
+        functionsItemLeftPad = filestats::styledListHeaderItemLeftPadding(m_functionsList->header()->font(), kItemCellInset);
+        m_functionsList->header()->setFixedHeight(filestats::styledListHeaderHeight(m_functionsList->header()->font()));
     }
 
     m_functionsList->setStyleSheet(
@@ -359,7 +355,7 @@ void DisassemblerPanel::buildUi()
             padding: 4px 6px;
         }
         QTreeWidget#disasmFunctionsList QHeaderView::section:hover {
-            background: palette(button);
+            background: palette(base);
         }
         QTreeWidget#disasmFunctionsList::item {
             padding: 3px 6px 3px %1px;
@@ -384,8 +380,10 @@ void DisassemblerPanel::buildUi()
     connect(m_functionsList, &QTreeWidget::itemActivated, this, &DisassemblerPanel::onFunctionItemActivated);
     connect(m_functionsList, &QTreeWidget::itemClicked, this, &DisassemblerPanel::onFunctionItemActivated);
 
+    functionsPageLayout->addWidget(m_functionsList);
+
     m_pageStack->addWidget(m_view);
-    m_pageStack->addWidget(m_functionsList);
+    m_pageStack->addWidget(functionsPage);
     m_tabFrame->setContentWidget(m_pageStack);
 
     // Single shared status label in the tab frame's footer (next to the

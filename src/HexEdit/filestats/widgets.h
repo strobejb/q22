@@ -2,8 +2,10 @@
 #define FILESTATS_WIDGETS_H
 
 #include <QColor>
+#include <QFont>
 #include <QFontMetrics>
 #include <QFrame>
+#include <QHeaderView>
 #include <QList>
 #include <QPalette>
 #include <QPoint>
@@ -89,6 +91,39 @@ inline int stringsHeaderGap(const QFontMetrics &fm)
 }
 
 static constexpr int kStringFooterRole = Qt::UserRole + 2;
+
+QFont styledListHeaderFont(const QFont &baseFont);
+int   styledListHeaderHeight(const QFont &baseFont);
+int   styledListHeaderItemLeftPadding(const QFont &baseFont, int itemCellInset = 3);
+
+class StyledListHeader : public QHeaderView
+{
+  public:
+    explicit StyledListHeader(Qt::Orientation orientation, QWidget *parent = nullptr);
+
+  protected:
+    void paintSection(QPainter *painter, const QRect &rect, int logicalIndex) const override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void leaveEvent(QEvent *event) override;
+
+    bool  isSectionHovered(int logicalIndex) const;
+    bool  nearSectionResizeHandle(const QPoint &pos) const;
+    QRect sectionTextRect(const QRect &sectionRect, const QFontMetrics &metrics) const;
+    void  paintSectionBase(QPainter *painter, const QRect &rect, int logicalIndex,
+                           const QFont &headerFont, const QString &text, bool drawNativeHeader = false) const;
+
+  private:
+    int m_hoveredSection = -1;
+};
+
+class StyledSortHeader : public StyledListHeader
+{
+  public:
+    explicit StyledSortHeader(Qt::Orientation orientation, QWidget *parent = nullptr);
+
+  protected:
+    void paintSection(QPainter *painter, const QRect &rect, int logicalIndex) const override;
+};
 
 class SectionHeader : public QWidget
 {

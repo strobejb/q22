@@ -22,7 +22,6 @@
 #include <QResizeEvent>
 #include <QScrollBar>
 #include <QSizePolicy>
-#include <QStyleOptionHeader>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QBrush>
@@ -138,81 +137,6 @@ private:
     }
 
     QTreeWidget *m_tree = nullptr;
-};
-
-static constexpr int kStringsResultHeaderBottomGap = 3;
-
-class InlineSortHeader : public QHeaderView
-{
-public:
-    explicit InlineSortHeader(Qt::Orientation orientation, QWidget *parent = nullptr)
-        : QHeaderView(orientation, parent)
-    {
-        setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    }
-
-protected:
-    void paintSection(QPainter *painter, const QRect &rect, int logicalIndex) const override
-    {
-        if (!painter || !rect.isValid())
-            return;
-
-        painter->save();
-        painter->fillRect(rect, palette().base());
-        QFont headerFont = font();
-        if (headerFont.pointSizeF() > 0)
-            headerFont.setPointSizeF(qMax(1.0, headerFont.pointSizeF() - 1.0));
-        else if (headerFont.pixelSize() > 0)
-            headerFont.setPixelSize(qMax(1, headerFont.pixelSize() - 1));
-        headerFont.setWeight(QFont::DemiBold);
-        const QFontMetrics headerMetrics(headerFont);
-        painter->setFont(headerFont);
-
-        QStyleOptionHeader opt;
-        initStyleOption(&opt);
-        initStyleOptionForIndex(&opt, logicalIndex);
-        opt.rect              = rect.adjusted(0, 0, 0, -kStringsResultHeaderBottomGap);
-        opt.fontMetrics       = QFontMetrics(headerFont);
-        const QPoint localPos = mapFromGlobal(QCursor::pos());
-        const bool   hovered  = rect.contains(localPos);
-        if (hovered)
-        {
-            opt.state |= QStyle::State_MouseOver;
-            opt.palette.setColor(QPalette::Button, palette().button().color());
-            opt.palette.setColor(QPalette::Window, palette().button().color());
-        }
-        else
-        {
-            opt.palette.setColor(QPalette::Button, palette().base().color());
-            opt.palette.setColor(QPalette::Window, palette().base().color());
-        }
-        const QColor headerTextColor = hovered ? palette().windowText().color() : stringsHeaderTextColor(palette());
-        opt.palette.setColor(QPalette::ButtonText, headerTextColor);
-        opt.palette.setColor(QPalette::WindowText, headerTextColor);
-        const QString text = opt.text;
-        opt.text.clear();
-        opt.sortIndicator = QStyleOptionHeader::None;
-        style()->drawControl(QStyle::CE_Header, &opt, painter, this);
-
-        const int     kTextPadding = stringsHeaderPadding(headerMetrics);
-        constexpr int kIconGap     = 4;
-        constexpr int kIconSize    = 10;
-        const QRect   textRect     = opt.rect.adjusted(kTextPadding, kTextPadding, -kTextPadding, -kTextPadding);
-        painter->setPen(headerTextColor);
-        painter->drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter, text);
-
-        if (logicalIndex == sortIndicatorSection())
-        {
-            const int     textWidth = painter->fontMetrics().horizontalAdvance(text);
-            const int     x         = qMin(textRect.left() + textWidth + kIconGap, textRect.right() - kIconSize + 1);
-            const QRect   iconRect(x, textRect.top() + (textRect.height() - kIconSize) / 2, kIconSize, kIconSize);
-            const QString iconName = sortIndicatorOrder() == Qt::AscendingOrder
-                                         ? QStringLiteral("ui/go-up-symbolic")
-                                         : QStringLiteral("ui/go-down-symbolic");
-            recoloredIcon(iconName, headerTextColor, kIconSize).paint(painter, iconRect);
-        }
-        painter->restore();
-    }
 };
 
 } // namespace
@@ -754,7 +678,7 @@ void FilePropertiesPanel::buildStringsSection(QWidget *parent, QVBoxLayout *cont
     )"));
 
     m_stringsList = new QTreeWidget(m_stringsListFrame);
-    m_stringsList->setHeader(new InlineSortHeader(Qt::Horizontal, m_stringsList));
+    m_stringsList->setHeader(new StyledSortHeader(Qt::Horizontal, m_stringsList));
     m_stringsList->setProperty("filePropertiesStringsList", true);
     m_stringsList->setMinimumSize(0, 0);
     m_stringsList->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
@@ -769,19 +693,10 @@ void FilePropertiesPanel::buildStringsSection(QWidget *parent, QVBoxLayout *cont
     m_stringsList->header()->setStretchLastSection(false);
     m_stringsList->header()->setSortIndicatorShown(true);
     {
-        QFont headerFont = m_stringsList->header()->font();
-        if (headerFont.pointSizeF() > 0)
-            headerFont.setPointSizeF(qMax(1.0, headerFont.pointSizeF() - 1.0));
-        else if (headerFont.pixelSize() > 0)
-            headerFont.setPixelSize(qMax(1, headerFont.pixelSize() - 1));
-        headerFont.setWeight(QFont::DemiBold);
-        const QFontMetrics headerMetrics(headerFont);
-        const int          headerPad             = stringsHeaderPadding(headerMetrics);
-        constexpr int      kStringsItemCellInset = 3;
-        const int          stringsItemLeftPad    = qMax(0, headerPad - kStringsItemCellInset);
-        const int          headerHeight =
-            headerMetrics.height() + 2 * headerPad + kStringsResultHeaderBottomGap;
-        m_stringsList->header()->setFixedHeight(headerHeight);
+        constexpr int kStringsItemCellInset = 3;
+        const int     stringsItemLeftPad =
+            styledListHeaderItemLeftPadding(m_stringsList->header()->font(), kStringsItemCellInset);
+        m_stringsList->header()->setFixedHeight(styledListHeaderHeight(m_stringsList->header()->font()));
         m_stringsList->setStyleSheet(
             QStringLiteral(
                 "QTreeWidget[filePropertiesStringsList=true]::item { padding: 3px 6px 3px %1px; }")

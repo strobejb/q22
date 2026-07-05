@@ -948,7 +948,7 @@ QTreeWidget[filePropertiesStringsList="true"] QHeaderView::section:last {
     border-top-right-radius: 5px;
 }
 QTreeWidget[filePropertiesStringsList="true"] QHeaderView::section:hover {
-    background: palette(button);
+    background: palette(base);
 }
 QTreeWidget[filePropertiesStringsList="true"]::item {
     padding: 3px 6px;

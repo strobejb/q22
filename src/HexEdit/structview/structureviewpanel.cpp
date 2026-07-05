@@ -37,7 +37,6 @@
 #include <QRegularExpression>
 #include <QSignalBlocker>
 #include <QStyle>
-#include <QStyleOptionHeader>
 #include <QStackedWidget>
 #include <QStringList>
 #include <QSyntaxHighlighter>
@@ -62,7 +61,6 @@
 
 namespace
 {
-static constexpr int kHeaderBottomGap = 3;
 
 enum class InitialStructureExpansion
 {
@@ -928,18 +926,15 @@ bool useClassicPlusMinusExpanders()
     return qEnvironmentVariableIntValue("QEXED_STRUCTURE_PLUS_MINUS") != 0;
 }
 
-class StructureGridHeader : public QHeaderView
+class StructureGridHeader : public filestats::StyledListHeader
 {
 public:
     using ContextMenuCallback = std::function<void(int column, const QPoint &globalPos)>;
 
     explicit StructureGridHeader(Qt::Orientation orientation, QWidget *parent = nullptr)
-        : QHeaderView(orientation, parent)
+        : filestats::StyledListHeader(orientation, parent)
     {
-        setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-        setHighlightSections(false);
         setSectionsClickable(false);
-        setMouseTracking(true);
     }
 
     void setContextMenuCallback(ContextMenuCallback callback)
@@ -948,60 +943,6 @@ public:
     }
 
 protected:
-    void paintSection(QPainter *painter, const QRect &rect, int logicalIndex) const override
-    {
-        if (!painter || !rect.isValid())
-            return;
-
-        painter->save();
-        const bool hovered = rect.contains(mapFromGlobal(QCursor::pos()));
-        const QColor background = hovered ? palette().color(QPalette::Button)
-                                          : palette().color(QPalette::Base);
-        painter->fillRect(rect, background);
-
-        QFont headerFont = font();
-        if (headerFont.pointSizeF() > 0)
-            headerFont.setPointSizeF(qMax(1.0, headerFont.pointSizeF() - 1.0));
-        else if (headerFont.pixelSize() > 0)
-            headerFont.setPixelSize(qMax(1, headerFont.pixelSize() - 1));
-        headerFont.setWeight(QFont::DemiBold);
-
-        QStyleOptionHeader opt;
-        initStyleOption(&opt);
-        initStyleOptionForIndex(&opt, logicalIndex);
-        opt.rect = rect.adjusted(0, 0, 0, -kHeaderBottomGap);
-        opt.fontMetrics = QFontMetrics(headerFont);
-        opt.text.clear();
-        opt.sortIndicator = QStyleOptionHeader::None;
-        opt.palette.setColor(QPalette::Button, background);
-        opt.palette.setColor(QPalette::Window, background);
-        style()->drawControl(QStyle::CE_Header, &opt, painter, this);
-
-        const QColor textColor = hovered ? palette().color(QPalette::WindowText)
-                                         : filestats::stringsHeaderTextColor(palette());
-        const int pad = filestats::stringsHeaderPadding(QFontMetrics(headerFont));
-        const QRect textRect = opt.rect.adjusted(pad, pad, -pad, -pad);
-
-        painter->setFont(headerFont);
-        painter->setPen(textColor);
-        painter->drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter,
-                          model() ? model()->headerData(logicalIndex, orientation(), Qt::DisplayRole).toString()
-                                  : QString());
-        painter->restore();
-    }
-
-    void mouseMoveEvent(QMouseEvent *event) override
-    {
-        QHeaderView::mouseMoveEvent(event);
-        if (nearSectionResizeHandle(event->position().toPoint()))
-            viewport()->setCursor(Qt::SplitHCursor);
-        else if (logicalIndexAt(event->position().toPoint()) >= 0)
-            viewport()->setCursor(Qt::PointingHandCursor);
-        else
-            viewport()->setCursor(Qt::ArrowCursor);
-        viewport()->update();
-    }
-
     void mousePressEvent(QMouseEvent *event) override
     {
         if (m_contextMenuCallback
@@ -1020,30 +961,7 @@ protected:
         QHeaderView::mousePressEvent(event);
     }
 
-    void leaveEvent(QEvent *event) override
-    {
-        QHeaderView::leaveEvent(event);
-        viewport()->unsetCursor();
-        viewport()->update();
-    }
-
 private:
-    bool nearSectionResizeHandle(const QPoint &pos) const
-    {
-        constexpr int kResizeSlop = 4;
-        for (int visual = 0; visual < count() - 1; ++visual)
-        {
-            const int logical = logicalIndex(visual);
-            if (isSectionHidden(logical))
-                continue;
-
-            const int edgeX = sectionViewportPosition(logical) + sectionSize(logical);
-            if (qAbs(pos.x() - edgeX) <= kResizeSlop)
-                return true;
-        }
-        return false;
-    }
-
     ContextMenuCallback m_contextMenuCallback;
 };
 
@@ -2173,17 +2091,9 @@ void StructureViewPanel::buildUi()
             this, &StructureViewPanel::showGridContextMenu);
     updateTreeSelectionPalette();
     {
-        QFont headerFont = m_tree->header()->font();
-        if (headerFont.pointSizeF() > 0)
-            headerFont.setPointSizeF(qMax(1.0, headerFont.pointSizeF() - 1.0));
-        else if (headerFont.pixelSize() > 0)
-            headerFont.setPixelSize(qMax(1, headerFont.pixelSize() - 1));
-        headerFont.setWeight(QFont::DemiBold);
-        const QFontMetrics metrics(headerFont);
-        const int headerPad = filestats::stringsHeaderPadding(metrics);
         constexpr int itemCellInset = 3;
-        m_treeItemLeftPad = qMax(0, headerPad - itemCellInset);
-        m_tree->header()->setFixedHeight(metrics.height() + 2 * headerPad + kHeaderBottomGap);
+        m_treeItemLeftPad = filestats::styledListHeaderItemLeftPadding(m_tree->header()->font(), itemCellInset);
+        m_tree->header()->setFixedHeight(filestats::styledListHeaderHeight(m_tree->header()->font()));
         updateTreeSelectionPalette();
     }
 
@@ -2516,7 +2426,7 @@ void StructureViewPanel::updateTreeSelectionPalette()
             padding: 4px 6px;
         }
         QTreeView#structureGrid QHeaderView::section:hover {
-            background: palette(button);
+            background: palette(base);
         }
         QTreeView#structureGrid::item {
             padding: 3px 6px 3px %1px;
