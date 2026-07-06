@@ -774,6 +774,9 @@ MainWindow::MainWindow(QWidget *parent)
     ui->actionStrings->setEnabled(true);
     connect(ui->actionStrings, &QAction::triggered,
             this, [this]() { openSidePanelSection(FilePropertiesPanel::SectionId::Strings); });
+    ui->actionEntropy->setEnabled(true);
+    connect(ui->actionEntropy, &QAction::triggered,
+            this, [this]() { openSidePanelSection(FilePropertiesPanel::SectionId::Entropy); });
 
     // Build a standalone Edit menu for the HexView context menu, sharing the
     // same QActions so any connections added later apply automatically.
