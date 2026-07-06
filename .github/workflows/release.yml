@@ -65,6 +65,12 @@ jobs:
           --version "${{ steps.release-info.outputs.version }}"
           --build-count 0
 
+      - name: Validate changelog section
+        run: >
+          python scripts/extract_changelog.py
+          --version "${{ steps.release-info.outputs.version }}"
+          --output release-notes.md
+
       - name: Commit version bump and tag
         run: |
           git config user.name "github-actions[bot]"
@@ -218,18 +224,28 @@ jobs:
       - build-windows
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-release.outputs.tag }}
+
       - name: Download release artifacts
         uses: actions/download-artifact@v4
         with:
           path: release-artifacts
           merge-multiple: true
 
+      - name: Extract release notes
+        run: >
+          python scripts/extract_changelog.py
+          --version "${{ needs.prepare-release.outputs.version }}"
+          --output release-notes.md
+
       - name: Create GitHub release
         run: |
           gh release create "${{ needs.prepare-release.outputs.tag }}" \
             --verify-tag \
             --title "q22 ${{ needs.prepare-release.outputs.version }}" \
-            --notes "q22 ${{ needs.prepare-release.outputs.version }}" \
+            --notes-file release-notes.md \
             release-artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
