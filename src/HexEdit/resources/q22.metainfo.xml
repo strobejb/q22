@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.strobejb.q22</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Q22</name>
+  <summary>Binary file and hex editor</summary>
+  <developer id="io.github.strobejb">
+    <name>James Brown</name>
+  </developer>
+
+  <launchable type="desktop-id">q22.desktop</launchable>
+  <provides>
+    <binary>q22</binary>
+  </provides>
+
+  <categories>
+    <category>Utility</category>
+    <category>Development</category>
+  </categories>
+
+  <description>
+    <p>
+      Q22 is a cross-platform binary file editor and hex editor, based on the
+      original Catch22 HexEdit application for Windows.
+    </p>
+    <p>
+      It supports direct binary editing, large files, bookmarks, search and
+      navigation, import and export formats, file properties, string
+      extraction, C-style structure inspection, and disassembly for common CPU
+      architectures.
+    </p>
+  </description>
+
+  <url type="homepage">https://github.com/strobejb/q22</url>
+  <url type="bugtracker">https://github.com/strobejb/q22/issues</url>
+  <url type="vcs-browser">https://github.com/strobejb/q22</url>
+
+  <releases>
+    <release version="3.0.1" date="2026-07-06">
+      <description>
+        <p>Development release preparing Linux and Windows packages.</p>
+      </description>
+    </release>
+  </releases>
+
+  <content_rating type="oars-1.1" />
+</component>

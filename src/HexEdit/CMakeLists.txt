@@ -298,6 +298,9 @@ if(UNIX AND NOT APPLE)
     install(FILES ${HEXEDIT_RESOURCE_DIR}/q22.desktop
         DESTINATION ${CMAKE_INSTALL_DATADIR}/applications
     )
+    install(FILES ${HEXEDIT_RESOURCE_DIR}/q22.metainfo.xml
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo
+    )
     install(FILES ${HEXEDIT_RESOURCE_DIR}/q22.png
         DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/256x256/apps
         RENAME q22.png

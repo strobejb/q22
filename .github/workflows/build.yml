@@ -68,6 +68,7 @@ jobs:
             --plugin qt \
             --output appimage \
             --desktop-file src/HexEdit/resources/q22.desktop \
+            --appdata-file src/HexEdit/resources/q22.metainfo.xml \
             --icon-file src/HexEdit/resources/q22.png
           test -f "${appimage}"
           echo "Created AppImage: ${appimage}"
