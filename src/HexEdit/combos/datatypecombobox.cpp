@@ -181,16 +181,21 @@ struct MenuActionOverlay : public QWidget
         p.setRenderHint(QPainter::Antialiasing);
         for (QAction *a : menu->actions()) {
             const QVariant sc = a->property("swatchColor");
-            if (!sc.isValid()) continue;
-            const QColor col = sc.value<QColor>();
+            const QVariant markerName = a->property("markerIconName");
+            if (!sc.isValid() && !markerName.isValid()) continue;
             const QRect r = menu->actionGeometry(a);
             if (r.isNull()) continue;
             constexpr int kSz = 15;
             const int x = r.left() + 10;
             const int y = r.top() + (r.height() - kSz) / 2;
-            p.setBrush(col);
-            p.setPen(Qt::NoPen);
-            p.drawEllipse(x, y, kSz, kSz);
+            if (sc.isValid()) {
+                const QColor col = sc.value<QColor>();
+                p.setBrush(col);
+                p.setPen(Qt::NoPen);
+                p.drawEllipse(x, y, kSz, kSz);
+            }
+            if (markerName.isValid())
+                paintKindMarker(&p, menu, a, markerName.toString());
         }
 
         if (m_combo)
@@ -337,6 +342,37 @@ private:
                 p->drawText(r, Qt::AlignCenter, m_combo->inlineModifierText(id, action));
             }
         }
+    }
+
+    void paintKindMarker(QPainter *p, QMenu *menu, QAction *action, const QString &iconName)
+    {
+        if (!p || !menu || !action || action->isSeparator() || iconName.isEmpty())
+            return;
+
+        const QRect r = menu->actionGeometry(action);
+        if (r.isNull())
+            return;
+
+        const QStringList parts = action->text().split(QLatin1Char('\t'));
+        const QString detail = parts.size() > 1 ? parts.constLast() : QString();
+        if (detail.isEmpty())
+            return;
+
+        constexpr int kIconSize = 14;
+        constexpr int kTextLeft = 32;
+        constexpr int kOffsetGap = 8;
+        constexpr int kTabColumnPad = 24;
+        constexpr int kRightInset = 12;
+        const int detailW = menu->fontMetrics().horizontalAdvance(detail);
+        const int x = r.right() - kRightInset - detailW
+                      - kTabColumnPad - kOffsetGap - kIconSize + 1;
+        if (x < r.left() + kTextLeft)
+            return;
+
+        const QRect iconRect(x, r.top() + (r.height() - kIconSize) / 2, kIconSize, kIconSize);
+        const QColor base = menu->palette().mid().color();
+        const QColor fg = blendTowards(base, menu->palette().windowText().color(), 0.65);
+        recoloredIcon(QStringLiteral("actions/") + iconName, fg, kIconSize).paint(p, iconRect);
     }
 
     QAction *actionAt(const QPoint &pos) const
@@ -496,7 +532,9 @@ QAction *DataTypeComboBox::createActionForItem(int index, QActionGroup *group, b
         a->setEnabled(false);
 
     // If the item has a QColor stored as DecorationRole, attach it as a
-    // property so SwatchOverlay can paint a swatch circle for that item.
+    // property so MenuActionOverlay can paint a swatch circle for that item.
+    // Kind-specific bookmark markers use custom roles so they can be drawn
+    // through the same overlay even when QSS suppresses QAction icons.
     const QVariant decoVar = itemData(index, Qt::DecorationRole);
     if (decoVar.canConvert<QColor>()) {
         const QColor c = decoVar.value<QColor>();
@@ -507,6 +545,9 @@ QAction *DataTypeComboBox::createActionForItem(int index, QActionGroup *group, b
         if (!itemIcon.isNull())
             a->setIcon(itemIcon);
     }
+    const QString markerIconName = itemData(index, MenuMarkerIconNameRole).toString();
+    if (!markerIconName.isEmpty())
+        a->setProperty("markerIconName", markerIconName);
 
     if (checkable) {
         a->setCheckable(true);
@@ -680,6 +721,7 @@ void DataTypeComboBox::updateMenuMinimumWidth()
     constexpr int kModifierHPad = 8;
     constexpr int kModifierGap = 6;
     constexpr int kSafetyGap = 14;
+    constexpr int kKindMarkerWidth = 22;
 
     // Measuring every action's text here is O(n) in item count on top of
     // whatever QMenu's own layout already does -- fine for a handful of
@@ -692,14 +734,25 @@ void DataTypeComboBox::updateMenuMinimumWidth()
     // normal layout regardless.
     constexpr int kMaxMeasuredActions = 300;
     int maxTextWidth = 0;
+    int maxTabbedTextWidth = 0;
     int measured = 0;
     for (QAction *action : std::as_const(m_actions)) {
         if (!action || action->isSeparator())
             continue;
         maxTextWidth = qMax(maxTextWidth, fontMetrics().horizontalAdvance(action->text()));
+        if (action->property("markerIconName").isValid()) {
+            const QStringList parts = action->text().split(QLatin1Char('\t'));
+            if (parts.size() > 1) {
+                maxTabbedTextWidth = qMax(maxTabbedTextWidth,
+                                          fontMetrics().horizontalAdvance(parts.first())
+                                          + kKindMarkerWidth
+                                          + fontMetrics().horizontalAdvance(parts.constLast()));
+            }
+        }
         if (++measured >= kMaxMeasuredActions)
             break;
     }
+    maxTextWidth = qMax(maxTextWidth, maxTabbedTextWidth);
 
     int modifierLaneWidth = 0;
     QSet<QString> reservedLabels;

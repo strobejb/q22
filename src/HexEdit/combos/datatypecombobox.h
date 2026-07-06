@@ -16,6 +16,10 @@ class DataTypeComboBox : public ValueComboBox
 {
     Q_OBJECT
 public:
+    enum CustomItemDataRole {
+        MenuMarkerIconNameRole = Qt::UserRole + 100,
+    };
+
     enum IconActionPosition {
         LeadingPosition
     };

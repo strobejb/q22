@@ -6,6 +6,7 @@
 
 #include <QFontMetrics>
 #include <QObject>
+#include <QColor>
 #include <QStringList>
 #include <QVariant>
 #include <algorithm>
@@ -20,6 +21,29 @@ static QString trimmedLeadingWhitespace(QString text)
     if (firstNonSpace > 0)
         text.remove(0, firstNonSpace);
     return text;
+}
+
+static QColor bookmarkColor(HexView *hv, const Bookmark &bm)
+{
+    if (!hv)
+        return {};
+    return bm.colourIndex >= 0
+        ? QColor(hv->getHexColour(HvColorSlot(HVC_BOOKMARK1 + bm.colourIndex)))
+        : (bm.bgColour ? QColor(bm.bgColour)
+                       : QColor(hv->getHexColour(HVC_BOOKMARK1)));
+}
+
+static QString markerIconName(BookmarkKind kind)
+{
+    switch (kind) {
+    case BookmarkKind::Function:
+        return QStringLiteral("chip");
+    case BookmarkKind::Structure:
+        return QStringLiteral("hex");
+    case BookmarkKind::Basic:
+        break;
+    }
+    return {};
 }
 
 void populate(DataTypeComboBox *combo, HexView *hv, Mode mode, bool swatches)
@@ -62,11 +86,11 @@ void populate(DataTypeComboBox *combo, HexView *hv, Mode mode, bool swatches)
         combo->addItem(label);
 
         if (swatches) {
-            const QColor bgCol = bm.colourIndex >= 0
-                ? QColor(hv->getHexColour(HvColorSlot(HVC_BOOKMARK1 + bm.colourIndex)))
-                : (bm.bgColour ? QColor(bm.bgColour)
-                               : QColor(hv->getHexColour(HVC_BOOKMARK1)));
-            combo->setItemData(comboIdx, bgCol, Qt::DecorationRole);
+            const QColor markerColor = bookmarkColor(hv, bm);
+            const QString iconName = markerIconName(bm.kind);
+            combo->setItemData(comboIdx, markerColor, Qt::DecorationRole);
+            if (!iconName.isEmpty())
+                combo->setItemData(comboIdx, iconName, DataTypeComboBox::MenuMarkerIconNameRole);
         }
         ++comboIdx;
         labels.append(label);
