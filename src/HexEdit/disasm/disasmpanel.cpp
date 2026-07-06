@@ -16,6 +16,7 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QInputDialog>
 #include <QKeyEvent>
 #include <QKeySequence>
 #include <QLabel>
@@ -30,6 +31,7 @@
 #include <QTextDocument>
 #include <QTextEdit>
 #include <QToolButton>
+#include <QToolTip>
 #include <QStyle>
 #include <QCursor>
 #include <QTextCharFormat>
@@ -40,6 +42,7 @@
 #include <QVBoxLayout>
 
 #include <optional>
+#include <limits>
 
 
 // ── arch table ────────────────────────────────────────────────────────────────
@@ -189,29 +192,36 @@ void DisassemblerPanel::buildUi()
         }
     });
 
-    // Read-only offset display with trailing pin toggle.
-    m_offsetEdit = new QLineEdit(content);
-    m_offsetEdit->setReadOnly(true);
-    m_offsetEdit->setFixedHeight(comboH);
-    m_offsetEdit->setPlaceholderText(tr("Offset"));
-    const auto existingBtns = m_offsetEdit->findChildren<QToolButton *>();
-    m_pinAction = m_offsetEdit->addAction(
-        recoloredIcon(QStringLiteral("actions/pin0"),
-                      palette().color(QPalette::WindowText), 16),
-        QLineEdit::TrailingPosition);
-    m_pinAction->setToolTip(tr("Pin offset"));
-    for (auto *btn : m_offsetEdit->findChildren<QToolButton *>())
-        if (!existingBtns.contains(btn))
-            btn->setCursor(Qt::PointingHandCursor);
-    // Width: 8 hex digits + generous left/right padding + trailing icon room
-    const int offsetW = m_offsetEdit->fontMetrics().horizontalAdvance(QStringLiteral("00000000")) + 40
-                        + 16 + 8; // icon + Qt's action button right margin
-    m_offsetEdit->setFixedWidth(offsetW);
+    auto makeToolButton = [this, content, comboH](const QString &iconName, const QString &toolTip) {
+        auto *button = new QToolButton(content);
+        button->setAutoRaise(true);
+        button->setCursor(Qt::PointingHandCursor);
+        button->setToolTip(toolTip);
+        button->setProperty("iconThemeName", iconName);
+        button->setIcon(recoloredIcon(iconName, palette().buttonText().color(), 16));
+        button->setIconSize(QSize(16, 16));
+        button->setFixedSize(comboH, comboH);
+        button->setStyleSheet(QStringLiteral(
+            "QToolButton { border: none; border-radius: 6px; background: transparent; padding: 0; }"
+            "QToolButton:hover { background: %1; }"
+            "QToolButton:pressed { background: %2; }"
+            "QToolButton:disabled { background: transparent; }"
+            "QToolButton::menu-indicator { image: none; width: 0; }")
+            .arg(filestats::cssColor(palette().color(QPalette::AlternateBase)),
+                 filestats::cssColor(palette().color(QPalette::Midlight))));
+        return button;
+    };
+
+    m_renameButton = makeToolButton(QStringLiteral("actions/document-edit-symbolic"),
+                                    tr("Rename function"));
+    m_bookmarkButton = makeToolButton(QStringLiteral("actions/bookmark-star-add"),
+                                      tr("Bookmark function"));
 
     optLay->addWidget(m_archCombo, 1);
     optLay->addWidget(m_functionsCombo, 1);
     optLay->addSpacing(2);
-    optLay->addWidget(m_offsetEdit);
+    optLay->addWidget(m_renameButton);
+    optLay->addWidget(m_bookmarkButton);
     contentLay->addLayout(optLay);
     contentLay->addSpacing(4);
 
@@ -424,8 +434,11 @@ void DisassemblerPanel::buildUi()
     connect(m_hv, &HexView::contentChanged,
             this, [this](size_w, size_w, uint) { if (!m_pinned && !m_updatingHexViewFromDisasm) disassemble(); });
 
-    connect(m_pinAction, &QAction::triggered,
-            this, [this]() { setPinned(!m_pinned); });
+    connect(m_renameButton, &QToolButton::clicked,
+            this, &DisassemblerPanel::renameCurrentScope);
+    connect(m_bookmarkButton, &QToolButton::clicked,
+            this, &DisassemblerPanel::bookmarkCurrentScope);
+    updateScopeActions();
 
     connect(m_hv, &HexView::structureEntryPointChanged,
             this, [this](bool, uint64_t) { populateFunctionsCombo(); });
@@ -729,9 +742,11 @@ void DisassemblerPanel::disassemble()
     {
         m_view->clear();
         m_lineHighlights.clear();
+        m_instructionRanges.clear();
         updateExtraSelections();
         m_disasmStatusText.clear();
         updateStatusLabelForCurrentTab();
+        updateScopeActions();
         return;
     }
 
@@ -740,15 +755,32 @@ void DisassemblerPanel::disassemble()
     {
         m_view->clear();
         m_lineHighlights.clear();
+        m_instructionRanges.clear();
         updateExtraSelections();
         m_disasmStatusText.clear();
         updateStatusLabelForCurrentTab();
+        updateScopeActions();
         return;
     }
 
-    const size_w offset      = m_hv->cursorOffset();
+    const size_w requestedOffset = m_hasExplicitRange
+        ? static_cast<size_w>(qMin<uint64_t>(m_explicitRangeOffset, std::numeric_limits<size_w>::max()))
+        : m_hv->cursorOffset();
+    if (requestedOffset >= fileSize)
+    {
+        m_view->setPlainText(tr("(no data at cursor)"));
+        m_instructionRanges.clear();
+        m_disasmStatusText.clear();
+        updateStatusLabelForCurrentTab();
+        updateScopeActions();
+        return;
+    }
+
+    const size_w offset      = requestedOffset;
     const size_w remaining   = fileSize - offset;
-    size_w desiredLength     = qMin((size_w)512, remaining);
+    size_w desiredLength     = m_hasExplicitRange
+        ? qMin(static_cast<size_w>(qMin<uint64_t>(m_explicitRangeLength, std::numeric_limits<size_w>::max())), remaining)
+        : qMin((size_w)512, remaining);
 
     // If the cursor falls inside a function found by recursive-descent code
     // discovery, show that function's full extent instead of an arbitrary
@@ -756,16 +788,19 @@ void DisassemblerPanel::disassemble()
     // ever produces something pathological.
     static constexpr size_w kMaxFunctionWindow = 8192;
     const DiscoveredFunction *containingFn = nullptr;
-    for (const DiscoveredFunction &fn : m_discoveredFunctions)
+    if (!m_hasExplicitRange)
     {
-        if (offset >= fn.startOffset && offset < fn.endOffset)
+        for (const DiscoveredFunction &fn : m_discoveredFunctions)
         {
-            desiredLength = qMin(qMin(fn.endOffset - offset, kMaxFunctionWindow), remaining);
-            containingFn = &fn;
-            break;
+            if (offset >= fn.startOffset && offset < fn.endOffset)
+            {
+                desiredLength = qMin(qMin(fn.endOffset - offset, kMaxFunctionWindow), remaining);
+                containingFn = &fn;
+                break;
+            }
         }
     }
-    const size_t bytesToRead = (size_t)desiredLength;
+    const size_t bytesToRead = (size_t)qMin<size_w>(desiredLength, static_cast<size_w>(std::numeric_limits<int>::max()));
 
     QByteArray buf(static_cast<int>(bytesToRead), '\0');
     const size_t got = m_hv->getData(offset,
@@ -774,8 +809,10 @@ void DisassemblerPanel::disassemble()
     if (got == 0)
     {
         m_view->setPlainText(tr("(no data at cursor)"));
+        m_instructionRanges.clear();
         m_disasmStatusText.clear();
         updateStatusLabelForCurrentTab();
+        updateScopeActions();
         return;
     }
 
@@ -790,8 +827,10 @@ void DisassemblerPanel::disassemble()
     if (count == 0)
     {
         m_view->setPlainText(tr("(no instructions decoded)"));
+        m_instructionRanges.clear();
         m_disasmStatusText.clear();
         updateStatusLabelForCurrentTab();
+        updateScopeActions();
         return;
     }
 
@@ -899,9 +938,11 @@ void DisassemblerPanel::disassemble()
     // m_instructionRanges and its QTextDocument block number needs to
     // account for these lines sitting above instruction 0.
     m_headerLineCount = 0;
-    if (containingFn)
+    const bool hasExplicitRangeHeader = m_hasExplicitRange && !m_explicitRangeName.isEmpty();
+    if (containingFn || hasExplicitRangeHeader)
     {
-        const QString headerAddrText = QString::number(containingFn->startOffset, 16)
+        const uint64_t headerOffset = containingFn ? containingFn->startOffset : static_cast<uint64_t>(offset);
+        const QString headerAddrText = QString::number(headerOffset, 16)
                                             .rightJustified(addrWidth, QLatin1Char('0'));
         const QString indent(addrWidth + 2, QLatin1Char(' '));
 
@@ -910,7 +951,11 @@ void DisassemblerPanel::disassemble()
         fmtHeaderName.setFontItalic(true);
 
         QString prefix, name, suffix;
-        if (containingFn->name.isEmpty())
+        if (hasExplicitRangeHeader)
+        {
+            name = m_explicitRangeName;
+        }
+        else if (containingFn->name.isEmpty())
         {
             name = QStringLiteral("sub_%1").arg(containingFn->startOffset, 0, 16);
         }
@@ -1005,6 +1050,7 @@ void DisassemblerPanel::disassemble()
 
     cs_free(insn, count);
     updateOffsetDisplay();
+    updateScopeActions();
 }
 
 void DisassemblerPanel::updateOffsetDisplay()
@@ -1013,6 +1059,173 @@ void DisassemblerPanel::updateOffsetDisplay()
         return;
     const size_w offset = m_hv->cursorOffset();
     m_offsetEdit->setText(QString::number(offset, 16).toUpper().rightJustified(8, QLatin1Char('0')));
+}
+
+DisassemblerPanel::ScopeInfo DisassemblerPanel::currentScope() const
+{
+    ScopeInfo scope;
+    if (!m_hv)
+        return scope;
+
+    if (m_hasExplicitRange && m_explicitRangeLength > 0)
+    {
+        scope.valid = true;
+        scope.offset = m_explicitRangeOffset;
+        scope.length = m_explicitRangeLength;
+        scope.name = m_explicitRangeName;
+        scope.renameable = true;
+        return scope;
+    }
+
+    if (m_instructionRanges.empty())
+        return scope;
+
+    const uint64_t start = m_instructionRanges.front().first;
+    const uint64_t end = m_instructionRanges.back().second;
+    for (int i = 0; i < m_discoveredFunctions.size(); ++i)
+    {
+        const DiscoveredFunction &fn = m_discoveredFunctions.at(i);
+        if (start >= fn.startOffset && start < fn.endOffset)
+        {
+            scope.valid = true;
+            scope.offset = fn.startOffset;
+            scope.length = fn.endOffset > fn.startOffset ? fn.endOffset - fn.startOffset : 1;
+            scope.name = fn.name.isEmpty()
+                ? QStringLiteral("sub_%1").arg(fn.startOffset, 0, 16).toUpper()
+                : demangleSymbolName(fn.name, DemangleStyle::NameOnly);
+            scope.functionIndex = i;
+            scope.renameable = true;
+            return scope;
+        }
+    }
+
+    if (end > start)
+    {
+        scope.valid = true;
+        scope.offset = start;
+        scope.length = end - start;
+        scope.name = QStringLiteral("sub_%1").arg(start, 0, 16).toUpper();
+    }
+    return scope;
+}
+
+void DisassemblerPanel::updateScopeActions()
+{
+    const ScopeInfo scope = currentScope();
+    if (m_renameButton)
+    {
+        m_renameButton->setEnabled(scope.valid && scope.renameable);
+        m_renameButton->setToolTip(scope.renameable ? tr("Rename function") : tr("No function to rename"));
+    }
+    if (m_bookmarkButton)
+    {
+        m_bookmarkButton->setEnabled(scope.valid);
+        m_bookmarkButton->setToolTip(scope.valid && m_hasExplicitRange ? tr("Bookmark selection")
+                                                                       : tr("Bookmark function"));
+    }
+    updateFunctionsComboDisplay();
+}
+
+void DisassemblerPanel::updateFunctionsComboDisplay()
+{
+    if (!m_functionsCombo)
+        return;
+
+    const ScopeInfo scope = currentScope();
+    if (scope.valid && !scope.name.isEmpty())
+        m_functionsCombo->setDisplayText(scope.name);
+    else
+        m_functionsCombo->setDisplayText(tr("Functions..."));
+}
+
+void DisassemblerPanel::renameCurrentScope()
+{
+    ScopeInfo scope = currentScope();
+    if (!scope.valid || !scope.renameable)
+        return;
+
+    bool ok = false;
+    const QString currentName = scope.name.isEmpty()
+        ? QStringLiteral("sub_%1").arg(scope.offset, 0, 16).toUpper()
+        : scope.name;
+    const QString name = QInputDialog::getText(this, tr("Rename Function"), tr("Name:"),
+                                               QLineEdit::Normal, currentName, &ok).trimmed();
+    if (!ok || name.isEmpty())
+        return;
+
+    if (m_hasExplicitRange)
+    {
+        m_explicitRangeName = name;
+    }
+    else if (scope.functionIndex >= 0 && scope.functionIndex < m_discoveredFunctions.size())
+    {
+        m_discoveredFunctions[scope.functionIndex].name = name;
+        rebuildFunctionsList();
+        populateFunctionsCombo();
+    }
+
+    disassemble();
+}
+
+void DisassemblerPanel::bookmarkCurrentScope()
+{
+    const ScopeInfo scope = currentScope();
+    if (!scope.valid || !m_hv || scope.length == 0)
+        return;
+
+    const size_w start = static_cast<size_w>(qMin<uint64_t>(scope.offset, std::numeric_limits<size_w>::max()));
+    const size_w maxLen = m_hv->size() > start ? m_hv->size() - start : 0;
+    const size_w length = qMin(static_cast<size_w>(qMin<uint64_t>(scope.length, std::numeric_limits<size_w>::max())), maxLen);
+    if (length == 0)
+        return;
+
+    const QList<Bookmark> &existing = m_hv->bookmarks();
+    for (int i = 0; i < existing.size(); ++i)
+    {
+        if (existing.at(i).offset == start && existing.at(i).length == length)
+        {
+            Bookmark bookmark = existing.at(i);
+            bool changed = false;
+            if (bookmark.kind != BookmarkKind::Function)
+            {
+                bookmark.kind = BookmarkKind::Function;
+                changed = true;
+            }
+            if (bookmark.text.isEmpty() && !scope.name.isEmpty())
+            {
+                bookmark.text = scope.name;
+                changed = true;
+            }
+            if (changed)
+                m_hv->replaceBookmark(i, bookmark);
+            m_hv->expandBookmark(i);
+            m_hv->scrollCenterIfOffScreen(start, length);
+            return;
+        }
+    }
+
+    Bookmark bookmark;
+    bookmark.offset = start;
+    bookmark.length = length;
+    bookmark.text = scope.name;
+    bookmark.kind = BookmarkKind::Function;
+    bookmark.fgColour = 0;
+    bookmark.colourIndex = 0;
+    m_hv->addBookmark(bookmark);
+
+    const QList<Bookmark> &updated = m_hv->bookmarks();
+    for (int i = 0; i < updated.size(); ++i)
+    {
+        if (updated.at(i).offset == start && updated.at(i).length == length)
+        {
+            m_hv->expandBookmark(i);
+            break;
+        }
+    }
+    m_hv->scrollCenterIfOffScreen(start, length);
+    QToolTip::showText(m_bookmarkButton ? m_bookmarkButton->mapToGlobal(m_bookmarkButton->rect().bottomLeft())
+                                        : QCursor::pos(),
+                       tr("Bookmark added"), m_bookmarkButton);
 }
 
 bool DisassemblerPanel::pushJumpSourceForSpan(int spanIndex)
@@ -1093,6 +1306,8 @@ void DisassemblerPanel::goToOffset(uint64_t offset)
 {
     if (!m_hv)
         return;
+    m_hasExplicitRange = false;
+    m_explicitRangeName.clear();
     // An explicit "go to" should actually land where it's pointed -- pin is
     // for freezing the view while browsing elsewhere, not for blocking a
     // deliberate jump, so unpin rather than just bypassing it for one update.
@@ -1118,6 +1333,31 @@ void DisassemblerPanel::goToOffset(uint64_t offset)
         m_hv->setCurSel(static_cast<size_w>(startOffset), static_cast<size_w>(endOffset), false);
         m_hv->scrollCenter(static_cast<size_w>(startOffset));
     }
+}
+
+void DisassemblerPanel::goToRange(uint64_t offset, uint64_t length, const QString &functionName)
+{
+    if (!m_hv || length == 0)
+        return;
+
+    if (m_pinned)
+        setPinned(false);
+
+    m_hasExplicitRange = true;
+    m_explicitRangeOffset = offset;
+    m_explicitRangeLength = length;
+    m_explicitRangeName = functionName;
+
+    const uint64_t maxOffset = std::numeric_limits<size_w>::max();
+    const uint64_t boundedStart = qMin<uint64_t>(offset, maxOffset);
+    const uint64_t boundedEnd = length > maxOffset - boundedStart
+        ? maxOffset
+        : boundedStart + length;
+    const size_w start = static_cast<size_w>(boundedStart);
+    const size_w end = static_cast<size_w>(boundedEnd);
+    m_hv->setCurSel(start, end, true);
+    m_hv->scrollCenterIfOffScreen(start, end > start ? end - start : 1);
+    disassemble();
 }
 
 namespace {
@@ -1263,7 +1503,7 @@ void DisassemblerPanel::populateFunctionsCombo()
     }
 
     m_functionsCombo->buildMenu(/*checkable=*/false);
-    m_functionsCombo->setDisplayText(tr("Functions..."));
+    updateFunctionsComboDisplay();
     m_functionsCombo->setItemEnabled(0, entryKnown); // "Entrypoint" is always item 0
 }
 
@@ -1307,6 +1547,12 @@ void DisassemblerPanel::onFunctionItemActivated(QTreeWidgetItem *item, int /*col
 
 void DisassemblerPanel::setPinned(bool pinned)
 {
+    if (!m_pinAction || !m_offsetEdit)
+    {
+        m_pinned = false;
+        return;
+    }
+
     m_pinned = pinned;
     // pin1 is the "planted" look (solid pin + base/shadow); pin0 is the
     // plain floating marker -- pinned should look planted, not the reverse.
@@ -1350,6 +1596,14 @@ void DisassemblerPanelHost::openAtOffset(uint64_t offset)
         openPanel();
     if (auto *panel = qobject_cast<DisassemblerPanel *>(panelWidget()))
         panel->goToOffset(offset);
+}
+
+void DisassemblerPanelHost::openRange(uint64_t offset, uint64_t length, const QString &functionName)
+{
+    if (!isOpen())
+        openPanel();
+    if (auto *panel = qobject_cast<DisassemblerPanel *>(panelWidget()))
+        panel->goToRange(offset, length, functionName);
 }
 
 void DisassemblerPanelHost::setDiscoveredFunctions(QList<DiscoveredFunction> functions)

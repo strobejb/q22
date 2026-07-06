@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "./ui_mainwindow.h"
 #include "bookmarks/bookmarkstore.h"
+#include "bookmarks/bookmarkactivation.h"
 #include "bookmarks/bookmarkcombo.h"
 #include "HexView/hexview.h"
 #include "HexView/seqbase.h"
@@ -101,22 +102,6 @@ static QString shortcutLabel(const QKeySequence &shortcut)
     return shortcut.toString(QKeySequence::NativeText);
 }
 
-void jumpToBookmark(HexView *hv, int idx)
-{
-    if (!hv)
-        return;
-    const QList<Bookmark> &bms = hv->bookmarks();
-    if (idx < 0 || idx >= bms.size())
-        return;
-
-    const Bookmark &bm = bms[idx];
-    hv->expandBookmark(idx);
-    hv->scrollCenterIfOffScreen(bm.offset, bm.length);
-    hv->setCurSel(bm.offset + bm.length, bm.offset);
-    hv->scrollHEnd();
-    hv->setFocus();
-}
-
 int bookmarkAreaComboWidth(const DataTypeComboBox *combo)
 {
     if (!combo)
@@ -129,7 +114,8 @@ int bookmarkAreaComboWidth(const DataTypeComboBox *combo)
     return qBound(132, textW + kIconW + kIconGap + kArrowW + kFrameAndSpare, 180);
 }
 
-void showBookmarkAreaPopup(HexView *hv, size_w referenceOffset, const QRect &globalRect, QWidget *owner)
+void showBookmarkAreaPopup(HexView *hv, size_w referenceOffset, const QRect &globalRect, QWidget *owner,
+                           BookmarkActivation::FunctionCallback functionCallback)
 {
     Q_UNUSED(referenceOffset);
     if (!hv || hv->bookmarks().isEmpty())
@@ -144,11 +130,11 @@ void showBookmarkAreaPopup(HexView *hv, size_w referenceOffset, const QRect &glo
     auto *combo = new DataTypeComboBox(owner);
     combo->hide();
     refreshCombo(combo);
-    QObject::connect(combo, &DataTypeComboBox::selectionChanged, combo, [hv, combo](int) {
+    QObject::connect(combo, &DataTypeComboBox::selectionChanged, combo, [hv, combo, functionCallback](int) {
         const QVariant data = combo->selectionData();
         if (data.isNull())
             return;
-        jumpToBookmark(hv, data.toInt());
+        BookmarkActivation::activate(hv, data.toInt(), functionCallback);
         combo->deleteLater();
     });
     QObject::connect(combo, &DataTypeComboBox::actionCloseRequested, combo,
@@ -759,6 +745,9 @@ MainWindow::MainWindow(QWidget *parent)
     addAction(ui->actionDisassemble);
     connect(ui->actionDisassemble, &QAction::triggered,
             this, &MainWindow::toggleDisassemblerPanel);
+    addAction(ui->actionDisassembleThis);
+    connect(ui->actionDisassembleThis, &QAction::triggered,
+            this, &MainWindow::disassembleSelection);
 
     ui->actionStructureView->setShortcut(structurePanelShortcut());
     addAction(ui->actionStructureView);
@@ -1035,13 +1024,23 @@ MainWindow::MainWindow(QWidget *parent)
             this, [this](int idx, QRect btnGlobal) {
         showBookmarkContextPopup(m_hv, idx, btnGlobal);
     });
+
+    auto openFunctionBookmark = [this](uint64_t offset, uint64_t length, const QString &name) {
+        openDisassemblerRange(offset, length, name);
+    };
+
+    auto activateBookmark = [this, openFunctionBookmark](int idx) {
+        BookmarkActivation::activate(m_hv, idx, openFunctionBookmark);
+    };
+
     connect(m_hv, &HexView::bookmarkAreaContextRequested,
-            this, [this](size_w referenceOffset, QRect globalRect) {
-        showBookmarkAreaPopup(m_hv, referenceOffset, globalRect, this);
+            this, [this, openFunctionBookmark](size_w referenceOffset, QRect globalRect) {
+        showBookmarkAreaPopup(m_hv, referenceOffset, globalRect, this, openFunctionBookmark);
     });
     m_hv->setBookmarkContextMenuExternallyHandled(true);
 
     connect(m_gotoDialog, &GotoPanel::bookmarkRequested, m_hv, &HexView::addBookmarkInline);
+    connect(m_gotoDialog, &GotoPanel::bookmarkActivated, this, activateBookmark);
 
     connect(m_hv, &HexView::bookmarksChanged,
             m_gotoDialog, &GotoPanel::refreshBookmarks);
@@ -1459,6 +1458,7 @@ void MainWindow::updateEditActions()
     // Copy / Copy As only need a selection.
     ui->action_Copy->setEnabled(hasSel);
     ui->actionCopy_As->setEnabled(hasSel);
+    ui->actionDisassembleThis->setEnabled(hasSel);
 
     // Paste / Paste Special: use cached clipboard state (m_clipboardReady), updated
     // from dataChanged where clipboard queries are safe.  Querying mimeData() here
@@ -1591,6 +1591,35 @@ void MainWindow::openDisassemblerAtOffset(uint64_t offset)
             m_structurePanelHost->closePanel();
     }
     m_disasmPanelHost->openAtOffset(offset);
+}
+
+void MainWindow::openDisassemblerRange(uint64_t offset, uint64_t length, const QString &name)
+{
+    if (!m_disasmPanelHost || length == 0)
+        return;
+
+    if (!m_disasmPanelHost->isOpen())
+    {
+        if (m_sidePanelHost && m_sidePanelHost->isOpen())
+            m_sidePanelHost->closePanel();
+        if (m_structurePanelHost && m_structurePanelHost->isOpen())
+            m_structurePanelHost->closePanel();
+    }
+
+    m_disasmPanelHost->openRange(offset, length, name);
+}
+
+void MainWindow::disassembleSelection()
+{
+    if (!m_hv || !m_disasmPanelHost || m_hv->selectionSize() == 0)
+        return;
+
+    const uint64_t offset = static_cast<uint64_t>(m_hv->selectionStart());
+    const uint64_t length = static_cast<uint64_t>(m_hv->selectionSize());
+    const QString name = QStringLiteral("selection_%1")
+                             .arg(offset, 0, 16)
+                             .toUpper();
+    openDisassemblerRange(offset, length, name);
 }
 
 void MainWindow::toggleStructurePanel()

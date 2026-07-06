@@ -31,6 +31,7 @@ public:
 
 signals:
     void bookmarkRequested();
+    void bookmarkActivated(int idx);
 
 protected:
     void keyPressEvent(QKeyEvent *e) override;

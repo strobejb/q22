@@ -5,6 +5,7 @@
 #include "filestats/sidepanel.h"
 
 #include <QTextEdit>
+#include <QString>
 #include <QWidget>
 #include <capstone/capstone.h>
 
@@ -20,6 +21,7 @@ class QLineEdit;
 class QPlainTextEdit;
 class QProgressBar;
 class QStackedWidget;
+class QToolButton;
 class QTreeWidget;
 class QTreeWidgetItem;
 namespace filestats { class TabbedContentFrame; }
@@ -37,6 +39,7 @@ signals:
 public slots:
     void refresh();
     void goToOffset(uint64_t offset);
+    void goToRange(uint64_t offset, uint64_t length, const QString &functionName);
     // Pushed in by DisassemblerPanelHost (which owns the long-lived cache,
     // since this panel itself is destroyed/recreated each time it's
     // closed/reopened) whenever CodeDiscoveryEngine's results change.
@@ -83,6 +86,10 @@ private:
     void onFunctionItemActivated(QTreeWidgetItem *item, int column);
     bool pushJumpSourceForSpan(int spanIndex);
     bool jumpBack();
+    void renameCurrentScope();
+    void bookmarkCurrentScope();
+    void updateScopeActions();
+    void updateFunctionsComboDisplay();
     // Rebuilds the "jump to function" combo's item list: a permanent
     // "Entrypoint" entry (enabled only once known) followed by, if any were
     // found, a separator and the discovered functions -- called whenever
@@ -109,6 +116,8 @@ private:
     DataTypeComboBox *m_functionsCombo = nullptr;
     QLineEdit      *m_offsetEdit       = nullptr;
     QAction        *m_pinAction        = nullptr;
+    QToolButton    *m_renameButton     = nullptr;
+    QToolButton    *m_bookmarkButton   = nullptr;
     QPlainTextEdit *m_view             = nullptr;
     QLabel         *m_statusLabel      = nullptr;
     QString         m_disasmStatusText;
@@ -122,6 +131,10 @@ private:
     // popupClosed() catches up once the user closes it.
     bool            m_functionsComboNeedsRefresh = false;
     bool            m_pinned           = false;
+    bool            m_hasExplicitRange = false;
+    uint64_t        m_explicitRangeOffset = 0;
+    uint64_t        m_explicitRangeLength = 0;
+    QString         m_explicitRangeName;
     // Per-line (one per disassembled instruction) [start, end) file offsets,
     // rebuilt every disassemble() call; index + m_headerLineCount == text
     // block number (NOT index alone -- see m_headerLineCount).
@@ -156,6 +169,16 @@ private:
     struct JumpHistoryEntry { uint64_t functionOffset; uint64_t instructionStart; uint64_t instructionEnd; };
     std::vector<JumpHistoryEntry> m_jumpHistory;
 
+    struct ScopeInfo {
+        bool valid = false;
+        uint64_t offset = 0;
+        uint64_t length = 0;
+        QString name;
+        int functionIndex = -1;
+        bool renameable = false;
+    };
+    ScopeInfo currentScope() const;
+
     cs_arch m_csArch   = CS_ARCH_X86;
     cs_mode m_csMode   = (cs_mode)CS_MODE_64;
     csh     m_csHandle = 0;
@@ -172,6 +195,7 @@ public:
     // toggle()) and jumps it to offset, bypassing "pin" since this is an
     // explicit navigation request rather than incidental cursor movement.
     void openAtOffset(uint64_t offset);
+    void openRange(uint64_t offset, uint64_t length, const QString &functionName);
 
     // The host outlives the panel widget (which is destroyed/recreated each
     // close/reopen), so it -- not HexView, not the panel -- is where

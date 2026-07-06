@@ -6,10 +6,17 @@
 #include <QRgb>
 #include <QString>
 
+enum class BookmarkKind {
+    Basic,
+    Function,
+    Structure,
+};
+
 struct Bookmark {
     size_w  offset      = 0;
     size_w  length      = 0;
     QString text;
+    BookmarkKind kind   = BookmarkKind::Basic;
     QRgb    fgColour    = 0;
     QRgb    bgColour    = 0;
     // bgColour == 0 is a sentinel meaning "FG-only" — used for modified-byte

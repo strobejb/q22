@@ -63,6 +63,8 @@ private:
     void toggleDisassemblerPanel();
     void toggleStructurePanel();
     void openDisassemblerAtOffset(uint64_t offset);
+    void openDisassemblerRange(uint64_t offset, uint64_t length, const QString &name);
+    void disassembleSelection();
     void openSidePanelSection(FilePropertiesPanel::SectionId section);
     void refreshSidePanel();
     void resetSidePanel();

@@ -99,7 +99,8 @@ static void appendBookmark(QString &out, const QJsonObject &bookmark, int level)
     out += indent(level + 1) + QStringLiteral("\"offset\": ") + jsonString(bookmark.value(QStringLiteral("offset")).toString()) + QStringLiteral(",\n");
     out += indent(level + 1) + QStringLiteral("\"length\": ") + jsonString(bookmark.value(QStringLiteral("length")).toString()) + QStringLiteral(",\n");
     out += indent(level + 1) + QStringLiteral("\"text\": ") + jsonString(bookmark.value(QStringLiteral("text")).toString()) + QStringLiteral(",\n");
-    out += indent(level + 1) + QStringLiteral("\"colour\": ") + QString::number(bookmark.value(QStringLiteral("colour")).toInt());
+    out += indent(level + 1) + QStringLiteral("\"colour\": ") + QString::number(bookmark.value(QStringLiteral("colour")).toInt()) + QStringLiteral(",\n");
+    out += indent(level + 1) + QStringLiteral("\"kind\": ") + jsonString(bookmark.value(QStringLiteral("kind")).toString(QStringLiteral("basic")));
     out += QStringLiteral("\n") + indent(level) + QStringLiteral("}");
 }
 
@@ -150,21 +151,41 @@ static QString formatStore(const QJsonObject &root)
 
 static QJsonObject bookmarkToJson(const Bookmark &bm)
 {
+    auto kindText = [](BookmarkKind kind) {
+        switch (kind)
+        {
+        case BookmarkKind::Function:  return QStringLiteral("function");
+        case BookmarkKind::Structure: return QStringLiteral("structure");
+        case BookmarkKind::Basic:     break;
+        }
+        return QStringLiteral("basic");
+    };
+
     return {
         { QStringLiteral("offset"), QString::number(bm.offset) },
         { QStringLiteral("length"), QString::number(bm.length) },
         { QStringLiteral("text"),   bm.text },
         { QStringLiteral("colour"), bm.colourIndex },
+        { QStringLiteral("kind"),   kindText(bm.kind) },
     };
 }
 
 static Bookmark bookmarkFromJson(const QJsonObject &obj)
 {
+    auto kindFromText = [](const QString &text) {
+        if (text == QStringLiteral("function"))
+            return BookmarkKind::Function;
+        if (text == QStringLiteral("structure"))
+            return BookmarkKind::Structure;
+        return BookmarkKind::Basic;
+    };
+
     Bookmark bm;
     bm.offset = obj.value(QStringLiteral("offset")).toString(QStringLiteral("0")).toULongLong();
     bm.length = obj.value(QStringLiteral("length")).toString(QStringLiteral("1")).toULongLong();
     bm.text = obj.value(QStringLiteral("text")).toString();
     bm.colourIndex = obj.value(QStringLiteral("colour")).toInt(0);
+    bm.kind = kindFromText(obj.value(QStringLiteral("kind")).toString(QStringLiteral("basic")));
     return bm;
 }
 

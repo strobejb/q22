@@ -41,6 +41,8 @@ set(PROJECT_SOURCES
         chrome/roundedlistwidget.h
         bookmarks/bookmarkpopup.h
         bookmarks/bookmarkpopup.cpp
+        bookmarks/bookmarkactivation.h
+        bookmarks/bookmarkactivation.cpp
         bookmarks/bookmarkcombo.h
         bookmarks/bookmarkcombo.cpp
         bookmarks/bookmarkstore.h

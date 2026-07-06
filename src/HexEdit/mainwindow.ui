@@ -66,6 +66,7 @@
     <addaction name="separator"/>
     <addaction name="menuHighlights"/>
     <addaction name="separator"/>
+    <addaction name="actionDisassembleThis"/>
    </widget>
    <widget class="QMenu" name="menuView">
     <property name="title">
@@ -114,8 +115,8 @@
     <addaction name="separator"/>
     <addaction name="menuView_2"/>
     <addaction name="separator"/>
-    <addaction name="actionDataInspector"/>
     <addaction name="actionProperties"/>
+    <addaction name="actionDataInspector"/>
     <addaction name="actionChecksum"/>
     <addaction name="actionStrings"/>
     <addaction name="actionEntropy"/>
@@ -509,6 +510,14 @@
   <action name="actionEntropy">
    <property name="text">
     <string>Entropy...</string>
+   </property>
+  </action>
+  <action name="actionDisassembleThis">
+   <property name="text">
+    <string>Disassemble</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Shift+D</string>
    </property>
   </action>
  </widget>

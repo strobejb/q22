@@ -124,18 +124,7 @@ GotoPanel::GotoPanel(HexView *hv, QWidget *parent)
             emit bookmarkRequested();
             return;
         }
-        const QList<Bookmark> &bms = m_hv->bookmarks();
-        if (idx >= 0 && idx < bms.size()) {
-            const Bookmark &bm = bms[idx];
-            // Pin this bookmark so it wins in its conflict group even if another
-            // member at the same offset would normally take priority.
-            m_hv->expandBookmark(idx);
-            m_hv->scrollCenterIfOffScreen(bm.offset, bm.length);
-            // Select the full bookmark range; cursor stays at the start.
-            m_hv->setCurSel(bm.offset + bm.length, bm.offset);
-            m_hv->scrollHEnd();
-            m_hv->setFocus();
-        }
+        emit bookmarkActivated(idx);
     });
 
     ui->btnBookmark->hide();
