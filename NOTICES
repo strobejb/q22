@@ -1,0 +1,88 @@
+Q22 Third-Party Notices
+=======================
+
+Q22 is licensed under GPL-3.0-or-later.  This file records notices for
+third-party software and artwork used by, linked with, or bundled with Q22.
+
+
+Qt
+--
+
+Q22 is built with the Qt application framework.
+
+Project: Qt
+Upstream: https://www.qt.io/
+License: Qt is available under commercial and open-source licenses.  The
+Qt open-source licensing options include LGPLv3 and GPLv3; some Qt modules
+may have different or additional license terms.
+
+Q22 uses Qt Widgets and related Qt tooling.  Binary packages may include Qt
+runtime libraries deployed by Qt's deployment tools or by linuxdeploy's Qt
+plugin.  See Qt's license documentation for the applicable notices and
+redistribution obligations:
+
+  https://www.qt.io/licensing
+  https://www.qt.io/licensing/open-source-lgpl-obligations
+  https://doc.qt.io/qt-6/licenses-used-in-qt.html
+
+
+Capstone
+--------
+
+Q22 uses the Capstone disassembly framework for disassembly support.
+
+Project: Capstone
+Upstream: https://www.capstone-engine.org/
+Source: https://github.com/capstone-engine/capstone
+License: BSD-style license
+
+Capstone has been designed & implemented by Nguyen Anh Quynh
+<aquynh@gmail.com>.
+
+Copyright (c) 2013, COSEINC.
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice,
+  this list of conditions and the following disclaimer.
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+* Neither the name of the developer(s) nor the names of its contributors may
+  be used to endorse or promote products derived from this software without
+  specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+
+Capstone also includes material derived from or synchronized with LLVM.  See
+the Capstone source distribution's LICENSE_LLVM.TXT for those notices.
+
+
+GNOME / Adwaita Icons
+---------------------
+
+Q22 bundles and/or uses symbolic icons derived from GNOME / Adwaita icon
+artwork.
+
+Project: Adwaita Icon Theme / GNOME Project
+Upstream: https://gitlab.gnome.org/GNOME/adwaita-icon-theme
+License: LGPLv3 or Creative Commons Attribution-Share Alike 3.0 United States
+
+Attribution: GNOME Project
+Website: https://www.gnome.org/
+
+The Adwaita Icon Theme COPYING file states that attribution as "GNOME Project"
+is sufficient, with a link to https://www.gnome.org/ where available.
+
