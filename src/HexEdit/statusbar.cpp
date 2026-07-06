@@ -126,6 +126,7 @@ bool PanelStrip::event(QEvent *e)
 static constexpr uint indexToMode[] = { HVMODE_OVERWRITE, HVMODE_INSERT, HVMODE_READONLY };
 static constexpr const char *indexToLabel[] = { "OVR", "INS", "READ" };
 static constexpr int kRightToggleMargin = 22;
+static constexpr int kPanelToggleIconSize = 20;
 
 static int modeToIndex(uint mode)
 {
@@ -168,7 +169,8 @@ StatusBar::StatusBar(HexView *hv, QStatusBar *bar, bool showPanelToggles,
         btn->setCursor(Qt::ArrowCursor);
         btn->setFocusPolicy(Qt::StrongFocus);
         btn->setMouseTracking(true);
-        btn->setIconSize(QSize(16, 16));
+        btn->setProperty("iconSize", kPanelToggleIconSize);
+        btn->setIconSize(QSize(kPanelToggleIconSize, kPanelToggleIconSize));
         const QIcon icon = QIcon::fromTheme(QString::fromLatin1(iconName).section('/', -1));
         if (!icon.isNull())
             btn->setIcon(icon);
@@ -300,7 +302,8 @@ bool StatusBar::eventFilter(QObject *obj, QEvent *event)
 
 void StatusBar::syncToggleButtonMetrics()
 {
-    const int h = std::max({ m_comboCursor ? m_comboCursor->sizeHint().height() : 0,
+    const int h = std::max({ kPanelToggleIconSize + 6,
+                             m_comboCursor ? m_comboCursor->sizeHint().height() : 0,
                              m_comboLength ? m_comboLength->sizeHint().height() : 0,
                              m_comboValue  ? m_comboValue->sizeHint().height()  : 0,
                              m_comboMode   ? m_comboMode->sizeHint().height()   : 0 });

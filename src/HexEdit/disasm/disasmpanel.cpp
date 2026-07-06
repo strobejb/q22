@@ -193,35 +193,46 @@ void DisassemblerPanel::buildUi()
     });
 
     auto makeToolButton = [this, content, comboH](const QString &iconName, const QString &toolTip) {
+        const bool dark = palette().window().color().lightness() < 128;
+        const QString hover = dark ? QStringLiteral("rgba(255,255,255,0.15)")
+                                   : QStringLiteral("rgba(0,0,0,0.10)");
+        const QString pressed = dark ? QStringLiteral("rgba(255,255,255,0.25)")
+                                     : QStringLiteral("rgba(0,0,0,0.18)");
+        const int buttonSize = qMax(comboH, 30);
+        constexpr int kIconSize = 20;
         auto *button = new QToolButton(content);
         button->setAutoRaise(true);
         button->setCursor(Qt::PointingHandCursor);
         button->setToolTip(toolTip);
         button->setProperty("iconThemeName", iconName);
-        button->setIcon(recoloredIcon(iconName, palette().buttonText().color(), 16));
-        button->setIconSize(QSize(16, 16));
-        button->setFixedSize(comboH, comboH);
+        button->setIcon(recoloredIcon(iconName, palette().buttonText().color(), kIconSize));
+        button->setIconSize(QSize(kIconSize, kIconSize));
+        button->setFixedSize(buttonSize, buttonSize);
         button->setStyleSheet(QStringLiteral(
             "QToolButton { border: none; border-radius: 6px; background: transparent; padding: 0; }"
             "QToolButton:hover { background: %1; }"
+            "QToolButton:hover:disabled { background: transparent; }"
             "QToolButton:pressed { background: %2; }"
             "QToolButton:disabled { background: transparent; }"
             "QToolButton::menu-indicator { image: none; width: 0; }")
-            .arg(filestats::cssColor(palette().color(QPalette::AlternateBase)),
-                 filestats::cssColor(palette().color(QPalette::Midlight))));
+            .arg(hover, pressed));
         return button;
     };
 
-    m_renameButton = makeToolButton(QStringLiteral("actions/document-edit-symbolic"),
+    m_renameButton = makeToolButton(QStringLiteral("actions/rename"),
                                     tr("Rename function"));
-    m_bookmarkButton = makeToolButton(QStringLiteral("actions/bookmark-star-add"),
+    m_bookmarkButton = makeToolButton(QStringLiteral("actions/bookmark"),
                                       tr("Bookmark function"));
 
     optLay->addWidget(m_archCombo, 1);
     optLay->addWidget(m_functionsCombo, 1);
-    optLay->addSpacing(2);
-    optLay->addWidget(m_renameButton);
-    optLay->addWidget(m_bookmarkButton);
+    optLay->addSpacing(4);
+    auto *scopeButtonLay = new QHBoxLayout;
+    scopeButtonLay->setContentsMargins(0, 0, 0, 0);
+    scopeButtonLay->setSpacing(0);
+    scopeButtonLay->addWidget(m_renameButton);
+    scopeButtonLay->addWidget(m_bookmarkButton);
+    optLay->addLayout(scopeButtonLay);
     contentLay->addLayout(optLay);
     contentLay->addSpacing(4);
 
