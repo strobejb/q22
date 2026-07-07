@@ -127,6 +127,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist
           Copy-Item build\Release\q22.exe dist\
           windeployqt --release --no-translations dist\q22.exe
+          Copy-Item LICENSE, NOTICES, CHANGELOG.md, README.md dist\
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
