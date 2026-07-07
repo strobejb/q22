@@ -59,7 +59,9 @@ jobs:
           wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
           chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage
           mkdir -p AppDir/usr/bin
+          mkdir -p AppDir/usr/share/metainfo
           cp build/q22 AppDir/usr/bin/
+          cp src/HexEdit/resources/q22.metainfo.xml AppDir/usr/share/metainfo/
           appimage="q22-${HEXEDIT_FILE_VERSION}-linux-x86_64.AppImage"
           QMAKE="$QT_ROOT_DIR/bin/qmake" \
           LDAI_OUTPUT="${appimage}" \
@@ -68,7 +70,6 @@ jobs:
             --plugin qt \
             --output appimage \
             --desktop-file src/HexEdit/resources/q22.desktop \
-            --appdata-file src/HexEdit/resources/q22.metainfo.xml \
             --icon-file src/HexEdit/resources/q22.png
           test -f "${appimage}"
           echo "Created AppImage: ${appimage}"
