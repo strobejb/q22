@@ -170,6 +170,9 @@ source_group("Forms" FILES ${PROJECT_FORMS_ABSOLUTE})
 if(WIN32)
     list(APPEND PROJECT_SOURCES resources/hexedit.rc)
 endif()
+if(WIN32 AND MSVC)
+    list(APPEND PROJECT_SOURCES chrome/windows-delayload.cpp)
+endif()
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
     qt_add_executable(hexedit
@@ -247,6 +250,16 @@ set_target_properties(hexedit PROPERTIES
 
 if(WIN32)
     target_link_libraries(hexedit PRIVATE dwmapi advapi32 dbghelp)
+endif()
+if(WIN32 AND MSVC)
+    target_link_libraries(hexedit PRIVATE delayimp)
+    set(_q22_delay_load_dlls Qt6Core.dll Qt6Gui.dll Qt6Widgets.dll)
+    if(TARGET Qt${QT_VERSION_MAJOR}::DBus)
+        list(APPEND _q22_delay_load_dlls Qt6DBus.dll)
+    endif()
+    foreach(_dll IN LISTS _q22_delay_load_dlls)
+        target_link_options(hexedit PRIVATE "/DELAYLOAD:${_dll}")
+    endforeach()
 endif()
 
 if(TARGET causewayData)

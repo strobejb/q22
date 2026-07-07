@@ -127,6 +127,29 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist
           Copy-Item build\Release\q22.exe dist\
           windeployqt --release --no-translations dist\q22.exe
+          New-Item -ItemType Directory -Force -Path dist\qt\bin, dist\qt\plugins
+          $qtRuntimePatterns = @("Qt6*.dll","icu*.dll","d3dcompiler_*.dll","dxcompiler.dll","dxil.dll","opengl32sw.dll","libEGL.dll","libGLESv2.dll")
+          Get-ChildItem dist -File -Filter *.dll | Where-Object {
+            $name = $_.Name
+            $qtRuntimePatterns | Where-Object { $name -like $_ }
+          } |
+            Move-Item -Destination dist\qt\bin -Force
+          $qtBin = Join-Path $env:QT_ROOT_DIR "bin"
+          foreach ($dll in "Qt6Core.dll","Qt6Gui.dll","Qt6Widgets.dll","Qt6DBus.dll") {
+            $dllPath = Join-Path $qtBin $dll
+            if (Test-Path $dllPath) {
+              Copy-Item $dllPath dist\qt\bin\ -Force
+            }
+          }
+          foreach ($dir in "platforms","imageformats","iconengines","styles","tls","networkinformation","generic","sqldrivers") {
+            if (Test-Path "dist\$dir") {
+              Move-Item "dist\$dir" dist\qt\plugins\ -Force
+            }
+          }
+          if (Test-Path dist\translations) {
+            Move-Item dist\translations dist\qt\translations -Force
+          }
+          Copy-Item src\HexEdit\resources\qt.conf dist\
           Copy-Item LICENSE, NOTICES, CHANGELOG.md, README.md dist\
 
       - name: Upload artifact
