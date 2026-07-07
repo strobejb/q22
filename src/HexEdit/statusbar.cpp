@@ -126,7 +126,12 @@ bool PanelStrip::event(QEvent *e)
 static constexpr uint indexToMode[] = { HVMODE_OVERWRITE, HVMODE_INSERT, HVMODE_READONLY };
 static constexpr const char *indexToLabel[] = { "OVR", "INS", "READ" };
 static constexpr int kRightToggleMargin = 22;
-static constexpr int kPanelToggleIconSize = 20;
+static constexpr int kPanelToggleButtonIconSize = 20;
+#ifdef Q_OS_WIN
+static constexpr int kPanelToggleIconSize = 16;
+#else
+static constexpr int kPanelToggleIconSize = kPanelToggleButtonIconSize;
+#endif
 
 static int modeToIndex(uint mode)
 {
@@ -302,7 +307,7 @@ bool StatusBar::eventFilter(QObject *obj, QEvent *event)
 
 void StatusBar::syncToggleButtonMetrics()
 {
-    const int h = std::max({ kPanelToggleIconSize + 6,
+    const int h = std::max({ kPanelToggleButtonIconSize + 6,
                              m_comboCursor ? m_comboCursor->sizeHint().height() : 0,
                              m_comboLength ? m_comboLength->sizeHint().height() : 0,
                              m_comboValue  ? m_comboValue->sizeHint().height()  : 0,

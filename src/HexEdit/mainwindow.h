@@ -36,6 +36,7 @@ class MainWindow : public QMainWindow
 public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
+    bool openFile(const QString &path);
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
@@ -49,7 +50,6 @@ protected:
 #endif
 
 private:
-    void openFile(const QString &path);
     bool maybeSave();       // prompt if modified; returns false if user cancelled
     void updateRecentMenu();
     void updateEditActions();

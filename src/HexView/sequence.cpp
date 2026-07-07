@@ -180,13 +180,16 @@ sequence::span * sequence::loadspan(const std::string &filename, bool readonly, 
 //
 bool sequence::open(const std::string &filename, bool readonly, bool quickload)
 {
-	if(!clear())
-		return false;
-
 	buffer_control *bc = new buffer_control();
 
 	if(bc->load(filename, readonly, quickload))
 	{
+		if(!clear())
+		{
+			delete bc;
+			return false;
+		}
+
 		bc->id = buffer_list.size();		// assign the id
 		buffer_list.push_back(bc);
 

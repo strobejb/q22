@@ -3,8 +3,9 @@
 #include "theme.h"
 #include "version.h"
 #include <QApplication>
+#include <QCommandLineParser>
 #include <QIcon>
-#include <QDir>
+#include <QTimer>
 
 
 int main(int argc, char *argv[])
@@ -19,6 +20,17 @@ int main(int argc, char *argv[])
     a.setApplicationDisplayName("q22");
     a.setDesktopFileName("q22");
     a.setApplicationVersion(PRODUCT_VERSION_STRING);
+
+    QCommandLineParser parser;
+    parser.setApplicationDescription(QApplication::applicationDisplayName());
+    parser.addHelpOption();
+    parser.addVersionOption();
+    parser.addPositionalArgument(QStringLiteral("file"), QApplication::translate("main", "File to open."));
+    parser.process(a);
+    const QStringList positionalArgs = parser.positionalArguments();
+    if (positionalArgs.size() > 1)
+        parser.showHelp(1);
+
 #ifndef Q_OS_WIN
     // On Windows the taskbar/titlebar icon comes from the Win32 ICON resource
     // embedded in the EXE (hexedit.rc).  Setting a QIcon here would make Qt
@@ -32,5 +44,9 @@ int main(int argc, char *argv[])
 
     MainWindow w;
     w.show();
+    if (!positionalArgs.isEmpty()) {
+        const QString path = positionalArgs.constFirst();
+        QTimer::singleShot(0, &w, [&w, path]() { w.openFile(path); });
+    }
     return a.exec();
 }

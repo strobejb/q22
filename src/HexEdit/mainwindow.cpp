@@ -1531,8 +1531,15 @@ void MainWindow::closeEvent(QCloseEvent *e)
     QMainWindow::closeEvent(e);
 }
 
-void MainWindow::openFile(const QString &path) {
-    m_hv->openFile(path);
+bool MainWindow::openFile(const QString &path) {
+    if (!m_hv->openFile(path)) {
+        QMessageBox::warning(this,
+                             tr("Open File"),
+                             tr("Could not open \"%1\".")
+                                 .arg(QDir::toNativeSeparators(path)));
+        return false;
+    }
+
     m_hv->setBookmarks(BookmarkStore::load(path));
     AppSettings::addRecentFile(path);
     updateRecentMenu();
@@ -1558,6 +1565,7 @@ void MainWindow::openFile(const QString &path) {
             m_disasmPanelHost->setFunctionsScanInProgress(true);
         m_codeDiscoveryEngine->scan(m_hv);
     }
+    return true;
 }
 
 void MainWindow::toggleSidePanel()
