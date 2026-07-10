@@ -89,6 +89,14 @@ private:
     bool evaluate(const EvalContext &context, ExprNode *expr, INUMTYPE *result);
     bool evaluate(StructureRow *scope, ExprNode *expr, INUMTYPE *result, uint64_t scopeOffset);
     bool evaluate(Type *scopeType, ExprNode *expr, INUMTYPE *result, uint64_t scopeOffset);
+    bool evaluateFunction(const EvalContext &context, ExprNode *expr, INUMTYPE *result);
+    bool evaluateFindFunction(const EvalContext &context, ExprNode *expr, INUMTYPE *result);
+    uint64_t readableEnd(uint64_t startOffset) const;
+    bool findPattern(uint64_t startOffset,
+                     uint64_t endOffset,
+                     const std::vector<uint8_t> &pattern,
+                     bool reverse,
+                     uint64_t *absoluteMatch) const;
     bool evaluateArrayCount(StructureRow *scope, TypeDecl *typeDecl, Type *arrayType, INUMTYPE *result, uint64_t offset);
     StructureRow *findFieldRow(StructureRow *scope, ExprNode *expr);
     StructureRow *findDirectField(StructureRow *scope, const char *name) const;

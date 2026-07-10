@@ -22,6 +22,7 @@ private slots:
 	void viewTagsParse();
 	void descriptionTagsParseAndDisplayRemainsSeparate();
 	void magicTagsParse();
+	void findSearchExpressionsParse();
 	void alignAndEntrypointTagsParse();
 	void extentTagsAndScalarSizeofParse();
 	void endianExpressionTagsParse();
@@ -418,6 +419,47 @@ void CausewayTests::magicTagsParse()
 	QVERIFY(dumped.contains("magic(4, { 0x7F, 'E', 'L', 'F' })"));
 }
 
+void CausewayTests::findSearchExpressionsParse()
+{
+	// Scenario: byte-pattern search is an expression built-in, not a tag.
+	// Expected: reserved find_first/find_last calls parse in ordinary tag
+	// expressions, while arbitrary identifier calls remain unsupported.
+	Parser parser;
+	QVERIFY(parseBuffer(parser,
+						"struct Root {\n"
+						"  [offset(find_last({ 'P', 'K', 0x05, 0x06 }, 65557))] dword eocd;\n"
+						"  [offset(find_first({ 'M', 'Z' }))] word mz;\n"
+						"} root;\n"));
+
+	TypeDecl *root = parser.GetStrataLibrary()->globalTypeDeclList[0];
+	TypeDecl *eocdDecl = root->baseType->sptr->typeDeclList[0];
+	ExprNode *offset = nullptr;
+	QVERIFY(FindTag(eocdDecl->tagList, TOK_OFFSET, &offset));
+	QVERIFY(offset);
+	QCOMPARE(offset->type, EXPR_FUNCTION);
+	QCOMPARE(offset->tok, TOK_FINDLAST);
+	QVERIFY(offset->left);
+	QCOMPARE(offset->left->type, EXPR_COMMA);
+	QVERIFY(offset->left->left);
+	QCOMPARE(offset->left->left->type, EXPR_BYTESEQ);
+	QCOMPARE(offset->left->left->byteSequence.size(), size_t(4));
+	QCOMPARE(offset->left->left->byteSequence[0], uint8_t('P'));
+	QCOMPARE(offset->left->left->byteSequence[1], uint8_t('K'));
+	QCOMPARE(offset->left->left->byteSequence[2], uint8_t(0x05));
+	QCOMPARE(offset->left->left->byteSequence[3], uint8_t(0x06));
+	QVERIFY(offset->left->right);
+	QCOMPARE(offset->left->right->type, EXPR_NUMBER);
+	QCOMPARE(offset->left->right->val, INUMTYPE(65557));
+
+	Parser invalidByte;
+	QVERIFY(!parseBuffer(invalidByte,
+						 "struct Root { [offset(find_last({ 0x100 }))] dword value; } root;\n"));
+
+	Parser arbitraryCall;
+	QVERIFY(!parseBuffer(arbitraryCall,
+						 "struct Root { [offset(foo(1))] dword value; } root;\n"));
+}
+
 void CausewayTests::alignAndEntrypointTagsParse()
 {
 	// Scenario: Structure View definitions annotate both layout and a field that
@@ -655,6 +697,7 @@ void CausewayTests::standardTypelibFilesParse()
 		QStringLiteral("basetypes.struct"),
 		QStringLiteral("elf.struct"),
 		QStringLiteral("pe.struct"),
+		QStringLiteral("zip.struct"),
 	};
 
 	for(const QString &file : files)

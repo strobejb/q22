@@ -13,6 +13,9 @@
 #include "tchar_compat.h"
 #include "lexer.h"
 
+#include <stdint.h>
+#include <vector>
+
 enum EXPR
 { 
 	EXPR_NUMBER,	EXPR_STRINGBUF, EXPR_IDENTIFIER, 
@@ -20,6 +23,10 @@ enum EXPR
 	EXPR_FIELD,		EXPR_ARRAY,		EXPR_FUNCTION,
 	EXPR_UNARY,		EXPR_BINARY,	EXPR_TERTIARY, 
 	EXPR_ASSIGN,	EXPR_COMMA,		EXPR_SIZEOF,
+	// Constant byte sequence literal, currently used by byte-search built-ins:
+	// find_first({ 'P', 'K' }) / find_last({ ... }). This is intentionally an
+	// expression-level counterpart to magic(...)'s existing byte sequence.
+	EXPR_BYTESEQ,
 	// One argument of a tag's parameter list written as tagKeyword(value) instead
 	// of a plain value -- e.g. name(DllName) as an argument inside
 	// dynamic_array(name(DllName), CHAR, Name, 4096, 0). 'tok' on the ExprNode
@@ -74,6 +81,7 @@ struct ExprNode
 	EXPR				type;		// type of expression
 	bool				brackets;	// was this node enclosed in brackets?
 	NUMBASE				base;		// dec/hex/oct etc (for EXPR_NUMBER only)
+	std::vector<uint8_t>	byteSequence;
 
 	union 
 	{

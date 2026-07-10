@@ -15,12 +15,14 @@
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
 
 namespace
 {
 static constexpr uint64_t kMaxArrayElements = 100;
 static constexpr qsizetype kMaxArrayPreviewElements = 8;
 static constexpr bool kPrefixArrayAliasesWithDash = false;
+static constexpr uint64_t kSearchChunkSize = 64 * 1024;
 
 uint64_t scalarSize(TYPE type)
 {
@@ -382,8 +384,9 @@ uint64_t StructureRenderEngine::appendTypeDecl(StructureRow *parent, TypeDecl *t
     if (FindTag(typeDecl->tagList, TOK_OFFSET, &offsetExpr))
     {
         INUMTYPE evaluated = offset;
-        if (evaluate(parent, offsetExpr, &evaluated, offset))
-            offset = m_baseOffset + evaluated;
+        if (!evaluate(parent, offsetExpr, &evaluated, offset))
+            return 0;
+        offset = m_baseOffset + evaluated;
     }
     else
     {
@@ -892,9 +895,224 @@ bool StructureRenderEngine::evaluate(const EvalContext &context, ExprNode *expr,
 
         return readInteger(base + static_cast<uint64_t>(relOffset), 1, result, false);
     }
+    case EXPR_FUNCTION:
+        return evaluateFunction(context, expr, result);
+    case EXPR_BYTESEQ:
+        return false;
     default:
         return false;
     }
+}
+
+namespace
+{
+void collectExpressionArgs(ExprNode *expr, std::vector<ExprNode *> *args)
+{
+    if (!expr || !args)
+        return;
+
+    if (expr->type == EXPR_COMMA)
+    {
+        collectExpressionArgs(expr->left, args);
+        collectExpressionArgs(expr->right, args);
+        return;
+    }
+
+    args->push_back(expr);
+}
+} // namespace
+
+bool StructureRenderEngine::evaluateFunction(const EvalContext &context, ExprNode *expr, INUMTYPE *result)
+{
+    if (!expr || expr->type != EXPR_FUNCTION)
+        return false;
+
+    switch (expr->tok)
+    {
+    case TOK_FINDFIRST:
+    case TOK_FINDLAST:
+        return evaluateFindFunction(context, expr, result);
+    default:
+        return false;
+    }
+}
+
+bool StructureRenderEngine::evaluateFindFunction(const EvalContext &context, ExprNode *expr, INUMTYPE *result)
+{
+    if (!expr || !result)
+        return false;
+
+    std::vector<ExprNode *> args;
+    collectExpressionArgs(expr->left, &args);
+    if (args.empty() || args.size() > 2)
+        return false;
+
+    ExprNode *patternExpr = args[0];
+    if (!patternExpr || patternExpr->type != EXPR_BYTESEQ || patternExpr->byteSequence.empty())
+        return false;
+
+    const uint64_t base = context.row ? context.row->absoluteOffset : context.offset;
+    uint64_t end = context.row && context.row->byteLength > 0
+        ? context.row->absoluteOffset + context.row->byteLength
+        : readableEnd(base);
+    if (end < base)
+        return false;
+
+    const bool reverse = expr->tok == TOK_FINDLAST;
+    uint64_t start = base;
+
+    if (args.size() == 2)
+    {
+        INUMTYPE limitValue = 0;
+        if (!evaluate(context, args[1], &limitValue))
+            return false;
+
+        const uint64_t limit = static_cast<uint64_t>(limitValue);
+        const uint64_t available = end - base;
+        if (limit < available)
+        {
+            if (reverse)
+                start = end - limit;
+            else
+                end = base + limit;
+        }
+    }
+
+    uint64_t absoluteMatch = 0;
+    if (!findPattern(start, end, patternExpr->byteSequence, reverse, &absoluteMatch))
+        return false;
+
+    if (absoluteMatch < base)
+        return false;
+
+    *result = static_cast<INUMTYPE>(absoluteMatch - base);
+    return true;
+}
+
+uint64_t StructureRenderEngine::readableEnd(uint64_t startOffset) const
+{
+    if (!m_reader)
+        return startOffset;
+
+    uint8_t byte = 0;
+    auto canRead = [&](uint64_t offset) {
+        return m_reader(offset, &byte, 1) == 1;
+    };
+
+    if (!canRead(startOffset))
+        return startOffset;
+
+    uint64_t step = 1;
+    uint64_t lastGoodEnd = startOffset + 1;
+    while (step < (std::numeric_limits<uint64_t>::max() / 2)
+           && startOffset <= std::numeric_limits<uint64_t>::max() - (step * 2)
+           && canRead(startOffset + (step * 2) - 1))
+    {
+        step *= 2;
+        lastGoodEnd = startOffset + step;
+    }
+
+    uint64_t high = startOffset <= std::numeric_limits<uint64_t>::max() - (step * 2)
+        ? startOffset + (step * 2) - 1
+        : std::numeric_limits<uint64_t>::max();
+    uint64_t low = lastGoodEnd;
+
+    while (low < high)
+    {
+        const uint64_t mid = low + (high - low + 1) / 2;
+        if (mid > 0 && canRead(mid - 1))
+            low = mid;
+        else
+            high = mid - 1;
+    }
+
+    return low;
+}
+
+bool StructureRenderEngine::findPattern(uint64_t startOffset,
+                                        uint64_t endOffset,
+                                        const std::vector<uint8_t> &pattern,
+                                        bool reverse,
+                                        uint64_t *absoluteMatch) const
+{
+    if (!m_reader || !absoluteMatch || pattern.empty() || endOffset <= startOffset)
+        return false;
+
+    const uint64_t patternSize = static_cast<uint64_t>(pattern.size());
+    if (endOffset - startOffset < patternSize)
+        return false;
+
+    const uint64_t overlap = patternSize > 0 ? patternSize - 1 : 0;
+    QByteArray bytes;
+
+    if (!reverse)
+    {
+        for (uint64_t pos = startOffset; pos < endOffset; )
+        {
+            const uint64_t coreEnd = std::min<uint64_t>(endOffset, pos + kSearchChunkSize);
+            const uint64_t readEnd = std::min<uint64_t>(endOffset, coreEnd + overlap);
+            const uint64_t readLength = readEnd - pos;
+            bytes.resize(static_cast<qsizetype>(readLength));
+            const size_t got = m_reader(pos, reinterpret_cast<uint8_t *>(bytes.data()), static_cast<size_t>(readLength));
+            bytes.truncate(static_cast<qsizetype>(got));
+
+            if (bytes.size() >= static_cast<qsizetype>(patternSize))
+            {
+                const uint64_t maxStart = std::min<uint64_t>(uint64_t(bytes.size()) - patternSize,
+                                                             coreEnd - pos);
+                for (uint64_t i = 0; i <= maxStart; ++i)
+                {
+                    if (std::memcmp(bytes.constData() + i, pattern.data(), pattern.size()) == 0)
+                    {
+                        *absoluteMatch = pos + i;
+                        return true;
+                    }
+                }
+            }
+
+            if (coreEnd == pos)
+                break;
+            pos = coreEnd;
+        }
+
+        return false;
+    }
+
+    for (uint64_t pos = endOffset; pos > startOffset; )
+    {
+        const uint64_t coreStart = pos > kSearchChunkSize && pos - kSearchChunkSize > startOffset
+            ? pos - kSearchChunkSize
+            : startOffset;
+        const uint64_t readStart = coreStart > startOffset + overlap
+            ? coreStart - overlap
+            : startOffset;
+        const uint64_t readLength = pos - readStart;
+        bytes.resize(static_cast<qsizetype>(readLength));
+        const size_t got = m_reader(readStart, reinterpret_cast<uint8_t *>(bytes.data()), static_cast<size_t>(readLength));
+        bytes.truncate(static_cast<qsizetype>(got));
+
+        if (bytes.size() >= static_cast<qsizetype>(patternSize))
+        {
+            for (int64_t i = static_cast<int64_t>(bytes.size() - static_cast<qsizetype>(patternSize)); i >= 0; --i)
+            {
+                const uint64_t absolute = readStart + static_cast<uint64_t>(i);
+                if (absolute + patternSize > pos)
+                    continue;
+
+                if (std::memcmp(bytes.constData() + i, pattern.data(), pattern.size()) == 0)
+                {
+                    *absoluteMatch = absolute;
+                    return true;
+                }
+            }
+        }
+
+        if (coreStart == pos)
+            break;
+        pos = coreStart;
+    }
+
+    return false;
 }
 
 uint64_t StructureRenderEngine::staticSizeOfName(const char *name)
@@ -1244,6 +1462,7 @@ void collectFieldReferenceRoots(ExprNode *expr, std::vector<ExprNode *> *roots)
         return;
     case EXPR_BINARY:
     case EXPR_COMMA:
+    case EXPR_FUNCTION:
         collectFieldReferenceRoots(expr->left, roots);
         collectFieldReferenceRoots(expr->right, roots);
         return;
@@ -1254,7 +1473,7 @@ void collectFieldReferenceRoots(ExprNode *expr, std::vector<ExprNode *> *roots)
         return;
     default:
         // EXPR_FIELD (see above), EXPR_NUMBER, EXPR_STRINGBUF, EXPR_SIZEOF,
-        // EXPR_RAWOFFSET, EXPR_TAGWRAP, etc: nothing to validate.
+        // EXPR_RAWOFFSET, EXPR_BYTESEQ, EXPR_TAGWRAP, etc: nothing to validate.
         return;
     }
 }

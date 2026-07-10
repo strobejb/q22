@@ -54,10 +54,12 @@ private slots:
     void builderExposesEnumChoicesAndEntrypoints();
     void builderEvaluatesUnionSwitchSelectorsFromTypedLayout();
     void builderEvaluatesFieldsAndCorrectedExpressions();
+    void builderEvaluatesFindSearchExpressions();
     void builderUsesDynamicEndianExpressions();
     void builderEvaluatesEnumIndexedArraysInExpressions();
     void builderEvaluatesEnumIndexedUnionMembersInExpressions();
     void builderUsesSimpleRootNamesForBuiltinTypedefRoots();
+    void builderRendersZipCentralDirectoryFromEocd();
     void builderRendersElf32AndElf64Tables();
     void builderPlacesDynamicStructsUnderNamedDynamicContainers();
     void builderRendersDynamicArraysAtReferencedOffsets();
@@ -1340,6 +1342,45 @@ void StructViewTests::builderEvaluatesFieldsAndCorrectedExpressions()
     QCOMPARE(rows[0]->children[1]->children[1]->value, QStringLiteral("187"));
 }
 
+void StructViewTests::builderEvaluatesFindSearchExpressions()
+{
+    // Scenario: offset(...) uses byte-pattern search expressions to place
+    // fields outside the sequential layout stream.
+    // Expected: find_first/find_last return structure-relative offsets, and
+    // bounded forms search only the first/last N bytes respectively.
+    // Regression guard: ZIP central-directory discovery depends on reverse
+    // trailer search, while failed searches must not render misleading inline
+    // fallback rows.
+    Parser parser;
+    QVERIFY(parseBuffer(parser,
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  [offset(find_first({ 0xAA, 0xBB }))] byte first;\n"
+                        "  [offset(find_last({ 0xAA, 0xBB }))] byte last;\n"
+                        "  [offset(find_first({ 0xAA, 0xBB }, 4))] byte firstLimited;\n"
+                        "  [offset(find_last({ 0xAA, 0xBB }, 4))] byte lastLimited;\n"
+                        "  [offset(find_first({ 0xCC }))] byte missing;\n"
+                        "} root;\n"));
+
+    const QByteArray bytes = QByteArray::fromHex("00 AABB 11 AABB 22 AABB 33");
+    auto rows = buildRows(parser.GetStrataLibrary(), firstExported(parser.GetStrataLibrary()), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+
+    StructureRow *first = findChildNamed(rows[0].get(), QStringLiteral("byte first"));
+    StructureRow *last = findChildNamed(rows[0].get(), QStringLiteral("byte last"));
+    StructureRow *firstLimited = findChildNamed(rows[0].get(), QStringLiteral("byte firstLimited"));
+    StructureRow *lastLimited = findChildNamed(rows[0].get(), QStringLiteral("byte lastLimited"));
+    QVERIFY(first);
+    QVERIFY(last);
+    QVERIFY(firstLimited);
+    QVERIFY(lastLimited);
+    QCOMPARE(first->relativeOffset, uint64_t(1));
+    QCOMPARE(last->relativeOffset, uint64_t(7));
+    QCOMPARE(firstLimited->relativeOffset, uint64_t(1));
+    QCOMPARE(lastLimited->relativeOffset, uint64_t(7));
+    QVERIFY(findChildNamed(rows[0].get(), QStringLiteral("byte missing")) == nullptr);
+}
+
 void StructViewTests::builderUsesDynamicEndianExpressions()
 {
     // Scenario: a format stores byte order in the file header, and the exported
@@ -1477,6 +1518,103 @@ void StructViewTests::builderUsesSimpleRootNamesForBuiltinTypedefRoots()
     auto elfRows = buildRows(&elfLibrary, elfRoot, elfBytes);
     QCOMPARE(elfRows.size(), size_t(1));
     QCOMPARE(elfRows[0]->name, QStringLiteral("ELF"));
+}
+
+void StructViewTests::builderRendersZipCentralDirectoryFromEocd()
+{
+    // Scenario: ZIP local headers may defer CRC/sizes to data descriptors, so
+    // walking local headers can stop after the first payload.
+    // Expected: the standard ZIP definition finds EOCD from the trailer and
+    // renders all central-directory entries instead.
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("zip.struct")), "zip.struct failed to parse");
+    TypeDecl *zipRoot = exportedNamed(&library, QStringLiteral("ZIP"));
+    QVERIFY(zipRoot);
+
+    QByteArray zip;
+    auto appendLe16 = [&zip](quint16 value) {
+        zip.append(char(value & 0xff));
+        zip.append(char((value >> 8) & 0xff));
+    };
+    auto appendLe32 = [&zip](quint32 value) {
+        zip.append(char(value & 0xff));
+        zip.append(char((value >> 8) & 0xff));
+        zip.append(char((value >> 16) & 0xff));
+        zip.append(char((value >> 24) & 0xff));
+    };
+    auto appendLocal = [&](const QByteArray &name, const QByteArray &data) -> quint32 {
+        const quint32 offset = static_cast<quint32>(zip.size());
+        appendLe32(0x04034b50);
+        appendLe16(20);
+        appendLe16(0x0008); // data descriptor follows payload
+        appendLe16(8);
+        appendLe16(0);
+        appendLe16(0);
+        appendLe32(0);
+        appendLe32(0);
+        appendLe32(0);
+        appendLe16(static_cast<quint16>(name.size()));
+        appendLe16(0);
+        zip.append(name);
+        zip.append(data);
+        appendLe32(0x08074b50);
+        appendLe32(0);
+        appendLe32(static_cast<quint32>(data.size()));
+        appendLe32(static_cast<quint32>(data.size()));
+        return offset;
+    };
+    auto appendCentral = [&](const QByteArray &name, quint32 localOffset, quint32 size) {
+        appendLe32(0x02014b50);
+        appendLe16(20);
+        appendLe16(20);
+        appendLe16(0x0008);
+        appendLe16(8);
+        appendLe16(0);
+        appendLe16(0);
+        appendLe32(0);
+        appendLe32(size);
+        appendLe32(size);
+        appendLe16(static_cast<quint16>(name.size()));
+        appendLe16(0);
+        appendLe16(0);
+        appendLe16(0);
+        appendLe16(0);
+        appendLe32(0);
+        appendLe32(localOffset);
+        zip.append(name);
+    };
+
+    const quint32 firstOffset = appendLocal("a.txt", "alpha");
+    const quint32 secondOffset = appendLocal("b.txt", "bravo");
+    const quint32 centralOffset = static_cast<quint32>(zip.size());
+    appendCentral("a.txt", firstOffset, 5);
+    appendCentral("b.txt", secondOffset, 5);
+    const quint32 centralSize = static_cast<quint32>(zip.size()) - centralOffset;
+    appendLe32(0x06054b50);
+    appendLe16(0);
+    appendLe16(0);
+    appendLe16(2);
+    appendLe16(2);
+    appendLe32(centralSize);
+    appendLe32(centralOffset);
+    appendLe16(0);
+
+    auto rows = buildRows(&library, zipRoot, zip);
+    QCOMPARE(rows.size(), size_t(1));
+    StructureRow *central = nullptr;
+    for (const auto &child : rows[0]->children)
+    {
+        if (child->name.contains(QStringLiteral("centralDirectory")))
+        {
+            central = child.get();
+            break;
+        }
+    }
+
+    QVERIFY(central);
+    QCOMPARE(central->children.size(), size_t(2));
+    QVERIFY(central->children[0]->name.contains(QStringLiteral("a.txt")));
+    QVERIFY(central->children[1]->name.contains(QStringLiteral("b.txt")));
 }
 
 void StructViewTests::builderRendersElf32AndElf64Tables()
@@ -2098,6 +2236,10 @@ void StructViewTests::definitionManagerFlagsNonStaticFieldReferences()
     StrataLibrary peLibrary;
     QVERIFY2(parseStandardDefinition(&peLibrary, QStringLiteral("pe.struct")), "pe.struct failed to parse");
     QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&peLibrary).isEmpty());
+
+    StrataLibrary zipLibrary;
+    QVERIFY2(parseStandardDefinition(&zipLibrary, QStringLiteral("zip.struct")), "zip.struct failed to parse");
+    QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&zipLibrary).isEmpty());
 }
 
 void StructViewTests::semanticRegistryRunsKnownViewsAndIgnoresUnknownViews()

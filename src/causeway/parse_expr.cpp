@@ -112,6 +112,15 @@ ExprNode * Parser::PrimaryExpression()
 		Advance();
 		break;
 
+	case '{':
+		p = new ExprNode(EXPR_BYTESEQ, t);
+		if(!ParseByteSequence(&p->byteSequence))
+		{
+			delete p;
+			p = new ExprNode(EXPR_NULL, TOK_NULL);
+		}
+		break;
+
 	default:
 		Error(ERROR_SYNTAX_ERROR, inenglish(t));
 		p = new ExprNode(EXPR_NULL, TOK_NULL);
@@ -295,6 +304,22 @@ ExprNode * Parser::UnaryExpression(void)
 			return new ExprNode(EXPR_NULL, TOK_NULL);
 
 		p = new ExprNode(EXPR_RAWOFFSET, TOKEN(TOK_SELECTOFFSET), p);
+		break;
+	}
+
+	case TOK_FINDFIRST:
+	case TOK_FINDLAST:
+	{
+		TOKEN funcTok = t;
+		Advance();
+		if(!Expected('('))
+			return new ExprNode(EXPR_NULL, TOK_NULL);
+
+		p = FullExpression(TOKEN(')'));
+		if(!p)
+			return new ExprNode(EXPR_NULL, TOK_NULL);
+
+		p = new ExprNode(EXPR_FUNCTION, funcTok, p);
 		break;
 	}
 
@@ -680,6 +705,23 @@ int RecurseFlatten(stringprint &sbuf, ExprNode *expr)
 		sbuf._stprintf(TEXT(")"));
 		break;
 
+	case EXPR_BYTESEQ:
+		sbuf._stprintf(TEXT("{ "));
+		for(size_t i = 0; i < expr->byteSequence.size(); i++)
+		{
+			if(i)
+				sbuf._stprintf(TEXT(", "));
+			sbuf._stprintf(TEXT("0x%x"), expr->byteSequence[i]);
+		}
+		sbuf._stprintf(TEXT(" }"));
+		break;
+
+	case EXPR_FUNCTION:
+		sbuf._stprintf(TEXT("%hs("), Parser::inenglish(expr->tok));
+		RecurseFlatten(sbuf, expr->left);
+		sbuf._stprintf(TEXT(")"));
+		break;
+
 	case EXPR_TAGWRAP:
 	case EXPR_RAWOFFSET:
 		sbuf._stprintf(TEXT("%hs("), Parser::inenglish(expr->tok));
@@ -688,7 +730,7 @@ int RecurseFlatten(stringprint &sbuf, ExprNode *expr)
 		break;
 
     // unimplemented; ignore
-    case EXPR_FUNCTION: case EXPR_ASSIGN: case EXPR_NULL:
+    case EXPR_ASSIGN: case EXPR_NULL:
         break;
     }
 
@@ -796,6 +838,10 @@ INUMTYPE Evaluate(ExprNode *expr)
 	case EXPR_RAWOFFSET:
 		return 0;
 
+	case EXPR_FUNCTION:
+	case EXPR_BYTESEQ:
+		return 0;
+
 	default:
 		// don't understand anything else
 		return 0;
@@ -817,6 +863,7 @@ ExprNode * CopyExpr(ExprNode *expr)
 	// copy the contents
 	expr2->brackets = expr->brackets;
 	expr2->base		= expr->base;
+	expr2->byteSequence = expr->byteSequence;
 	switch(expr->type)
 	{
 	case EXPR_IDENTIFIER:
