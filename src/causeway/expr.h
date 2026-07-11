@@ -29,7 +29,8 @@ enum EXPR
 	EXPR_BYTESEQ,
 	// One argument of a tag's parameter list written as tagKeyword(value) instead
 	// of a plain value -- e.g. name(DllName) as an argument inside
-	// dynamic_array(name(DllName), CHAR, Name, 4096, 0). 'tok' on the ExprNode
+	// dynamic_array(name(DllName), type(CHAR), offset(Name), count(4096)).
+	// 'tok' on the ExprNode
 	// records which tag keyword wrapped it (e.g. TOK_NAME); 'left' is the
 	// wrapped value. Parsed directly by the tag-argument parser, not by the
 	// general expression grammar -- see Parser::TagWrappedArg().

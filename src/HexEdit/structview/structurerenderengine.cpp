@@ -173,7 +173,7 @@ size_t structureRowCount(const StructureRow *row)
 }
 
 // If 'arg' was written as wrapperKeyword(value) inside a tag's parameter list
-// (e.g. name(DllName) inside dynamic_array(name(DllName), CHAR, Name, 4096, 0)),
+// (e.g. name(DllName) inside dynamic_array(name(DllName), type(CHAR), ...)),
 // return the wrapping token and set *inner to the wrapped value. Otherwise
 // return TOK_NULL and set *inner to 'arg' unchanged, so callers can use *inner
 // exactly as before regardless of whether the argument was wrapped.
@@ -1685,8 +1685,7 @@ void StructureRenderEngine::collectDynamicRequests(StructureRow *row)
         return;
 
     INUMTYPE arrayIndex = 0;
-    if (!arrayIndexFromRow(row, &arrayIndex))
-        return;
+    const bool rowIsArrayElement = arrayIndexFromRow(row, &arrayIndex);
 
     for (Tag *tag = row->typeDecl->tagList; tag; tag = tag->link)
     {
@@ -1694,19 +1693,19 @@ void StructureRenderEngine::collectDynamicRequests(StructureRow *row)
             continue;
 
         ExprNode *selectorExpr = nullptr;
+        ExprNode *labelExpr = nullptr;
         ExprNode *typeNameExpr = nullptr;
         ExprNode *logicalOffsetExpr = nullptr;
         ExprNode *conditionExpr = nullptr;
-        if (!dynamicTagArgs(tag->expr, &selectorExpr, &typeNameExpr, &logicalOffsetExpr, &conditionExpr))
+        DynamicMapper mapper = DynamicMapper::Direct;
+        if (!dynamicTagArgs(tag->expr, &selectorExpr, &labelExpr, &typeNameExpr, &logicalOffsetExpr, &conditionExpr, &mapper))
             continue;
 
         INUMTYPE selector = 0;
-        INUMTYPE condition = 0;
+        INUMTYPE condition = 1;
         INUMTYPE logicalOffset = 0;
-        if (!evaluate(row, selectorExpr, &selector, row->absoluteOffset)
-            || selector != arrayIndex
-            || !evaluate(row, conditionExpr, &condition, row->absoluteOffset)
-            || condition == 0
+        if ((selectorExpr && (!rowIsArrayElement || !evaluate(row, selectorExpr, &selector, row->absoluteOffset) || selector != arrayIndex))
+            || (conditionExpr && (!evaluate(row, conditionExpr, &condition, row->absoluteOffset) || condition == 0))
             || !evaluate(row, logicalOffsetExpr, &logicalOffset, row->absoluteOffset))
         {
             continue;
@@ -1719,7 +1718,15 @@ void StructureRenderEngine::collectDynamicRequests(StructureRow *row)
         if (!targetType)
             continue;
 
-        m_dynamicRequests.push_back(DynamicRequest{ targetType, uint64_t(logicalOffset) });
+        Type *renderType = targetType->declList.empty() ? targetType->baseType : targetType->declList[0];
+        if (!renderType)
+            continue;
+
+        QString label;
+        if (labelExpr && labelExpr->str)
+            label = QString::fromLocal8Bit(labelExpr->str);
+
+        m_dynamicRequests.push_back(DynamicRequest{ row, targetType, renderType, label, uint64_t(logicalOffset), mapper });
     }
 }
 
@@ -1742,6 +1749,7 @@ void StructureRenderEngine::collectDynamicArrayRequests(StructureRow *row)
         ExprNode *countExpr = nullptr;
         ExprNode *stopExpr = nullptr;
         ExprNode *conditionExpr = nullptr;
+        DynamicMapper mapper = DynamicMapper::Direct;
         if (!dynamicArrayArgs(tag->expr,
                               &selectorOrLabelExpr,
                               &typeNameExpr,
@@ -1749,6 +1757,7 @@ void StructureRenderEngine::collectDynamicArrayRequests(StructureRow *row)
                               &countExpr,
                               &stopExpr,
                               &conditionExpr,
+                              &mapper,
                               nullptr))
             continue;
 
@@ -1766,7 +1775,7 @@ void StructureRenderEngine::collectDynamicArrayRequests(StructureRow *row)
             {
                 if (selector != arrayIndex)
                     continue;
-                attachToMappedContainer = true;
+                attachToMappedContainer = mapper == DynamicMapper::OffsetMap;
             }
         }
 
@@ -1805,6 +1814,7 @@ void StructureRenderEngine::collectDynamicArrayRequests(StructureRow *row)
             uint64_t(count),
             stopExpr,
             conditionExpr,
+            mapper,
             attachToMappedContainer
         });
     }
@@ -1842,25 +1852,38 @@ void StructureRenderEngine::appendDynamicRows(StructureRow *parent)
 
     for (const DynamicRequest &request : m_dynamicRequests)
     {
-        DynamicContainer *container = nullptr;
         uint64_t fileOffset = 0;
-        if (!(container = mapLogicalOffset(request.logicalOffset, &fileOffset)) || !container->row || !request.typeDecl)
+        StructureRow *parentRow = request.owner;
+        if (request.mapper == DynamicMapper::OffsetMap)
+        {
+            DynamicContainer *container = mapLogicalOffset(request.logicalOffset, &fileOffset);
+            if (!container || !container->row)
+                continue;
+            parentRow = container->row;
+        }
+        else
+        {
+            fileOffset = request.logicalOffset;
+        }
+
+        if (!parentRow || !request.typeDecl || !request.renderType)
             continue;
 
-        Type *renderType = request.typeDecl->declList.empty() ? request.typeDecl->baseType : request.typeDecl->declList[0];
-        auto row = makeRow(container->row, renderType, request.typeDecl, m_baseOffset + fileOffset);
-        applyDeclarationName(row.get(), renderType);
+        auto row = makeRow(parentRow, request.renderType, request.typeDecl, m_baseOffset + fileOffset);
+        applyDeclarationName(row.get(), request.renderType);
+        if (!request.label.isEmpty())
+            row->setNameParts(QString(), request.label, QString());
         row->kind = StructureRowKind::Dynamic;
         row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueDoubleClosed),
                             QString::fromLatin1(StructureBranchIcons::kBlueDoubleOpen),
                             QString::fromLatin1(StructureBranchIcons::kGrayDoubleClosed));
-        const bool bigEndian = declarationBigEndian(request.typeDecl, row.get(), renderType, m_baseOffset + fileOffset);
+        const bool bigEndian = declarationBigEndian(request.typeDecl, row.get(), request.renderType, m_baseOffset + fileOffset);
         EndianScope endian(this, bigEndian);
         row->bigEndian = m_bigEndian;
-        row->byteLength = formatType(row.get(), renderType, request.typeDecl, m_baseOffset + fileOffset);
+        row->byteLength = formatType(row.get(), request.renderType, request.typeDecl, m_baseOffset + fileOffset);
         if (row->value.isEmpty() && !row->children.empty())
             row->value = QStringLiteral("{...}");
-        container->row->children.push_back(std::move(row));
+        parentRow->children.push_back(std::move(row));
     }
 }
 
@@ -1878,12 +1901,15 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
         if (request.owner != row || !request.renderType)
             continue;
 
-        uint64_t fileOffset = 0;
-        DynamicContainer *container = mapLogicalOffset(request.logicalOffset, &fileOffset);
-        if (!container)
-            continue;
-
-        StructureRow *parentRow = request.attachToMappedContainer && container->row ? container->row : row;
+        uint64_t fileOffset = request.logicalOffset;
+        StructureRow *parentRow = row;
+        if (request.mapper == DynamicMapper::OffsetMap)
+        {
+            DynamicContainer *container = mapLogicalOffset(request.logicalOffset, &fileOffset);
+            if (!container)
+                continue;
+            parentRow = request.attachToMappedContainer && container->row ? container->row : row;
+        }
 
         auto arrayRow = makeRow(parentRow, request.renderType, request.typeDecl, m_baseOffset + fileOffset);
         const QString elementTypeName = typeName(request.renderType);
@@ -1919,7 +1945,7 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
         // avoid calling collectDynamicArrayRequests for every element of the
         // large export/import raw-data arrays. While we're scanning anyway,
         // also look for a dynamic_array tag whose label argument was written
-        // as name(...) (e.g. dynamic_array(name(DllName), CHAR, Name, 4096, 0)):
+        // as name(...) (e.g. dynamic_array(name(DllName), type(CHAR), ...)):
         // that explicitly marks itself as the per-element name source for
         // whichever array contains elements of this type.
         bool elementTypeHasSubArrays = false;
@@ -1933,10 +1959,16 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
             if (!nameSourceTagExpr)
             {
                 bool isNameSource = false;
-                if (dynamicArrayArgs(tag->expr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &isNameSource)
+                ExprNode *nameSourceTypeNameExpr = nullptr;
+                if (dynamicArrayArgs(tag->expr, nullptr, &nameSourceTypeNameExpr, nullptr, nullptr, nullptr, nullptr, nullptr, &isNameSource)
                     && isNameSource)
                 {
-                    nameSourceTagExpr = tag->expr;
+                    Type *nameSourceType = nameSourceTypeNameExpr && nameSourceTypeNameExpr->str
+                        ? typeInDecl(findTypeDecl(nameSourceTypeNameExpr->str), nameSourceTypeNameExpr->str)
+                        : nullptr;
+                    Type *nameSourceBase = BaseNode(nameSourceType);
+                    if (nameSourceBase && (nameSourceBase->ty == typeCHAR || nameSourceBase->ty == typeWCHAR))
+                        nameSourceTagExpr = tag->expr;
                 }
             }
         }
@@ -2037,30 +2069,73 @@ std::vector<StructureRenderEngine::RowPtr> StructureRenderEngine::buildSubArrays
 
 bool StructureRenderEngine::dynamicTagArgs(ExprNode *expr,
                                            ExprNode **selector,
+                                           ExprNode **label,
                                            ExprNode **typeName,
                                            ExprNode **logicalOffset,
-                                           ExprNode **condition) const
+                                           ExprNode **condition,
+                                           DynamicMapper *mapper) const
 {
     std::vector<ExprNode *> args;
     appendCommaArgs(expr, &args);
-    if (args.size() != 4)
+
+    ExprNode *selectorExpr = nullptr;
+    ExprNode *labelExpr = nullptr;
+    ExprNode *typeExpr = nullptr;
+    ExprNode *offsetExpr = nullptr;
+    ExprNode *conditionExpr = nullptr;
+    DynamicMapper mapperValue = DynamicMapper::Direct;
+
+    for (ExprNode *arg : args)
+    {
+        ExprNode *inner = nullptr;
+        const TOKEN wrapTok = unwrapTagArg(arg, &inner);
+        switch (wrapTok)
+        {
+        case TOK_CASE:
+            selectorExpr = inner;
+            break;
+        case TOK_NAME:
+            labelExpr = inner;
+            break;
+        case TOK_TYPE:
+            typeExpr = inner;
+            break;
+        case TOK_OFFSET:
+            offsetExpr = inner;
+            break;
+        case TOK_OPTIONAL:
+            conditionExpr = inner;
+            break;
+        case TOK_MAPPER:
+            if (!inner || !inner->str)
+                return false;
+            if (std::strcmp(inner->str, "direct") == 0)
+                mapperValue = DynamicMapper::Direct;
+            else if (std::strcmp(inner->str, "offset_map") == 0)
+                mapperValue = DynamicMapper::OffsetMap;
+            else
+                return false;
+            break;
+        default:
+            return false;
+        }
+    }
+
+    if (!typeExpr || !offsetExpr)
         return false;
 
-    // arg[0] may be wrapped as case(...) (selector role made explicit) and
-    // arg[3] as optional(...) (gating-condition role made explicit); unwrap
-    // both so bare and wrapped forms evaluate identically.
-    ExprNode *selectorInner = nullptr;
-    unwrapTagArg(args[0], &selectorInner);
     if (selector)
-        *selector = selectorInner;
+        *selector = selectorExpr;
+    if (label)
+        *label = labelExpr;
     if (typeName)
-        *typeName = args[1];
+        *typeName = typeExpr;
     if (logicalOffset)
-        *logicalOffset = args[2];
-    ExprNode *conditionInner = nullptr;
-    unwrapTagArg(args[3], &conditionInner);
+        *logicalOffset = offsetExpr;
     if (condition)
-        *condition = conditionInner;
+        *condition = conditionExpr;
+    if (mapper)
+        *mapper = mapperValue;
     return true;
 }
 
@@ -2071,69 +2146,83 @@ bool StructureRenderEngine::dynamicArrayArgs(ExprNode *expr,
                                              ExprNode **count,
                                              ExprNode **stop,
                                              ExprNode **condition,
+                                             DynamicMapper *mapper,
                                              bool *isNameSource) const
 {
     std::vector<ExprNode *> args;
     appendCommaArgs(expr, &args);
-    if (args.size() != 4 && args.size() != 5 && args.size() != 6)
+
+    ExprNode *selector = nullptr;
+    ExprNode *typeExpr = nullptr;
+    ExprNode *offsetExpr = nullptr;
+    ExprNode *countExpr = nullptr;
+    ExprNode *stopExpr = nullptr;
+    ExprNode *conditionExpr = nullptr;
+    DynamicMapper mapperValue = DynamicMapper::Direct;
+    bool nameSource = false;
+
+    for (ExprNode *arg : args)
+    {
+        ExprNode *inner = nullptr;
+        const TOKEN wrapTok = unwrapTagArg(arg, &inner);
+        switch (wrapTok)
+        {
+        case TOK_NAME:
+            selector = inner;
+            nameSource = true;
+            break;
+        case TOK_CASE:
+            selector = inner;
+            break;
+        case TOK_TYPE:
+            typeExpr = inner;
+            break;
+        case TOK_OFFSET:
+            offsetExpr = inner;
+            break;
+        case TOK_SIZEIS:
+            countExpr = inner;
+            break;
+        case TOK_TERMINATEDBY:
+            stopExpr = inner;
+            break;
+        case TOK_OPTIONAL:
+            conditionExpr = inner;
+            break;
+        case TOK_MAPPER:
+            if (!inner || !inner->str)
+                return false;
+            if (std::strcmp(inner->str, "direct") == 0)
+                mapperValue = DynamicMapper::Direct;
+            else if (std::strcmp(inner->str, "offset_map") == 0)
+                mapperValue = DynamicMapper::OffsetMap;
+            else
+                return false;
+            break;
+        default:
+            return false;
+        }
+    }
+
+    if (!typeExpr || !offsetExpr || !countExpr)
         return false;
 
-    // The first argument may be wrapped, e.g. name(DllName) instead of plain
-    // DllName, to explicitly flag this dynamic_array as the per-element name
-    // source for whichever array contains elements of this type. Unwrap it
-    // here so every existing consumer of *selectorOrLabel keeps working
-    // unchanged, whether or not the argument was wrapped.
-    ExprNode *selector = nullptr;
-    const TOKEN wrapTok = unwrapTagArg(args[0], &selector);
     if (selectorOrLabel)
         *selectorOrLabel = selector;
     if (isNameSource)
-        *isNameSource = (wrapTok == TOK_NAME);
+        *isNameSource = nameSource;
     if (typeName)
-        *typeName = args[1];
+        *typeName = typeExpr;
     if (logicalOffset)
-        *logicalOffset = args[2];
+        *logicalOffset = offsetExpr;
     if (count)
-        *count = args[3];
-
-    // Trailing arguments (5th, 6th) are stop and condition respectively when
-    // bare, for backward compatibility with .struct files written before
-    // these wrappers existed. Either may instead be written explicitly as
-    // terminated_by(...) / optional(...), in which case position no longer
-    // matters and either one may be supplied without the other.
-    ExprNode *stopExpr = nullptr;
-    ExprNode *conditionExpr = nullptr;
-    bool stopAssigned = false;
-    bool conditionAssigned = false;
-    for (size_t i = 4; i < args.size(); ++i)
-    {
-        ExprNode *inner = nullptr;
-        const TOKEN argWrapTok = unwrapTagArg(args[i], &inner);
-        if (argWrapTok == TOK_TERMINATEDBY)
-        {
-            stopExpr = inner;
-            stopAssigned = true;
-        }
-        else if (argWrapTok == TOK_OPTIONAL)
-        {
-            conditionExpr = inner;
-            conditionAssigned = true;
-        }
-        else if (!stopAssigned)
-        {
-            stopExpr = inner;
-            stopAssigned = true;
-        }
-        else if (!conditionAssigned)
-        {
-            conditionExpr = inner;
-            conditionAssigned = true;
-        }
-    }
+        *count = countExpr;
     if (stop)
         *stop = stopExpr;
     if (condition)
         *condition = conditionExpr;
+    if (mapper)
+        *mapper = mapperValue;
     return true;
 }
 
@@ -2141,11 +2230,15 @@ bool StructureRenderEngine::dynamicContainerArgs(ExprNode *expr, ExprNode **type
 {
     std::vector<ExprNode *> args;
     appendCommaArgs(expr, &args);
-    if (args.empty())
+    if (args.size() != 1)
+        return false;
+
+    ExprNode *inner = nullptr;
+    if (unwrapTagArg(args[0], &inner) != TOK_TYPE)
         return false;
 
     if (typeName)
-        *typeName = args[0];
+        *typeName = inner;
     return true;
 }
 
@@ -2488,7 +2581,7 @@ QString StructureRenderEngine::decodeNulTerminatedText(const QByteArray &bytes, 
 
 // Resolve the display text for a dynamic_array tag explicitly marked as a name
 // source via name(...) on its label argument (e.g. dynamic_array(name(DllName),
-// CHAR, Name, 4096, 0) -- see the nameSourceTagExpr scan in
+// type(CHAR), ...) -- see the nameSourceTagExpr scan in
 // appendDynamicArrayRows()). The referenced field is an RVA/offset, not inline
 // data, so this re-derives the same offset + read that the dynamic_array would
 // use for its own child row, without requiring that lazily-built child to
@@ -2501,8 +2594,9 @@ QString StructureRenderEngine::dynamicArrayNameString(StructureRow *elementRow, 
     ExprNode *typeNameExpr = nullptr;
     ExprNode *logicalOffsetExpr = nullptr;
     ExprNode *countExpr = nullptr;
+    DynamicMapper mapper = DynamicMapper::Direct;
     if (!dynamicArrayArgs(dynamicArrayTagExpr, nullptr, &typeNameExpr, &logicalOffsetExpr,
-                          &countExpr, nullptr, nullptr, nullptr))
+                          &countExpr, nullptr, nullptr, &mapper, nullptr))
         return {};
 
     Type *renderType = typeNameExpr && typeNameExpr->str
@@ -2519,8 +2613,8 @@ QString StructureRenderEngine::dynamicArrayNameString(StructureRow *elementRow, 
         || count <= 0)
         return {};
 
-    uint64_t fileOffset = 0;
-    if (!mapLogicalOffset(uint64_t(logicalOffset), &fileOffset))
+    uint64_t fileOffset = uint64_t(logicalOffset);
+    if (mapper == DynamicMapper::OffsetMap && !mapLogicalOffset(uint64_t(logicalOffset), &fileOffset))
         return {};
 
     const uint64_t unitSize = base->ty == typeWCHAR ? 2 : 1;

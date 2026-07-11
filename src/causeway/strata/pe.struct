@@ -32,8 +32,9 @@ enum IMAGE_DIRECTORY
 tagset PE_DATA_DIRECTORY_TAGS
 [
   name(IMAGE_DIRECTORY),
-  dynamic_struct(case(IMAGE_DIRECTORY_ENTRY_EXPORT), IMAGE_EXPORT_DIRECTORY, VirtualAddress, optional(Size != 0)),
-  dynamic_array(case(IMAGE_DIRECTORY_ENTRY_IMPORT), IMAGE_IMPORT_DESCRIPTOR, VirtualAddress, Size / sizeof(IMAGE_IMPORT_DESCRIPTOR),
+  dynamic_struct(case(IMAGE_DIRECTORY_ENTRY_EXPORT), type(IMAGE_EXPORT_DIRECTORY), offset(VirtualAddress), mapper(offset_map), optional(Size != 0)),
+  dynamic_array(case(IMAGE_DIRECTORY_ENTRY_IMPORT), type(IMAGE_IMPORT_DESCRIPTOR), offset(VirtualAddress), count(Size / sizeof(IMAGE_IMPORT_DESCRIPTOR)),
+                mapper(offset_map),
                 terminated_by(OriginalFirstThunk == 0 && TimeDateStamp == 0 && ForwarderChain == 0 && Name == 0 && FirstThunk == 0))
 ];
 
@@ -235,9 +236,9 @@ typedef struct _IMAGE_SECTION_HEADER
 // them inline.  dynamic_array keeps the C struct honest while rendering those
 // related raw tables under the directory row.
 [
-    dynamic_array(ExportFunctions, DWORD, AddressOfFunctions, NumberOfFunctions),
-    dynamic_array(ExportNames, DWORD, AddressOfNames, NumberOfNames),
-    dynamic_array(ExportOrdinals, WORD, AddressOfNameOrdinals, NumberOfNames),
+    dynamic_array(name(ExportFunctions), type(DWORD), offset(AddressOfFunctions), count(NumberOfFunctions), mapper(offset_map)),
+    dynamic_array(name(ExportNames), type(DWORD), offset(AddressOfNames), count(NumberOfNames), mapper(offset_map)),
+    dynamic_array(name(ExportOrdinals), type(WORD), offset(AddressOfNameOrdinals), count(NumberOfNames), mapper(offset_map)),
     view("pe.exports")
 ]
 typedef struct _IMAGE_EXPORT_DIRECTORY
@@ -283,11 +284,11 @@ typedef struct _IMAGE_IMPORT_BY_NAME
 // tables are rendered here, while view("pe.imports") is kept as a friendly
 // semantic overlay for correlating DLL/function names.
 [
-    dynamic_array(name(DllName), CHAR, Name, 4096, terminated_by(0)),
-    dynamic_array(ImportLookup32, IMAGE_THUNK_DATA32, OriginalFirstThunk, 512, terminated_by(Function == 0), optional(ntHeaders.OptionalHeader32.Magic == 0x10b)),
-    dynamic_array(ImportAddress32, IMAGE_THUNK_DATA32, FirstThunk, 512, terminated_by(Function == 0), optional(ntHeaders.OptionalHeader32.Magic == 0x10b)),
-    dynamic_array(ImportLookup64, IMAGE_THUNK_DATA64, OriginalFirstThunk, 512, terminated_by(Function == 0), optional(ntHeaders.OptionalHeader64.Magic == 0x20b)),
-    dynamic_array(ImportAddress64, IMAGE_THUNK_DATA64, FirstThunk, 512, terminated_by(Function == 0), optional(ntHeaders.OptionalHeader64.Magic == 0x20b)),
+    dynamic_array(name(DllName), type(CHAR), offset(Name), count(4096), mapper(offset_map), terminated_by(0)),
+    dynamic_array(name(ImportLookup32), type(IMAGE_THUNK_DATA32), offset(OriginalFirstThunk), count(512), mapper(offset_map), terminated_by(Function == 0), optional(ntHeaders.OptionalHeader32.Magic == 0x10b)),
+    dynamic_array(name(ImportAddress32), type(IMAGE_THUNK_DATA32), offset(FirstThunk), count(512), mapper(offset_map), terminated_by(Function == 0), optional(ntHeaders.OptionalHeader32.Magic == 0x10b)),
+    dynamic_array(name(ImportLookup64), type(IMAGE_THUNK_DATA64), offset(OriginalFirstThunk), count(512), mapper(offset_map), terminated_by(Function == 0), optional(ntHeaders.OptionalHeader64.Magic == 0x20b)),
+    dynamic_array(name(ImportAddress64), type(IMAGE_THUNK_DATA64), offset(FirstThunk), count(512), mapper(offset_map), terminated_by(Function == 0), optional(ntHeaders.OptionalHeader64.Magic == 0x20b)),
     view("pe.imports"),
     name("IMAGE_IMPORT_DESCRIPTOR[]")
 ]
@@ -300,7 +301,7 @@ typedef struct _IMAGE_IMPORT_DESCRIPTOR
     dword   FirstThunk;
 } IMAGE_IMPORT_DESCRIPTOR, *PIMAGE_IMPORT_DESCRIPTOR;
 
-// Marker type for dynamic_container(SECTION). The render engine creates one
+// Marker type for dynamic_container(type(SECTION)). The render engine creates one
 // container instance per IMAGE_SECTION_HEADER entry; other declarations resolve
 // their RVA-based offsets against these containers to attach into the correct
 // section. The struct is intentionally empty — section content is heterogeneous
@@ -325,7 +326,7 @@ typedef struct _PE
 
   [
     offset_map(VirtualAddress, SizeOfRawData, PointerToRawData),
-    dynamic_container(SECTION),
+    dynamic_container(type(SECTION)),
 
     name(Name),
     count(ntHeaders.FileHeader.NumberOfSections)

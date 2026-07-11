@@ -171,8 +171,8 @@ void CausewayTests::tagsetsParseAndExpand()
 						"tagset DIRECTORY_TAGS\n"
 						"[\n"
 						"  name(Dir),\n"
-						"  dynamic_struct(ExportEntry, ExportDesc, VirtualAddress, Size != 0),\n"
-						"  dynamic_struct(ImportEntry, ImportDesc, VirtualAddress, Size != 0)\n"
+						"  dynamic_struct(case(ExportEntry), type(ExportDesc), offset(VirtualAddress), mapper(offset_map), optional(Size != 0)),\n"
+						"  dynamic_struct(case(ImportEntry), type(ImportDesc), offset(VirtualAddress), mapper(offset_map), optional(Size != 0))\n"
 						"];\n"
 						"[export]\n"
 						"struct Root {\n"
@@ -306,8 +306,8 @@ void CausewayTests::dynamicPlacementTagsParse()
 						"typedef struct _Import { dword value; } ImportDesc;\n"
 						"[export]\n"
 						"struct Root {\n"
-						"  [dynamic_struct(ImportEntry, ImportDesc, VirtualAddress, Size != 0), dynamic_array(ImportEntry, ImportDesc, VirtualAddress, Size / sizeof(ImportDesc), value == 0)] DataDir dirs[2];\n"
-						"  [dynamic_container(SectionBucket), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section sections[2];\n"
+						"  [dynamic_struct(case(ImportEntry), type(ImportDesc), offset(VirtualAddress), mapper(offset_map), optional(Size != 0)), dynamic_array(case(ImportEntry), type(ImportDesc), offset(VirtualAddress), count(Size / sizeof(ImportDesc)), mapper(offset_map), terminated_by(value == 0))] DataDir dirs[2];\n"
+						"  [dynamic_container(type(SectionBucket)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section sections[2];\n"
 						"  [size_is(16), terminated_by(0)] char name[];\n"
 						"} root;\n"));
 

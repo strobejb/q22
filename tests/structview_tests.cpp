@@ -62,6 +62,7 @@ private slots:
     void builderRendersZipCentralDirectoryFromEocd();
     void builderRendersElf32AndElf64Tables();
     void builderPlacesDynamicStructsUnderNamedDynamicContainers();
+    void builderPlacesDirectDynamicStructsUnderOwningRows();
     void builderRendersDynamicArraysAtReferencedOffsets();
     void builderStopsDynamicAndInlineArraysAtTerminators();
     void builderRunsSemanticViewsOnceForDynamicArrayTables();
@@ -1746,8 +1747,8 @@ void StructViewTests::builderPlacesDynamicStructsUnderNamedDynamicContainers()
                         "typedef struct _ExportDir { dword flags; } ExportDir;\n"
                         "[export]\n"
                         "struct Root {\n"
-                        "  [dynamic_struct(Export, ExportDir, VirtualAddress, Size != 0), dynamic_struct(Import, ImportDesc, VirtualAddress, Size != 0)] DataDir dirs[2];\n"
-                        "  [name(Name), dynamic_container(SECTION), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section sections[2];\n"
+                        "  [dynamic_struct(case(Export), type(ExportDir), offset(VirtualAddress), mapper(offset_map), optional(Size != 0)), dynamic_struct(case(Import), type(ImportDesc), offset(VirtualAddress), mapper(offset_map), optional(Size != 0))] DataDir dirs[2];\n"
+                        "  [name(Name), dynamic_container(type(SECTION)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section sections[2];\n"
                         "} root;\n"));
 
     QByteArray bytes(0x90, '\0');
@@ -1819,6 +1820,44 @@ void StructViewTests::builderPlacesDynamicStructsUnderNamedDynamicContainers()
     QVERIFY(!(model.flags(dynamicIndex) & Qt::ItemIsEditable));
 }
 
+void StructViewTests::builderPlacesDirectDynamicStructsUnderOwningRows()
+{
+    // Scenario: a non-PE format stores an absolute file offset in an ordinary
+    // row and wants the pointed-to structure displayed as related data.
+    // Expected: the default direct mapper uses that file offset and attaches
+    // the dynamic row under the declaration carrying dynamic_struct(...).
+    // Regression guard: dynamic_struct must not require array selectors or
+    // PE-style offset_map containers.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef struct _Payload { byte value; } Payload;\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  [dynamic_struct(name(RelatedPayload), type(Payload), offset(payloadOffset))] dword payloadOffset;\n"
+                        "  dword padding;\n"
+                        "} root;\n"));
+
+    QByteArray bytes(16, '\0');
+    writeLe32(&bytes, 0, 12);
+    bytes[12] = char(0x5a);
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+
+    StructureRow *offsetRow = findChildNamed(rows[0].get(), QStringLiteral("dword payloadOffset"));
+    QVERIFY(offsetRow);
+    QCOMPARE(offsetRow->children.size(), size_t(1));
+
+    StructureRow *payload = offsetRow->children[0].get();
+    QCOMPARE(payload->name, QStringLiteral("RelatedPayload"));
+    QCOMPARE(payload->offset, QStringLiteral("0000000C"));
+    QCOMPARE(static_cast<int>(payload->kind), static_cast<int>(StructureRowKind::Dynamic));
+    QCOMPARE(payload->children.size(), size_t(1));
+    QCOMPARE(payload->children[0]->name, QStringLiteral("byte value"));
+    QCOMPARE(payload->children[0]->value, QStringLiteral("90"));
+}
+
 void StructViewTests::builderRendersDynamicArraysAtReferencedOffsets()
 {
     // Scenario: a rendered directory row points at a table elsewhere in the
@@ -1839,8 +1878,8 @@ void StructViewTests::builderRendersDynamicArraysAtReferencedOffsets()
                         "typedef struct _SectionBucket { } SECTION;\n"
                         "[export]\n"
                         "struct Root {\n"
-                        "  [dynamic_array(Entries, Entry, AddressOfEntries, NumberOfEntries)] Directory dir;\n"
-                        "  [dynamic_container(SECTION), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section section[1];\n"
+                        "  [dynamic_array(name(Entries), type(Entry), offset(AddressOfEntries), count(NumberOfEntries), mapper(offset_map))] Directory dir;\n"
+                        "  [dynamic_container(type(SECTION)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section section[1];\n"
                         "} root;\n"));
 
     QByteArray bytes(0x80, '\0');
@@ -1885,8 +1924,8 @@ void StructViewTests::builderStopsDynamicAndInlineArraysAtTerminators()
                         "struct Root {\n"
                         "  [size_is(8), terminated_by(0)] char title[];\n"
                         "  byte afterTitle;\n"
-                        "  [dynamic_array(Descs, Desc, tableRva, 4, Value == 0)] dword tableRva;\n"
-                        "  [dynamic_container(SECTION), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section section[1];\n"
+                        "  [dynamic_array(name(Descs), type(Desc), offset(tableRva), count(4), mapper(offset_map), terminated_by(Value == 0))] dword tableRva;\n"
+                        "  [dynamic_container(type(SECTION)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section section[1];\n"
                         "} root;\n"));
 
     QByteArray bytes(0x90, '\0');
@@ -1946,8 +1985,8 @@ void StructViewTests::builderRunsSemanticViewsOnceForDynamicArrayTables()
                         "typedef struct _SectionBucket { } SECTION;\n"
                         "[export]\n"
                         "struct Root {\n"
-                        "  [dynamic_array(Entries, Viewed, tableRva, 4, Value == 0)] dword tableRva;\n"
-                        "  [dynamic_container(SECTION), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section section[1];\n"
+                        "  [dynamic_array(name(Entries), type(Viewed), offset(tableRva), count(4), mapper(offset_map), terminated_by(Value == 0))] dword tableRva;\n"
+                        "  [dynamic_container(type(SECTION)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section section[1];\n"
                         "} root;\n"));
 
     QByteArray bytes(0x90, '\0');
@@ -2044,7 +2083,7 @@ void StructViewTests::builderNamesPeDynamicSectionsFromStandardDefinition()
 void StructViewTests::builderNamesPeImportDescriptorsFromStandardDefinition()
 {
     // Scenario: the shipped PE definition's _IMAGE_IMPORT_DESCRIPTOR carries
-    // dynamic_array(name(DllName), CHAR, Name, 4096, 0) -- an explicit marker
+    // dynamic_array(name(DllName), type(CHAR), offset(Name), count(4096), ...)
     // that this RVA-redirected sub-array is the per-element name source for
     // whichever array contains IMAGE_IMPORT_DESCRIPTOR elements.
     // Expected: each descriptor's "[i]" tree label gets the resolved DLL name
@@ -2288,8 +2327,8 @@ void StructViewTests::builderRunsSemanticViewsAfterDynamicPlacement()
                         "typedef struct _ImportDesc { dword OriginalFirstThunk; dword TimeDateStamp; dword ForwarderChain; dword Name; dword FirstThunk; } ImportDesc;\n"
                         "[export]\n"
                         "struct Root {\n"
-                        "  [dynamic_struct(Import, ImportDesc, VirtualAddress, Size != 0)] DataDir dirs[1];\n"
-                        "  [name(Name), dynamic_container(SECTION), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section sections[1];\n"
+                        "  [dynamic_struct(case(Import), type(ImportDesc), offset(VirtualAddress), mapper(offset_map), optional(Size != 0))] DataDir dirs[1];\n"
+                        "  [name(Name), dynamic_container(type(SECTION)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section sections[1];\n"
                         "} root;\n"));
 
     QByteArray bytes(0x140, '\0');
@@ -2373,8 +2412,8 @@ void StructViewTests::builderKeepsRawDynamicRowsWhenSemanticImportDataIsTruncate
                         "typedef struct _ImportDesc { dword OriginalFirstThunk; dword TimeDateStamp; dword ForwarderChain; dword Name; dword FirstThunk; } ImportDesc;\n"
                         "[export]\n"
                         "struct Root {\n"
-                        "  [dynamic_struct(Import, ImportDesc, VirtualAddress, Size != 0)] DataDir dirs[1];\n"
-                        "  [name(Name), dynamic_container(SECTION), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section sections[1];\n"
+                        "  [dynamic_struct(case(Import), type(ImportDesc), offset(VirtualAddress), mapper(offset_map), optional(Size != 0))] DataDir dirs[1];\n"
+                        "  [name(Name), dynamic_container(type(SECTION)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section sections[1];\n"
                         "} root;\n"));
 
     QByteArray bytes(0xa0, '\0');

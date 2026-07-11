@@ -110,7 +110,8 @@ typedef struct _ZIP64_DATA_DESCRIPTOR
 } ZIP64_DATA_DESCRIPTOR, *PZIP64_DATA_DESCRIPTOR;
 
 [
-    dynamic_struct(LocalFileHeader, ZIP_LOCAL_FILE_HEADER, RelativeOffsetOfLocalHeader, optional(Signature == ZIP_CENTRAL_DIRECTORY_SIGNATURE)),
+    dynamic_struct(name(LocalFileHeader), type(ZIP_LOCAL_FILE_HEADER), offset(RelativeOffsetOfLocalHeader),
+                   optional(Signature == ZIP_CENTRAL_DIRECTORY_SIGNATURE)),
     name("ZIP Central Directory File Header")
 ]
 typedef struct _ZIP_CENTRAL_DIRECTORY_FILE_HEADER
@@ -174,8 +175,8 @@ typedef struct _ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR
 } ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR, *PZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR;
 
 [
-    dynamic_array(CentralDirectory, ZIP_CENTRAL_DIRECTORY_FILE_HEADER,
-                  OffsetOfStartOfCentralDirectory, TotalEntries,
+    dynamic_array(name(CentralDirectory), type(ZIP_CENTRAL_DIRECTORY_FILE_HEADER),
+                  offset(OffsetOfStartOfCentralDirectory), count(TotalEntries),
                   terminated_by(Signature != ZIP_CENTRAL_DIRECTORY_SIGNATURE)),
     name("ZIP End Of Central Directory")
 ]

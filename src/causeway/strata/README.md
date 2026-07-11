@@ -17,7 +17,7 @@ displayed. Files use the `.struct` extension.
 | Layout | [`offset`](#layout) · [`align`](#layout) · [`endian`](#byte-order) · [`entrypoint`](#layout) · [`extent`](#layout) · [`optional`](#layout) |
 | Arrays | [`count`](#arrays) · [`terminated_by`](#arrays) |
 | Unions | [`select`](#discriminated-unions) · [`case`](#discriminated-unions) |
-| Semantic views | [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) · [`view`](#view) · [tag-argument wrapping](#tag-argument-wrapping) |
+| Semantic views | [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) · [`view`](#view) |
 | Export | [`export`](#export-metadata) · [`assoc`](#export-metadata) · [`magic`](#export-metadata) |
 | Expressions | [`sizeof`](#expressions) · [`find_first`](#byte-pattern-search) · [`find_last`](#byte-pattern-search) · [`select_offset`](#select_offset) |
 
@@ -228,11 +228,17 @@ to a field with the `tags(Name)` keyword. The tags are expanded inline as if wri
 tagset PE_DATA_DIRECTORY_TAGS
 [
     name(IMAGE_DIRECTORY),
-    dynamic_struct(IMAGE_DIRECTORY_ENTRY_EXPORT, IMAGE_EXPORT_DIRECTORY,
-                   VirtualAddress, Size != 0),
-    dynamic_array(IMAGE_DIRECTORY_ENTRY_IMPORT, IMAGE_IMPORT_DESCRIPTOR,
-                  VirtualAddress, Size / sizeof(IMAGE_IMPORT_DESCRIPTOR),
-                  OriginalFirstThunk == 0 && FirstThunk == 0)
+    dynamic_struct(case(IMAGE_DIRECTORY_ENTRY_EXPORT),
+                   type(IMAGE_EXPORT_DIRECTORY),
+                   offset(VirtualAddress),
+                   mapper(offset_map),
+                   optional(Size != 0)),
+    dynamic_array(case(IMAGE_DIRECTORY_ENTRY_IMPORT),
+                  type(IMAGE_IMPORT_DESCRIPTOR),
+                  offset(VirtualAddress),
+                  count(Size / sizeof(IMAGE_IMPORT_DESCRIPTOR)),
+                  mapper(offset_map),
+                  terminated_by(OriginalFirstThunk == 0 && FirstThunk == 0))
 ];
 
 // apply the tags to a declaration
@@ -329,83 +335,89 @@ attaching additional structures, arrays, or named overlays beyond the raw field 
 |-----|--------|
 | `dynamic_struct(...)` | Render a single struct at a computed offset |
 | `dynamic_array(...)` | Render a variable-length array at a computed offset |
-| `dynamic_container(Type)` | Create a layout container per array element for the above to attach into |
+| `dynamic_container(type(Type))` | Create a layout container per array element for mapped dynamic rows to attach into |
 | `offset_map(va, size, raw)` | Declare how virtual addresses within a container map to file offsets |
 | `view("id")` | Attach a named C++ semantic view overlay to a type |
 
 ### `dynamic_struct`
 
-Renders a single struct at an offset field, guarded by a condition:
+Renders a single struct at a computed offset. Arguments must be wrapped by role:
 
 ```c
-dynamic_struct(selector, Type, offset_field, condition)
+dynamic_struct(type(Type), offset(expr)
+               [, name(label) | case(selector)]
+               [, mapper(direct | offset_map)]
+               [, optional(condition)])
 ```
 
-- `selector` — an enum value; only the matching array element gets this struct
-- `Type` — the struct type to render at that offset
-- `offset_field` — field in the enclosing struct holding the file offset
-- `condition` — skip when false
+- `type(Type)` — the struct type to render
+- `offset(expr)` — target offset expression
+- `name(label)` — display label when attaching to the current row
+- `case(selector)` — only the matching array element emits this struct
+- `mapper(direct)` — interpret `offset(expr)` as a direct file offset; this is the default
+- `mapper(offset_map)` — map `offset(expr)` through `offset_map(...)` containers before rendering
+- `optional(condition)` — skip when false
 
 ```c
-dynamic_struct(IMAGE_DIRECTORY_ENTRY_EXPORT, IMAGE_EXPORT_DIRECTORY,
-               VirtualAddress, Size != 0)
+dynamic_struct(case(IMAGE_DIRECTORY_ENTRY_EXPORT),
+               type(IMAGE_EXPORT_DIRECTORY),
+               offset(VirtualAddress),
+               mapper(offset_map),
+               optional(Size != 0))
 ```
 
-`selector` and `condition` can also be written wrapped — `case(selector)`,
-`optional(condition)` — to make which is which explicit rather than relying
-on position. Both forms behave identically; wrapping is purely about
-readability. See [Tag-argument wrapping](#tag-argument-wrapping) below.
+For direct file offsets, omit `mapper(...)` or spell it explicitly:
 
 ```c
-dynamic_struct(case(IMAGE_DIRECTORY_ENTRY_EXPORT), IMAGE_EXPORT_DIRECTORY,
-               VirtualAddress, optional(Size != 0))
+dynamic_struct(name(LocalFileHeader),
+               type(ZIP_LOCAL_FILE_HEADER),
+               offset(RelativeOffsetOfLocalHeader))
 ```
 
 ### `dynamic_array`
 
-Renders a variable-length array at an offset field:
+Renders a variable-length array at a computed offset. Arguments must be wrapped by role:
 
 ```c
-dynamic_array(label_or_selector, ElemType, offset_field, count
-              [, stop_cond [, condition]])
+dynamic_array(type(ElemType), offset(expr), count(expr)
+              [, name(label) | case(selector)]
+              [, mapper(direct | offset_map)]
+              [, terminated_by(stop_condition)]
+              [, optional(condition)])
 ```
 
-- `label_or_selector` — a field name used as a display label (when on a typedef),
-  or an enum selector (when used in a tagset applied to an indexed array)
-- `ElemType` — element type
-- `offset_field` — field holding the base file offset
-- `count` — max element count (expression)
-- `stop_cond` — stop early when this per-element expression is true *(optional)*
-- `condition` — render only when true *(optional)*
+- `type(ElemType)` — element type
+- `offset(expr)` — target offset expression
+- `count(expr)` — max element count
+- `name(label)` — display label; also marks character arrays as a per-element name source
+- `case(selector)` — only the matching array element emits this array
+- `mapper(direct)` — interpret `offset(expr)` as a direct file offset; this is the default
+- `mapper(offset_map)` — map `offset(expr)` through `offset_map(...)` containers before rendering
+- `terminated_by(stop_condition)` — stop early when this per-element expression is true
+- `optional(condition)` — render only when true
 
 ```c
-// Label form — on IMAGE_IMPORT_DESCRIPTOR itself:
-dynamic_array(DllName, CHAR, Name, 4096, 0)
+// Direct file-offset form, as used by ZIP central-directory records:
+dynamic_array(name(CentralDirectory),
+              type(ZIP_CENTRAL_DIRECTORY_FILE_HEADER),
+              offset(OffsetOfStartOfCentralDirectory),
+              count(TotalEntries),
+              terminated_by(Signature != ZIP_CENTRAL_DIRECTORY_SIGNATURE))
 
-// Selector form — applied via a tagset to DataDirectory[]:
-dynamic_array(IMAGE_DIRECTORY_ENTRY_IMPORT, IMAGE_IMPORT_DESCRIPTOR,
-              VirtualAddress, Size / sizeof(IMAGE_IMPORT_DESCRIPTOR),
-              OriginalFirstThunk == 0 && FirstThunk == 0)
-
-// With condition — only when the PE is 32-bit:
-dynamic_array(ImportLookup32, IMAGE_THUNK_DATA32, OriginalFirstThunk, 512,
-              Function == 0, ntHeaders.OptionalHeader32.Magic == 0x10b)
-```
-
-`dynamic_array` has more positional ambiguity than `dynamic_struct` — the
-first argument is either a label *or* a selector depending on context, and
-the trailing arguments are either `stop_cond` or `condition` depending on
-how many are present. Each can be wrapped to say which it is, in any order,
-and any subset of them — wrapping `terminated_by(...)`/`optional(...)` lets
-you supply a condition without a stop condition, which bare positional args
-can't express:
-
-```c
-dynamic_array(case(IMAGE_DIRECTORY_ENTRY_IMPORT), IMAGE_IMPORT_DESCRIPTOR,
-              VirtualAddress, Size / sizeof(IMAGE_IMPORT_DESCRIPTOR),
+// Mapped selector form, as used by PE data directories:
+dynamic_array(case(IMAGE_DIRECTORY_ENTRY_IMPORT),
+              type(IMAGE_IMPORT_DESCRIPTOR),
+              offset(VirtualAddress),
+              count(Size / sizeof(IMAGE_IMPORT_DESCRIPTOR)),
+              mapper(offset_map),
               terminated_by(OriginalFirstThunk == 0 && FirstThunk == 0))
 
-dynamic_array(ImportLookup32, IMAGE_THUNK_DATA32, OriginalFirstThunk, 512,
+// With condition — only when the PE is 32-bit:
+dynamic_array(name(ImportLookup32),
+              type(IMAGE_THUNK_DATA32),
+              offset(OriginalFirstThunk),
+              count(512),
+              mapper(offset_map),
               terminated_by(Function == 0),
               optional(ntHeaders.OptionalHeader32.Magic == 0x10b))
 ```
@@ -420,23 +432,12 @@ to the element's tree label — e.g. `[0] - KERNEL32.dll` instead of just
 
 ```c
 [
-    dynamic_array(name(DllName), CHAR, Name, 4096, terminated_by(0)),
+    dynamic_array(name(DllName), type(CHAR), offset(Name), count(4096),
+                  mapper(offset_map), terminated_by(0)),
     ...
 ]
 typedef struct _IMAGE_IMPORT_DESCRIPTOR { ... } IMAGE_IMPORT_DESCRIPTOR;
 ```
-
-#### Tag-argument wrapping
-
-`name(...)`, `case(...)`, `terminated_by(...)` and `optional(...)` can wrap a
-single argument inside `dynamic_array`/`dynamic_struct`/`dynamic_container`'s
-own argument list, written as `wrapperKeyword(value)` in place of a bare
-value. This is parsed directly as part of the tag's argument list — it does
-not make `name(...)` etc. into general call-expressions usable anywhere in
-the language, only inside these specific tags' own arguments, where the
-position of a bare value would otherwise be ambiguous. Wrapping is always
-optional: every example above also works with plain positional arguments,
-and existing `.struct` files using bare arguments don't need to change.
 
 ### `dynamic_container`
 
@@ -445,14 +446,14 @@ other `dynamic_array` / `dynamic_struct` declarations resolve their offsets
 against these containers.
 
 ```c
-[dynamic_container(SECTION), ...]
+[dynamic_container(type(SECTION)), ...]
 IMAGE_SECTION_HEADER sectionHeader[];
 ```
 
 ### `offset_map`
 
 Declares how virtual addresses within a container map to raw file offsets.
-Required when `dynamic_array` / `dynamic_struct` targets alternative address schemes rather than direct file offsets (e.g. PE sections using Relative Virtual Addresses ).
+Required when `dynamic_array` / `dynamic_struct` uses `mapper(offset_map)` to target an alternative address scheme rather than direct file offsets, such as PE Relative Virtual Addresses.
 
 ```c
 offset_map(va_base, size, file_offset)
@@ -461,7 +462,7 @@ offset_map(va_base, size, file_offset)
 ```c
 [
   offset_map(VirtualAddress, SizeOfRawData, PointerToRawData),
-  dynamic_container(SECTION),
+  dynamic_container(type(SECTION)),
   size_is(ntHeaders.FileHeader.NumberOfSections)
 ]
 IMAGE_SECTION_HEADER sectionHeader[];

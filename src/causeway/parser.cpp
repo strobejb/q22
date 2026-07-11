@@ -204,7 +204,10 @@ bool Parser::ParseByteSequence(vector<uint8_t> *bytes)
 //   terminated_by(x) -- per-element stop condition
 //   optional(x)      -- whole-tag gating condition
 // Add more here -- TOK_NULL-terminated -- as more wrapped roles are needed.
-static TOKEN kDynamicTagValueWrappers[] = { TOK_NAME, TOK_CASE, TOK_TERMINATEDBY, TOK_OPTIONAL, TOK_NULL };
+static TOKEN kDynamicTagValueWrappers[] = {
+	TOK_NAME, TOK_CASE, TOK_TYPE, TOK_OFFSET, TOK_SIZEIS,
+	TOK_MAPPER, TOK_TERMINATEDBY, TOK_OPTIONAL, TOK_NULL
+};
 
 bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 {

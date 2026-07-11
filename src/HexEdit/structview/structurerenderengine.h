@@ -64,10 +64,20 @@ private:
         std::vector<OffsetMap> maps;
     };
 
+    enum class DynamicMapper
+    {
+        Direct,
+        OffsetMap
+    };
+
     struct DynamicRequest
     {
+        StructureRow *owner = nullptr;
         TypeDecl *typeDecl = nullptr;
+        Type *renderType = nullptr;
+        QString label;
         uint64_t logicalOffset = 0;
+        DynamicMapper mapper = DynamicMapper::Direct;
     };
 
     // Referenced PE/ELF-style tables are not inline C fields: a row contains an
@@ -84,6 +94,7 @@ private:
         uint64_t maxCount = 0;
         ExprNode *stopExpr = nullptr;
         ExprNode *conditionExpr = nullptr;
+        DynamicMapper mapper = DynamicMapper::Direct;
         bool attachToMappedContainer = false;
     };
     bool evaluate(const EvalContext &context, ExprNode *expr, INUMTYPE *result);
@@ -117,7 +128,13 @@ private:
     void appendDynamicArrayRows(StructureRow *row);
     std::vector<RowPtr> buildSubArraysForElement(StructureRow *elementRow,
                                                  std::vector<DynamicArrayRequest> subRequests);
-    bool dynamicTagArgs(ExprNode *expr, ExprNode **selector, ExprNode **typeName, ExprNode **logicalOffset, ExprNode **condition) const;
+    bool dynamicTagArgs(ExprNode *expr,
+                        ExprNode **selector,
+                        ExprNode **label,
+                        ExprNode **typeName,
+                        ExprNode **logicalOffset,
+                        ExprNode **condition,
+                        DynamicMapper *mapper) const;
     bool dynamicArrayArgs(ExprNode *expr,
                           ExprNode **selectorOrLabel,
                           ExprNode **typeName,
@@ -125,6 +142,7 @@ private:
                           ExprNode **count,
                           ExprNode **stop,
                           ExprNode **condition,
+                          DynamicMapper *mapper,
                           bool *isNameSource) const;
     bool dynamicContainerArgs(ExprNode *expr, ExprNode **typeName) const;
     bool offsetMapArgs(ExprNode *expr, ExprNode **logicalStart, ExprNode **logicalSize, ExprNode **fileOffset) const;

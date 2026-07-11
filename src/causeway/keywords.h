@@ -79,10 +79,12 @@ DEFINE_KEYWORD          ( TOK_SWITCHIS,         "switch_is" )
 DEFINE_KEYWORD          ( TOK_TAGS,             "tags" )
 DEFINE_KEYWORD          ( TOK_TAGSET,           "tagset" )
 DEFINE_KEYWORD          ( TOK_TERMINATEDBY,     "terminated_by" )
+DEFINE_KEYWORD          ( TOK_TYPE,             "type" )
 DEFINE_RESERVED_KEYWORD ( TOK_TYPEDEF,          "typedef" )
 DEFINE_RESERVED_KEYWORD ( TOK_UNION,			"union" )
 DEFINE_RESERVED_KEYWORD ( TOK_UNSIGNED,         "unsigned" )
 DEFINE_KEYWORD          ( TOK_VIEW,             "view" )
+DEFINE_KEYWORD          ( TOK_MAPPER,           "mapper" )
 
 // IDL-derived alternative spellings -- see DEFINE_KEYWORD_ALIAS above.
 DEFINE_KEYWORD_ALIAS    ( TOK_SIZEIS,           "count" )
