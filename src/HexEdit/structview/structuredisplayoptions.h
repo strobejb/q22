@@ -17,6 +17,7 @@ struct StructureDisplayOptions
     bool hexadecimalValues = false;
     bool hexadecimalOffsets = true;
     bool relativeOffsets = false;
+    bool sortTopLevelRowsByOffset = false;
 };
 
 inline int64_t signedStructureValue(uint64_t value, uint64_t length)

@@ -3090,6 +3090,7 @@ StructureDisplayOptions StructureViewPanel::displayOptions() const
     options.hexadecimalValues = m_useHexadecimalValues;
     options.hexadecimalOffsets = m_useHexadecimalOffsets;
     options.relativeOffsets = m_useRelativeOffsets;
+    options.sortTopLevelRowsByOffset = displayNameForTypeDecl(selectedRootType()) == QStringLiteral("ZIP");
     return options;
 }
 

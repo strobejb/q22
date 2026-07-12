@@ -334,6 +334,12 @@ std::vector<std::unique_ptr<StructureRow>> StructureRenderEngine::build()
             semanticOffsetMaps.push_back(StructureOffsetMap{ map.logicalStart, map.logicalSize, map.fileOffset });
     }
     runStructureSemanticViews(m_library, root.get(), m_baseOffset, m_reader, semanticOffsetMaps);
+    if (m_options.sortTopLevelRowsByOffset)
+    {
+        std::stable_sort(root->children.begin(), root->children.end(), [](const RowPtr &left, const RowPtr &right) {
+            return left && right && left->absoluteOffset < right->absoluteOffset;
+        });
+    }
     if (profile)
     {
         structureProfileLog(QStringLiteral("[StructureProfile] engine semantic rows=%1 maps=%2 ms=%3 total=%4")
@@ -614,6 +620,10 @@ uint64_t StructureRenderEngine::formatScalar(StructureRow *row, Type *type, Type
     }
 
     const uint64_t raw = unsignedValue(data, length, m_bigEndian);
+    applyBitflagTag(row, type, typeDecl, raw, length);
+    if (!row->children.empty())
+        return length;
+
     Enum *displayEnum = tagEnum(typeDecl);
     if (!displayEnum && base->ty == typeENUM)
         displayEnum = base->eptr;
@@ -2448,10 +2458,10 @@ bool StructureRenderEngine::declarationBigEndian(TypeDecl *typeDecl,
     return ok ? value != 0 : m_bigEndian;
 }
 
-Enum *StructureRenderEngine::tagEnum(TypeDecl *typeDecl) const
+Enum *StructureRenderEngine::tagValueEnum(TypeDecl *typeDecl, TOKEN tagTok) const
 {
     ExprNode *expr = nullptr;
-    if (!m_library || !FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_ENUM, &expr) || !expr || !expr->str)
+    if (!m_library || !FindTag(typeDecl ? typeDecl->tagList : nullptr, tagTok, &expr) || !expr || !expr->str)
         return nullptr;
 
     if (Symbol *sym = LookupSymbol(m_library->globalTagSymbolList, expr->str))
@@ -2466,6 +2476,11 @@ Enum *StructureRenderEngine::tagEnum(TypeDecl *typeDecl) const
     }
 
     return nullptr;
+}
+
+Enum *StructureRenderEngine::tagEnum(TypeDecl *typeDecl) const
+{
+    return tagValueEnum(typeDecl, TOK_ENUM);
 }
 
 QString StructureRenderEngine::enumNameForValue(Enum *eptr, INUMTYPE value) const
@@ -2493,6 +2508,60 @@ QStringList StructureRenderEngine::enumChoiceLabels(Enum *eptr) const
             labels.push_back(QString::fromLocal8Bit(field->name->name));
     }
     return labels;
+}
+
+void StructureRenderEngine::applyBitflagTag(StructureRow *row,
+                                            Type *type,
+                                            TypeDecl *typeDecl,
+                                            uint64_t rawValue,
+                                            uint64_t byteLength)
+{
+    if (!row)
+        return;
+
+    Enum *flags = tagValueEnum(typeDecl, TOK_BITFLAG);
+    if (!flags)
+        return;
+
+    QStringList activeLabels;
+    uint64_t coveredBits = 0;
+    for (EnumField *field : flags->fieldList)
+    {
+        if (!field || !field->name || !field->name->name)
+            continue;
+
+        const uint64_t mask = static_cast<uint64_t>(field->val);
+        const bool active = mask == 0 ? rawValue == 0 : (rawValue & mask) == mask;
+        if (!active)
+            continue;
+
+        const QString label = QString::fromLocal8Bit(field->name->name);
+        activeLabels.push_back(label);
+        coveredBits |= mask;
+
+        auto child = makeRow(row, type, typeDecl, row->absoluteOffset);
+        child->name = label;
+        child->value = formatStructureIntegerValue(mask, byteLength, false, QString(), m_options);
+        child->byteLength = byteLength;
+        row->children.push_back(std::move(child));
+    }
+
+    const uint64_t unknownBits = rawValue & ~coveredBits;
+    if (unknownBits != 0)
+    {
+        activeLabels.push_back(QStringLiteral("Unknown bits"));
+
+        auto child = makeRow(row, type, typeDecl, row->absoluteOffset);
+        child->name = QStringLiteral("Unknown bits");
+        child->value = formatStructureIntegerValue(unknownBits, byteLength, false, QString(), m_options);
+        child->byteLength = byteLength;
+        row->children.push_back(std::move(child));
+    }
+
+    row->valueKind = StructureRowValueKind::Custom;
+    row->value = activeLabels.isEmpty()
+        ? formatStructureIntegerValue(rawValue, byteLength, false, QString(), m_options)
+        : activeLabels.join(QStringLiteral(" | "));
 }
 
 void StructureRenderEngine::applyEntryPointTag(StructureRow *row, TypeDecl *typeDecl)

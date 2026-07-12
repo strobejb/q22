@@ -31,6 +31,7 @@ private slots:
     void exportedTypesExposeMagicSignatures();
     void exportedTypesExposeDescriptions();
     void builderFormatsScalarsAndEndian();
+    void builderRendersBitflagsAsExpandableRows();
     void builderFormatsCharacterArraysAsStrings();
     void builderFormatsScalarArraysAsPreviewLists();
     void builderPopulatesCommentsFromTypeDeclarations();
@@ -59,6 +60,7 @@ private slots:
     void builderEvaluatesEnumIndexedArraysInExpressions();
     void builderEvaluatesEnumIndexedUnionMembersInExpressions();
     void builderUsesSimpleRootNamesForBuiltinTypedefRoots();
+    void builderOptionallySortsTopLevelRowsByOffset();
     void builderRendersZipCentralDirectoryFromEocd();
     void builderRendersElf32AndElf64Tables();
     void builderPlacesDynamicStructsUnderNamedDynamicContainers();
@@ -137,10 +139,42 @@ static TypeDecl *exportedNamed(StrataLibrary *library, const QString &name)
     return nullptr;
 }
 
+static TypeDecl *typeNamed(StrataLibrary *library, const QString &name)
+{
+    if (!library)
+        return nullptr;
+
+    const QByteArray nameBytes = name.toLocal8Bit();
+    for (TypeDecl *decl : library->globalTypeDeclList)
+    {
+        if (!decl)
+            continue;
+
+        for (Type *type : decl->declList)
+        {
+            if ((type->ty == typeTYPEDEF || type->ty == typeIDENTIFIER) && type->sym
+                && nameBytes == type->sym->name)
+            {
+                return decl;
+            }
+        }
+
+        Type *base = BaseNode(decl->baseType);
+        if (base && (base->ty == typeSTRUCT || base->ty == typeUNION) && base->sptr
+            && base->sptr->symbol && nameBytes == base->sptr->symbol->name)
+        {
+            return decl;
+        }
+    }
+
+    return nullptr;
+}
+
 static std::vector<std::unique_ptr<StructureRow>> buildRows(StrataLibrary *library,
                                                             TypeDecl *root,
                                                             const QByteArray &bytes,
-                                                            uint64_t baseOffset = 0)
+                                                            uint64_t baseOffset = 0,
+                                                            const StructureDisplayOptions &options = StructureDisplayOptions())
 {
     StructureValueBuilder builder;
     return builder.build(library,
@@ -154,7 +188,8 @@ static std::vector<std::unique_ptr<StructureRow>> buildRows(StrataLibrary *libra
                              const size_t copied = qMin(length, available);
                              memcpy(buffer, bytes.constData() + offset, copied);
                              return copied;
-                         });
+                         },
+                         options);
 }
 
 static bool parseStandardElfDefinition(StrataLibrary *library)
@@ -610,6 +645,52 @@ void StructViewTests::builderFormatsScalarsAndEndian()
     QCOMPARE(rows[0]->children[0]->value, QStringLiteral("18"));
     QCOMPARE(rows[0]->children[1]->value, QStringLiteral("1"));
     QCOMPARE(rows[0]->children[2]->value, QStringLiteral("258"));
+}
+
+void StructViewTests::builderRendersBitflagsAsExpandableRows()
+{
+    // Scenario: bitflag(EnumName) annotates an integer field whose bits map to
+    // named masks.
+    // Expected: the parent row shows the active flag names and expands to one
+    // child row per set flag, preserving unknown bits instead of hiding them.
+    // Regression guard: bitflag(...) should be more than a parsed no-op.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "enum Flags { None = 0, Read = 1, Write = 2, Execute = 4 };\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  [bitflag(Flags)] byte flags;\n"
+                        "  [bitflag(Flags)] byte none;\n"
+                        "  [bitflag(Flags)] byte unknown;\n"
+                        "} root;\n"));
+
+    StructureDisplayOptions options;
+    options.hexadecimalValues = true;
+    auto rows = buildRows(&library, firstExported(&library), QByteArray::fromHex("030008"), 0, options);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(3));
+
+    StructureRow *flags = rows[0]->children[0].get();
+    QCOMPARE(flags->name, QStringLiteral("byte flags"));
+    QCOMPARE(flags->value, QStringLiteral("Read | Write"));
+    QCOMPARE(flags->children.size(), size_t(2));
+    QCOMPARE(flags->children[0]->name, QStringLiteral("Read"));
+    QCOMPARE(flags->children[0]->value, QStringLiteral("01"));
+    QCOMPARE(flags->children[1]->name, QStringLiteral("Write"));
+    QCOMPARE(flags->children[1]->value, QStringLiteral("02"));
+
+    StructureRow *none = rows[0]->children[1].get();
+    QCOMPARE(none->value, QStringLiteral("None"));
+    QCOMPARE(none->children.size(), size_t(1));
+    QCOMPARE(none->children[0]->name, QStringLiteral("None"));
+    QCOMPARE(none->children[0]->value, QStringLiteral("00"));
+
+    StructureRow *unknown = rows[0]->children[2].get();
+    QCOMPARE(unknown->value, QStringLiteral("Unknown bits"));
+    QCOMPARE(unknown->children.size(), size_t(1));
+    QCOMPARE(unknown->children[0]->name, QStringLiteral("Unknown bits"));
+    QCOMPARE(unknown->children[0]->value, QStringLiteral("08"));
 }
 
 void StructViewTests::builderFormatsCharacterArraysAsStrings()
@@ -1521,6 +1602,51 @@ void StructViewTests::builderUsesSimpleRootNamesForBuiltinTypedefRoots()
     QCOMPARE(elfRows[0]->name, QStringLiteral("ELF"));
 }
 
+void StructViewTests::builderOptionallySortsTopLevelRowsByOffset()
+{
+    // Scenario: archive formats such as ZIP may need to evaluate rows in one
+    // order while displaying top-level structures in physical file order.
+    // Expected: the opt-in renderer flag sorts only the exported root's direct
+    // children; nested C struct fields remain declaration-ordered.
+    // Regression guard: PE/ELF and ordinary structs keep declaration order by
+    // default because sortTopLevelRowsByOffset defaults to false.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef struct _Inner {\n"
+                        "  [offset(4)] byte childLate;\n"
+                        "  [offset(2)] byte childEarly;\n"
+                        "} Inner;\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  [offset(8)] byte late;\n"
+                        "  [offset(0)] byte early;\n"
+                        "  Inner inner;\n"
+                        "} root;\n"));
+
+    QByteArray bytes(16, '\0');
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(3));
+    QCOMPARE(rows[0]->children[0]->name, QStringLiteral("byte late"));
+    QCOMPARE(rows[0]->children[1]->name, QStringLiteral("byte early"));
+    QCOMPARE(rows[0]->children[2]->name, QStringLiteral("Inner inner"));
+
+    StructureDisplayOptions sortedOptions;
+    sortedOptions.sortTopLevelRowsByOffset = true;
+    auto sortedRows = buildRows(&library, firstExported(&library), bytes, 0, sortedOptions);
+    QCOMPARE(sortedRows.size(), size_t(1));
+    QCOMPARE(sortedRows[0]->children.size(), size_t(3));
+    QCOMPARE(sortedRows[0]->children[0]->name, QStringLiteral("byte early"));
+    QCOMPARE(sortedRows[0]->children[1]->name, QStringLiteral("byte late"));
+    QCOMPARE(sortedRows[0]->children[2]->name, QStringLiteral("Inner inner"));
+
+    StructureRow *inner = sortedRows[0]->children[2].get();
+    QCOMPARE(inner->children.size(), size_t(2));
+    QCOMPARE(inner->children[0]->name, QStringLiteral("byte childLate"));
+    QCOMPARE(inner->children[1]->name, QStringLiteral("byte childEarly"));
+}
+
 void StructViewTests::builderRendersZipCentralDirectoryFromEocd()
 {
     // Scenario: ZIP local headers may defer CRC/sizes to data descriptors, so
@@ -1602,9 +1728,17 @@ void StructViewTests::builderRendersZipCentralDirectoryFromEocd()
 
     auto rows = buildRows(&library, zipRoot, zip);
     QCOMPARE(rows.size(), size_t(1));
+
+    StructureRow *locals = nullptr;
     StructureRow *central = nullptr;
     for (const auto &child : rows[0]->children)
     {
+        if (child->name.contains(QStringLiteral("localFileHeaders")))
+        {
+            locals = child.get();
+            continue;
+        }
+
         if (child->name.contains(QStringLiteral("centralDirectory")))
         {
             central = child.get();
@@ -1612,10 +1746,95 @@ void StructViewTests::builderRendersZipCentralDirectoryFromEocd()
         }
     }
 
+    QVERIFY(locals);
+    QCOMPARE(locals->children.size(), size_t(1));
+    QVERIFY(locals->children[0]->name.contains(QStringLiteral("a.txt")));
+
     QVERIFY(central);
     QCOMPARE(central->children.size(), size_t(2));
     QVERIFY(central->children[0]->name.contains(QStringLiteral("a.txt")));
     QVERIFY(central->children[1]->name.contains(QStringLiteral("b.txt")));
+
+    StructureDisplayOptions sortedOptions;
+    sortedOptions.sortTopLevelRowsByOffset = true;
+    auto sortedRows = buildRows(&library, zipRoot, zip, 0, sortedOptions);
+    QCOMPARE(sortedRows.size(), size_t(1));
+    QCOMPARE(sortedRows[0]->children.size(), size_t(3));
+    QVERIFY(sortedRows[0]->children[0]->name.contains(QStringLiteral("localFileHeaders")));
+    QVERIFY(sortedRows[0]->children[1]->name.contains(QStringLiteral("centralDirectory")));
+    QCOMPARE(sortedRows[0]->children[2]->name, QStringLiteral("ZIP_END_OF_CENTRAL_DIRECTORY_RECORD eocd"));
+
+    QByteArray storedZip;
+    auto appendStoredLe16 = [&storedZip](quint16 value) {
+        storedZip.append(char(value & 0xff));
+        storedZip.append(char((value >> 8) & 0xff));
+    };
+    auto appendStoredLe32 = [&storedZip](quint32 value) {
+        storedZip.append(char(value & 0xff));
+        storedZip.append(char((value >> 8) & 0xff));
+        storedZip.append(char((value >> 16) & 0xff));
+        storedZip.append(char((value >> 24) & 0xff));
+    };
+    auto appendStoredLocal = [&](const QByteArray &name, qsizetype size) -> quint32 {
+        const quint32 offset = static_cast<quint32>(storedZip.size());
+        appendStoredLe32(0x04034b50);
+        appendStoredLe16(20);
+        appendStoredLe16(0);
+        appendStoredLe16(0);
+        appendStoredLe16(0);
+        appendStoredLe16(0);
+        appendStoredLe32(0);
+        appendStoredLe32(static_cast<quint32>(size));
+        appendStoredLe32(static_cast<quint32>(size));
+        appendStoredLe16(static_cast<quint16>(name.size()));
+        appendStoredLe16(0);
+        storedZip.append(name);
+        storedZip.append(QByteArray(size, '\0'));
+        return offset;
+    };
+    auto appendStoredCentral = [&](const QByteArray &name, quint32 localOffset, qsizetype size) {
+        appendStoredLe32(0x02014b50);
+        appendStoredLe16(20);
+        appendStoredLe16(20);
+        appendStoredLe16(0);
+        appendStoredLe16(0);
+        appendStoredLe16(0);
+        appendStoredLe16(0);
+        appendStoredLe32(0);
+        appendStoredLe32(static_cast<quint32>(size));
+        appendStoredLe32(static_cast<quint32>(size));
+        appendStoredLe16(static_cast<quint16>(name.size()));
+        appendStoredLe16(0);
+        appendStoredLe16(0);
+        appendStoredLe16(0);
+        appendStoredLe16(0);
+        appendStoredLe32(0);
+        appendStoredLe32(localOffset);
+        storedZip.append(name);
+    };
+
+    const quint32 largeOffset = appendStoredLocal("large.bin", 5000);
+    const quint32 nextOffset = appendStoredLocal("next.bin", 1);
+    const quint32 storedCentralOffset = static_cast<quint32>(storedZip.size());
+    appendStoredCentral("large.bin", largeOffset, 5000);
+    appendStoredCentral("next.bin", nextOffset, 1);
+    const quint32 storedCentralSize = static_cast<quint32>(storedZip.size()) - storedCentralOffset;
+    appendStoredLe32(0x06054b50);
+    appendStoredLe16(0);
+    appendStoredLe16(0);
+    appendStoredLe16(2);
+    appendStoredLe16(2);
+    appendStoredLe32(storedCentralSize);
+    appendStoredLe32(storedCentralOffset);
+    appendStoredLe16(0);
+
+    auto storedRows = buildRows(&library, zipRoot, storedZip);
+    QCOMPARE(storedRows.size(), size_t(1));
+    StructureRow *storedLocals = findChildNamed(storedRows[0].get(), QStringLiteral("ZIP_LOCAL_FILE_HEADER localFileHeaders[]"));
+    QVERIFY(storedLocals);
+    QCOMPARE(storedLocals->children.size(), size_t(2));
+    QVERIFY(storedLocals->children[0]->name.contains(QStringLiteral("large.bin")));
+    QVERIFY(storedLocals->children[1]->name.contains(QStringLiteral("next.bin")));
 }
 
 void StructViewTests::builderRendersElf32AndElf64Tables()
@@ -1722,10 +1941,48 @@ void StructViewTests::builderRendersElf32AndElf64Tables()
     auto rows64 = buildRows(&library64, root64, elf64);
     QCOMPARE(rows64.size(), size_t(1));
     QVERIFY(findChildNamed(rows64[0].get(), QStringLiteral("Elf64_Ehdr header64")));
-    QVERIFY(findChildNamed(rows64[0].get(), QStringLiteral("Elf64_Phdr programHeaders64[]")));
+    StructureRow *programs64 = findChildNamed(rows64[0].get(), QStringLiteral("Elf64_Phdr programHeaders64[]"));
+    QVERIFY(programs64);
+    QCOMPARE(programs64->children.size(), size_t(1));
     StructureRow *sections64 = findChildNamed(rows64[0].get(), QStringLiteral("Elf64_Shdr sectionHeaders64[]"));
     QVERIFY(sections64);
     QCOMPARE(sections64->children.size(), size_t(1));
+
+    QByteArray phdr32(32, '\0');
+    writeLe32(&phdr32, 24, 0x5);
+    auto phdr32Rows = buildRows(&library32, typeNamed(&library32, QStringLiteral("Elf32_Phdr")), phdr32);
+    QCOMPARE(phdr32Rows.size(), size_t(1));
+    StructureRow *programFlags32 = findChildNamed(phdr32Rows[0].get(), QStringLiteral("e32 p_flags"));
+    QVERIFY(programFlags32);
+    QCOMPARE(programFlags32->value, QStringLiteral("PF_X | PF_R"));
+    QVERIFY(findChildNamed(programFlags32, QStringLiteral("PF_X")));
+    QVERIFY(findChildNamed(programFlags32, QStringLiteral("PF_R")));
+
+    QByteArray phdr64(56, '\0');
+    writeLe32(&phdr64, 4, 0x6);
+    auto phdr64Rows = buildRows(&library64, typeNamed(&library64, QStringLiteral("Elf64_Phdr")), phdr64);
+    QCOMPARE(phdr64Rows.size(), size_t(1));
+    StructureRow *programFlags64 = findChildNamed(phdr64Rows[0].get(), QStringLiteral("e32 p_flags"));
+    QVERIFY(programFlags64);
+    QCOMPARE(programFlags64->value, QStringLiteral("PF_W | PF_R"));
+
+    QByteArray shdr32(40, '\0');
+    writeLe32(&shdr32, 8, 0x6);
+    auto shdr32Rows = buildRows(&library32, typeNamed(&library32, QStringLiteral("Elf32_Shdr")), shdr32);
+    QCOMPARE(shdr32Rows.size(), size_t(1));
+    StructureRow *sectionFlags32 = findChildNamed(shdr32Rows[0].get(), QStringLiteral("e32 sh_flags"));
+    QVERIFY(sectionFlags32);
+    QCOMPARE(sectionFlags32->value, QStringLiteral("SHF_ALLOC | SHF_EXECINSTR"));
+    QVERIFY(findChildNamed(sectionFlags32, QStringLiteral("SHF_ALLOC")));
+    QVERIFY(findChildNamed(sectionFlags32, QStringLiteral("SHF_EXECINSTR")));
+
+    QByteArray shdr64(64, '\0');
+    writeLe64(&shdr64, 8, 0x3);
+    auto shdr64Rows = buildRows(&library64, typeNamed(&library64, QStringLiteral("Elf64_Shdr")), shdr64);
+    QCOMPARE(shdr64Rows.size(), size_t(1));
+    StructureRow *sectionFlags64 = findChildNamed(shdr64Rows[0].get(), QStringLiteral("e64 sh_flags"));
+    QVERIFY(sectionFlags64);
+    QCOMPARE(sectionFlags64->value, QStringLiteral("SHF_WRITE | SHF_ALLOC"));
 }
 
 void StructViewTests::builderPlacesDynamicStructsUnderNamedDynamicContainers()
@@ -2032,8 +2289,10 @@ void StructViewTests::builderNamesPeDynamicSectionsFromStandardDefinition()
     QByteArray bytes(0x300, '\0');
     writeLe32(&bytes, 0x3c, 0x80);
     writeLe16(&bytes, 0x86, 2);
+    writeLe16(&bytes, 0x96, 0x2002);
     writeLe16(&bytes, 0x94, 256);
     writeLe16(&bytes, 0x98, 0x10b);
+    writeLe16(&bytes, 0x98 + 70, 0x0140);
     writeLe32(&bytes, 0x98 + 92, 16);
 
     const qsizetype sectionTable = 0x80 + 4 + 20 + 256;
@@ -2041,12 +2300,14 @@ void StructViewTests::builderNamesPeDynamicSectionsFromStandardDefinition()
     writeLe32(&bytes, sectionTable + 12, 0x1000);
     writeLe32(&bytes, sectionTable + 16, 0x100);
     writeLe32(&bytes, sectionTable + 20, 0x200);
+    writeLe32(&bytes, sectionTable + 36, 0x60000020);
 
     const qsizetype secondSection = sectionTable + 40;
     writeAscii(&bytes, secondSection, ".idata");
     writeLe32(&bytes, secondSection + 12, 0x2000);
     writeLe32(&bytes, secondSection + 16, 0x80);
     writeLe32(&bytes, secondSection + 20, 0x280);
+    writeLe32(&bytes, secondSection + 36, 0xC0000040);
 
     TypeDecl *root = exportedNamed(&library, QStringLiteral("PE"));
     QVERIFY(root);
@@ -2062,6 +2323,30 @@ void StructViewTests::builderNamesPeDynamicSectionsFromStandardDefinition()
     QVERIFY(idata);
     QCOMPARE(idata->offset, QStringLiteral("00000280"));
     QVERIFY(!idata->name.startsWith(QStringLiteral("SECTION - ")));
+
+    StructureRow *fileCharacteristics = findDescendantNamed(rows[0].get(), QStringLiteral("word Characteristics"));
+    QVERIFY(fileCharacteristics);
+    QCOMPARE(fileCharacteristics->value, QStringLiteral("IMAGE_FILE_EXECUTABLE_IMAGE | IMAGE_FILE_DLL"));
+    QVERIFY(findChildNamed(fileCharacteristics, QStringLiteral("IMAGE_FILE_EXECUTABLE_IMAGE")));
+    QVERIFY(findChildNamed(fileCharacteristics, QStringLiteral("IMAGE_FILE_DLL")));
+
+    StructureRow *dllCharacteristics = findDescendantNamed(rows[0].get(), QStringLiteral("word DllCharacteristics"));
+    QVERIFY(dllCharacteristics);
+    QCOMPARE(dllCharacteristics->value, QStringLiteral("IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE | IMAGE_DLLCHARACTERISTICS_NX_COMPAT"));
+    QVERIFY(findChildNamed(dllCharacteristics, QStringLiteral("IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE")));
+    QVERIFY(findChildNamed(dllCharacteristics, QStringLiteral("IMAGE_DLLCHARACTERISTICS_NX_COMPAT")));
+
+    StructureRow *textHeader = findDescendantNamed(rows[0].get(), QStringLiteral("[0].text"));
+    QVERIFY(textHeader);
+    StructureRow *textCharacteristics = findChildNamed(textHeader, QStringLiteral("dword Characteristics"));
+    QVERIFY(textCharacteristics);
+    QCOMPARE(textCharacteristics->value, QStringLiteral("IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_READ"));
+
+    StructureRow *idataHeader = findDescendantNamed(rows[0].get(), QStringLiteral("[1].idata"));
+    QVERIFY(idataHeader);
+    StructureRow *idataCharacteristics = findChildNamed(idataHeader, QStringLiteral("dword Characteristics"));
+    QVERIFY(idataCharacteristics);
+    QCOMPARE(idataCharacteristics->value, QStringLiteral("IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_WRITE"));
 
     StructureTreeModel model;
     model.setRowsForTests(std::move(rows));

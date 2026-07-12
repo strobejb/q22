@@ -75,6 +75,13 @@ enum ELF_PROGRAM_TYPE
     PT_TLS     = 7
 };
 
+enum ELF_PROGRAM_FLAGS
+{
+    PF_X = 0x1,
+    PF_W = 0x2,
+    PF_R = 0x4
+};
+
 enum ELF_SECTION_TYPE
 {
     SHT_NULL     = 0,
@@ -94,6 +101,24 @@ enum ELF_SECTION_TYPE
     SHT_PREINIT_ARRAY = 16,
     SHT_GROUP    = 17,
     SHT_SYMTAB_SHNDX = 18
+};
+
+enum ELF_SECTION_FLAGS
+{
+    SHF_WRITE            = 0x00000001,
+    SHF_ALLOC            = 0x00000002,
+    SHF_EXECINSTR        = 0x00000004,
+    SHF_MERGE            = 0x00000010,
+    SHF_STRINGS          = 0x00000020,
+    SHF_INFO_LINK        = 0x00000040,
+    SHF_LINK_ORDER       = 0x00000080,
+    SHF_OS_NONCONFORMING = 0x00000100,
+    SHF_GROUP            = 0x00000200,
+    SHF_TLS              = 0x00000400,
+    SHF_COMPRESSED       = 0x00000800,
+    SHF_GNU_RETAIN       = 0x00200000,
+    SHF_ORDERED          = 0x04000000,
+    SHF_EXCLUDE          = 0x08000000
 };
 
 enum ELF_SYMBOL_BIND
@@ -133,6 +158,8 @@ typedef struct _Elf32_Ehdr
     e32_addr e_entry;                   // Entry point virtual address
     e32_off  e_phoff;                   // Program header table file offset
     e32_off  e_shoff;                   // Section header table file offset
+    // e_flags is processor-specific: ARM, MIPS, RISC-V, etc. assign different
+    // meanings to the same bits, so keep it raw in the generic ELF definition.
     e32      e_flags;                   // Processor-specific flags
     e16      e_ehsize;                  // ELF header size in bytes
     e16      e_phentsize;               // Program header table entry size
@@ -154,6 +181,8 @@ typedef struct _Elf64_Ehdr
     e64_addr e_entry;                   // Entry point virtual address
     e64_off  e_phoff;                   // Program header table file offset
     e64_off  e_shoff;                   // Section header table file offset
+    // e_flags is processor-specific: ARM, MIPS, RISC-V, etc. assign different
+    // meanings to the same bits, so keep it raw in the generic ELF definition.
     e32      e_flags;                   // Processor-specific flags
     e16      e_ehsize;                  // ELF header size in bytes
     e16      e_phentsize;               // Program header table entry size
@@ -172,6 +201,7 @@ typedef struct _Elf32_Phdr
     e32_addr p_paddr;                   // Segment physical address
     e32      p_filesz;                  // Segment size in file
     e32      p_memsz;                   // Segment size in memory
+    [bitflag(ELF_PROGRAM_FLAGS)]
     e32      p_flags;                   // Segment flags
     e32      p_align;                   // Segment alignment
 } Elf32_Phdr;
@@ -180,6 +210,7 @@ typedef struct _Elf64_Phdr
 {
     [enum(ELF_PROGRAM_TYPE)]
     e32      p_type;                    // Segment type
+    [bitflag(ELF_PROGRAM_FLAGS)]
     e32      p_flags;                   // Segment flags
     e64_off  p_offset;                  // Segment file offset
     e64_addr p_vaddr;                   // Segment virtual address
@@ -194,6 +225,7 @@ typedef struct _Elf32_Shdr
     e32      sh_name;                   // Section name string-table offset
     [enum(ELF_SECTION_TYPE)]
     e32      sh_type;                   // Section type
+    [bitflag(ELF_SECTION_FLAGS)]
     e32      sh_flags;                  // Section flags
     e32_addr sh_addr;                   // Section virtual address
     e32_off  sh_offset;                 // Section file offset
@@ -209,6 +241,7 @@ typedef struct _Elf64_Shdr
     e32      sh_name;                   // Section name string-table offset
     [enum(ELF_SECTION_TYPE)]
     e32      sh_type;                   // Section type
+    [bitflag(ELF_SECTION_FLAGS)]
     e64      sh_flags;                  // Section flags
     e64_addr sh_addr;                   // Section virtual address
     e64_off  sh_offset;                 // Section file offset
