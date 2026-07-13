@@ -1,4 +1,4 @@
 interface:
   display_name: "Q22 Strata Authoring"
-  short_description: "Write and review q22 .struct binary format definitions."
-  default_prompt: "Use $q22-strata-authoring to write or fix a q22 Strata .struct definition."
+  short_description: "Write and review q22 .strata binary format definitions."
+  default_prompt: "Use $q22-strata-authoring to write or fix a q22 Strata .strata definition."

@@ -1,9 +1,9 @@
-// q22-struct v1
+// q22-strata-v1
 //
-//  zip.struct
+//  zip.strata
 //
 
-include "basetypes.struct";
+include "basetypes.strata";
 
 enum ZIP_SIGNATURE
 {

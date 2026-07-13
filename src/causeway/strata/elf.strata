@@ -1,6 +1,6 @@
-//--q22-struct v1
+// q22-strata-v1
 //
-//  elf.struct
+//  elf.strata
 //
 //  www.catch22.net
 //
@@ -8,7 +8,7 @@
 //  Please refer to the file LICENCE.TXT for copying permission
 //
 
-include "basetypes.struct";
+include "basetypes.strata";
 
 enum ELF_IDENT
 {

@@ -27,7 +27,8 @@ Structure View:
 - Built-in support for PE and ELF files.
 - Expand headers, sections, imports, exports, symbols, and related tables.
 - Automatically choose known formats from file type or magic bytes.
-- Add custom `.struct` definitions using the Strata language.
+- Add custom `.strata` definitions using the Strata language; legacy `.struct`
+  files are still supported.
 
 Disassembly:
 

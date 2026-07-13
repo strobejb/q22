@@ -97,7 +97,7 @@ PeMetadata readPeMetadata(const PeByteReader &reader, uint64_t fileSize)
     pe.entryPointRva = readU32(ntHeader, kOptionalHeaderOffset + 0x10);
 
     // DataDirectory[] begins at +96 (PE32) or +112 (PE32+) -- fixed per the
-    // PE/COFF spec, matching pe.struct's IMAGE_OPTIONAL_HEADER field list.
+    // PE/COFF spec, matching pe.strata's IMAGE_OPTIONAL_HEADER field list.
     const int dataDirectoryOffset = kOptionalHeaderOffset + (pe.is64Bit ? 112 : 96);
     const uint32_t exportDirRva  = readU32(ntHeader, dataDirectoryOffset + 0);
     const uint32_t exportDirSize = readU32(ntHeader, dataDirectoryOffset + 4);

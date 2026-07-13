@@ -76,14 +76,17 @@ void AppSettings::migrateLegacyConfig()
     const QString oldSettings = legacySettingsFilePath();
     const QString oldRoot = QFileInfo(oldSettings).absolutePath();
     const QString newRoot = appConfigDir();
-    if (QFileInfo(oldRoot).absoluteFilePath() == QFileInfo(newRoot).absoluteFilePath())
-        return;
+    if (QFileInfo(oldRoot).absoluteFilePath() != QFileInfo(newRoot).absoluteFilePath())
+    {
+        copyFileIfMissing(oldSettings, settingsFilePath());
+        copyDirEntriesIfMissing(QDir(oldRoot).filePath(QStringLiteral("palettes")),
+                                QDir(newRoot).filePath(QStringLiteral("palettes")));
+        copyDirEntriesIfMissing(QDir(oldRoot).filePath(QStringLiteral("structs")),
+                                QDir(newRoot).filePath(QStringLiteral("strata")));
+    }
 
-    copyFileIfMissing(oldSettings, settingsFilePath());
-    copyDirEntriesIfMissing(QDir(oldRoot).filePath(QStringLiteral("palettes")),
-                            QDir(newRoot).filePath(QStringLiteral("palettes")));
-    copyDirEntriesIfMissing(QDir(oldRoot).filePath(QStringLiteral("structs")),
-                            QDir(newRoot).filePath(QStringLiteral("structs")));
+    copyDirEntriesIfMissing(QDir(newRoot).filePath(QStringLiteral("structs")),
+                            QDir(newRoot).filePath(QStringLiteral("strata")));
     copyFileIfMissing(QDir(oldRoot).filePath(QStringLiteral("bookmarks.json")),
                       QDir(newRoot).filePath(QStringLiteral("bookmarks.json")));
     copyFileIfMissing(QDir(oldRoot).filePath(QStringLiteral("bookmarks.ini")),

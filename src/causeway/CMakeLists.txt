@@ -25,11 +25,20 @@ target_include_directories(causeway PUBLIC
 set(CAUSEWAY_DATA_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/strata")
 set(CAUSEWAY_DATA_BINARY_DIR "${PROJECT_BINARY_DIR}/strata")
 file(GLOB CAUSEWAY_STANDARD_FILES CONFIGURE_DEPENDS
+    "${CAUSEWAY_DATA_SOURCE_DIR}/*.strata"
     "${CAUSEWAY_DATA_SOURCE_DIR}/*.struct"
+)
+set(CAUSEWAY_LEGACY_STANDARD_FILES
+    "${CAUSEWAY_DATA_BINARY_DIR}/basetypes.struct"
+    "${CAUSEWAY_DATA_BINARY_DIR}/dex.struct"
+    "${CAUSEWAY_DATA_BINARY_DIR}/elf.struct"
+    "${CAUSEWAY_DATA_BINARY_DIR}/pe.struct"
+    "${CAUSEWAY_DATA_BINARY_DIR}/zip.struct"
 )
 
 add_custom_target(causewayData ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CAUSEWAY_DATA_BINARY_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E rm -f ${CAUSEWAY_LEGACY_STANDARD_FILES}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CAUSEWAY_STANDARD_FILES}
         "${CAUSEWAY_DATA_BINARY_DIR}"

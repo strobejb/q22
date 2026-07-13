@@ -1,9 +1,9 @@
-// q22-struct v1
+// q22-strata-v1
 //
-//  dex.struct
+//  dex.strata
 //
 
-include "basetypes.struct";
+include "basetypes.strata";
 
 enum DEX_ENDIAN_TAG
 {

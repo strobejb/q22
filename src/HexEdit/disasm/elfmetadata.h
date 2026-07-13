@@ -31,7 +31,7 @@ struct ElfMetadata
 {
     bool     isValid    = false;
     bool     is64Bit    = false;
-    uint16_t machine    = 0; // e_machine (ELF_MACHINE enum in elf.struct, e.g. EM_X86_64 = 62)
+    uint16_t machine    = 0; // e_machine (ELF_MACHINE enum in elf.strata, e.g. EM_X86_64 = 62)
     uint64_t entryVaddr = 0;
     std::vector<ElfSection> sections;
     std::vector<ElfExport>  exports; // global/weak STT_FUNC symbols from .dynsym (or .symtab as fallback)
@@ -42,7 +42,7 @@ struct ElfMetadata
 using ElfByteReader = std::function<size_t(uint64_t offset, uint8_t *buf, size_t len)>;
 
 // Reads section headers + exported function symbols directly off raw bytes,
-// using the fixed ELF32/ELF64 byte layout (see causeway/strata/elf.struct) --
+// using the fixed ELF32/ELF64 byte layout (see causeway/strata/elf.strata) --
 // no causeway/Parser involvement. isValid is false for anything that isn't a
 // well-formed ELF file.
 ElfMetadata readElfMetadata(const ElfByteReader &reader, uint64_t fileSize);

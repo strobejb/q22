@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE language>
 <language
-    name="Q22 Struct"
-    version="3"
+    name="Q22 Strata"
+    version="5"
     kateversion="5.79"
     section="Sources"
-    extensions="*.struct"
-    mimetype="text/x-q22-struct"
+    extensions="*.strata;*.struct"
+    mimetype="text/x-q22-strata;text/x-q22-struct"
     priority="20"
     author="q22"
     license="MIT">
@@ -17,6 +17,8 @@
     <item>default</item>
     <item>display</item>
     <item>enum</item>
+    <item>find_first</item>
+    <item>find_last</item>
     <item>ignore</item>
     <item>include</item>
     <item>select_offset</item>
@@ -38,6 +40,8 @@
     <item>wchar_t</item>
     <item>float</item>
     <item>double</item>
+    <item>uleb128</item>
+    <item>sleb128</item>
     <item>signed</item>
     <item>unsigned</item>
     <item>short</item>
@@ -50,6 +54,7 @@
     <item>assoc</item>
     <item>bitflag</item>
     <item>case</item>
+    <item>container</item>
     <item>count</item>
     <item>description</item>
     <item>display</item>
@@ -63,15 +68,19 @@
     <item>export</item>
     <item>length_is</item>
     <item>magic</item>
+    <item>mapper</item>
     <item>name</item>
     <item>offset</item>
     <item>offset_map</item>
     <item>optional</item>
     <item>select</item>
     <item>size_is</item>
+    <item>string</item>
     <item>switch_is</item>
     <item>tags</item>
     <item>terminated_by</item>
+    <item>type</item>
+    <item>version</item>
     <item>view</item>
 </list>
 

@@ -160,21 +160,36 @@ QStringList existingDefinitionFilesInDir(const QString &dirPath, bool includeLeg
     if (!dir.exists())
         return {};
 
-    QStringList nameFilters = { QStringLiteral("*.struct") };
+    QStringList nameFilters = {
+        QStringLiteral("*.strata"),
+        QStringLiteral("*.struct")
+    };
     if (includeLegacyExtensions)
     {
         nameFilters.push_back(QStringLiteral("*.txt"));
         nameFilters.push_back(QStringLiteral("*.bstruct"));
     }
 
-    QStringList files;
     const QFileInfoList entries = dir.entryInfoList(
         nameFilters,
         QDir::Files | QDir::Readable,
         QDir::Name | QDir::IgnoreCase);
 
+    QSet<QString> strataBaseNames;
     for (const QFileInfo &entry : entries)
+        if (entry.suffix().compare(QStringLiteral("strata"), Qt::CaseInsensitive) == 0)
+            strataBaseNames.insert(entry.completeBaseName().toCaseFolded());
+
+    QStringList files;
+    for (const QFileInfo &entry : entries)
+    {
+        if (entry.suffix().compare(QStringLiteral("struct"), Qt::CaseInsensitive) == 0
+            && strataBaseNames.contains(entry.completeBaseName().toCaseFolded()))
+        {
+            continue;
+        }
         files.push_back(entry.absoluteFilePath());
+    }
 
     return files;
 }
@@ -199,7 +214,7 @@ void appendDuplicateDefinitionFileLog(const QStringList &files,
     for (const QString &file : files)
     {
         const QFileInfo info(file);
-        const QString name = info.fileName();
+        const QString name = info.completeBaseName();
         const QString path = QDir::toNativeSeparators(info.absoluteFilePath());
         if (info.absoluteFilePath().startsWith(userDir + QLatin1Char('/')))
             usersByName[name].push_back(path);
@@ -272,7 +287,7 @@ QList<ExportedStructureType> StructureDefinitionManager::resolvedExportedTypes(Q
     for (const FailedStructureFile &failure : m_failedFiles)
         failedFilePaths.insert(QDir::toNativeSeparators(failure.filePath));
 
-    const QString userDir = QFileInfo(userStructsDir()).absoluteFilePath();
+    const QString userDir = QFileInfo(userStrataDir()).absoluteFilePath();
 
     for (TypeDecl *decl : m_library->globalTypeDeclList)
     {
@@ -382,12 +397,12 @@ bool StructureDefinitionManager::isLoaded() const
     return m_loaded;
 }
 
-QString StructureDefinitionManager::userStructsDir() const
+QString StructureDefinitionManager::userStrataDir() const
 {
     if (!m_userDirOverride.isEmpty())
         return m_userDirOverride;
 
-    return QDir(AppSettings::appConfigDir()).filePath(QStringLiteral("structs"));
+    return QDir(AppSettings::appConfigDir()).filePath(QStringLiteral("strata"));
 }
 
 QStringList StructureDefinitionManager::builtinStructDirs() const
@@ -419,14 +434,14 @@ void StructureDefinitionManager::setBuiltinStructDirsForTests(const QStringList 
     m_builtinDirsOverride = dirs;
 }
 
-void StructureDefinitionManager::setUserStructsDirForTests(const QString &dir)
+void StructureDefinitionManager::setUserStrataDirForTests(const QString &dir)
 {
     m_userDirOverride = dir;
 }
 
 bool StructureDefinitionManager::reload()
 {
-    QDir().mkpath(userStructsDir());
+    QDir().mkpath(userStrataDir());
 
     const QStringList files = discoverDefinitionFiles();
     m_loadLog.clear();
@@ -486,7 +501,7 @@ bool StructureDefinitionManager::reload()
 
     QStringList exportResolutionLog;
     const QList<ExportedStructureType> activeExports = resolvedExportedTypes(&exportResolutionLog);
-    appendDuplicateDefinitionFileLog(files, userStructsDir(), activeExports, &m_loadLog);
+    appendDuplicateDefinitionFileLog(files, userStrataDir(), activeExports, &m_loadLog);
     for (const QString &message : exportResolutionLog)
         m_loadLog.push_back(message);
 
@@ -511,7 +526,7 @@ QStringList StructureDefinitionManager::discoverDefinitionFiles() const
     for (const QString &dir : builtinStructDirs())
         files.append(existingDefinitionFilesInDir(dir, false));
 
-    const QStringList userFiles = existingDefinitionFilesInDir(userStructsDir(), true);
+    const QStringList userFiles = existingDefinitionFilesInDir(userStrataDir(), true);
     for (const QString &file : userFiles)
         if (!files.contains(file))
             files.push_back(file);
@@ -560,7 +575,7 @@ void StructureDefinitionManager::updateWatchedFiles(const QStringList &files)
         if (QFileInfo::exists(dir))
             dirs.push_back(QFileInfo(dir).absoluteFilePath());
 
-    const QString userDir = QFileInfo(userStructsDir()).absoluteFilePath();
+    const QString userDir = QFileInfo(userStrataDir()).absoluteFilePath();
     QDir().mkpath(userDir);
     dirs.push_back(userDir);
 

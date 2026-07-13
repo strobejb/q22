@@ -73,7 +73,7 @@ QString StructureTypeNameFormatter::storageTypeName(Type *type) const
         if (base && (base->ty == typeSTRUCT || base->ty == typeUNION || base->ty == typeENUM))
             return definedTypeName(type);
         // Typedefs of a signed/unsigned primitive (short, int, long, BYTE, WORD,
-        // DWORD, USHORT, ULONG, ... in basetypes.struct) are themselves the name
+        // DWORD, USHORT, ULONG, ... in basetypes.strata) are themselves the name
         // a reader expects in "storage type" mode -- unwrapping them to "signed
         // word" / "unsigned dword" loses the only thing that named them.
         if (type->link && (type->link->ty == typeSIGNED || type->link->ty == typeUNSIGNED))

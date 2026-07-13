@@ -43,7 +43,7 @@ struct Seed
 struct ExecSection { uint64_t fileOffset; uint64_t fileSize; };
 struct SeedExport  { QString name; uint64_t fileOffset; };
 
-// ELF_MACHINE values (see causeway/strata/elf.struct) this engine knows how
+// ELF_MACHINE values (see causeway/strata/elf.strata) this engine knows how
 // to point Capstone at. Other e_machine values are left unhandled -- the
 // scan simply finds nothing for that file rather than guessing wrong.
 constexpr uint16_t kElfMachineX86    = 3;

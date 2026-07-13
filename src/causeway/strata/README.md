@@ -2,7 +2,8 @@
 
 Strata is a binary structure definition language. It extends C struct syntax with
 annotation tags that describe how binary data should be navigated, decoded, and
-displayed. Files use the `.struct` extension.
+displayed. Files use the `.strata` extension. Legacy `.struct` files are still
+accepted for user definitions.
 
 ---
 
@@ -13,60 +14,13 @@ displayed. Files use the `.struct` extension.
 | Files | [`include`](#comments-and-includes) |
 | Types | [`struct`](#structs) · [`union`](#unions) · [`enum`](#enums) · [`typedef`](#type-declarations) |
 | Tags | [`tagset`](#tagsets) · [`tags`](#tagsets) |
-| Display | [`enum(N)`](#display) · [`bitflag(N)`](#display) · [`name`](#display) |
+| Display | [`enum(N)`](#display) · [`bitflag(N)`](#display) · [`name`](#display) · [`string`](#display) |
 | Layout | [`offset`](#layout) · [`align`](#layout) · [`endian`](#byte-order) · [`entrypoint`](#layout) · [`extent`](#layout) · [`optional`](#layout) |
 | Arrays | [`count`](#arrays) · [`terminated_by`](#arrays) |
 | Unions | [`select`](#discriminated-unions) · [`case`](#discriminated-unions) |
 | Semantic views | [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) · [`view`](#view) |
-| Export | [`export`](#export-metadata) · [`assoc`](#export-metadata) · [`magic`](#export-metadata) |
+| Export | [`export`](#export-metadata) · [`version`](#export-metadata) · [`assoc`](#export-metadata) · [`magic`](#export-metadata) |
 | Expressions | [`sizeof`](#expressions) · [`find_first`](#byte-pattern-search) · [`find_last`](#byte-pattern-search) · [`select_offset`](#select_offset) |
-
----
-
-## Writing good `.struct` files
-
-Start with the raw file format before adding presentation helpers. A good
-definition should let someone compare the structure tree against a hex view and
-recognize the on-disk layout.
-
-Recommended workflow:
-
-1. Define primitive aliases, enums, and simple structs first.
-2. Add an exported root with `export`, `assoc`, `magic`, and `offset`.
-3. Model fields in physical order where possible.
-4. Use `offset(...)` for tables or records referenced from elsewhere in the file.
-5. Use `count(...)` and `terminated_by(...)` for variable arrays.
-6. Use `extent(...)` when a rendered field is capped or conditionally short, but
-   its parent still needs to advance by the full byte length.
-7. Add display tags (`enum`, `bitflag`, `name`) after the raw layout is correct.
-8. Add dynamic or semantic views only when pure structure data cannot express the
-   relationship cleanly.
-9. Add focused Structure View tests for new rendering behavior.
-
-Prefer pure structures for ordinary file layouts. Reach for
-`dynamic_array(...)`, `dynamic_struct(...)`, `dynamic_container(...)`, and
-`view(...)` only for related data that is not really an inline C field, such as
-PE RVA-mapped import/export tables.
-
-Use `enum(Name)` for one-of-N values. Use `bitflag(Name)` only for independent
-mask bits. Do not use `bitflag(...)` for packed fields whose values overlap,
-such as PE section alignment values. Leave architecture-specific fields raw
-unless the definition can switch safely on architecture; for example ELF
-`e_flags` is processor-specific and should not use a single generic bitflag
-enum.
-
-For large payloads, remember that the Structure View caps how many array
-children it renders. Pair `count(...)` with `extent(...)` when layout must
-advance by the true byte length:
-
-```c
-[count(CompressedSize), extent(CompressedSize)]
-byte CompressedData[];
-```
-
-For trailer-indexed formats such as ZIP, it is fine to render both the local
-records and the central index/trailer records. They represent different parts of
-the file even if much of the metadata overlaps.
 
 ---
 
@@ -77,12 +31,12 @@ the file even if much of the metadata overlaps.
 /* Block comment */
 ```
 
-`include` pulls in another `.struct` file, making all its type and enum
+`include` pulls in another `.strata` file, making all its type and enum
 definitions available in the current file. Paths are relative to the including
 file. Circular includes are detected and ignored.
 
 ```c
-include "basetypes.struct";
+include "basetypes.strata";
 ```
 
 ---
@@ -224,7 +178,7 @@ reads a byte directly by position instead, with no field lookup at all.
 
 A reference that resolves neither way — not a sibling, not a consistent
 union-candidate field, and not wrapped in `select_offset` — is caught when
-the `.struct` file is loaded, not silently at render time: the structure
+the `.strata` file is loaded, not silently at render time: the structure
 view's definitions manager reports it as a load error naming the field and
 the tag that referenced it.
 
@@ -320,12 +274,14 @@ The following 'display' tags can be used to alter the rendered value or name of 
 | `bitflag(Name)` | Show the value as named bit masks and expand the row to list active flags |
 | `name("label")` | Override the display label with a string literal |
 | `name(field)` | Use the value of `field` as the display label |
+| `string` | Render a byte or char array as a string preview |
 
 ```c
 [enum(ELF_TYPE)] e16 e_type;
 [bitflag(ELF_SECTION_FLAGS)] e64 sh_flags;
 [name(SectionName)] dword Offset;
 [name("Alternative name")] dword Offset;
+[string] byte Name[32];
 ```
 
 ### Layout
@@ -374,7 +330,7 @@ typedef struct _ELF { ... } ELF;
 [endian("little")] dword LittleField;
 ```
 
-In real `elf.struct`, `e_ident` is actually declared only inside each
+In real `elf.strata`, `e_ident` is actually declared only inside each
 per-bitness header candidate, not as a field of `_ELF` itself — see
 [Discriminators that live inside the candidates themselves](#discriminators-that-live-inside-the-candidates-themselves)
 for how that still resolves.
@@ -658,14 +614,77 @@ means something as a sub-expression inside another tag's expression.
 
 ---
 
-## Reserved keywords
+## Reserved and unsupported keywords
 
-Certain reserved keywords are parsed without error but are not yet implemented — they have no effect on rendering:
+Some keywords are reserved so definitions fail clearly near the unsupported
+syntax instead of treating the word as an ordinary identifier.
 
 | Keyword | Intended purpose |
 |---------|-----------------|
 | `display(expr)` | Override the displayed value |
 | `ignore` | Parse but hide a field |
 | `length_is(expr)` | Byte length of a flexible array |
-| `string` | Render bytes as a character string |
 | `style(...)` | Rendering style hint |
+
+## Keyword reference
+
+This list is intended to stay in sync with `src/causeway/keywords.h` and the
+Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
+
+| Category | Keywords |
+|----------|----------|
+| Type declarations | `struct`, `union`, `enum`, `typedef`, `const`, `signed`, `unsigned` |
+| Primitive types | `byte`, `word`, `dword`, `qword`, `char`, `wchar_t`, `float`, `double`, `uleb128`, `sleb128` |
+| Display/layout tags | `align`, `bitflag`, `description`, `display`, `endian`, `entrypoint`, `extent`, `ignore`, `name`, `offset`, `optional`, `string`, `style` |
+| Arrays/unions | `case`, `count`, `length_is`, `select`, `select_offset`, `size_is`, `switch_is`, `terminated_by` |
+| Dynamic/semantic tags | `container`, `dynamic_array`, `dynamic_container`, `dynamic_struct`, `mapper`, `offset_map`, `type`, `view` |
+| Export/detection tags | `assoc`, `export`, `magic`, `version` |
+| Tagsets/files | `include`, `tagset`, `tags` |
+| Expression helpers | `default`, `find_first`, `find_last`, `sizeof` |
+
+---
+
+## Writing good `.strata` files
+
+Start with the raw file format before adding presentation helpers. A good
+definition should let someone compare the structure tree against a hex view and
+recognize the on-disk layout.
+
+Recommended workflow:
+
+1. Define primitive aliases, enums, and simple structs first.
+2. Add an exported root with `export`, `assoc`, `magic`, and `offset`.
+3. Model fields in physical order where possible.
+4. Use `offset(...)` for tables or records referenced from elsewhere in the file.
+5. Use `count(...)` and `terminated_by(...)` for variable arrays.
+6. Use `extent(...)` when a rendered field is capped or conditionally short, but
+   its parent still needs to advance by the full byte length.
+7. Add display tags (`enum`, `bitflag`, `name`) after the raw layout is correct.
+8. Add dynamic or semantic views only when pure structure data cannot express the
+   relationship cleanly.
+9. Add focused Structure View tests for new rendering behavior.
+
+Prefer pure structures for ordinary file layouts. Reach for
+`dynamic_array(...)`, `dynamic_struct(...)`, `dynamic_container(...)`, and
+`view(...)` only for related data that is not really an inline C field, such as
+PE RVA-mapped import/export tables.
+
+Use `enum(Name)` for one-of-N values. Use `bitflag(Name)` only for independent
+mask bits. Do not use `bitflag(...)` for packed fields whose values overlap,
+such as PE section alignment values. Leave architecture-specific fields raw
+unless the definition can switch safely on architecture; for example ELF
+`e_flags` is processor-specific and should not use a single generic bitflag
+enum.
+
+For large payloads, remember that the Structure View caps how many array
+children it renders. Pair `count(...)` with `extent(...)` when layout must
+advance by the true byte length:
+
+```c
+[count(CompressedSize), extent(CompressedSize)]
+byte CompressedData[];
+```
+
+For trailer-indexed formats such as ZIP, it is fine to render both the local
+records and the central index/trailer records. They represent different parts of
+the file even if much of the metadata overlaps.

@@ -1,21 +1,22 @@
 ---
 name: q22-strata-authoring
-description: Write, review, and debug q22 Strata `.struct` binary format definitions. Use when Codex is asked to add or fix files under `src/causeway/strata/`, define binary layouts, add enum/bitflag display tags, model offset-based tables, update Strata docs, or troubleshoot Structure View rendering of PE, ELF, ZIP, or new file formats.
+description: Write, review, and debug q22 Strata `.strata`/legacy `.struct` binary format definitions. Use when Codex is asked to add or fix files under `src/causeway/strata/`, define binary layouts, add enum/bitflag display tags, model offset-based tables, update Strata docs, or troubleshoot Structure View rendering of PE, ELF, ZIP, or new file formats.
 ---
 
 # Q22 Strata Authoring
 
 ## Workflow
 
-1. Read `AGENTS.md` and `src/causeway/strata/README.md` before changing `.struct` files.
+1. Read `AGENTS.md` and `src/causeway/strata/README.md` before changing `.strata` files.
 2. Prefer a pure structure model first: fields in physical file order, `offset(...)` for tables elsewhere, `count(...)`/`terminated_by(...)` for arrays, and `extent(...)` when rendered children are capped but layout must advance by full byte length.
 3. Use `dynamic_array`, `dynamic_struct`, `dynamic_container`, and semantic `view(...)` only when the raw structure cannot express the relationship cleanly, such as PE RVA-mapped data directories.
-4. Add or update focused tests in `tests/structview_tests.cpp` for every behavior change that affects rendering.
-5. Validate with `/tmp/q22-structview-build/tests/structview_tests` when available, and build `hexedit` if embedded Strata resources or renderer code changed.
+4. When adding or renaming Strata keywords, update all keyword-facing surfaces in the same change: `src/causeway/strata/README.md`, `scripts/qtcreator/q22-strata.xml`, parser/lexer tests, and any shipped `.strata` examples that demonstrate the syntax.
+5. Add or update focused tests in `tests/structview_tests.cpp` for every behavior change that affects rendering.
+6. Validate with `/tmp/q22-structview-build/tests/structview_tests` when available, and build `hexedit` if embedded Strata resources or renderer code changed.
 
 ## Authoring Rules
 
-- Keep `.struct` definitions honest: do not hide or reorder raw fields to make the tree prettier.
+- Keep `.strata` definitions honest: do not hide or reorder raw fields to make the tree prettier.
 - Use `enum(Name)` for one-of-N values and `bitflag(Name)` for independent masks.
 - Do not use `bitflag(...)` for packed fields whose values overlap, such as PE section alignment bits. Leave those raw or add a purpose-built renderer later.
 - Leave architecture-specific fields raw unless the definition can switch safely on architecture. ELF `e_flags` is intentionally raw because architectures assign different meanings to the same bits.

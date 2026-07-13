@@ -2227,7 +2227,7 @@ void StructureViewPanel::buildUi()
             // attached when that happens. Attaching afterwards makes its initial highlight
             // pass run once over the final, settled block structure.
             wrapMarkdownCodeBlocks(view->document());
-            // Reuses the same highlighter (and q22-struct.xml colors) as the live
+            // Reuses the same highlighter (and q22-strata.xml colors) as the live
             // source editor, scoped to fenced code blocks via isMarkdownCodeBlock.
             new StructureSourceHighlighter(view->document(), viewPalette, nullptr, isMarkdownCodeBlock);
 

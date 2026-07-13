@@ -20,7 +20,7 @@ class StructViewTests : public QObject
     Q_OBJECT
 
 private slots:
-    void managerCreatesUserStructsDirectory();
+    void managerCreatesUserStrataDirectory();
     void managerDiscoversBuiltinAndUserDefinitionFiles();
     void reloadSwapsInParsedStrataLibrary();
     void managerReportsChangedDefinitionsWithoutAutoReload();
@@ -206,7 +206,7 @@ static bool parseStandardElfDefinition(StrataLibrary *library)
         return false;
 
     Parser parser(library);
-    const QString path = QDir(QStringLiteral(CAUSEWAY_TEST_DATA_DIR)).filePath(QStringLiteral("elf.struct"));
+    const QString path = QDir(QStringLiteral(CAUSEWAY_TEST_DATA_DIR)).filePath(QStringLiteral("elf.strata"));
     return parser.Ooof(qPrintable(path));
 }
 
@@ -313,20 +313,20 @@ static void writeAscii(QByteArray *bytes, qsizetype offset, const char *text)
     memcpy(bytes->data() + offset, text, size_t(length));
 }
 
-void StructViewTests::managerCreatesUserStructsDirectory()
+void StructViewTests::managerCreatesUserStrataDirectory()
 {
     // Scenario: the Structure View panel is opened on a fresh profile.
-    // Expected: the user-editable structs directory is created lazily beside the
+    // Expected: the user-editable strata directory is created lazily beside the
     // settings/palette area, so users have a stable place to drop definitions.
     // Regression guard: first-open loading must not fail just because the custom
     // definitions directory has not existed before.
     QTemporaryDir temp;
     QVERIFY(temp.isValid());
 
-    const QString userDir = temp.filePath(QStringLiteral("structs"));
+    const QString userDir = temp.filePath(QStringLiteral("user-strata"));
     StructureDefinitionManager manager;
     manager.setBuiltinStructDirsForTests({});
-    manager.setUserStructsDirForTests(userDir);
+    manager.setUserStrataDirForTests(userDir);
 
     QVERIFY2(manager.reload(), qPrintable(manager.lastError()));
     QVERIFY(QDir(userDir).exists());
@@ -335,27 +335,30 @@ void StructViewTests::managerCreatesUserStructsDirectory()
 void StructViewTests::managerDiscoversBuiltinAndUserDefinitionFiles()
 {
     // Scenario: shipped definitions and user definitions are both available.
-    // Expected: built-ins and user files are discovered, with the .struct
-    // extension and legacy .txt/.bstruct extensions all accepted.
+    // Expected: built-ins and user files are discovered, with the canonical
+    // .strata extension, .struct compatibility extension, and legacy
+    // .txt/.bstruct extensions all accepted.
     // Regression guard: adding the user watched directory must not hide the
     // runtime definitions that ship with the app.
     QTemporaryDir temp;
     QVERIFY(temp.isValid());
 
     const QString builtinDir = temp.filePath(QStringLiteral("strata"));
-    const QString userDir = temp.filePath(QStringLiteral("structs"));
+    const QString userDir = temp.filePath(QStringLiteral("user-strata"));
     QVERIFY(QDir().mkpath(builtinDir));
     QVERIFY(QDir().mkpath(userDir));
-    writeTextFile(QDir(builtinDir).filePath(QStringLiteral("builtin.struct")), "typedef dword BuiltinType;\n");
+    writeTextFile(QDir(builtinDir).filePath(QStringLiteral("builtin.strata")), "typedef dword BuiltinType;\n");
+    writeTextFile(QDir(builtinDir).filePath(QStringLiteral("builtin.struct")), "typedef dword StaleBuiltinType;\n");
+    writeTextFile(QDir(userDir).filePath(QStringLiteral("user.struct")), "typedef dword StructCompatType;\n");
     writeTextFile(QDir(userDir).filePath(QStringLiteral("user.txt")), "typedef byte LegacyType;\n");
     writeTextFile(QDir(userDir).filePath(QStringLiteral("user.bstruct")), "typedef word UserType;\n");
 
     StructureDefinitionManager manager;
     manager.setBuiltinStructDirsForTests({ builtinDir });
-    manager.setUserStructsDirForTests(userDir);
+    manager.setUserStrataDirForTests(userDir);
 
     QVERIFY2(manager.reload(), qPrintable(manager.lastError()));
-    QCOMPARE(manager.definitionFiles().size(), 3);
+    QCOMPARE(manager.definitionFiles().size(), 4);
 }
 
 void StructViewTests::reloadSwapsInParsedStrataLibrary()
@@ -368,13 +371,13 @@ void StructViewTests::reloadSwapsInParsedStrataLibrary()
     QTemporaryDir temp;
     QVERIFY(temp.isValid());
 
-    const QString userDir = temp.filePath(QStringLiteral("structs"));
+    const QString userDir = temp.filePath(QStringLiteral("user-strata"));
     QVERIFY(QDir().mkpath(userDir));
     writeTextFile(QDir(userDir).filePath(QStringLiteral("first.txt")), "typedef dword FirstType;\n");
 
     StructureDefinitionManager manager;
     manager.setBuiltinStructDirsForTests({});
-    manager.setUserStructsDirForTests(userDir);
+    manager.setUserStrataDirForTests(userDir);
 
     QVERIFY2(manager.reload(), qPrintable(manager.lastError()));
     QVERIFY(manager.library());
@@ -391,14 +394,14 @@ void StructViewTests::managerReportsChangedDefinitionsWithoutAutoReload()
     QTemporaryDir temp;
     QVERIFY(temp.isValid());
 
-    const QString userDir = temp.filePath(QStringLiteral("structs"));
+    const QString userDir = temp.filePath(QStringLiteral("user-strata"));
     QVERIFY(QDir().mkpath(userDir));
     const QString filePath = QDir(userDir).filePath(QStringLiteral("types.struct"));
     writeTextFile(filePath, "typedef dword FirstType;\n");
 
     StructureDefinitionManager manager;
     manager.setBuiltinStructDirsForTests({});
-    manager.setUserStructsDirForTests(userDir);
+    manager.setUserStrataDirForTests(userDir);
 
     QVERIFY2(manager.reload(), qPrintable(manager.lastError()));
     StrataLibrary *activeLibrary = manager.library();
@@ -424,7 +427,7 @@ void StructViewTests::brokenDefinitionFileIsReportedWithoutDroppingValidOnes()
     QTemporaryDir temp;
     QVERIFY(temp.isValid());
 
-    const QString userDir = temp.filePath(QStringLiteral("structs"));
+    const QString userDir = temp.filePath(QStringLiteral("user-strata"));
     QVERIFY(QDir().mkpath(userDir));
     const QString stableFilePath = QDir(userDir).filePath(QStringLiteral("stable.struct"));
     const QString brokenFilePath = QDir(userDir).filePath(QStringLiteral("broken.struct"));
@@ -433,7 +436,7 @@ void StructViewTests::brokenDefinitionFileIsReportedWithoutDroppingValidOnes()
 
     StructureDefinitionManager manager;
     manager.setBuiltinStructDirsForTests({});
-    manager.setUserStructsDirForTests(userDir);
+    manager.setUserStrataDirForTests(userDir);
 
     QVERIFY(!manager.reload());
     QVERIFY(manager.library());
@@ -461,14 +464,14 @@ void StructViewTests::fixingABrokenDefinitionFileRestoresItsTypes()
     QTemporaryDir temp;
     QVERIFY(temp.isValid());
 
-    const QString userDir = temp.filePath(QStringLiteral("structs"));
+    const QString userDir = temp.filePath(QStringLiteral("user-strata"));
     QVERIFY(QDir().mkpath(userDir));
     const QString filePath = QDir(userDir).filePath(QStringLiteral("types.struct"));
     writeTextFile(filePath, "this is not valid Strata syntax\n");
 
     StructureDefinitionManager manager;
     manager.setBuiltinStructDirsForTests({});
-    manager.setUserStructsDirForTests(userDir);
+    manager.setUserStrataDirForTests(userDir);
 
     QVERIFY(!manager.reload());
     QCOMPARE(manager.failedFiles().size(), 1);
@@ -491,7 +494,7 @@ void StructViewTests::partiallyParsedFileDoesNotExposeStaleExportedType()
     QTemporaryDir temp;
     QVERIFY(temp.isValid());
 
-    const QString userDir = temp.filePath(QStringLiteral("structs"));
+    const QString userDir = temp.filePath(QStringLiteral("user-strata"));
     QVERIFY(QDir().mkpath(userDir));
     const QString filePath = QDir(userDir).filePath(QStringLiteral("types.struct"));
     writeTextFile(filePath,
@@ -500,7 +503,7 @@ void StructViewTests::partiallyParsedFileDoesNotExposeStaleExportedType()
 
     StructureDefinitionManager manager;
     manager.setBuiltinStructDirsForTests({});
-    manager.setUserStructsDirForTests(userDir);
+    manager.setUserStrataDirForTests(userDir);
 
     QVERIFY2(manager.reload(), qPrintable(manager.lastError()));
     QCOMPARE(manager.exportedTypes().size(), 1);
@@ -525,7 +528,7 @@ void StructViewTests::exportedTypesUseExplicitExportTagsOnly()
     QTemporaryDir temp;
     QVERIFY(temp.isValid());
 
-    const QString userDir = temp.filePath(QStringLiteral("structs"));
+    const QString userDir = temp.filePath(QStringLiteral("user-strata"));
     QVERIFY(QDir().mkpath(userDir));
     writeTextFile(QDir(userDir).filePath(QStringLiteral("types.txt")),
                   "[export]\n"
@@ -534,7 +537,7 @@ void StructViewTests::exportedTypesUseExplicitExportTagsOnly()
 
     StructureDefinitionManager manager;
     manager.setBuiltinStructDirsForTests({});
-    manager.setUserStructsDirForTests(userDir);
+    manager.setUserStrataDirForTests(userDir);
 
     QVERIFY2(manager.reload(), qPrintable(manager.lastError()));
     const QList<ExportedStructureType> exported = manager.exportedTypes();
@@ -552,7 +555,7 @@ void StructViewTests::exportedTypesExposeAssocExtensions()
     QTemporaryDir temp;
     QVERIFY(temp.isValid());
 
-    const QString userDir = temp.filePath(QStringLiteral("structs"));
+    const QString userDir = temp.filePath(QStringLiteral("user-strata"));
     QVERIFY(QDir().mkpath(userDir));
     writeTextFile(QDir(userDir).filePath(QStringLiteral("types.txt")),
                   "[export, assoc(\".EXE\", \"dll\")]\n"
@@ -560,7 +563,7 @@ void StructViewTests::exportedTypesExposeAssocExtensions()
 
     StructureDefinitionManager manager;
     manager.setBuiltinStructDirsForTests({});
-    manager.setUserStructsDirForTests(userDir);
+    manager.setUserStrataDirForTests(userDir);
 
     QVERIFY2(manager.reload(), qPrintable(manager.lastError()));
     const QList<ExportedStructureType> exported = manager.exportedTypes();
@@ -579,7 +582,7 @@ void StructViewTests::exportedTypesExposeMagicSignatures()
     QTemporaryDir temp;
     QVERIFY(temp.isValid());
 
-    const QString userDir = temp.filePath(QStringLiteral("structs"));
+    const QString userDir = temp.filePath(QStringLiteral("user-strata"));
     QVERIFY(QDir().mkpath(userDir));
     writeTextFile(QDir(userDir).filePath(QStringLiteral("types.txt")),
                   "[export, magic({ 'A', 'B' }, 2), magic({ 0x7F, 'E', 'L', 'F' }, 4)]\n"
@@ -587,7 +590,7 @@ void StructViewTests::exportedTypesExposeMagicSignatures()
 
     StructureDefinitionManager manager;
     manager.setBuiltinStructDirsForTests({});
-    manager.setUserStructsDirForTests(userDir);
+    manager.setUserStrataDirForTests(userDir);
 
     QVERIFY2(manager.reload(), qPrintable(manager.lastError()));
     const QList<ExportedStructureType> exported = manager.exportedTypes();
@@ -610,7 +613,7 @@ void StructViewTests::exportedTypesExposeDescriptions()
     QTemporaryDir temp;
     QVERIFY(temp.isValid());
 
-    const QString userDir = temp.filePath(QStringLiteral("structs"));
+    const QString userDir = temp.filePath(QStringLiteral("user-strata"));
     QVERIFY(QDir().mkpath(userDir));
     writeTextFile(QDir(userDir).filePath(QStringLiteral("types.txt")),
                   "[export(\"Friendly Root\")]\n"
@@ -620,7 +623,7 @@ void StructViewTests::exportedTypesExposeDescriptions()
 
     StructureDefinitionManager manager;
     manager.setBuiltinStructDirsForTests({});
-    manager.setUserStructsDirForTests(userDir);
+    manager.setUserStrataDirForTests(userDir);
 
     QVERIFY2(manager.reload(), qPrintable(manager.lastError()));
     const QList<ExportedStructureType> exported = manager.exportedTypes();
@@ -641,11 +644,11 @@ void StructViewTests::exportedTypesResolveDuplicateVersionsAndLogDecision()
     QVERIFY(temp.isValid());
 
     const QString builtinDir = temp.filePath(QStringLiteral("strata"));
-    const QString userDir = temp.filePath(QStringLiteral("structs"));
+    const QString userDir = temp.filePath(QStringLiteral("user-strata"));
     QVERIFY(QDir().mkpath(builtinDir));
     QVERIFY(QDir().mkpath(userDir));
 
-    writeTextFile(QDir(builtinDir).filePath(QStringLiteral("zip.struct")),
+    writeTextFile(QDir(builtinDir).filePath(QStringLiteral("zip.strata")),
                   "[export(\"ZIP Archive\"), version(1), assoc(\".zip\")]\n"
                   "struct BuiltinZipRoot { byte builtin; } builtinZip;\n");
     writeTextFile(QDir(userDir).filePath(QStringLiteral("zip.struct")),
@@ -654,7 +657,7 @@ void StructViewTests::exportedTypesResolveDuplicateVersionsAndLogDecision()
 
     StructureDefinitionManager manager;
     manager.setBuiltinStructDirsForTests({ builtinDir });
-    manager.setUserStructsDirForTests(userDir);
+    manager.setUserStrataDirForTests(userDir);
 
     QVERIFY2(manager.reload(), qPrintable(manager.lastError()));
     const QList<ExportedStructureType> exported = manager.exportedTypes();
@@ -665,11 +668,11 @@ void StructViewTests::exportedTypesResolveDuplicateVersionsAndLogDecision()
     QCOMPARE(exported[0].fileName, QStringLiteral("zip.struct"));
 
     const QString log = manager.loadLog();
-    QVERIFY(log.contains(QStringLiteral("Definition file zip.struct: user and built-in copies are both present")));
+    QVERIFY(log.contains(QStringLiteral("Definition file zip: user and built-in copies are both present")));
     QVERIFY(log.contains(QStringLiteral("user(picked):")));
     QVERIFY(log.contains(QStringLiteral("built-in(ignored):")));
     QVERIFY(log.contains(QStringLiteral("Export ZIP Archive: picked: user zip.struct version 2")));
-    QVERIFY(log.contains(QStringLiteral("Export ZIP Archive: ignored: built-in zip.struct version 1")));
+    QVERIFY(log.contains(QStringLiteral("Export ZIP Archive: ignored: built-in zip.strata version 1")));
     QVERIFY(log.contains(QStringLiteral("Exported type(s): 1")));
 }
 
@@ -683,11 +686,11 @@ void StructViewTests::exportedTypesLogDuplicateFilesEvenWhenUserCopyFails()
     QVERIFY(temp.isValid());
 
     const QString builtinDir = temp.filePath(QStringLiteral("strata"));
-    const QString userDir = temp.filePath(QStringLiteral("structs"));
+    const QString userDir = temp.filePath(QStringLiteral("user-strata"));
     QVERIFY(QDir().mkpath(builtinDir));
     QVERIFY(QDir().mkpath(userDir));
 
-    writeTextFile(QDir(builtinDir).filePath(QStringLiteral("zip.struct")),
+    writeTextFile(QDir(builtinDir).filePath(QStringLiteral("zip.strata")),
                   "[export(\"ZIP Archive\"), version(1)]\n"
                   "struct BuiltinZipRoot { byte builtin; } builtinZip;\n");
     writeTextFile(QDir(userDir).filePath(QStringLiteral("zip.struct")),
@@ -696,11 +699,11 @@ void StructViewTests::exportedTypesLogDuplicateFilesEvenWhenUserCopyFails()
 
     StructureDefinitionManager manager;
     manager.setBuiltinStructDirsForTests({ builtinDir });
-    manager.setUserStructsDirForTests(userDir);
+    manager.setUserStrataDirForTests(userDir);
 
     QVERIFY(!manager.reload());
     const QString log = manager.loadLog();
-    QVERIFY(log.contains(QStringLiteral("Definition file zip.struct: user and built-in copies are both present")));
+    QVERIFY(log.contains(QStringLiteral("Definition file zip: user and built-in copies are both present")));
     QVERIFY(log.contains(QStringLiteral("built-in(picked):")));
     QVERIFY(log.contains(QStringLiteral("user(ignored):")));
     QVERIFY(log.contains(QStringLiteral("Failed: zip.struct")));
@@ -1133,7 +1136,7 @@ void StructViewTests::builderUsesSizeIsForUnsizedArrays()
     // Expected: the parser accepts the unsized array syntax and the renderer
     // expands exactly the count read from the already-rendered structure data.
     // Regression guard: PE section headers must not be capped by a placeholder
-    // array size in pe.struct just because the count is data-driven.
+    // array size in pe.strata just because the count is data-driven.
     StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
@@ -1414,7 +1417,7 @@ void StructViewTests::builderAlignsFieldNamesWithinCompoundTypes()
 
 void StructViewTests::builderKeepsSignedPrimitiveTypedefNamesInStorageMode()
 {
-    // Scenario: basetypes.struct defines "short"/"int"/"long"/etc. as ordinary
+    // Scenario: basetypes.strata defines "short"/"int"/"long"/etc. as ordinary
     // typedefs of a signed/unsigned primitive (e.g. typedef signed word short;)
     // -- there is no built-in TYPE for them, they are ordinary user-level
     // typedefs exactly like e32/DOSTIME.
@@ -1757,7 +1760,7 @@ void StructViewTests::builderUsesSimpleRootNamesForBuiltinTypedefRoots()
     // Regression guard: moving tags between typedefs and variable declarations
     // should not reintroduce noisy root labels like "ELF elf".
     StrataLibrary peLibrary;
-    QVERIFY2(parseStandardDefinition(&peLibrary, QStringLiteral("pe.struct")), "pe.struct failed to parse");
+    QVERIFY2(parseStandardDefinition(&peLibrary, QStringLiteral("pe.strata")), "pe.strata failed to parse");
     TypeDecl *peRoot = exportedNamed(&peLibrary, QStringLiteral("PE"));
     QVERIFY(peRoot);
     auto peRows = buildRows(&peLibrary, peRoot, QByteArray(512, '\0'));
@@ -1765,7 +1768,7 @@ void StructViewTests::builderUsesSimpleRootNamesForBuiltinTypedefRoots()
     QCOMPARE(peRows[0]->name, QStringLiteral("PE"));
 
     StrataLibrary elfLibrary;
-    QVERIFY2(parseStandardDefinition(&elfLibrary, QStringLiteral("elf.struct")), "elf.struct failed to parse");
+    QVERIFY2(parseStandardDefinition(&elfLibrary, QStringLiteral("elf.strata")), "elf.strata failed to parse");
     QByteArray elfBytes(128, '\0');
     elfBytes[0] = char(0x7f);
     elfBytes[1] = 'E';
@@ -1831,7 +1834,7 @@ void StructViewTests::builderRendersDexHeaderAndTables()
     // Expected: the standard DEX definition renders the fixed header, ID tables,
     // class definitions, and map list from the offsets in the header.
     StrataLibrary library;
-    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("dex.struct")), "dex.struct failed to parse");
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("dex.strata")), "dex.strata failed to parse");
     TypeDecl *dexRoot = exportedNamed(&library, QStringLiteral("DEX"));
     QVERIFY(dexRoot);
 
@@ -1990,7 +1993,7 @@ void StructViewTests::builderAddsDexSemanticSummaryPastArrayRenderCap()
     // Regression guard: DEX name discovery must not depend on the first 100 raw
     // stringIds[] children being useful human-readable text.
     StrataLibrary library;
-    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("dex.struct")), "dex.struct failed to parse");
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("dex.strata")), "dex.strata failed to parse");
     TypeDecl *dexRoot = exportedNamed(&library, QStringLiteral("DEX"));
     QVERIFY(dexRoot);
 
@@ -2069,7 +2072,7 @@ void StructViewTests::builderRendersZipCentralDirectoryFromEocd()
     // Expected: the standard ZIP definition finds EOCD from the trailer and
     // renders all central-directory entries instead.
     StrataLibrary library;
-    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("zip.struct")), "zip.struct failed to parse");
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("zip.strata")), "zip.strata failed to parse");
     TypeDecl *zipRoot = exportedNamed(&library, QStringLiteral("ZIP"));
     QVERIFY(zipRoot);
 
@@ -2260,7 +2263,7 @@ void StructViewTests::builderRendersElf32AndElf64Tables()
     // Regression guard: ELF support must not assume PE-like fixed offsets or a
     // single word size.
     StrataLibrary library32;
-    QVERIFY2(parseStandardElfDefinition(&library32), "elf.struct failed to parse");
+    QVERIFY2(parseStandardElfDefinition(&library32), "elf.strata failed to parse");
     QByteArray elf32(0x180, '\0');
     elf32[0] = char(0x7f);
     elf32[1] = 'E';
@@ -2302,7 +2305,7 @@ void StructViewTests::builderRendersElf32AndElf64Tables()
     QCOMPARE(header32->children[4]->value, QStringLiteral("305419896"));
 
     StrataLibrary library32be;
-    QVERIFY2(parseStandardElfDefinition(&library32be), "elf.struct failed to parse");
+    QVERIFY2(parseStandardElfDefinition(&library32be), "elf.strata failed to parse");
     QByteArray elf32be(0x180, '\0');
     elf32be[0] = char(0x7f);
     elf32be[1] = 'E';
@@ -2331,7 +2334,7 @@ void StructViewTests::builderRendersElf32AndElf64Tables()
     QCOMPARE(header32be->children[4]->value, QStringLiteral("16909060"));
 
     StrataLibrary library64;
-    QVERIFY2(parseStandardElfDefinition(&library64), "elf.struct failed to parse");
+    QVERIFY2(parseStandardElfDefinition(&library64), "elf.strata failed to parse");
     QByteArray elf64(0x180, '\0');
     elf64[0] = char(0x7f);
     elf64[1] = 'E';
@@ -2699,7 +2702,7 @@ void StructViewTests::builderNamesPeDynamicSectionsFromStandardDefinition()
     // Regression guard: fixed-width PE section names must survive the generic
     // dynamic_container handoff instead of falling back to a bare SECTION node.
     StrataLibrary library;
-    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("pe.struct")), "pe.struct failed to parse");
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("pe.strata")), "pe.strata failed to parse");
 
     QByteArray bytes(0x300, '\0');
     writeLe32(&bytes, 0x3c, 0x80);
@@ -2793,7 +2796,7 @@ void StructViewTests::builderNamesPeImportDescriptorsFromStandardDefinition()
     // must resolve end-to-end through the real PE definition, not just in a
     // synthetic test-only struct.
     StrataLibrary library;
-    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("pe.struct")), "pe.struct failed to parse");
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("pe.strata")), "pe.strata failed to parse");
 
     QByteArray bytes(0x300, '\0');
     writeLe32(&bytes, 0x3c, 0x80);
@@ -2847,7 +2850,7 @@ void StructViewTests::builderResolvesEntryPointRvaThroughSectionOffsetMap()
     // dynamic_container/offset_map has been collected, using the real PE
     // definition (a synthetic struct with no sections can't exercise this).
     StrataLibrary library;
-    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("pe.struct")), "pe.struct failed to parse");
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("pe.strata")), "pe.strata failed to parse");
 
     QByteArray bytes(0x300, '\0');
     writeLe32(&bytes, 0x3c, 0x80);
@@ -2928,8 +2931,8 @@ void StructViewTests::definitionManagerFlagsNonStaticFieldReferences()
     // file -- neither a sibling field nor declared identically by every
     // case(...) candidate of an enclosing union.
     // Expected: validateStaticFieldReferences reports it with a message
-    // naming the bad reference; well-formed definitions (the real elf.struct
-    // and pe.struct, and an equivalent valid synthetic struct) produce no
+    // naming the bad reference; well-formed definitions (the real elf.strata
+    // and pe.strata, and an equivalent valid synthetic struct) produce no
     // false positives.
     // Regression guard: this is meant to catch the exact ELF e_ident mistake
     // this session kept hitting as a silent render-time failure, at
@@ -2969,15 +2972,15 @@ void StructViewTests::definitionManagerFlagsNonStaticFieldReferences()
     QVERIFY2(badErrors.first().contains(QStringLiteral("nope")), qPrintable(badErrors.first()));
 
     StrataLibrary elfLibrary;
-    QVERIFY2(parseStandardElfDefinition(&elfLibrary), "elf.struct failed to parse");
+    QVERIFY2(parseStandardElfDefinition(&elfLibrary), "elf.strata failed to parse");
     QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&elfLibrary).isEmpty());
 
     StrataLibrary peLibrary;
-    QVERIFY2(parseStandardDefinition(&peLibrary, QStringLiteral("pe.struct")), "pe.struct failed to parse");
+    QVERIFY2(parseStandardDefinition(&peLibrary, QStringLiteral("pe.strata")), "pe.strata failed to parse");
     QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&peLibrary).isEmpty());
 
     StrataLibrary zipLibrary;
-    QVERIFY2(parseStandardDefinition(&zipLibrary, QStringLiteral("zip.struct")), "zip.struct failed to parse");
+    QVERIFY2(parseStandardDefinition(&zipLibrary, QStringLiteral("zip.strata")), "zip.strata failed to parse");
     QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&zipLibrary).isEmpty());
 }
 
@@ -3269,7 +3272,7 @@ void StructViewTests::builderAddsElfSectionAndSymbolSemanticRows()
     // Regression guard: ELF domain knowledge belongs in elfsemanticview.cpp,
     // augmenting the declarative structs rather than replacing them.
     StrataLibrary library;
-    QVERIFY2(parseStandardElfDefinition(&library), "elf.struct failed to parse");
+    QVERIFY2(parseStandardElfDefinition(&library), "elf.strata failed to parse");
 
     QByteArray bytes(0x320, '\0');
     bytes[0] = char(0x7f);
@@ -3346,7 +3349,7 @@ void StructViewTests::builderKeepsRawElfRowsWhenSemanticDataIsTruncated()
     // Regression guard: malformed ELF files must not make Structure View blank
     // or fail just because name resolution cannot complete.
     StrataLibrary library;
-    QVERIFY2(parseStandardElfDefinition(&library), "elf.struct failed to parse");
+    QVERIFY2(parseStandardElfDefinition(&library), "elf.strata failed to parse");
 
     QByteArray bytes(0x160, '\0');
     bytes[0] = char(0x7f);
@@ -3565,7 +3568,7 @@ void StructViewTests::modelBuildsExpandableRowsForStructFields()
     QTemporaryDir temp;
     QVERIFY(temp.isValid());
 
-    const QString userDir = temp.filePath(QStringLiteral("structs"));
+    const QString userDir = temp.filePath(QStringLiteral("user-strata"));
     QVERIFY(QDir().mkpath(userDir));
     writeTextFile(QDir(userDir).filePath(QStringLiteral("types.txt")),
                   "[export]\n"
@@ -3573,7 +3576,7 @@ void StructViewTests::modelBuildsExpandableRowsForStructFields()
 
     StructureDefinitionManager manager;
     manager.setBuiltinStructDirsForTests({});
-    manager.setUserStructsDirForTests(userDir);
+    manager.setUserStrataDirForTests(userDir);
     QVERIFY2(manager.reload(), qPrintable(manager.lastError()));
 
     QList<TypeDecl *> exportedDecls;

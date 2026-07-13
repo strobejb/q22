@@ -1,6 +1,6 @@
-// q22-struct v1
+// q22-strata-v1
 //
-//  pe.struct
+//  pe.strata
 //
 //  www.catch22.net
 //
@@ -8,7 +8,7 @@
 //  Please refer to the file LICENCE.TXT for copying permission
 //
 
-include "basetypes.struct";
+include "basetypes.strata";
 
 enum IMAGE_DIRECTORY
 {
@@ -224,38 +224,38 @@ typedef struct _IMAGE_OPTIONAL_HEADER {
 } IMAGE_OPTIONAL_HEADER32, *PIMAGE_OPTIONAL_HEADER32;
 
 typedef struct _IMAGE_OPTIONAL_HEADER64 {
-    WORD        Magic;
-    BYTE        MajorLinkerVersion;
-    BYTE        MinorLinkerVersion;
-    DWORD       SizeOfCode;
-    DWORD       SizeOfInitializedData;
-    DWORD       SizeOfUninitializedData;
+    word        Magic;
+    byte        MajorLinkerVersion;
+    byte        MinorLinkerVersion;
+    dword       SizeOfCode;
+    dword       SizeOfInitializedData;
+    dword       SizeOfUninitializedData;
     [entrypoint]
-    DWORD       AddressOfEntryPoint;
-    DWORD       BaseOfCode;
-    ULONG64     ImageBase;
-    DWORD       SectionAlignment;
-    DWORD       FileAlignment;
-    WORD        MajorOperatingSystemVersion;
-    WORD        MinorOperatingSystemVersion;
-    WORD        MajorImageVersion;
-    WORD        MinorImageVersion;
-    WORD        MajorSubsystemVersion;
-    WORD        MinorSubsystemVersion;
-    DWORD       Win32VersionValue;
-    DWORD       SizeOfImage;
-    DWORD       SizeOfHeaders;
-    DWORD       CheckSum;
-    WORD        Subsystem;
+    dword       AddressOfEntryPoint;
+    dword       BaseOfCode;
+    uint64      ImageBase;
+    dword       SectionAlignment;
+    dword       FileAlignment;
+    word        MajorOperatingSystemVersion;
+    word        MinorOperatingSystemVersion;
+    word        MajorImageVersion;
+    word        MinorImageVersion;
+    word        MajorSubsystemVersion;
+    word        MinorSubsystemVersion;
+    dword       Win32VersionValue;
+    dword       SizeOfImage;
+    dword       SizeOfHeaders;
+    dword       CheckSum;
+    word        Subsystem;
 
     [bitflag(IMAGE_DLL_CHARACTERISTICS)]
-    WORD        DllCharacteristics;
-    ULONG64     SizeOfStackReserve;
-    ULONG64     SizeOfStackCommit;
-    ULONG64     SizeOfHeapReserve;
-    ULONG64     SizeOfHeapCommit;
-    DWORD       LoaderFlags;
-    DWORD       NumberOfRvaAndSizes;
+    word        DllCharacteristics;
+    uint64      SizeOfStackReserve;
+    uint64      SizeOfStackCommit;
+    uint64      SizeOfHeapReserve;
+    uint64      SizeOfHeapCommit;
+    dword       LoaderFlags;
+    dword       NumberOfRvaAndSizes;
 
     [tags(PE_DATA_DIRECTORY_TAGS)]
     IMAGE_DATA_DIRECTORY DataDirectory[16]; //IMAGE_NUMBEROF_DIRECTORY_ENTRIES];
@@ -324,26 +324,26 @@ typedef struct _IMAGE_EXPORT_DIRECTORY
 
 typedef union _IMAGE_THUNK_DATA32
 {
-    DWORD ForwarderString;
-    DWORD Function;
-    DWORD Ordinal;
-    DWORD AddressOfData;
+    dword ForwarderString;
+    dword Function;
+    dword Ordinal;
+    dword AddressOfData;
 } IMAGE_THUNK_DATA32, *PIMAGE_THUNK_DATA32;
 
 typedef union _IMAGE_THUNK_DATA64
 {
-    ULONGLONG ForwarderString;
-    ULONGLONG Function;
-    ULONGLONG Ordinal;
-    ULONGLONG AddressOfData;
+    uint64 ForwarderString;
+    uint64 Function;
+    uint64 Ordinal;
+    uint64 AddressOfData;
 } IMAGE_THUNK_DATA64, *PIMAGE_THUNK_DATA64;
 
 typedef struct _IMAGE_IMPORT_BY_NAME
 {
-    WORD Hint;
+    word Hint;
 
     [count(4096), terminated_by(0)]
-    CHAR Name[];
+    char Name[];
 } IMAGE_IMPORT_BY_NAME, *PIMAGE_IMPORT_BY_NAME;
 
 // Import descriptors similarly point at DLL names and thunk tables.  The raw

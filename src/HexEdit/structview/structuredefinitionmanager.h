@@ -54,11 +54,11 @@ public:
     QString loadLog() const;
     bool isLoaded() const;
 
-    QString userStructsDir() const;
+    QString userStrataDir() const;
     QStringList builtinStructDirs() const;
 
     void setBuiltinStructDirsForTests(const QStringList &dirs);
-    void setUserStructsDirForTests(const QString &dir);
+    void setUserStrataDirForTests(const QString &dir);
 
     void suppressNextChangeNotification();
 

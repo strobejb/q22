@@ -664,12 +664,12 @@ void CausewayTests::unsizedArraysRequireSizeIs()
 void CausewayTests::elfRootIsExportedAndAssociated()
 {
 	// Scenario: qexed ships ELF as a real Structure View root definition.
-	// Expected: elf.struct parses to an exported root with common ELF suffix
+	// Expected: elf.strata parses to an exported root with common ELF suffix
 	// associations, so the UI can list and auto-select it like PE.
 	// Regression guard: ELF support should not remain a stale standalone header
 	// typedef that never appears in the Structure View picker.
 	const QDir typeLibDir(QStringLiteral(CAUSEWAY_TEST_DATA_DIR));
-	const QString path = typeLibDir.filePath(QStringLiteral("elf.struct"));
+	const QString path = typeLibDir.filePath(QStringLiteral("elf.strata"));
 	Parser parser;
 	QVERIFY2(parser.Ooof(qPrintable(path)), qPrintable(parser.LastErrStr()));
 
@@ -711,17 +711,17 @@ void CausewayTests::standardTypelibFilesParse()
 {
 	// Scenario: qexed ships real Strata definition files for users and tests.
 	// Expected: every shipped example parses from the runtime data directory, and
-	// relative includes such as elf.struct -> basetypes.struct resolve naturally.
+	// relative includes such as elf.strata -> basetypes.strata resolve naturally.
 	// Regression guard: the examples must not drift into stale, untested app data.
 	const QDir typeLibDir(QStringLiteral(CAUSEWAY_TEST_DATA_DIR));
 	QVERIFY2(typeLibDir.exists(), qPrintable(typeLibDir.absolutePath()));
 
 	const QStringList files = {
-		QStringLiteral("basetypes.struct"),
-		QStringLiteral("dex.struct"),
-		QStringLiteral("elf.struct"),
-		QStringLiteral("pe.struct"),
-		QStringLiteral("zip.struct"),
+		QStringLiteral("basetypes.strata"),
+		QStringLiteral("dex.strata"),
+		QStringLiteral("elf.strata"),
+		QStringLiteral("pe.strata"),
+		QStringLiteral("zip.strata"),
 	};
 
 	for(const QString &file : files)
@@ -731,14 +731,13 @@ void CausewayTests::standardTypelibFilesParse()
 		QFile source(path);
 		QVERIFY2(source.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(path));
 		const QString header = QString::fromUtf8(source.readLine()).trimmed();
-		QVERIFY(header == QStringLiteral("// q22-struct v1")
-				|| header == QStringLiteral("//--q22-struct v1"));
+		QCOMPARE(header, QStringLiteral("// q22-strata-v1"));
 
 		Parser parser;
 		QVERIFY2(parser.Ooof(qPrintable(path)), qPrintable(parser.LastErrStr()));
 		QVERIFY2(!parser.GetStrataLibrary()->globalTypeDeclList.empty(), qPrintable(file));
 
-		if(file == QStringLiteral("pe.struct"))
+		if(file == QStringLiteral("pe.strata"))
 		{
 			TypeDecl *pe = nullptr;
 			for(TypeDecl *decl : parser.GetStrataLibrary()->globalTypeDeclList)
