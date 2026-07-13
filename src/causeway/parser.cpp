@@ -324,15 +324,43 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 			if(!Expected('('))
 				return false;
 
-			if((expr = Expression(TOKEN(','))) == 0)
+			std::vector<uint8_t> bytes;
+			if(t != '{')
+			{
+				Error(ERROR_MAGIC_SYNTAX);
+				return false;
+			}
+			if(!ParseByteSequence(&bytes))
 				return false;
 
+			expr = new ExprNode(EXPR_NUMBER, TOK_INUMBER);
+			expr->val = 0;
+			expr->base = DEC;
 			tag = new Tag(tmp, tag, expr);
-			if(!ParseByteSequence(&tag->byteSequence))
-				return false;
+			tag->byteSequence = bytes;
 
-			if(!Expected(')'))
+			if(t == ',')
+			{
+				Advance();
+				if(t != TOK_INUMBER)
+				{
+					Error(ERROR_MAGIC_SYNTAX);
+					return false;
+				}
+
+				delete tag->expr;
+				tag->expr = new ExprNode(EXPR_NUMBER, TOK_INUMBER);
+				tag->expr->val = t.num;
+				tag->expr->base = t.base;
+				Advance();
+
+				if(!Expected(')'))
+					return false;
+			}
+			else if(!Expected(')'))
+			{
 				return false;
+			}
 
 			break;
 		}

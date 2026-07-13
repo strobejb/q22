@@ -147,8 +147,7 @@ size_t DisplayTags(FILE *fp, Tag *tagList)
 			if(tag->tok == TOK_MAGIC && tag->expr && !tag->byteSequence.empty())
 			{
 				len += fprintf(fp, "(");
-				len += Flatten(fp, tag->expr);
-				len += fprintf(fp, ", { ");
+				len += fprintf(fp, "{ ");
 				for(size_t i = 0; i < tag->byteSequence.size(); i++)
 				{
 					const uint8_t byte = tag->byteSequence[i];
@@ -171,7 +170,13 @@ size_t DisplayTags(FILE *fp, Tag *tagList)
 						break;
 					}
 				}
-				len += fprintf(fp, " })");
+				len += fprintf(fp, " }");
+				if(Evaluate(tag->expr) != 0)
+				{
+					len += fprintf(fp, ", ");
+					len += Flatten(fp, tag->expr);
+				}
+				len += fprintf(fp, ")");
 			}
 			else if(tag->expr)
 			{

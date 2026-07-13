@@ -163,7 +163,7 @@ typedef struct _DEX_MAP_LIST
 [
     export("Dalvik Executable (DEX)"),
     assoc(".dex"),
-    magic(0, { 'd', 'e', 'x', 0x0a }),
+    magic({ 'd', 'e', 'x', 0x0a }),
     offset(0),
     endian(select_offset(40) == 0x12),
     view("dex.summary")

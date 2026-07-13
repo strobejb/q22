@@ -275,7 +275,7 @@ typedef struct _Elf64_Sym
 [
     export("Executable and Linkable Format (ELF)"),
     assoc(".elf", ".so", ".o"),
-    magic(0, { 0x7F, 'E', 'L', 'F' }),
+    magic({ 0x7F, 'E', 'L', 'F' }),
     offset(0),
     // e_ident[EI_DATA] lives inside whichever of Elf32_Ehdr/Elf64_Ehdr gets
     // selected below, not in a sibling field of _ELF -- resolveDirectField's

@@ -22,6 +22,7 @@ private slots:
 	void viewTagsParse();
 	void descriptionTagsParseAndDisplayRemainsSeparate();
 	void magicTagsParse();
+	void magicTagRequiresByteSequenceBeforeOptionalOffset();
 	void findSearchExpressionsParse();
 	void alignAndEntrypointTagsParse();
 	void extentTagsAndScalarSizeofParse();
@@ -382,13 +383,13 @@ void CausewayTests::magicTagsParse()
 {
 	// Scenario: an exported root declares byte signatures for extensionless
 	// binary files, including a non-printable leading byte.
-	// Expected: magic(...) is preserved as an ordinary comma-expression tag, so
+	// Expected: magic(...) stores a byte sequence plus optional integer offset, so
 	// Structure View can extract the offset and signature bytes later.
 	// Regression guard: file association should not be limited to filename
 	// suffixes, and ELF must not require fragile escaped string literals.
 	Parser parser;
 	QVERIFY(parseBuffer(parser,
-						"[export, magic(0, { 'M', 'Z' }), magic(4, { 0x7F, 'E', 'L', 'F' })]\n"
+						"[export, magic({ 'M', 'Z' }), magic({ 0x7F, 'E', 'L', 'F' }, 4)]\n"
 						"struct Root { byte value; } root;\n"));
 
 	TypeDecl *root = parser.GetStrataLibrary()->globalTypeDeclList[0];
@@ -416,7 +417,29 @@ void CausewayTests::magicTagsParse()
 	QFile dumpFile(dumpPath);
 	QVERIFY(dumpFile.open(QIODevice::ReadOnly));
 	const QByteArray dumped = dumpFile.readAll();
-	QVERIFY(dumped.contains("magic(4, { 0x7F, 'E', 'L', 'F' })"));
+	QVERIFY(dumped.contains("magic({ 0x7F, 'E', 'L', 'F' }, 4)"));
+}
+
+void CausewayTests::magicTagRequiresByteSequenceBeforeOptionalOffset()
+{
+	// Scenario: magic(...) is intentionally byte-sequence first, with a simple
+	// optional integer offset after it.
+	// Expected: the ZIP-style shorthand parses, while the old offset-first form
+	// is rejected with a tag-specific message.
+	// Regression guard: magic({'P', 'K'}) should be accepted and documented as
+	// the obvious spelling for signatures at offset zero.
+	Parser ok;
+	QVERIFY(parseBuffer(ok,
+						"[magic({ 'P', 'K', 0x03, 0x04 })]\n"
+						"struct Root { byte value; } root;\n"));
+
+	Parser parser;
+	QVERIFY(!parseBuffer(parser,
+						 "[magic(0, { 'P', 'K', 0x03, 0x04 })]\n"
+						 "struct Root { byte value; } root;\n"));
+
+	QCOMPARE(parser.LastErr(), ERROR_MAGIC_SYNTAX);
+	QVERIFY(QByteArray(parser.LastErrStr()).contains("{ bytes... }"));
 }
 
 void CausewayTests::findSearchExpressionsParse()

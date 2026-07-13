@@ -566,13 +566,14 @@ detect and open automatically:
 |-----|--------|
 | `export` / `export("name")` | Register as a file-format root, with optional human-readable name |
 | `assoc(".ext", ...)` | File extensions for this format |
-| `magic(offset, { b, b, ... })` | Magic byte sequence at `offset` |
+| `magic({ b, b, ... })` | Magic byte sequence at offset `0` |
+| `magic({ b, b, ... }, offset)` | Magic byte sequence at `offset` |
 
 ```c
 [
   export("Portable Executable (PE)"),
   assoc(".exe", ".sys", ".dll"),
-  magic(0, { 'M', 'Z' })
+  magic({ 'M', 'Z' })
 ]
 typedef struct _PE { ... } PE;
 ```

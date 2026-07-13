@@ -580,7 +580,7 @@ void StructViewTests::exportedTypesExposeMagicSignatures()
     const QString userDir = temp.filePath(QStringLiteral("structs"));
     QVERIFY(QDir().mkpath(userDir));
     writeTextFile(QDir(userDir).filePath(QStringLiteral("types.txt")),
-                  "[export, magic(2, { 'A', 'B' }), magic(4, { 0x7F, 'E', 'L', 'F' })]\n"
+                  "[export, magic({ 'A', 'B' }, 2), magic({ 0x7F, 'E', 'L', 'F' }, 4)]\n"
                   "struct Root { byte magic; } root;\n");
 
     StructureDefinitionManager manager;
