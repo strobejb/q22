@@ -61,6 +61,7 @@ private slots:
     void builderEvaluatesEnumIndexedUnionMembersInExpressions();
     void builderUsesSimpleRootNamesForBuiltinTypedefRoots();
     void builderOptionallySortsTopLevelRowsByOffset();
+    void builderRendersDexHeaderAndTables();
     void builderRendersZipCentralDirectoryFromEocd();
     void builderRendersElf32AndElf64Tables();
     void builderPlacesDynamicStructsUnderNamedDynamicContainers();
@@ -1645,6 +1646,112 @@ void StructViewTests::builderOptionallySortsTopLevelRowsByOffset()
     QCOMPARE(inner->children.size(), size_t(2));
     QCOMPARE(inner->children[0]->name, QStringLiteral("byte childLate"));
     QCOMPARE(inner->children[1]->name, QStringLiteral("byte childEarly"));
+}
+
+void StructViewTests::builderRendersDexHeaderAndTables()
+{
+    // Scenario: DEX files are mostly a header plus offset-counted ID tables.
+    // Expected: the standard DEX definition renders the fixed header, ID tables,
+    // class definitions, and map list from the offsets in the header.
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("dex.struct")), "dex.struct failed to parse");
+    TypeDecl *dexRoot = exportedNamed(&library, QStringLiteral("DEX"));
+    QVERIFY(dexRoot);
+
+    QByteArray dex(0x110, '\0');
+    dex[0] = 'd';
+    dex[1] = 'e';
+    dex[2] = 'x';
+    dex[3] = '\n';
+    dex[4] = '0';
+    dex[5] = '3';
+    dex[6] = '5';
+
+    writeLe32(&dex, 0x20, 0x110);      // file_size
+    writeLe32(&dex, 0x24, 0x70);       // header_size
+    writeLe32(&dex, 0x28, 0x12345678); // endian_tag
+    writeLe32(&dex, 0x34, 0xb4);       // map_off
+    writeLe32(&dex, 0x38, 1);          // string_ids_size
+    writeLe32(&dex, 0x3c, 0x70);       // string_ids_off
+    writeLe32(&dex, 0x40, 1);          // type_ids_size
+    writeLe32(&dex, 0x44, 0x74);       // type_ids_off
+    writeLe32(&dex, 0x48, 1);          // proto_ids_size
+    writeLe32(&dex, 0x4c, 0x78);       // proto_ids_off
+    writeLe32(&dex, 0x50, 1);          // field_ids_size
+    writeLe32(&dex, 0x54, 0x84);       // field_ids_off
+    writeLe32(&dex, 0x58, 1);          // method_ids_size
+    writeLe32(&dex, 0x5c, 0x8c);       // method_ids_off
+    writeLe32(&dex, 0x60, 1);          // class_defs_size
+    writeLe32(&dex, 0x64, 0x94);       // class_defs_off
+    writeLe32(&dex, 0x68, 0x5c);       // data_size
+    writeLe32(&dex, 0x6c, 0xb4);       // data_off
+
+    writeLe32(&dex, 0x70, 0xc8);       // string_data_off
+    writeLe32(&dex, 0x74, 0);          // descriptor_idx
+    writeLe32(&dex, 0x78, 0);          // shorty_idx
+    writeLe32(&dex, 0x7c, 0);          // return_type_idx
+    writeLe32(&dex, 0x80, 0xd0);       // parameters_off
+    writeLe16(&dex, 0x84, 0);          // field class_idx
+    writeLe16(&dex, 0x86, 0);          // field type_idx
+    writeLe32(&dex, 0x88, 0);          // field name_idx
+    writeLe16(&dex, 0x8c, 0);          // method class_idx
+    writeLe16(&dex, 0x8e, 0);          // method proto_idx
+    writeLe32(&dex, 0x90, 0);          // method name_idx
+    writeLe32(&dex, 0x94, 0);          // class_idx
+    writeLe32(&dex, 0x98, 0x00000401); // public abstract
+    writeLe32(&dex, 0x9c, 0xffffffff); // no superclass
+
+    writeLe32(&dex, 0xb4, 7);          // map_list size
+    qsizetype map = 0xb8;
+    auto writeMapItem = [&](quint16 type, quint32 size, quint32 offset) {
+        writeLe16(&dex, map + 0, type);
+        writeLe16(&dex, map + 2, 0);
+        writeLe32(&dex, map + 4, size);
+        writeLe32(&dex, map + 8, offset);
+        map += 12;
+    };
+    writeMapItem(0x0000, 1, 0x00);
+    writeMapItem(0x0001, 1, 0x70);
+    writeMapItem(0x0002, 1, 0x74);
+    writeMapItem(0x0003, 1, 0x78);
+    writeMapItem(0x0004, 1, 0x84);
+    writeMapItem(0x0005, 1, 0x8c);
+    writeMapItem(0x0006, 1, 0x94);
+
+    auto rows = buildRows(&library, dexRoot, dex);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->name, QStringLiteral("DEX"));
+
+    StructureRow *header = findChildNamed(rows[0].get(), QStringLiteral("DEX_HEADER header"));
+    QVERIFY(header);
+    QVERIFY(findChildNamed(header, QStringLiteral("dword file_size")));
+    QCOMPARE(findChildNamed(header, QStringLiteral("dword file_size"))->value, QStringLiteral("272"));
+    QCOMPARE(findChildNamed(header, QStringLiteral("dword endian_tag"))->value,
+             QStringLiteral("DEX_ENDIAN_CONSTANT"));
+
+    StructureRow *stringIds = findChildNamed(rows[0].get(), QStringLiteral("DEX_STRING_ID_ITEM stringIds[]"));
+    QVERIFY(stringIds);
+    QCOMPARE(stringIds->absoluteOffset, uint64_t(0x70));
+    QCOMPARE(stringIds->children.size(), size_t(1));
+    QCOMPARE(findChildNamed(stringIds->children[0].get(), QStringLiteral("dword string_data_off"))->value,
+             QStringLiteral("200"));
+
+    StructureRow *classDefs = findChildNamed(rows[0].get(), QStringLiteral("DEX_CLASS_DEF_ITEM classDefs[]"));
+    QVERIFY(classDefs);
+    QCOMPARE(classDefs->absoluteOffset, uint64_t(0x94));
+    StructureRow *accessFlags = findChildNamed(classDefs->children[0].get(), QStringLiteral("dword access_flags"));
+    QVERIFY(accessFlags);
+    QVERIFY(findChildNamed(accessFlags, QStringLiteral("DEX_ACC_PUBLIC")));
+    QVERIFY(findChildNamed(accessFlags, QStringLiteral("DEX_ACC_ABSTRACT")));
+
+    StructureRow *mapList = findChildNamed(rows[0].get(), QStringLiteral("DEX_MAP_LIST mapList"));
+    QVERIFY(mapList);
+    QCOMPARE(mapList->absoluteOffset, uint64_t(0xb4));
+    StructureRow *mapItems = findChildNamed(mapList, QStringLiteral("DEX_MAP_ITEM list[]"));
+    QVERIFY(mapItems);
+    QCOMPARE(mapItems->children.size(), size_t(7));
+    QCOMPARE(findChildNamed(mapItems->children[1].get(), QStringLiteral("word type"))->value,
+             QStringLiteral("DEX_TYPE_STRING_ID_ITEM"));
 }
 
 void StructViewTests::builderRendersZipCentralDirectoryFromEocd()

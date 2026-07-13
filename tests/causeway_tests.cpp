@@ -695,6 +695,7 @@ void CausewayTests::standardTypelibFilesParse()
 
 	const QStringList files = {
 		QStringLiteral("basetypes.struct"),
+		QStringLiteral("dex.struct"),
 		QStringLiteral("elf.struct"),
 		QStringLiteral("pe.struct"),
 		QStringLiteral("zip.struct"),
