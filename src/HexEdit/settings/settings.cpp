@@ -13,9 +13,8 @@
 
 void AppSettings::ensureSettingsDir()
 {
-    QSettings probe(QSettings::IniFormat, QSettings::UserScope, QCoreApplication::organizationName(), QCoreApplication::applicationName());
-                    //, ORG, APP);
-    QDir().mkpath(QFileInfo(probe.fileName()).absolutePath());
+    QDir().mkpath(appConfigDir());
+    AppSettings::migrateLegacyConfig();
 }
 
 QStringList AppSettings::recentFiles()

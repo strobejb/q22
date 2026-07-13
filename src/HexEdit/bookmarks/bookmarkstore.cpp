@@ -1,4 +1,5 @@
 #include "bookmarkstore.h"
+#include "settings/appconfig.h"
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -18,13 +19,7 @@ namespace BookmarkStore {
 
 static QString storePath()
 {
-    // Derive the directory from a QSettings probe using the same org/app names
-    // as the rest of the app — this puts bookmarks.json alongside q22.ini
-    // rather than in a deeper AppConfigLocation subdirectory.
-    const QSettings probe(QSettings::IniFormat, QSettings::UserScope,
-                          QCoreApplication::organizationName(),
-                          QCoreApplication::applicationName());
-    return QFileInfo(probe.fileName()).absolutePath() + QStringLiteral("/bookmarks.json");
+    return QDir(AppSettings::appConfigDir()).filePath(QStringLiteral("bookmarks.json"));
 }
 
 // Use an MD5 hash of the canonical path as a stable file id.  The human-readable

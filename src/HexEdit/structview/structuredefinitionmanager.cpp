@@ -1,5 +1,6 @@
 #include "structview/structuredefinitionmanager.h"
 #include "structview/structurerenderengine.h"
+#include "settings/appconfig.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -151,12 +152,6 @@ QString exportedRootName(TypeDecl *decl)
         return QString::fromLocal8Bit(base->sptr->symbol->name);
 
     return {};
-}
-
-QString settingsSiblingDir(const QString &name)
-{
-    const QFileInfo settingsFile(QSettings().fileName());
-    return settingsFile.dir().filePath(name);
 }
 
 QStringList existingDefinitionFilesInDir(const QString &dirPath, bool includeLegacyExtensions)
@@ -392,7 +387,7 @@ QString StructureDefinitionManager::userStructsDir() const
     if (!m_userDirOverride.isEmpty())
         return m_userDirOverride;
 
-    return settingsSiblingDir(QStringLiteral("structs"));
+    return QDir(AppSettings::appConfigDir()).filePath(QStringLiteral("structs"));
 }
 
 QStringList StructureDefinitionManager::builtinStructDirs() const

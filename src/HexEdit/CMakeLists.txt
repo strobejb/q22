@@ -89,9 +89,11 @@ set(PROJECT_SOURCES
         settings/preferences.ui
         chrome/shadow-chrome.cpp
         chrome/shadow-chrome.h
+        settings/appconfig.cpp
         settings/slideoverlay.cpp
         settings/slideoverlay.h
         settings/settings.cpp
+        settings/appconfig.h
         settings/settings.h
         statusbar.cpp
         statusbar.h

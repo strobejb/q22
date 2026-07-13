@@ -1,6 +1,7 @@
 #include "palettes.h"
 #include "palette/screencolorpicker.h"
 #include "chrome/roundedlistwidget.h"
+#include "settings/appconfig.h"
 #include "settings/settingscard.h"
 #include "settings/settings.h"
 
@@ -424,12 +425,9 @@ bool reloadPalette(const QDir &customDir, const QString &name, PaletteInfo *out)
 
 
 // Returns the user-writable directory where custom palettes are stored.
-// Linux:   ~/.config/catch22/palettes/
-// Windows: %APPDATA%/catch22/palettes/
 QString paletteStorageDir()
 {
-    OPEN_SETTINGS;
-    return QFileInfo(s.fileName()).dir().filePath("palettes");
+    return QDir(AppSettings::appConfigDir()).filePath(QStringLiteral("palettes"));
 }
 
 QString paletteFilePath(const QString &name)

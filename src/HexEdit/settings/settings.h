@@ -1,6 +1,8 @@
 #ifndef SETTINGS_H
 #define SETTINGS_H
 
+#include "settings/appconfig.h"
+
 #include <QByteArray>
 #include <QFont>
 #include <QStringList>
@@ -9,16 +11,16 @@
 // QSettings is non-copyable so callers construct it directly via this helper
 // macro rather than a factory function.
 #define OPEN_SETTINGS \
-QSettings s(QSettings::IniFormat, QSettings::UserScope, QCoreApplication::organizationName(), QCoreApplication::applicationName())
+QSettings s(AppSettings::settingsFilePath(), QSettings::IniFormat)
 
 
 // Typed accessors for persistent application preferences.
 // Data is stored as INI under the platform user-config location, using the
 // org/app names set in main() via QCoreApplication::setOrganizationName /
 // setApplicationName.  With org="catch22" and app="q22":
-//   Linux:   ~/.config/catch22/q22.ini
-//   Windows: %APPDATA%\catch22\q22.ini
-//   macOS:   ~/Library/Preferences/catch22/q22.ini
+//   Linux:   ~/.config/catch22/q22/q22.ini
+//   Windows: %APPDATA%\catch22\q22\q22.ini
+//   macOS:   ~/Library/Preferences/catch22/q22/q22.ini
 namespace AppSettings {
 
 // Call once at startup (before any other AppSettings function) to guarantee

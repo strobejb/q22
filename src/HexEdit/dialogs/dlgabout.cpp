@@ -8,17 +8,16 @@
 //
 
 #include "dlgabout.h"
+#include "settings/appconfig.h"
 #include "settings/settingscard.h"
 #include "settings/slideoverlay.h"
 #include "theme.h"
 
 #include <QApplication>
 #include <QDialog>
-#include <QFileInfo>
 #include <QFont>
 #include <QLabel>
 #include <QPixmap>
-#include <QSettings>
 #include <QUrl>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
@@ -71,9 +70,7 @@ void ShowAboutDlg(QWidget *parent)
                                          SettingsCard::Style::Compact, &dlg);
 
     // ── Config folder card ────────────────────────────────────────────────────
-    const QString configPath = QSettings(QSettings::IniFormat, QSettings::UserScope,
-                                         QCoreApplication::organizationName(), QCoreApplication::applicationName()).fileName();
-    const QUrl configDirUrl  = QUrl::fromLocalFile(QFileInfo(configPath).absolutePath());
+    const QUrl configDirUrl  = QUrl::fromLocalFile(AppSettings::appConfigDir());
     auto *configRow  = new NavigationRow(QObject::tr("Config"), configDirUrl, &dlg);
     auto *configCard = new SettingsCard({configRow},
                                          SettingsCard::Style::Compact, &dlg);
