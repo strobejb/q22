@@ -39,6 +39,7 @@ private slots:
     void builderRendersBitflagsAsExpandableRows();
     void builderFormatsCharacterArraysAsStrings();
     void builderFormatsTaggedByteArraysAsStrings();
+    void builderRendersRaggedStringTables();
     void builderFormatsScalarArraysAsPreviewLists();
     void builderPopulatesCommentsFromTypeDeclarations();
     void builderUsesPackedLayoutByDefault();
@@ -69,6 +70,7 @@ private slots:
     void builderOptionallySortsTopLevelRowsByOffset();
     void builderRendersDexHeaderAndTables();
     void builderAddsDexSemanticSummaryPastArrayRenderCap();
+    void builderRendersDtbHeaderAndBlocks();
     void builderRendersZipCentralDirectoryFromEocd();
     void builderRendersElf32AndElf64Tables();
     void builderPlacesDynamicStructsUnderNamedDynamicContainers();
@@ -301,6 +303,15 @@ static void writeBe32(QByteArray *bytes, qsizetype offset, quint32 value)
     (*bytes)[offset + 1] = char((value >> 16) & 0xff);
     (*bytes)[offset + 2] = char((value >> 8) & 0xff);
     (*bytes)[offset + 3] = char(value & 0xff);
+}
+
+static void writeBe64(QByteArray *bytes, qsizetype offset, quint64 value)
+{
+    QVERIFY(bytes != nullptr);
+    QVERIFY(offset >= 0);
+    QVERIFY(offset + 8 <= bytes->size());
+    for (int i = 0; i < 8; ++i)
+        (*bytes)[offset + i] = char((value >> ((7 - i) * 8)) & 0xff);
 }
 
 static void writeAscii(QByteArray *bytes, qsizetype offset, const char *text)
@@ -898,6 +909,37 @@ void StructViewTests::builderFormatsTaggedByteArraysAsStrings()
     QCOMPARE(rows[0]->children[0]->value, QStringLiteral("\"Hié\""));
     QCOMPARE(rows[0]->children[1]->name, QStringLiteral("byte raw[]"));
     QCOMPARE(rows[0]->children[1]->value, QStringLiteral("{ 72, 105, 0, 42 }"));
+}
+
+void StructViewTests::builderRendersRaggedStringTables()
+{
+    // Scenario: a binary format stores a table as a flat byte extent containing
+    // consecutive NUL-terminated strings.
+    // Expected: nested flexible arrays render one expandable quoted string row
+    // per entry, and the outer array stops at extent(...) rather than continuing
+    // into padding or missing bytes.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  [count(16, 16), terminated_by(_, 0), extent(8)] char strings[][];\n"
+                        "} root;\n"));
+
+    auto rows = buildRows(&library, firstExported(&library), QByteArray("foo\0bar\0xxxx", 12));
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(1));
+
+    StructureRow *strings = rows[0]->children[0].get();
+    QCOMPARE(strings->name, QStringLiteral("char strings[][]"));
+    QCOMPARE(strings->value, QStringLiteral("{...}"));
+    QCOMPARE(strings->children.size(), size_t(2));
+    QCOMPARE(strings->children[0]->name, QStringLiteral("[0]"));
+    QCOMPARE(strings->children[0]->value, QStringLiteral("\"foo\""));
+    QCOMPARE(strings->children[0]->byteLength, uint64_t(4));
+    QCOMPARE(strings->children[1]->name, QStringLiteral("[1]"));
+    QCOMPARE(strings->children[1]->value, QStringLiteral("\"bar\""));
+    QCOMPARE(strings->children[1]->byteLength, uint64_t(4));
 }
 
 void StructViewTests::builderFormatsScalarArraysAsPreviewLists()
@@ -2063,6 +2105,83 @@ void StructViewTests::builderAddsDexSemanticSummaryPastArrayRenderCap()
     StructureRow *decodedMethods = findChildNamed(summary, QStringLiteral("Decoded Methods"));
     QVERIFY(decodedMethods);
     QVERIFY(findChildNamed(decodedMethods, QStringLiteral("Method[0] NormalName")));
+}
+
+void StructViewTests::builderRendersDtbHeaderAndBlocks()
+{
+    // Scenario: DTB/FDT files use a big-endian header that points at the memory
+    // reservation map, structure token stream, and strings block.
+    // Expected: the standard DTB definition renders those regions from header
+    // offsets without pretending the variable-width structure token stream is a
+    // fixed C struct.
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("dtb.strata")), "dtb.strata failed to parse");
+    TypeDecl *dtbRoot = exportedNamed(&library, QStringLiteral("FDT"));
+    QVERIFY(dtbRoot);
+
+    QByteArray dtb(0x60, '\0');
+    writeBe32(&dtb, 0x00, 0xd00dfeed); // magic
+    writeBe32(&dtb, 0x04, quint32(dtb.size()));
+    writeBe32(&dtb, 0x08, 0x48);       // off_dt_struct
+    writeBe32(&dtb, 0x0c, 0x58);       // off_dt_strings
+    writeBe32(&dtb, 0x10, 0x28);       // off_mem_rsvmap
+    writeBe32(&dtb, 0x14, 17);         // version
+    writeBe32(&dtb, 0x18, 16);         // last_comp_version
+    writeBe32(&dtb, 0x1c, 0);          // boot_cpuid_phys
+    writeBe32(&dtb, 0x20, 8);          // size_dt_strings
+    writeBe32(&dtb, 0x24, 16);         // size_dt_struct
+
+    writeBe64(&dtb, 0x28, 0x0000000000001000);
+    writeBe64(&dtb, 0x30, 0x0000000000000100);
+    writeBe64(&dtb, 0x38, 0);
+    writeBe64(&dtb, 0x40, 0);
+
+    writeBe32(&dtb, 0x48, 0x00000001); // FDT_BEGIN_NODE
+    writeBe32(&dtb, 0x4c, 0x00000000); // root node name: ""
+    writeBe32(&dtb, 0x50, 0x00000002); // FDT_END_NODE
+    writeBe32(&dtb, 0x54, 0x00000009); // FDT_END
+    writeAscii(&dtb, 0x58, "foo");
+    writeAscii(&dtb, 0x5c, "bar");
+
+    auto rows = buildRows(&library, dtbRoot, dtb);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->name, QStringLiteral("FDT"));
+
+    StructureRow *header = findChildNamed(rows[0].get(), QStringLiteral("FDT_HEADER header"));
+    QVERIFY(header);
+    QCOMPARE(findChildNamed(header, QStringLiteral("dword magic"))->value, QStringLiteral("3490578157"));
+    QCOMPARE(findChildNamed(header, QStringLiteral("dword off_dt_struct"))->value, QStringLiteral("72"));
+    QCOMPARE(findChildNamed(header, QStringLiteral("dword size_dt_struct"))->value, QStringLiteral("16"));
+
+    StructureRow *reserveMap = findChildNamed(rows[0].get(), QStringLiteral("FDT_RESERVE_ENTRY reserveMap[]"));
+    QVERIFY(reserveMap);
+    QCOMPARE(reserveMap->absoluteOffset, uint64_t(0x28));
+    QCOMPARE(reserveMap->children.size(), size_t(1));
+    QCOMPARE(findChildNamed(reserveMap->children[0].get(), QStringLiteral("qword address"))->value,
+             QStringLiteral("4096"));
+    QCOMPARE(findChildNamed(reserveMap->children[0].get(), QStringLiteral("qword size"))->value,
+             QStringLiteral("256"));
+
+    StructureRow *structureBlock = findChildNamed(rows[0].get(), QStringLiteral("FDT_STRUCT_ITEM structureBlock[]"));
+    QVERIFY(structureBlock);
+    QCOMPARE(structureBlock->absoluteOffset, uint64_t(0x48));
+    QCOMPARE(structureBlock->children.size(), size_t(2));
+    QCOMPARE(findChildNamed(structureBlock->children[0].get(), QStringLiteral("dword token"))->value,
+             QStringLiteral("FDT_BEGIN_NODE"));
+    StructureRow *payload = findChildNamed(structureBlock->children[0].get(), QStringLiteral("union payload"));
+    QVERIFY(payload);
+    StructureRow *beginNode = findChildNamed(payload, QStringLiteral("FDT_BEGIN_NODE_PAYLOAD beginNode"));
+    QVERIFY(beginNode);
+    QCOMPARE(findChildNamed(beginNode, QStringLiteral("char name[]"))->value, QStringLiteral("\"\""));
+    QCOMPARE(findChildNamed(structureBlock->children[1].get(), QStringLiteral("dword token"))->value,
+             QStringLiteral("FDT_END_NODE"));
+
+    StructureRow *stringsBlock = findChildNamed(rows[0].get(), QStringLiteral("char stringsBlock[][]"));
+    QVERIFY(stringsBlock);
+    QCOMPARE(stringsBlock->absoluteOffset, uint64_t(0x58));
+    QCOMPARE(stringsBlock->children.size(), size_t(2));
+    QCOMPARE(stringsBlock->children[0]->value, QStringLiteral("\"foo\""));
+    QCOMPARE(stringsBlock->children[1]->value, QStringLiteral("\"bar\""));
 }
 
 void StructViewTests::builderRendersZipCentralDirectoryFromEocd()

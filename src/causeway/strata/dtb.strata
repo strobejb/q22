@@ -1,0 +1,111 @@
+// q22-strata-v1
+//
+//  dtb.strata
+//
+
+include "basetypes.strata";
+
+enum FDT_TOKEN
+{
+    FDT_BEGIN_NODE = 0x00000001,
+    FDT_END_NODE   = 0x00000002,
+    FDT_PROP       = 0x00000003,
+    FDT_NOP        = 0x00000004,
+    FDT_END        = 0x00000009
+};
+
+typedef struct _FDT_HEADER
+{
+    dword magic;
+    dword totalsize;
+    dword off_dt_struct;
+    dword off_dt_strings;
+    dword off_mem_rsvmap;
+    dword version;
+    dword last_comp_version;
+    dword boot_cpuid_phys;
+    dword size_dt_strings;
+    dword size_dt_struct;
+} FDT_HEADER, *PFDT_HEADER;
+
+typedef struct _FDT_RESERVE_ENTRY
+{
+    qword address;
+    qword size;
+} FDT_RESERVE_ENTRY, *PFDT_RESERVE_ENTRY;
+
+typedef struct _FDT_BEGIN_NODE_PAYLOAD
+{
+    [count(256), terminated_by(0)]
+    char name[];
+
+    // FDT node names are NUL-terminated and padded so the next token starts on
+    // a 4-byte boundary. This zero-length field consumes only the alignment gap
+    // and does not render as a row.
+    [align(4), count(0)]
+    byte _align[];
+} FDT_BEGIN_NODE_PAYLOAD, *PFDT_BEGIN_NODE_PAYLOAD;
+
+typedef struct _FDT_PROP_PAYLOAD
+{
+    dword len;
+    dword nameoff;
+
+    [
+        count(len),
+        extent((len + 3) & ~3)
+    ]
+    byte data[];
+} FDT_PROP_PAYLOAD, *PFDT_PROP_PAYLOAD;
+
+typedef struct _FDT_STRUCT_ITEM
+{
+    [enum(FDT_TOKEN)]
+    dword token;
+
+    [switch_is(token)]
+    union
+    {
+        [case(FDT_BEGIN_NODE)]
+        FDT_BEGIN_NODE_PAYLOAD beginNode;
+
+        [case(FDT_PROP)]
+        FDT_PROP_PAYLOAD prop;
+    } payload;
+} FDT_STRUCT_ITEM, *PFDT_STRUCT_ITEM;
+
+[
+    export("Flattened Device Tree (DTB)"),
+    version(1),
+    assoc(".dtb"),
+    magic({ 0xd0, 0x0d, 0xfe, 0xed }),
+    offset(0),
+    endian("big")
+]
+typedef struct _FDT
+{
+    FDT_HEADER header;
+
+    [
+        offset(header.off_mem_rsvmap),
+        count(1024),
+        terminated_by(address == 0 && size == 0)
+    ]
+    FDT_RESERVE_ENTRY reserveMap[];
+
+    [
+        offset(header.off_dt_struct),
+        count(4096),
+        terminated_by(token == FDT_END),
+        extent(header.size_dt_struct)
+    ]
+    FDT_STRUCT_ITEM structureBlock[];
+
+    [
+        offset(header.off_dt_strings),
+        count(1024, 256),
+        terminated_by(_, 0),
+        extent(header.size_dt_strings)
+    ]
+    char stringsBlock[][];
+} FDT;

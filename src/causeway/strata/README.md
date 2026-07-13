@@ -2,8 +2,8 @@
 
 Strata is a binary structure definition language. It extends C struct syntax with
 annotation tags that describe how binary data should be navigated, decoded, and
-displayed. Files use the `.strata` extension. Legacy `.struct` files are still
-accepted for user definitions.
+displayed. Structure-definition files use the `.strata` extension and should be
+stored in `~/.config/catch22/q22/strata`.
 
 ---
 
@@ -26,14 +26,16 @@ accepted for user definitions.
 
 ## Comments and includes
 
+Standard C-style line and block-level comments are supported:
+
 ```c
 // Line comment
 /* Block comment */
 ```
 
-`include` pulls in another `.strata` file, making all its type and enum
-definitions available in the current file. Paths are relative to the including
-file. Circular includes are detected and ignored.
+Additional Strata files can also be included with the `include` keyword; this pulls
+in another `.strata` file, making all its type and enum definitions available in the current file.
+Paths are relative to the including file. Circular includes are detected and ignored.
 
 ```c
 include "basetypes.strata";
@@ -83,7 +85,9 @@ byte Payload[];
 
 ### Structs
 
-Structure fields are laid out sequentially in file order with no implicit padding - layout is always byte-packed. Various alignment and formatting options are available with Strata tags. Structs can be nested and may carry tag blocks on individual fields or on the typedef itself.
+Structure fields are laid out sequentially in file order with no implicit padding - layout is always byte-packed. 
+Various alignment and formatting options are available with Strata tags. Structs can be nested 
+and may carry tag blocks on individual fields or on the typedef itself.
 
 ```c
 typedef struct _IMAGE_FILE_HEADER {
@@ -215,6 +219,21 @@ Variable-sized arrays can be defined with an empty `[]` with the array bounds sp
 [count(4096), terminated_by(0)] char  Name[];
 ```
 
+Nested flexible arrays are supported for byte/string-table patterns where the
+outer array is a sequence of variable-width inner arrays rather than a C-style
+rectangular matrix. Comma-separated `count(...)` and `terminated_by(...)`
+arguments apply to successive dimensions. Use `_` as a placeholder when a
+dimension has no rule for that tag:
+
+```c
+[count(1024, 256), terminated_by(_, 0), extent(StringsSize)]
+char Strings[][];
+```
+
+This models up to 1024 NUL-terminated strings, each capped at 256 characters,
+inside a byte extent of `StringsSize`. The `extent(...)` bounds the whole field
+and stops the outer array when the table bytes have been consumed.
+
 ---
 
 ### Pointer access
@@ -339,8 +358,8 @@ for how that still resolves.
 
 | Tag | Effect |
 |-----|--------|
-| `count(expr)` | Element count for a flexible array (`size_is` is a legacy alias) |
-| `terminated_by(val)` | Stop reading when an element equals `val` |
+| `count(expr[, expr...])` | Element count for a flexible array (`size_is` is a legacy alias); extra arguments apply to nested dimensions |
+| `terminated_by(val[, val...])` | Stop reading when an element equals `val`; use `_` to skip a nested-array dimension |
 
 ---
 

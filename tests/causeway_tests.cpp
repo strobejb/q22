@@ -30,6 +30,7 @@ private slots:
 	void ternaryExpressionTagsParse();
 	void lengthIsIsReserved();
 	void unsizedArraysRequireSizeIs();
+	void multiDimensionalFlexibleArraysParse();
 	void elfRootIsExportedAndAssociated();
 	void standardTypelibFilesParse();
 };
@@ -661,6 +662,36 @@ void CausewayTests::unsizedArraysRequireSizeIs()
 						"} root;\n"));
 }
 
+void CausewayTests::multiDimensionalFlexibleArraysParse()
+{
+	// Scenario: a variable-width string table is modeled as nested flexible
+	// arrays, with comma-separated tag arguments applying to successive
+	// dimensions.
+	// Expected: the parser accepts both dimensions and preserves the comma
+	// argument lists for the renderer.
+	Parser parser;
+	QVERIFY(parseBuffer(parser,
+						"struct Root {\n"
+						"  [count(4, 16), terminated_by(_, 0)] char strings[][];\n"
+						"} root;\n"));
+
+	TypeDecl *root = parser.GetStrataLibrary()->globalTypeDeclList[0];
+	TypeDecl *field = root->baseType->sptr->typeDeclList[0];
+	QVERIFY(field);
+	QVERIFY(field->declList[0]->link->ty == typeARRAY);
+	QVERIFY(field->declList[0]->link->link->ty == typeARRAY);
+
+	ExprNode *countExpr = nullptr;
+	QVERIFY(FindTag(field->tagList, TOK_SIZEIS, &countExpr));
+	QVERIFY(countExpr);
+	QCOMPARE(countExpr->type, EXPR_COMMA);
+
+	ExprNode *terminatorExpr = nullptr;
+	QVERIFY(FindTag(field->tagList, TOK_TERMINATEDBY, &terminatorExpr));
+	QVERIFY(terminatorExpr);
+	QCOMPARE(terminatorExpr->type, EXPR_COMMA);
+}
+
 void CausewayTests::elfRootIsExportedAndAssociated()
 {
 	// Scenario: qexed ships ELF as a real Structure View root definition.
@@ -719,6 +750,7 @@ void CausewayTests::standardTypelibFilesParse()
 	const QStringList files = {
 		QStringLiteral("basetypes.strata"),
 		QStringLiteral("dex.strata"),
+		QStringLiteral("dtb.strata"),
 		QStringLiteral("elf.strata"),
 		QStringLiteral("pe.strata"),
 		QStringLiteral("zip.strata"),

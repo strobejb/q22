@@ -401,7 +401,7 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 					return false;
 				}
 			}
-			else if(tmp == TOK_SIZEIS || tmp == TOK_ASSOC || tmp == TOK_OFFSETMAP)
+			else if(tmp == TOK_SIZEIS || tmp == TOK_TERMINATEDBY || tmp == TOK_ASSOC || tmp == TOK_OFFSETMAP)
 			{
 				// full comma-separated expression 
 				if((expr = CommaExpression(TOK_NULL)) == 0)

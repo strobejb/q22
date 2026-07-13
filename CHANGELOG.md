@@ -5,6 +5,7 @@
 ### Added
 
 * Added Android DEX Structure View support with raw DEX tables and a semantic summary for strings, types, fields, methods, and classes.
+* Added Flattened Device Tree (DTB/FDT) Structure View support for firmware and embedded Linux images.
 * Added Strata `uleb128` and `sleb128` primitive integer types for variable-width encodings used by DEX, WebAssembly-style formats, and related binary formats.
 * Added Strata export `version(...)` metadata so user definitions can intentionally override built-in definitions.
 * Added Qt Creator highlighting for canonical `.strata` files while keeping legacy `.struct` highlighting.

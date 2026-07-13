@@ -183,6 +183,47 @@ void appendCommaArgs(ExprNode *expr, std::vector<ExprNode *> *args)
     args->push_back(expr);
 }
 
+bool isDimensionPlaceholder(ExprNode *expr)
+{
+    return expr && expr->type == EXPR_IDENTIFIER && expr->str && std::strcmp(expr->str, "_") == 0;
+}
+
+qsizetype arrayDimensionIndex(TypeDecl *typeDecl, Type *arrayType)
+{
+    if (!typeDecl || !arrayType)
+        return 0;
+
+    for (Type *declType : typeDecl->declList)
+    {
+        qsizetype dimension = 0;
+        for (Type *cursor = declType; cursor; cursor = cursor->link)
+        {
+            if (cursor == arrayType)
+                return dimension;
+
+            if (cursor->ty == typeARRAY)
+                ++dimension;
+        }
+    }
+
+    return 0;
+}
+
+ExprNode *dimensionTagArg(Tag *tagList, TOKEN tagTok, qsizetype dimension)
+{
+    ExprNode *expr = nullptr;
+    if (!FindTag(tagList, tagTok, &expr) || !expr)
+        return nullptr;
+
+    std::vector<ExprNode *> args;
+    appendCommaArgs(expr, &args);
+    if (dimension < 0 || static_cast<size_t>(dimension) >= args.size())
+        return nullptr;
+
+    ExprNode *arg = args[static_cast<size_t>(dimension)];
+    return isDimensionPlaceholder(arg) ? nullptr : arg;
+}
+
 bool arrayIndexFromRow(const StructureRow *row, INUMTYPE *index)
 {
     if (!row || !index || !row->nameTypePrefix.startsWith(QLatin1Char('[')))
@@ -551,10 +592,25 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
         if (!evaluateArrayCount(parent, typeDecl, type, &count, offset))
             return 0;
 
+        const qsizetype dimension = arrayDimensionIndex(typeDecl, type);
+        uint64_t extentLimit = 0;
+        if (dimension == 0)
+        {
+            ExprNode *extentExpr = nullptr;
+            if (FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_EXTENT, &extentExpr) && extentExpr)
+            {
+                INUMTYPE evaluatedExtent = 0;
+                StructureRow *evalScope = parent && parent->parent ? parent->parent : parent;
+                if (evaluate(evalScope, extentExpr, &evaluatedExtent, offset) && evaluatedExtent > 0)
+                    extentLimit = static_cast<uint64_t>(evaluatedExtent);
+            }
+        }
+
         const uint64_t boundedCount = std::min<uint64_t>(count, kMaxArrayElements);
         uint64_t length = 0;
-        ExprNode *terminatorExpr = nullptr;
-        FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_TERMINATEDBY, &terminatorExpr);
+        ExprNode *terminatorExpr = dimensionTagArg(typeDecl ? typeDecl->tagList : nullptr,
+                                                   TOK_TERMINATEDBY,
+                                                   dimension);
         Enum *nameEnum = nullptr;
         ExprNode *nameExpr = nullptr;
         if (FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_NAME, &nameExpr) && m_library && nameExpr && nameExpr->str)
@@ -585,6 +641,9 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
 
         for (uint64_t i = 0; i < boundedCount; ++i)
         {
+            if (extentLimit > 0 && length >= extentLimit)
+                break;
+
             auto row = makeRow(parent, type->link, elementTypeDecl ? elementTypeDecl : typeDecl, offset + length);
             const QString indexLabel = QStringLiteral("[%1]").arg(i);
             row->name = indexLabel;
@@ -599,6 +658,12 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
 
             const uint64_t elementLength = formatType(row.get(), type->link, typeDecl, offset + length);
             row->byteLength = elementLength;
+            if (row->value.isEmpty())
+            {
+                const QString stringValue = stringArrayValue(row.get(), type->link, typeDecl, offset + length);
+                if (!stringValue.isNull())
+                    row->value = stringValue;
+            }
             const bool terminates = elementMatchesTerminator(row.get(), type->link, terminatorExpr, offset + length);
             if (!nameEnum && nameExpr)
             {
@@ -899,13 +964,13 @@ bool StructureRenderEngine::evaluateArrayCount(StructureRow *scope,
     if (arrayType->elements)
         return evaluate(evalScope, arrayType->elements, result, offset);
 
-    ExprNode *sizeExpr = nullptr;
-    if (!FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_SIZEIS, &sizeExpr) || !sizeExpr)
+    ExprNode *sizeExpr = dimensionTagArg(typeDecl ? typeDecl->tagList : nullptr,
+                                         TOK_SIZEIS,
+                                         arrayDimensionIndex(typeDecl, arrayType));
+    if (!sizeExpr)
         return false;
 
-    std::vector<ExprNode *> args;
-    appendCommaArgs(sizeExpr, &args);
-    return !args.empty() && evaluate(evalScope, args[0], result, offset);
+    return evaluate(evalScope, sizeExpr, result, offset);
 }
 
 bool StructureRenderEngine::evaluate(const EvalContext &context, ExprNode *expr, INUMTYPE *result)
@@ -1682,6 +1747,8 @@ void StructureRenderEngine::validateFieldTagExpressions(Type *enclosingScope, Ex
     for (ExprNode *root : roots)
     {
         if (!root || root->type != EXPR_IDENTIFIER || !root->str)
+            continue;
+        if (std::strcmp(root->str, "_") == 0)
             continue;
         if (isKnownEnumConstant(root->str))
             continue;
@@ -2853,6 +2920,9 @@ QString StructureRenderEngine::stringArrayValue(StructureRow *scope, Type *type,
     }
 
     if (!arrayType)
+        return {};
+
+    if (arrayType->link && arrayType->link->ty == typeARRAY)
         return {};
 
     Type *elementType = BaseNode(arrayType->link);
