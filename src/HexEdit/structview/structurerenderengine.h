@@ -104,6 +104,8 @@ private:
     bool evaluate(Type *scopeType, ExprNode *expr, INUMTYPE *result, uint64_t scopeOffset);
     bool evaluateFunction(const EvalContext &context, ExprNode *expr, INUMTYPE *result);
     bool evaluateFindFunction(const EvalContext &context, ExprNode *expr, INUMTYPE *result);
+    bool evaluateString(const EvalContext &context, ExprNode *expr, QString *result);
+    bool evaluateStringFunction(const EvalContext &context, ExprNode *expr, QString *result);
     uint64_t readableEnd(uint64_t startOffset) const;
     bool findPattern(uint64_t startOffset,
                      uint64_t endOffset,

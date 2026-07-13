@@ -14,6 +14,7 @@
 <highlighting>
 <list name="keywords">
     <item>const</item>
+    <item>cstr_at</item>
     <item>default</item>
     <item>display</item>
     <item>enum</item>
@@ -56,6 +57,7 @@
     <item>case</item>
     <item>container</item>
     <item>count</item>
+    <item>default</item>
     <item>description</item>
     <item>display</item>
     <item>dynamic_array</item>
@@ -73,6 +75,7 @@
     <item>offset</item>
     <item>offset_map</item>
     <item>optional</item>
+    <item>pad_to</item>
     <item>select</item>
     <item>size_is</item>
     <item>string</item>

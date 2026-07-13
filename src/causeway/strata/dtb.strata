@@ -36,14 +36,8 @@ typedef struct _FDT_RESERVE_ENTRY
 
 typedef struct _FDT_BEGIN_NODE_PAYLOAD
 {
-    [count(256), terminated_by(0)]
+    [count(256), terminated_by(0), pad_to(4)]
     char name[];
-
-    // FDT node names are NUL-terminated and padded so the next token starts on
-    // a 4-byte boundary. This zero-length field consumes only the alignment gap
-    // and does not render as a row.
-    [align(4), count(0)]
-    byte _align[];
 } FDT_BEGIN_NODE_PAYLOAD, *PFDT_BEGIN_NODE_PAYLOAD;
 
 typedef struct _FDT_PROP_PAYLOAD
@@ -51,11 +45,24 @@ typedef struct _FDT_PROP_PAYLOAD
     dword len;
     dword nameoff;
 
-    [
-        count(len),
-        extent((len + 3) & ~3)
-    ]
-    byte data[];
+    [select(cstr_at(header.off_dt_strings + nameoff, 256)), pad_to(4)]
+    union
+    {
+        [case("compatible"), string, count(len)]
+        byte compatible[];
+
+        [case("model"), string, count(len)]
+        byte model[];
+
+        [case("status"), string, count(len)]
+        byte status[];
+
+        [case("device_type"), string, count(len)]
+        byte deviceType[];
+
+        [default, count(len)]
+        byte raw[];
+    };
 } FDT_PROP_PAYLOAD, *PFDT_PROP_PAYLOAD;
 
 typedef struct _FDT_STRUCT_ITEM
@@ -71,7 +78,7 @@ typedef struct _FDT_STRUCT_ITEM
 
         [case(FDT_PROP)]
         FDT_PROP_PAYLOAD prop;
-    } payload;
+    };
 } FDT_STRUCT_ITEM, *PFDT_STRUCT_ITEM;
 
 [

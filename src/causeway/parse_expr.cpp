@@ -308,6 +308,7 @@ ExprNode * Parser::UnaryExpression(void)
 		break;
 	}
 
+	case TOK_CSTRAT:
 	case TOK_FINDFIRST:
 	case TOK_FINDLAST:
 	{

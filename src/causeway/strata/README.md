@@ -15,7 +15,7 @@ stored in `~/.config/catch22/q22/strata`.
 | Types | [`struct`](#structs) · [`union`](#unions) · [`enum`](#enums) · [`typedef`](#type-declarations) |
 | Tags | [`tagset`](#tagsets) · [`tags`](#tagsets) |
 | Display | [`enum(N)`](#display) · [`bitflag(N)`](#display) · [`name`](#display) · [`string`](#display) |
-| Layout | [`offset`](#layout) · [`align`](#layout) · [`endian`](#byte-order) · [`entrypoint`](#layout) · [`extent`](#layout) · [`optional`](#layout) |
+| Layout | [`offset`](#layout) · [`align`](#layout) · [`pad_to`](#layout) · [`endian`](#byte-order) · [`entrypoint`](#layout) · [`extent`](#layout) · [`optional`](#layout) |
 | Arrays | [`count`](#arrays) · [`terminated_by`](#arrays) |
 | Unions | [`select`](#discriminated-unions) · [`case`](#discriminated-unions) |
 | Semantic views | [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) · [`view`](#view) |
@@ -123,11 +123,12 @@ typedef union _VALUE {
 
 #### Discriminated unions
 
-`select(expr)` on a union evaluates an expression and uses the result to
-select which member to render. Each member is tagged with `[case(value)]`; only
-the member whose value matches is shown. A member with no `case` tag is always
-rendered regardless of the discriminator. (`switch_is` is a legacy alias for
-`select`.)
+`select(expr)` on a union evaluates an integer or string expression and uses the
+result to select which member to render. Each member is tagged with
+`[case(value)]`; only the member whose value matches is shown. A member with no
+`case` tag is always rendered regardless of the discriminator. A `[default]`
+member is rendered only when no `case(...)` member matches. (`switch_is` is a
+legacy alias for `select`.)
 
 ```c
 [
@@ -136,6 +137,31 @@ rendered regardless of the discriminator. (`switch_is` is a legacy alias for
 union {
     [case(0x10b)] IMAGE_OPTIONAL_HEADER32 OptionalHeader32;
     [case(0x20b)] IMAGE_OPTIONAL_HEADER64 OptionalHeader64;
+};
+```
+
+String selectors are useful when a field's interpretation is keyed by a name in
+a string table:
+
+```c
+[select(cstr_at(StringsOffset + nameoff, 256))]
+union {
+    [case("model"), string, count(len)] byte model[];
+    [default, count(len)] byte raw[];
+};
+```
+
+If a nested union has no declarator, the selected member is rendered directly in
+the parent row rather than under a separate `union name` row:
+
+```c
+struct Payload {
+    dword kind;
+    [select(kind)]
+    union {
+        [case(1)] byte text[];
+        [default] byte raw[];
+    };
 };
 ```
 
@@ -312,6 +338,7 @@ Layout tag affect the alignment and positioning of fields:
 | `offset(expr)` | Pin the field or type to a logical offset within the current container (added to the container's base file offset) |
 | `align(n)` | Align to an n-byte boundary before this field |
 | `extent(bytes)` | Limit parsing of this field to `bytes` bytes |
+| `pad_to(n)` | Pad this field's consumed extent so the following field starts on an n-byte boundary |
 | `optional(cond)` | Skip this field when `cond` is false |
 | `entrypoint` | Mark this scalar field's own value as a code entry point address for disassembly |
 
@@ -322,6 +349,9 @@ IMAGE_NT_HEADERS ntHeaders;
 [optional(FileHeader.SizeOfOptionalHeader != 0),
  extent(FileHeader.SizeOfOptionalHeader)]
 IMAGE_OPTIONAL_HEADER OptionalHeader;
+
+[count(len), pad_to(4)]
+byte Data[];
 ```
 
 ### Byte order
@@ -575,6 +605,7 @@ dosHeader.e_lfanew
 | Logical | `&& \|\|` |
 | Conditional | `? :` |
 | Size | `sizeof(Type)` |
+| String lookup | `cstr_at(offset, maxLen)` |
 | Byte search | `find_first({ ... })` · `find_last({ ... })` |
 | Raw read | `select_offset(byteOffset)` |
 
@@ -583,6 +614,11 @@ size_is(Header.Count * sizeof(DWORD))
 optional(Signature == 0x00004550)
 terminated_by(0)
 ```
+
+`cstr_at(offset, maxLen)` reads a NUL-terminated 8-bit string at `offset`
+relative to the root structure base, capped at `maxLen` bytes. It returns a
+string expression, so it is primarily useful with string-valued
+`select(...)`/`case("...")` unions.
 
 ### Byte pattern search
 
@@ -654,12 +690,12 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 |----------|----------|
 | Type declarations | `struct`, `union`, `enum`, `typedef`, `const`, `signed`, `unsigned` |
 | Primitive types | `byte`, `word`, `dword`, `qword`, `char`, `wchar_t`, `float`, `double`, `uleb128`, `sleb128` |
-| Display/layout tags | `align`, `bitflag`, `description`, `display`, `endian`, `entrypoint`, `extent`, `ignore`, `name`, `offset`, `optional`, `string`, `style` |
-| Arrays/unions | `case`, `count`, `length_is`, `select`, `select_offset`, `size_is`, `switch_is`, `terminated_by` |
+| Display/layout tags | `align`, `bitflag`, `description`, `display`, `endian`, `entrypoint`, `extent`, `ignore`, `name`, `offset`, `optional`, `pad_to`, `string`, `style` |
+| Arrays/unions | `case`, `count`, `default`, `length_is`, `select`, `select_offset`, `size_is`, `switch_is`, `terminated_by` |
 | Dynamic/semantic tags | `container`, `dynamic_array`, `dynamic_container`, `dynamic_struct`, `mapper`, `offset_map`, `type`, `view` |
 | Export/detection tags | `assoc`, `export`, `magic`, `version` |
 | Tagsets/files | `include`, `tagset`, `tags` |
-| Expression helpers | `default`, `find_first`, `find_last`, `sizeof` |
+| Expression helpers | `cstr_at`, `find_first`, `find_last`, `sizeof` |
 
 ---
 

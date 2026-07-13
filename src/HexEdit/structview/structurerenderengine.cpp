@@ -23,6 +23,7 @@ static constexpr uint64_t kMaxArrayElements = 100;
 static constexpr qsizetype kMaxArrayPreviewElements = 8;
 static constexpr bool kPrefixArrayAliasesWithDash = false;
 static constexpr uint64_t kSearchChunkSize = 64 * 1024;
+static constexpr uint64_t kMaxStringLookupBytes = 4096;
 
 enum class ScalarEncoding
 {
@@ -731,24 +732,62 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
             return 0;
 
         INUMTYPE switchValue = 0;
+        QString switchString;
         ExprNode *switchExpr = nullptr;
         const bool hasSwitchTag = FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_SWITCHIS, &switchExpr);
         const bool hasSwitch = hasSwitchTag && evaluate(EvalContext{ parent, type, offset }, switchExpr, &switchValue);
-        if (hasSwitchTag && !hasSwitch)
+        const bool hasStringSwitch = hasSwitchTag
+            && !hasSwitch
+            && evaluateString(EvalContext{ parent, type, offset }, switchExpr, &switchString);
+        if (hasSwitchTag && !hasSwitch && !hasStringSwitch)
             return 0;
 
         uint64_t length = 0;
+        bool matchedCase = false;
+        std::vector<TypeDecl *> defaultDecls;
         for (TypeDecl *childDecl : type->sptr->typeDeclList)
         {
-            ExprNode *caseExpr = nullptr;
-            if (hasSwitch && FindTag(childDecl ? childDecl->tagList : nullptr, TOK_CASE, &caseExpr))
+            if (FindTag(childDecl ? childDecl->tagList : nullptr, TOK_DEFAULT, nullptr))
             {
-                INUMTYPE caseValue = 0;
-                if (!evaluate(parent, caseExpr, &caseValue, offset) || caseValue != switchValue)
+                defaultDecls.push_back(childDecl);
+                continue;
+            }
+
+            ExprNode *caseExpr = nullptr;
+            if ((hasSwitch || hasStringSwitch) && FindTag(childDecl ? childDecl->tagList : nullptr, TOK_CASE, &caseExpr))
+            {
+                bool caseMatches = false;
+                if (hasSwitch)
+                {
+                    INUMTYPE caseValue = 0;
+                    caseMatches = evaluate(parent, caseExpr, &caseValue, offset) && caseValue == switchValue;
+                }
+                else
+                {
+                    QString caseString;
+                    caseMatches = evaluateString(EvalContext{ parent, type, offset }, caseExpr, &caseString)
+                        && caseString == switchString;
+                }
+
+                if (!caseMatches)
                     continue;
+
+                matchedCase = true;
             }
             length = std::max(length, appendTypeDecl(parent, childDecl, offset));
         }
+
+        if ((hasSwitch || hasStringSwitch) && !matchedCase)
+        {
+            for (TypeDecl *childDecl : defaultDecls)
+                length = std::max(length, appendTypeDecl(parent, childDecl, offset));
+        }
+        else if (!hasSwitch && !hasStringSwitch)
+        {
+            for (TypeDecl *childDecl : defaultDecls)
+                length = std::max(length, appendTypeDecl(parent, childDecl, offset));
+        }
+
         return length;
     }
 
@@ -1158,6 +1197,68 @@ bool StructureRenderEngine::evaluateFunction(const EvalContext &context, ExprNod
     case TOK_FINDFIRST:
     case TOK_FINDLAST:
         return evaluateFindFunction(context, expr, result);
+    default:
+        return false;
+    }
+}
+
+bool StructureRenderEngine::evaluateString(const EvalContext &context, ExprNode *expr, QString *result)
+{
+    if (!expr || !result)
+        return false;
+
+    switch (expr->type)
+    {
+    case EXPR_STRINGBUF:
+        *result = QString::fromUtf8(expr->str ? expr->str : "");
+        return true;
+    case EXPR_FUNCTION:
+        return evaluateStringFunction(context, expr, result);
+    default:
+        return false;
+    }
+}
+
+bool StructureRenderEngine::evaluateStringFunction(const EvalContext &context, ExprNode *expr, QString *result)
+{
+    if (!expr || expr->type != EXPR_FUNCTION || !result)
+        return false;
+
+    switch (expr->tok)
+    {
+    case TOK_CSTRAT:
+    {
+        std::vector<ExprNode *> args;
+        collectExpressionArgs(expr->left, &args);
+        if (args.size() != 2)
+            return false;
+
+        INUMTYPE logicalOffset = 0;
+        INUMTYPE maxLen = 0;
+        if (!evaluate(context, args[0], &logicalOffset)
+            || !evaluate(context, args[1], &maxLen)
+            || logicalOffset < 0
+            || maxLen <= 0)
+        {
+            return false;
+        }
+
+        const uint64_t cappedLength = std::min<uint64_t>(static_cast<uint64_t>(maxLen), kMaxStringLookupBytes);
+        if (m_baseOffset > std::numeric_limits<uint64_t>::max() - static_cast<uint64_t>(logicalOffset))
+            return false;
+
+        QByteArray bytes(static_cast<int>(cappedLength), Qt::Uninitialized);
+        const size_t got = m_reader ? m_reader(m_baseOffset + static_cast<uint64_t>(logicalOffset),
+                                               reinterpret_cast<uint8_t *>(bytes.data()),
+                                               static_cast<size_t>(bytes.size()))
+                                    : 0;
+        if (got == 0)
+            return false;
+
+        bytes.truncate(static_cast<int>(got));
+        *result = decodeNulTerminatedText(bytes, false);
+        return true;
+    }
     default:
         return false;
     }
@@ -1774,7 +1875,7 @@ void StructureRenderEngine::validateStructTags(Type *structType, QStringList *er
         return;
 
     static constexpr TOKEN kValidatedTags[] = {
-        TOK_SWITCHIS, TOK_ENDIAN, TOK_OFFSET, TOK_SIZEIS, TOK_OPTIONAL, TOK_EXTENT
+        TOK_SWITCHIS, TOK_ENDIAN, TOK_OFFSET, TOK_SIZEIS, TOK_OPTIONAL, TOK_EXTENT, TOK_PADTO
     };
 
     for (TypeDecl *decl : base->sptr->typeDeclList)
@@ -1801,7 +1902,7 @@ QStringList StructureRenderEngine::validateStaticFieldReferences(StrataLibrary *
         return errors;
 
     static constexpr TOKEN kValidatedTags[] = {
-        TOK_SWITCHIS, TOK_ENDIAN, TOK_OFFSET, TOK_SIZEIS, TOK_OPTIONAL, TOK_EXTENT
+        TOK_SWITCHIS, TOK_ENDIAN, TOK_OFFSET, TOK_SIZEIS, TOK_OPTIONAL, TOK_EXTENT, TOK_PADTO
     };
 
     StructureRenderEngine scratch(library, nullptr, 0, StructureValueBuilder::ByteReader{}, StructureDisplayOptions{});
@@ -2727,14 +2828,29 @@ uint64_t StructureRenderEngine::declarationExtent(TypeDecl *typeDecl,
                                                   uint64_t fallback)
 {
     ExprNode *expr = nullptr;
-    if (!FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_EXTENT, &expr) || !expr)
-        return fallback;
+    uint64_t length = fallback;
 
     INUMTYPE value = 0;
-    if (!evaluate(EvalContext{ scope, scopeType, scopeOffset }, expr, &value) || value <= 0)
-        return fallback;
+    if (FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_EXTENT, &expr) && expr
+        && evaluate(EvalContext{ scope, scopeType, scopeOffset }, expr, &value)
+        && value > 0)
+    {
+        length = static_cast<uint64_t>(value);
+    }
 
-    return static_cast<uint64_t>(value);
+    expr = nullptr;
+    if (!FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_PADTO, &expr) || !expr)
+        return length;
+
+    value = 0;
+    if (!evaluate(EvalContext{ scope, scopeType, scopeOffset }, expr, &value) || value <= 1)
+        return length;
+
+    if (scopeOffset > std::numeric_limits<uint64_t>::max() - length)
+        return length;
+
+    const uint64_t alignedEnd = alignedOffset(scopeOffset + length, static_cast<uint64_t>(value));
+    return alignedEnd >= scopeOffset ? alignedEnd - scopeOffset : length;
 }
 
 bool StructureRenderEngine::declarationIsOptionalAndAbsent(TypeDecl *typeDecl,

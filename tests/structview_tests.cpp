@@ -47,6 +47,7 @@ private slots:
     void builderLetsOffsetOverrideAlignment();
     void builderKeepsUnionMembersAtAlignedBase();
     void builderUsesExtentToAdvancePastRenderedUnionSize();
+    void builderPadsDeclarationsToAlignmentBoundaries();
     void builderSkipsAbsentOptionalDeclarations();
     void builderUsesSizeIsForUnsizedArrays();
     void builderEvaluatesTernaryExpressions();
@@ -63,6 +64,7 @@ private slots:
     void builderEvaluatesUnionSwitchSelectorsFromTypedLayout();
     void builderEvaluatesFieldsAndCorrectedExpressions();
     void builderEvaluatesFindSearchExpressions();
+    void builderSelectsUnionMembersFromStringExpressions();
     void builderUsesDynamicEndianExpressions();
     void builderEvaluatesEnumIndexedArraysInExpressions();
     void builderEvaluatesEnumIndexedUnionMembersInExpressions();
@@ -1130,6 +1132,39 @@ void StructViewTests::builderUsesExtentToAdvancePastRenderedUnionSize()
     QCOMPARE(rows[0]->children[2]->value, QStringLiteral("11"));
 }
 
+void StructViewTests::builderPadsDeclarationsToAlignmentBoundaries()
+{
+    // Scenario: variable payloads render their true byte counts, but the file
+    // format pads each field end to a fixed boundary before the next
+    // declaration.
+    // Expected: pad_to(4) rounds only the consumed declaration length, so the
+    // payload previews stay data-sized and following fields start at the
+    // padded boundary.
+    Parser parser;
+    QVERIFY(parseBuffer(parser,
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  byte len;\n"
+                        "  [string, count(len), pad_to(4)]\n"
+                        "  byte data[];\n"
+                        "  [count(8), terminated_by(0), pad_to(4)]\n"
+                        "  char name[];\n"
+                        "  byte afterName;\n"
+                        "} root;\n"));
+
+    auto rows = buildRows(parser.GetStrataLibrary(),
+                          firstExported(parser.GetStrataLibrary()),
+                          QByteArray::fromHex("02414200585900000B"));
+
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(4));
+    QCOMPARE(rows[0]->children[1]->value, QStringLiteral("\"AB\""));
+    QCOMPARE(rows[0]->children[2]->value, QStringLiteral("\"XY\""));
+    QCOMPARE(rows[0]->children[3]->name, QStringLiteral("byte afterName"));
+    QCOMPARE(rows[0]->children[3]->absoluteOffset, uint64_t(8));
+    QCOMPARE(rows[0]->children[3]->value, QStringLiteral("11"));
+}
+
 void StructViewTests::builderSkipsAbsentOptionalDeclarations()
 {
     // Scenario: a PE-style NT header reports no optional-header bytes.
@@ -1686,6 +1721,53 @@ void StructViewTests::builderEvaluatesFindSearchExpressions()
     QVERIFY(findChildNamed(rows[0].get(), QStringLiteral("byte missing")) == nullptr);
 }
 
+void StructViewTests::builderSelectsUnionMembersFromStringExpressions()
+{
+    // Scenario: a nameless union discriminator is a NUL-terminated string found
+    // through an offset expression, and cases are string literals rather than
+    // numeric constants.
+    // Expected: select(cstr_at(...)) chooses the matching string case, and
+    // falls back to [default] when no case matches. Because the union has no
+    // declarator, the selected child is flattened into the parent row.
+    Parser parser;
+    QVERIFY(parseBuffer(parser,
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  dword strings;\n"
+                        "  byte nameoff;\n"
+                        "  [select(cstr_at(strings + nameoff, 16))]\n"
+                        "  union {\n"
+                        "    [case(\"known\")] byte selected;\n"
+                        "    [default] word fallback;\n"
+                        "  };\n"
+                        "} root;\n"));
+
+    QByteArray known(32, '\0');
+    writeLe32(&known, 0, 12);
+    known[4] = char(0);
+    known[5] = char(0x7f);
+    writeAscii(&known, 12, "known");
+
+    auto knownRows = buildRows(parser.GetStrataLibrary(), firstExported(parser.GetStrataLibrary()), known);
+    QVERIFY(findChildNamed(knownRows[0].get(), QStringLiteral("byte selected")));
+    QVERIFY(!findChildNamed(knownRows[0].get(), QStringLiteral("union value")));
+    QVERIFY(!findChildNamed(knownRows[0].get(), QStringLiteral("word fallback")));
+
+    QByteArray unknown(32, '\0');
+    writeLe32(&unknown, 0, 12);
+    unknown[4] = char(6);
+    writeLe16(&unknown, 5, 0x1234);
+    writeAscii(&unknown, 12, "known");
+    writeAscii(&unknown, 18, "other");
+
+    auto unknownRows = buildRows(parser.GetStrataLibrary(), firstExported(parser.GetStrataLibrary()), unknown);
+    QVERIFY(!findChildNamed(unknownRows[0].get(), QStringLiteral("union value")));
+    QVERIFY(!findChildNamed(unknownRows[0].get(), QStringLiteral("byte selected")));
+    StructureRow *fallback = findChildNamed(unknownRows[0].get(), QStringLiteral("word fallback"));
+    QVERIFY(fallback);
+    QCOMPARE(fallback->value, QStringLiteral("4660"));
+}
+
 void StructViewTests::builderUsesDynamicEndianExpressions()
 {
     // Scenario: a format stores byte order in the file header, and the exported
@@ -2119,17 +2201,17 @@ void StructViewTests::builderRendersDtbHeaderAndBlocks()
     TypeDecl *dtbRoot = exportedNamed(&library, QStringLiteral("FDT"));
     QVERIFY(dtbRoot);
 
-    QByteArray dtb(0x60, '\0');
+    QByteArray dtb(0x90, '\0');
     writeBe32(&dtb, 0x00, 0xd00dfeed); // magic
     writeBe32(&dtb, 0x04, quint32(dtb.size()));
     writeBe32(&dtb, 0x08, 0x48);       // off_dt_struct
-    writeBe32(&dtb, 0x0c, 0x58);       // off_dt_strings
+    writeBe32(&dtb, 0x0c, 0x78);       // off_dt_strings
     writeBe32(&dtb, 0x10, 0x28);       // off_mem_rsvmap
     writeBe32(&dtb, 0x14, 17);         // version
     writeBe32(&dtb, 0x18, 16);         // last_comp_version
     writeBe32(&dtb, 0x1c, 0);          // boot_cpuid_phys
-    writeBe32(&dtb, 0x20, 8);          // size_dt_strings
-    writeBe32(&dtb, 0x24, 16);         // size_dt_struct
+    writeBe32(&dtb, 0x20, 15);         // size_dt_strings
+    writeBe32(&dtb, 0x24, 0x30);       // size_dt_struct
 
     writeBe64(&dtb, 0x28, 0x0000000000001000);
     writeBe64(&dtb, 0x30, 0x0000000000000100);
@@ -2138,10 +2220,21 @@ void StructViewTests::builderRendersDtbHeaderAndBlocks()
 
     writeBe32(&dtb, 0x48, 0x00000001); // FDT_BEGIN_NODE
     writeBe32(&dtb, 0x4c, 0x00000000); // root node name: ""
-    writeBe32(&dtb, 0x50, 0x00000002); // FDT_END_NODE
-    writeBe32(&dtb, 0x54, 0x00000009); // FDT_END
-    writeAscii(&dtb, 0x58, "foo");
-    writeAscii(&dtb, 0x5c, "bar");
+    writeBe32(&dtb, 0x50, 0x00000003); // FDT_PROP
+    writeBe32(&dtb, 0x54, 3);          // len
+    writeBe32(&dtb, 0x58, 0);          // nameoff: "compatible"
+    writeAscii(&dtb, 0x5c, "abc");
+    writeBe32(&dtb, 0x60, 0x00000003); // FDT_PROP
+    writeBe32(&dtb, 0x64, 4);          // len
+    writeBe32(&dtb, 0x68, 11);         // nameoff: "foo"
+    dtb[0x6c] = char(1);
+    dtb[0x6d] = char(2);
+    dtb[0x6e] = char(3);
+    dtb[0x6f] = char(4);
+    writeBe32(&dtb, 0x70, 0x00000002); // FDT_END_NODE
+    writeBe32(&dtb, 0x74, 0x00000009); // FDT_END
+    writeAscii(&dtb, 0x78, "compatible");
+    writeAscii(&dtb, 0x83, "foo");
 
     auto rows = buildRows(&library, dtbRoot, dtb);
     QCOMPARE(rows.size(), size_t(1));
@@ -2151,7 +2244,7 @@ void StructViewTests::builderRendersDtbHeaderAndBlocks()
     QVERIFY(header);
     QCOMPARE(findChildNamed(header, QStringLiteral("dword magic"))->value, QStringLiteral("3490578157"));
     QCOMPARE(findChildNamed(header, QStringLiteral("dword off_dt_struct"))->value, QStringLiteral("72"));
-    QCOMPARE(findChildNamed(header, QStringLiteral("dword size_dt_struct"))->value, QStringLiteral("16"));
+    QCOMPARE(findChildNamed(header, QStringLiteral("dword size_dt_struct"))->value, QStringLiteral("48"));
 
     StructureRow *reserveMap = findChildNamed(rows[0].get(), QStringLiteral("FDT_RESERVE_ENTRY reserveMap[]"));
     QVERIFY(reserveMap);
@@ -2165,23 +2258,45 @@ void StructViewTests::builderRendersDtbHeaderAndBlocks()
     StructureRow *structureBlock = findChildNamed(rows[0].get(), QStringLiteral("FDT_STRUCT_ITEM structureBlock[]"));
     QVERIFY(structureBlock);
     QCOMPARE(structureBlock->absoluteOffset, uint64_t(0x48));
-    QCOMPARE(structureBlock->children.size(), size_t(2));
+    QCOMPARE(structureBlock->children.size(), size_t(4));
     QCOMPARE(findChildNamed(structureBlock->children[0].get(), QStringLiteral("dword token"))->value,
              QStringLiteral("FDT_BEGIN_NODE"));
-    StructureRow *payload = findChildNamed(structureBlock->children[0].get(), QStringLiteral("union payload"));
-    QVERIFY(payload);
-    StructureRow *beginNode = findChildNamed(payload, QStringLiteral("FDT_BEGIN_NODE_PAYLOAD beginNode"));
+    QVERIFY(!findChildNamed(structureBlock->children[0].get(), QStringLiteral("union payload")));
+    StructureRow *beginNode = findChildNamed(structureBlock->children[0].get(), QStringLiteral("FDT_BEGIN_NODE_PAYLOAD beginNode"));
     QVERIFY(beginNode);
     QCOMPARE(findChildNamed(beginNode, QStringLiteral("char name[]"))->value, QStringLiteral("\"\""));
+
     QCOMPARE(findChildNamed(structureBlock->children[1].get(), QStringLiteral("dword token"))->value,
+             QStringLiteral("FDT_PROP"));
+    QVERIFY(!findChildNamed(structureBlock->children[1].get(), QStringLiteral("union payload")));
+    StructureRow *compatibleProp = findChildNamed(structureBlock->children[1].get(), QStringLiteral("FDT_PROP_PAYLOAD prop"));
+    QVERIFY(compatibleProp);
+    StructureRow *compatible = findChildNamed(compatibleProp, QStringLiteral("byte compatible[]"));
+    QVERIFY(compatible);
+    QCOMPARE(compatible->value, QStringLiteral("\"abc\""));
+    QVERIFY(!findChildNamed(compatibleProp, QStringLiteral("union data")));
+    QVERIFY(!findChildNamed(compatibleProp, QStringLiteral("byte raw[]")));
+
+    QCOMPARE(findChildNamed(structureBlock->children[2].get(), QStringLiteral("dword token"))->value,
+             QStringLiteral("FDT_PROP"));
+    QVERIFY(!findChildNamed(structureBlock->children[2].get(), QStringLiteral("union payload")));
+    StructureRow *rawProp = findChildNamed(structureBlock->children[2].get(), QStringLiteral("FDT_PROP_PAYLOAD prop"));
+    QVERIFY(rawProp);
+    StructureRow *raw = findChildNamed(rawProp, QStringLiteral("byte raw[]"));
+    QVERIFY(raw);
+    QCOMPARE(raw->value, QStringLiteral("{ 1, 2, 3, 4 }"));
+    QVERIFY(!findChildNamed(rawProp, QStringLiteral("union data")));
+    QVERIFY(!findChildNamed(rawProp, QStringLiteral("byte compatible[]")));
+
+    QCOMPARE(findChildNamed(structureBlock->children[3].get(), QStringLiteral("dword token"))->value,
              QStringLiteral("FDT_END_NODE"));
 
     StructureRow *stringsBlock = findChildNamed(rows[0].get(), QStringLiteral("char stringsBlock[][]"));
     QVERIFY(stringsBlock);
-    QCOMPARE(stringsBlock->absoluteOffset, uint64_t(0x58));
+    QCOMPARE(stringsBlock->absoluteOffset, uint64_t(0x78));
     QCOMPARE(stringsBlock->children.size(), size_t(2));
-    QCOMPARE(stringsBlock->children[0]->value, QStringLiteral("\"foo\""));
-    QCOMPARE(stringsBlock->children[1]->value, QStringLiteral("\"bar\""));
+    QCOMPARE(stringsBlock->children[0]->value, QStringLiteral("\"compatible\""));
+    QCOMPARE(stringsBlock->children[1]->value, QStringLiteral("\"foo\""));
 }
 
 void StructViewTests::builderRendersZipCentralDirectoryFromEocd()
