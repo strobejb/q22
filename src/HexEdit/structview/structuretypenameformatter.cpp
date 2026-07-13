@@ -51,6 +51,8 @@ QString StructureTypeNameFormatter::definedTypeName(Type *type) const
     case typeQWORD: return QStringLiteral("qword");
     case typeFLOAT: return QStringLiteral("float");
     case typeDOUBLE: return QStringLiteral("double");
+    case typeULEB128: return QStringLiteral("uleb128");
+    case typeSLEB128: return QStringLiteral("sleb128");
     default:
         return definedTypeName(type->link);
     }
@@ -98,6 +100,8 @@ QString StructureTypeNameFormatter::storageTypeName(Type *type) const
     case typeQWORD: return QStringLiteral("qword");
     case typeFLOAT: return QStringLiteral("float");
     case typeDOUBLE: return QStringLiteral("double");
+    case typeULEB128: return QStringLiteral("uleb128");
+    case typeSLEB128: return QStringLiteral("sleb128");
     default:
         return storageTypeName(type->link);
     }

@@ -11,6 +11,7 @@
 #include <QTemporaryDir>
 #include <QtTest/QtTest>
 
+#include <algorithm>
 #include <cstring>
 #include <memory>
 
@@ -31,8 +32,11 @@ private slots:
     void exportedTypesExposeMagicSignatures();
     void exportedTypesExposeDescriptions();
     void builderFormatsScalarsAndEndian();
+    void builderFormatsLeb128ScalarsAndAdvancesByEncodedLength();
+    void builderUsesLeb128ValuesInExpressions();
     void builderRendersBitflagsAsExpandableRows();
     void builderFormatsCharacterArraysAsStrings();
+    void builderFormatsTaggedByteArraysAsStrings();
     void builderFormatsScalarArraysAsPreviewLists();
     void builderPopulatesCommentsFromTypeDeclarations();
     void builderUsesPackedLayoutByDefault();
@@ -62,6 +66,7 @@ private slots:
     void builderUsesSimpleRootNamesForBuiltinTypedefRoots();
     void builderOptionallySortsTopLevelRowsByOffset();
     void builderRendersDexHeaderAndTables();
+    void builderAddsDexSemanticSummaryPastArrayRenderCap();
     void builderRendersZipCentralDirectoryFromEocd();
     void builderRendersElf32AndElf64Tables();
     void builderPlacesDynamicStructsUnderNamedDynamicContainers();
@@ -648,6 +653,75 @@ void StructViewTests::builderFormatsScalarsAndEndian()
     QCOMPARE(rows[0]->children[2]->value, QStringLiteral("258"));
 }
 
+void StructViewTests::builderFormatsLeb128ScalarsAndAdvancesByEncodedLength()
+{
+    // Scenario: LEB128 scalars have no fixed width; each field's encoded bytes
+    // determine both its value and the next field offset.
+    // Expected: uleb128/sleb128 values are decoded and following fields start
+    // after the actual encoded byte count.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  uleb128 small;\n"
+                        "  uleb128 medium;\n"
+                        "  uleb128 large;\n"
+                        "  sleb128 negOne;\n"
+                        "  sleb128 negLarge;\n"
+                        "  byte tail;\n"
+                        "} root;\n"));
+
+    auto rows = buildRows(&library,
+                          firstExported(&library),
+                          QByteArray::fromHex("7F8001E58E267F9BF15942"));
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(6));
+    QCOMPARE(rows[0]->children[0]->name, QStringLiteral("uleb128 small"));
+    QCOMPARE(rows[0]->children[0]->value, QStringLiteral("127"));
+    QCOMPARE(rows[0]->children[0]->byteLength, uint64_t(1));
+    QCOMPARE(rows[0]->children[1]->value, QStringLiteral("128"));
+    QCOMPARE(rows[0]->children[1]->absoluteOffset, uint64_t(1));
+    QCOMPARE(rows[0]->children[1]->byteLength, uint64_t(2));
+    QCOMPARE(rows[0]->children[2]->value, QStringLiteral("624485"));
+    QCOMPARE(rows[0]->children[2]->absoluteOffset, uint64_t(3));
+    QCOMPARE(rows[0]->children[2]->byteLength, uint64_t(3));
+    QCOMPARE(rows[0]->children[3]->value, QStringLiteral("-1"));
+    QCOMPARE(rows[0]->children[3]->absoluteOffset, uint64_t(6));
+    QCOMPARE(rows[0]->children[4]->value, QStringLiteral("-624485"));
+    QCOMPARE(rows[0]->children[4]->byteLength, uint64_t(3));
+    QCOMPARE(rows[0]->children[5]->name, QStringLiteral("byte tail"));
+    QCOMPARE(rows[0]->children[5]->absoluteOffset, uint64_t(10));
+    QCOMPARE(rows[0]->children[5]->value, QStringLiteral("66"));
+}
+
+void StructViewTests::builderUsesLeb128ValuesInExpressions()
+{
+    // Scenario: DEX/WASM-style structures commonly use a uleb128 field as the
+    // count for the variable data that immediately follows.
+    // Expected: expression evaluation sees the decoded integer, not the raw
+    // encoded bytes.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  uleb128 count;\n"
+                        "  [count(count)] byte values[];\n"
+                        "  byte tail;\n"
+                        "} root;\n"));
+
+    auto rows = buildRows(&library, firstExported(&library), QByteArray::fromHex("030A0B0C2A"));
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(3));
+    QCOMPARE(rows[0]->children[0]->value, QStringLiteral("3"));
+    QCOMPARE(rows[0]->children[1]->name, QStringLiteral("byte values[]"));
+    QCOMPARE(rows[0]->children[1]->children.size(), size_t(3));
+    QCOMPARE(rows[0]->children[1]->children[2]->value, QStringLiteral("12"));
+    QCOMPARE(rows[0]->children[2]->absoluteOffset, uint64_t(4));
+    QCOMPARE(rows[0]->children[2]->value, QStringLiteral("42"));
+}
+
 void StructViewTests::builderRendersBitflagsAsExpandableRows()
 {
     // Scenario: bitflag(EnumName) annotates an integer field whose bits map to
@@ -718,6 +792,30 @@ void StructViewTests::builderFormatsCharacterArraysAsStrings()
     QCOMPARE(rows[0]->children[1]->name, QStringLiteral("wchar_t wide[]"));
     QCOMPARE(rows[0]->children[1]->value, QStringLiteral("\"AB\""));
     QCOMPARE(rows[0]->children[1]->children.size(), size_t(3));
+}
+
+void StructViewTests::builderFormatsTaggedByteArraysAsStrings()
+{
+    // Scenario: some formats store UTF-8 or ASCII bytes as byte arrays rather
+    // than char arrays.
+    // Expected: [string] opts byte[] into the quoted text display path, while
+    // untagged byte arrays keep their scalar preview.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  [string, count(4)] byte text[];\n"
+                        "  byte raw[4];\n"
+                        "} root;\n"));
+
+    auto rows = buildRows(&library, firstExported(&library), QByteArray::fromHex("4869C3A94869002A"));
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(2));
+    QCOMPARE(rows[0]->children[0]->name, QStringLiteral("byte text[]"));
+    QCOMPARE(rows[0]->children[0]->value, QStringLiteral("\"Hié\""));
+    QCOMPARE(rows[0]->children[1]->name, QStringLiteral("byte raw[]"));
+    QCOMPARE(rows[0]->children[1]->value, QStringLiteral("{ 72, 105, 0, 42 }"));
 }
 
 void StructViewTests::builderFormatsScalarArraysAsPreviewLists()
@@ -1717,6 +1815,10 @@ void StructViewTests::builderRendersDexHeaderAndTables()
     writeMapItem(0x0004, 1, 0x84);
     writeMapItem(0x0005, 1, 0x8c);
     writeMapItem(0x0006, 1, 0x94);
+    dex[0xc8] = char(2); // utf16_size as uleb128
+    dex[0xc9] = 'H';
+    dex[0xca] = 'i';
+    dex[0xcb] = '\0';
 
     auto rows = buildRows(&library, dexRoot, dex);
     QCOMPARE(rows.size(), size_t(1));
@@ -1735,6 +1837,28 @@ void StructViewTests::builderRendersDexHeaderAndTables()
     QCOMPARE(stringIds->children.size(), size_t(1));
     QCOMPARE(findChildNamed(stringIds->children[0].get(), QStringLiteral("dword string_data_off"))->value,
              QStringLiteral("200"));
+    QVERIFY(!findChildNamed(rows[0].get(), QStringLiteral("DEX Strings")));
+
+    StructureRow *typeIds = findChildNamed(rows[0].get(), QStringLiteral("DEX_TYPE_ID_ITEM typeIds[]"));
+    QVERIFY(typeIds);
+    QCOMPARE(typeIds->children.size(), size_t(1));
+    QVERIFY(!findChildNamed(rows[0].get(), QStringLiteral("DEX Types")));
+
+    StructureRow *protoIds = findChildNamed(rows[0].get(), QStringLiteral("DEX_PROTO_ID_ITEM protoIds[]"));
+    QVERIFY(protoIds);
+    QCOMPARE(protoIds->children.size(), size_t(1));
+    QVERIFY(findChildNamed(protoIds->children[0].get(), QStringLiteral("dword shorty_idx")));
+    QVERIFY(!findChildNamed(rows[0].get(), QStringLiteral("DEX Protos")));
+
+    StructureRow *fieldIds = findChildNamed(rows[0].get(), QStringLiteral("DEX_FIELD_ID_ITEM fieldIds[]"));
+    QVERIFY(fieldIds);
+    QCOMPARE(fieldIds->children.size(), size_t(1));
+    QVERIFY(!findChildNamed(rows[0].get(), QStringLiteral("DEX Fields")));
+
+    StructureRow *methodIds = findChildNamed(rows[0].get(), QStringLiteral("DEX_METHOD_ID_ITEM methodIds[]"));
+    QVERIFY(methodIds);
+    QCOMPARE(methodIds->children.size(), size_t(1));
+    QVERIFY(!findChildNamed(rows[0].get(), QStringLiteral("DEX Methods")));
 
     StructureRow *classDefs = findChildNamed(rows[0].get(), QStringLiteral("DEX_CLASS_DEF_ITEM classDefs[]"));
     QVERIFY(classDefs);
@@ -1743,6 +1867,7 @@ void StructViewTests::builderRendersDexHeaderAndTables()
     QVERIFY(accessFlags);
     QVERIFY(findChildNamed(accessFlags, QStringLiteral("DEX_ACC_PUBLIC")));
     QVERIFY(findChildNamed(accessFlags, QStringLiteral("DEX_ACC_ABSTRACT")));
+    QVERIFY(!findChildNamed(rows[0].get(), QStringLiteral("DEX Classes")));
 
     StructureRow *mapList = findChildNamed(rows[0].get(), QStringLiteral("DEX_MAP_LIST mapList"));
     QVERIFY(mapList);
@@ -1752,6 +1877,110 @@ void StructViewTests::builderRendersDexHeaderAndTables()
     QCOMPARE(mapItems->children.size(), size_t(7));
     QCOMPARE(findChildNamed(mapItems->children[1].get(), QStringLiteral("word type"))->value,
              QStringLiteral("DEX_TYPE_STRING_ID_ITEM"));
+
+    StructureRow *summary = findChildNamed(rows[0].get(), QStringLiteral("DEX Summary"));
+    QVERIFY(summary);
+    StructureRow *decodedStrings = findChildNamed(summary, QStringLiteral("Decoded Strings"));
+    QVERIFY(decodedStrings);
+    QVERIFY(findChildNamed(decodedStrings, QStringLiteral("String[0] Hi")));
+    StructureRow *decodedTypes = findChildNamed(summary, QStringLiteral("Decoded Types"));
+    QVERIFY(decodedTypes);
+    QVERIFY(findChildNamed(decodedTypes, QStringLiteral("Type[0] Hi")));
+    StructureRow *decodedFields = findChildNamed(summary, QStringLiteral("Decoded Fields"));
+    QVERIFY(decodedFields);
+    StructureRow *field = findChildNamed(decodedFields, QStringLiteral("Field[0] Hi"));
+    QVERIFY(field);
+    QCOMPARE(field->value, QStringLiteral("Hi : Hi"));
+    StructureRow *decodedMethods = findChildNamed(summary, QStringLiteral("Decoded Methods"));
+    QVERIFY(decodedMethods);
+    QVERIFY(findChildNamed(decodedMethods, QStringLiteral("Method[0] Hi")));
+    StructureRow *decodedClasses = findChildNamed(summary, QStringLiteral("Decoded Classes"));
+    QVERIFY(decodedClasses);
+    StructureRow *classDef = findChildNamed(decodedClasses, QStringLiteral("Class[0] Hi"));
+    QVERIFY(classDef);
+    QVERIFY(classDef->value.contains(QStringLiteral("FLAGS 0X00000401")));
+    QVERIFY(classDef->value.contains(QStringLiteral("source Hi")));
+}
+
+void StructViewTests::builderAddsDexSemanticSummaryPastArrayRenderCap()
+{
+    // Scenario: large real-world DEX files may have readable names well after
+    // the raw renderer's array preview cap.
+    // Expected: the semantic DEX summary walks the header tables directly and
+    // exposes decoded names even when their string_id item was not rendered.
+    // Regression guard: DEX name discovery must not depend on the first 100 raw
+    // stringIds[] children being useful human-readable text.
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("dex.struct")), "dex.struct failed to parse");
+    TypeDecl *dexRoot = exportedNamed(&library, QStringLiteral("DEX"));
+    QVERIFY(dexRoot);
+
+    constexpr quint32 kStringCount = 121;
+    constexpr quint32 kReadableIndex = 120;
+    constexpr qsizetype kStringIdsOff = 0x70;
+    constexpr qsizetype kTypeIdsOff = kStringIdsOff + kStringCount * 4;
+    constexpr qsizetype kMethodIdsOff = kTypeIdsOff + 4;
+    constexpr qsizetype kStringDataOff = 0x300;
+
+    QByteArray dex(0x430, '\0');
+    dex[0] = 'd';
+    dex[1] = 'e';
+    dex[2] = 'x';
+    dex[3] = '\n';
+    dex[4] = '0';
+    dex[5] = '3';
+    dex[6] = '9';
+
+    writeLe32(&dex, 0x20, quint32(dex.size()));
+    writeLe32(&dex, 0x24, 0x70);
+    writeLe32(&dex, 0x28, 0x12345678);
+    writeLe32(&dex, 0x38, kStringCount);
+    writeLe32(&dex, 0x3c, kStringIdsOff);
+    writeLe32(&dex, 0x40, 1);
+    writeLe32(&dex, 0x44, kTypeIdsOff);
+    writeLe32(&dex, 0x58, 1);
+    writeLe32(&dex, 0x5c, kMethodIdsOff);
+    writeLe32(&dex, 0x68, quint32(dex.size() - kStringDataOff));
+    writeLe32(&dex, 0x6c, kStringDataOff);
+
+    for (quint32 i = 0; i < kStringCount; ++i)
+    {
+        const quint32 dataOffset = quint32(kStringDataOff + i * 2);
+        writeLe32(&dex, kStringIdsOff + qsizetype(i) * 4, dataOffset);
+        dex[dataOffset] = char(0);     // utf16_size
+        dex[dataOffset + 1] = char(0); // terminator
+    }
+
+    const qsizetype readableDataOff = kStringDataOff + qsizetype(kReadableIndex) * 2;
+    writeLe32(&dex, kStringIdsOff + qsizetype(kReadableIndex) * 4, quint32(readableDataOff));
+    dex[readableDataOff] = char(13);
+    memcpy(dex.data() + readableDataOff + 1, "   NormalName", 13);
+    dex[readableDataOff + 14] = char(0);
+
+    writeLe32(&dex, kTypeIdsOff, kReadableIndex);
+    writeLe16(&dex, kMethodIdsOff, 0);
+    writeLe16(&dex, kMethodIdsOff + 2, 0);
+    writeLe32(&dex, kMethodIdsOff + 4, kReadableIndex);
+
+    auto rows = buildRows(&library, dexRoot, dex);
+    QCOMPARE(rows.size(), size_t(1));
+
+    StructureRow *stringIds = findChildNamed(rows[0].get(), QStringLiteral("DEX_STRING_ID_ITEM stringIds[]"));
+    QVERIFY(stringIds);
+    QVERIFY(stringIds->children.size() < kStringCount);
+    QVERIFY(!findDescendantNamed(stringIds, QStringLiteral("String[120] NormalName")));
+
+    StructureRow *summary = findChildNamed(rows[0].get(), QStringLiteral("DEX Summary"));
+    QVERIFY(summary);
+    StructureRow *decodedStrings = findChildNamed(summary, QStringLiteral("Decoded Strings"));
+    QVERIFY(decodedStrings);
+    QVERIFY(findChildNamed(decodedStrings, QStringLiteral("String[120] NormalName")));
+    StructureRow *decodedTypes = findChildNamed(summary, QStringLiteral("Decoded Types"));
+    QVERIFY(decodedTypes);
+    QVERIFY(findChildNamed(decodedTypes, QStringLiteral("Type[0] NormalName")));
+    StructureRow *decodedMethods = findChildNamed(summary, QStringLiteral("Decoded Methods"));
+    QVERIFY(decodedMethods);
+    QVERIFY(findChildNamed(decodedMethods, QStringLiteral("Method[0] NormalName")));
 }
 
 void StructViewTests::builderRendersZipCentralDirectoryFromEocd()

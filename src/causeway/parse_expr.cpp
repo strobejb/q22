@@ -247,6 +247,7 @@ ExprNode * Parser::UnaryExpression(void)
 		case TOK_FLOAT: case TOK_DOUBLE:
 		case TOK_BYTE:  case TOK_WORD:
 		case TOK_DWORD: case TOK_QWORD:
+		case TOK_ULEB128: case TOK_SLEB128:
 		{
 			TOKEN nameTok = t;
 			p = new ExprNode(EXPR_IDENTIFIER, nameTok);

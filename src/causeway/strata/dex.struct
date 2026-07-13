@@ -82,6 +82,17 @@ typedef struct _DEX_STRING_ID_ITEM
     dword string_data_off;
 } DEX_STRING_ID_ITEM, *PDEX_STRING_ID_ITEM;
 
+[
+    name(data)
+]
+typedef struct _DEX_STRING_DATA_ITEM
+{
+    uleb128 utf16_size;
+
+    [string, count(4096), terminated_by(0)]
+    byte data[];
+} DEX_STRING_DATA_ITEM, *PDEX_STRING_DATA_ITEM;
+
 typedef struct _DEX_TYPE_ID_ITEM
 {
     dword descriptor_idx;
@@ -154,7 +165,8 @@ typedef struct _DEX_MAP_LIST
     assoc(".dex"),
     magic(0, { 'd', 'e', 'x', 0x0a }),
     offset(0),
-    endian(select_offset(40) == 0x12)
+    endian(select_offset(40) == 0x12),
+    view("dex.summary")
 ]
 typedef struct _DEX
 {

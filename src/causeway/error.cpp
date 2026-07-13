@@ -94,6 +94,8 @@ const char * Parser::inenglish(TOKEN t)
 	case TOK_QWORD:			return "qword";
 	case TOK_FLOAT:			return "float";
 	case TOK_DOUBLE:		return "double";
+	case TOK_ULEB128:		return "uleb128";
+	case TOK_SLEB128:		return "sleb128";
 		
 	case '(':				return "(";
 	case ')':				return ")";
@@ -143,6 +145,8 @@ const char * inenglish(TYPE ty)
 	case typeWORD: return "typeWORD";
 	case typeDWORD: return "typeDWORD";
 	case typeQWORD: return "typeQWORD";
+	case typeULEB128: return "typeULEB128";
+	case typeSLEB128: return "typeSLEB128";
 	
 	// type modifiers
 	case typeTYPEDEF: return "typeTYPEDEF";

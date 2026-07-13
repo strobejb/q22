@@ -78,6 +78,7 @@ set_tests_properties(causeway_tests PROPERTIES
 
 add_executable(structview_tests
     structview_tests.cpp
+    ../src/HexEdit/structview/dexsemanticview.cpp
     ../src/HexEdit/structview/elfsemanticview.cpp
     ../src/HexEdit/structview/pesemanticview.cpp
     ../src/HexEdit/structview/structuredefinitionmanager.cpp

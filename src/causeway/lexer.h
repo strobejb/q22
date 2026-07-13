@@ -147,6 +147,8 @@ typedef enum TOKEN
 	TOK_FLOAT,
 	TOK_DOUBLE,
 	TOK_WCHAR,
+	TOK_ULEB128,
+	TOK_SLEB128,
 } TOKEN;
 
 #ifdef __cplusplus

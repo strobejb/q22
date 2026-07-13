@@ -23,6 +23,8 @@ enum TYPE
 	typeQWORD,
 	typeFLOAT,
 	typeDOUBLE,
+	typeULEB128,
+	typeSLEB128,
 
 	// others
 	typeDOSTIME,

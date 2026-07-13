@@ -52,6 +52,8 @@ TOKEN_LOOKUP toklook[] =
 	{	TOK_QWORD,		"qword"			},
 	{	TOK_FLOAT,		"float"			},
 	{	TOK_DOUBLE,		"double"		},
+	{	TOK_ULEB128,	"uleb128"		},
+	{	TOK_SLEB128,	"sleb128"		},
 
 #undef DEFINE_KEYWORD
 #define DEFINE_KEYWORD(tok,str) {tok, str},
@@ -1041,4 +1043,3 @@ Token Lexer::Next()
 		}
 	}
 }
-

@@ -1,5 +1,6 @@
 #include "structview/structuresemanticview.h"
 
+#include "structview/dexsemanticview.h"
 #include "structview/elfsemanticview.h"
 #include "structview/pesemanticview.h"
 #include "structview/structurebranchicons.h"
@@ -229,6 +230,7 @@ void registerBuiltInStructureSemanticViews()
         return;
 
     registered = true;
+    registerDexSemanticViews(StructureSemanticViewRegistry::instance());
     registerElfSemanticViews(StructureSemanticViewRegistry::instance());
     registerPeSemanticViews(StructureSemanticViewRegistry::instance());
 }

@@ -101,6 +101,8 @@ set(PROJECT_SOURCES
         structview/structurecommentformatter.h
         structview/structuregriditemdelegate.cpp
         structview/structuregriditemdelegate.h
+        structview/dexsemanticview.cpp
+        structview/dexsemanticview.h
         structview/elfsemanticview.cpp
         structview/elfsemanticview.h
         structview/pesemanticview.cpp

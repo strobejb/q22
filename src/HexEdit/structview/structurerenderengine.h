@@ -76,6 +76,7 @@ private:
         TypeDecl *typeDecl = nullptr;
         Type *renderType = nullptr;
         QString label;
+        QString containerLabel;
         uint64_t logicalOffset = 0;
         DynamicMapper mapper = DynamicMapper::Direct;
     };
@@ -90,6 +91,7 @@ private:
         TypeDecl *typeDecl = nullptr;
         Type *renderType = nullptr;
         QString label;
+        QString containerLabel;
         uint64_t logicalOffset = 0;
         uint64_t maxCount = 0;
         ExprNode *stopExpr = nullptr;
@@ -112,6 +114,7 @@ private:
     StructureRow *findFieldRow(StructureRow *scope, ExprNode *expr);
     StructureRow *findDirectField(StructureRow *scope, const char *name) const;
     bool readInteger(uint64_t offset, uint64_t length, INUMTYPE *result, bool bigEndian) const;
+    bool decodeScalarValue(Type *type, uint64_t offset, uint64_t *value, uint64_t *byteLength) const;
     struct ResolvedField;
     bool resolveField(Type *scopeType, ExprNode *expr, uint64_t scopeOffset, ResolvedField *field);
     bool resolveDirectField(Type *scopeType, const char *name, uint64_t scopeOffset, ResolvedField *field);
@@ -131,12 +134,14 @@ private:
     bool dynamicTagArgs(ExprNode *expr,
                         ExprNode **selector,
                         ExprNode **label,
+                        ExprNode **container,
                         ExprNode **typeName,
                         ExprNode **logicalOffset,
                         ExprNode **condition,
                         DynamicMapper *mapper) const;
     bool dynamicArrayArgs(ExprNode *expr,
                           ExprNode **selectorOrLabel,
+                          ExprNode **container,
                           ExprNode **typeName,
                           ExprNode **logicalOffset,
                           ExprNode **count,
@@ -149,6 +154,7 @@ private:
     TypeDecl *findTypeDecl(const char *name) const;
     Type *typeInDecl(TypeDecl *decl, const char *name) const;
     DynamicContainer *mapLogicalOffset(uint64_t logicalOffset, uint64_t *fileOffset);
+    StructureRow *dynamicRootGroup(const QString &label);
     void resolveEntryPointRows(StructureRow *row);
 
     QString typeName(Type *type) const;
@@ -193,6 +199,7 @@ private:
     bool m_evaluatingEndian = false;
     StructureDisplayOptions m_options;
     StructureValueBuilder::ByteReader m_reader;
+    StructureRow *m_rootRow = nullptr;
     std::vector<DynamicContainer> m_dynamicContainers;
     std::vector<DynamicRequest> m_dynamicRequests;
     std::vector<DynamicArrayRequest> m_dynamicArrayRequests;

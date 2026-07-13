@@ -99,6 +99,8 @@ include "basetypes.struct";
 | `wchar_t` | 16-bit | wide character |
 | `float` | 32-bit | IEEE 754 |
 | `double` | 64-bit | IEEE 754 |
+| `uleb128` | 1-10 bytes | unsigned LEB128 variable-width integer |
+| `sleb128` | 1-10 bytes | signed LEB128 variable-width integer |
 
 Use `signed` or `unsigned` to override the default:
 
@@ -109,6 +111,17 @@ typedef signed   dword  int, long;
 ```
 
 Built-in special types: `DOSTIME`, `DOSDATE`, `FILETIME`, `time_t`.
+
+`uleb128` and `sleb128` are scalar integer types whose byte length is decoded
+from the file at render time. They advance layout by the encoded byte count and
+can be referenced from expressions such as `count(...)` after they have been
+read:
+
+```c
+uleb128 Size;
+[count(Size)]
+byte Payload[];
+```
 
 ---
 
@@ -395,6 +408,7 @@ Renders a single struct at a computed offset. Arguments must be wrapped by role:
 ```c
 dynamic_struct(type(Type), offset(expr)
                [, name(label) | case(selector)]
+               [, container(label)]
                [, mapper(direct | offset_map)]
                [, optional(condition)])
 ```
@@ -403,6 +417,7 @@ dynamic_struct(type(Type), offset(expr)
 - `offset(expr)` — target offset expression
 - `name(label)` — display label when attaching to the current row
 - `case(selector)` — only the matching array element emits this struct
+- `container(label)` — place the generated dynamic struct under a named root-level group
 - `mapper(direct)` — interpret `offset(expr)` as a direct file offset; this is the default
 - `mapper(offset_map)` — map `offset(expr)` through `offset_map(...)` containers before rendering
 - `optional(condition)` — skip when false
@@ -423,6 +438,16 @@ dynamic_struct(name(LocalFileHeader),
                offset(RelativeOffsetOfLocalHeader))
 ```
 
+Use `container(Name)` to place generated dynamic rows under a named root-level
+group instead of under the owning row:
+
+```c
+dynamic_struct(container(RelatedData),
+               name(LocalFileHeader),
+               type(ZIP_LOCAL_FILE_HEADER),
+               offset(RelativeOffsetOfLocalHeader))
+```
+
 ### `dynamic_array`
 
 Renders a variable-length array at a computed offset. Arguments must be wrapped by role:
@@ -430,6 +455,7 @@ Renders a variable-length array at a computed offset. Arguments must be wrapped 
 ```c
 dynamic_array(type(ElemType), offset(expr), count(expr)
               [, name(label) | case(selector)]
+              [, container(label)]
               [, mapper(direct | offset_map)]
               [, terminated_by(stop_condition)]
               [, optional(condition)])
@@ -440,6 +466,7 @@ dynamic_array(type(ElemType), offset(expr), count(expr)
 - `count(expr)` — max element count
 - `name(label)` — display label; also marks character arrays as a per-element name source
 - `case(selector)` — only the matching array element emits this array
+- `container(label)` — place the generated dynamic array under a named root-level group
 - `mapper(direct)` — interpret `offset(expr)` as a direct file offset; this is the default
 - `mapper(offset_map)` — map `offset(expr)` through `offset_map(...)` containers before rendering
 - `terminated_by(stop_condition)` — stop early when this per-element expression is true

@@ -210,6 +210,7 @@ void PrintType(Type *type)
 		case typeBYTE:		case typeWORD:
 		case typeDWORD:		case typeQWORD:
         case typeFLOAT:     case typeDOUBLE:
+        case typeULEB128:   case typeSLEB128:
 			printf("%s ", Parser::inenglish(TypeToToken(type->ty))); 
 			break;                    
 
@@ -452,6 +453,7 @@ size_t RecurseDisplayType(FILE *fp, TypeDecl *typeDecl, Type *type, int indent, 
 		case typeBYTE:		case typeWORD:
 		case typeDWORD:		case typeQWORD:
 		case typeFLOAT:		case typeDOUBLE:
+		case typeULEB128:	case typeSLEB128:
 			
 			//if(type->link)
 			if(padtype && !fPreserveWhitespace)
@@ -653,4 +655,3 @@ void Parser::Dump2(FILE *fp)
 
 	printf("\n\n");
 }
-

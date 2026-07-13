@@ -548,6 +548,7 @@ Type * Parser::ParseBaseType(TypeDecl *typeDecl, bool nested)
 		case TOK_FLOAT: case TOK_DOUBLE:
 		case TOK_BYTE:  case TOK_WORD: 
 		case TOK_DWORD: case TOK_QWORD:
+		case TOK_ULEB128: case TOK_SLEB128:
 
 			tmp  = t;
 			Advance();
@@ -724,6 +725,7 @@ TypeDecl * Parser::ParseTypeDecl(Tag *tagList, SymbolTable &symTable, bool neste
 	// all built-in types / aliased types
 	case TOK_BYTE:   case TOK_WORD: 
 	case TOK_DWORD:  case TOK_QWORD:
+	case TOK_ULEB128: case TOK_SLEB128:
 	case TOK_CHAR:   case TOK_WCHAR:
 	case TOK_FLOAT:  case TOK_DOUBLE:
 	case TOK_STRUCT: case TOK_UNION:	

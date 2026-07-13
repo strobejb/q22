@@ -179,6 +179,8 @@ TYPE TokenToType(TOKEN t)
 	case TOK_FLOAT:		return typeFLOAT;
 	case TOK_DOUBLE:	return typeDOUBLE;
 	case TOK_QWORD:		return typeQWORD;
+	case TOK_ULEB128:	return typeULEB128;
+	case TOK_SLEB128:	return typeSLEB128;
 	case TOK_STRUCT:	return typeSTRUCT;
 	case TOK_UNION:		return typeUNION;
 	case TOK_ENUM:		return typeENUM;
@@ -198,6 +200,8 @@ TOKEN TypeToToken(TYPE ty)
 	case typeQWORD:		return TOK_QWORD;
 	case typeFLOAT:		return TOK_FLOAT;
 	case typeDOUBLE:	return TOK_DOUBLE;
+	case typeULEB128:	return TOK_ULEB128;
+	case typeSLEB128:	return TOK_SLEB128;
 	case typeSTRUCT:	return TOK_STRUCT;
 	case typeENUM:		return TOK_ENUM;
 	case typeUNION:		return TOK_UNION;
@@ -422,6 +426,7 @@ static int RecurseRenderType(stringprint &sbuf, Type *type)
 	case typeBYTE:		case typeWORD:
 	case typeDWORD:		case typeQWORD:
 	case typeFLOAT:		case typeDOUBLE:
+	case typeULEB128:	case typeSLEB128:
 		sbuf._stprintf(TEXT("%hs "), Parser::inenglish(TypeToToken(type->ty))); 
 		RecurseRenderType(sbuf, type->link);
 
@@ -505,6 +510,7 @@ bool IsInt(TYPE ty)
 	{
 	case typeCHAR: case typeWCHAR: case typeBYTE: 
 	case typeWORD: case typeDWORD: case typeQWORD:
+	case typeULEB128: case typeSLEB128:
 		return true;
 
 	default:
