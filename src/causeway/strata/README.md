@@ -565,6 +565,7 @@ detect and open automatically:
 | Tag | Effect |
 |-----|--------|
 | `export` / `export("name")` | Register as a file-format root, with optional human-readable name |
+| `version(n)` | Export definition version used to resolve built-in/user duplicates; defaults to `0` |
 | `assoc(".ext", ...)` | File extensions for this format |
 | `magic({ b, b, ... })` | Magic byte sequence at offset `0` |
 | `magic({ b, b, ... }, offset)` | Magic byte sequence at `offset` |
@@ -572,6 +573,7 @@ detect and open automatically:
 ```c
 [
   export("Portable Executable (PE)"),
+  version(1),
   assoc(".exe", ".sys", ".dll"),
   magic({ 'M', 'Z' })
 ]

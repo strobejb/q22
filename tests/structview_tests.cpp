@@ -31,6 +31,8 @@ private slots:
     void exportedTypesExposeAssocExtensions();
     void exportedTypesExposeMagicSignatures();
     void exportedTypesExposeDescriptions();
+    void exportedTypesResolveDuplicateVersionsAndLogDecision();
+    void exportedTypesLogDuplicateFilesEvenWhenUserCopyFails();
     void builderFormatsScalarsAndEndian();
     void builderFormatsLeb128ScalarsAndAdvancesByEncodedLength();
     void builderUsesLeb128ValuesInExpressions();
@@ -625,6 +627,83 @@ void StructViewTests::exportedTypesExposeDescriptions()
     QCOMPARE(exported.size(), 2);
     QCOMPARE(exported[0].description, QStringLiteral("Friendly Root"));
     QCOMPARE(exported[1].description, QString());
+}
+
+void StructViewTests::exportedTypesResolveDuplicateVersionsAndLogDecision()
+{
+    // Scenario: a user definition intentionally replaces a bundled exported
+    // format by using the same exported display name with a higher version.
+    // Expected: both files parse, only the newer user export is listed, and the
+    // load log names the selected and ignored candidates.
+    // Regression guard: stale config copies should not silently shadow built-ins
+    // and intentional overrides should not need to reuse built-in C symbols.
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+
+    const QString builtinDir = temp.filePath(QStringLiteral("strata"));
+    const QString userDir = temp.filePath(QStringLiteral("structs"));
+    QVERIFY(QDir().mkpath(builtinDir));
+    QVERIFY(QDir().mkpath(userDir));
+
+    writeTextFile(QDir(builtinDir).filePath(QStringLiteral("zip.struct")),
+                  "[export(\"ZIP Archive\"), version(1), assoc(\".zip\")]\n"
+                  "struct BuiltinZipRoot { byte builtin; } builtinZip;\n");
+    writeTextFile(QDir(userDir).filePath(QStringLiteral("zip.struct")),
+                  "[export(\"ZIP Archive\"), version(2), assoc(\".zip\")]\n"
+                  "struct UserZipRoot { byte user; } userZip;\n");
+
+    StructureDefinitionManager manager;
+    manager.setBuiltinStructDirsForTests({ builtinDir });
+    manager.setUserStructsDirForTests(userDir);
+
+    QVERIFY2(manager.reload(), qPrintable(manager.lastError()));
+    const QList<ExportedStructureType> exported = manager.exportedTypes();
+    QCOMPARE(exported.size(), 1);
+    QCOMPARE(exported[0].description, QStringLiteral("ZIP Archive"));
+    QCOMPARE(exported[0].version, 2);
+    QVERIFY(exported[0].userDefinition);
+    QCOMPARE(exported[0].fileName, QStringLiteral("zip.struct"));
+
+    const QString log = manager.loadLog();
+    QVERIFY(log.contains(QStringLiteral("Definition file zip.struct: user and built-in copies are both present")));
+    QVERIFY(log.contains(QStringLiteral("user(picked):")));
+    QVERIFY(log.contains(QStringLiteral("built-in(ignored):")));
+    QVERIFY(log.contains(QStringLiteral("Export ZIP Archive: picked: user zip.struct version 2")));
+    QVERIFY(log.contains(QStringLiteral("Export ZIP Archive: ignored: built-in zip.struct version 1")));
+    QVERIFY(log.contains(QStringLiteral("Exported type(s): 1")));
+}
+
+void StructViewTests::exportedTypesLogDuplicateFilesEvenWhenUserCopyFails()
+{
+    // Scenario: a stale user file has the same basename as a bundled definition,
+    // but fails before it can contribute an exported root.
+    // Expected: the load log still calls out the duplicate file pair, then
+    // reports the parse failure normally.
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+
+    const QString builtinDir = temp.filePath(QStringLiteral("strata"));
+    const QString userDir = temp.filePath(QStringLiteral("structs"));
+    QVERIFY(QDir().mkpath(builtinDir));
+    QVERIFY(QDir().mkpath(userDir));
+
+    writeTextFile(QDir(builtinDir).filePath(QStringLiteral("zip.struct")),
+                  "[export(\"ZIP Archive\"), version(1)]\n"
+                  "struct BuiltinZipRoot { byte builtin; } builtinZip;\n");
+    writeTextFile(QDir(userDir).filePath(QStringLiteral("zip.struct")),
+                  "[export(\"ZIP Archive\"), version(2)]\n"
+                  "struct UserZipRoot { Word broken; } userZip;\n");
+
+    StructureDefinitionManager manager;
+    manager.setBuiltinStructDirsForTests({ builtinDir });
+    manager.setUserStructsDirForTests(userDir);
+
+    QVERIFY(!manager.reload());
+    const QString log = manager.loadLog();
+    QVERIFY(log.contains(QStringLiteral("Definition file zip.struct: user and built-in copies are both present")));
+    QVERIFY(log.contains(QStringLiteral("built-in(picked):")));
+    QVERIFY(log.contains(QStringLiteral("user(ignored):")));
+    QVERIFY(log.contains(QStringLiteral("Failed: zip.struct")));
 }
 
 void StructViewTests::builderFormatsScalarsAndEndian()

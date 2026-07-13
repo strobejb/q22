@@ -213,6 +213,7 @@ typedef struct _ZIP_CENTRAL_DIRECTORY_SEQUENCE
 
 [
     export("ZIP Archive"),
+    version(1),
     assoc(".zip", ".jar", ".apk", ".aar", ".war", ".ear", ".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp", ".epub", ".cbz"),
     magic({ 'P', 'K' }),
     offset(0),

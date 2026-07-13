@@ -27,6 +27,8 @@ struct ExportedStructureType
     QString  filePath;
     QString  fileName;
     QString  description;
+    int      version = 0;
+    bool     userDefinition = false;
     QStringList assocExtensions;
     QList<StructureMagicSignature> magicSignatures;
 };
@@ -73,6 +75,7 @@ private:
     bool parseFiles(const QStringList &files,
                     StrataLibrary *library,
                     QList<FailedStructureFile> *failures) const;
+    QList<ExportedStructureType> resolvedExportedTypes(QStringList *resolutionLog = nullptr) const;
     void updateWatchedFiles(const QStringList &files);
     void scheduleChangeNotification();
 

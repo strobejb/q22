@@ -379,6 +379,7 @@ typedef struct _SECTION
 
 [
   export("Portable Executable (PE)"),
+  version(1),
   assoc(".exe", ".sys", ".dll"),
   magic({ 'M', 'Z' }),
   offset(0)

@@ -5,6 +5,8 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
+#include <QHash>
+#include <QMap>
 #include <QSet>
 #include <QSettings>
 #include <QStandardPaths>
@@ -125,6 +127,32 @@ QString descriptionFromTags(Tag *tagList)
     return QString::fromLocal8Bit(expr->str).trimmed();
 }
 
+int versionFromTags(Tag *tagList)
+{
+    ExprNode *expr = nullptr;
+    if (!FindTag(tagList, TOK_VERSION, &expr) || !expr)
+        return 0;
+
+    const INUMTYPE value = Evaluate(expr);
+    return value < 0 ? 0 : static_cast<int>(value);
+}
+
+QString exportedRootName(TypeDecl *decl)
+{
+    if (!decl)
+        return {};
+
+    for (Type *type : decl->declList)
+        if (type && type->sym)
+            return QString::fromLocal8Bit(type->sym->name);
+
+    Type *base = BaseNode(decl->baseType);
+    if (base && (base->ty == typeSTRUCT || base->ty == typeUNION) && base->sptr && base->sptr->symbol)
+        return QString::fromLocal8Bit(base->sptr->symbol->name);
+
+    return {};
+}
+
 QString settingsSiblingDir(const QString &name)
 {
     const QFileInfo settingsFile(QSettings().fileName());
@@ -155,6 +183,54 @@ QStringList existingDefinitionFilesInDir(const QString &dirPath, bool includeLeg
 
     return files;
 }
+
+void appendDuplicateDefinitionFileLog(const QStringList &files,
+                                      const QString &userDirPath,
+                                      const QList<ExportedStructureType> &activeExports,
+                                      QStringList *log)
+{
+    if (!log)
+        return;
+
+    const QString userDir = QFileInfo(userDirPath).absoluteFilePath();
+    QMap<QString, QStringList> builtinsByName;
+    QMap<QString, QStringList> usersByName;
+    QSet<QString> pickedPaths;
+
+    for (const ExportedStructureType &type : activeExports)
+        if (!type.filePath.isEmpty())
+            pickedPaths.insert(QDir::toNativeSeparators(QFileInfo(type.filePath).absoluteFilePath()));
+
+    for (const QString &file : files)
+    {
+        const QFileInfo info(file);
+        const QString name = info.fileName();
+        const QString path = QDir::toNativeSeparators(info.absoluteFilePath());
+        if (info.absoluteFilePath().startsWith(userDir + QLatin1Char('/')))
+            usersByName[name].push_back(path);
+        else
+            builtinsByName[name].push_back(path);
+    }
+
+    for (auto it = usersByName.constBegin(); it != usersByName.constEnd(); ++it)
+    {
+        const QString name = it.key();
+        if (!builtinsByName.contains(name))
+            continue;
+
+        log->push_back(QObject::tr("Definition file %1: user and built-in copies are both present").arg(name));
+        for (const QString &path : builtinsByName.value(name))
+        {
+            const QString prefix = pickedPaths.contains(path) ? QObject::tr("picked") : QObject::tr("ignored");
+            log->push_back(QObject::tr("  built-in(%1): %2").arg(prefix, path));
+        }
+        for (const QString &path : it.value())
+        {
+            const QString prefix = pickedPaths.contains(path) ? QObject::tr("picked") : QObject::tr("ignored");
+            log->push_back(QObject::tr("  user(%1): %2").arg(prefix, path));
+        }
+    }
+}
 }
 
 StructureDefinitionManager::StructureDefinitionManager(QObject *parent)
@@ -184,6 +260,11 @@ QStringList StructureDefinitionManager::definitionFiles() const
 
 QList<ExportedStructureType> StructureDefinitionManager::exportedTypes() const
 {
+    return resolvedExportedTypes();
+}
+
+QList<ExportedStructureType> StructureDefinitionManager::resolvedExportedTypes(QStringList *resolutionLog) const
+{
     QList<ExportedStructureType> types;
     if (!m_library)
         return types;
@@ -195,6 +276,8 @@ QList<ExportedStructureType> StructureDefinitionManager::exportedTypes() const
     QSet<QString> failedFilePaths;
     for (const FailedStructureFile &failure : m_failedFiles)
         failedFilePaths.insert(QDir::toNativeSeparators(failure.filePath));
+
+    const QString userDir = QFileInfo(userStructsDir()).absoluteFilePath();
 
     for (TypeDecl *decl : m_library->globalTypeDeclList)
     {
@@ -210,9 +293,12 @@ QList<ExportedStructureType> StructureDefinitionManager::exportedTypes() const
         if (fileDesc)
         {
             type.filePath = QString::fromLocal8Bit(fileDesc->filePath);
-            type.fileName = QString::fromLocal8Bit(fileDesc->fileName);
+            type.fileName = QFileInfo(type.filePath).fileName();
         }
         type.description = descriptionFromTags(decl->tagList);
+        type.version = versionFromTags(decl->tagList);
+        type.userDefinition = !type.filePath.isEmpty()
+            && QFileInfo(type.filePath).absoluteFilePath().startsWith(userDir + QLatin1Char('/'));
 
         ExprNode *assocExpr = nullptr;
         if (FindTag(decl->tagList, TOK_ASSOC, &assocExpr))
@@ -221,7 +307,64 @@ QList<ExportedStructureType> StructureDefinitionManager::exportedTypes() const
         types.push_back(type);
     }
 
-    return types;
+    QHash<QString, QVector<int>> groups;
+    QStringList keysInOrder;
+    for (int i = 0; i < types.size(); ++i)
+    {
+        QString key = types[i].description;
+        if (key.isEmpty())
+            key = exportedRootName(types[i].typeDecl);
+        if (key.isEmpty())
+            key = types[i].fileName;
+
+        if (!groups.contains(key))
+            keysInOrder.push_back(key);
+        groups[key].push_back(i);
+    }
+
+    QList<ExportedStructureType> selected;
+    for (const QString &key : keysInOrder)
+    {
+        const QVector<int> indexes = groups.value(key);
+        if (indexes.isEmpty())
+            continue;
+
+        int best = indexes.first();
+        for (int index : indexes)
+        {
+            const ExportedStructureType &candidate = types[index];
+            const ExportedStructureType &current = types[best];
+            if (candidate.version > current.version
+                || (candidate.version == current.version && candidate.userDefinition && !current.userDefinition))
+            {
+                best = index;
+            }
+        }
+
+        selected.push_back(types[best]);
+        if (resolutionLog && indexes.size() > 1)
+        {
+            const ExportedStructureType &winner = types[best];
+            resolutionLog->push_back(tr("Export %1: picked: %2 %3 version %4")
+                                         .arg(key,
+                                              winner.userDefinition ? tr("user") : tr("built-in"),
+                                              winner.fileName)
+                                         .arg(winner.version));
+            for (int index : indexes)
+            {
+                if (index == best)
+                    continue;
+                const ExportedStructureType &ignored = types[index];
+                resolutionLog->push_back(tr("Export %1: ignored: %2 %3 version %4")
+                                             .arg(key,
+                                                  ignored.userDefinition ? tr("user") : tr("built-in"),
+                                                  ignored.fileName)
+                                             .arg(ignored.version));
+            }
+        }
+    }
+
+    return selected;
 }
 
 QList<FailedStructureFile> StructureDefinitionManager::failedFiles() const
@@ -346,8 +489,14 @@ bool StructureDefinitionManager::reload()
             m_loadLog.push_back(QStringLiteral("  ") + message);
     }
 
+    QStringList exportResolutionLog;
+    const QList<ExportedStructureType> activeExports = resolvedExportedTypes(&exportResolutionLog);
+    appendDuplicateDefinitionFileLog(files, userStructsDir(), activeExports, &m_loadLog);
+    for (const QString &message : exportResolutionLog)
+        m_loadLog.push_back(message);
+
     m_loadLog.push_back(tr("Loaded %1 definition file(s)").arg(files.size()));
-    m_loadLog.push_back(tr("Exported type(s): %1").arg(exportedTypes().size()));
+    m_loadLog.push_back(tr("Exported type(s): %1").arg(activeExports.size()));
     m_loaded = true;
     updateWatchedFiles(files);
     emit definitionsReloaded();
