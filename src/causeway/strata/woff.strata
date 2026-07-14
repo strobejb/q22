@@ -1,0 +1,69 @@
+// q22-strata-v1
+//
+//  woff.strata
+//
+
+include "basetypes.strata";
+
+enum WOFF_SFNT_FLAVOR
+{
+    WOFF_SFNT_TRUETYPE_1_0 = 0x00010000,
+    WOFF_SFNT_TRUETYPE     = 0x74727565,
+    WOFF_SFNT_OPENTYPE_CFF = 0x4f54544f
+};
+
+typedef struct _WOFF_TABLE_DIRECTORY_ENTRY
+{
+    [string, count(4)]
+    char tag[];
+
+    [dynamic_array(name(TableData), type(BYTE), offset(offset), count(compLength), optional(compLength != 0))]
+    dword offset;
+
+    dword compLength;
+    dword origLength;
+    dword origChecksum;
+} WOFF_TABLE_DIRECTORY_ENTRY, *PWOFF_TABLE_DIRECTORY_ENTRY;
+
+typedef struct _WOFF_HEADER
+{
+    [string, count(4)]
+    char signature[];
+
+    [enum(WOFF_SFNT_FLAVOR)]
+    dword flavor;
+
+    dword length;
+    word numTables;
+    word reserved;
+    dword totalSfntSize;
+    word majorVersion;
+    word minorVersion;
+
+    [dynamic_array(name(Metadata), type(BYTE), offset(metaOffset), count(metaLength), optional(metaOffset != 0 && metaLength != 0))]
+    dword metaOffset;
+
+    dword metaLength;
+    dword metaOrigLength;
+
+    [dynamic_array(name(PrivateData), type(BYTE), offset(privOffset), count(privLength), optional(privOffset != 0 && privLength != 0))]
+    dword privOffset;
+
+    dword privLength;
+} WOFF_HEADER, *PWOFF_HEADER;
+
+[
+    export("Web Open Font Format (WOFF)"),
+    version(1),
+    assoc(".woff"),
+    magic({ 'w', 'O', 'F', 'F' }),
+    offset(0),
+    endian("big")
+]
+typedef struct _WOFF
+{
+    WOFF_HEADER header;
+
+    [count(header.numTables), name(tag)]
+    WOFF_TABLE_DIRECTORY_ENTRY tables[];
+} WOFF;
