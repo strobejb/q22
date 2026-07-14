@@ -1194,6 +1194,20 @@ bool StructureRenderEngine::evaluateFunction(const EvalContext &context, ExprNod
 
     switch (expr->tok)
     {
+    case TOK_EXTENTOF:
+    {
+        std::vector<ExprNode *> args;
+        collectExpressionArgs(expr->left, &args);
+        if (args.size() != 1)
+            return false;
+
+        StructureRow *row = findFieldRow(context.row, args[0]);
+        if (!row)
+            return false;
+
+        *result = static_cast<INUMTYPE>(row->byteLength);
+        return true;
+    }
     case TOK_FILESIZE:
     {
         std::vector<ExprNode *> args;
@@ -1271,6 +1285,24 @@ bool StructureRenderEngine::evaluateStringFunction(const EvalContext &context, E
 
         bytes.truncate(static_cast<int>(got));
         *result = decodeNulTerminatedText(bytes, false);
+        return true;
+    }
+    case TOK_STR:
+    {
+        std::vector<ExprNode *> args;
+        collectExpressionArgs(expr->left, &args);
+        if (args.size() != 1)
+            return false;
+
+        StructureRow *row = findFieldRow(context.row, args[0]);
+        if (!row)
+            return false;
+
+        const QString text = fieldStringValue(row);
+        if (text.isNull())
+            return false;
+
+        *result = text;
         return true;
     }
     default:
@@ -3157,6 +3189,47 @@ QString StructureRenderEngine::stringArrayValue(StructureRow *scope, Type *type,
     bytes.truncate(static_cast<int>(got));
 
     return quoteString(decodeNulTerminatedText(bytes, elementType->ty == typeWCHAR));
+}
+
+QString StructureRenderEngine::fieldStringValue(StructureRow *row)
+{
+    if (!row || row->byteLength == 0)
+        return {};
+
+    Type *arrayType = nullptr;
+    for (Type *cursor = row->type; cursor; cursor = cursor->link)
+    {
+        if (cursor->ty == typeARRAY)
+        {
+            arrayType = cursor;
+            break;
+        }
+    }
+
+    if (!arrayType || (arrayType->link && arrayType->link->ty == typeARRAY))
+        return {};
+
+    Type *elementType = BaseNode(arrayType->link);
+    const bool explicitString = FindTag(row->typeDecl ? row->typeDecl->tagList : nullptr, TOK_STRING, nullptr);
+    if (!elementType
+        || (elementType->ty != typeCHAR
+            && elementType->ty != typeWCHAR
+            && !(explicitString && elementType->ty == typeBYTE)))
+    {
+        return {};
+    }
+
+    const uint64_t cappedLength = std::min<uint64_t>(row->byteLength, kMaxStringLookupBytes);
+    QByteArray bytes(static_cast<int>(cappedLength), Qt::Uninitialized);
+    const size_t got = m_reader ? m_reader(row->absoluteOffset,
+                                           reinterpret_cast<uint8_t *>(bytes.data()),
+                                           static_cast<size_t>(bytes.size()))
+                                : 0;
+    if (got == 0)
+        return {};
+
+    bytes.truncate(static_cast<int>(got));
+    return decodeNulTerminatedText(bytes, elementType->ty == typeWCHAR);
 }
 
 QString decodeModifiedUtf8(const QByteArray &bytes)

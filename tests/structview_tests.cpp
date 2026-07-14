@@ -2328,10 +2328,16 @@ void StructViewTests::builderRendersWasmHeaderAndSections()
     wasm.append(QByteArray::fromHex("0061736d"));     // magic
     wasm.append(QByteArray::fromHex("01000000"));     // version 1
     wasm.append(char(0x00));                          // custom section
-    wasm.append(char(0x06));                          // size
+    wasm.append(char(0x17));                          // size
     wasm.append(char(0x04));                          // name size
     wasm.append("name", 4);
-    wasm.append(char(0xff));                          // custom payload byte
+    wasm.append(QByteArray::fromHex("0005"));         // module name subsection, size 5
+    wasm.append(char(0x04));                          // module name length
+    wasm.append("demo", 4);
+    wasm.append(QByteArray::fromHex("0109"));         // function names subsection, size 9
+    wasm.append(QByteArray::fromHex("0100"));         // one entry, function index 0
+    wasm.append(char(0x06));                          // function name length
+    wasm.append("answer", 6);
     wasm.append(char(0x01));                          // type section
     wasm.append(char(0x05));                          // size
     wasm.append(QByteArray::fromHex("016000017f"));   // () -> i32
@@ -2372,7 +2378,7 @@ void StructViewTests::builderRendersWasmHeaderAndSections()
     QCOMPARE(customId->value, QStringLiteral("WASM_SECTION_CUSTOM"));
     StructureRow *customSize = findChildNamed(customSection, QStringLiteral("uleb128 size"));
     QVERIFY2(customSize, qPrintable(childNames(customSection)));
-    QCOMPARE(customSize->value, QStringLiteral("6"));
+    QCOMPARE(customSize->value, QStringLiteral("23"));
     StructureRow *custom = findChildNamed(customSection, QStringLiteral("WASM_CUSTOM_SECTION custom"));
     QVERIFY2(custom, qPrintable(childNames(customSection)));
     StructureRow *customNameSize = findChildNamed(custom, QStringLiteral("uleb128 nameSize"));
@@ -2381,6 +2387,25 @@ void StructViewTests::builderRendersWasmHeaderAndSections()
     StructureRow *customName = findChildNamed(custom, QStringLiteral("byte name[]"));
     QVERIFY2(customName, qPrintable(childNames(custom)));
     QCOMPARE(customName->value, QStringLiteral("\"name\""));
+    StructureRow *nameSubsections = findChildNamed(custom, QStringLiteral("WASM_NAME_SUBSECTION nameSubsections[]"));
+    QVERIFY2(nameSubsections, qPrintable(childNames(custom)));
+    QCOMPARE(nameSubsections->children.size(), size_t(2));
+    StructureRow *moduleSubsection = nameSubsections->children[0].get();
+    QCOMPARE(findChildNamed(moduleSubsection, QStringLiteral("byte id"))->value, QStringLiteral("WASM_NAME_MODULE"));
+    StructureRow *moduleName = findChildNamed(moduleSubsection, QStringLiteral("WASM_NAME module"));
+    QVERIFY2(moduleName, qPrintable(childNames(moduleSubsection)));
+    QCOMPARE(findChildNamed(moduleName, QStringLiteral("byte bytes[]"))->value, QStringLiteral("\"demo\""));
+    StructureRow *functionNameSubsection = nameSubsections->children[1].get();
+    QCOMPARE(findChildNamed(functionNameSubsection, QStringLiteral("byte id"))->value, QStringLiteral("WASM_NAME_FUNCTION"));
+    StructureRow *functionNameMap = findChildNamed(functionNameSubsection, QStringLiteral("WASM_NAME_MAP functions"));
+    QVERIFY2(functionNameMap, qPrintable(childNames(functionNameSubsection)));
+    StructureRow *functionNames = findChildNamed(functionNameMap, QStringLiteral("WASM_NAME_ASSOC names[]"));
+    QVERIFY2(functionNames, qPrintable(childNames(functionNameMap)));
+    QCOMPARE(functionNames->children.size(), size_t(1));
+    QCOMPARE(findChildNamed(functionNames->children[0].get(), QStringLiteral("uleb128 index"))->value, QStringLiteral("0"));
+    StructureRow *functionDebugName = findChildNamed(functionNames->children[0].get(), QStringLiteral("WASM_NAME name"));
+    QVERIFY2(functionDebugName, qPrintable(childNames(functionNames->children[0].get())));
+    QCOMPARE(findChildNamed(functionDebugName, QStringLiteral("byte bytes[]"))->value, QStringLiteral("\"answer\""));
 
     StructureRow *typeSection = sections->children[1].get();
     StructureRow *typeId = findChildNamed(typeSection, QStringLiteral("byte id"));
@@ -2453,9 +2478,14 @@ void StructViewTests::builderRendersWasmHeaderAndSections()
     QVERIFY2(codePayload, qPrintable(childNames(codeSection)));
     StructureRow *functions = findChildNamed(codePayload, QStringLiteral("WASM_CODE_ENTRY functions[]"));
     QVERIFY2(functions, qPrintable(childNames(codePayload)));
-    StructureRow *body = findChildNamed(functions->children[0].get(), QStringLiteral("byte body[]"));
+    StructureRow *body = findChildNamed(functions->children[0].get(), QStringLiteral("WASM_CODE_BODY body"));
     QVERIFY2(body, qPrintable(childNames(functions->children[0].get())));
-    QCOMPARE(body->value, QStringLiteral("{ 0, 65, 42, 11 }"));
+    StructureRow *localDeclCount = findChildNamed(body, QStringLiteral("uleb128 localDeclCount"));
+    QVERIFY2(localDeclCount, qPrintable(childNames(body)));
+    QCOMPARE(localDeclCount->value, QStringLiteral("0"));
+    StructureRow *instructions = findChildNamed(body, QStringLiteral("byte instructions[]"));
+    QVERIFY2(instructions, qPrintable(childNames(body)));
+    QCOMPARE(instructions->value, QStringLiteral("{ 65, 42 }"));
 }
 
 void StructViewTests::builderRendersZipCentralDirectoryFromEocd()

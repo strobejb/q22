@@ -20,7 +20,7 @@ stored in `~/.config/catch22/q22/strata`.
 | Unions | [`select`](#discriminated-unions) · [`case`](#discriminated-unions) |
 | Semantic views | [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) · [`view`](#view) |
 | Export | [`export`](#export-metadata) · [`version`](#export-metadata) · [`assoc`](#export-metadata) · [`magic`](#export-metadata) |
-| Expressions | [`sizeof`](#expressions) · [`file_size`](#expressions) · [`find_first`](#byte-pattern-search) · [`find_last`](#byte-pattern-search) · [`select_offset`](#select_offset) |
+| Expressions | [`sizeof`](#expressions) · [`file_size`](#expressions) · [`extent_of`](#expressions) · [`str`](#expressions) · [`find_first`](#byte-pattern-search) · [`find_last`](#byte-pattern-search) · [`select_offset`](#select_offset) |
 
 ---
 
@@ -605,7 +605,9 @@ dosHeader.e_lfanew
 | Logical | `&& \|\|` |
 | Conditional | `? :` |
 | Size | `sizeof(Type)` |
+| Runtime extent | `extent_of(field)` |
 | File size | `file_size()` |
+| Parsed string | `str(field)` |
 | String lookup | `cstr_at(offset, maxLen)` |
 | Byte search | `find_first({ ... })` · `find_last({ ... })` |
 | Raw read | `select_offset(byteOffset)` |
@@ -628,6 +630,30 @@ explicit byte-count field:
 ```c
 [count(4096), extent(file_size() - sizeof(Header))]
 Record records[];
+```
+
+`extent_of(field)` returns the actual rendered byte length of an already-parsed
+field. This is useful with variable-width scalars such as `uleb128` and flexible
+arrays when a following payload length is relative to the current record:
+
+```c
+[extent(size - extent_of(length) - extent_of(name))]
+byte payload[];
+```
+
+`str(field)` returns the decoded text of an already-parsed string field. The
+field must be a `char`/`wchar_t` array or a `byte` array tagged with `[string]`.
+It is useful with string-valued `select(...)` unions over length-prefixed names:
+
+```c
+[string, count(nameSize)]
+byte name[];
+
+[select(str(name))]
+union {
+    [case("metadata")] Metadata metadata;
+    [default] byte raw[];
+};
 ```
 
 ### Byte pattern search
@@ -705,7 +731,7 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 | Dynamic/semantic tags | `container`, `dynamic_array`, `dynamic_container`, `dynamic_struct`, `mapper`, `offset_map`, `type`, `view` |
 | Export/detection tags | `assoc`, `export`, `magic`, `version` |
 | Tagsets/files | `include`, `tagset`, `tags` |
-| Expression helpers | `cstr_at`, `file_size`, `find_first`, `find_last`, `sizeof` |
+| Expression helpers | `cstr_at`, `extent_of`, `file_size`, `find_first`, `find_last`, `sizeof`, `str` |
 
 ---
 

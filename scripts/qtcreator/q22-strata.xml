@@ -18,6 +18,7 @@
     <item>default</item>
     <item>display</item>
     <item>enum</item>
+    <item>extent_of</item>
     <item>file_size</item>
     <item>find_first</item>
     <item>find_last</item>
@@ -25,6 +26,7 @@
     <item>include</item>
     <item>select_offset</item>
     <item>sizeof</item>
+    <item>str</item>
     <item>string</item>
     <item>struct</item>
     <item>style</item>

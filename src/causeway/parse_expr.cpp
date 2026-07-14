@@ -309,8 +309,10 @@ ExprNode * Parser::UnaryExpression(void)
 	}
 
 	case TOK_CSTRAT:
+	case TOK_EXTENTOF:
 	case TOK_FINDFIRST:
 	case TOK_FINDLAST:
+	case TOK_STR:
 	{
 		TOKEN funcTok = t;
 		Advance();

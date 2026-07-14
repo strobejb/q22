@@ -68,6 +68,16 @@ enum WASM_DATA_MODE
     WASM_DATA_ACTIVE_MEMORY_N = 2
 };
 
+enum WASM_NAME_SUBSECTION_ID
+{
+    WASM_NAME_MODULE   = 0,
+    WASM_NAME_FUNCTION = 1,
+    WASM_NAME_LOCAL    = 2,
+    WASM_NAME_TYPE     = 4,
+    WASM_NAME_FIELD    = 10,
+    WASM_NAME_TAG      = 11
+};
+
 typedef struct _WASM_HEADER
 {
     byte magic[4];
@@ -81,6 +91,67 @@ typedef struct _WASM_NAME
     [string, count(length)]
     byte bytes[];
 } WASM_NAME, *PWASM_NAME;
+
+typedef struct _WASM_NAME_ASSOC
+{
+    uleb128 index;
+    WASM_NAME name;
+} WASM_NAME_ASSOC, *PWASM_NAME_ASSOC;
+
+typedef struct _WASM_NAME_MAP
+{
+    uleb128 count;
+
+    [count(count)]
+    WASM_NAME_ASSOC names[];
+} WASM_NAME_MAP, *PWASM_NAME_MAP;
+
+typedef struct _WASM_INDIRECT_NAME_ASSOC
+{
+    uleb128 index;
+    WASM_NAME_MAP names;
+} WASM_INDIRECT_NAME_ASSOC, *PWASM_INDIRECT_NAME_ASSOC;
+
+typedef struct _WASM_INDIRECT_NAME_MAP
+{
+    uleb128 count;
+
+    [count(count)]
+    WASM_INDIRECT_NAME_ASSOC names[];
+} WASM_INDIRECT_NAME_MAP, *PWASM_INDIRECT_NAME_MAP;
+
+typedef struct _WASM_NAME_SUBSECTION
+{
+    [enum(WASM_NAME_SUBSECTION_ID)]
+    byte id;
+
+    uleb128 size;
+
+    [select(id), extent(size)]
+    union
+    {
+        [case(WASM_NAME_MODULE)]
+        WASM_NAME module;
+
+        [case(WASM_NAME_FUNCTION)]
+        WASM_NAME_MAP functions;
+
+        [case(WASM_NAME_LOCAL)]
+        WASM_INDIRECT_NAME_MAP locals;
+
+        [case(WASM_NAME_TYPE)]
+        WASM_NAME_MAP types;
+
+        [case(WASM_NAME_FIELD)]
+        WASM_INDIRECT_NAME_MAP fields;
+
+        [case(WASM_NAME_TAG)]
+        WASM_NAME_MAP tags;
+
+        [default, count(size)]
+        byte raw[];
+    };
+} WASM_NAME_SUBSECTION, *PWASM_NAME_SUBSECTION;
 
 typedef struct _WASM_RESULT_TYPE
 {
@@ -257,12 +328,23 @@ typedef struct _WASM_LOCAL_DECL
     byte valueType;
 } WASM_LOCAL_DECL, *PWASM_LOCAL_DECL;
 
+typedef struct _WASM_CODE_BODY
+{
+    uleb128 localDeclCount;
+
+    [count(localDeclCount)]
+    WASM_LOCAL_DECL locals[];
+
+    [count(size), terminated_by(0x0b)]
+    byte instructions[];
+} WASM_CODE_BODY, *PWASM_CODE_BODY;
+
 typedef struct _WASM_CODE_ENTRY
 {
     uleb128 size;
 
-    [count(size), extent(size)]
-    byte body[];
+    [extent(size)]
+    WASM_CODE_BODY body;
 } WASM_CODE_ENTRY, *PWASM_CODE_ENTRY;
 
 typedef struct _WASM_CODE_SECTION
@@ -345,6 +427,19 @@ typedef struct _WASM_CUSTOM_SECTION
 
     [string, count(nameSize)]
     byte name[];
+
+    [
+        select(str(name)),
+        extent(size - extent_of(nameSize) - extent_of(name))
+    ]
+    union
+    {
+        [case("name"), count(64), extent(size - extent_of(nameSize) - extent_of(name))]
+        WASM_NAME_SUBSECTION nameSubsections[];
+
+        [default, count(size - extent_of(nameSize) - extent_of(name))]
+        byte raw[];
+    };
 } WASM_CUSTOM_SECTION, *PWASM_CUSTOM_SECTION;
 
 typedef struct _WASM_RAW_SECTION
