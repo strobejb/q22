@@ -74,6 +74,7 @@ private slots:
     void builderAddsDexSemanticSummaryPastArrayRenderCap();
     void builderRendersDtbHeaderAndBlocks();
     void builderRendersWasmHeaderAndSections();
+    void builderRendersSfntTableDirectory();
     void builderRendersZipCentralDirectoryFromEocd();
     void builderRendersElf32AndElf64Tables();
     void builderPlacesDynamicStructsUnderNamedDynamicContainers();
@@ -2402,6 +2403,7 @@ void StructViewTests::builderRendersWasmHeaderAndSections()
     StructureRow *functionNames = findChildNamed(functionNameMap, QStringLiteral("WASM_NAME_ASSOC names[]"));
     QVERIFY2(functionNames, qPrintable(childNames(functionNameMap)));
     QCOMPARE(functionNames->children.size(), size_t(1));
+    QCOMPARE(functionNames->children[0]->name, QStringLiteral("[0]answer"));
     QCOMPARE(findChildNamed(functionNames->children[0].get(), QStringLiteral("uleb128 index"))->value, QStringLiteral("0"));
     StructureRow *functionDebugName = findChildNamed(functionNames->children[0].get(), QStringLiteral("WASM_NAME name"));
     QVERIFY2(functionDebugName, qPrintable(childNames(functionNames->children[0].get())));
@@ -2456,6 +2458,7 @@ void StructViewTests::builderRendersWasmHeaderAndSections()
     QVERIFY2(exportPayload, qPrintable(childNames(exportSection)));
     StructureRow *exports = findChildNamed(exportPayload, QStringLiteral("WASM_EXPORT exports[]"));
     QVERIFY2(exports, qPrintable(childNames(exportPayload)));
+    QCOMPARE(exports->children[0]->name, QStringLiteral("[0]answer"));
     StructureRow *exportName = findChildNamed(exports->children[0].get(), QStringLiteral("WASM_NAME name"));
     QVERIFY2(exportName, qPrintable(childNames(exports->children[0].get())));
     StructureRow *exportNameBytes = findChildNamed(exportName, QStringLiteral("byte bytes[]"));
@@ -2486,6 +2489,59 @@ void StructViewTests::builderRendersWasmHeaderAndSections()
     StructureRow *instructions = findChildNamed(body, QStringLiteral("byte instructions[]"));
     QVERIFY2(instructions, qPrintable(childNames(body)));
     QCOMPARE(instructions->value, QStringLiteral("{ 65, 42 }"));
+}
+
+void StructViewTests::builderRendersSfntTableDirectory()
+{
+    // Scenario: TTF/OTF fonts share the big-endian SFNT table-directory
+    // container. Table records carry FourCC tags plus offsets and lengths.
+    // Expected: the standard SFNT definition names table-record rows by tag and
+    // exposes the table directory fields without needing typed table payloads.
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("sfnt.strata")), "sfnt.strata failed to parse");
+    TypeDecl *sfntRoot = exportedNamed(&library, QStringLiteral("SFNT"));
+    QVERIFY(sfntRoot);
+
+    QByteArray font(54, '\0');
+    writeBe32(&font, 0, 0x00010000); // TrueType sfntVersion
+    writeBe16(&font, 4, 2);          // numTables
+    writeBe16(&font, 6, 32);         // searchRange
+    writeBe16(&font, 8, 1);          // entrySelector
+    writeBe16(&font, 10, 0);         // rangeShift
+    font.replace(12, 4, "head");
+    writeBe32(&font, 16, 0x11111111);
+    writeBe32(&font, 20, 44);
+    writeBe32(&font, 24, 4);
+    font.replace(28, 4, "name");
+    writeBe32(&font, 32, 0x22222222);
+    writeBe32(&font, 36, 48);
+    writeBe32(&font, 40, 6);
+    font.replace(44, 4, QByteArray::fromHex("01020304"));
+    font.replace(48, 6, QByteArray("font\0\0", 6));
+
+    auto rows = buildRows(&library, sfntRoot, font);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->name, QStringLiteral("SFNT"));
+
+    StructureRow *signature = findChildNamed(rows[0].get(), QStringLiteral("dword signature"));
+    QVERIFY2(signature, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(signature->value, QStringLiteral("SFNT_TRUETYPE_1_0"));
+
+    StructureRow *offsetTable = findChildNamed(rows[0].get(), QStringLiteral("SFNT_OFFSET_TABLE font"));
+    QVERIFY2(offsetTable, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(findChildNamed(offsetTable, QStringLiteral("word numTables"))->value, QStringLiteral("2"));
+
+    StructureRow *tables = findChildNamed(offsetTable, QStringLiteral("SFNT_TABLE_RECORD tables[]"));
+    QVERIFY2(tables, qPrintable(childNames(offsetTable)));
+    QCOMPARE(tables->children.size(), size_t(2));
+    QCOMPARE(tables->children[0]->name, QStringLiteral("[0]head"));
+    QCOMPARE(tables->children[1]->name, QStringLiteral("[1]name"));
+
+    StructureRow *headTag = findChildNamed(tables->children[0].get(), QStringLiteral("char tag[]"));
+    QVERIFY2(headTag, qPrintable(childNames(tables->children[0].get())));
+    QCOMPARE(headTag->value, QStringLiteral("\"head\""));
+    QCOMPARE(findChildNamed(tables->children[0].get(), QStringLiteral("dword offset"))->value, QStringLiteral("44"));
+    QCOMPARE(findChildNamed(tables->children[1].get(), QStringLiteral("dword length"))->value, QStringLiteral("6"));
 }
 
 void StructViewTests::builderRendersZipCentralDirectoryFromEocd()
@@ -3405,6 +3461,10 @@ void StructViewTests::definitionManagerFlagsNonStaticFieldReferences()
     StrataLibrary zipLibrary;
     QVERIFY2(parseStandardDefinition(&zipLibrary, QStringLiteral("zip.strata")), "zip.strata failed to parse");
     QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&zipLibrary).isEmpty());
+
+    StrataLibrary sfntLibrary;
+    QVERIFY2(parseStandardDefinition(&sfntLibrary, QStringLiteral("sfnt.strata")), "sfnt.strata failed to parse");
+    QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&sfntLibrary).isEmpty());
 }
 
 void StructViewTests::definitionManagerFlagsRuntimeExpressionsInRootOffsets()

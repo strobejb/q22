@@ -102,7 +102,7 @@ typedef struct _WASM_NAME_MAP
 {
     uleb128 count;
 
-    [count(count)]
+    [count(count), name(name.bytes)]
     WASM_NAME_ASSOC names[];
 } WASM_NAME_MAP, *PWASM_NAME_MAP;
 
@@ -249,7 +249,7 @@ typedef struct _WASM_IMPORT_SECTION
 {
     uleb128 count;
 
-    [count(count)]
+    [count(count), name(name.bytes)]
     WASM_IMPORT imports[];
 } WASM_IMPORT_SECTION, *PWASM_IMPORT_SECTION;
 
@@ -311,7 +311,7 @@ typedef struct _WASM_EXPORT_SECTION
 {
     uleb128 count;
 
-    [count(count)]
+    [count(count), name(name.bytes)]
     WASM_EXPORT exports[];
 } WASM_EXPORT_SECTION, *PWASM_EXPORT_SECTION;
 

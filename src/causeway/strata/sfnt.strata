@@ -1,0 +1,113 @@
+// q22-strata-v1
+//
+//  sfnt.strata
+//
+
+include "basetypes.strata";
+
+enum SFNT_SIGNATURE
+{
+    SFNT_TRUETYPE_1_0 = 0x00010000,
+    SFNT_TRUETYPE     = 0x74727565,
+    SFNT_OPENTYPE_CFF = 0x4f54544f,
+    SFNT_SIGNATURE_COLLECTION = 0x74746366
+};
+
+enum SFNT_COLLECTION_VERSION
+{
+    SFNT_TTC_VERSION_1_0 = 0x00010000,
+    SFNT_TTC_VERSION_2_0 = 0x00020000
+};
+
+typedef struct _SFNT_TABLE_PAYLOAD
+{
+    [count(size), extent(size)]
+    BYTE bytes[];
+} SFNT_TABLE_PAYLOAD, *PSFNT_TABLE_PAYLOAD;
+
+[
+    dynamic_array(name(TableData), type(BYTE), offset(offset), count(length), optional(length != 0))
+]
+typedef struct _SFNT_TABLE_RECORD
+{
+    [string, count(4)]
+    char tag[];
+
+    dword checksum;
+    dword offset;
+    dword length;
+} SFNT_TABLE_RECORD, *PSFNT_TABLE_RECORD;
+
+typedef struct _SFNT_OFFSET_TABLE
+{
+    [enum(SFNT_SIGNATURE)]
+    dword sfntVersion;
+
+    word numTables;
+    word searchRange;
+    word entrySelector;
+    word rangeShift;
+
+    [count(numTables), name(tag)]
+    SFNT_TABLE_RECORD tables[];
+} SFNT_OFFSET_TABLE, *PSFNT_OFFSET_TABLE;
+
+[
+    dynamic_struct(name(Font), type(SFNT_OFFSET_TABLE), offset(offset), optional(offset != 0))
+]
+typedef struct _SFNT_COLLECTION_FONT
+{
+    dword offset;
+} SFNT_COLLECTION_FONT, *PSFNT_COLLECTION_FONT;
+
+typedef struct _SFNT_COLLECTION
+{
+    [enum(SFNT_SIGNATURE)]
+    dword tag;
+
+    [enum(SFNT_COLLECTION_VERSION)]
+    dword version;
+
+    dword numFonts;
+
+    [count(numFonts)]
+    SFNT_COLLECTION_FONT fonts[];
+
+    [optional(version == SFNT_TTC_VERSION_2_0)]
+    dword dsigTag;
+
+    [optional(version == SFNT_TTC_VERSION_2_0)]
+    dword dsigLength;
+
+    [optional(version == SFNT_TTC_VERSION_2_0)]
+    dword dsigOffset;
+} SFNT_COLLECTION, *PSFNT_COLLECTION;
+
+[
+    export("SFNT / TrueType / OpenType Font"),
+    version(1),
+    assoc(".ttf"),
+    assoc(".otf"),
+    assoc(".ttc"),
+    assoc(".otc"),
+    magic({ 0x00, 0x01, 0x00, 0x00 }),
+    magic({ 'O', 'T', 'T', 'O' }),
+    magic({ 't', 't', 'c', 'f' }),
+    offset(0),
+    endian("big")
+]
+typedef struct _SFNT
+{
+    [enum(SFNT_SIGNATURE)]
+    dword signature;
+
+    [offset(0), select(signature)]
+    union
+    {
+        [case(SFNT_SIGNATURE_COLLECTION)]
+        SFNT_COLLECTION collection;
+
+        [default]
+        SFNT_OFFSET_TABLE font;
+    };
+} SFNT;
