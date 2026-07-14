@@ -1,0 +1,100 @@
+// q22-strata-v1
+//
+//  tar.strata
+//
+
+include "basetypes.strata";
+
+enum TAR_TYPEFLAG
+{
+    TAR_TYPE_NORMAL          = '0',
+    TAR_TYPE_HARD_LINK       = '1',
+    TAR_TYPE_SYMBOLIC_LINK   = '2',
+    TAR_TYPE_CHARACTER_DEVICE = '3',
+    TAR_TYPE_BLOCK_DEVICE    = '4',
+    TAR_TYPE_DIRECTORY       = '5',
+    TAR_TYPE_FIFO            = '6',
+    TAR_TYPE_CONTIGUOUS      = '7',
+    TAR_TYPE_GLOBAL_EXTENDED = 'g',
+    TAR_TYPE_EXTENDED        = 'x'
+};
+
+typedef struct _TAR_HEADER
+{
+    [string, count(100), extent(100)]
+    char name[];
+
+    [string, count(8), extent(8)]
+    char mode[];
+
+    [string, count(8), extent(8)]
+    char uid[];
+
+    [string, count(8), extent(8)]
+    char gid[];
+
+    [string, count(12), extent(12)]
+    char size[];
+
+    [string, count(12), extent(12)]
+    char mtime[];
+
+    [string, count(8), extent(8)]
+    char checksum[];
+
+    [enum(TAR_TYPEFLAG)]
+    char typeflag;
+
+    [string, count(100), extent(100)]
+    char linkname[];
+
+    [string, count(6), extent(6)]
+    char magic[];
+
+    [string, count(2), extent(2)]
+    char version[];
+
+    [string, count(32), extent(32)]
+    char uname[];
+
+    [string, count(32), extent(32)]
+    char gname[];
+
+    [string, count(8), extent(8)]
+    char devmajor[];
+
+    [string, count(8), extent(8)]
+    char devminor[];
+
+    [string, count(155), extent(155)]
+    char prefix[];
+
+    byte padding[12];
+} TAR_HEADER, *PTAR_HEADER;
+
+typedef struct _TAR_ENTRY
+{
+    TAR_HEADER header;
+
+    [count(octal(str(header.size))), pad_to(512)]
+    byte data[];
+} TAR_ENTRY, *PTAR_ENTRY;
+
+[
+    export("Tape Archive (TAR)"),
+    version(1),
+    category("storage"),
+    assoc(".tar"),
+    magic({ 'u', 's', 't', 'a', 'r' }, 257),
+    offset(0)
+]
+typedef struct _TAR
+{
+    [
+        count(4096),
+        extent(file_size()),
+        terminated_by(header.name[0] == 0),
+        name(header.name)
+    ]
+    TAR_ENTRY entries[];
+} TAR;

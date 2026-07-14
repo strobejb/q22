@@ -1,0 +1,115 @@
+// q22-strata-v1
+//
+//  gzip.strata
+//
+
+include "basetypes.strata";
+
+enum GZIP_COMPRESSION_METHOD
+{
+    GZIP_COMPRESSION_DEFLATE = 8
+};
+
+enum GZIP_FLAGS
+{
+    GZIP_FLAG_FTEXT    = 0x01,
+    GZIP_FLAG_FHCRC    = 0x02,
+    GZIP_FLAG_FEXTRA   = 0x04,
+    GZIP_FLAG_FNAME    = 0x08,
+    GZIP_FLAG_FCOMMENT = 0x10
+};
+
+enum GZIP_EXTRA_FLAGS
+{
+    GZIP_XFL_NONE          = 0,
+    GZIP_XFL_FASTEST       = 4,
+    GZIP_XFL_MAX_COMPRESSION = 2
+};
+
+enum GZIP_OS
+{
+    GZIP_OS_FAT         = 0,
+    GZIP_OS_AMIGA       = 1,
+    GZIP_OS_VMS         = 2,
+    GZIP_OS_UNIX        = 3,
+    GZIP_OS_VM_CMS      = 4,
+    GZIP_OS_ATARI_TOS   = 5,
+    GZIP_OS_HPFS        = 6,
+    GZIP_OS_MACINTOSH   = 7,
+    GZIP_OS_Z_SYSTEM    = 8,
+    GZIP_OS_CP_M        = 9,
+    GZIP_OS_TOPS_20     = 10,
+    GZIP_OS_NTFS        = 11,
+    GZIP_OS_QDOS        = 12,
+    GZIP_OS_ACORN_RISCOS = 13,
+    GZIP_OS_UNKNOWN     = 255
+};
+
+typedef struct _GZIP_EXTRA_FIELD
+{
+    word length;
+
+    [count(length)]
+    byte data[];
+} GZIP_EXTRA_FIELD, *PGZIP_EXTRA_FIELD;
+
+typedef struct _GZIP_HEADER
+{
+    byte id1;
+    byte id2;
+
+    [enum(GZIP_COMPRESSION_METHOD)]
+    byte compressionMethod;
+
+    [bitflag(GZIP_FLAGS)]
+    byte flags;
+
+    dword modificationTime;
+
+    [enum(GZIP_EXTRA_FLAGS)]
+    byte extraFlags;
+
+    [enum(GZIP_OS)]
+    byte operatingSystem;
+
+    [optional((flags & GZIP_FLAG_FEXTRA) != 0)]
+    GZIP_EXTRA_FIELD extra;
+
+    [optional((flags & GZIP_FLAG_FNAME) != 0), string, count(4096), terminated_by(0)]
+    char originalName[];
+
+    [optional((flags & GZIP_FLAG_FCOMMENT) != 0), string, count(4096), terminated_by(0)]
+    char comment[];
+
+    [optional((flags & GZIP_FLAG_FHCRC) != 0)]
+    word headerCrc16;
+} GZIP_HEADER, *PGZIP_HEADER;
+
+typedef struct _GZIP_TRAILER
+{
+    dword crc32;
+    dword inputSize;
+} GZIP_TRAILER, *PGZIP_TRAILER;
+
+[
+    export("GZip Compressed Data (GZ)"),
+    version(1),
+    category("storage"),
+    assoc(".gz"),
+    assoc(".gzip"),
+    assoc(".tgz"),
+    assoc(".tar.gz"),
+    magic({ 0x1f, 0x8b }),
+    offset(0),
+    endian("little")
+]
+typedef struct _GZIP
+{
+    GZIP_HEADER header;
+
+    [count(file_size() - extent_of(header) - sizeof(GZIP_TRAILER))]
+    byte compressedData[];
+
+    [offset(file_size() - sizeof(GZIP_TRAILER))]
+    GZIP_TRAILER trailer;
+} GZIP;

@@ -1,0 +1,154 @@
+// q22-strata-v1
+//
+//  cab.strata
+//
+
+include "basetypes.strata";
+
+enum CAB_SIGNATURE
+{
+    CAB_SIGNATURE_MSCF = 0x4643534d
+};
+
+enum CAB_FLAGS
+{
+    CAB_FLAG_PREV_CABINET = 0x0001,
+    CAB_FLAG_NEXT_CABINET = 0x0002,
+    CAB_FLAG_RESERVE_PRESENT = 0x0004
+};
+
+enum CAB_FILE_ATTRIBUTES
+{
+    CAB_ATTR_READONLY = 0x0001,
+    CAB_ATTR_HIDDEN   = 0x0002,
+    CAB_ATTR_SYSTEM   = 0x0004,
+    CAB_ATTR_ARCHIVE  = 0x0020,
+    CAB_ATTR_EXEC     = 0x0040,
+    CAB_ATTR_NAME_UTF = 0x0080
+};
+
+enum CAB_FOLDER_INDEX
+{
+    CAB_FOLDER_CONTINUED_FROM_PREV = 0xfffd,
+    CAB_FOLDER_CONTINUED_TO_NEXT   = 0xfffe,
+    CAB_FOLDER_CONTINUED_PREV_NEXT = 0xffff
+};
+
+enum CAB_COMPRESSION_TYPE
+{
+    CAB_COMPRESSION_NONE    = 0,
+    CAB_COMPRESSION_MSZIP   = 1,
+    CAB_COMPRESSION_QUANTUM = 2,
+    CAB_COMPRESSION_LZX     = 3
+};
+
+typedef struct _CAB_CFDATA
+{
+    dword checksum;
+    word compressedSize;
+    word uncompressedSize;
+
+    [count(compressedSize)]
+    byte compressedData[];
+} CAB_CFDATA, *PCAB_CFDATA;
+
+typedef struct _CAB_CFFOLDER
+{
+    dword firstDataBlockOffset;
+    word dataBlockCount;
+
+    // Low four bits identify the compression algorithm; upper bits carry
+    // algorithm-specific parameters such as LZX window size.
+    word compressionType;
+
+    [offset(firstDataBlockOffset), count(dataBlockCount)]
+    CAB_CFDATA dataBlocks[];
+} CAB_CFFOLDER, *PCAB_CFFOLDER;
+
+typedef struct _CAB_CFFILE
+{
+    dword uncompressedSize;
+    dword uncompressedFolderOffset;
+
+    [enum(CAB_FOLDER_INDEX)]
+    word folderIndex;
+
+    DOSDATE date;
+    DOSTIME time;
+
+    [bitflag(CAB_FILE_ATTRIBUTES)]
+    word attributes;
+
+    [string, count(4096), terminated_by(0)]
+    char fileName[];
+} CAB_CFFILE, *PCAB_CFFILE;
+
+typedef struct _CAB_CFHEADER
+{
+    [enum(CAB_SIGNATURE)]
+    dword signature;
+
+    dword reserved1;
+    dword cabinetSize;
+    dword reserved2;
+    dword filesOffset;
+    dword reserved3;
+    byte versionMinor;
+    byte versionMajor;
+    word folderCount;
+    word fileCount;
+
+    [bitflag(CAB_FLAGS)]
+    word flags;
+
+    word setId;
+    word cabinetIndex;
+
+    [optional((flags & CAB_FLAG_RESERVE_PRESENT) != 0)]
+    word headerReserveSize;
+
+    [optional((flags & CAB_FLAG_RESERVE_PRESENT) != 0)]
+    byte folderReserveSize;
+
+    [optional((flags & CAB_FLAG_RESERVE_PRESENT) != 0)]
+    byte dataReserveSize;
+
+    [optional((flags & CAB_FLAG_RESERVE_PRESENT) != 0), count(headerReserveSize)]
+    byte headerReserve[];
+
+    [optional((flags & CAB_FLAG_PREV_CABINET) != 0), string, count(256), terminated_by(0)]
+    char previousCabinetName[];
+
+    [optional((flags & CAB_FLAG_PREV_CABINET) != 0), string, count(256), terminated_by(0)]
+    char previousDiskName[];
+
+    [optional((flags & CAB_FLAG_NEXT_CABINET) != 0), string, count(256), terminated_by(0)]
+    char nextCabinetName[];
+
+    [optional((flags & CAB_FLAG_NEXT_CABINET) != 0), string, count(256), terminated_by(0)]
+    char nextDiskName[];
+} CAB_CFHEADER, *PCAB_CFHEADER;
+
+[
+    export("Windows Cabinet (CAB)"),
+    version(1),
+    category("storage"),
+    assoc(".cab"),
+    magic({ 'M', 'S', 'C', 'F' }),
+    offset(0),
+    endian("little")
+]
+typedef struct _CAB
+{
+    CAB_CFHEADER header;
+
+    [count(header.folderCount)]
+    CAB_CFFOLDER folders[];
+
+    [
+        offset(header.filesOffset),
+        count(header.fileCount),
+        name(fileName)
+    ]
+    CAB_CFFILE files[];
+} CAB;

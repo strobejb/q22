@@ -65,6 +65,7 @@ private slots:
     void builderEvaluatesUnionSwitchSelectorsFromTypedLayout();
     void builderEvaluatesFieldsAndCorrectedExpressions();
     void builderEvaluatesFindSearchExpressions();
+    void builderEvaluatesOctalStringExpressions();
     void builderSelectsUnionMembersFromStringExpressions();
     void builderSelectsUnionMembersFromFourCcExpressions();
     void builderUsesDynamicEndianExpressions();
@@ -84,6 +85,9 @@ private slots:
     void builderRendersWoffDirectoryAndPayloads();
     void builderRendersMp4Boxes();
     void builderRendersRiffWaveAndWebpChunks();
+    void builderRendersTarEntries();
+    void builderRendersGzipHeaderAndTrailer();
+    void builderRendersCabinetHeaderFilesAndData();
     void builderRendersZipCentralDirectoryFromEocd();
     void builderRendersElf32AndElf64Tables();
     void builderPlacesDynamicStructsUnderNamedDynamicContainers();
@@ -1773,6 +1777,35 @@ void StructViewTests::builderEvaluatesFindSearchExpressions()
     QVERIFY(findChildNamed(rows[0].get(), QStringLiteral("byte missing")) == nullptr);
 }
 
+void StructViewTests::builderEvaluatesOctalStringExpressions()
+{
+    // Scenario: formats such as TAR store numeric fields as ASCII octal.
+    // Expected: octal(str(field)) converts a rendered string field into an
+    // integer expression usable by later layout tags.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  [string, count(12), terminated_by(0)] char size[];\n"
+                        "  [count(octal(str(size)))] byte payload[];\n"
+                        "} root;\n"));
+
+    QByteArray bytes(17, '\0');
+    writeAscii(&bytes, 0, "00000000005");
+    bytes[12] = char(0x11);
+    bytes[13] = char(0x22);
+    bytes[14] = char(0x33);
+    bytes[15] = char(0x44);
+    bytes[16] = char(0x55);
+
+    auto rows = buildRows(parser.GetStrataLibrary(), firstExported(parser.GetStrataLibrary()), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+    StructureRow *payload = findChildNamed(rows[0].get(), QStringLiteral("byte payload[]"));
+    QVERIFY2(payload, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(payload->value, QStringLiteral("{ 17, 34, 51, 68, 85 }"));
+}
+
 void StructViewTests::builderSelectsUnionMembersFromStringExpressions()
 {
     // Scenario: a nameless union discriminator is a NUL-terminated string found
@@ -3148,6 +3181,172 @@ void StructViewTests::builderRendersRiffWaveAndWebpChunks()
     QCOMPARE(vp8Data->value, QStringLiteral("{ 157, 1, 42, 0 }"));
 }
 
+void StructViewTests::builderRendersTarEntries()
+{
+    // Scenario: TAR stores records as 512-byte headers followed by payloads
+    // whose size is encoded as ASCII octal.
+    // Expected: the standard TAR definition names entries from the header,
+    // converts the octal size field, and advances over the padded payload.
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("tar.strata")), "tar.strata failed to parse");
+    TypeDecl *tarRoot = exportedNamed(&library, QStringLiteral("TAR"));
+    QVERIFY(tarRoot);
+
+    QByteArray tar(2048, '\0');
+    writeAscii(&tar, 0, "hello.txt");
+    writeAscii(&tar, 100, "0000644");
+    writeAscii(&tar, 108, "0000000");
+    writeAscii(&tar, 116, "0000000");
+    writeAscii(&tar, 124, "00000000005");
+    writeAscii(&tar, 136, "00000000000");
+    writeAscii(&tar, 148, "        ");
+    tar[156] = char('0');
+    writeAscii(&tar, 257, "ustar");
+    writeAscii(&tar, 263, "00");
+    tar.replace(512, 5, "hello");
+
+    auto rows = buildRows(&library, tarRoot, tar);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->name, QStringLiteral("TAR"));
+
+    StructureRow *entries = findChildNamed(rows[0].get(), QStringLiteral("TAR_ENTRY entries[]"));
+    QVERIFY2(entries, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(entries->children.size(), size_t(1));
+    QCOMPARE(entries->children[0]->name, QStringLiteral("[0]hello.txt"));
+
+    StructureRow *header = findChildNamed(entries->children[0].get(), QStringLiteral("TAR_HEADER header"));
+    QVERIFY2(header, qPrintable(childNames(entries->children[0].get())));
+    StructureRow *size = findChildNamed(header, QStringLiteral("char size[]"));
+    QVERIFY2(size, qPrintable(childNames(header)));
+    QCOMPARE(size->value, QStringLiteral("\"00000000005\""));
+
+    StructureRow *data = findChildNamed(entries->children[0].get(), QStringLiteral("byte data[]"));
+    QVERIFY2(data, qPrintable(childNames(entries->children[0].get())));
+    QCOMPARE(data->offset, QStringLiteral("00000200"));
+    QCOMPARE(data->value, QStringLiteral("{ 104, 101, 108, 108, 111 }"));
+}
+
+void StructViewTests::builderRendersGzipHeaderAndTrailer()
+{
+    // Scenario: GZip has a fixed header followed by optional NUL-terminated
+    // filename/comment fields, compressed bytes, and a fixed trailer.
+    // Expected: the standard GZip definition renders the optional strings and
+    // bounds compressedData before the trailer.
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("gzip.strata")), "gzip.strata failed to parse");
+    TypeDecl *gzipRoot = exportedNamed(&library, QStringLiteral("GZIP"));
+    QVERIFY(gzipRoot);
+
+    QByteArray gzip;
+    gzip.append(char(0x1f));
+    gzip.append(char(0x8b));
+    gzip.append(char(8));    // deflate
+    gzip.append(char(0x18)); // FNAME | FCOMMENT
+    gzip.append(QByteArray::fromHex("00000000"));
+    gzip.append(char(0));
+    gzip.append(char(3));    // Unix
+    gzip.append("hello.txt", 9);
+    gzip.append(char(0));
+    gzip.append("comment", 7);
+    gzip.append(char(0));
+    gzip.append(QByteArray::fromHex("01020304"));
+    gzip.append(QByteArray::fromHex("78563412"));
+    gzip.append(QByteArray::fromHex("05000000"));
+
+    auto rows = buildRows(&library, gzipRoot, gzip);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->name, QStringLiteral("GZIP"));
+
+    StructureRow *header = findChildNamed(rows[0].get(), QStringLiteral("GZIP_HEADER header"));
+    QVERIFY2(header, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(findChildNamed(header, QStringLiteral("byte compressionMethod"))->value,
+             QStringLiteral("GZIP_COMPRESSION_DEFLATE"));
+    QCOMPARE(findChildNamed(header, QStringLiteral("byte operatingSystem"))->value,
+             QStringLiteral("GZIP_OS_UNIX"));
+    StructureRow *originalName = findChildNamed(header, QStringLiteral("char originalName[]"));
+    QVERIFY2(originalName, qPrintable(childNames(header)));
+    QCOMPARE(originalName->value, QStringLiteral("\"hello.txt\""));
+    StructureRow *comment = findChildNamed(header, QStringLiteral("char comment[]"));
+    QVERIFY2(comment, qPrintable(childNames(header)));
+    QCOMPARE(comment->value, QStringLiteral("\"comment\""));
+
+    StructureRow *compressedData = findChildNamed(rows[0].get(), QStringLiteral("byte compressedData[]"));
+    QVERIFY2(compressedData, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(compressedData->value, QStringLiteral("{ 1, 2, 3, 4 }"));
+
+    StructureRow *trailer = findChildNamed(rows[0].get(), QStringLiteral("GZIP_TRAILER trailer"));
+    QVERIFY2(trailer, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(findChildNamed(trailer, QStringLiteral("dword crc32"))->value, QStringLiteral("305419896"));
+    QCOMPARE(findChildNamed(trailer, QStringLiteral("dword inputSize"))->value, QStringLiteral("5"));
+}
+
+void StructViewTests::builderRendersCabinetHeaderFilesAndData()
+{
+    // Scenario: CAB files contain a fixed header, folder table, file table, and
+    // compressed data blocks referenced by each folder.
+    // Expected: the standard CAB definition renders the folder's data blocks at
+    // their target offset and names files from CFFILE.fileName.
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("cab.strata")), "cab.strata failed to parse");
+    TypeDecl *cabRoot = exportedNamed(&library, QStringLiteral("CAB"));
+    QVERIFY(cabRoot);
+
+    QByteArray cab(83, '\0');
+    cab.replace(0, 4, "MSCF");
+    writeLe32(&cab, 8, quint32(cab.size()));
+    writeLe32(&cab, 16, 44); // filesOffset
+    cab[24] = char(3);       // versionMinor
+    cab[25] = char(1);       // versionMajor
+    writeLe16(&cab, 26, 1);  // folderCount
+    writeLe16(&cab, 28, 1);  // fileCount
+    writeLe16(&cab, 32, 7);  // setId
+
+    writeLe32(&cab, 36, 70); // firstDataBlockOffset
+    writeLe16(&cab, 40, 1);  // dataBlockCount
+    writeLe16(&cab, 42, 0);  // no compression
+
+    writeLe32(&cab, 44, 5);  // uncompressedSize
+    writeLe32(&cab, 48, 0);  // uncompressedFolderOffset
+    writeLe16(&cab, 52, 0);  // folderIndex
+    writeLe16(&cab, 58, 0x0020); // archive attribute
+    writeAscii(&cab, 60, "hello.txt");
+
+    writeLe32(&cab, 70, 0);  // checksum
+    writeLe16(&cab, 74, 5);  // compressedSize
+    writeLe16(&cab, 76, 5);  // uncompressedSize
+    cab.replace(78, 5, "hello");
+
+    auto rows = buildRows(&library, cabRoot, cab);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->name, QStringLiteral("CAB"));
+
+    StructureRow *header = findChildNamed(rows[0].get(), QStringLiteral("CAB_CFHEADER header"));
+    QVERIFY2(header, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(findChildNamed(header, QStringLiteral("dword signature"))->value,
+             QStringLiteral("CAB_SIGNATURE_MSCF"));
+    QCOMPARE(findChildNamed(header, QStringLiteral("word folderCount"))->value, QStringLiteral("1"));
+    QCOMPARE(findChildNamed(header, QStringLiteral("word fileCount"))->value, QStringLiteral("1"));
+
+    StructureRow *folders = findChildNamed(rows[0].get(), QStringLiteral("CAB_CFFOLDER folders[]"));
+    QVERIFY2(folders, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(folders->children.size(), size_t(1));
+    StructureRow *dataBlocks = findChildNamed(folders->children[0].get(), QStringLiteral("CAB_CFDATA dataBlocks[]"));
+    QVERIFY2(dataBlocks, qPrintable(childNames(folders->children[0].get())));
+    QCOMPARE(dataBlocks->children.size(), size_t(1));
+    QCOMPARE(dataBlocks->children[0]->offset, QStringLiteral("00000046"));
+    StructureRow *compressedData = findChildNamed(dataBlocks->children[0].get(), QStringLiteral("byte compressedData[]"));
+    QVERIFY2(compressedData, qPrintable(childNames(dataBlocks->children[0].get())));
+    QCOMPARE(compressedData->value, QStringLiteral("{ 104, 101, 108, 108, 111 }"));
+
+    StructureRow *files = findChildNamed(rows[0].get(), QStringLiteral("CAB_CFFILE files[]"));
+    QVERIFY2(files, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(files->children.size(), size_t(1));
+    QCOMPARE(files->children[0]->name, QStringLiteral("[0]hello.txt"));
+    StructureRow *fileName = findChildNamed(files->children[0].get(), QStringLiteral("char fileName[]"));
+    QVERIFY2(fileName, qPrintable(childNames(files->children[0].get())));
+    QCOMPARE(fileName->value, QStringLiteral("\"hello.txt\""));
+}
+
 void StructViewTests::builderRendersZipCentralDirectoryFromEocd()
 {
     // Scenario: ZIP local headers may defer CRC/sizes to data descriptors, so
@@ -4097,6 +4296,18 @@ void StructViewTests::definitionManagerFlagsNonStaticFieldReferences()
     StrataLibrary riffLibrary;
     QVERIFY2(parseStandardDefinition(&riffLibrary, QStringLiteral("riff.strata")), "riff.strata failed to parse");
     QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&riffLibrary).isEmpty());
+
+    StrataLibrary tarLibrary;
+    QVERIFY2(parseStandardDefinition(&tarLibrary, QStringLiteral("tar.strata")), "tar.strata failed to parse");
+    QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&tarLibrary).isEmpty());
+
+    StrataLibrary gzipLibrary;
+    QVERIFY2(parseStandardDefinition(&gzipLibrary, QStringLiteral("gzip.strata")), "gzip.strata failed to parse");
+    QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&gzipLibrary).isEmpty());
+
+    StrataLibrary cabLibrary;
+    QVERIFY2(parseStandardDefinition(&cabLibrary, QStringLiteral("cab.strata")), "cab.strata failed to parse");
+    QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&cabLibrary).isEmpty());
 }
 
 void StructViewTests::definitionManagerFlagsRuntimeExpressionsInRootOffsets()

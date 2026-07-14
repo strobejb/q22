@@ -1213,6 +1213,34 @@ void collectExpressionArgs(ExprNode *expr, std::vector<ExprNode *> *args)
 
     args->push_back(expr);
 }
+
+bool parseOctalText(const QString &text, INUMTYPE *result)
+{
+    if (!result)
+        return false;
+
+    uint64_t value = 0;
+    bool sawDigit = false;
+    const QString trimmed = text.trimmed();
+    for (const QChar ch : trimmed)
+    {
+        if (ch == QLatin1Char('\0') || ch == QLatin1Char(' '))
+            break;
+        if (ch < QLatin1Char('0') || ch > QLatin1Char('7'))
+            return false;
+
+        sawDigit = true;
+        value = (value << 3) | uint64_t(ch.unicode() - QLatin1Char('0').unicode());
+        if (value > uint64_t(std::numeric_limits<INUMTYPE>::max()))
+            return false;
+    }
+
+    if (!sawDigit)
+        return false;
+
+    *result = static_cast<INUMTYPE>(value);
+    return true;
+}
 } // namespace
 
 bool StructureRenderEngine::evaluateFunction(const EvalContext &context, ExprNode *expr, INUMTYPE *result)
@@ -1261,6 +1289,19 @@ bool StructureRenderEngine::evaluateFunction(const EvalContext &context, ExprNod
             return false;
 
         return packFourCcLiteral(args[0]->str, m_bigEndian, result);
+    }
+    case TOK_OCTAL:
+    {
+        std::vector<ExprNode *> args;
+        collectExpressionArgs(expr->left, &args);
+        if (args.size() != 1)
+            return false;
+
+        QString text;
+        if (!evaluateString(context, args[0], &text))
+            return false;
+
+        return parseOctalText(text, result);
     }
     default:
         return false;

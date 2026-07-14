@@ -20,7 +20,7 @@ stored in `~/.config/catch22/q22/strata`.
 | Unions | [`select`](#discriminated-unions) · [`case`](#discriminated-unions) |
 | Semantic views | [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) · [`view`](#view) |
 | Export | [`export`](#export-metadata) · [`category`](#export-metadata) · [`version`](#export-metadata) · [`assoc`](#export-metadata) · [`magic`](#export-metadata) |
-| Expressions | [`sizeof`](#expressions) · [`file_size`](#expressions) · [`extent_of`](#expressions) · [`str`](#expressions) · [`find_first`](#byte-pattern-search) · [`find_last`](#byte-pattern-search) · [`select_offset`](#select_offset) |
+| Expressions | [`sizeof`](#expressions) · [`file_size`](#expressions) · [`extent_of`](#expressions) · [`str`](#expressions) · [`octal`](#expressions) · [`find_first`](#byte-pattern-search) · [`find_last`](#byte-pattern-search) · [`select_offset`](#select_offset) |
 
 ---
 
@@ -611,6 +611,7 @@ dosHeader.e_lfanew
 | Runtime extent | `extent_of(field)` |
 | File size | `file_size()` |
 | Parsed string | `str(field)` |
+| Octal text | `octal(text)` |
 | FourCC literal | `fourcc("abcd")` |
 | String lookup | `cstr_at(offset, maxLen)` |
 | Byte search | `find_first({ ... })` · `find_last({ ... })` |
@@ -658,6 +659,18 @@ union {
     [case("metadata")] Metadata metadata;
     [default] byte raw[];
 };
+```
+
+`octal(text)` converts a string expression containing ASCII octal digits to an
+integer. This is useful for formats such as TAR whose numeric header fields are
+stored as NUL/space-padded octal text:
+
+```c
+[string, count(12), terminated_by(0)]
+char size[];
+
+[count(octal(str(size))), pad_to(512)]
+byte data[];
 ```
 
 `fourcc("abcd")` packs exactly four string-literal bytes into the integer value
@@ -750,7 +763,7 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 | Dynamic/semantic tags | `container`, `dynamic_array`, `dynamic_container`, `dynamic_struct`, `mapper`, `offset_map`, `type`, `view` |
 | Export/detection tags | `assoc`, `category`, `export`, `magic`, `version` |
 | Tagsets/files | `include`, `tagset`, `tags` |
-| Expression helpers | `cstr_at`, `extent_of`, `file_size`, `find_first`, `find_last`, `fourcc`, `sizeof`, `str` |
+| Expression helpers | `cstr_at`, `extent_of`, `file_size`, `find_first`, `find_last`, `fourcc`, `octal`, `sizeof`, `str` |
 
 ---
 
