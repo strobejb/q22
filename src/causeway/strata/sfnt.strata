@@ -84,7 +84,7 @@ typedef struct _SFNT_COLLECTION
 } SFNT_COLLECTION, *PSFNT_COLLECTION;
 
 [
-    export("SFNT / TrueType / OpenType Font"),
+    export("TrueType / OpenType Font (TTF/OTF)"),
     version(1),
     assoc(".ttf"),
     assoc(".otf"),

@@ -1,0 +1,211 @@
+// q22-strata-v1
+//
+//  png.strata
+//
+
+include "basetypes.strata";
+
+enum PNG_CHUNK_TYPE
+{
+    PNG_CHUNK_IHDR = 0x49484452,
+    PNG_CHUNK_PLTE = 0x504c5445,
+    PNG_CHUNK_IDAT = 0x49444154,
+    PNG_CHUNK_IEND = 0x49454e44,
+    PNG_CHUNK_cHRM = 0x6348524d,
+    PNG_CHUNK_gAMA = 0x67414d41,
+    PNG_CHUNK_iCCP = 0x69434350,
+    PNG_CHUNK_sBIT = 0x73424954,
+    PNG_CHUNK_sRGB = 0x73524742,
+    PNG_CHUNK_bKGD = 0x624b4744,
+    PNG_CHUNK_hIST = 0x68495354,
+    PNG_CHUNK_tEXt = 0x74455874,
+    PNG_CHUNK_zTXt = 0x7a545874,
+    PNG_CHUNK_iTXt = 0x69545874,
+    PNG_CHUNK_pHYs = 0x70485973,
+    PNG_CHUNK_sPLT = 0x73504c54,
+    PNG_CHUNK_tIME = 0x74494d45,
+    PNG_CHUNK_tRNS = 0x74524e53
+};
+
+enum PNG_COLOR_TYPE
+{
+    PNG_COLOR_GRAYSCALE       = 0,
+    PNG_COLOR_TRUECOLOR       = 2,
+    PNG_COLOR_INDEXED         = 3,
+    PNG_COLOR_GRAYSCALE_ALPHA = 4,
+    PNG_COLOR_TRUECOLOR_ALPHA = 6
+};
+
+enum PNG_COMPRESSION_METHOD
+{
+    PNG_COMPRESSION_DEFLATE = 0
+};
+
+enum PNG_FILTER_METHOD
+{
+    PNG_FILTER_ADAPTIVE = 0
+};
+
+enum PNG_INTERLACE_METHOD
+{
+    PNG_INTERLACE_NONE  = 0,
+    PNG_INTERLACE_ADAM7 = 1
+};
+
+enum PNG_UNIT_SPECIFIER
+{
+    PNG_UNIT_UNKNOWN = 0,
+    PNG_UNIT_METER   = 1
+};
+
+enum PNG_SRGB_RENDERING_INTENT
+{
+    PNG_SRGB_PERCEPTUAL            = 0,
+    PNG_SRGB_RELATIVE_COLORIMETRIC = 1,
+    PNG_SRGB_SATURATION            = 2,
+    PNG_SRGB_ABSOLUTE_COLORIMETRIC = 3
+};
+
+typedef struct _PNG_SIGNATURE
+{
+    byte bytes[8];
+} PNG_SIGNATURE, *PPNG_SIGNATURE;
+
+typedef struct _PNG_IHDR
+{
+    dword width;
+    dword height;
+    byte bitDepth;
+
+    [enum(PNG_COLOR_TYPE)]
+    byte colorType;
+
+    [enum(PNG_COMPRESSION_METHOD)]
+    byte compressionMethod;
+
+    [enum(PNG_FILTER_METHOD)]
+    byte filterMethod;
+
+    [enum(PNG_INTERLACE_METHOD)]
+    byte interlaceMethod;
+} PNG_IHDR, *PPNG_IHDR;
+
+typedef struct _PNG_PLTE_ENTRY
+{
+    byte red;
+    byte green;
+    byte blue;
+} PNG_PLTE_ENTRY, *PPNG_PLTE_ENTRY;
+
+typedef struct _PNG_PLTE
+{
+    [count(length / sizeof(PNG_PLTE_ENTRY)), extent(length)]
+    PNG_PLTE_ENTRY entries[];
+} PNG_PLTE, *PPNG_PLTE;
+
+typedef struct _PNG_cHRM
+{
+    dword whitePointX;
+    dword whitePointY;
+    dword redX;
+    dword redY;
+    dword greenX;
+    dword greenY;
+    dword blueX;
+    dword blueY;
+} PNG_cHRM, *PPNG_cHRM;
+
+typedef struct _PNG_gAMA
+{
+    dword imageGamma;
+} PNG_gAMA, *PPNG_gAMA;
+
+typedef struct _PNG_sRGB
+{
+    [enum(PNG_SRGB_RENDERING_INTENT)]
+    byte renderingIntent;
+} PNG_sRGB, *PPNG_sRGB;
+
+typedef struct _PNG_pHYs
+{
+    dword pixelsPerUnitX;
+    dword pixelsPerUnitY;
+
+    [enum(PNG_UNIT_SPECIFIER)]
+    byte unitSpecifier;
+} PNG_pHYs, *PPNG_pHYs;
+
+typedef struct _PNG_tIME
+{
+    word year;
+    byte month;
+    byte day;
+    byte hour;
+    byte minute;
+    byte second;
+} PNG_tIME, *PPNG_tIME;
+
+typedef struct _PNG_RAW_CHUNK_DATA
+{
+    [count(length)]
+    byte data[];
+} PNG_RAW_CHUNK_DATA, *PPNG_RAW_CHUNK_DATA;
+
+typedef struct _PNG_CHUNK
+{
+    dword length;
+
+    [enum(PNG_CHUNK_TYPE)]
+    dword type;
+
+    [select(type), extent(length)]
+    union
+    {
+        [case(PNG_CHUNK_IHDR)]
+        PNG_IHDR ihdr;
+
+        [case(PNG_CHUNK_PLTE)]
+        PNG_PLTE plte;
+
+        [case(PNG_CHUNK_cHRM)]
+        PNG_cHRM chromaticities;
+
+        [case(PNG_CHUNK_gAMA)]
+        PNG_gAMA gamma;
+
+        [case(PNG_CHUNK_sRGB)]
+        PNG_sRGB standardRgb;
+
+        [case(PNG_CHUNK_pHYs)]
+        PNG_pHYs physicalPixels;
+
+        [case(PNG_CHUNK_tIME)]
+        PNG_tIME modificationTime;
+
+        [default]
+        PNG_RAW_CHUNK_DATA raw;
+    };
+
+    dword crc;
+} PNG_CHUNK, *PPNG_CHUNK;
+
+[
+    export("Portable Network Graphics (PNG)"),
+    version(1),
+    assoc(".png"),
+    magic({ 0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a }),
+    offset(0),
+    endian("big")
+]
+typedef struct _PNG
+{
+    PNG_SIGNATURE signature;
+
+    [
+        count(4096),
+        extent(file_size() - sizeof(PNG_SIGNATURE)),
+        name(type)
+    ]
+    PNG_CHUNK chunks[];
+} PNG;
+

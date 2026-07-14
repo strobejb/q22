@@ -75,6 +75,7 @@ private slots:
     void builderRendersDtbHeaderAndBlocks();
     void builderRendersWasmHeaderAndSections();
     void builderRendersSfntTableDirectory();
+    void builderRendersPngChunks();
     void builderRendersZipCentralDirectoryFromEocd();
     void builderRendersElf32AndElf64Tables();
     void builderPlacesDynamicStructsUnderNamedDynamicContainers();
@@ -2544,6 +2545,66 @@ void StructViewTests::builderRendersSfntTableDirectory()
     QCOMPARE(findChildNamed(tables->children[1].get(), QStringLiteral("dword length"))->value, QStringLiteral("6"));
 }
 
+void StructViewTests::builderRendersPngChunks()
+{
+    // Scenario: PNG is a big-endian signature plus a stream of length/type/data/CRC chunks.
+    // Expected: the standard PNG definition names chunks by type and expands common
+    // typed payloads such as IHDR while leaving compressed image data raw.
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("png.strata")), "png.strata failed to parse");
+    TypeDecl *pngRoot = exportedNamed(&library, QStringLiteral("PNG"));
+    QVERIFY(pngRoot);
+
+    QByteArray png;
+    const auto appendBe32 = [&png](quint32 value) {
+        png.append(char((value >> 24) & 0xff));
+        png.append(char((value >> 16) & 0xff));
+        png.append(char((value >> 8) & 0xff));
+        png.append(char(value & 0xff));
+    };
+
+    png.append(QByteArray::fromHex("89504e470d0a1a0a")); // signature
+    appendBe32(13);
+    png.append("IHDR", 4);
+    appendBe32(1);
+    appendBe32(2);
+    png.append(char(8));  // bit depth
+    png.append(char(2));  // truecolor
+    png.append(char(0));  // compression
+    png.append(char(0));  // filter
+    png.append(char(1));  // Adam7
+    appendBe32(0x12345678);
+    appendBe32(2);
+    png.append("IDAT", 4);
+    png.append(QByteArray::fromHex("789c"));
+    appendBe32(0x90abcdef);
+    appendBe32(0);
+    png.append("IEND", 4);
+    appendBe32(0xae426082);
+
+    auto rows = buildRows(&library, pngRoot, png);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->name, QStringLiteral("PNG"));
+
+    StructureRow *chunks = findChildNamed(rows[0].get(), QStringLiteral("PNG_CHUNK chunks[]"));
+    QVERIFY2(chunks, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(chunks->children.size(), size_t(3));
+    QCOMPARE(chunks->children[0]->name, QStringLiteral("[0]PNG_CHUNK_IHDR"));
+    QCOMPARE(chunks->children[1]->name, QStringLiteral("[1]PNG_CHUNK_IDAT"));
+    QCOMPARE(chunks->children[2]->name, QStringLiteral("[2]PNG_CHUNK_IEND"));
+
+    StructureRow *ihdr = findChildNamed(chunks->children[0].get(), QStringLiteral("PNG_IHDR ihdr"));
+    QVERIFY2(ihdr, qPrintable(childNames(chunks->children[0].get())));
+    QCOMPARE(findChildNamed(ihdr, QStringLiteral("dword width"))->value, QStringLiteral("1"));
+    QCOMPARE(findChildNamed(ihdr, QStringLiteral("dword height"))->value, QStringLiteral("2"));
+    QCOMPARE(findChildNamed(ihdr, QStringLiteral("byte colorType"))->value, QStringLiteral("PNG_COLOR_TRUECOLOR"));
+    QCOMPARE(findChildNamed(ihdr, QStringLiteral("byte interlaceMethod"))->value, QStringLiteral("PNG_INTERLACE_ADAM7"));
+
+    StructureRow *idat = findChildNamed(chunks->children[1].get(), QStringLiteral("PNG_RAW_CHUNK_DATA raw"));
+    QVERIFY2(idat, qPrintable(childNames(chunks->children[1].get())));
+    QCOMPARE(findChildNamed(idat, QStringLiteral("byte data[]"))->value, QStringLiteral("{ 120, 156 }"));
+}
+
 void StructViewTests::builderRendersZipCentralDirectoryFromEocd()
 {
     // Scenario: ZIP local headers may defer CRC/sizes to data descriptors, so
@@ -3465,6 +3526,10 @@ void StructViewTests::definitionManagerFlagsNonStaticFieldReferences()
     StrataLibrary sfntLibrary;
     QVERIFY2(parseStandardDefinition(&sfntLibrary, QStringLiteral("sfnt.strata")), "sfnt.strata failed to parse");
     QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&sfntLibrary).isEmpty());
+
+    StrataLibrary pngLibrary;
+    QVERIFY2(parseStandardDefinition(&pngLibrary, QStringLiteral("png.strata")), "png.strata failed to parse");
+    QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&pngLibrary).isEmpty());
 }
 
 void StructViewTests::definitionManagerFlagsRuntimeExpressionsInRootOffsets()
