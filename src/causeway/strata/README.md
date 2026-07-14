@@ -14,7 +14,7 @@ stored in `~/.config/catch22/q22/strata`.
 | Files | [`include`](#comments-and-includes) |
 | Types | [`struct`](#structs) · [`union`](#unions) · [`enum`](#enums) · [`typedef`](#type-declarations) |
 | Tags | [`tagset`](#tagsets) · [`tags`](#tagsets) |
-| Display | [`enum(N)`](#display) · [`bitflag(N)`](#display) · [`name`](#display) · [`string`](#display) |
+| Display | [`enum(N)`](#display) · [`bitflag(N)`](#display) · [`fourcc`](#display) · [`name`](#display) · [`string`](#display) |
 | Layout | [`offset`](#layout) · [`align`](#layout) · [`pad_to`](#layout) · [`endian`](#byte-order) · [`entrypoint`](#layout) · [`extent`](#layout) · [`optional`](#layout) |
 | Arrays | [`count`](#arrays) · [`terminated_by`](#arrays) |
 | Unions | [`select`](#discriminated-unions) · [`case`](#discriminated-unions) |
@@ -317,6 +317,7 @@ The following 'display' tags can be used to alter the rendered value or name of 
 |-----|--------|
 | `enum(Name)` | Show the value as a named enum constant |
 | `bitflag(Name)` | Show the value as named bit masks and expand the row to list active flags |
+| `fourcc` | Show a 4-byte scalar as an ASCII FourCC read from the file bytes |
 | `name("label")` | Override the display label with a string literal |
 | `name(field)` | Use the value of `field` as the display label |
 | `string` | Render a byte or char array as a string preview |
@@ -608,6 +609,7 @@ dosHeader.e_lfanew
 | Runtime extent | `extent_of(field)` |
 | File size | `file_size()` |
 | Parsed string | `str(field)` |
+| FourCC literal | `fourcc("abcd")` |
 | String lookup | `cstr_at(offset, maxLen)` |
 | Byte search | `find_first({ ... })` · `find_last({ ... })` |
 | Raw read | `select_offset(byteOffset)` |
@@ -653,6 +655,21 @@ byte name[];
 union {
     [case("metadata")] Metadata metadata;
     [default] byte raw[];
+};
+```
+
+`fourcc("abcd")` packs exactly four string-literal bytes into the integer value
+that a 4-byte scalar would decode in the current endian context. Pair it with
+the `[fourcc]` display tag for FourCC chunk or box discriminators:
+
+```c
+[fourcc]
+dword type;
+
+[select(type)]
+union {
+    [case(fourcc("ftyp"))] MP4_FILE_TYPE_BOX fileType;
+    [case(fourcc("mdat"))] MP4_MEDIA_DATA_BOX mediaData;
 };
 ```
 
@@ -726,12 +743,12 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 |----------|----------|
 | Type declarations | `struct`, `union`, `enum`, `typedef`, `const`, `signed`, `unsigned` |
 | Primitive types | `byte`, `word`, `dword`, `qword`, `char`, `wchar_t`, `float`, `double`, `uleb128`, `sleb128` |
-| Display/layout tags | `align`, `bitflag`, `description`, `display`, `endian`, `entrypoint`, `extent`, `ignore`, `name`, `offset`, `optional`, `pad_to`, `string`, `style` |
+| Display/layout tags | `align`, `bitflag`, `description`, `display`, `endian`, `entrypoint`, `extent`, `fourcc`, `ignore`, `name`, `offset`, `optional`, `pad_to`, `string`, `style` |
 | Arrays/unions | `case`, `count`, `default`, `length_is`, `select`, `select_offset`, `size_is`, `switch_is`, `terminated_by` |
 | Dynamic/semantic tags | `container`, `dynamic_array`, `dynamic_container`, `dynamic_struct`, `mapper`, `offset_map`, `type`, `view` |
 | Export/detection tags | `assoc`, `export`, `magic`, `version` |
 | Tagsets/files | `include`, `tagset`, `tags` |
-| Expression helpers | `cstr_at`, `extent_of`, `file_size`, `find_first`, `find_last`, `sizeof`, `str` |
+| Expression helpers | `cstr_at`, `extent_of`, `file_size`, `find_first`, `find_last`, `fourcc`, `sizeof`, `str` |
 
 ---
 

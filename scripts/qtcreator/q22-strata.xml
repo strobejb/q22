@@ -22,6 +22,7 @@
     <item>file_size</item>
     <item>find_first</item>
     <item>find_last</item>
+    <item>fourcc</item>
     <item>ignore</item>
     <item>include</item>
     <item>select_offset</item>
@@ -71,6 +72,7 @@
     <item>extent</item>
     <item>enum</item>
     <item>export</item>
+    <item>fourcc</item>
     <item>length_is</item>
     <item>magic</item>
     <item>mapper</item>

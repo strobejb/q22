@@ -858,6 +858,9 @@ uint64_t StructureRenderEngine::formatScalar(StructureRow *row, Type *type, Type
     if (!row->children.empty())
         return length;
 
+    if (applyFourCcTag(row, typeDecl, length))
+        return length;
+
     Enum *displayEnum = tagEnum(typeDecl);
     if (!displayEnum && base->ty == typeENUM)
         displayEnum = base->eptr;
@@ -1171,6 +1174,31 @@ bool StructureRenderEngine::evaluate(const EvalContext &context, ExprNode *expr,
 
 namespace
 {
+bool packFourCcLiteral(const char *text, bool bigEndian, INUMTYPE *result)
+{
+    if (!text || !result)
+        return false;
+
+    const QByteArray bytes(text);
+    if (bytes.size() != 4)
+        return false;
+
+    uint64_t value = 0;
+    if (bigEndian)
+    {
+        for (int i = 0; i < 4; ++i)
+            value = (value << 8) | uchar(bytes[i]);
+    }
+    else
+    {
+        for (int i = 0; i < 4; ++i)
+            value |= uint64_t(uchar(bytes[i])) << (i * 8);
+    }
+
+    *result = static_cast<INUMTYPE>(value);
+    return true;
+}
+
 void collectExpressionArgs(ExprNode *expr, std::vector<ExprNode *> *args)
 {
     if (!expr || !args)
@@ -1225,6 +1253,15 @@ bool StructureRenderEngine::evaluateFunction(const EvalContext &context, ExprNod
     case TOK_FINDFIRST:
     case TOK_FINDLAST:
         return evaluateFindFunction(context, expr, result);
+    case TOK_FOURCC:
+    {
+        std::vector<ExprNode *> args;
+        collectExpressionArgs(expr->left, &args);
+        if (args.size() != 1 || !args[0] || args[0]->type != EXPR_STRINGBUF)
+            return false;
+
+        return packFourCcLiteral(args[0]->str, m_bigEndian, result);
+    }
     default:
         return false;
     }
@@ -3121,6 +3158,32 @@ void StructureRenderEngine::applyBitflagTag(StructureRow *row,
     row->value = activeLabels.isEmpty()
         ? formatStructureIntegerValue(rawValue, byteLength, false, QString(), m_options)
         : activeLabels.join(QStringLiteral(" | "));
+}
+
+bool StructureRenderEngine::applyFourCcTag(StructureRow *row, TypeDecl *typeDecl, uint64_t byteLength)
+{
+    if (!row || byteLength != 4 || !FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_FOURCC, nullptr))
+        return false;
+
+    QByteArray bytes(4, Qt::Uninitialized);
+    const size_t got = m_reader ? m_reader(row->absoluteOffset,
+                                           reinterpret_cast<uint8_t *>(bytes.data()),
+                                           static_cast<size_t>(bytes.size()))
+                                : 0;
+    if (got != 4)
+        return false;
+
+    QString text;
+    text.reserve(4);
+    for (char byte : bytes)
+    {
+        const uchar ch = uchar(byte);
+        text.append(ch >= 0x20 && ch <= 0x7e ? QChar(QLatin1Char(char(ch))) : QChar(QLatin1Char('.')));
+    }
+
+    row->valueKind = StructureRowValueKind::Custom;
+    row->value = quoteString(text);
+    return true;
 }
 
 void StructureRenderEngine::applyEntryPointTag(StructureRow *row, TypeDecl *typeDecl)

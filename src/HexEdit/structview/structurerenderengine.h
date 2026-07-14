@@ -182,6 +182,7 @@ private:
     QString enumNameForValue(Enum *eptr, INUMTYPE value) const;
     QStringList enumChoiceLabels(Enum *eptr) const;
     void applyBitflagTag(StructureRow *row, Type *type, TypeDecl *typeDecl, uint64_t rawValue, uint64_t byteLength);
+    bool applyFourCcTag(StructureRow *row, TypeDecl *typeDecl, uint64_t byteLength);
     void applyEntryPointTag(StructureRow *row, TypeDecl *typeDecl);
     void applyDeclarationName(StructureRow *row, Type *type) const;
     QString stringArrayValue(StructureRow *scope, Type *type, TypeDecl *typeDecl, uint64_t offset);

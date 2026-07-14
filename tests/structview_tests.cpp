@@ -65,6 +65,7 @@ private slots:
     void builderEvaluatesFieldsAndCorrectedExpressions();
     void builderEvaluatesFindSearchExpressions();
     void builderSelectsUnionMembersFromStringExpressions();
+    void builderSelectsUnionMembersFromFourCcExpressions();
     void builderUsesDynamicEndianExpressions();
     void builderEvaluatesEnumIndexedArraysInExpressions();
     void builderEvaluatesEnumIndexedUnionMembersInExpressions();
@@ -1788,6 +1789,57 @@ void StructViewTests::builderSelectsUnionMembersFromStringExpressions()
     QCOMPARE(fallback->value, QStringLiteral("4660"));
 }
 
+void StructViewTests::builderSelectsUnionMembersFromFourCcExpressions()
+{
+    // Scenario: FourCC fields are scalar integers, but definitions should be
+    // able to display them as text and use readable FourCC literals in case tags.
+    // Expected: [fourcc] renders the original four file bytes, and
+    // fourcc("....") compares using the active endian context.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "[export, endian(\"big\")]\n"
+                        "typedef struct _Big {\n"
+                        "  [fourcc] dword tag;\n"
+                        "  [select(tag)] union {\n"
+                        "    [case(fourcc(\"ftyp\"))] byte bigHit;\n"
+                        "    [default] byte bigMiss;\n"
+                        "  };\n"
+                        "} Big;\n"
+                        "[export, endian(\"little\")]\n"
+                        "typedef struct _Little {\n"
+                        "  [fourcc] dword tag;\n"
+                        "  [select(tag)] union {\n"
+                        "    [case(fourcc(\"RIFF\"))] byte littleHit;\n"
+                        "    [default] byte littleMiss;\n"
+                        "  };\n"
+                        "} Little;\n"));
+
+    TypeDecl *bigRoot = exportedNamed(&library, QStringLiteral("Big"));
+    QVERIFY(bigRoot);
+    auto bigRows = buildRows(&library, bigRoot, QByteArray("ftyp\x7f", 5));
+    QCOMPARE(bigRows.size(), size_t(1));
+    StructureRow *bigTag = findChildNamed(bigRows[0].get(), QStringLiteral("dword tag"));
+    QVERIFY2(bigTag, qPrintable(childNames(bigRows[0].get())));
+    QCOMPARE(bigTag->value, QStringLiteral("\"ftyp\""));
+    StructureRow *bigHit = findChildNamed(bigRows[0].get(), QStringLiteral("byte bigHit"));
+    QVERIFY2(bigHit, qPrintable(childNames(bigRows[0].get())));
+    QCOMPARE(bigHit->value, QStringLiteral("127"));
+    QVERIFY(!findChildNamed(bigRows[0].get(), QStringLiteral("byte bigMiss")));
+
+    TypeDecl *littleRoot = exportedNamed(&library, QStringLiteral("Little"));
+    QVERIFY(littleRoot);
+    auto littleRows = buildRows(&library, littleRoot, QByteArray("RIFF\x42", 5));
+    QCOMPARE(littleRows.size(), size_t(1));
+    StructureRow *littleTag = findChildNamed(littleRows[0].get(), QStringLiteral("dword tag"));
+    QVERIFY2(littleTag, qPrintable(childNames(littleRows[0].get())));
+    QCOMPARE(littleTag->value, QStringLiteral("\"RIFF\""));
+    StructureRow *littleHit = findChildNamed(littleRows[0].get(), QStringLiteral("byte littleHit"));
+    QVERIFY2(littleHit, qPrintable(childNames(littleRows[0].get())));
+    QCOMPARE(littleHit->value, QStringLiteral("66"));
+    QVERIFY(!findChildNamed(littleRows[0].get(), QStringLiteral("byte littleMiss")));
+}
+
 void StructViewTests::builderUsesDynamicEndianExpressions()
 {
     // Scenario: a format stores byte order in the file header, and the exported
@@ -2543,7 +2595,7 @@ void StructViewTests::builderRendersSfntTableDirectory()
     QCOMPARE(tables->children[0]->name, QStringLiteral("[0]head"));
     QCOMPARE(tables->children[1]->name, QStringLiteral("[1]name"));
 
-    StructureRow *headTag = findChildNamed(tables->children[0].get(), QStringLiteral("char tag[]"));
+    StructureRow *headTag = findChildNamed(tables->children[0].get(), QStringLiteral("dword tag"));
     QVERIFY2(headTag, qPrintable(childNames(tables->children[0].get())));
     QCOMPARE(headTag->value, QStringLiteral("\"head\""));
     QCOMPARE(findChildNamed(tables->children[0].get(), QStringLiteral("dword offset"))->value, QStringLiteral("44"));
@@ -2858,7 +2910,7 @@ void StructViewTests::builderRendersWoffDirectoryAndPayloads()
     QVERIFY2(tables, qPrintable(childNames(rows[0].get())));
     QCOMPARE(tables->children.size(), size_t(1));
     QCOMPARE(tables->children[0]->name, QStringLiteral("[0]name"));
-    StructureRow *tag = findChildNamed(tables->children[0].get(), QStringLiteral("char tag[]"));
+    StructureRow *tag = findChildNamed(tables->children[0].get(), QStringLiteral("dword tag"));
     QVERIFY2(tag, qPrintable(childNames(tables->children[0].get())));
     QCOMPARE(tag->value, QStringLiteral("\"name\""));
 

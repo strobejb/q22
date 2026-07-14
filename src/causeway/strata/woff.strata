@@ -14,8 +14,8 @@ enum WOFF_SFNT_FLAVOR
 
 typedef struct _WOFF_TABLE_DIRECTORY_ENTRY
 {
-    [string, count(4)]
-    char tag[];
+    [fourcc]
+    dword tag;
 
     [dynamic_array(name(TableData), type(BYTE), offset(offset), count(compLength), optional(compLength != 0))]
     dword offset;

@@ -30,8 +30,8 @@ typedef struct _SFNT_TABLE_PAYLOAD
 ]
 typedef struct _SFNT_TABLE_RECORD
 {
-    [string, count(4)]
-    char tag[];
+    [fourcc]
+    dword tag;
 
     dword checksum;
     dword offset;

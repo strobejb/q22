@@ -32,22 +32,22 @@ typedef struct _MP4_BOX
 {
     dword boxSize;
 
-    [string, count(4)]
-    char type[];
+    [fourcc]
+    dword type;
 
     [optional(boxSize == 1)]
     qword largeSize;
 
-    [optional(str(type) == "uuid")]
+    [optional(type == fourcc("uuid"))]
     byte userType[16];
 
-    [select(str(type)), extent(boxSize == 1 ? largeSize - 16 : boxSize - 8)]
+    [select(type), extent(boxSize == 1 ? largeSize - 16 : boxSize - 8)]
     union
     {
-        [case("ftyp")]
+        [case(fourcc("ftyp"))]
         MP4_FILE_TYPE_BOX fileType;
 
-        [case("mdat")]
+        [case(fourcc("mdat"))]
         MP4_MEDIA_DATA_BOX mediaData;
 
         [default]
