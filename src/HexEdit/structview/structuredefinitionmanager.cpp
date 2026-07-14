@@ -460,13 +460,9 @@ bool StructureDefinitionManager::reload()
     m_definitionFiles = files;
     m_failedFiles = failures;
 
-    // Catches the class of mistake that only fails silently at render time
-    // otherwise: a select/switch_is/endian/offset/size_is/optional/extent
-    // expression referencing a field that doesn't exist as a sibling and
-    // isn't declared identically by every case(...) candidate of an
-    // enclosing union (e.g. forgetting select_offset(...) -- or the
-    // fallback it stands in for not applying -- for a discriminator that
-    // lives inside a not-yet-selected union member).
+    // Catches expression mistakes that only fail silently at render time
+    // otherwise: unresolvable static field references, and root offset(...)
+    // expressions that need the live render context before one exists.
     const QStringList staticFieldErrors = StructureRenderEngine::validateStaticFieldReferences(m_library.get());
 
     if (!failures.isEmpty())
@@ -494,7 +490,7 @@ bool StructureDefinitionManager::reload()
 
     if (!staticFieldErrors.isEmpty())
     {
-        m_loadLog.push_back(tr("%1 unresolvable field reference(s):").arg(staticFieldErrors.size()));
+        m_loadLog.push_back(tr("%1 static expression issue(s):").arg(staticFieldErrors.size()));
         for (const QString &message : staticFieldErrors)
             m_loadLog.push_back(QStringLiteral("  ") + message);
     }

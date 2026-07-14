@@ -20,7 +20,7 @@ stored in `~/.config/catch22/q22/strata`.
 | Unions | [`select`](#discriminated-unions) · [`case`](#discriminated-unions) |
 | Semantic views | [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) · [`view`](#view) |
 | Export | [`export`](#export-metadata) · [`version`](#export-metadata) · [`assoc`](#export-metadata) · [`magic`](#export-metadata) |
-| Expressions | [`sizeof`](#expressions) · [`find_first`](#byte-pattern-search) · [`find_last`](#byte-pattern-search) · [`select_offset`](#select_offset) |
+| Expressions | [`sizeof`](#expressions) · [`file_size`](#expressions) · [`find_first`](#byte-pattern-search) · [`find_last`](#byte-pattern-search) · [`select_offset`](#select_offset) |
 
 ---
 
@@ -605,6 +605,7 @@ dosHeader.e_lfanew
 | Logical | `&& \|\|` |
 | Conditional | `? :` |
 | Size | `sizeof(Type)` |
+| File size | `file_size()` |
 | String lookup | `cstr_at(offset, maxLen)` |
 | Byte search | `find_first({ ... })` · `find_last({ ... })` |
 | Raw read | `select_offset(byteOffset)` |
@@ -619,6 +620,15 @@ terminated_by(0)
 relative to the root structure base, capped at `maxLen` bytes. It returns a
 string expression, so it is primarily useful with string-valued
 `select(...)`/`case("...")` unions.
+
+`file_size()` returns the number of readable bytes from the root structure base.
+It is useful for bounding a final stream of records when the format has no
+explicit byte-count field:
+
+```c
+[count(4096), extent(file_size() - sizeof(Header))]
+Record records[];
+```
 
 ### Byte pattern search
 
@@ -695,7 +705,7 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 | Dynamic/semantic tags | `container`, `dynamic_array`, `dynamic_container`, `dynamic_struct`, `mapper`, `offset_map`, `type`, `view` |
 | Export/detection tags | `assoc`, `export`, `magic`, `version` |
 | Tagsets/files | `include`, `tagset`, `tags` |
-| Expression helpers | `cstr_at`, `find_first`, `find_last`, `sizeof` |
+| Expression helpers | `cstr_at`, `file_size`, `find_first`, `find_last`, `sizeof` |
 
 ---
 

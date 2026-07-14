@@ -1194,6 +1194,20 @@ bool StructureRenderEngine::evaluateFunction(const EvalContext &context, ExprNod
 
     switch (expr->tok)
     {
+    case TOK_FILESIZE:
+    {
+        std::vector<ExprNode *> args;
+        collectExpressionArgs(expr->left, &args);
+        if (!args.empty())
+            return false;
+
+        const uint64_t end = readableEnd(m_baseOffset);
+        if (end < m_baseOffset)
+            return false;
+
+        *result = static_cast<INUMTYPE>(end - m_baseOffset);
+        return true;
+    }
     case TOK_FINDFIRST:
     case TOK_FINDLAST:
         return evaluateFindFunction(context, expr, result);
@@ -1815,6 +1829,73 @@ void collectFieldReferenceRoots(ExprNode *expr, std::vector<ExprNode *> *roots)
     }
 }
 
+bool rootOffsetExpressionIsConstantFoldable(ExprNode *expr)
+{
+    if (!expr)
+        return false;
+
+    switch (expr->type)
+    {
+    case EXPR_NUMBER:
+        return true;
+    case EXPR_UNARY:
+        return rootOffsetExpressionIsConstantFoldable(expr->left);
+    case EXPR_BINARY:
+        return rootOffsetExpressionIsConstantFoldable(expr->left)
+            && rootOffsetExpressionIsConstantFoldable(expr->right);
+    case EXPR_TERTIARY:
+        return rootOffsetExpressionIsConstantFoldable(expr->cond)
+            && rootOffsetExpressionIsConstantFoldable(expr->left)
+            && rootOffsetExpressionIsConstantFoldable(expr->right);
+    default:
+        return false;
+    }
+}
+
+QString rootOffsetUnsupportedExpressionName(ExprNode *expr)
+{
+    if (!expr)
+        return QStringLiteral("empty expression");
+
+    switch (expr->type)
+    {
+    case EXPR_IDENTIFIER:
+        return expr->str
+            ? QStringLiteral("field reference '%1'").arg(QString::fromLocal8Bit(expr->str))
+            : QStringLiteral("field reference");
+    case EXPR_FIELD:
+    case EXPR_ARRAY:
+        return QStringLiteral("field reference");
+    case EXPR_SIZEOF:
+        return QStringLiteral("sizeof(...)");
+    case EXPR_RAWOFFSET:
+        return QStringLiteral("select_offset(...)");
+    case EXPR_FUNCTION:
+        return QStringLiteral("%1(...)").arg(QString::fromLocal8Bit(Parser::inenglish(expr->tok)));
+    case EXPR_STRINGBUF:
+        return QStringLiteral("string literal");
+    case EXPR_BYTESEQ:
+        return QStringLiteral("byte sequence");
+    case EXPR_TAGWRAP:
+        return QStringLiteral("tag-wrapped expression");
+    case EXPR_UNARY:
+        return rootOffsetUnsupportedExpressionName(expr->left);
+    case EXPR_BINARY:
+    case EXPR_COMMA:
+        if (!rootOffsetExpressionIsConstantFoldable(expr->left))
+            return rootOffsetUnsupportedExpressionName(expr->left);
+        return rootOffsetUnsupportedExpressionName(expr->right);
+    case EXPR_TERTIARY:
+        if (!rootOffsetExpressionIsConstantFoldable(expr->cond))
+            return rootOffsetUnsupportedExpressionName(expr->cond);
+        if (!rootOffsetExpressionIsConstantFoldable(expr->left))
+            return rootOffsetUnsupportedExpressionName(expr->left);
+        return rootOffsetUnsupportedExpressionName(expr->right);
+    default:
+        return QStringLiteral("runtime expression");
+    }
+}
+
 } // namespace
 
 namespace
@@ -1919,7 +2000,19 @@ QStringList StructureRenderEngine::validateStaticFieldReferences(StrataLibrary *
         {
             ExprNode *tagExpr = nullptr;
             if (FindTag(typeDecl->tagList, tagTok, &tagExpr) && tagExpr)
+            {
+                if (tagTok == TOK_OFFSET
+                    && FindTag(typeDecl->tagList, TOK_EXPORT, nullptr)
+                    && !rootOffsetExpressionIsConstantFoldable(tagExpr))
+                {
+                    errors.push_back(tagLocationPrefix(typeDecl)
+                                     + QStringLiteral("root offset(...) uses %1, but root offsets are "
+                                                      "evaluated before a live render context exists; "
+                                                      "use constant arithmetic only")
+                                           .arg(rootOffsetUnsupportedExpressionName(tagExpr)));
+                }
                 scratch.validateFieldTagExpressions(typeDecl->baseType, tagExpr, typeDecl, tagTok, &errors);
+            }
         }
 
         scratch.validateStructTags(typeDecl->baseType, &errors);

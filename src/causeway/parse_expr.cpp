@@ -325,6 +325,19 @@ ExprNode * Parser::UnaryExpression(void)
 		break;
 	}
 
+	case TOK_FILESIZE:
+	{
+		TOKEN funcTok = t;
+		Advance();
+		if(!Expected('('))
+			return new ExprNode(EXPR_NULL, TOK_NULL);
+		if(!Expected(')'))
+			return new ExprNode(EXPR_NULL, TOK_NULL);
+
+		p = new ExprNode(EXPR_FUNCTION, funcTok, 0);
+		break;
+	}
+
 	// pre-increment & pre-decrement operators
 	case TOK_INC: case TOK_DEC:		
 #ifdef INCDEC_SUPPORTED

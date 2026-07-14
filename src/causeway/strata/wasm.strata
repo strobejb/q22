@@ -1,0 +1,426 @@
+// q22-strata-v1
+//
+//  wasm.strata
+//
+
+include "basetypes.strata";
+
+enum WASM_SECTION_ID
+{
+    WASM_SECTION_CUSTOM     = 0,
+    WASM_SECTION_TYPE       = 1,
+    WASM_SECTION_IMPORT     = 2,
+    WASM_SECTION_FUNCTION   = 3,
+    WASM_SECTION_TABLE      = 4,
+    WASM_SECTION_MEMORY     = 5,
+    WASM_SECTION_GLOBAL     = 6,
+    WASM_SECTION_EXPORT     = 7,
+    WASM_SECTION_START      = 8,
+    WASM_SECTION_ELEMENT    = 9,
+    WASM_SECTION_CODE       = 10,
+    WASM_SECTION_DATA       = 11,
+    WASM_SECTION_DATA_COUNT = 12,
+    WASM_SECTION_TAG        = 13
+};
+
+enum WASM_VALUE_TYPE
+{
+    WASM_VALTYPE_FUNCREF  = 0x70,
+    WASM_VALTYPE_EXTERNREF = 0x6f,
+    WASM_VALTYPE_V128     = 0x7b,
+    WASM_VALTYPE_F64      = 0x7c,
+    WASM_VALTYPE_F32      = 0x7d,
+    WASM_VALTYPE_I64      = 0x7e,
+    WASM_VALTYPE_I32      = 0x7f
+};
+
+enum WASM_TYPE_FORM
+{
+    WASM_TYPE_FORM_FUNC = 0x60
+};
+
+enum WASM_EXTERN_KIND
+{
+    WASM_EXTERN_FUNC   = 0,
+    WASM_EXTERN_TABLE  = 1,
+    WASM_EXTERN_MEMORY = 2,
+    WASM_EXTERN_GLOBAL = 3,
+    WASM_EXTERN_TAG    = 4
+};
+
+enum WASM_MUTABILITY
+{
+    WASM_CONST = 0,
+    WASM_VAR   = 1
+};
+
+enum WASM_LIMIT_FLAGS
+{
+    WASM_LIMIT_MIN_ONLY       = 0,
+    WASM_LIMIT_MIN_MAX        = 1,
+    WASM_LIMIT_MIN_MAX_SHARED = 3
+};
+
+enum WASM_DATA_MODE
+{
+    WASM_DATA_ACTIVE_MEMORY_0 = 0,
+    WASM_DATA_PASSIVE         = 1,
+    WASM_DATA_ACTIVE_MEMORY_N = 2
+};
+
+typedef struct _WASM_HEADER
+{
+    byte magic[4];
+    dword version;
+} WASM_HEADER, *PWASM_HEADER;
+
+typedef struct _WASM_NAME
+{
+    uleb128 length;
+
+    [string, count(length)]
+    byte bytes[];
+} WASM_NAME, *PWASM_NAME;
+
+typedef struct _WASM_RESULT_TYPE
+{
+    uleb128 count;
+
+    [enum(WASM_VALUE_TYPE), count(count)]
+    byte types[];
+} WASM_RESULT_TYPE, *PWASM_RESULT_TYPE;
+
+typedef struct _WASM_FUNCTION_TYPE
+{
+    [enum(WASM_TYPE_FORM)]
+    byte form;
+
+    WASM_RESULT_TYPE params;
+    WASM_RESULT_TYPE results;
+} WASM_FUNCTION_TYPE, *PWASM_FUNCTION_TYPE;
+
+typedef struct _WASM_TYPE_SECTION
+{
+    uleb128 count;
+
+    [count(count)]
+    WASM_FUNCTION_TYPE types[];
+} WASM_TYPE_SECTION, *PWASM_TYPE_SECTION;
+
+typedef struct _WASM_LIMITS
+{
+    [enum(WASM_LIMIT_FLAGS)]
+    uleb128 flags;
+
+    uleb128 min;
+
+    [optional(flags & 1)]
+    uleb128 max;
+} WASM_LIMITS, *PWASM_LIMITS;
+
+typedef struct _WASM_TABLE_TYPE
+{
+    [enum(WASM_VALUE_TYPE)]
+    byte refType;
+
+    WASM_LIMITS limits;
+} WASM_TABLE_TYPE, *PWASM_TABLE_TYPE;
+
+typedef struct _WASM_MEMORY_TYPE
+{
+    WASM_LIMITS limits;
+} WASM_MEMORY_TYPE, *PWASM_MEMORY_TYPE;
+
+typedef struct _WASM_GLOBAL_TYPE
+{
+    [enum(WASM_VALUE_TYPE)]
+    byte valueType;
+
+    [enum(WASM_MUTABILITY)]
+    byte mutability;
+} WASM_GLOBAL_TYPE, *PWASM_GLOBAL_TYPE;
+
+typedef struct _WASM_TAG_TYPE
+{
+    byte attribute;
+    uleb128 typeIndex;
+} WASM_TAG_TYPE, *PWASM_TAG_TYPE;
+
+typedef struct _WASM_IMPORT
+{
+    WASM_NAME module;
+    WASM_NAME name;
+
+    [enum(WASM_EXTERN_KIND)]
+    byte kind;
+
+    [select(kind)]
+    union
+    {
+        [case(WASM_EXTERN_FUNC)]
+        uleb128 functionTypeIndex;
+
+        [case(WASM_EXTERN_TABLE)]
+        WASM_TABLE_TYPE table;
+
+        [case(WASM_EXTERN_MEMORY)]
+        WASM_MEMORY_TYPE memory;
+
+        [case(WASM_EXTERN_GLOBAL)]
+        WASM_GLOBAL_TYPE global;
+
+        [case(WASM_EXTERN_TAG)]
+        WASM_TAG_TYPE tag;
+    };
+} WASM_IMPORT, *PWASM_IMPORT;
+
+typedef struct _WASM_IMPORT_SECTION
+{
+    uleb128 count;
+
+    [count(count)]
+    WASM_IMPORT imports[];
+} WASM_IMPORT_SECTION, *PWASM_IMPORT_SECTION;
+
+typedef struct _WASM_FUNCTION_SECTION
+{
+    uleb128 count;
+
+    [count(count)]
+    uleb128 typeIndices[];
+} WASM_FUNCTION_SECTION, *PWASM_FUNCTION_SECTION;
+
+typedef struct _WASM_TABLE_SECTION
+{
+    uleb128 count;
+
+    [count(count)]
+    WASM_TABLE_TYPE tables[];
+} WASM_TABLE_SECTION, *PWASM_TABLE_SECTION;
+
+typedef struct _WASM_MEMORY_SECTION
+{
+    uleb128 count;
+
+    [count(count)]
+    WASM_MEMORY_TYPE memories[];
+} WASM_MEMORY_SECTION, *PWASM_MEMORY_SECTION;
+
+typedef struct _WASM_GLOBAL
+{
+    WASM_GLOBAL_TYPE type;
+
+    [count(size), terminated_by(0x0b)]
+    byte initExpr[];
+} WASM_GLOBAL, *PWASM_GLOBAL;
+
+typedef struct _WASM_GLOBAL_SECTION
+{
+    uleb128 count;
+
+    [count(count)]
+    WASM_GLOBAL globals[];
+} WASM_GLOBAL_SECTION, *PWASM_GLOBAL_SECTION;
+
+typedef struct _WASM_EXTERN_INDEX
+{
+    [enum(WASM_EXTERN_KIND)]
+    byte kind;
+
+    uleb128 index;
+} WASM_EXTERN_INDEX, *PWASM_EXTERN_INDEX;
+
+typedef struct _WASM_EXPORT
+{
+    WASM_NAME name;
+    WASM_EXTERN_INDEX target;
+} WASM_EXPORT, *PWASM_EXPORT;
+
+typedef struct _WASM_EXPORT_SECTION
+{
+    uleb128 count;
+
+    [count(count)]
+    WASM_EXPORT exports[];
+} WASM_EXPORT_SECTION, *PWASM_EXPORT_SECTION;
+
+typedef struct _WASM_START_SECTION
+{
+    uleb128 functionIndex;
+} WASM_START_SECTION, *PWASM_START_SECTION;
+
+typedef struct _WASM_LOCAL_DECL
+{
+    uleb128 count;
+
+    [enum(WASM_VALUE_TYPE)]
+    byte valueType;
+} WASM_LOCAL_DECL, *PWASM_LOCAL_DECL;
+
+typedef struct _WASM_CODE_ENTRY
+{
+    uleb128 size;
+
+    [count(size), extent(size)]
+    byte body[];
+} WASM_CODE_ENTRY, *PWASM_CODE_ENTRY;
+
+typedef struct _WASM_CODE_SECTION
+{
+    uleb128 count;
+
+    [count(count)]
+    WASM_CODE_ENTRY functions[];
+} WASM_CODE_SECTION, *PWASM_CODE_SECTION;
+
+typedef struct _WASM_DATA_SEGMENT
+{
+    [enum(WASM_DATA_MODE)]
+    uleb128 mode;
+
+    [select(mode)]
+    union
+    {
+        [case(WASM_DATA_ACTIVE_MEMORY_0)]
+        struct
+        {
+            [count(size), terminated_by(0x0b)]
+            byte offsetExpr[];
+
+            uleb128 byteCount;
+
+            [count(byteCount)]
+            byte bytes[];
+        } activeMemory0;
+
+        [case(WASM_DATA_PASSIVE)]
+        struct
+        {
+            uleb128 byteCount;
+
+            [count(byteCount)]
+            byte bytes[];
+        } passive;
+
+        [case(WASM_DATA_ACTIVE_MEMORY_N)]
+        struct
+        {
+            uleb128 memoryIndex;
+
+            [count(size), terminated_by(0x0b)]
+            byte offsetExpr[];
+
+            uleb128 byteCount;
+
+            [count(byteCount)]
+            byte bytes[];
+        } activeMemoryN;
+    };
+} WASM_DATA_SEGMENT, *PWASM_DATA_SEGMENT;
+
+typedef struct _WASM_DATA_SECTION
+{
+    uleb128 count;
+
+    [count(count)]
+    WASM_DATA_SEGMENT data[];
+} WASM_DATA_SECTION, *PWASM_DATA_SECTION;
+
+typedef struct _WASM_DATA_COUNT_SECTION
+{
+    uleb128 count;
+} WASM_DATA_COUNT_SECTION, *PWASM_DATA_COUNT_SECTION;
+
+typedef struct _WASM_TAG_SECTION
+{
+    uleb128 count;
+
+    [count(count)]
+    WASM_TAG_TYPE tags[];
+} WASM_TAG_SECTION, *PWASM_TAG_SECTION;
+
+typedef struct _WASM_CUSTOM_SECTION
+{
+    uleb128 nameSize;
+
+    [string, count(nameSize)]
+    byte name[];
+} WASM_CUSTOM_SECTION, *PWASM_CUSTOM_SECTION;
+
+typedef struct _WASM_RAW_SECTION
+{
+    [count(size), extent(size)]
+    byte payload[];
+} WASM_RAW_SECTION, *PWASM_RAW_SECTION;
+
+typedef struct _WASM_SECTION
+{
+    [enum(WASM_SECTION_ID)]
+    byte id;
+
+    uleb128 size;
+
+    [select(id), extent(size)]
+    union
+    {
+        [case(WASM_SECTION_CUSTOM)]
+        WASM_CUSTOM_SECTION custom;
+
+        [case(WASM_SECTION_TYPE)]
+        WASM_TYPE_SECTION type;
+
+        [case(WASM_SECTION_IMPORT)]
+        WASM_IMPORT_SECTION import;
+
+        [case(WASM_SECTION_FUNCTION)]
+        WASM_FUNCTION_SECTION function;
+
+        [case(WASM_SECTION_TABLE)]
+        WASM_TABLE_SECTION table;
+
+        [case(WASM_SECTION_MEMORY)]
+        WASM_MEMORY_SECTION memory;
+
+        [case(WASM_SECTION_GLOBAL)]
+        WASM_GLOBAL_SECTION global;
+
+        [case(WASM_SECTION_EXPORT)]
+        WASM_EXPORT_SECTION export;
+
+        [case(WASM_SECTION_START)]
+        WASM_START_SECTION start;
+
+        [case(WASM_SECTION_CODE)]
+        WASM_CODE_SECTION code;
+
+        [case(WASM_SECTION_DATA)]
+        WASM_DATA_SECTION data;
+
+        [case(WASM_SECTION_DATA_COUNT)]
+        WASM_DATA_COUNT_SECTION dataCount;
+
+        [case(WASM_SECTION_TAG)]
+        WASM_TAG_SECTION tag;
+
+        [default]
+        WASM_RAW_SECTION raw;
+    };
+} WASM_SECTION, *PWASM_SECTION;
+
+[
+    export("WebAssembly Module"),
+    version(1),
+    assoc(".wasm"),
+    magic({ 0x00, 0x61, 0x73, 0x6d }),
+    offset(0)
+]
+typedef struct _WASM
+{
+    WASM_HEADER header;
+
+    [
+        count(4096),
+        extent(file_size() - sizeof(WASM_HEADER))
+    ]
+    WASM_SECTION sections[];
+} WASM;

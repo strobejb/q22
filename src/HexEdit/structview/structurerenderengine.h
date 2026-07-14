@@ -21,14 +21,13 @@ public:
 
     // Strata-language static analysis, not rendering: every select/
     // switch_is/endian/offset/size_is/optional/extent tag expression in
-    // `library` is checked for field references that resolveDirectField
-    // (including its union-candidate fallback) cannot resolve without a
-    // live file open -- e.g. a discriminator that only some union
-    // candidates declare, or whose position depends on a data-dependent
-    // array size earlier in the same struct. One message per problem
-    // found, empty if none. Used by StructureDefinitionManager to catch
-    // ELF-e_ident-style mistakes when a .struct file is loaded, instead of
-    // them silently failing the first time a real file is opened.
+    // `library` is checked for constructs that cannot work in its static
+    // context. This catches field references that resolveDirectField
+    // cannot resolve without a live file open, and exported root
+    // offset(...) expressions that are not constant-foldable. One message
+    // per problem found, empty if none. Used by StructureDefinitionManager
+    // to catch definition mistakes when a .struct/.strata file is loaded,
+    // instead of them silently failing the first time a real file is opened.
     static QStringList validateStaticFieldReferences(StrataLibrary *library);
 
 private:

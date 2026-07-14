@@ -18,6 +18,7 @@
     <item>default</item>
     <item>display</item>
     <item>enum</item>
+    <item>file_size</item>
     <item>find_first</item>
     <item>find_last</item>
     <item>ignore</item>

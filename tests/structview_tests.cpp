@@ -73,6 +73,7 @@ private slots:
     void builderRendersDexHeaderAndTables();
     void builderAddsDexSemanticSummaryPastArrayRenderCap();
     void builderRendersDtbHeaderAndBlocks();
+    void builderRendersWasmHeaderAndSections();
     void builderRendersZipCentralDirectoryFromEocd();
     void builderRendersElf32AndElf64Tables();
     void builderPlacesDynamicStructsUnderNamedDynamicContainers();
@@ -85,6 +86,7 @@ private slots:
     void builderResolvesEntryPointRvaThroughSectionOffsetMap();
     void builderResolvesUnionDiscriminatorFromCandidateOnlyField();
     void definitionManagerFlagsNonStaticFieldReferences();
+    void definitionManagerFlagsRuntimeExpressionsInRootOffsets();
     void semanticRegistryRunsKnownViewsAndIgnoresUnknownViews();
     void builderRunsSemanticViewsAfterDynamicPlacement();
     void builderKeepsRawDynamicRowsWhenSemanticImportDataIsTruncated();
@@ -248,6 +250,17 @@ static StructureRow *findDescendantNamed(StructureRow *parent, const QString &na
             return found;
 
     return nullptr;
+}
+
+static QString childNames(StructureRow *parent)
+{
+    if (!parent)
+        return QStringLiteral("<null>");
+
+    QStringList names;
+    for (const auto &child : parent->children)
+        names.push_back(child->name);
+    return names.join(QStringLiteral(", "));
 }
 
 static void verifyBranchIconsPresent(const StructureRow *row)
@@ -2299,6 +2312,152 @@ void StructViewTests::builderRendersDtbHeaderAndBlocks()
     QCOMPARE(stringsBlock->children[1]->value, QStringLiteral("\"foo\""));
 }
 
+void StructViewTests::builderRendersWasmHeaderAndSections()
+{
+    // Scenario: WebAssembly modules have a fixed header followed by an
+    // EOF-terminated stream of size-prefixed sections.
+    // Expected: the standard Wasm definition renders only the real sections,
+    // names known section IDs, decodes custom section names, and expands the
+    // common typed payload sections used by a tiny exported function module.
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("wasm.strata")), "wasm.strata failed to parse");
+    TypeDecl *wasmRoot = exportedNamed(&library, QStringLiteral("WASM"));
+    QVERIFY(wasmRoot);
+
+    QByteArray wasm;
+    wasm.append(QByteArray::fromHex("0061736d"));     // magic
+    wasm.append(QByteArray::fromHex("01000000"));     // version 1
+    wasm.append(char(0x00));                          // custom section
+    wasm.append(char(0x06));                          // size
+    wasm.append(char(0x04));                          // name size
+    wasm.append("name", 4);
+    wasm.append(char(0xff));                          // custom payload byte
+    wasm.append(char(0x01));                          // type section
+    wasm.append(char(0x05));                          // size
+    wasm.append(QByteArray::fromHex("016000017f"));   // () -> i32
+    wasm.append(char(0x03));                          // function section
+    wasm.append(char(0x02));                          // size
+    wasm.append(QByteArray::fromHex("0100"));         // one function, type 0
+    wasm.append(char(0x05));                          // memory section
+    wasm.append(char(0x03));                          // size
+    wasm.append(QByteArray::fromHex("010001"));       // one min-only memory, min 1 page
+    wasm.append(char(0x07));                          // export section
+    wasm.append(char(0x0a));                          // size
+    wasm.append(char(0x01));                          // one export
+    wasm.append(char(0x06));                          // name length
+    wasm.append("answer", 6);
+    wasm.append(char(0x00));                          // function export
+    wasm.append(char(0x00));                          // function index 0
+    wasm.append(char(0x0a));                          // code section
+    wasm.append(char(0x06));                          // size
+    wasm.append(QByteArray::fromHex("010400412a0b")); // one body: i32.const 42; end
+
+    auto rows = buildRows(&library, wasmRoot, wasm);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->name, QStringLiteral("WASM"));
+
+    StructureRow *header = findChildNamed(rows[0].get(), QStringLiteral("WASM_HEADER header"));
+    QVERIFY(header);
+    StructureRow *version = findChildNamed(header, QStringLiteral("dword version"));
+    QVERIFY2(version, qPrintable(childNames(header)));
+    QCOMPARE(version->value, QStringLiteral("1"));
+
+    StructureRow *sections = findChildNamed(rows[0].get(), QStringLiteral("WASM_SECTION sections[]"));
+    QVERIFY(sections);
+    QCOMPARE(sections->children.size(), size_t(6));
+
+    StructureRow *customSection = sections->children[0].get();
+    StructureRow *customId = findChildNamed(customSection, QStringLiteral("byte id"));
+    QVERIFY2(customId, qPrintable(childNames(customSection)));
+    QCOMPARE(customId->value, QStringLiteral("WASM_SECTION_CUSTOM"));
+    StructureRow *customSize = findChildNamed(customSection, QStringLiteral("uleb128 size"));
+    QVERIFY2(customSize, qPrintable(childNames(customSection)));
+    QCOMPARE(customSize->value, QStringLiteral("6"));
+    StructureRow *custom = findChildNamed(customSection, QStringLiteral("WASM_CUSTOM_SECTION custom"));
+    QVERIFY2(custom, qPrintable(childNames(customSection)));
+    StructureRow *customNameSize = findChildNamed(custom, QStringLiteral("uleb128 nameSize"));
+    QVERIFY2(customNameSize, qPrintable(childNames(custom)));
+    QCOMPARE(customNameSize->value, QStringLiteral("4"));
+    StructureRow *customName = findChildNamed(custom, QStringLiteral("byte name[]"));
+    QVERIFY2(customName, qPrintable(childNames(custom)));
+    QCOMPARE(customName->value, QStringLiteral("\"name\""));
+
+    StructureRow *typeSection = sections->children[1].get();
+    StructureRow *typeId = findChildNamed(typeSection, QStringLiteral("byte id"));
+    QVERIFY2(typeId, qPrintable(childNames(typeSection)));
+    QCOMPARE(typeId->value, QStringLiteral("WASM_SECTION_TYPE"));
+    StructureRow *typeSize = findChildNamed(typeSection, QStringLiteral("uleb128 size"));
+    QVERIFY2(typeSize, qPrintable(childNames(typeSection)));
+    QCOMPARE(typeSize->value, QStringLiteral("5"));
+    StructureRow *typePayload = findChildNamed(typeSection, QStringLiteral("WASM_TYPE_SECTION type"));
+    QVERIFY2(typePayload, qPrintable(childNames(typeSection)));
+    StructureRow *typeCount = findChildNamed(typePayload, QStringLiteral("uleb128 count"));
+    QVERIFY2(typeCount, qPrintable(childNames(typePayload)));
+    QCOMPARE(typeCount->value, QStringLiteral("1"));
+    StructureRow *functionTypes = findChildNamed(typePayload, QStringLiteral("WASM_FUNCTION_TYPE types[]"));
+    QVERIFY2(functionTypes, qPrintable(childNames(typePayload)));
+    QCOMPARE(functionTypes->children.size(), size_t(1));
+    StructureRow *typeForm = findChildNamed(functionTypes->children[0].get(), QStringLiteral("byte form"));
+    QVERIFY2(typeForm, qPrintable(childNames(functionTypes->children[0].get())));
+    QCOMPARE(typeForm->value, QStringLiteral("WASM_TYPE_FORM_FUNC"));
+
+    StructureRow *functionSection = sections->children[2].get();
+    StructureRow *functionId = findChildNamed(functionSection, QStringLiteral("byte id"));
+    QVERIFY2(functionId, qPrintable(childNames(functionSection)));
+    QCOMPARE(functionId->value, QStringLiteral("WASM_SECTION_FUNCTION"));
+    StructureRow *functionPayload = findChildNamed(functionSection, QStringLiteral("WASM_FUNCTION_SECTION function"));
+    QVERIFY2(functionPayload, qPrintable(childNames(functionSection)));
+    StructureRow *typeIndices = findChildNamed(functionPayload, QStringLiteral("uleb128 typeIndices[]"));
+    QVERIFY2(typeIndices, qPrintable(childNames(functionPayload)));
+    QCOMPARE(typeIndices->value, QStringLiteral("{ 0 }"));
+
+    StructureRow *memorySection = sections->children[3].get();
+    StructureRow *memoryId = findChildNamed(memorySection, QStringLiteral("byte id"));
+    QVERIFY2(memoryId, qPrintable(childNames(memorySection)));
+    QCOMPARE(memoryId->value, QStringLiteral("WASM_SECTION_MEMORY"));
+    StructureRow *memoryPayload = findChildNamed(memorySection, QStringLiteral("WASM_MEMORY_SECTION memory"));
+    QVERIFY2(memoryPayload, qPrintable(childNames(memorySection)));
+    StructureRow *memories = findChildNamed(memoryPayload, QStringLiteral("WASM_MEMORY_TYPE memories[]"));
+    QVERIFY2(memories, qPrintable(childNames(memoryPayload)));
+    StructureRow *memoryMin = findDescendantNamed(memories->children[0].get(), QStringLiteral("uleb128 min"));
+    QVERIFY2(memoryMin, qPrintable(childNames(memories->children[0].get())));
+    QCOMPARE(memoryMin->value, QStringLiteral("1"));
+
+    StructureRow *exportSection = sections->children[4].get();
+    StructureRow *exportId = findChildNamed(exportSection, QStringLiteral("byte id"));
+    QVERIFY2(exportId, qPrintable(childNames(exportSection)));
+    QCOMPARE(exportId->value, QStringLiteral("WASM_SECTION_EXPORT"));
+    StructureRow *exportPayload = findChildNamed(exportSection, QStringLiteral("WASM_EXPORT_SECTION export"));
+    QVERIFY2(exportPayload, qPrintable(childNames(exportSection)));
+    StructureRow *exports = findChildNamed(exportPayload, QStringLiteral("WASM_EXPORT exports[]"));
+    QVERIFY2(exports, qPrintable(childNames(exportPayload)));
+    StructureRow *exportName = findChildNamed(exports->children[0].get(), QStringLiteral("WASM_NAME name"));
+    QVERIFY2(exportName, qPrintable(childNames(exports->children[0].get())));
+    StructureRow *exportNameBytes = findChildNamed(exportName, QStringLiteral("byte bytes[]"));
+    QVERIFY2(exportNameBytes, qPrintable(childNames(exportName)));
+    QCOMPARE(exportNameBytes->value, QStringLiteral("\"answer\""));
+    StructureRow *exportTarget = findChildNamed(exports->children[0].get(), QStringLiteral("WASM_EXTERN_INDEX target"));
+    QVERIFY2(exportTarget, qPrintable(childNames(exports->children[0].get())));
+    StructureRow *exportKind = findChildNamed(exportTarget, QStringLiteral("byte kind"));
+    QVERIFY2(exportKind, qPrintable(childNames(exportTarget)));
+    QCOMPARE(exportKind->value, QStringLiteral("WASM_EXTERN_FUNC"));
+    StructureRow *exportIndex = findChildNamed(exportTarget, QStringLiteral("uleb128 index"));
+    QVERIFY2(exportIndex, qPrintable(childNames(exportTarget)));
+    QCOMPARE(exportIndex->value, QStringLiteral("0"));
+
+    StructureRow *codeSection = sections->children[5].get();
+    StructureRow *codeId = findChildNamed(codeSection, QStringLiteral("byte id"));
+    QVERIFY2(codeId, qPrintable(childNames(codeSection)));
+    QCOMPARE(codeId->value, QStringLiteral("WASM_SECTION_CODE"));
+    StructureRow *codePayload = findChildNamed(codeSection, QStringLiteral("WASM_CODE_SECTION code"));
+    QVERIFY2(codePayload, qPrintable(childNames(codeSection)));
+    StructureRow *functions = findChildNamed(codePayload, QStringLiteral("WASM_CODE_ENTRY functions[]"));
+    QVERIFY2(functions, qPrintable(childNames(codePayload)));
+    StructureRow *body = findChildNamed(functions->children[0].get(), QStringLiteral("byte body[]"));
+    QVERIFY2(body, qPrintable(childNames(functions->children[0].get())));
+    QCOMPARE(body->value, QStringLiteral("{ 0, 65, 42, 11 }"));
+}
+
 void StructViewTests::builderRendersZipCentralDirectoryFromEocd()
 {
     // Scenario: ZIP local headers may defer CRC/sizes to data descriptors, so
@@ -3216,6 +3375,37 @@ void StructViewTests::definitionManagerFlagsNonStaticFieldReferences()
     StrataLibrary zipLibrary;
     QVERIFY2(parseStandardDefinition(&zipLibrary, QStringLiteral("zip.strata")), "zip.strata failed to parse");
     QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&zipLibrary).isEmpty());
+}
+
+void StructViewTests::definitionManagerFlagsRuntimeExpressionsInRootOffsets()
+{
+    StrataLibrary constantLibrary;
+    Parser constantParser(&constantLibrary);
+    QVERIFY(parseBuffer(constantParser,
+                        "[export, offset(4 + 8)]\n"
+                        "struct Root { byte value; } root;\n"));
+    QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&constantLibrary).isEmpty());
+
+    StrataLibrary fileSizeLibrary;
+    Parser fileSizeParser(&fileSizeLibrary);
+    QVERIFY(parseBuffer(fileSizeParser,
+                        "[export, offset(file_size() - 1)]\n"
+                        "struct Root { byte value; } root;\n"));
+    const QStringList fileSizeErrors = StructureRenderEngine::validateStaticFieldReferences(&fileSizeLibrary);
+    QCOMPARE(fileSizeErrors.size(), 1);
+    QVERIFY2(fileSizeErrors.first().contains(QStringLiteral("root offset(...)")), qPrintable(fileSizeErrors.first()));
+    QVERIFY2(fileSizeErrors.first().contains(QStringLiteral("file_size(...)")), qPrintable(fileSizeErrors.first()));
+    QVERIFY2(fileSizeErrors.first().contains(QStringLiteral("constant arithmetic")), qPrintable(fileSizeErrors.first()));
+
+    StrataLibrary sizeofLibrary;
+    Parser sizeofParser(&sizeofLibrary);
+    QVERIFY(parseBuffer(sizeofParser,
+                        "struct Header { byte value; };\n"
+                        "[export, offset(sizeof(Header))]\n"
+                        "struct Root { byte value; } root;\n"));
+    const QStringList sizeofErrors = StructureRenderEngine::validateStaticFieldReferences(&sizeofLibrary);
+    QCOMPARE(sizeofErrors.size(), 1);
+    QVERIFY2(sizeofErrors.first().contains(QStringLiteral("sizeof(...)")), qPrintable(sizeofErrors.first()));
 }
 
 void StructViewTests::semanticRegistryRunsKnownViewsAndIgnoresUnknownViews()
