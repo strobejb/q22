@@ -275,6 +275,7 @@ typedef struct _Elf64_Sym
 [
     export("Executable and Linkable Format (ELF)"),
     version(1),
+    category("code"),
     assoc(".elf", ".so", ".o"),
     magic({ 0x7F, 'E', 'L', 'F' }),
     offset(0),

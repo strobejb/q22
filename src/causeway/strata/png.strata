@@ -192,6 +192,7 @@ typedef struct _PNG_CHUNK
 [
     export("Portable Network Graphics (PNG)"),
     version(1),
+    category("image"),
     assoc(".png"),
     magic({ 0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a }),
     offset(0),
@@ -208,4 +209,3 @@ typedef struct _PNG
     ]
     PNG_CHUNK chunks[];
 } PNG;
-

@@ -169,6 +169,7 @@ typedef struct _BMP_RAW_DIB_HEADER
 [
     export("Windows Bitmap (BMP)"),
     version(1),
+    category("image"),
     assoc(".bmp"),
     assoc(".dib"),
     magic({ 'B', 'M' }),

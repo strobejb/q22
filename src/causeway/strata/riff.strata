@@ -116,6 +116,7 @@ typedef struct _RIFF_CHUNK
 [
     export("Waveform Audio (WAVE)"),
     version(1),
+    category("media"),
     assoc(".wav"),
     assoc(".wave"),
     magic({ 'W', 'A', 'V', 'E' }, 8),
@@ -137,8 +138,9 @@ typedef struct _WAVE
 } WAVE;
 
 [
-    export("WebP Image"),
+    export("WebP Image (WEBP)"),
     version(1),
+    category("image"),
     assoc(".webp"),
     magic({ 'W', 'E', 'B', 'P' }, 8),
     offset(0),
@@ -161,6 +163,7 @@ typedef struct _WEBP
 [
     export("Resource Interchange File Format (RIFF)"),
     version(1),
+    category("media"),
     assoc(".riff"),
     assoc(".avi"),
     assoc(".ani"),

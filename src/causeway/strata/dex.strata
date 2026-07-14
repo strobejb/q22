@@ -163,6 +163,7 @@ typedef struct _DEX_MAP_LIST
 [
     export("Dalvik Executable (DEX)"),
     version(1),
+    category("code"),
     assoc(".dex"),
     magic({ 'd', 'e', 'x', 0x0a }),
     offset(0),

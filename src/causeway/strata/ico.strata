@@ -28,6 +28,7 @@ typedef struct _ICO_DIRECTORY_ENTRY
 [
     export("Windows Icon / Cursor (ICO/CUR)"),
     version(1),
+    category("image"),
     assoc(".ico"),
     assoc(".cur"),
     magic({ 0x00, 0x00, 0x01, 0x00 }),

@@ -23,6 +23,7 @@ public:
     // slot, e.g. a pointer or offset a caller needs back via currentData())
     // so storing payload data never leaks into the visible menu label.
     static constexpr int DetailRole = Qt::UserRole + 100;
+    static constexpr int SectionRole = Qt::UserRole + 101;
 
     void setLeadingIcon(const QIcon &icon);
 

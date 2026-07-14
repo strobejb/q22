@@ -267,14 +267,24 @@ void MenuComboBox::buildMenu()
 {
     m_menu->clear();
     const int cur = currentIndex();
+    QString currentSection;
+    bool hasAction = false;
     for (int i = 0; i < count(); ++i) {
         const QString text = itemText(i);
         if (text.isEmpty()) {
             m_menu->addSeparator();
+            currentSection.clear();
             continue;
+        }
+        const QString section = itemData(i, SectionRole).toString();
+        if (!section.isEmpty() && section != currentSection) {
+            if (hasAction)
+                m_menu->addSection(section);
+            currentSection = section;
         }
         const QString detail = itemData(i, DetailRole).toString();
         QAction *a = m_menu->addAction(detail.isEmpty() ? text : text + QLatin1Char('\t') + detail);
+        hasAction = true;
         a->setCheckable(true);
         a->setChecked(i == cur);
         connect(a, &QAction::triggered, this, [this, i]() {

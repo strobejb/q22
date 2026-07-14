@@ -31,6 +31,7 @@ private slots:
     void exportedTypesExposeAssocExtensions();
     void exportedTypesExposeMagicSignatures();
     void exportedTypesExposeDescriptions();
+    void exportedTypesExposeCategories();
     void exportedTypesResolveDuplicateVersionsAndLogDecision();
     void exportedTypesLogDuplicateFilesEvenWhenUserCopyFails();
     void builderFormatsScalarsAndEndian();
@@ -665,6 +666,35 @@ void StructViewTests::exportedTypesExposeDescriptions()
     QCOMPARE(exported.size(), 2);
     QCOMPARE(exported[0].description, QStringLiteral("Friendly Root"));
     QCOMPARE(exported[1].description, QString());
+}
+
+void StructViewTests::exportedTypesExposeCategories()
+{
+    // Scenario: exported roots can declare a coarse Structure View category for
+    // grouped dropdown display.
+    // Expected: the manager exposes the normalized category string and leaves
+    // uncategorized roots empty so the panel can place them in its fallback
+    // section.
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+
+    const QString userDir = temp.filePath(QStringLiteral("user-strata"));
+    QVERIFY(QDir().mkpath(userDir));
+    writeTextFile(QDir(userDir).filePath(QStringLiteral("types.txt")),
+                  "[export(\"Image Root\"), category(\"Media\")]\n"
+                  "struct ImageRoot { byte magic; } imageRoot;\n"
+                  "[export(\"Plain Root\")]\n"
+                  "struct PlainRoot { word flags; } plainRoot;\n");
+
+    StructureDefinitionManager manager;
+    manager.setBuiltinStructDirsForTests({});
+    manager.setUserStrataDirForTests(userDir);
+
+    QVERIFY2(manager.reload(), qPrintable(manager.lastError()));
+    const QList<ExportedStructureType> exported = manager.exportedTypes();
+    QCOMPARE(exported.size(), 2);
+    QCOMPARE(exported[0].category, QStringLiteral("media"));
+    QCOMPARE(exported[1].category, QString());
 }
 
 void StructViewTests::exportedTypesResolveDuplicateVersionsAndLogDecision()

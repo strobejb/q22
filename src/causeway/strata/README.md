@@ -19,7 +19,7 @@ stored in `~/.config/catch22/q22/strata`.
 | Arrays | [`count`](#arrays) · [`terminated_by`](#arrays) |
 | Unions | [`select`](#discriminated-unions) · [`case`](#discriminated-unions) |
 | Semantic views | [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) · [`view`](#view) |
-| Export | [`export`](#export-metadata) · [`version`](#export-metadata) · [`assoc`](#export-metadata) · [`magic`](#export-metadata) |
+| Export | [`export`](#export-metadata) · [`category`](#export-metadata) · [`version`](#export-metadata) · [`assoc`](#export-metadata) · [`magic`](#export-metadata) |
 | Expressions | [`sizeof`](#expressions) · [`file_size`](#expressions) · [`extent_of`](#expressions) · [`str`](#expressions) · [`find_first`](#byte-pattern-search) · [`find_last`](#byte-pattern-search) · [`select_offset`](#select_offset) |
 
 ---
@@ -571,6 +571,7 @@ detect and open automatically:
 | Tag | Effect |
 |-----|--------|
 | `export` / `export("name")` | Register as a file-format root, with optional human-readable name |
+| `category("name")` | Optional Structure View menu section, such as `"code"`, `"image"`, `"media"`, `"font"`, `"storage"`, or `"system"` |
 | `version(n)` | Export definition version used to resolve built-in/user duplicates; defaults to `0` |
 | `assoc(".ext", ...)` | File extensions for this format |
 | `magic({ b, b, ... })` | Magic byte sequence at offset `0` |
@@ -579,6 +580,7 @@ detect and open automatically:
 ```c
 [
   export("Portable Executable (PE)"),
+  category("code"),
   version(1),
   assoc(".exe", ".sys", ".dll"),
   magic({ 'M', 'Z' })
@@ -746,7 +748,7 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 | Display/layout tags | `align`, `bitflag`, `description`, `display`, `endian`, `entrypoint`, `extent`, `fourcc`, `ignore`, `name`, `offset`, `optional`, `pad_to`, `string`, `style` |
 | Arrays/unions | `case`, `count`, `default`, `length_is`, `select`, `select_offset`, `size_is`, `switch_is`, `terminated_by` |
 | Dynamic/semantic tags | `container`, `dynamic_array`, `dynamic_container`, `dynamic_struct`, `mapper`, `offset_map`, `type`, `view` |
-| Export/detection tags | `assoc`, `export`, `magic`, `version` |
+| Export/detection tags | `assoc`, `category`, `export`, `magic`, `version` |
 | Tagsets/files | `include`, `tagset`, `tags` |
 | Expression helpers | `cstr_at`, `extent_of`, `file_size`, `find_first`, `find_last`, `fourcc`, `sizeof`, `str` |
 
@@ -761,7 +763,7 @@ recognize the on-disk layout.
 Recommended workflow:
 
 1. Define primitive aliases, enums, and simple structs first.
-2. Add an exported root with `export`, `assoc`, `magic`, and `offset`.
+2. Add an exported root with `export`, optional `category`, `assoc`, `magic`, and `offset`.
 3. Model fields in physical order where possible.
 4. Use `offset(...)` for tables or records referenced from elsewhere in the file.
 5. Use `count(...)` and `terminated_by(...)` for variable arrays.

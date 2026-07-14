@@ -505,6 +505,7 @@ typedef struct _WASM_SECTION
 [
     export("WebAssembly Module (WASM)"),
     version(1),
+    category("code"),
     assoc(".wasm"),
     magic({ 0x00, 0x61, 0x73, 0x6d }),
     offset(0)

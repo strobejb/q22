@@ -53,6 +53,7 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <functional>
@@ -78,6 +79,56 @@ static constexpr int kBranchIconSize = 16;
 // normal, successfully-parsed type), kRootComboErrorRole the parser diagnostic.
 static constexpr int kRootComboFilePathRole = Qt::UserRole + 1;
 static constexpr int kRootComboErrorRole    = Qt::UserRole + 2;
+
+struct RootComboLabel
+{
+    QString text;
+    QString detail;
+};
+
+static RootComboLabel splitRootComboLabel(QString label)
+{
+    static const QRegularExpression suffixRe(QStringLiteral(R"(^(.+?)\s*\(([^()]+)\)\s*$)"));
+    const QRegularExpressionMatch match = suffixRe.match(label);
+    if (!match.hasMatch())
+        return { label, {} };
+
+    return { match.captured(1).trimmed(), match.captured(2).trimmed() };
+}
+
+static int rootCategoryRank(const QString &category)
+{
+    if (category == QStringLiteral("code"))
+        return 0;
+    if (category == QStringLiteral("image"))
+        return 1;
+    if (category == QStringLiteral("media"))
+        return 2;
+    if (category == QStringLiteral("font"))
+        return 3;
+    if (category == QStringLiteral("storage"))
+        return 4;
+    if (category == QStringLiteral("system"))
+        return 5;
+    return 6;
+}
+
+static QString rootCategoryLabel(const QString &category)
+{
+    if (category == QStringLiteral("code"))
+        return QObject::tr("Code");
+    if (category == QStringLiteral("image"))
+        return QObject::tr("Images");
+    if (category == QStringLiteral("media"))
+        return QObject::tr("Media");
+    if (category == QStringLiteral("font"))
+        return QObject::tr("Fonts");
+    if (category == QStringLiteral("storage"))
+        return QObject::tr("Storage");
+    if (category == QStringLiteral("system"))
+        return QObject::tr("System");
+    return QObject::tr("Other");
+}
 
 static bool structureProfileEnabled()
 {
@@ -2451,7 +2502,7 @@ void StructureViewPanel::updateTreeSelectionPalette()
 
 void StructureViewPanel::updateDefinitionsUi()
 {
-    const QList<ExportedStructureType> exportedTypes = m_definitions->exportedTypes();
+    const QList<ExportedStructureType> exportedTypes = sortedExportedTypes(m_definitions->exportedTypes());
     const QList<FailedStructureFile> failedFiles = m_definitions->failedFiles();
 
     {
@@ -2462,12 +2513,19 @@ void StructureViewPanel::updateDefinitionsUi()
             const QString displayName = type.description.isEmpty()
                 ? displayNameForTypeDecl(type.typeDecl)
                 : type.description;
-            m_rootCombo->addItem(displayName,
+            const RootComboLabel label = splitRootComboLabel(displayName);
+            const int index = m_rootCombo->count();
+            m_rootCombo->addItem(label.text,
                                  QVariant::fromValue<qulonglong>(reinterpret_cast<qulonglong>(type.typeDecl)));
+            m_rootCombo->setItemData(index, rootCategoryLabel(type.category), MenuComboBox::SectionRole);
+            if (!label.detail.isEmpty())
+                m_rootCombo->setItemData(index, label.detail, MenuComboBox::DetailRole);
         }
         // Files that failed to parse still get an entry (by filename, since we never
         // got far enough to read an @export description) so they aren't silently
         // dropped from the list; selecting one shows an error in place of the grid.
+        if (!exportedTypes.isEmpty() && !failedFiles.isEmpty())
+            m_rootCombo->addItem(QString());
         for (const FailedStructureFile &failure : failedFiles)
         {
             const int index = m_rootCombo->count();
@@ -3300,6 +3358,27 @@ bool StructureViewPanel::selectAssociatedRootType(const QList<ExportedStructureT
     return changed;
 }
 
+QList<ExportedStructureType> StructureViewPanel::sortedExportedTypes(const QList<ExportedStructureType> &exportedTypes) const
+{
+    QList<ExportedStructureType> sorted = exportedTypes;
+    std::stable_sort(sorted.begin(), sorted.end(),
+                     [this](const ExportedStructureType &a, const ExportedStructureType &b) {
+        const int rankA = rootCategoryRank(a.category);
+        const int rankB = rootCategoryRank(b.category);
+        if (rankA != rankB)
+            return rankA < rankB;
+
+        const QString nameA = splitRootComboLabel(a.description.isEmpty()
+            ? displayNameForTypeDecl(a.typeDecl)
+            : a.description).text.toCaseFolded();
+        const QString nameB = splitRootComboLabel(b.description.isEmpty()
+            ? displayNameForTypeDecl(b.typeDecl)
+            : b.description).text.toCaseFolded();
+        return nameA < nameB;
+    });
+    return sorted;
+}
+
 int StructureViewPanel::associatedRootTypeIndex(const QList<ExportedStructureType> &exportedTypes) const
 {
     if (!m_hv || exportedTypes.isEmpty())
@@ -3342,7 +3421,7 @@ void StructureViewPanel::refreshForCurrentFileAssociation()
         return;
 
     m_definitions->ensureLoaded();
-    const QList<ExportedStructureType> exportedTypes = m_definitions->exportedTypes();
+    const QList<ExportedStructureType> exportedTypes = sortedExportedTypes(m_definitions->exportedTypes());
     const int associatedIndex = associatedRootTypeIndex(exportedTypes);
     if (associatedIndex < 0)
     {

@@ -108,6 +108,7 @@ private:
     bool magicSignatureMatches(const StructureMagicSignature &signature) const;
     int associatedRootTypeIndex(const QList<ExportedStructureType> &exportedTypes) const;
     bool selectAssociatedRootType(const QList<ExportedStructureType> &exportedTypes);
+    QList<ExportedStructureType> sortedExportedTypes(const QList<ExportedStructureType> &exportedTypes) const;
     void refreshForCurrentFileAssociation();
     TypeDecl *selectedRootType() const;
     QString displayNameForTypeDecl(TypeDecl *decl) const;

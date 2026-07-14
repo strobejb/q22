@@ -55,6 +55,7 @@ typedef struct _WOFF_HEADER
 [
     export("Web Open Font Format (WOFF)"),
     version(1),
+    category("font"),
     assoc(".woff"),
     magic({ 'w', 'O', 'F', 'F' }),
     offset(0),

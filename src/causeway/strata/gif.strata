@@ -172,6 +172,7 @@ typedef struct _GIF_BLOCK
 [
     export("Graphics Interchange Format (GIF)"),
     version(1),
+    category("image"),
     assoc(".gif"),
     magic({ 'G', 'I', 'F', '8', '7', 'a' }),
     magic({ 'G', 'I', 'F', '8', '9', 'a' }),

@@ -84,6 +84,7 @@ typedef struct _FDT_STRUCT_ITEM
 [
     export("Flattened Device Tree (DTB)"),
     version(1),
+    category("system"),
     assoc(".dtb"),
     magic({ 0xd0, 0x0d, 0xfe, 0xed }),
     offset(0),

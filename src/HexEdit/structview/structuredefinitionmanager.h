@@ -27,6 +27,7 @@ struct ExportedStructureType
     QString  filePath;
     QString  fileName;
     QString  description;
+    QString  category;
     int      version = 0;
     bool     userDefinition = false;
     QStringList assocExtensions;

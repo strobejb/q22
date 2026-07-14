@@ -128,6 +128,20 @@ QString descriptionFromTags(Tag *tagList)
     return QString::fromLocal8Bit(expr->str).trimmed();
 }
 
+QString categoryFromTags(Tag *tagList)
+{
+    ExprNode *expr = nullptr;
+    if (!FindTag(tagList, TOK_CATEGORY, &expr)
+        || !expr
+        || expr->type != EXPR_STRINGBUF
+        || !expr->str)
+    {
+        return {};
+    }
+
+    return QString::fromLocal8Bit(expr->str).trimmed().toLower();
+}
+
 int versionFromTags(Tag *tagList)
 {
     ExprNode *expr = nullptr;
@@ -306,6 +320,7 @@ QList<ExportedStructureType> StructureDefinitionManager::resolvedExportedTypes(Q
             type.fileName = QFileInfo(type.filePath).fileName();
         }
         type.description = descriptionFromTags(decl->tagList);
+        type.category = categoryFromTags(decl->tagList);
         type.version = versionFromTags(decl->tagList);
         type.userDefinition = !type.filePath.isEmpty()
             && QFileInfo(type.filePath).absoluteFilePath().startsWith(userDir + QLatin1Char('/'));

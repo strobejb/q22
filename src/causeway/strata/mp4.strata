@@ -58,6 +58,7 @@ typedef struct _MP4_BOX
 [
     export("MPEG-4 (MP4)"),
     version(1),
+    category("media"),
     assoc(".mp4"),
     assoc(".m4v"),
     assoc(".m4a"),
