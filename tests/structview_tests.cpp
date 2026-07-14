@@ -76,6 +76,8 @@ private slots:
     void builderRendersWasmHeaderAndSections();
     void builderRendersSfntTableDirectory();
     void builderRendersPngChunks();
+    void builderRendersBmpHeaderAndPixelPayload();
+    void builderRendersIcoDirectoryAndImagePayload();
     void builderRendersZipCentralDirectoryFromEocd();
     void builderRendersElf32AndElf64Tables();
     void builderPlacesDynamicStructsUnderNamedDynamicContainers();
@@ -2605,6 +2607,112 @@ void StructViewTests::builderRendersPngChunks()
     QCOMPARE(findChildNamed(idat, QStringLiteral("byte data[]"))->value, QStringLiteral("{ 120, 156 }"));
 }
 
+void StructViewTests::builderRendersBmpHeaderAndPixelPayload()
+{
+    // Scenario: BMP is a little-endian file header followed by a DIB header
+    // whose first field selects the concrete header variant.
+    // Expected: the standard BMP definition expands the selected DIB header and
+    // exposes the pixel payload at bfOffBits as dynamic data.
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("bmp.strata")), "bmp.strata failed to parse");
+    TypeDecl *bmpRoot = exportedNamed(&library, QStringLiteral("BMP"));
+    QVERIFY(bmpRoot);
+
+    QByteArray bmp(58, '\0');
+    bmp[0] = 'B';
+    bmp[1] = 'M';
+    writeLe32(&bmp, 2, quint32(bmp.size()));
+    writeLe32(&bmp, 10, 54);
+    writeLe32(&bmp, 14, 40); // BITMAPINFOHEADER
+    writeLe32(&bmp, 18, 1);  // width
+    writeLe32(&bmp, 22, 1);  // height
+    writeLe16(&bmp, 26, 1);  // planes
+    writeLe16(&bmp, 28, 32); // bit count
+    writeLe32(&bmp, 30, 0);  // BI_RGB
+    bmp[54] = char(0x11);
+    bmp[55] = char(0x22);
+    bmp[56] = char(0x33);
+    bmp[57] = char(0x44);
+
+    auto rows = buildRows(&library, bmpRoot, bmp);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->name, QStringLiteral("BMP"));
+
+    StructureRow *fileHeader = findChildNamed(rows[0].get(), QStringLiteral("BMP_FILE_HEADER fileHeader"));
+    QVERIFY2(fileHeader, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(findChildNamed(fileHeader, QStringLiteral("word type"))->value, QStringLiteral("BMP_FILE_BM"));
+    QCOMPARE(findChildNamed(fileHeader, QStringLiteral("dword pixelArrayOffset"))->value, QStringLiteral("54"));
+
+    StructureRow *dibHeaderSize = findChildNamed(rows[0].get(), QStringLiteral("dword dibHeaderSize"));
+    QVERIFY2(dibHeaderSize, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(dibHeaderSize->value, QStringLiteral("BMP_DIB_INFO"));
+
+    StructureRow *infoHeader = findChildNamed(rows[0].get(), QStringLiteral("BMP_INFO_HEADER infoHeader"));
+    QVERIFY2(infoHeader, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(findChildNamed(infoHeader, QStringLiteral("long width"))->value, QStringLiteral("1"));
+    QCOMPARE(findChildNamed(infoHeader, QStringLiteral("word bitCount"))->value, QStringLiteral("32"));
+    QCOMPARE(findChildNamed(infoHeader, QStringLiteral("dword compression"))->value, QStringLiteral("BMP_COMPRESSION_RGB"));
+
+    StructureRow *pixelOffset = findChildNamed(fileHeader, QStringLiteral("dword pixelArrayOffset"));
+    QVERIFY2(pixelOffset, qPrintable(childNames(fileHeader)));
+    StructureRow *pixelData = findChildNamed(pixelOffset, QStringLiteral("BYTE PixelData[]"));
+    QVERIFY2(pixelData, qPrintable(childNames(pixelOffset)));
+    QCOMPARE(pixelData->offset, QStringLiteral("00000036"));
+    QCOMPARE(pixelData->children.size(), size_t(4));
+    QCOMPARE(pixelData->children[0]->value, QStringLiteral("17"));
+    QCOMPARE(pixelData->children[3]->value, QStringLiteral("68"));
+}
+
+void StructViewTests::builderRendersIcoDirectoryAndImagePayload()
+{
+    // Scenario: ICO/CUR files contain a directory of image records whose
+    // payloads live elsewhere in the file.
+    // Expected: the standard ICO definition renders directory entries and
+    // exposes each bounded image payload as dynamic data.
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("ico.strata")), "ico.strata failed to parse");
+    TypeDecl *icoRoot = exportedNamed(&library, QStringLiteral("ICO"));
+    QVERIFY(icoRoot);
+
+    QByteArray ico(26, '\0');
+    writeLe16(&ico, 0, 0);
+    writeLe16(&ico, 2, 1);
+    writeLe16(&ico, 4, 1);
+    ico[6] = char(16); // width
+    ico[7] = char(16); // height
+    writeLe16(&ico, 10, 1);
+    writeLe16(&ico, 12, 32);
+    writeLe32(&ico, 14, 4);
+    writeLe32(&ico, 18, 22);
+    ico[22] = char(0x89);
+    ico[23] = 'P';
+    ico[24] = 'N';
+    ico[25] = 'G';
+
+    auto rows = buildRows(&library, icoRoot, ico);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->name, QStringLiteral("ICO"));
+    QCOMPARE(findChildNamed(rows[0].get(), QStringLiteral("word type"))->value, QStringLiteral("ICO_TYPE_ICON"));
+
+    StructureRow *entries = findChildNamed(rows[0].get(), QStringLiteral("ICO_DIRECTORY_ENTRY entries[]"));
+    QVERIFY2(entries, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(entries->children.size(), size_t(1));
+
+    StructureRow *entry = entries->children[0].get();
+    QCOMPARE(findChildNamed(entry, QStringLiteral("byte width"))->value, QStringLiteral("16"));
+    QCOMPARE(findChildNamed(entry, QStringLiteral("dword bytesInResource"))->value, QStringLiteral("4"));
+    QCOMPARE(findChildNamed(entry, QStringLiteral("dword imageOffset"))->value, QStringLiteral("22"));
+
+    StructureRow *imageOffset = findChildNamed(entry, QStringLiteral("dword imageOffset"));
+    QVERIFY2(imageOffset, qPrintable(childNames(entry)));
+    StructureRow *imageData = findChildNamed(imageOffset, QStringLiteral("BYTE ImageData[]"));
+    QVERIFY2(imageData, qPrintable(childNames(imageOffset)));
+    QCOMPARE(imageData->offset, QStringLiteral("00000016"));
+    QCOMPARE(imageData->children.size(), size_t(4));
+    QCOMPARE(imageData->children[0]->value, QStringLiteral("137"));
+    QCOMPARE(imageData->children[3]->value, QStringLiteral("71"));
+}
+
 void StructViewTests::builderRendersZipCentralDirectoryFromEocd()
 {
     // Scenario: ZIP local headers may defer CRC/sizes to data descriptors, so
@@ -3530,6 +3638,14 @@ void StructViewTests::definitionManagerFlagsNonStaticFieldReferences()
     StrataLibrary pngLibrary;
     QVERIFY2(parseStandardDefinition(&pngLibrary, QStringLiteral("png.strata")), "png.strata failed to parse");
     QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&pngLibrary).isEmpty());
+
+    StrataLibrary bmpLibrary;
+    QVERIFY2(parseStandardDefinition(&bmpLibrary, QStringLiteral("bmp.strata")), "bmp.strata failed to parse");
+    QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&bmpLibrary).isEmpty());
+
+    StrataLibrary icoLibrary;
+    QVERIFY2(parseStandardDefinition(&icoLibrary, QStringLiteral("ico.strata")), "ico.strata failed to parse");
+    QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&icoLibrary).isEmpty());
 }
 
 void StructViewTests::definitionManagerFlagsRuntimeExpressionsInRootOffsets()

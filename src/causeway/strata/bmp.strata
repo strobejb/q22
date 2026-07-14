@@ -1,0 +1,209 @@
+// q22-strata-v1
+//
+//  bmp.strata
+//
+
+include "basetypes.strata";
+
+enum BMP_FILE_TYPE
+{
+    BMP_FILE_BM = 0x4d42,
+    BMP_FILE_BA = 0x4142,
+    BMP_FILE_CI = 0x4943,
+    BMP_FILE_CP = 0x5043,
+    BMP_FILE_IC = 0x4349,
+    BMP_FILE_PT = 0x5450
+};
+
+enum BMP_DIB_HEADER_SIZE
+{
+    BMP_DIB_CORE        = 12,
+    BMP_DIB_INFO        = 40,
+    BMP_DIB_V2          = 52,
+    BMP_DIB_V3          = 56,
+    BMP_DIB_V4          = 108,
+    BMP_DIB_V5          = 124
+};
+
+enum BMP_COMPRESSION
+{
+    BMP_COMPRESSION_RGB            = 0,
+    BMP_COMPRESSION_RLE8           = 1,
+    BMP_COMPRESSION_RLE4           = 2,
+    BMP_COMPRESSION_BITFIELDS      = 3,
+    BMP_COMPRESSION_JPEG           = 4,
+    BMP_COMPRESSION_PNG            = 5,
+    BMP_COMPRESSION_ALPHABITFIELDS = 6,
+    BMP_COMPRESSION_CMYK           = 11,
+    BMP_COMPRESSION_CMYKRLE8       = 12,
+    BMP_COMPRESSION_CMYKRLE4       = 13
+};
+
+enum BMP_COLOR_SPACE_TYPE
+{
+    BMP_LCS_CALIBRATED_RGB = 0x00000000,
+    BMP_LCS_sRGB           = 0x73524742,
+    BMP_LCS_WINDOWS_COLOR_SPACE = 0x57696e20,
+    BMP_PROFILE_LINKED     = 0x4c494e4b,
+    BMP_PROFILE_EMBEDDED   = 0x4d424544
+};
+
+enum BMP_GAMUT_MAPPING_INTENT
+{
+    BMP_LCS_GM_BUSINESS         = 1,
+    BMP_LCS_GM_GRAPHICS         = 2,
+    BMP_LCS_GM_IMAGES           = 4,
+    BMP_LCS_GM_ABS_COLORIMETRIC = 8
+};
+
+typedef struct _BMP_FILE_HEADER
+{
+    [enum(BMP_FILE_TYPE)]
+    word type;
+
+    dword fileSize;
+    word reserved1;
+    word reserved2;
+
+    [dynamic_array(name(PixelData), type(BYTE), offset(pixelArrayOffset), count(fileSize > pixelArrayOffset ? fileSize - pixelArrayOffset : 0), optional(pixelArrayOffset != 0))]
+    dword pixelArrayOffset;
+} BMP_FILE_HEADER, *PBMP_FILE_HEADER;
+
+typedef struct _BMP_CORE_HEADER
+{
+    [enum(BMP_DIB_HEADER_SIZE)]
+    dword headerSize;
+
+    word width;
+    word height;
+    word planes;
+    word bitCount;
+} BMP_CORE_HEADER, *PBMP_CORE_HEADER;
+
+typedef struct _BMP_INFO_HEADER
+{
+    [enum(BMP_DIB_HEADER_SIZE)]
+    dword headerSize;
+
+    long width;
+    long height;
+    word planes;
+    word bitCount;
+
+    [enum(BMP_COMPRESSION)]
+    dword compression;
+
+    dword imageSize;
+    long xPixelsPerMeter;
+    long yPixelsPerMeter;
+    dword colorsUsed;
+    dword colorsImportant;
+} BMP_INFO_HEADER, *PBMP_INFO_HEADER;
+
+typedef struct _BMP_V2_HEADER
+{
+    BMP_INFO_HEADER info;
+    dword redMask;
+    dword greenMask;
+    dword blueMask;
+} BMP_V2_HEADER, *PBMP_V2_HEADER;
+
+typedef struct _BMP_V3_HEADER
+{
+    BMP_INFO_HEADER info;
+    dword redMask;
+    dword greenMask;
+    dword blueMask;
+    dword alphaMask;
+} BMP_V3_HEADER, *PBMP_V3_HEADER;
+
+typedef struct _BMP_CIEXYZ
+{
+    long x;
+    long y;
+    long z;
+} BMP_CIEXYZ, *PBMP_CIEXYZ;
+
+typedef struct _BMP_CIEXYZTRIPLE
+{
+    BMP_CIEXYZ red;
+    BMP_CIEXYZ green;
+    BMP_CIEXYZ blue;
+} BMP_CIEXYZTRIPLE, *PBMP_CIEXYZTRIPLE;
+
+typedef struct _BMP_V4_HEADER
+{
+    BMP_INFO_HEADER info;
+    dword redMask;
+    dword greenMask;
+    dword blueMask;
+    dword alphaMask;
+
+    [enum(BMP_COLOR_SPACE_TYPE)]
+    dword colorSpaceType;
+
+    BMP_CIEXYZTRIPLE endpoints;
+    dword gammaRed;
+    dword gammaGreen;
+    dword gammaBlue;
+} BMP_V4_HEADER, *PBMP_V4_HEADER;
+
+typedef struct _BMP_V5_HEADER
+{
+    BMP_V4_HEADER v4;
+
+    [enum(BMP_GAMUT_MAPPING_INTENT)]
+    dword intent;
+
+    dword profileData;
+    dword profileSize;
+    dword reserved;
+} BMP_V5_HEADER, *PBMP_V5_HEADER;
+
+typedef struct _BMP_RAW_DIB_HEADER
+{
+    [count(size), extent(size)]
+    BYTE bytes[];
+} BMP_RAW_DIB_HEADER, *PBMP_RAW_DIB_HEADER;
+
+[
+    export("Windows Bitmap (BMP)"),
+    version(1),
+    assoc(".bmp"),
+    assoc(".dib"),
+    magic({ 'B', 'M' }),
+    offset(0),
+    endian("little")
+]
+typedef struct _BMP
+{
+    BMP_FILE_HEADER fileHeader;
+
+    [enum(BMP_DIB_HEADER_SIZE)]
+    dword dibHeaderSize;
+
+    [offset(sizeof(BMP_FILE_HEADER)), select(dibHeaderSize), extent(dibHeaderSize)]
+    union
+    {
+        [case(BMP_DIB_CORE)]
+        BMP_CORE_HEADER coreHeader;
+
+        [case(BMP_DIB_INFO)]
+        BMP_INFO_HEADER infoHeader;
+
+        [case(BMP_DIB_V2)]
+        BMP_V2_HEADER v2Header;
+
+        [case(BMP_DIB_V3)]
+        BMP_V3_HEADER v3Header;
+
+        [case(BMP_DIB_V4)]
+        BMP_V4_HEADER v4Header;
+
+        [case(BMP_DIB_V5)]
+        BMP_V5_HEADER v5Header;
+
+        [default]
+        BMP_RAW_DIB_HEADER rawHeader;
+    };
+} BMP;

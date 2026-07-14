@@ -1,0 +1,49 @@
+// q22-strata-v1
+//
+//  ico.strata
+//
+
+include "basetypes.strata";
+
+enum ICO_RESOURCE_TYPE
+{
+    ICO_TYPE_ICON   = 1,
+    ICO_TYPE_CURSOR = 2
+};
+
+typedef struct _ICO_DIRECTORY_ENTRY
+{
+    byte width;
+    byte height;
+    byte colorCount;
+    byte reserved;
+    word planesOrHotspotX;
+    word bitCountOrHotspotY;
+    dword bytesInResource;
+
+    [dynamic_array(name(ImageData), type(BYTE), offset(imageOffset), count(bytesInResource), optional(bytesInResource != 0))]
+    dword imageOffset;
+} ICO_DIRECTORY_ENTRY, *PICO_DIRECTORY_ENTRY;
+
+[
+    export("Windows Icon / Cursor (ICO/CUR)"),
+    version(1),
+    assoc(".ico"),
+    assoc(".cur"),
+    magic({ 0x00, 0x00, 0x01, 0x00 }),
+    magic({ 0x00, 0x00, 0x02, 0x00 }),
+    offset(0),
+    endian("little")
+]
+typedef struct _ICO
+{
+    word reserved;
+
+    [enum(ICO_RESOURCE_TYPE)]
+    word type;
+
+    word count;
+
+    [count(count)]
+    ICO_DIRECTORY_ENTRY entries[];
+} ICO;
