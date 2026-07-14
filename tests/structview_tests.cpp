@@ -78,6 +78,8 @@ private slots:
     void builderRendersPngChunks();
     void builderRendersBmpHeaderAndPixelPayload();
     void builderRendersIcoDirectoryAndImagePayload();
+    void builderRendersGifBlocks();
+    void builderRendersWoffDirectoryAndPayloads();
     void builderRendersZipCentralDirectoryFromEocd();
     void builderRendersElf32AndElf64Tables();
     void builderPlacesDynamicStructsUnderNamedDynamicContainers();
@@ -2713,6 +2715,167 @@ void StructViewTests::builderRendersIcoDirectoryAndImagePayload()
     QCOMPARE(imageData->children[3]->value, QStringLiteral("71"));
 }
 
+void StructViewTests::builderRendersGifBlocks()
+{
+    // Scenario: GIF is a little-endian header, logical screen descriptor,
+    // optional color table, and a sentinel-tagged stream of extensions/images.
+    // Expected: the standard GIF definition expands color tables, extension
+    // blocks, image descriptors, data sub-blocks, and the trailer.
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("gif.strata")), "gif.strata failed to parse");
+    TypeDecl *gifRoot = exportedNamed(&library, QStringLiteral("GIF"));
+    QVERIFY(gifRoot);
+
+    QByteArray gif;
+    gif.append("GIF89a", 6);
+    gif.append(char(1));
+    gif.append(char(0));
+    gif.append(char(1));
+    gif.append(char(0));
+    gif.append(char(0x80)); // global color table present, 2 entries
+    gif.append(char(0));
+    gif.append(char(0));
+    gif.append(QByteArray::fromHex("000000ffffff"));
+    gif.append(char(0x21)); // extension
+    gif.append(char(0xf9)); // graphic control
+    gif.append(char(4));
+    gif.append(char(1));
+    gif.append(char(5));
+    gif.append(char(0));
+    gif.append(char(0));
+    gif.append(char(0));
+    gif.append(char(0x2c)); // image
+    gif.append(char(0));
+    gif.append(char(0));
+    gif.append(char(0));
+    gif.append(char(0));
+    gif.append(char(1));
+    gif.append(char(0));
+    gif.append(char(1));
+    gif.append(char(0));
+    gif.append(char(0)); // no local color table
+    gif.append(char(2)); // LZW minimum code size
+    gif.append(char(2));
+    gif.append(char(0x4c));
+    gif.append(char(0x01));
+    gif.append(char(0)); // sub-block terminator
+    gif.append(char(0x3b)); // trailer
+
+    auto rows = buildRows(&library, gifRoot, gif);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->name, QStringLiteral("GIF"));
+
+    StructureRow *header = findChildNamed(rows[0].get(), QStringLiteral("GIF_HEADER header"));
+    QVERIFY2(header, qPrintable(childNames(rows[0].get())));
+    StructureRow *gifSignature = findChildNamed(header, QStringLiteral("char signature[]"));
+    QVERIFY2(gifSignature, qPrintable(childNames(header)));
+    QCOMPARE(gifSignature->value, QStringLiteral("\"GIF\""));
+    StructureRow *gifVersion = findChildNamed(header, QStringLiteral("char version[]"));
+    QVERIFY2(gifVersion, qPrintable(childNames(header)));
+    QCOMPARE(gifVersion->value, QStringLiteral("\"89a\""));
+
+    StructureRow *globalColorTable = findChildNamed(rows[0].get(), QStringLiteral("GIF_COLOR_TABLE_ENTRY globalColorTable[]"));
+    QVERIFY2(globalColorTable, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(globalColorTable->children.size(), size_t(2));
+
+    StructureRow *blocks = findChildNamed(rows[0].get(), QStringLiteral("GIF_BLOCK blocks[]"));
+    QVERIFY2(blocks, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(blocks->children.size(), size_t(2));
+    QCOMPARE(blocks->children[0]->name, QStringLiteral("[0]"));
+    StructureRow *extensionBlockType = findChildNamed(blocks->children[0].get(), QStringLiteral("byte blockType"));
+    QVERIFY2(extensionBlockType, qPrintable(childNames(blocks->children[0].get())));
+    QCOMPARE(extensionBlockType->value, QStringLiteral("GIF_BLOCK_EXTENSION"));
+    StructureRow *extensionLabel = findDescendantNamed(blocks->children[0].get(), QStringLiteral("byte label"));
+    QVERIFY2(extensionLabel, qPrintable(childNames(blocks->children[0].get())));
+    QCOMPARE(extensionLabel->value, QStringLiteral("GIF_EXTENSION_GRAPHIC_CONTROL"));
+
+    StructureRow *image = findDescendantNamed(blocks->children[1].get(), QStringLiteral("GIF_IMAGE_DESCRIPTOR image"));
+    QVERIFY2(image, qPrintable(childNames(blocks->children[1].get())));
+    StructureRow *lzwMinimumCodeSize = findChildNamed(image, QStringLiteral("byte lzwMinimumCodeSize"));
+    QVERIFY2(lzwMinimumCodeSize, qPrintable(childNames(image)));
+    QCOMPARE(lzwMinimumCodeSize->value, QStringLiteral("2"));
+    StructureRow *subBlocks = findDescendantNamed(image, QStringLiteral("GIF_DATA_SUB_BLOCK blocks[]"));
+    QVERIFY2(subBlocks, qPrintable(childNames(image)));
+    QCOMPARE(subBlocks->children.size(), size_t(1));
+    StructureRow *imageData = findChildNamed(subBlocks->children[0].get(), QStringLiteral("byte data[]"));
+    QVERIFY2(imageData, qPrintable(childNames(subBlocks->children[0].get())));
+    QCOMPARE(imageData->value, QStringLiteral("{ 76, 1 }"));
+    StructureRow *trailer = findChildNamed(rows[0].get(), QStringLiteral("byte trailer"));
+    QVERIFY2(trailer, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(trailer->value, QStringLiteral("GIF_BLOCK_TRAILER"));
+}
+
+void StructViewTests::builderRendersWoffDirectoryAndPayloads()
+{
+    // Scenario: WOFF 1.0 is a big-endian wrapper around sfnt table data with a
+    // fixed header and table directory.
+    // Expected: the standard WOFF definition renders the directory entries by
+    // tag and exposes compressed table and metadata payloads as dynamic bytes.
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("woff.strata")), "woff.strata failed to parse");
+    TypeDecl *woffRoot = exportedNamed(&library, QStringLiteral("WOFF"));
+    QVERIFY(woffRoot);
+
+    QByteArray woff(68, '\0');
+    woff.replace(0, 4, "wOFF");
+    writeBe32(&woff, 4, 0x00010000); // TrueType flavor
+    writeBe32(&woff, 8, quint32(woff.size()));
+    writeBe16(&woff, 12, 1);
+    writeBe16(&woff, 14, 0);
+    writeBe32(&woff, 16, 32); // reconstructed sfnt size
+    writeBe16(&woff, 20, 1);
+    writeBe16(&woff, 22, 0);
+    writeBe32(&woff, 24, 64);
+    writeBe32(&woff, 28, 4);
+    writeBe32(&woff, 32, 8);
+    writeBe32(&woff, 36, 0);
+    writeBe32(&woff, 40, 0);
+    woff.replace(44, 4, "name");
+    writeBe32(&woff, 48, 64);
+    writeBe32(&woff, 52, 4);
+    writeBe32(&woff, 56, 8);
+    writeBe32(&woff, 60, 0x12345678);
+    woff.replace(64, 4, QByteArray::fromHex("01020304"));
+
+    auto rows = buildRows(&library, woffRoot, woff);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->name, QStringLiteral("WOFF"));
+
+    StructureRow *header = findChildNamed(rows[0].get(), QStringLiteral("WOFF_HEADER header"));
+    QVERIFY2(header, qPrintable(childNames(rows[0].get())));
+    StructureRow *signature = findChildNamed(header, QStringLiteral("char signature[]"));
+    QVERIFY2(signature, qPrintable(childNames(header)));
+    QCOMPARE(signature->value, QStringLiteral("\"wOFF\""));
+    StructureRow *flavor = findChildNamed(header, QStringLiteral("dword flavor"));
+    QVERIFY2(flavor, qPrintable(childNames(header)));
+    QCOMPARE(flavor->value, QStringLiteral("WOFF_SFNT_TRUETYPE_1_0"));
+    StructureRow *numTables = findChildNamed(header, QStringLiteral("word numTables"));
+    QVERIFY2(numTables, qPrintable(childNames(header)));
+    QCOMPARE(numTables->value, QStringLiteral("1"));
+
+    StructureRow *tables = findChildNamed(rows[0].get(), QStringLiteral("WOFF_TABLE_DIRECTORY_ENTRY tables[]"));
+    QVERIFY2(tables, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(tables->children.size(), size_t(1));
+    QCOMPARE(tables->children[0]->name, QStringLiteral("[0]name"));
+    StructureRow *tag = findChildNamed(tables->children[0].get(), QStringLiteral("char tag[]"));
+    QVERIFY2(tag, qPrintable(childNames(tables->children[0].get())));
+    QCOMPARE(tag->value, QStringLiteral("\"name\""));
+
+    StructureRow *tableOffset = findChildNamed(tables->children[0].get(), QStringLiteral("dword offset"));
+    QVERIFY2(tableOffset, qPrintable(childNames(tables->children[0].get())));
+    StructureRow *tableData = findChildNamed(tableOffset, QStringLiteral("BYTE TableData[]"));
+    QVERIFY2(tableData, qPrintable(childNames(tableOffset)));
+    QCOMPARE(tableData->offset, QStringLiteral("00000040"));
+    QCOMPARE(tableData->children.size(), size_t(4));
+
+    StructureRow *metaOffset = findChildNamed(header, QStringLiteral("dword metaOffset"));
+    QVERIFY2(metaOffset, qPrintable(childNames(header)));
+    StructureRow *metadata = findChildNamed(metaOffset, QStringLiteral("BYTE Metadata[]"));
+    QVERIFY2(metadata, qPrintable(childNames(metaOffset)));
+    QCOMPARE(metadata->offset, QStringLiteral("00000040"));
+    QCOMPARE(metadata->children[0]->value, QStringLiteral("1"));
+}
+
 void StructViewTests::builderRendersZipCentralDirectoryFromEocd()
 {
     // Scenario: ZIP local headers may defer CRC/sizes to data descriptors, so
@@ -3646,6 +3809,14 @@ void StructViewTests::definitionManagerFlagsNonStaticFieldReferences()
     StrataLibrary icoLibrary;
     QVERIFY2(parseStandardDefinition(&icoLibrary, QStringLiteral("ico.strata")), "ico.strata failed to parse");
     QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&icoLibrary).isEmpty());
+
+    StrataLibrary gifLibrary;
+    QVERIFY2(parseStandardDefinition(&gifLibrary, QStringLiteral("gif.strata")), "gif.strata failed to parse");
+    QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&gifLibrary).isEmpty());
+
+    StrataLibrary woffLibrary;
+    QVERIFY2(parseStandardDefinition(&woffLibrary, QStringLiteral("woff.strata")), "woff.strata failed to parse");
+    QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&woffLibrary).isEmpty());
 }
 
 void StructViewTests::definitionManagerFlagsRuntimeExpressionsInRootOffsets()

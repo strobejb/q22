@@ -1,0 +1,200 @@
+// q22-strata-v1
+//
+//  gif.strata
+//
+
+include "basetypes.strata";
+
+enum GIF_BLOCK_TYPE
+{
+    GIF_BLOCK_EXTENSION = 0x21,
+    GIF_BLOCK_IMAGE     = 0x2c,
+    GIF_BLOCK_TRAILER   = 0x3b
+};
+
+enum GIF_EXTENSION_LABEL
+{
+    GIF_EXTENSION_PLAIN_TEXT      = 0x01,
+    GIF_EXTENSION_GRAPHIC_CONTROL = 0xf9,
+    GIF_EXTENSION_COMMENT         = 0xfe,
+    GIF_EXTENSION_APPLICATION     = 0xff
+};
+
+typedef struct _GIF_HEADER
+{
+    [string]
+    char signature[3];
+
+    [string]
+    char version[3];
+} GIF_HEADER, *PGIF_HEADER;
+
+typedef struct _GIF_LOGICAL_SCREEN_DESCRIPTOR
+{
+    word width;
+    word height;
+    byte packedFields;
+    byte backgroundColorIndex;
+    byte pixelAspectRatio;
+} GIF_LOGICAL_SCREEN_DESCRIPTOR, *PGIF_LOGICAL_SCREEN_DESCRIPTOR;
+
+typedef struct _GIF_COLOR_TABLE_ENTRY
+{
+    byte red;
+    byte green;
+    byte blue;
+} GIF_COLOR_TABLE_ENTRY, *PGIF_COLOR_TABLE_ENTRY;
+
+typedef struct _GIF_DATA_SUB_BLOCK
+{
+    byte size;
+
+    [count(size)]
+    byte data[];
+} GIF_DATA_SUB_BLOCK, *PGIF_DATA_SUB_BLOCK;
+
+typedef struct _GIF_DATA_SUB_BLOCKS
+{
+    [count(4096), terminated_by(size == 0)]
+    GIF_DATA_SUB_BLOCK blocks[];
+} GIF_DATA_SUB_BLOCKS, *PGIF_DATA_SUB_BLOCKS;
+
+typedef struct _GIF_GRAPHIC_CONTROL_EXTENSION
+{
+    byte blockSize;
+    byte packedFields;
+    word delayTime;
+    byte transparentColorIndex;
+    byte terminator;
+} GIF_GRAPHIC_CONTROL_EXTENSION, *PGIF_GRAPHIC_CONTROL_EXTENSION;
+
+typedef struct _GIF_PLAIN_TEXT_EXTENSION
+{
+    byte blockSize;
+    word textGridLeftPosition;
+    word textGridTopPosition;
+    word textGridWidth;
+    word textGridHeight;
+    byte characterCellWidth;
+    byte characterCellHeight;
+    byte textForegroundColorIndex;
+    byte textBackgroundColorIndex;
+    GIF_DATA_SUB_BLOCKS textData;
+} GIF_PLAIN_TEXT_EXTENSION, *PGIF_PLAIN_TEXT_EXTENSION;
+
+typedef struct _GIF_APPLICATION_EXTENSION
+{
+    byte blockSize;
+
+    [string]
+    char applicationIdentifier[8];
+
+    byte applicationAuthenticationCode[3];
+    GIF_DATA_SUB_BLOCKS applicationData;
+} GIF_APPLICATION_EXTENSION, *PGIF_APPLICATION_EXTENSION;
+
+typedef struct _GIF_COMMENT_EXTENSION
+{
+    GIF_DATA_SUB_BLOCKS commentData;
+} GIF_COMMENT_EXTENSION, *PGIF_COMMENT_EXTENSION;
+
+typedef struct _GIF_UNKNOWN_EXTENSION
+{
+    GIF_DATA_SUB_BLOCKS extensionData;
+} GIF_UNKNOWN_EXTENSION, *PGIF_UNKNOWN_EXTENSION;
+
+typedef struct _GIF_EXTENSION
+{
+    [enum(GIF_EXTENSION_LABEL)]
+    byte label;
+
+    [select(label)]
+    union
+    {
+        [case(GIF_EXTENSION_GRAPHIC_CONTROL)]
+        GIF_GRAPHIC_CONTROL_EXTENSION graphicControl;
+
+        [case(GIF_EXTENSION_PLAIN_TEXT)]
+        GIF_PLAIN_TEXT_EXTENSION plainText;
+
+        [case(GIF_EXTENSION_APPLICATION)]
+        GIF_APPLICATION_EXTENSION application;
+
+        [case(GIF_EXTENSION_COMMENT)]
+        GIF_COMMENT_EXTENSION comment;
+
+        [default]
+        GIF_UNKNOWN_EXTENSION unknown;
+    };
+} GIF_EXTENSION, *PGIF_EXTENSION;
+
+typedef struct _GIF_IMAGE_DESCRIPTOR
+{
+    word leftPosition;
+    word topPosition;
+    word width;
+    word height;
+    byte packedFields;
+
+    [
+        optional((packedFields & 0x80) != 0),
+        count(2 << (packedFields & 0x07))
+    ]
+    GIF_COLOR_TABLE_ENTRY localColorTable[];
+
+    byte lzwMinimumCodeSize;
+    GIF_DATA_SUB_BLOCKS imageData;
+} GIF_IMAGE_DESCRIPTOR, *PGIF_IMAGE_DESCRIPTOR;
+
+typedef struct _GIF_TRAILER
+{
+} GIF_TRAILER, *PGIF_TRAILER;
+
+typedef struct _GIF_BLOCK
+{
+    [enum(GIF_BLOCK_TYPE)]
+    byte blockType;
+
+    [select(blockType)]
+    union
+    {
+        [case(GIF_BLOCK_EXTENSION)]
+        GIF_EXTENSION extension;
+
+        [case(GIF_BLOCK_IMAGE)]
+        GIF_IMAGE_DESCRIPTOR image;
+
+        [case(GIF_BLOCK_TRAILER)]
+        GIF_TRAILER trailer;
+    };
+} GIF_BLOCK, *PGIF_BLOCK;
+
+[
+    export("Graphics Interchange Format (GIF)"),
+    version(1),
+    assoc(".gif"),
+    magic({ 'G', 'I', 'F', '8', '7', 'a' }),
+    magic({ 'G', 'I', 'F', '8', '9', 'a' }),
+    offset(0),
+    endian("little")
+]
+typedef struct _GIF
+{
+    GIF_HEADER header;
+    GIF_LOGICAL_SCREEN_DESCRIPTOR logicalScreen;
+
+    [
+        optional((logicalScreen.packedFields & 0x80) != 0),
+        count(2 << (logicalScreen.packedFields & 0x07))
+    ]
+    GIF_COLOR_TABLE_ENTRY globalColorTable[];
+
+    [
+        count(4096),
+        extent(file_size() - sizeof(GIF_HEADER) - sizeof(GIF_LOGICAL_SCREEN_DESCRIPTOR) - (((logicalScreen.packedFields & 0x80) != 0) ? ((2 << (logicalScreen.packedFields & 0x07)) * sizeof(GIF_COLOR_TABLE_ENTRY)) : 0) - 1)
+    ]
+    GIF_BLOCK blocks[];
+
+    [offset(file_size() - 1), enum(GIF_BLOCK_TYPE)]
+    byte trailer;
+} GIF;
