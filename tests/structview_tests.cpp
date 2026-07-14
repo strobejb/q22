@@ -82,6 +82,7 @@ private slots:
     void builderRendersGifBlocks();
     void builderRendersWoffDirectoryAndPayloads();
     void builderRendersMp4Boxes();
+    void builderRendersRiffWaveAndWebpChunks();
     void builderRendersZipCentralDirectoryFromEocd();
     void builderRendersElf32AndElf64Tables();
     void builderPlacesDynamicStructsUnderNamedDynamicContainers();
@@ -3017,6 +3018,106 @@ void StructViewTests::builderRendersMp4Boxes()
     QCOMPARE(data->value, QStringLiteral("{ 1, 2, 3, 4 }"));
 }
 
+void StructViewTests::builderRendersRiffWaveAndWebpChunks()
+{
+    // Scenario: RIFF-family files share a chunk stream but use their form type
+    // and chunk FourCCs to interpret payloads.
+    // Expected: WAVE and WebP roots render named chunks, typed known payloads,
+    // and RIFF's even-byte payload padding without a synthetic _align field.
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("riff.strata")), "riff.strata failed to parse");
+
+    TypeDecl *waveRoot = exportedNamed(&library, QStringLiteral("WAVE"));
+    QVERIFY(waveRoot);
+    QByteArray wave(48, '\0');
+    wave.replace(0, 4, "RIFF");
+    writeLe32(&wave, 4, 40);
+    wave.replace(8, 4, "WAVE");
+    wave.replace(12, 4, "fmt ");
+    writeLe32(&wave, 16, 16);
+    writeLe16(&wave, 20, 1);
+    writeLe16(&wave, 22, 2);
+    writeLe32(&wave, 24, 44100);
+    writeLe32(&wave, 28, 176400);
+    writeLe16(&wave, 32, 4);
+    writeLe16(&wave, 34, 16);
+    wave.replace(36, 4, "data");
+    writeLe32(&wave, 40, 3);
+    wave[44] = char(0x01);
+    wave[45] = char(0x02);
+    wave[46] = char(0x03);
+
+    auto waveRows = buildRows(&library, waveRoot, wave);
+    QCOMPARE(waveRows.size(), size_t(1));
+    QCOMPARE(waveRows[0]->name, QStringLiteral("WAVE"));
+
+    StructureRow *waveFormType = findChildNamed(waveRows[0].get(), QStringLiteral("dword formType"));
+    QVERIFY2(waveFormType, qPrintable(childNames(waveRows[0].get())));
+    QCOMPARE(waveFormType->value, QStringLiteral("\"WAVE\""));
+
+    StructureRow *waveChunks = findChildNamed(waveRows[0].get(), QStringLiteral("RIFF_CHUNK chunks[]"));
+    QVERIFY2(waveChunks, qPrintable(childNames(waveRows[0].get())));
+    QCOMPARE(waveChunks->children.size(), size_t(2));
+    QCOMPARE(waveChunks->children[0]->name, QStringLiteral("[0]fmt "));
+    QCOMPARE(waveChunks->children[1]->name, QStringLiteral("[1]data"));
+
+    StructureRow *waveFormat = findDescendantNamed(waveChunks->children[0].get(), QStringLiteral("RIFF_WAVE_FORMAT_CHUNK waveFormat"));
+    QVERIFY2(waveFormat, qPrintable(childNames(waveChunks->children[0].get())));
+    StructureRow *audioFormat = findChildNamed(waveFormat, QStringLiteral("word audioFormat"));
+    QVERIFY2(audioFormat, qPrintable(childNames(waveFormat)));
+    QCOMPARE(audioFormat->value, QStringLiteral("RIFF_WAVE_FORMAT_PCM"));
+    StructureRow *samplesPerSecond = findChildNamed(waveFormat, QStringLiteral("dword samplesPerSecond"));
+    QVERIFY2(samplesPerSecond, qPrintable(childNames(waveFormat)));
+    QCOMPARE(samplesPerSecond->value, QStringLiteral("44100"));
+
+    StructureRow *waveDataRaw = findDescendantNamed(waveChunks->children[1].get(), QStringLiteral("RIFF_RAW_CHUNK_PAYLOAD raw"));
+    QVERIFY2(waveDataRaw, qPrintable(childNames(waveChunks->children[1].get())));
+    StructureRow *waveData = findChildNamed(waveDataRaw, QStringLiteral("byte data[]"));
+    QVERIFY2(waveData, qPrintable(childNames(waveDataRaw)));
+    QCOMPARE(waveData->value, QStringLiteral("{ 1, 2, 3 }"));
+
+    TypeDecl *webpRoot = exportedNamed(&library, QStringLiteral("WEBP"));
+    QVERIFY(webpRoot);
+    QByteArray webp(42, '\0');
+    webp.replace(0, 4, "RIFF");
+    writeLe32(&webp, 4, 34);
+    webp.replace(8, 4, "WEBP");
+    webp.replace(12, 4, "VP8X");
+    writeLe32(&webp, 16, 10);
+    webp[20] = char(0x10);
+    webp[24] = char(0x3f);
+    webp[27] = char(0x1f);
+    webp.replace(30, 4, "VP8 ");
+    writeLe32(&webp, 34, 4);
+    webp.replace(38, 4, QByteArray::fromHex("9d012a00"));
+
+    auto webpRows = buildRows(&library, webpRoot, webp);
+    QCOMPARE(webpRows.size(), size_t(1));
+    QCOMPARE(webpRows[0]->name, QStringLiteral("WEBP"));
+
+    StructureRow *webpFormType = findChildNamed(webpRows[0].get(), QStringLiteral("dword formType"));
+    QVERIFY2(webpFormType, qPrintable(childNames(webpRows[0].get())));
+    QCOMPARE(webpFormType->value, QStringLiteral("\"WEBP\""));
+
+    StructureRow *webpChunks = findChildNamed(webpRows[0].get(), QStringLiteral("RIFF_CHUNK chunks[]"));
+    QVERIFY2(webpChunks, qPrintable(childNames(webpRows[0].get())));
+    QCOMPARE(webpChunks->children.size(), size_t(2));
+    QCOMPARE(webpChunks->children[0]->name, QStringLiteral("[0]VP8X"));
+    QCOMPARE(webpChunks->children[1]->name, QStringLiteral("[1]VP8 "));
+
+    StructureRow *vp8x = findDescendantNamed(webpChunks->children[0].get(), QStringLiteral("WEBP_VP8X_CHUNK vp8x"));
+    QVERIFY2(vp8x, qPrintable(childNames(webpChunks->children[0].get())));
+    StructureRow *flags = findChildNamed(vp8x, QStringLiteral("byte flags"));
+    QVERIFY2(flags, qPrintable(childNames(vp8x)));
+    QCOMPARE(flags->value, QStringLiteral("16"));
+
+    StructureRow *vp8Raw = findDescendantNamed(webpChunks->children[1].get(), QStringLiteral("RIFF_RAW_CHUNK_PAYLOAD raw"));
+    QVERIFY2(vp8Raw, qPrintable(childNames(webpChunks->children[1].get())));
+    StructureRow *vp8Data = findChildNamed(vp8Raw, QStringLiteral("byte data[]"));
+    QVERIFY2(vp8Data, qPrintable(childNames(vp8Raw)));
+    QCOMPARE(vp8Data->value, QStringLiteral("{ 157, 1, 42, 0 }"));
+}
+
 void StructViewTests::builderRendersZipCentralDirectoryFromEocd()
 {
     // Scenario: ZIP local headers may defer CRC/sizes to data descriptors, so
@@ -3962,6 +4063,10 @@ void StructViewTests::definitionManagerFlagsNonStaticFieldReferences()
     StrataLibrary mp4Library;
     QVERIFY2(parseStandardDefinition(&mp4Library, QStringLiteral("mp4.strata")), "mp4.strata failed to parse");
     QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&mp4Library).isEmpty());
+
+    StrataLibrary riffLibrary;
+    QVERIFY2(parseStandardDefinition(&riffLibrary, QStringLiteral("riff.strata")), "riff.strata failed to parse");
+    QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&riffLibrary).isEmpty());
 }
 
 void StructViewTests::definitionManagerFlagsRuntimeExpressionsInRootOffsets()

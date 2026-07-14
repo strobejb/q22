@@ -1,0 +1,184 @@
+// q22-strata-v1
+//
+//  riff.strata
+//
+
+include "basetypes.strata";
+
+enum RIFF_WAVE_AUDIO_FORMAT
+{
+    RIFF_WAVE_FORMAT_PCM        = 0x0001,
+    RIFF_WAVE_FORMAT_IEEE_FLOAT = 0x0003,
+    RIFF_WAVE_FORMAT_ALAW       = 0x0006,
+    RIFF_WAVE_FORMAT_MULAW      = 0x0007,
+    RIFF_WAVE_FORMAT_EXTENSIBLE = 0xfffe
+};
+
+typedef struct _RIFF_RAW_CHUNK_PAYLOAD
+{
+    [count(size)]
+    byte data[];
+} RIFF_RAW_CHUNK_PAYLOAD, *PRIFF_RAW_CHUNK_PAYLOAD;
+
+typedef struct _RIFF_LIST_PAYLOAD
+{
+    [fourcc]
+    dword listType;
+
+    [count(size - 4)]
+    byte data[];
+} RIFF_LIST_PAYLOAD, *PRIFF_LIST_PAYLOAD;
+
+typedef struct _RIFF_WAVE_FORMAT_CHUNK
+{
+    [enum(RIFF_WAVE_AUDIO_FORMAT)]
+    word audioFormat;
+
+    word channels;
+    dword samplesPerSecond;
+    dword averageBytesPerSecond;
+    word blockAlign;
+    word bitsPerSample;
+
+    [count(size > 16 ? size - 16 : 0)]
+    byte extra[];
+} RIFF_WAVE_FORMAT_CHUNK, *PRIFF_WAVE_FORMAT_CHUNK;
+
+typedef struct _RIFF_WAVE_FACT_CHUNK
+{
+    dword sampleLength;
+
+    [count(size > 4 ? size - 4 : 0)]
+    byte extra[];
+} RIFF_WAVE_FACT_CHUNK, *PRIFF_WAVE_FACT_CHUNK;
+
+typedef struct _WEBP_VP8X_CHUNK
+{
+    byte flags;
+    byte reserved[3];
+    byte canvasWidthMinusOne[3];
+    byte canvasHeightMinusOne[3];
+} WEBP_VP8X_CHUNK, *PWEBP_VP8X_CHUNK;
+
+typedef struct _WEBP_ANIM_CHUNK
+{
+    dword backgroundColor;
+    word loopCount;
+} WEBP_ANIM_CHUNK, *PWEBP_ANIM_CHUNK;
+
+typedef struct _WEBP_ANMF_CHUNK
+{
+    byte frameX[3];
+    byte frameY[3];
+    byte frameWidthMinusOne[3];
+    byte frameHeightMinusOne[3];
+    word durationMillisecondsLow;
+    byte durationMillisecondsHigh;
+    byte flags;
+
+    [count(size > 16 ? size - 16 : 0)]
+    byte frameData[];
+} WEBP_ANMF_CHUNK, *PWEBP_ANMF_CHUNK;
+
+typedef struct _RIFF_CHUNK
+{
+    [fourcc]
+    dword chunkId;
+
+    dword size;
+
+    [select(chunkId), extent(size), pad_to(2)]
+    union
+    {
+        [case(fourcc("LIST"))]
+        RIFF_LIST_PAYLOAD list;
+
+        [case(fourcc("fmt "))]
+        RIFF_WAVE_FORMAT_CHUNK waveFormat;
+
+        [case(fourcc("fact"))]
+        RIFF_WAVE_FACT_CHUNK waveFact;
+
+        [case(fourcc("VP8X"))]
+        WEBP_VP8X_CHUNK vp8x;
+
+        [case(fourcc("ANIM"))]
+        WEBP_ANIM_CHUNK anim;
+
+        [case(fourcc("ANMF"))]
+        WEBP_ANMF_CHUNK anmf;
+
+        [default]
+        RIFF_RAW_CHUNK_PAYLOAD raw;
+    };
+} RIFF_CHUNK, *PRIFF_CHUNK;
+
+[
+    export("Waveform Audio (WAVE)"),
+    version(1),
+    assoc(".wav"),
+    assoc(".wave"),
+    magic({ 'W', 'A', 'V', 'E' }, 8),
+    offset(0),
+    endian(signature == fourcc("RIFX"))
+]
+typedef struct _WAVE
+{
+    [fourcc]
+    dword signature;
+
+    dword fileSize;
+
+    [fourcc]
+    dword formType;
+
+    [count(4096), extent(fileSize - 4), name(chunkId)]
+    RIFF_CHUNK chunks[];
+} WAVE;
+
+[
+    export("WebP Image"),
+    version(1),
+    assoc(".webp"),
+    magic({ 'W', 'E', 'B', 'P' }, 8),
+    offset(0),
+    endian(signature == fourcc("RIFX"))
+]
+typedef struct _WEBP
+{
+    [fourcc]
+    dword signature;
+
+    dword fileSize;
+
+    [fourcc]
+    dword formType;
+
+    [count(4096), extent(fileSize - 4), name(chunkId)]
+    RIFF_CHUNK chunks[];
+} WEBP;
+
+[
+    export("Resource Interchange File Format (RIFF)"),
+    version(1),
+    assoc(".riff"),
+    assoc(".avi"),
+    assoc(".ani"),
+    magic({ 'R', 'I', 'F', 'F' }),
+    magic({ 'R', 'I', 'F', 'X' }),
+    offset(0),
+    endian(signature == fourcc("RIFX"))
+]
+typedef struct _RIFF
+{
+    [fourcc]
+    dword signature;
+
+    dword fileSize;
+
+    [fourcc]
+    dword formType;
+
+    [count(4096), extent(fileSize - 4), name(chunkId)]
+    RIFF_CHUNK chunks[];
+} RIFF;
