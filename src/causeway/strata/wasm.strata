@@ -503,7 +503,7 @@ typedef struct _WASM_SECTION
 } WASM_SECTION, *PWASM_SECTION;
 
 [
-    export("WebAssembly Module"),
+    export("WebAssembly Module (WASM)"),
     version(1),
     assoc(".wasm"),
     magic({ 0x00, 0x61, 0x73, 0x6d }),

@@ -80,6 +80,7 @@ private slots:
     void builderRendersIcoDirectoryAndImagePayload();
     void builderRendersGifBlocks();
     void builderRendersWoffDirectoryAndPayloads();
+    void builderRendersMp4Boxes();
     void builderRendersZipCentralDirectoryFromEocd();
     void builderRendersElf32AndElf64Tables();
     void builderPlacesDynamicStructsUnderNamedDynamicContainers();
@@ -2876,6 +2877,94 @@ void StructViewTests::builderRendersWoffDirectoryAndPayloads()
     QCOMPARE(metadata->children[0]->value, QStringLiteral("1"));
 }
 
+void StructViewTests::builderRendersMp4Boxes()
+{
+    // Scenario: MP4/ISO BMFF files are big-endian FourCC box streams.
+    // Expected: the standard MP4 definition labels boxes by type, decodes ftyp,
+    // and keeps media/container payloads bounded.
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("mp4.strata")), "mp4.strata failed to parse");
+    TypeDecl *mp4Root = exportedNamed(&library, QStringLiteral("MP4"));
+    QVERIFY(mp4Root);
+
+    QByteArray mp4;
+    const auto appendBe32 = [&mp4](quint32 value) {
+        mp4.append(char((value >> 24) & 0xff));
+        mp4.append(char((value >> 16) & 0xff));
+        mp4.append(char((value >> 8) & 0xff));
+        mp4.append(char(value & 0xff));
+    };
+
+    appendBe32(24);
+    mp4.append("ftyp", 4);
+    mp4.append("isom", 4);
+    appendBe32(0x00000200);
+    mp4.append("isom", 4);
+    mp4.append("mp42", 4);
+
+    appendBe32(116);
+    mp4.append("moov", 4);
+    appendBe32(108);
+    mp4.append("mvhd", 4);
+    mp4.append(char(0)); // version
+    mp4.append(QByteArray(3, '\0'));
+    appendBe32(1);       // creation_time
+    appendBe32(2);       // modification_time
+    appendBe32(1000);    // timescale
+    appendBe32(5000);    // duration
+    appendBe32(0x00010000);
+    mp4.append(char(1));
+    mp4.append(char(0));
+    mp4.append(QByteArray(10, '\0'));
+    appendBe32(0x00010000);
+    appendBe32(0);
+    appendBe32(0);
+    appendBe32(0);
+    appendBe32(0x00010000);
+    appendBe32(0);
+    appendBe32(0);
+    appendBe32(0);
+    appendBe32(0x40000000);
+    mp4.append(QByteArray(24, '\0'));
+    appendBe32(2);
+
+    appendBe32(12);
+    mp4.append("mdat", 4);
+    mp4.append(QByteArray::fromHex("01020304"));
+
+    auto rows = buildRows(&library, mp4Root, mp4);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->name, QStringLiteral("MP4"));
+
+    StructureRow *boxes = findChildNamed(rows[0].get(), QStringLiteral("MP4_BOX boxes[]"));
+    QVERIFY2(boxes, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(boxes->children.size(), size_t(3));
+    QCOMPARE(boxes->children[0]->name, QStringLiteral("[0]ftyp"));
+    QCOMPARE(boxes->children[1]->name, QStringLiteral("[1]moov"));
+    QCOMPARE(boxes->children[2]->name, QStringLiteral("[2]mdat"));
+
+    StructureRow *fileType = findDescendantNamed(boxes->children[0].get(), QStringLiteral("MP4_FILE_TYPE_BOX fileType"));
+    QVERIFY2(fileType, qPrintable(childNames(boxes->children[0].get())));
+    StructureRow *majorBrand = findChildNamed(fileType, QStringLiteral("char majorBrand[]"));
+    QVERIFY2(majorBrand, qPrintable(childNames(fileType)));
+    QCOMPARE(majorBrand->value, QStringLiteral("\"isom\""));
+    StructureRow *compatibleBrands = findChildNamed(fileType, QStringLiteral("char compatibleBrands[][]"));
+    QVERIFY2(compatibleBrands, qPrintable(childNames(fileType)));
+    QCOMPARE(compatibleBrands->children.size(), size_t(2));
+
+    StructureRow *moviePayload = findDescendantNamed(boxes->children[1].get(), QStringLiteral("MP4_RAW_BOX_PAYLOAD raw"));
+    QVERIFY2(moviePayload, qPrintable(childNames(boxes->children[1].get())));
+    StructureRow *movieData = findChildNamed(moviePayload, QStringLiteral("byte data[]"));
+    QVERIFY2(movieData, qPrintable(childNames(moviePayload)));
+    QCOMPARE(movieData->children.size(), size_t(100));
+
+    StructureRow *mediaData = findDescendantNamed(boxes->children[2].get(), QStringLiteral("MP4_MEDIA_DATA_BOX mediaData"));
+    QVERIFY2(mediaData, qPrintable(childNames(boxes->children[2].get())));
+    StructureRow *data = findChildNamed(mediaData, QStringLiteral("byte data[]"));
+    QVERIFY2(data, qPrintable(childNames(mediaData)));
+    QCOMPARE(data->value, QStringLiteral("{ 1, 2, 3, 4 }"));
+}
+
 void StructViewTests::builderRendersZipCentralDirectoryFromEocd()
 {
     // Scenario: ZIP local headers may defer CRC/sizes to data descriptors, so
@@ -3817,6 +3906,10 @@ void StructViewTests::definitionManagerFlagsNonStaticFieldReferences()
     StrataLibrary woffLibrary;
     QVERIFY2(parseStandardDefinition(&woffLibrary, QStringLiteral("woff.strata")), "woff.strata failed to parse");
     QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&woffLibrary).isEmpty());
+
+    StrataLibrary mp4Library;
+    QVERIFY2(parseStandardDefinition(&mp4Library, QStringLiteral("mp4.strata")), "mp4.strata failed to parse");
+    QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&mp4Library).isEmpty());
 }
 
 void StructViewTests::definitionManagerFlagsRuntimeExpressionsInRootOffsets()

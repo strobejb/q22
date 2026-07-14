@@ -1,0 +1,76 @@
+// q22-strata-v1
+//
+//  mp4.strata
+//
+
+include "basetypes.strata";
+
+typedef struct _MP4_FILE_TYPE_BOX
+{
+    [string, count(4)]
+    char majorBrand[];
+
+    dword minorVersion;
+
+    [string, count(((boxSize == 1 ? largeSize : boxSize) - 16) / 4, 4)]
+    char compatibleBrands[][];
+} MP4_FILE_TYPE_BOX, *PMP4_FILE_TYPE_BOX;
+
+typedef struct _MP4_MEDIA_DATA_BOX
+{
+    [count(boxSize == 1 ? largeSize - 16 : boxSize - 8)]
+    byte data[];
+} MP4_MEDIA_DATA_BOX, *PMP4_MEDIA_DATA_BOX;
+
+typedef struct _MP4_RAW_BOX_PAYLOAD
+{
+    [count(boxSize == 1 ? largeSize - 16 : boxSize - 8)]
+    byte data[];
+} MP4_RAW_BOX_PAYLOAD, *PMP4_RAW_BOX_PAYLOAD;
+
+typedef struct _MP4_BOX
+{
+    dword boxSize;
+
+    [string, count(4)]
+    char type[];
+
+    [optional(boxSize == 1)]
+    qword largeSize;
+
+    [optional(str(type) == "uuid")]
+    byte userType[16];
+
+    [select(str(type)), extent(boxSize == 1 ? largeSize - 16 : boxSize - 8)]
+    union
+    {
+        [case("ftyp")]
+        MP4_FILE_TYPE_BOX fileType;
+
+        [case("mdat")]
+        MP4_MEDIA_DATA_BOX mediaData;
+
+        [default]
+        MP4_RAW_BOX_PAYLOAD raw;
+    };
+} MP4_BOX, *PMP4_BOX;
+
+[
+    export("MPEG-4 (MP4)"),
+    version(1),
+    assoc(".mp4"),
+    assoc(".m4v"),
+    assoc(".m4a"),
+    assoc(".mov"),
+    assoc(".heic"),
+    assoc(".heif"),
+    assoc(".avif"),
+    magic({ 'f', 't', 'y', 'p' }, 4),
+    offset(0),
+    endian("big")
+]
+typedef struct _MP4
+{
+    [count(4096), extent(file_size()), name(type)]
+    MP4_BOX boxes[];
+} MP4;
