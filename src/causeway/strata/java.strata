@@ -1,0 +1,229 @@
+// q22-strata-v1
+//
+//  java.strata
+//
+
+include "basetypes.strata";
+
+enum JAVA_MAGIC
+{
+    JAVA_MAGIC_CLASS = 0xcafebabe
+};
+
+enum JAVA_CONSTANT_TAG
+{
+    JAVA_CONSTANT_Utf8               = 1,
+    JAVA_CONSTANT_Integer            = 3,
+    JAVA_CONSTANT_Float              = 4,
+    JAVA_CONSTANT_Long               = 5,
+    JAVA_CONSTANT_Double             = 6,
+    JAVA_CONSTANT_Class              = 7,
+    JAVA_CONSTANT_String             = 8,
+    JAVA_CONSTANT_Fieldref           = 9,
+    JAVA_CONSTANT_Methodref          = 10,
+    JAVA_CONSTANT_InterfaceMethodref = 11,
+    JAVA_CONSTANT_NameAndType        = 12,
+    JAVA_CONSTANT_MethodHandle       = 15,
+    JAVA_CONSTANT_MethodType         = 16,
+    JAVA_CONSTANT_Dynamic            = 17,
+    JAVA_CONSTANT_InvokeDynamic      = 18,
+    JAVA_CONSTANT_Module             = 19,
+    JAVA_CONSTANT_Package            = 20
+};
+
+enum JAVA_ACCESS_FLAGS
+{
+    JAVA_ACC_PUBLIC     = 0x0001,
+    JAVA_ACC_PRIVATE    = 0x0002,
+    JAVA_ACC_PROTECTED  = 0x0004,
+    JAVA_ACC_STATIC     = 0x0008,
+    JAVA_ACC_FINAL      = 0x0010,
+    JAVA_ACC_SUPER      = 0x0020,
+    JAVA_ACC_VOLATILE   = 0x0040,
+    JAVA_ACC_TRANSIENT  = 0x0080,
+    JAVA_ACC_NATIVE     = 0x0100,
+    JAVA_ACC_INTERFACE  = 0x0200,
+    JAVA_ACC_ABSTRACT   = 0x0400,
+    JAVA_ACC_STRICT     = 0x0800,
+    JAVA_ACC_SYNTHETIC  = 0x1000,
+    JAVA_ACC_ANNOTATION = 0x2000,
+    JAVA_ACC_ENUM       = 0x4000,
+    JAVA_ACC_MODULE     = 0x8000
+};
+
+typedef struct _JAVA_CONSTANT_Utf8_INFO
+{
+    word length;
+
+    [string, count(length)]
+    byte bytes[];
+} JAVA_CONSTANT_Utf8_INFO, *PJAVA_CONSTANT_Utf8_INFO;
+
+typedef struct _JAVA_CONSTANT_Integer_INFO
+{
+    dword bytes;
+} JAVA_CONSTANT_Integer_INFO, *PJAVA_CONSTANT_Integer_INFO;
+
+typedef struct _JAVA_CONSTANT_Long_INFO
+{
+    qword bytes;
+} JAVA_CONSTANT_Long_INFO, *PJAVA_CONSTANT_Long_INFO;
+
+typedef struct _JAVA_CONSTANT_Class_INFO
+{
+    word nameIndex;
+} JAVA_CONSTANT_Class_INFO, *PJAVA_CONSTANT_Class_INFO;
+
+typedef struct _JAVA_CONSTANT_Ref_INFO
+{
+    word classIndex;
+    word nameAndTypeIndex;
+} JAVA_CONSTANT_Ref_INFO, *PJAVA_CONSTANT_Ref_INFO;
+
+typedef struct _JAVA_CONSTANT_NameAndType_INFO
+{
+    word nameIndex;
+    word descriptorIndex;
+} JAVA_CONSTANT_NameAndType_INFO, *PJAVA_CONSTANT_NameAndType_INFO;
+
+typedef struct _JAVA_CONSTANT_MethodHandle_INFO
+{
+    byte referenceKind;
+    word referenceIndex;
+} JAVA_CONSTANT_MethodHandle_INFO, *PJAVA_CONSTANT_MethodHandle_INFO;
+
+typedef struct _JAVA_CONSTANT_Dynamic_INFO
+{
+    word bootstrapMethodAttrIndex;
+    word nameAndTypeIndex;
+} JAVA_CONSTANT_Dynamic_INFO, *PJAVA_CONSTANT_Dynamic_INFO;
+
+typedef struct _JAVA_CP_INFO
+{
+    [enum(JAVA_CONSTANT_TAG)]
+    byte tag;
+
+    [select(tag)]
+    union
+    {
+        [case(JAVA_CONSTANT_Utf8)]
+        JAVA_CONSTANT_Utf8_INFO utf8;
+
+        [case(JAVA_CONSTANT_Integer)]
+        JAVA_CONSTANT_Integer_INFO integer;
+
+        [case(JAVA_CONSTANT_Float)]
+        JAVA_CONSTANT_Integer_INFO floatBits;
+
+        [case(JAVA_CONSTANT_Long)]
+        JAVA_CONSTANT_Long_INFO longValue;
+
+        [case(JAVA_CONSTANT_Double)]
+        JAVA_CONSTANT_Long_INFO doubleBits;
+
+        [case(JAVA_CONSTANT_Class)]
+        JAVA_CONSTANT_Class_INFO classInfo;
+
+        [case(JAVA_CONSTANT_String)]
+        JAVA_CONSTANT_Class_INFO stringInfo;
+
+        [case(JAVA_CONSTANT_Fieldref)]
+        JAVA_CONSTANT_Ref_INFO fieldref;
+
+        [case(JAVA_CONSTANT_Methodref)]
+        JAVA_CONSTANT_Ref_INFO methodref;
+
+        [case(JAVA_CONSTANT_InterfaceMethodref)]
+        JAVA_CONSTANT_Ref_INFO interfaceMethodref;
+
+        [case(JAVA_CONSTANT_NameAndType)]
+        JAVA_CONSTANT_NameAndType_INFO nameAndType;
+
+        [case(JAVA_CONSTANT_MethodHandle)]
+        JAVA_CONSTANT_MethodHandle_INFO methodHandle;
+
+        [case(JAVA_CONSTANT_MethodType)]
+        JAVA_CONSTANT_Class_INFO methodType;
+
+        [case(JAVA_CONSTANT_Dynamic)]
+        JAVA_CONSTANT_Dynamic_INFO dynamicInfo;
+
+        [case(JAVA_CONSTANT_InvokeDynamic)]
+        JAVA_CONSTANT_Dynamic_INFO invokeDynamic;
+
+        [case(JAVA_CONSTANT_Module)]
+        JAVA_CONSTANT_Class_INFO moduleInfo;
+
+        [case(JAVA_CONSTANT_Package)]
+        JAVA_CONSTANT_Class_INFO packageInfo;
+    };
+} JAVA_CP_INFO, *PJAVA_CP_INFO;
+
+typedef struct _JAVA_ATTRIBUTE_INFO
+{
+    word attributeNameIndex;
+    dword attributeLength;
+
+    [count(attributeLength)]
+    byte info[];
+} JAVA_ATTRIBUTE_INFO, *PJAVA_ATTRIBUTE_INFO;
+
+typedef struct _JAVA_FIELD_INFO
+{
+    [bitflag(JAVA_ACCESS_FLAGS)]
+    word accessFlags;
+
+    word nameIndex;
+    word descriptorIndex;
+    word attributesCount;
+
+    [count(attributesCount)]
+    JAVA_ATTRIBUTE_INFO attributes[];
+} JAVA_FIELD_INFO, *PJAVA_FIELD_INFO;
+
+[
+    export("Java Class File (CLASS)"),
+    version(1),
+    category("code"),
+    assoc(".class"),
+    magic({ 0xca, 0xfe, 0xba, 0xbe }),
+    offset(0),
+    endian("big")
+]
+typedef struct _JAVA_CLASS
+{
+    [enum(JAVA_MAGIC)]
+    dword magic;
+
+    word minorVersion;
+    word majorVersion;
+    word constantPoolCount;
+
+    [count(constantPoolCount - 1), name(tag)]
+    JAVA_CP_INFO constantPool[];
+
+    [bitflag(JAVA_ACCESS_FLAGS)]
+    word accessFlags;
+
+    word thisClass;
+    word superClass;
+    word interfacesCount;
+
+    [count(interfacesCount)]
+    word interfaces[];
+
+    word fieldsCount;
+
+    [count(fieldsCount)]
+    JAVA_FIELD_INFO fields[];
+
+    word methodsCount;
+
+    [count(methodsCount)]
+    JAVA_FIELD_INFO methods[];
+
+    word attributesCount;
+
+    [count(attributesCount)]
+    JAVA_ATTRIBUTE_INFO attributes[];
+} JAVA_CLASS;

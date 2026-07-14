@@ -79,6 +79,7 @@ private:
     void rebuildRows();
     void applyInitialExpansion();
     void showGridContextMenu(const QPoint &pos);
+    void showRootComboContextMenu(const QPoint &pos);
     void showHeaderContextMenu(int column, const QPoint &globalPos);
     void showOptionsContextMenu(int column, const QPoint &globalPos, bool includeAllColumns, const QModelIndex &rowIndex = QModelIndex());
     void expandSubtree(const QModelIndex &index);
@@ -109,6 +110,7 @@ private:
     int associatedRootTypeIndex(const QList<ExportedStructureType> &exportedTypes) const;
     bool selectAssociatedRootType(const QList<ExportedStructureType> &exportedTypes);
     QList<ExportedStructureType> sortedExportedTypes(const QList<ExportedStructureType> &exportedTypes) const;
+    int rootComboIndexForType(TypeDecl *typeDecl) const;
     void refreshForCurrentFileAssociation();
     TypeDecl *selectedRootType() const;
     QString displayNameForTypeDecl(TypeDecl *decl) const;
@@ -142,6 +144,8 @@ private:
     bool                        m_useHexadecimalValues = false;
     bool                        m_useHexadecimalOffsets = true;
     bool                        m_useRelativeOffsets = true;
+    bool                        m_sortRootComboByDetail = false;
+    bool                        m_preserveRootComboSelectionOnce = false;
     bool                        m_updatingHexViewFromStructure = false;
     bool                        m_rebuildingRows = false;
     uint64_t                    m_pinnedOffset = 0;

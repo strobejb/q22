@@ -1,0 +1,294 @@
+// q22-strata-v1
+//
+//  macho.strata
+//
+
+include "basetypes.strata";
+
+enum MACHO_MAGIC
+{
+    MACHO_MAGIC_32 = 0xfeedface,
+    MACHO_MAGIC_64 = 0xfeedfacf
+};
+
+enum MACHO_CPU_TYPE
+{
+    MACHO_CPU_TYPE_X86    = 7,
+    MACHO_CPU_TYPE_X86_64 = 0x01000007,
+    MACHO_CPU_TYPE_ARM    = 12,
+    MACHO_CPU_TYPE_ARM64  = 0x0100000c,
+    MACHO_CPU_TYPE_POWERPC = 18,
+    MACHO_CPU_TYPE_POWERPC64 = 0x01000012
+};
+
+enum MACHO_FILE_TYPE
+{
+    MACHO_MH_OBJECT  = 0x1,
+    MACHO_MH_EXECUTE = 0x2,
+    MACHO_MH_FVMLIB  = 0x3,
+    MACHO_MH_CORE    = 0x4,
+    MACHO_MH_PRELOAD = 0x5,
+    MACHO_MH_DYLIB   = 0x6,
+    MACHO_MH_DYLINKER = 0x7,
+    MACHO_MH_BUNDLE  = 0x8,
+    MACHO_MH_DYLIB_STUB = 0x9,
+    MACHO_MH_DSYM    = 0xa,
+    MACHO_MH_KEXT_BUNDLE = 0xb,
+    MACHO_MH_FILESET = 0xc
+};
+
+enum MACHO_HEADER_FLAGS
+{
+    MACHO_MH_NOUNDEFS                = 0x00000001,
+    MACHO_MH_INCRLINK                = 0x00000002,
+    MACHO_MH_DYLDLINK                = 0x00000004,
+    MACHO_MH_BINDATLOAD              = 0x00000008,
+    MACHO_MH_PREBOUND                = 0x00000010,
+    MACHO_MH_SPLIT_SEGS              = 0x00000020,
+    MACHO_MH_TWOLEVEL                = 0x00000080,
+    MACHO_MH_PIE                     = 0x00200000,
+    MACHO_MH_HAS_TLV_DESCRIPTORS     = 0x00800000,
+    MACHO_MH_NO_HEAP_EXECUTION       = 0x01000000,
+    MACHO_MH_APP_EXTENSION_SAFE      = 0x02000000
+};
+
+enum MACHO_LOAD_COMMAND_TYPE
+{
+    MACHO_LC_SEGMENT       = 0x00000001,
+    MACHO_LC_SYMTAB        = 0x00000002,
+    MACHO_LC_SYMSEG        = 0x00000003,
+    MACHO_LC_THREAD        = 0x00000004,
+    MACHO_LC_UNIXTHREAD    = 0x00000005,
+    MACHO_LC_LOAD_DYLIB    = 0x0000000c,
+    MACHO_LC_ID_DYLIB      = 0x0000000d,
+    MACHO_LC_LOAD_DYLINKER = 0x0000000e,
+    MACHO_LC_ID_DYLINKER   = 0x0000000f,
+    MACHO_LC_SEGMENT_64    = 0x00000019,
+    MACHO_LC_UUID          = 0x0000001b,
+    MACHO_LC_CODE_SIGNATURE = 0x0000001d,
+    MACHO_LC_DYLD_INFO_ONLY = 0x80000022,
+    MACHO_LC_LOAD_DYLIB_WEAK = 0x80000018,
+    MACHO_LC_MAIN          = 0x80000028,
+    MACHO_LC_BUILD_VERSION = 0x00000032
+};
+
+typedef struct _MACHO_HEADER32
+{
+    [enum(MACHO_CPU_TYPE)]
+    dword cpuType;
+
+    dword cpuSubtype;
+
+    [enum(MACHO_FILE_TYPE)]
+    dword fileType;
+
+    dword commandCount;
+    dword commandsSize;
+
+    [bitflag(MACHO_HEADER_FLAGS)]
+    dword flags;
+} MACHO_HEADER32, *PMACHO_HEADER32;
+
+typedef struct _MACHO_HEADER64
+{
+    [enum(MACHO_CPU_TYPE)]
+    dword cpuType;
+
+    dword cpuSubtype;
+
+    [enum(MACHO_FILE_TYPE)]
+    dword fileType;
+
+    dword commandCount;
+    dword commandsSize;
+
+    [bitflag(MACHO_HEADER_FLAGS)]
+    dword flags;
+
+    dword reserved;
+} MACHO_HEADER64, *PMACHO_HEADER64;
+
+typedef struct _MACHO_SECTION32
+{
+    [string, count(16), extent(16)]
+    char sectionName[];
+
+    [string, count(16), extent(16)]
+    char segmentName[];
+
+    dword address;
+    dword size;
+    dword offset;
+    dword align;
+    dword relocationOffset;
+    dword relocationCount;
+    dword flags;
+    dword reserved1;
+    dword reserved2;
+} MACHO_SECTION32, *PMACHO_SECTION32;
+
+typedef struct _MACHO_SECTION64
+{
+    [string, count(16), extent(16)]
+    char sectionName[];
+
+    [string, count(16), extent(16)]
+    char segmentName[];
+
+    qword address;
+    qword size;
+    dword offset;
+    dword align;
+    dword relocationOffset;
+    dword relocationCount;
+    dword flags;
+    dword reserved1;
+    dword reserved2;
+    dword reserved3;
+} MACHO_SECTION64, *PMACHO_SECTION64;
+
+typedef struct _MACHO_SEGMENT32_COMMAND
+{
+    [string, count(16), extent(16)]
+    char segmentName[];
+
+    dword vmAddress;
+    dword vmSize;
+    dword fileOffset;
+    dword fileSize;
+    dword maxProtection;
+    dword initialProtection;
+    dword sectionCount;
+    dword flags;
+
+    [count(sectionCount)]
+    MACHO_SECTION32 sections[];
+} MACHO_SEGMENT32_COMMAND, *PMACHO_SEGMENT32_COMMAND;
+
+typedef struct _MACHO_SEGMENT64_COMMAND
+{
+    [string, count(16), extent(16)]
+    char segmentName[];
+
+    qword vmAddress;
+    qword vmSize;
+    qword fileOffset;
+    qword fileSize;
+    dword maxProtection;
+    dword initialProtection;
+    dword sectionCount;
+    dword flags;
+
+    [count(sectionCount)]
+    MACHO_SECTION64 sections[];
+} MACHO_SEGMENT64_COMMAND, *PMACHO_SEGMENT64_COMMAND;
+
+typedef struct _MACHO_SYMTAB_COMMAND
+{
+    dword symbolOffset;
+    dword symbolCount;
+    dword stringOffset;
+    dword stringSize;
+} MACHO_SYMTAB_COMMAND, *PMACHO_SYMTAB_COMMAND;
+
+typedef struct _MACHO_UUID_COMMAND
+{
+    byte uuid[16];
+} MACHO_UUID_COMMAND, *PMACHO_UUID_COMMAND;
+
+typedef struct _MACHO_DYLIB_COMMAND
+{
+    dword nameOffset;
+    dword timestamp;
+    dword currentVersion;
+    dword compatibilityVersion;
+
+    [offset(nameOffset - 8), string, count(cmdSize - nameOffset), terminated_by(0)]
+    char name[];
+} MACHO_DYLIB_COMMAND, *PMACHO_DYLIB_COMMAND;
+
+typedef struct _MACHO_MAIN_COMMAND
+{
+    qword entryOffset;
+    qword stackSize;
+} MACHO_MAIN_COMMAND, *PMACHO_MAIN_COMMAND;
+
+typedef struct _MACHO_RAW_LOAD_COMMAND
+{
+    [count(cmdSize - 8)]
+    byte data[];
+} MACHO_RAW_LOAD_COMMAND, *PMACHO_RAW_LOAD_COMMAND;
+
+typedef struct _MACHO_LOAD_COMMAND
+{
+    [enum(MACHO_LOAD_COMMAND_TYPE)]
+    dword cmd;
+
+    dword cmdSize;
+
+    [select(cmd), extent(cmdSize - 8)]
+    union
+    {
+        [case(MACHO_LC_SEGMENT)]
+        MACHO_SEGMENT32_COMMAND segment32;
+
+        [case(MACHO_LC_SEGMENT_64)]
+        MACHO_SEGMENT64_COMMAND segment64;
+
+        [case(MACHO_LC_SYMTAB)]
+        MACHO_SYMTAB_COMMAND symtab;
+
+        [case(MACHO_LC_UUID)]
+        MACHO_UUID_COMMAND uuid;
+
+        [case(MACHO_LC_LOAD_DYLIB)]
+        MACHO_DYLIB_COMMAND loadDylib;
+
+        [case(MACHO_LC_ID_DYLIB)]
+        MACHO_DYLIB_COMMAND idDylib;
+
+        [case(MACHO_LC_MAIN)]
+        MACHO_MAIN_COMMAND main;
+
+        [default]
+        MACHO_RAW_LOAD_COMMAND raw;
+    };
+} MACHO_LOAD_COMMAND, *PMACHO_LOAD_COMMAND;
+
+[
+    export("Mach-O Binary (MACH-O)"),
+    version(1),
+    category("code"),
+    assoc(".macho"),
+    assoc(".dylib"),
+    assoc(".bundle"),
+    assoc(".kext"),
+    magic({ 0xfe, 0xed, 0xfa, 0xce }),
+    magic({ 0xfe, 0xed, 0xfa, 0xcf }),
+    magic({ 0xce, 0xfa, 0xed, 0xfe }),
+    magic({ 0xcf, 0xfa, 0xed, 0xfe }),
+    offset(0),
+    endian(magic == 0xcefaedfe || magic == 0xcffaedfe)
+]
+typedef struct _MACHO
+{
+    [enum(MACHO_MAGIC)]
+    dword magic;
+
+    [select(magic)]
+    union
+    {
+        [case(MACHO_MAGIC_32)]
+        MACHO_HEADER32 header32;
+
+        [case(MACHO_MAGIC_64)]
+        MACHO_HEADER64 header64;
+    };
+
+    [
+        count(magic == MACHO_MAGIC_64 ? header64.commandCount : header32.commandCount),
+        extent(magic == MACHO_MAGIC_64 ? header64.commandsSize : header32.commandsSize),
+        name(cmd)
+    ]
+    MACHO_LOAD_COMMAND loadCommands[];
+} MACHO;

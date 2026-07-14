@@ -2077,6 +2077,7 @@ void StructureViewPanel::buildUi()
     m_rootCombo->setLeadingIcon(
         recoloredIcon(QStringLiteral("actions/hierarchy1"),
                       filestats::subduedTextColor(palette()), 16));
+    m_rootCombo->setContextMenuPolicy(Qt::CustomContextMenu);
     const int comboH = qMax(24, static_cast<QComboBox *>(m_rootCombo)->sizeHint().height() - 4);
     m_rootCombo->setFixedHeight(comboH);
 
@@ -2427,6 +2428,8 @@ void StructureViewPanel::buildUi()
                     showLogPage();
                 }
             });
+    connect(m_rootCombo, &QWidget::customContextMenuRequested,
+            this, &StructureViewPanel::showRootComboContextMenu);
     connect(m_rootCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, [this](int) {
                 rebuildRows();
@@ -2504,6 +2507,7 @@ void StructureViewPanel::updateDefinitionsUi()
 {
     const QList<ExportedStructureType> exportedTypes = sortedExportedTypes(m_definitions->exportedTypes());
     const QList<FailedStructureFile> failedFiles = m_definitions->failedFiles();
+    TypeDecl *previousRoot = m_preserveRootComboSelectionOnce ? selectedRootType() : nullptr;
 
     {
         const QSignalBlocker blocker(m_rootCombo);
@@ -2534,12 +2538,16 @@ void StructureViewPanel::updateDefinitionsUi()
             m_rootCombo->setItemData(index, failure.message, kRootComboErrorRole);
         }
 
+        const int preservedIndex = rootComboIndexForType(previousRoot);
         const int associatedIndex = associatedRootTypeIndex(exportedTypes);
-        if (associatedIndex >= 0)
+        if (preservedIndex >= 0)
+            m_rootCombo->setCurrentIndex(preservedIndex);
+        else if (associatedIndex >= 0)
             m_rootCombo->setCurrentIndex(associatedIndex);
         else if (m_hv && !m_hv->filePath().isEmpty())
             m_rootCombo->setCurrentIndex(-1);
     }
+    m_preserveRootComboSelectionOnce = false;
 
     setStatusLabelError(!failedFiles.isEmpty());
     if (!failedFiles.isEmpty())
@@ -2707,6 +2715,36 @@ void StructureViewPanel::showGridContextMenu(const QPoint &pos)
 {
     const QModelIndex rowIndex = m_tree ? m_tree->indexAt(pos).siblingAtColumn(StructureTreeModel::NameColumn) : QModelIndex();
     showOptionsContextMenu(-1, m_tree ? m_tree->mapToGlobal(pos) : mapToGlobal(pos), true, rowIndex);
+}
+
+void StructureViewPanel::showRootComboContextMenu(const QPoint &pos)
+{
+    if (!m_rootCombo)
+        return;
+
+    QMenu menu(this);
+    QAction *sortByName = menu.addAction(tr("Sort by Name"));
+    sortByName->setCheckable(true);
+    sortByName->setChecked(!m_sortRootComboByDetail);
+
+    QAction *sortByDetail = menu.addAction(tr("Sort by Extension"));
+    sortByDetail->setCheckable(true);
+    sortByDetail->setChecked(m_sortRootComboByDetail);
+
+    const auto setSortMode = [this](bool byDetail) {
+        if (m_sortRootComboByDetail == byDetail)
+            return;
+        m_sortRootComboByDetail = byDetail;
+        m_preserveRootComboSelectionOnce = true;
+        updateDefinitionsUi();
+    };
+
+    connect(sortByName, &QAction::triggered,
+            this, [setSortMode]() { setSortMode(false); });
+    connect(sortByDetail, &QAction::triggered,
+            this, [setSortMode]() { setSortMode(true); });
+
+    menu.exec(m_rootCombo->mapToGlobal(pos));
 }
 
 void StructureViewPanel::showHeaderContextMenu(int column, const QPoint &globalPos)
@@ -3368,15 +3406,38 @@ QList<ExportedStructureType> StructureViewPanel::sortedExportedTypes(const QList
         if (rankA != rankB)
             return rankA < rankB;
 
-        const QString nameA = splitRootComboLabel(a.description.isEmpty()
+        const RootComboLabel labelA = splitRootComboLabel(a.description.isEmpty()
             ? displayNameForTypeDecl(a.typeDecl)
-            : a.description).text.toCaseFolded();
-        const QString nameB = splitRootComboLabel(b.description.isEmpty()
+            : a.description);
+        const RootComboLabel labelB = splitRootComboLabel(b.description.isEmpty()
             ? displayNameForTypeDecl(b.typeDecl)
-            : b.description).text.toCaseFolded();
-        return nameA < nameB;
+            : b.description);
+
+        const QString primaryA = (m_sortRootComboByDetail && !labelA.detail.isEmpty())
+            ? labelA.detail.toCaseFolded()
+            : labelA.text.toCaseFolded();
+        const QString primaryB = (m_sortRootComboByDetail && !labelB.detail.isEmpty())
+            ? labelB.detail.toCaseFolded()
+            : labelB.text.toCaseFolded();
+        if (primaryA != primaryB)
+            return primaryA < primaryB;
+
+        return labelA.text.toCaseFolded() < labelB.text.toCaseFolded();
     });
     return sorted;
+}
+
+int StructureViewPanel::rootComboIndexForType(TypeDecl *typeDecl) const
+{
+    if (!m_rootCombo || !typeDecl)
+        return -1;
+
+    const qulonglong needle = reinterpret_cast<qulonglong>(typeDecl);
+    for (int i = 0; i < m_rootCombo->count(); ++i)
+        if (m_rootCombo->itemData(i).toULongLong() == needle)
+            return i;
+
+    return -1;
 }
 
 int StructureViewPanel::associatedRootTypeIndex(const QList<ExportedStructureType> &exportedTypes) const

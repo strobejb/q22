@@ -77,6 +77,8 @@ private slots:
     void builderAddsDexSemanticSummaryPastArrayRenderCap();
     void builderRendersDtbHeaderAndBlocks();
     void builderRendersWasmHeaderAndSections();
+    void builderRendersJavaClassConstantPool();
+    void builderRendersMachOHeaderAndLoadCommands();
     void builderRendersSfntTableDirectory();
     void builderRendersPngChunks();
     void builderRendersBmpHeaderAndPixelPayload();
@@ -2613,6 +2615,119 @@ void StructViewTests::builderRendersWasmHeaderAndSections()
     QCOMPARE(instructions->value, QStringLiteral("{ 65, 42 }"));
 }
 
+void StructViewTests::builderRendersJavaClassConstantPool()
+{
+    // Scenario: Java class files are big-endian and start with a constant pool
+    // whose entries are tagged variants.
+    // Expected: the standard Java definition renders the class header and
+    // selects a UTF-8 constant pool payload by tag.
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("java.strata")), "java.strata failed to parse");
+    TypeDecl *javaRoot = exportedNamed(&library, QStringLiteral("JAVA_CLASS"));
+    QVERIFY(javaRoot);
+
+    QByteArray klass;
+    const auto appendBe16 = [&klass](quint16 value) {
+        klass.append(char((value >> 8) & 0xff));
+        klass.append(char(value & 0xff));
+    };
+    const auto appendBe32 = [&klass](quint32 value) {
+        klass.append(char((value >> 24) & 0xff));
+        klass.append(char((value >> 16) & 0xff));
+        klass.append(char((value >> 8) & 0xff));
+        klass.append(char(value & 0xff));
+    };
+
+    appendBe32(0xcafebabe);
+    appendBe16(0);  // minor
+    appendBe16(52); // Java 8 major
+    appendBe16(2);  // one constant pool entry
+    klass.append(char(1));
+    appendBe16(4);
+    klass.append("Test", 4);
+    appendBe16(0x0021); // public | super
+    appendBe16(0);
+    appendBe16(0);
+    appendBe16(0);
+    appendBe16(0);
+    appendBe16(0);
+    appendBe16(0);
+
+    auto rows = buildRows(&library, javaRoot, klass);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->name, QStringLiteral("JAVA_CLASS"));
+    QCOMPARE(findChildNamed(rows[0].get(), QStringLiteral("dword magic"))->value,
+             QStringLiteral("JAVA_MAGIC_CLASS"));
+    QCOMPARE(findChildNamed(rows[0].get(), QStringLiteral("word majorVersion"))->value,
+             QStringLiteral("52"));
+
+    StructureRow *constantPool = findChildNamed(rows[0].get(), QStringLiteral("JAVA_CP_INFO constantPool[]"));
+    QVERIFY2(constantPool, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(constantPool->children.size(), size_t(1));
+    QCOMPARE(constantPool->children[0]->name, QStringLiteral("[0]JAVA_CONSTANT_Utf8"));
+
+    StructureRow *utf8 = findDescendantNamed(constantPool->children[0].get(), QStringLiteral("JAVA_CONSTANT_Utf8_INFO utf8"));
+    QVERIFY2(utf8, qPrintable(childNames(constantPool->children[0].get())));
+    StructureRow *bytes = findChildNamed(utf8, QStringLiteral("byte bytes[]"));
+    QVERIFY2(bytes, qPrintable(childNames(utf8)));
+    QCOMPARE(bytes->value, QStringLiteral("\"Test\""));
+}
+
+void StructViewTests::builderRendersMachOHeaderAndLoadCommands()
+{
+    // Scenario: 64-bit Mach-O files carry a header followed by typed load commands.
+    // Expected: the standard Mach-O definition selects the 64-bit header and
+    // decodes common load command payloads such as UUID and main entry point.
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("macho.strata")), "macho.strata failed to parse");
+    TypeDecl *machoRoot = exportedNamed(&library, QStringLiteral("MACHO"));
+    QVERIFY(machoRoot);
+
+    QByteArray macho(80, '\0');
+    writeLe32(&macho, 0, 0xfeedfacf);
+    writeLe32(&macho, 4, 0x01000007); // x86_64
+    writeLe32(&macho, 8, 3);
+    writeLe32(&macho, 12, 2); // execute
+    writeLe32(&macho, 16, 2);
+    writeLe32(&macho, 20, 48);
+    writeLe32(&macho, 24, 0x00200004); // dyldlink | pie
+    writeLe32(&macho, 28, 0);
+    writeLe32(&macho, 32, 0x1b); // LC_UUID
+    writeLe32(&macho, 36, 24);
+    for (int i = 0; i < 16; ++i)
+        macho[40 + i] = char(i);
+    writeLe32(&macho, 56, 0x80000028); // LC_MAIN
+    writeLe32(&macho, 60, 24);
+    writeLe64(&macho, 64, 0x1000);
+    writeLe64(&macho, 72, 0);
+
+    auto rows = buildRows(&library, machoRoot, macho);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->name, QStringLiteral("MACHO"));
+
+    StructureRow *header = findDescendantNamed(rows[0].get(), QStringLiteral("MACHO_HEADER64 header64"));
+    QVERIFY2(header, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(findChildNamed(rows[0].get(), QStringLiteral("dword magic"))->value, QStringLiteral("MACHO_MAGIC_64"));
+    QCOMPARE(findChildNamed(header, QStringLiteral("dword cpuType"))->value, QStringLiteral("MACHO_CPU_TYPE_X86_64"));
+    QCOMPARE(findChildNamed(header, QStringLiteral("dword commandCount"))->value, QStringLiteral("2"));
+
+    StructureRow *commands = findChildNamed(rows[0].get(), QStringLiteral("MACHO_LOAD_COMMAND loadCommands[]"));
+    QVERIFY2(commands, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(commands->children.size(), size_t(2));
+    QCOMPARE(commands->children[0]->name, QStringLiteral("[0]MACHO_LC_UUID"));
+    QCOMPARE(commands->children[1]->name, QStringLiteral("[1]MACHO_LC_MAIN"));
+
+    StructureRow *uuid = findDescendantNamed(commands->children[0].get(), QStringLiteral("MACHO_UUID_COMMAND uuid"));
+    QVERIFY2(uuid, qPrintable(childNames(commands->children[0].get())));
+    StructureRow *uuidBytes = findChildNamed(uuid, QStringLiteral("byte uuid[]"));
+    QVERIFY2(uuidBytes, qPrintable(childNames(uuid)));
+    QCOMPARE(uuidBytes->value, QStringLiteral("{ 0, 1, 2, 3, 4, 5, 6, 7, ... }"));
+
+    StructureRow *main = findDescendantNamed(commands->children[1].get(), QStringLiteral("MACHO_MAIN_COMMAND main"));
+    QVERIFY2(main, qPrintable(childNames(commands->children[1].get())));
+    QCOMPARE(findChildNamed(main, QStringLiteral("qword entryOffset"))->value, QStringLiteral("4096"));
+}
+
 void StructViewTests::builderRendersSfntTableDirectory()
 {
     // Scenario: TTF/OTF fonts share the big-endian SFNT table-directory
@@ -4308,6 +4423,14 @@ void StructViewTests::definitionManagerFlagsNonStaticFieldReferences()
     StrataLibrary cabLibrary;
     QVERIFY2(parseStandardDefinition(&cabLibrary, QStringLiteral("cab.strata")), "cab.strata failed to parse");
     QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&cabLibrary).isEmpty());
+
+    StrataLibrary javaLibrary;
+    QVERIFY2(parseStandardDefinition(&javaLibrary, QStringLiteral("java.strata")), "java.strata failed to parse");
+    QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&javaLibrary).isEmpty());
+
+    StrataLibrary machoLibrary;
+    QVERIFY2(parseStandardDefinition(&machoLibrary, QStringLiteral("macho.strata")), "macho.strata failed to parse");
+    QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&machoLibrary).isEmpty());
 }
 
 void StructViewTests::definitionManagerFlagsRuntimeExpressionsInRootOffsets()
