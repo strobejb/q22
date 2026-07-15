@@ -6,6 +6,7 @@
 #include "disasm/branchtarget.h"
 #include "disasm/demangle.h"
 #include "filestats/widgets.h"
+#include "settings/settings.h"
 #include "theme.h"
 
 #include <QApplication>
@@ -1580,7 +1581,8 @@ void DisassemblerPanel::setPinned(bool pinned)
 // ── DisassemblerPanelHost ─────────────────────────────────────────────────────
 
 DisassemblerPanelHost::DisassemblerPanelHost(HexView *hv, QWidget *parent)
-    : SidePanelHostBase(450, 300, 800, /*gripOnLeft=*/true, parent)
+    : SidePanelHostBase(AppSettings::disassemblyPanelWidth() > 0 ? AppSettings::disassemblyPanelWidth() : 450,
+                        300, 1400, /*gripOnLeft=*/true, parent)
     , m_hv(hv)
 {}
 
@@ -1599,6 +1601,11 @@ QWidget *DisassemblerPanelHost::createPanelWidget()
     panel->setFunctionsScanInProgress(m_functionsScanInProgress);
     panel->setScanProgress(m_scanProgressDiscovered, m_scanProgressProcessed, m_scanProgressTotal);
     return panel;
+}
+
+void DisassemblerPanelHost::onPaneWidthCommitted(int width)
+{
+    AppSettings::setDisassemblyPanelWidth(width);
 }
 
 void DisassemblerPanelHost::openAtOffset(uint64_t offset)

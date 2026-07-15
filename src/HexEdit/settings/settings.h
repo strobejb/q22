@@ -95,6 +95,12 @@ QStringList sidePanelSectionOrder();
 void        setSidePanelSectionOrder(const QStringList &order);
 int         sidePanelWidth();              // 0 = use default width
 void        setSidePanelWidth(int width);
+int         structureViewPanelWidth();     // 0 = use default width
+void        setStructureViewPanelWidth(int width);
+int         disassemblyPanelWidth();       // 0 = use default width
+void        setDisassemblyPanelWidth(int width);
+QByteArray  structureViewGridHeaderState();
+void        setStructureViewGridHeaderState(const QByteArray &state);
 
 } // namespace AppSettings
 

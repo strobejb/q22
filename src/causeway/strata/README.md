@@ -5,6 +5,8 @@ annotation tags that describe how binary data should be navigated, decoded, and
 displayed. Structure-definition files use the `.strata` extension and should be
 stored in `~/.config/catch22/q22/strata`.
 
+View online: [Strata Language Reference](https://github.com/strobejb/q22/blob/main/src/causeway/strata/README.md)
+
 ---
 
 ## Quick reference

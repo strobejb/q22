@@ -156,6 +156,7 @@ set(PROJECT_SOURCES
         settings/settingscard.cpp
         settings/scrollhintoverlay.h
         settings/scrollhintoverlay.cpp
+        resources/strata_docs.qrc
 )
 
 set(PROJECT_FORMS
@@ -221,15 +222,6 @@ qt_add_resources(hexedit "app_resources"
     PREFIX "/"
     BASE "${HEXEDIT_RESOURCE_DIR}"
     FILES ${HEXEDIT_RESOURCES}
-)
-
-set_source_files_properties(
-    "${CMAKE_SOURCE_DIR}/src/causeway/strata/README.md"
-    PROPERTIES QT_RESOURCE_ALIAS "README.md"
-)
-qt_add_resources(hexedit "strata_docs"
-    PREFIX "/docs"
-    FILES "${CMAKE_SOURCE_DIR}/src/causeway/strata/README.md"
 )
 
 target_include_directories(hexedit PRIVATE

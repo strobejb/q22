@@ -92,6 +92,9 @@ private:
     bool locateLogDiagnosticAt(const QPoint &viewportPos);
     bool logDiagnosticAt(const QPoint &viewportPos, QString *path, int *lineNo) const;
     bool loadSourceFile(const QString &path, int line, int selStart = -1, int selEnd = -1);
+    bool saveSourceDefinition();
+    QString sourceSaveTargetPath() const;
+    bool confirmOverwriteSourceFile(const QString &path) const;
     StructureRow *sourceRowForIndex(const QModelIndex &index) const;
     void setStatusLabelError(bool error);
     StructureDisplayOptions displayOptions() const;
@@ -165,6 +168,7 @@ signals:
 
 protected:
     QWidget *createPanelWidget() override;
+    void onPaneWidthCommitted(int width) override;
 
 private:
     HexView *m_hv = nullptr;

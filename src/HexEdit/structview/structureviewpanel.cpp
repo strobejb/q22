@@ -8,13 +8,16 @@
 #include "structview/structuregriditemdelegate.h"
 #include "structview/structuretreemodel.h"
 #include "structview/structurevaluebuilder.h"
+#include "settings/settings.h"
 #include "theme.h"
 
 #include <QApplication>
 #include <QAction>
 #include <QComboBox>
+#include <QDesktopServices>
 #include <QDialog>
 #include <QTextEdit>
+#include <QTextBrowser>
 #include <QDebug>
 #include <QElapsedTimer>
 #include <QEvent>
@@ -30,9 +33,12 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPushButton>
+#include <QSaveFile>
 #include <QPlainTextEdit>
 #include <QRegularExpression>
 #include <QSignalBlocker>
@@ -51,6 +57,7 @@
 #include <QTimer>
 #include <QTreeView>
 #include <QToolButton>
+#include <QUrl>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -73,6 +80,54 @@ enum class InitialStructureExpansion
 static constexpr InitialStructureExpansion kInitialStructureExpansion =
     InitialStructureExpansion::FirstLevel;
 static constexpr int kBranchIconSize = 16;
+
+static QString markdownAnchorSlug(const QString &text)
+{
+    QString slug;
+    bool previousDash = false;
+    for (const QChar ch : text.trimmed().toLower())
+    {
+        if (ch.isLetterOrNumber() || ch == QLatin1Char('_') || ch == QLatin1Char('-'))
+        {
+            slug.append(ch);
+            previousDash = false;
+        }
+        else if (ch.isSpace())
+        {
+            if (!slug.isEmpty() && !previousDash)
+            {
+                slug.append(QLatin1Char('-'));
+                previousDash = true;
+            }
+        }
+    }
+
+    while (slug.endsWith(QLatin1Char('-')))
+        slug.chop(1);
+    return slug;
+}
+
+static bool scrollMarkdownHelpToAnchor(QTextEdit *view, const QString &fragment)
+{
+    if (!view || fragment.isEmpty())
+        return false;
+
+    const QString target = fragment.toLower();
+    QTextDocument *doc = view->document();
+    for (QTextBlock block = doc->begin(); block.isValid(); block = block.next())
+    {
+        if (block.blockFormat().headingLevel() <= 0)
+            continue;
+        if (markdownAnchorSlug(block.text()) != target)
+            continue;
+
+        view->setTextCursor(QTextCursor(block));
+        view->ensureCursorVisible();
+        return true;
+    }
+
+    return false;
+}
 
 // m_rootCombo item data roles used to mark an entry as a definition file that
 // failed to parse: kRootComboFilePathRole holds the source path (empty for a
@@ -2137,6 +2192,12 @@ void StructureViewPanel::buildUi()
     m_tree->header()->resizeSection(StructureTreeModel::ValueColumn, 90);
     m_tree->header()->resizeSection(StructureTreeModel::OffsetColumn, 84);
     m_tree->header()->resizeSection(StructureTreeModel::CommentColumn, 140);
+    const QByteArray savedGridHeaderState = AppSettings::structureViewGridHeaderState();
+    if (!savedGridHeaderState.isEmpty())
+        m_tree->header()->restoreState(savedGridHeaderState);
+    connect(m_tree->header(), &QHeaderView::sectionResized, this, [this]() {
+        AppSettings::setStructureViewGridHeaderState(m_tree->header()->saveState());
+    });
     connect(m_tree->selectionModel(), &QItemSelectionModel::currentChanged,
             this, &StructureViewPanel::updateHexViewSelection);
     connect(m_tree, &QWidget::customContextMenuRequested,
@@ -2161,52 +2222,7 @@ void StructureViewPanel::buildUi()
     m_sourceSaveButton = new SourceViewButton(
         QStringLiteral("document-save-symbolic"),
         tr("Save structure definition"),
-        [this]() {
-            if (m_currentSourceFilePath.isEmpty() || !m_sourceView || !m_definitions)
-                return;
-
-            QFile file(m_currentSourceFilePath);
-            if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
-            {
-                setStatusLabelError(true);
-                m_statusLabel->setText(
-                    tr("Failed to save %1").arg(QFileInfo(m_currentSourceFilePath).fileName()));
-                return;
-            }
-            file.write(m_sourceView->toPlainText().toUtf8());
-            file.close();
-
-            const QString savedPath = m_currentSourceFilePath;
-
-            // Suppress the file-watcher notification that would otherwise re-raise
-            // the "definitions changed" banner immediately after our own reload.
-            m_definitions->suppressNextChangeNotification();
-            m_definitions->reload();
-
-            // Other, unrelated definition files can fail independently of the one we
-            // just saved, so check specifically for the saved file rather than the
-            // overall reload() result: reload() already updated the status label/
-            // dropdown for the batch as a whole via definitionsReloaded.
-            bool savedFileFailed = false;
-            for (const FailedStructureFile &failure : m_definitions->failedFiles())
-            {
-                if (failure.filePath == savedPath)
-                {
-                    savedFileFailed = true;
-                    break;
-                }
-            }
-
-            if (savedFileFailed)
-            {
-                showLogPage();
-            }
-            else
-            {
-                setStatusLabelError(false);
-                m_statusLabel->setText(tr("%1 saved").arg(QFileInfo(savedPath).fileName()));
-            }
-        },
+        [this]() { saveSourceDefinition(); },
         m_sourceView);
     m_sourceHelpButton = new SourceViewButton(
         QStringLiteral("question"),
@@ -2231,10 +2247,12 @@ void StructureViewPanel::buildUi()
             auto *vl = new QVBoxLayout(dlg);
             vl->setContentsMargins(0, 0, 0, 0);
 
-            auto *view = new QTextEdit(dlg);
+            auto *view = new QTextBrowser(dlg);
             view->setObjectName(QStringLiteral("strataHelpView"));
             view->setReadOnly(true);
             view->setFrameShape(QFrame::NoFrame);
+            view->setOpenLinks(false);
+            view->setOpenExternalLinks(false);
 
             QPalette viewPalette = view->palette();
             viewPalette.setColor(QPalette::Base, Qt::white);
@@ -2253,16 +2271,16 @@ void StructureViewPanel::buildUi()
             // scrollbar's bottom margin is bumped past the global default so the dialog's
             // rounded corner doesn't clip the thumb.
             view->setStyleSheet(QStringLiteral(
-                "QTextEdit#strataHelpView { color: black; }"
-                "QTextEdit#strataHelpView QScrollBar:vertical { background: white; }"
-                "QTextEdit#strataHelpView QScrollBar::handle:vertical { margin: 0px 4px 16px 3px; }"
-                "QTextEdit#strataHelpView QScrollBar::add-page:vertical,"
-                "QTextEdit#strataHelpView QScrollBar::sub-page:vertical { background: white; }"
-                "QTextEdit#strataHelpView QScrollBar:horizontal { background: white; }"
-                "QTextEdit#strataHelpView QScrollBar::handle:horizontal { margin: 3px 16px 4px 0px; }"
-                "QTextEdit#strataHelpView QScrollBar::add-page:horizontal,"
-                "QTextEdit#strataHelpView QScrollBar::sub-page:horizontal { background: white; }"
-                "QTextEdit#strataHelpView::corner { background: white; }"));
+                "QTextBrowser#strataHelpView { color: black; }"
+                "QTextBrowser#strataHelpView QScrollBar:vertical { background: white; }"
+                "QTextBrowser#strataHelpView QScrollBar::handle:vertical { margin: 0px 4px 16px 3px; }"
+                "QTextBrowser#strataHelpView QScrollBar::add-page:vertical,"
+                "QTextBrowser#strataHelpView QScrollBar::sub-page:vertical { background: white; }"
+                "QTextBrowser#strataHelpView QScrollBar:horizontal { background: white; }"
+                "QTextBrowser#strataHelpView QScrollBar::handle:horizontal { margin: 3px 16px 4px 0px; }"
+                "QTextBrowser#strataHelpView QScrollBar::add-page:horizontal,"
+                "QTextBrowser#strataHelpView QScrollBar::sub-page:horizontal { background: white; }"
+                "QTextBrowser#strataHelpView::corner { background: white; }"));
 
             QFile f(QStringLiteral(":/docs/README.md"));
             if (f.open(QIODevice::ReadOnly))
@@ -2282,6 +2300,18 @@ void StructureViewPanel::buildUi()
             // Reuses the same highlighter (and q22-strata.xml colors) as the live
             // source editor, scoped to fenced code blocks via isMarkdownCodeBlock.
             new StructureSourceHighlighter(view->document(), viewPalette, nullptr, isMarkdownCodeBlock);
+            connect(view, &QTextBrowser::anchorClicked,
+                    view, [view](const QUrl &url) {
+                        if (!url.fragment().isEmpty() && (url.isRelative() || url.scheme() == QLatin1String("qrc")))
+                        {
+                            view->scrollToAnchor(url.fragment());
+                            scrollMarkdownHelpToAnchor(view, url.fragment());
+                            return;
+                        }
+
+                        if (url.isValid())
+                            QDesktopServices::openUrl(url);
+                    });
 
             vl->addWidget(view);
 
@@ -2895,8 +2925,8 @@ void StructureViewPanel::repositionSourceViewButtons()
     const int bottomY = vpOrigin.y() + vp->height() - margin - btnSz;
     const int topY    = bottomY - gap - btnSz;
 
-    m_sourceSaveButton->move(x, topY);
-    m_sourceHelpButton->move(x, bottomY);
+    m_sourceHelpButton->move(x, topY);
+    m_sourceSaveButton->move(x, bottomY);
 }
 
 void StructureViewPanel::showGridPage()
@@ -3142,6 +3172,109 @@ bool StructureViewPanel::loadSourceFile(const QString &path, int line, int selSt
             m_sourceView->centerCursor();
         }
     }
+    return true;
+}
+
+QString StructureViewPanel::sourceSaveTargetPath() const
+{
+    if (m_currentSourceFilePath.isEmpty() || !m_definitions)
+        return {};
+
+    const QFileInfo sourceInfo(m_currentSourceFilePath);
+    const QString sourceCanonical = sourceInfo.canonicalFilePath();
+    for (const QString &builtinDir : m_definitions->builtinStructDirs())
+    {
+        const QString builtinCanonical = QFileInfo(builtinDir).canonicalFilePath();
+        if (builtinCanonical.isEmpty() || sourceCanonical.isEmpty())
+            continue;
+
+        const QString prefix = QDir::cleanPath(builtinCanonical) + QLatin1Char('/');
+        if (QDir::cleanPath(sourceCanonical).startsWith(prefix))
+            return QDir(m_definitions->userStrataDir()).filePath(sourceInfo.fileName());
+    }
+
+    return m_currentSourceFilePath;
+}
+
+bool StructureViewPanel::confirmOverwriteSourceFile(const QString &path) const
+{
+    if (!QFile::exists(path))
+        return true;
+
+    QMessageBox msg(QMessageBox::Warning,
+                    tr("Overwrite structure definition?"),
+                    tr("A structure definition named \"%1\" already exists. Overwrite it?")
+                        .arg(QFileInfo(path).fileName()),
+                    QMessageBox::NoButton,
+                    const_cast<StructureViewPanel *>(this));
+    QPushButton *overwriteBtn = msg.addButton(tr("Overwrite"), QMessageBox::AcceptRole);
+    msg.addButton(tr("Cancel"), QMessageBox::RejectRole);
+    msg.setDefaultButton(overwriteBtn);
+    styleMessageBox(&msg);
+    msg.exec();
+    return msg.clickedButton() == static_cast<QAbstractButton *>(overwriteBtn);
+}
+
+bool StructureViewPanel::saveSourceDefinition()
+{
+    if (m_currentSourceFilePath.isEmpty() || !m_sourceView || !m_definitions)
+        return false;
+
+    const QString targetPath = sourceSaveTargetPath();
+    if (targetPath.isEmpty())
+        return false;
+
+    if (!confirmOverwriteSourceFile(targetPath))
+        return false;
+
+    QDir targetDir(QFileInfo(targetPath).absolutePath());
+    if (!targetDir.exists() && !targetDir.mkpath(QStringLiteral(".")))
+    {
+        setStatusLabelError(true);
+        m_statusLabel->setText(tr("Failed to create %1").arg(QDir::toNativeSeparators(targetDir.path())));
+        return false;
+    }
+
+    const QString sourceText = m_sourceView->toPlainText();
+    QSaveFile file(targetPath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)
+        || file.write(sourceText.toUtf8()) < 0
+        || !file.commit())
+    {
+        setStatusLabelError(true);
+        m_statusLabel->setText(tr("Failed to save %1").arg(QFileInfo(targetPath).fileName()));
+        return false;
+    }
+
+    m_currentSourceFilePath = targetPath;
+
+    // Suppress the file-watcher notification that would otherwise re-raise
+    // the "definitions changed" banner immediately after our own reload.
+    m_definitions->suppressNextChangeNotification();
+    m_definitions->reload();
+
+    // Other, unrelated definition files can fail independently of the one we
+    // just saved, so check specifically for the saved file rather than the
+    // overall reload() result: reload() already updated the status label/
+    // dropdown for the batch as a whole via definitionsReloaded.
+    bool savedFileFailed = false;
+    for (const FailedStructureFile &failure : m_definitions->failedFiles())
+    {
+        if (failure.filePath == targetPath)
+        {
+            savedFileFailed = true;
+            break;
+        }
+    }
+
+    if (savedFileFailed)
+    {
+        showLogPage();
+        return false;
+    }
+
+    setStatusLabelError(false);
+    m_statusLabel->setText(tr("%1 saved").arg(QFileInfo(targetPath).fileName()));
     return true;
 }
 
@@ -3557,7 +3690,8 @@ void StructureViewPanel::updateLoadErrorView()
 }
 
 StructureViewPanelHost::StructureViewPanelHost(HexView *hv, QWidget *parent)
-    : SidePanelHostBase(450, 300, 800, true, parent)
+    : SidePanelHostBase(AppSettings::structureViewPanelWidth() > 0 ? AppSettings::structureViewPanelWidth() : 450,
+                        300, 1400, true, parent)
     , m_hv(hv)
 {
 }
@@ -3578,4 +3712,9 @@ QWidget *StructureViewPanelHost::createPanelWidget()
     if (m_hasPendingSelection)
         panel->restoreSelection(m_pendingSelectionName, m_pendingSelectionOffset);
     return panel;
+}
+
+void StructureViewPanelHost::onPaneWidthCommitted(int width)
+{
+    AppSettings::setStructureViewPanelWidth(width);
 }

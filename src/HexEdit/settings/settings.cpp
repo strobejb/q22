@@ -10,6 +10,46 @@
 //#define ORG "Catch22"
 //#define APP "q22"
 
+namespace
+{
+QString decimalByteList(const QByteArray &bytes)
+{
+    QStringList parts;
+    parts.reserve(bytes.size());
+    for (unsigned char byte : bytes)
+        parts.push_back(QString::number(byte));
+    return parts.join(QLatin1Char(','));
+}
+
+QByteArray byteArrayFromSetting(const QVariant &value)
+{
+    if (!value.isValid())
+        return {};
+
+    if (value.metaType().id() != QMetaType::QByteArray)
+    {
+        const QString text = value.toString().trimmed();
+        if (text.isEmpty())
+            return {};
+
+        QByteArray bytes;
+        const QStringList parts = text.split(QLatin1Char(','), Qt::SkipEmptyParts);
+        bytes.reserve(parts.size());
+        for (const QString &part : parts)
+        {
+            bool ok = false;
+            const int byte = part.trimmed().toInt(&ok);
+            if (!ok || byte < 0 || byte > 255)
+                return value.toByteArray();
+            bytes.append(char(byte));
+        }
+        return bytes;
+    }
+
+    return value.toByteArray();
+}
+} // namespace
+
 
 void AppSettings::ensureSettingsDir()
 {
@@ -166,13 +206,13 @@ void AppSettings::setPrefRestoreWindowGeometry(bool on)
 QByteArray AppSettings::windowGeometry()
 {
     OPEN_SETTINGS;
-    return s.value("window/geometry").toByteArray();
+    return byteArrayFromSetting(s.value("window/geometry"));
 }
 
 void AppSettings::setWindowGeometry(const QByteArray &geometry)
 {
     OPEN_SETTINGS;
-    s.setValue("window/geometry", geometry);
+    s.setValue("window/geometry", decimalByteList(geometry));
 }
 
 bool AppSettings::prefMenuHighlight()
@@ -404,4 +444,40 @@ void AppSettings::setSidePanelWidth(int width)
 {
     OPEN_SETTINGS;
     s.setValue("sidepanel/width", std::max(0, width));
+}
+
+int AppSettings::structureViewPanelWidth()
+{
+    OPEN_SETTINGS;
+    return std::max(0, s.value("structureView/panelWidth", 0).toInt());
+}
+
+void AppSettings::setStructureViewPanelWidth(int width)
+{
+    OPEN_SETTINGS;
+    s.setValue("structureView/panelWidth", std::max(0, width));
+}
+
+int AppSettings::disassemblyPanelWidth()
+{
+    OPEN_SETTINGS;
+    return std::max(0, s.value("disassembly/panelWidth", 0).toInt());
+}
+
+void AppSettings::setDisassemblyPanelWidth(int width)
+{
+    OPEN_SETTINGS;
+    s.setValue("disassembly/panelWidth", std::max(0, width));
+}
+
+QByteArray AppSettings::structureViewGridHeaderState()
+{
+    OPEN_SETTINGS;
+    return byteArrayFromSetting(s.value("structureView/gridHeaderState"));
+}
+
+void AppSettings::setStructureViewGridHeaderState(const QByteArray &state)
+{
+    OPEN_SETTINGS;
+    s.setValue("structureView/gridHeaderState", decimalByteList(state));
 }

@@ -532,12 +532,23 @@ void StructureDefinitionManager::ensureLoaded()
 
 QStringList StructureDefinitionManager::discoverDefinitionFiles() const
 {
-    QStringList files;
-
-    for (const QString &dir : builtinStructDirs())
-        files.append(existingDefinitionFilesInDir(dir, false));
-
     const QStringList userFiles = existingDefinitionFilesInDir(userStrataDir(), true);
+    QSet<QString> userBaseNames;
+    for (const QString &file : userFiles)
+        userBaseNames.insert(QFileInfo(file).completeBaseName().toCaseFolded());
+
+    QStringList files;
+    for (const QString &dir : builtinStructDirs())
+    {
+        const QStringList builtinFiles = existingDefinitionFilesInDir(dir, false);
+        for (const QString &file : builtinFiles)
+        {
+            if (userBaseNames.contains(QFileInfo(file).completeBaseName().toCaseFolded()))
+                continue;
+            files.push_back(file);
+        }
+    }
+
     for (const QString &file : userFiles)
         if (!files.contains(file))
             files.push_back(file);
@@ -553,6 +564,12 @@ bool StructureDefinitionManager::parseFiles(const QStringList &files,
     for (const QString &file : files)
     {
         Parser parser(library);
+        const QStringList includeDirs = QStringList{ userStrataDir() } + builtinStructDirs();
+        for (const QString &includeDir : includeDirs)
+        {
+            const QByteArray nativeIncludeDir = QDir::toNativeSeparators(includeDir).toLocal8Bit();
+            parser.AddIncludePath(nativeIncludeDir.constData());
+        }
         const QByteArray nativePath = QDir::toNativeSeparators(file).toLocal8Bit();
         if (!parser.Ooof(nativePath.constData()))
         {

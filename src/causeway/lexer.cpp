@@ -99,12 +99,20 @@ void Lexer::SetStrataLibrary(StrataLibrary *lib)
 void Lexer::SetParentLexer(Lexer *parent)
 {
 	parentLexer = parent;
+	if(parent)
+		includePaths = parent->includePaths;
 }
 
 void Lexer::SetErrorCallback(void (*callback)(void *, ERROR, va_list), void *context)
 {
 	errorCallback = callback;
 	errorContext = context;
+}
+
+void Lexer::AddIncludePath(const char *path)
+{
+	if(path && path[0])
+		includePaths.push_back(path);
 }
 
 void Lexer::Error(ERROR err, ...)
@@ -212,7 +220,8 @@ static bool searchenv(const char *envname, const char *name, char *fullname, siz
 //		2. directories specified by /I switch
 //		3. directories specified by INCLUDE environment variable
 //
-static bool getfullname(const char *curpath, const char *name, char *fullname, size_t fullnamelen)
+static bool getfullname(const char *curpath, const char *name, char *fullname, size_t fullnamelen,
+                        const vector<string> *includePaths = 0)
 {
 	size_t i;
 	//FILE_DESC *curFile;
@@ -246,7 +255,18 @@ static bool getfullname(const char *curpath, const char *name, char *fullname, s
 		return true;
 	}
 
-	// 2. search directories specified by -I commandline option
+	// 2. search parser-supplied library/include paths
+	if(includePaths)
+	{
+		for(i = 0; i < includePaths->size(); i++)
+		{
+			joinpath(fullname, fullnamelen, (*includePaths)[i].c_str(), name);
+			if(exists(fullname))
+				return true;
+		}
+	}
+
+	// 3. search directories specified by -I commandline option
 	for(i = 0; i < cpp_options.size(); i++)
 	{
 		char *opt = cpp_options[i];
@@ -273,7 +293,7 @@ static bool getfullname(const char *curpath, const char *name, char *fullname, s
 		}
 	}
 
-	// 3. search directories specified by INCLUDE environment
+	// 4. search directories specified by INCLUDE environment
 	if(searchenv("INCLUDE", name, fullname, fullnamelen))
 		return true;
 
@@ -320,7 +340,7 @@ bool Lexer::FileIncluded(const char *filename)
 	char fullpath[_MAX_PATH];
 
 	// get the full path to the specified file.
-	if(getfullname(curFile->filePath, filename, fullpath, _MAX_PATH) == false)
+	if(getfullname(curFile->filePath, filename, fullpath, _MAX_PATH, &includePaths) == false)
 	{
 		Error(ERROR_NOSUCHFILE, filename);
 		return false;
@@ -347,7 +367,7 @@ bool Lexer::InitFile(const char *filename)
 	FILE *fp;
 
 	// get the full path to the specified file.
-	if(getfullname(parentLexer ? parentLexer->curFile->filePath : NULL, filename, fullpath, _MAX_PATH) == false)
+	if(getfullname(parentLexer ? parentLexer->curFile->filePath : NULL, filename, fullpath, _MAX_PATH, &includePaths) == false)
 	{
 		Error(ERROR_NOSUCHFILE, filename);
 		return false;

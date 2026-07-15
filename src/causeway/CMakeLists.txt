@@ -24,6 +24,9 @@ target_include_directories(causeway PUBLIC
 
 set(CAUSEWAY_DATA_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/strata")
 set(CAUSEWAY_DATA_BINARY_DIR "${PROJECT_BINARY_DIR}/strata")
+set(CAUSEWAY_DATA_DOC_FILES
+    "${CAUSEWAY_DATA_SOURCE_DIR}/README.md"
+)
 file(GLOB CAUSEWAY_STANDARD_FILES CONFIGURE_DEPENDS
     "${CAUSEWAY_DATA_SOURCE_DIR}/*.strata"
     "${CAUSEWAY_DATA_SOURCE_DIR}/*.struct"
@@ -42,9 +45,11 @@ add_custom_target(causewayData ALL
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CAUSEWAY_STANDARD_FILES}
         "${CAUSEWAY_DATA_BINARY_DIR}"
-    SOURCES ${CAUSEWAY_STANDARD_FILES}
+    SOURCES ${CAUSEWAY_STANDARD_FILES} ${CAUSEWAY_DATA_DOC_FILES}
     COMMENT "Copying Causeway/Strata runtime data"
 )
+source_group("Documentation" FILES ${CAUSEWAY_DATA_DOC_FILES})
+source_group("Strata" FILES ${CAUSEWAY_STANDARD_FILES})
 
 include(GNUInstallDirs)
 install(FILES ${CAUSEWAY_STANDARD_FILES}

@@ -12,6 +12,7 @@ private slots:
 	void defaultParsersDoNotShareTypes();
 	void sharedStrataLibraryPoolsTypesAcrossParsers();
 	void includeParserUsesTheSameStrataLibrary();
+	void includeParserSearchesLibraryPathsAfterLocalDirectory();
 	void fileRefsRemainValidForSharedLibraryAfterParserDies();
 	void cleanupBelongsToTheStrataLibrary();
 	void tagsetsParseAndExpand();
@@ -109,6 +110,38 @@ void CausewayTests::includeParserUsesTheSameStrataLibrary()
 
 	QCOMPARE(library.globalFileHistory.size(), size_t(2));
 	QCOMPARE(library.globalTypeDeclList.size(), size_t(2));
+}
+
+void CausewayTests::includeParserSearchesLibraryPathsAfterLocalDirectory()
+{
+	// Scenario: a user override definition includes a shared file that exists
+	// in a Strata library directory rather than beside the override.
+	// Expected: include resolution checks the including file's directory first,
+	// then parser-supplied library paths.
+	QTemporaryDir userDir;
+	QTemporaryDir libraryDir;
+	QVERIFY(userDir.isValid());
+	QVERIFY(libraryDir.isValid());
+
+	QFile includeFile(libraryDir.filePath("common.tl"));
+	QVERIFY(includeFile.open(QIODevice::WriteOnly | QIODevice::Text));
+	QVERIFY(includeFile.write("typedef dword LibraryType;\n") > 0);
+	includeFile.close();
+
+	QFile mainFile(userDir.filePath("main.tl"));
+	QVERIFY(mainFile.open(QIODevice::WriteOnly | QIODevice::Text));
+	QVERIFY(mainFile.write("include \"common.tl\";\nLibraryType value;\n") > 0);
+	mainFile.close();
+
+	StrataLibrary library;
+	Parser parser(&library);
+	parser.AddIncludePath(qPrintable(libraryDir.path()));
+	QVERIFY2(parser.Ooof(qPrintable(mainFile.fileName())), parser.LastErrStr());
+
+	QCOMPARE(library.globalFileHistory.size(), size_t(2));
+	QCOMPARE(library.globalTypeDeclList.size(), size_t(2));
+	QCOMPARE(QString::fromLocal8Bit(library.globalFileHistory[1]->filePath),
+	         QFileInfo(includeFile).canonicalFilePath());
 }
 
 void CausewayTests::fileRefsRemainValidForSharedLibraryAfterParserDies()

@@ -42,8 +42,10 @@ static inline void strncpy_s(char *dest, size_t destsz, const char *src, size_t 
 #endif
 
 #ifdef __cplusplus
+#include <string>
 #include <vector>
 #include "error.h"
+using std::string;
 using std::vector;
 
 struct Statement;
@@ -288,6 +290,7 @@ public:
 	void SetStrataLibrary(StrataLibrary *lib);
 	void SetParentLexer(Lexer *parent);
 	void SetErrorCallback(void (*callback)(void *, ERROR, va_list), void *context);
+	void AddIncludePath(const char *path);
 
 	void newline();
 	bool InitBuffer(const char *buffer, size_t len);
@@ -321,6 +324,7 @@ private:
 	FILE_DESC	*	curFile;
 	Lexer		*	parentLexer;
 	StrataLibrary *	typeLibrary;
+	vector<string>	includePaths;
 	void		(*errorCallback)(void *, ERROR, va_list);
 	void		*	errorContext;
 };

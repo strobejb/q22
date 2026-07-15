@@ -63,6 +63,7 @@ public:
 	bool Ooof(const char *file);
 	void SetErrorStream(FILE *fperr);
 	void SetErrorCallback(ERROR_CALLBACK callback, void *param);
+	void AddIncludePath(const char *path);
 
 	void Initialize();
 	bool Init(const char *file);

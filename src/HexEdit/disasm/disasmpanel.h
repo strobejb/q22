@@ -208,6 +208,7 @@ public:
 
 protected:
     QWidget *createPanelWidget() override;
+    void onPaneWidthCommitted(int width) override;
 
 private:
     HexView *m_hv = nullptr;

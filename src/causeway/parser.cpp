@@ -605,6 +605,11 @@ bool Parser::Init(const char *file)
 	return true;
 }
 
+void Parser::AddIncludePath(const char *path)
+{
+	lexer.AddIncludePath(path);
+}
+
 bool Parser::Init(const char *buf, size_t len)
 {	
 //	fileStack.clear();

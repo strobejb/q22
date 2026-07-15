@@ -33,7 +33,8 @@ private slots:
     void exportedTypesExposeDescriptions();
     void exportedTypesExposeCategories();
     void exportedTypesResolveDuplicateVersionsAndLogDecision();
-    void exportedTypesLogDuplicateFilesEvenWhenUserCopyFails();
+    void userDefinitionOverridesBuiltinWithSameBaseName();
+    void brokenUserDefinitionOverrideBlocksBuiltinFallback();
     void builderFormatsScalarsAndEndian();
     void builderFormatsLeb128ScalarsAndAdvancesByEncodedLength();
     void builderUsesLeb128ValuesInExpressions();
@@ -725,7 +726,7 @@ void StructViewTests::exportedTypesResolveDuplicateVersionsAndLogDecision()
     writeTextFile(QDir(builtinDir).filePath(QStringLiteral("zip.strata")),
                   "[export(\"ZIP Archive\"), version(1), assoc(\".zip\")]\n"
                   "struct BuiltinZipRoot { byte builtin; } builtinZip;\n");
-    writeTextFile(QDir(userDir).filePath(QStringLiteral("zip.struct")),
+    writeTextFile(QDir(userDir).filePath(QStringLiteral("zip_override.struct")),
                   "[export(\"ZIP Archive\"), version(2), assoc(\".zip\")]\n"
                   "struct UserZipRoot { byte user; } userZip;\n");
 
@@ -739,23 +740,22 @@ void StructViewTests::exportedTypesResolveDuplicateVersionsAndLogDecision()
     QCOMPARE(exported[0].description, QStringLiteral("ZIP Archive"));
     QCOMPARE(exported[0].version, 2);
     QVERIFY(exported[0].userDefinition);
-    QCOMPARE(exported[0].fileName, QStringLiteral("zip.struct"));
+    QCOMPARE(exported[0].fileName, QStringLiteral("zip_override.struct"));
 
     const QString log = manager.loadLog();
-    QVERIFY(log.contains(QStringLiteral("Definition file zip: user and built-in copies are both present")));
-    QVERIFY(log.contains(QStringLiteral("user(picked):")));
-    QVERIFY(log.contains(QStringLiteral("built-in(ignored):")));
-    QVERIFY(log.contains(QStringLiteral("Export ZIP Archive: picked: user zip.struct version 2")));
+    QVERIFY(log.contains(QStringLiteral("Export ZIP Archive: picked: user zip_override.struct version 2")));
     QVERIFY(log.contains(QStringLiteral("Export ZIP Archive: ignored: built-in zip.strata version 1")));
     QVERIFY(log.contains(QStringLiteral("Exported type(s): 1")));
 }
 
-void StructViewTests::exportedTypesLogDuplicateFilesEvenWhenUserCopyFails()
+void StructViewTests::userDefinitionOverridesBuiltinWithSameBaseName()
 {
-    // Scenario: a stale user file has the same basename as a bundled definition,
-    // but fails before it can contribute an exported root.
-    // Expected: the load log still calls out the duplicate file pair, then
-    // reports the parse failure normally.
+    // Scenario: the user saves an editable copy of a bundled definition under
+    // the same basename.
+    // Expected: the user copy replaces the built-in before parsing, so shared
+    // helper names can be reused without causing redefinition errors.
+    // Regression guard: loading both files into the same StrataLibrary collides
+    // on common type names such as JAVA_MAGIC.
     QTemporaryDir temp;
     QVERIFY(temp.isValid());
 
@@ -764,10 +764,52 @@ void StructViewTests::exportedTypesLogDuplicateFilesEvenWhenUserCopyFails()
     QVERIFY(QDir().mkpath(builtinDir));
     QVERIFY(QDir().mkpath(userDir));
 
-    writeTextFile(QDir(builtinDir).filePath(QStringLiteral("zip.strata")),
+    const QString builtinPath = QDir(builtinDir).filePath(QStringLiteral("java.strata"));
+    const QString userPath = QDir(userDir).filePath(QStringLiteral("java.strata"));
+    writeTextFile(builtinPath,
+                  "enum JAVA_MAGIC { BUILTIN_MAGIC = 1 };\n"
+                  "[export(\"Java Class\"), version(1)]\n"
+                  "struct BuiltinJavaRoot { byte builtin; } builtinJava;\n");
+    writeTextFile(userPath,
+                  "enum JAVA_MAGIC { USER_MAGIC = 2 };\n"
+                  "[export(\"Java Class\"), version(2)]\n"
+                  "struct UserJavaRoot { byte user; } userJava;\n");
+
+    StructureDefinitionManager manager;
+    manager.setBuiltinStructDirsForTests({ builtinDir });
+    manager.setUserStrataDirForTests(userDir);
+
+    QVERIFY2(manager.reload(), qPrintable(manager.lastError()));
+    QVERIFY(!manager.definitionFiles().contains(builtinPath));
+    QVERIFY(manager.definitionFiles().contains(userPath));
+
+    const QList<ExportedStructureType> exported = manager.exportedTypes();
+    QCOMPARE(exported.size(), 1);
+    QCOMPARE(exported[0].description, QStringLiteral("Java Class"));
+    QCOMPARE(exported[0].version, 2);
+    QVERIFY(exported[0].userDefinition);
+    QCOMPARE(exported[0].filePath, userPath);
+}
+
+void StructViewTests::brokenUserDefinitionOverrideBlocksBuiltinFallback()
+{
+    // Scenario: a same-basename user override is currently broken.
+    // Expected: the override still replaces the built-in, and the parse failure
+    // is reported without falling back to a second, incompatible definition set.
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+
+    const QString builtinDir = temp.filePath(QStringLiteral("strata"));
+    const QString userDir = temp.filePath(QStringLiteral("user-strata"));
+    QVERIFY(QDir().mkpath(builtinDir));
+    QVERIFY(QDir().mkpath(userDir));
+
+    const QString builtinPath = QDir(builtinDir).filePath(QStringLiteral("zip.strata"));
+    const QString userPath = QDir(userDir).filePath(QStringLiteral("zip.struct"));
+    writeTextFile(builtinPath,
                   "[export(\"ZIP Archive\"), version(1)]\n"
                   "struct BuiltinZipRoot { byte builtin; } builtinZip;\n");
-    writeTextFile(QDir(userDir).filePath(QStringLiteral("zip.struct")),
+    writeTextFile(userPath,
                   "[export(\"ZIP Archive\"), version(2)]\n"
                   "struct UserZipRoot { Word broken; } userZip;\n");
 
@@ -776,11 +818,13 @@ void StructViewTests::exportedTypesLogDuplicateFilesEvenWhenUserCopyFails()
     manager.setUserStrataDirForTests(userDir);
 
     QVERIFY(!manager.reload());
+    QVERIFY(!manager.definitionFiles().contains(builtinPath));
+    QVERIFY(manager.definitionFiles().contains(userPath));
+
     const QString log = manager.loadLog();
-    QVERIFY(log.contains(QStringLiteral("Definition file zip: user and built-in copies are both present")));
-    QVERIFY(log.contains(QStringLiteral("built-in(picked):")));
-    QVERIFY(log.contains(QStringLiteral("user(ignored):")));
     QVERIFY(log.contains(QStringLiteral("Failed: zip.struct")));
+    QVERIFY(!log.contains(QStringLiteral("built-in(picked):")));
+    QVERIFY(manager.exportedTypes().isEmpty());
 }
 
 void StructViewTests::builderFormatsScalarsAndEndian()
