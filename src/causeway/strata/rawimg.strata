@@ -1,0 +1,99 @@
+// q22-strata-v1
+//
+//  rawimg.strata
+//
+
+include "basetypes.strata";
+
+enum RAWIMG_BOOT_SIGNATURE
+{
+    RAWIMG_BOOT_SIGNATURE_MBR = 0xaa55
+};
+
+enum RAWIMG_PARTITION_TYPE
+{
+    RAWIMG_PARTITION_EMPTY          = 0x00,
+    RAWIMG_PARTITION_FAT12          = 0x01,
+    RAWIMG_PARTITION_FAT16_LT32M    = 0x04,
+    RAWIMG_PARTITION_EXTENDED_CHS   = 0x05,
+    RAWIMG_PARTITION_FAT16          = 0x06,
+    RAWIMG_PARTITION_NTFS_EXFAT     = 0x07,
+    RAWIMG_PARTITION_FAT32_CHS      = 0x0b,
+    RAWIMG_PARTITION_FAT32_LBA      = 0x0c,
+    RAWIMG_PARTITION_FAT16_LBA      = 0x0e,
+    RAWIMG_PARTITION_EXTENDED_LBA   = 0x0f,
+    RAWIMG_PARTITION_LINUX_SWAP     = 0x82,
+    RAWIMG_PARTITION_LINUX          = 0x83,
+    RAWIMG_PARTITION_GPT_PROTECTIVE = 0xee,
+    RAWIMG_PARTITION_EFI_SYSTEM     = 0xef
+};
+
+enum RAWIMG_BOOT_INDICATOR
+{
+    RAWIMG_PARTITION_INACTIVE = 0x00,
+    RAWIMG_PARTITION_ACTIVE   = 0x80
+};
+
+typedef struct _RAWIMG_CHS_ADDRESS
+{
+    byte head;
+    byte sectorCylinderHigh;
+    byte cylinderLow;
+} RAWIMG_CHS_ADDRESS, *PRAWIMG_CHS_ADDRESS;
+
+typedef struct _RAWIMG_PARTITION_ENTRY
+{
+    [enum(RAWIMG_BOOT_INDICATOR)]
+    byte bootIndicator;
+
+    RAWIMG_CHS_ADDRESS startChs;
+
+    [enum(RAWIMG_PARTITION_TYPE)]
+    byte partitionType;
+
+    RAWIMG_CHS_ADDRESS endChs;
+    dword firstLba;
+
+    [
+        dynamic_array(
+            name(PartitionData),
+            type(BYTE),
+            offset(firstLba * 512),
+            count(sectorCount * 512),
+            optional(partitionType != RAWIMG_PARTITION_EMPTY)
+        )
+    ]
+    dword sectorCount;
+} RAWIMG_PARTITION_ENTRY, *PRAWIMG_PARTITION_ENTRY;
+
+typedef struct _RAWIMG_MASTER_BOOT_RECORD
+{
+    [count(440), extent(440)]
+    byte bootCode[];
+
+    dword diskSignature;
+    word reserved;
+
+    [count(4), name(partitionType)]
+    RAWIMG_PARTITION_ENTRY partitions[];
+
+    [enum(RAWIMG_BOOT_SIGNATURE)]
+    word signature;
+} RAWIMG_MASTER_BOOT_RECORD, *PRAWIMG_MASTER_BOOT_RECORD;
+
+[
+    export("Raw Disk Image (IMG)"),
+    version(1),
+    category("storage"),
+    assoc(".img"),
+    assoc(".ima"),
+    assoc(".raw"),
+    assoc(".dd"),
+    magic({ 0x55, 0xaa }, 510),
+    offset(0),
+    endian("little")
+]
+typedef struct _RAWIMG
+{
+    RAWIMG_MASTER_BOOT_RECORD mbr;
+} RAWIMG;

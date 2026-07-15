@@ -1,0 +1,266 @@
+// q22-strata-v1
+//
+//  iso.strata
+//
+
+include "basetypes.strata";
+
+enum ISO_VOLUME_DESCRIPTOR_TYPE
+{
+    ISO_VOLUME_BOOT_RECORD = 0,
+    ISO_VOLUME_PRIMARY = 1,
+    ISO_VOLUME_SUPPLEMENTARY = 2,
+    ISO_VOLUME_PARTITION = 3,
+    ISO_VOLUME_TERMINATOR = 255
+};
+
+enum ISO_FILE_FLAGS
+{
+    ISO_FILE_FLAG_HIDDEN = 0x01,
+    ISO_FILE_FLAG_DIRECTORY = 0x02,
+    ISO_FILE_FLAG_ASSOCIATED = 0x04,
+    ISO_FILE_FLAG_RECORD = 0x08,
+    ISO_FILE_FLAG_PROTECTION = 0x10,
+    ISO_FILE_FLAG_MULTI_EXTENT = 0x80
+};
+
+typedef struct _ISO_U16_BOTH
+{
+    word le;
+
+    [endian("big")]
+    word be;
+} ISO_U16_BOTH, *PISO_U16_BOTH;
+
+typedef struct _ISO_U32_BOTH
+{
+    dword le;
+
+    [endian("big")]
+    dword be;
+} ISO_U32_BOTH, *PISO_U32_BOTH;
+
+typedef struct _ISO_RECORDING_DATE_TIME
+{
+    byte yearsSince1900;
+    byte month;
+    byte day;
+    byte hour;
+    byte minute;
+    byte second;
+    byte gmtOffset;
+} ISO_RECORDING_DATE_TIME, *PISO_RECORDING_DATE_TIME;
+
+typedef struct _ISO_DIRECTORY_RECORD
+{
+    byte length;
+    byte extendedAttributeRecordLength;
+    ISO_U32_BOTH extentLocation;
+    ISO_U32_BOTH dataLength;
+    ISO_RECORDING_DATE_TIME recordingDateTime;
+
+    [
+        bitflag(ISO_FILE_FLAGS),
+        dynamic_array(
+            name(DirectoryData),
+            type(BYTE),
+            offset(extentLocation.le * 2048),
+            count(dataLength.le),
+            optional((fileFlags & ISO_FILE_FLAG_DIRECTORY) != 0 && dataLength.le != 0)
+        ),
+        dynamic_array(
+            name(FileData),
+            type(BYTE),
+            offset(extentLocation.le * 2048),
+            count(dataLength.le),
+            optional((fileFlags & ISO_FILE_FLAG_DIRECTORY) == 0 && dataLength.le != 0)
+        )
+    ]
+    byte fileFlags;
+
+    byte fileUnitSize;
+    byte interleaveGapSize;
+    ISO_U16_BOTH volumeSequenceNumber;
+    byte fileIdentifierLength;
+
+    [count(fileIdentifierLength)]
+    byte fileIdentifier[];
+
+    [count(length - 33 - fileIdentifierLength)]
+    byte systemUse[];
+} ISO_DIRECTORY_RECORD, *PISO_DIRECTORY_RECORD;
+
+typedef struct _ISO_BOOT_RECORD_PAYLOAD
+{
+    [string, count(32), extent(32)]
+    char bootSystemIdentifier[];
+
+    [string, count(32), extent(32)]
+    char bootIdentifier[];
+
+    [count(1977), extent(1977)]
+    byte bootSystemUse[];
+} ISO_BOOT_RECORD_PAYLOAD, *PISO_BOOT_RECORD_PAYLOAD;
+
+typedef struct _ISO_PRIMARY_VOLUME_DESCRIPTOR_PAYLOAD
+{
+    byte unused1;
+
+    [string, count(32), extent(32)]
+    char systemIdentifier[];
+
+    [string, count(32), extent(32)]
+    char volumeIdentifier[];
+
+    [count(8), extent(8)]
+    byte unused2[];
+
+    ISO_U32_BOTH volumeSpaceSize;
+
+    [count(32), extent(32)]
+    byte escapeSequencesOrUnused3[];
+
+    ISO_U16_BOTH volumeSetSize;
+    ISO_U16_BOTH volumeSequenceNumber;
+    ISO_U16_BOTH logicalBlockSize;
+    ISO_U32_BOTH pathTableSize;
+
+    [
+        dynamic_array(
+            name(TypeLPathTable),
+            type(BYTE),
+            offset(typeLPathTableLocation * 2048),
+            count(pathTableSize.le),
+            optional(pathTableSize.le != 0 && typeLPathTableLocation != 0)
+        )
+    ]
+    dword typeLPathTableLocation;
+
+    dword optionalTypeLPathTableLocation;
+
+    [
+        endian("big"),
+        dynamic_array(
+            name(TypeMPathTable),
+            type(BYTE),
+            offset(typeMPathTableLocation * 2048),
+            count(pathTableSize.le),
+            optional(pathTableSize.le != 0 && typeMPathTableLocation != 0)
+        )
+    ]
+    dword typeMPathTableLocation;
+
+    [endian("big")]
+    dword optionalTypeMPathTableLocation;
+
+    ISO_DIRECTORY_RECORD rootDirectoryRecord;
+
+    [string, count(128), extent(128)]
+    char volumeSetIdentifier[];
+
+    [string, count(128), extent(128)]
+    char publisherIdentifier[];
+
+    [string, count(128), extent(128)]
+    char dataPreparerIdentifier[];
+
+    [string, count(128), extent(128)]
+    char applicationIdentifier[];
+
+    [string, count(37), extent(37)]
+    char copyrightFileIdentifier[];
+
+    [string, count(37), extent(37)]
+    char abstractFileIdentifier[];
+
+    [string, count(37), extent(37)]
+    char bibliographicFileIdentifier[];
+
+    [string, count(17), extent(17)]
+    char volumeCreationDateTime[];
+
+    [string, count(17), extent(17)]
+    char volumeModificationDateTime[];
+
+    [string, count(17), extent(17)]
+    char volumeExpirationDateTime[];
+
+    [string, count(17), extent(17)]
+    char volumeEffectiveDateTime[];
+
+    byte fileStructureVersion;
+    byte reserved1;
+
+    [count(512), extent(512)]
+    byte applicationUse[];
+
+    [count(653), extent(653)]
+    byte reserved2[];
+} ISO_PRIMARY_VOLUME_DESCRIPTOR_PAYLOAD, *PISO_PRIMARY_VOLUME_DESCRIPTOR_PAYLOAD;
+
+typedef struct _ISO_VOLUME_PARTITION_PAYLOAD
+{
+    [string, count(32), extent(32)]
+    char systemIdentifier[];
+
+    [string, count(32), extent(32)]
+    char partitionIdentifier[];
+
+    ISO_U32_BOTH partitionLocation;
+    ISO_U32_BOTH partitionSize;
+
+    [count(1961), extent(1961)]
+    byte systemUse[];
+} ISO_VOLUME_PARTITION_PAYLOAD, *PISO_VOLUME_PARTITION_PAYLOAD;
+
+typedef struct _ISO_VOLUME_DESCRIPTOR
+{
+    [enum(ISO_VOLUME_DESCRIPTOR_TYPE)]
+    byte type;
+
+    [string, count(5), extent(5)]
+    char standardIdentifier[];
+
+    byte version;
+
+    [select(type), extent(2041)]
+    union
+    {
+        [case(ISO_VOLUME_BOOT_RECORD)]
+        ISO_BOOT_RECORD_PAYLOAD bootRecord;
+
+        [case(ISO_VOLUME_PRIMARY)]
+        ISO_PRIMARY_VOLUME_DESCRIPTOR_PAYLOAD primary;
+
+        [case(ISO_VOLUME_SUPPLEMENTARY)]
+        ISO_PRIMARY_VOLUME_DESCRIPTOR_PAYLOAD supplementary;
+
+        [case(ISO_VOLUME_PARTITION)]
+        ISO_VOLUME_PARTITION_PAYLOAD partition;
+
+        [default, count(2041), extent(2041)]
+        byte rawPayload[];
+    };
+} ISO_VOLUME_DESCRIPTOR, *PISO_VOLUME_DESCRIPTOR;
+
+[
+    export("ISO 9660 Image (ISO)"),
+    version(1),
+    category("storage"),
+    assoc(".iso"),
+    assoc(".cdr"),
+    magic({ 'C', 'D', '0', '0', '1' }, 32769),
+    offset(0),
+    endian("little")
+]
+typedef struct _ISO_IMAGE
+{
+    [
+        offset(16 * 2048),
+        count(64),
+        terminated_by(type == ISO_VOLUME_TERMINATOR),
+        extent(file_size() - (16 * 2048)),
+        name(type)
+    ]
+    ISO_VOLUME_DESCRIPTOR volumeDescriptors[];
+} ISO_IMAGE;
