@@ -85,10 +85,7 @@ typedef struct _RAWIMG_MASTER_BOOT_RECORD
     export("Raw Disk Image (IMG)"),
     version(1),
     category("storage"),
-    assoc(".img"),
-    assoc(".ima"),
-    assoc(".raw"),
-    assoc(".dd"),
+    assoc(".img", ".ima", ".raw", ".dd"),
     magic({ 0x55, 0xaa }, 510),
     offset(0),
     endian("little")

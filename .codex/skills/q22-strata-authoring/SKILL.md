@@ -24,6 +24,7 @@ description: Write, review, and debug q22 Strata `.strata`/legacy `.struct` bina
 - For ZIP-like formats, show both local records and index/trailer records when both exist; use top-level offset sorting in the renderer when physical order matters.
 - For endian-sensitive formats, put `endian(...)` high enough for nested fields to inherit it.
 - For discriminators inside union candidates, use the shared-candidate field fallback when the field is declared identically by every case; otherwise use `select_offset(byteOffset)`.
+- For exported root file associations, put every extension in one comma-separated `assoc(...)` tag, e.g. `assoc(".mp4", ".mov")`; do not repeat separate `assoc(...)` tags for the same export.
 
 ## Common Patterns
 

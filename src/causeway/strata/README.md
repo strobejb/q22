@@ -612,7 +612,7 @@ detect and open automatically:
 | `export` / `export("name")` | Register as a file-format root, with optional human-readable name |
 | `category("name")` | Optional Structure View menu section, such as `"code"`, `"image"`, `"media"`, `"font"`, `"storage"`, or `"system"` |
 | `version(n)` | Export definition version used to resolve built-in/user duplicates; defaults to `0` |
-| `assoc(".ext", ...)` | File extensions for this format |
+| `assoc(".ext", ...)` | File extensions for this format; list all extensions in one comma-separated tag |
 | `magic({ b, b, ... })` | Magic byte sequence at offset `0` |
 | `magic({ b, b, ... }, offset)` | Magic byte sequence at `offset` |
 
@@ -626,6 +626,10 @@ detect and open automatically:
 ]
 typedef struct _PE { ... } PE;
 ```
+
+Use a single comma-separated `assoc(...)` tag for all extensions belonging to an
+exported root. Repeating separate `assoc(...)` tags is not canonical and may not
+be combined by every consumer.
 
 ---
 
@@ -815,7 +819,7 @@ recognize the on-disk layout.
 Recommended workflow:
 
 1. Define primitive aliases, enums, and simple structs first.
-2. Add an exported root with `export`, optional `category`, `assoc`, `magic`, and `offset`.
+2. Add an exported root with `export`, optional `category`, one comma-separated `assoc`, `magic`, and `offset`.
 3. Model fields in physical order where possible.
 4. Use `offset(...)` for tables or records referenced from elsewhere in the file.
 5. Use `count(...)` and `terminated_by(...)` for variable arrays.

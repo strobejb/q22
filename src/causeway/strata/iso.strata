@@ -247,8 +247,7 @@ typedef struct _ISO_VOLUME_DESCRIPTOR
     export("ISO 9660 Image (ISO)"),
     version(1),
     category("storage"),
-    assoc(".iso"),
-    assoc(".cdr"),
+    assoc(".iso", ".cdr"),
     magic({ 'C', 'D', '0', '0', '1' }, 32769),
     offset(0),
     endian("little")

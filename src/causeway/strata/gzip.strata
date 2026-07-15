@@ -95,10 +95,7 @@ typedef struct _GZIP_TRAILER
     export("GZip Compressed Data (GZ)"),
     version(1),
     category("storage"),
-    assoc(".gz"),
-    assoc(".gzip"),
-    assoc(".tgz"),
-    assoc(".tar.gz"),
+    assoc(".gz", ".gzip", ".tgz", ".tar.gz"),
     magic({ 0x1f, 0x8b }),
     offset(0),
     endian("little")
