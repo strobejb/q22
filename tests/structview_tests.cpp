@@ -2971,7 +2971,7 @@ void StructViewTests::builderRendersMachOHeaderAndLoadCommands()
     QVERIFY2(uuid, qPrintable(childNames(commands->children[0].get())));
     StructureRow *uuidBytes = findChildNamed(uuid, QStringLiteral("byte uuid[]"));
     QVERIFY2(uuidBytes, qPrintable(childNames(uuid)));
-    QCOMPARE(uuidBytes->value, QStringLiteral("{ 0, 1, 2, 3, 4, 5, 6, 7, ... }"));
+    QCOMPARE(uuidBytes->value, QStringLiteral("\"00010203-0405-0607-0809-0a0b0c0d0e0f\""));
 
     StructureRow *main = findDescendantNamed(commands->children[1].get(), QStringLiteral("MACHO_MAIN_COMMAND main"));
     QVERIFY2(main, qPrintable(childNames(commands->children[1].get())));

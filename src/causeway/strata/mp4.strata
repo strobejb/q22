@@ -38,7 +38,7 @@ typedef struct _MP4_BOX
     [optional(boxSize == 1)]
     qword largeSize;
 
-    [optional(type == fourcc("uuid"))]
+    [optional(type == fourcc("uuid")), format("uuid")]
     byte userType[16];
 
     [select(type), extent(boxSize == 1 ? largeSize - 16 : boxSize - 8)]

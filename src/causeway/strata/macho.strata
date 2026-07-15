@@ -193,6 +193,7 @@ typedef struct _MACHO_SYMTAB_COMMAND
 
 typedef struct _MACHO_UUID_COMMAND
 {
+    [format("uuid")]
     byte uuid[16];
 } MACHO_UUID_COMMAND, *PMACHO_UUID_COMMAND;
 
