@@ -32,7 +32,7 @@ typedef struct _MP4_BOX
 {
     dword boxSize;
 
-    [fourcc]
+    [format("fourcc")]
     dword type;
 
     [optional(boxSize == 1)]

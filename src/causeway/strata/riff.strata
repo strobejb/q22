@@ -22,7 +22,7 @@ typedef struct _RIFF_RAW_CHUNK_PAYLOAD
 
 typedef struct _RIFF_LIST_PAYLOAD
 {
-    [fourcc]
+    [format("fourcc")]
     dword listType;
 
     [count(size - 4)]
@@ -82,7 +82,7 @@ typedef struct _WEBP_ANMF_CHUNK
 
 typedef struct _RIFF_CHUNK
 {
-    [fourcc]
+    [format("fourcc")]
     dword chunkId;
 
     dword size;
@@ -125,12 +125,12 @@ typedef struct _RIFF_CHUNK
 ]
 typedef struct _WAVE
 {
-    [fourcc]
+    [format("fourcc")]
     dword signature;
 
     dword fileSize;
 
-    [fourcc]
+    [format("fourcc")]
     dword formType;
 
     [count(4096), extent(fileSize - 4), name(chunkId)]
@@ -148,12 +148,12 @@ typedef struct _WAVE
 ]
 typedef struct _WEBP
 {
-    [fourcc]
+    [format("fourcc")]
     dword signature;
 
     dword fileSize;
 
-    [fourcc]
+    [format("fourcc")]
     dword formType;
 
     [count(4096), extent(fileSize - 4), name(chunkId)]
@@ -174,12 +174,12 @@ typedef struct _WEBP
 ]
 typedef struct _RIFF
 {
-    [fourcc]
+    [format("fourcc")]
     dword signature;
 
     dword fileSize;
 
-    [fourcc]
+    [format("fourcc")]
     dword formType;
 
     [count(4096), extent(fileSize - 4), name(chunkId)]

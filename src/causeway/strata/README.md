@@ -16,7 +16,7 @@ View online: [Strata Language Reference](https://github.com/strobejb/q22/blob/ma
 | Files | [`include`](#comments-and-includes) |
 | Types | [`struct`](#structs) · [`union`](#unions) · [`enum`](#enums) · [`typedef`](#type-declarations) |
 | Tags | [`tagset`](#tagsets) · [`tags`](#tagsets) |
-| Display | [`enum(N)`](#display) · [`bitflag(N)`](#display) · [`fourcc`](#display) · [`name`](#display) · [`string`](#display) |
+| Display | [`enum(N)`](#display) · [`bitflag(N)`](#display) · [`format("...")`](#display) · [`name`](#display) · [`string`](#display) |
 | Layout | [`offset`](#layout) · [`align`](#layout) · [`pad_to`](#layout) · [`endian`](#byte-order) · [`entrypoint`](#layout) · [`extent`](#layout) · [`optional`](#layout) |
 | Arrays | [`count`](#arrays) · [`count_as`](#arrays) · [`terminated_by`](#arrays) |
 | Unions | [`select`](#discriminated-unions) · [`case`](#discriminated-unions) |
@@ -337,17 +337,23 @@ The following 'display' tags can be used to alter the rendered value or name of 
 |-----|--------|
 | `enum(Name)` | Show the value as a named enum constant |
 | `bitflag(Name)` | Show the value as named bit masks and expand the row to list active flags |
-| `fourcc` | Show a 4-byte scalar as an ASCII FourCC read from the file bytes |
+| `format("fourcc")` | Show a 4-byte scalar as an ASCII FourCC read from the file bytes |
+| `format("string")`, `format("ascii")`, `format("utf8")` | Render a byte or char array as a string preview |
+| `format("utf16")`, `format("utf16le")`, `format("utf16be")` | Render a byte array as a UTF-16 string preview |
+| `format("guid")`, `format("uuid")` | Render a 16-byte array as a canonical GUID/UUID string |
+| `format("hex")`, `format("dec")` | Force integer display base for this row only |
 | `name("label")` | Override the display label with a string literal |
 | `name(field)` | Use the value of `field` as the display label |
-| `string` | Render a byte or char array as a string preview |
+| `string` | Legacy sugar for `format("string")` |
 
 ```c
 [enum(ELF_TYPE)] e16 e_type;
 [bitflag(ELF_SECTION_FLAGS)] e64 sh_flags;
 [name(SectionName)] dword Offset;
 [name("Alternative name")] dword Offset;
+[format("fourcc")] dword Tag;
 [string] byte Name[32];
+[format("utf16le")] byte WideName[64];
 ```
 
 ### Layout
@@ -374,6 +380,18 @@ IMAGE_OPTIONAL_HEADER OptionalHeader;
 [count(len), pad_to(4)]
 byte Data[];
 ```
+
+### Tree presentation
+
+`tree("...")` changes only how parsed rows appear in Structure View. It does not
+change layout, expression evaluation, or byte consumption.
+
+| Tag | Effect |
+|-----|--------|
+| `tree("hidden")` | Parse and lay out the field normally, but suppress its row |
+| `tree("collapsed")` | Show an expandable row initially closed |
+| `tree("expanded")` | Show an expandable row initially open |
+| `tree("flatten")` | Suppress the wrapper row and promote its children |
 
 ### Byte order
 
@@ -696,10 +714,10 @@ byte data[];
 
 `fourcc("abcd")` packs exactly four string-literal bytes into the integer value
 that a 4-byte scalar would decode in the current endian context. Pair it with
-the `[fourcc]` display tag for FourCC chunk or box discriminators:
+`format("fourcc")` for FourCC chunk or box discriminators:
 
 ```c
-[fourcc]
+[format("fourcc")]
 dword type;
 
 [select(type)]
@@ -779,7 +797,7 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 |----------|----------|
 | Type declarations | `struct`, `union`, `enum`, `typedef`, `const`, `signed`, `unsigned` |
 | Primitive types | `byte`, `word`, `dword`, `qword`, `char`, `wchar_t`, `float`, `double`, `uleb128`, `sleb128` |
-| Display/layout tags | `align`, `bitflag`, `description`, `display`, `endian`, `entrypoint`, `extent`, `fourcc`, `ignore`, `name`, `offset`, `optional`, `pad_to`, `string`, `style` |
+| Display/layout tags | `align`, `bitflag`, `description`, `display`, `endian`, `entrypoint`, `extent`, `format`, `ignore`, `name`, `offset`, `optional`, `pad_to`, `string`, `style`, `tree` |
 | Arrays/unions | `case`, `count`, `count_as`, `default`, `length_is`, `select`, `select_offset`, `size_is`, `switch_is`, `terminated_by` |
 | Dynamic/semantic tags | `container`, `dynamic_array`, `dynamic_container`, `dynamic_struct`, `mapper`, `offset_map`, `type`, `view` |
 | Export/detection tags | `assoc`, `category`, `export`, `magic`, `version` |

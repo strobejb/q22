@@ -21,6 +21,8 @@ private slots:
 	void tagsetsDumpInSourceOrder();
 	void dynamicPlacementTagsParse();
 	void viewTagsParse();
+	void formatAndTreeTagsParse();
+	void fourccBareTagIsRejected();
 	void descriptionTagsParseAndDisplayRemainsSeparate();
 	void magicTagsParse();
 	void magicTagRequiresByteSequenceBeforeOptionalOffset();
@@ -386,6 +388,48 @@ void CausewayTests::viewTagsParse()
 	QVERIFY(expr);
 	QCOMPARE(expr->type, EXPR_STRINGBUF);
 	QCOMPARE(QString::fromLocal8Bit(expr->str), QStringLiteral("pe.imports"));
+}
+
+void CausewayTests::formatAndTreeTagsParse()
+{
+	// Scenario: Strata has generic display and tree-presentation tags.
+	// Expected: both parse as ordinary string-valued tags and remain available
+	// on the declaration for Structure View to interpret.
+	Parser parser;
+	QVERIFY(parseBuffer(parser,
+						 "[export]\n"
+						 "struct Root {\n"
+						 "  [format(\"fourcc\")] dword tag;\n"
+						 "  [tree(\"collapsed\")] byte payload;\n"
+						 "  [case(fourcc(\"RIFF\"))] byte selected;\n"
+						 "} root;\n"));
+
+	TypeDecl *root = nullptr;
+	for(TypeDecl *decl : parser.GetStrataLibrary()->globalTypeDeclList)
+		if(decl && FindTag(decl->tagList, TOK_EXPORT, nullptr))
+			root = decl;
+
+	QVERIFY(root);
+	QVERIFY(root->baseType);
+	QVERIFY(root->baseType->sptr);
+	QCOMPARE(root->baseType->sptr->typeDeclList.size(), size_t(3));
+	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[0]->tagList, TOK_FORMAT, nullptr));
+	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[1]->tagList, TOK_TREE, nullptr));
+	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[2]->tagList, TOK_CASE, nullptr));
+}
+
+void CausewayTests::fourccBareTagIsRejected()
+{
+	// Scenario: fourcc remains an expression helper, but no longer a public
+	// bare display tag.
+	// Expected: [fourcc] fails during tag parsing instead of being accepted and
+	// interpreted specially by Structure View.
+	Parser parser;
+	QVERIFY(!parseBuffer(parser,
+						 "struct Root {\n"
+						 "  [fourcc] dword tag;\n"
+						 "} root;\n"));
+	QCOMPARE(parser.LastErr(), ERROR_ILLEGAL_TAG);
 }
 
 void CausewayTests::descriptionTagsParseAndDisplayRemainsSeparate()

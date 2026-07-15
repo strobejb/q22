@@ -27,6 +27,15 @@ enum class StructureRowValueKind
     ScalarArrayPreview
 };
 
+enum class StructureRowTreeMode
+{
+    Default,
+    Hidden,
+    Collapsed,
+    Expanded,
+    Flatten
+};
+
 struct StructureRow;
 using StructureLazyChildLoader = std::function<std::vector<std::unique_ptr<StructureRow>>()>;
 
@@ -80,6 +89,7 @@ struct StructureRow
     std::vector<std::unique_ptr<StructureRow>> children;
     StructureLazyChildLoader lazyChildLoader;
     bool lazyChildrenLoaded = false;
+    StructureRowTreeMode treeMode = StructureRowTreeMode::Default;
 };
 
 class StructureTreeModel : public QAbstractItemModel

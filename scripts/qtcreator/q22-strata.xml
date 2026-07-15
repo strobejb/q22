@@ -22,6 +22,7 @@
     <item>file_size</item>
     <item>find_first</item>
     <item>find_last</item>
+    <item>format</item>
     <item>fourcc</item>
     <item>ignore</item>
     <item>include</item>
@@ -74,7 +75,7 @@
     <item>extent</item>
     <item>enum</item>
     <item>export</item>
-    <item>fourcc</item>
+    <item>format</item>
     <item>length_is</item>
     <item>magic</item>
     <item>mapper</item>
@@ -90,6 +91,7 @@
     <item>switch_is</item>
     <item>tags</item>
     <item>terminated_by</item>
+    <item>tree</item>
     <item>type</item>
     <item>version</item>
     <item>view</item>

@@ -2724,21 +2724,43 @@ void StructureViewPanel::applyInitialExpansion()
     switch (kInitialStructureExpansion)
     {
     case InitialStructureExpansion::Collapsed:
-        return;
+        break;
     case InitialStructureExpansion::All:
         m_tree->expandAll();
-        return;
-    case InitialStructureExpansion::FirstLevel:
         break;
+    case InitialStructureExpansion::FirstLevel:
+    {
+        const int rootRows = m_model->rowCount();
+        for (int row = 0; row < rootRows; ++row)
+        {
+            const QModelIndex rootIndex = m_model->index(row, StructureTreeModel::NameColumn);
+            if (rootIndex.isValid())
+                m_tree->expand(rootIndex);
+        }
+        break;
+    }
     }
 
     const int rootRows = m_model->rowCount();
+    std::function<void(const QModelIndex &)> applyTreeTags = [&](const QModelIndex &index) {
+        if (!index.isValid())
+            return;
+
+        if (StructureRow *row = m_model->rowForIndex(index))
+        {
+            if (row->treeMode == StructureRowTreeMode::Expanded)
+                m_tree->expand(index);
+            else if (row->treeMode == StructureRowTreeMode::Collapsed)
+                m_tree->collapse(index);
+        }
+
+        const int childRows = m_model->rowCount(index);
+        for (int childRow = 0; childRow < childRows; ++childRow)
+            applyTreeTags(m_model->index(childRow, StructureTreeModel::NameColumn, index));
+    };
+
     for (int row = 0; row < rootRows; ++row)
-    {
-        const QModelIndex rootIndex = m_model->index(row, StructureTreeModel::NameColumn);
-        if (rootIndex.isValid())
-            m_tree->expand(rootIndex);
-    }
+        applyTreeTags(m_model->index(row, StructureTreeModel::NameColumn));
 }
 
 void StructureViewPanel::showGridContextMenu(const QPoint &pos)

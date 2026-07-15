@@ -41,6 +41,8 @@ private slots:
     void builderRendersBitflagsAsExpandableRows();
     void builderFormatsCharacterArraysAsStrings();
     void builderFormatsTaggedByteArraysAsStrings();
+    void builderFormatsGenericDisplayTags();
+    void builderAppliesTreePresentationTags();
     void builderRendersRaggedStringTables();
     void builderFormatsScalarArraysAsPreviewLists();
     void builderPopulatesCommentsFromTypeDeclarations();
@@ -1018,6 +1020,94 @@ void StructViewTests::builderFormatsTaggedByteArraysAsStrings()
     QCOMPARE(rows[0]->children[1]->value, QStringLiteral("{ 72, 105, 0, 42 }"));
 }
 
+void StructViewTests::builderFormatsGenericDisplayTags()
+{
+    // Scenario: format("...") controls only the tagged row's value decoding.
+    // Expected: FourCC/string legacy behavior is available through format(),
+    // UTF-16 byte arrays and GUID/UUID values decode as text, and integer base
+    // overrides do not leak to neighboring rows.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  [format(\"fourcc\")] dword tag;\n"
+                        "  [format(\"string\"), count(4)] byte text[];\n"
+                        "  [format(\"utf16le\"), count(6)] byte le[];\n"
+                        "  [format(\"utf16be\"), count(6)] byte be[];\n"
+                        "  [format(\"guid\")] byte guid[16];\n"
+                        "  [format(\"uuid\")] byte uuid[16];\n"
+                        "  [format(\"dec\")] byte decValue;\n"
+                        "  byte normalValue;\n"
+                        "} root;\n"));
+
+    const QByteArray bytes = QByteArray("RIFF", 4)
+                             + QByteArray::fromHex("4869002A")
+                             + QByteArray::fromHex("410042000000")
+                             + QByteArray::fromHex("005800590000")
+                             + QByteArray::fromHex("33221100554477668899AABBCCDDEEFF")
+                             + QByteArray::fromHex("00112233445566778899AABBCCDDEEFF")
+                             + QByteArray::fromHex("1010");
+    StructureDisplayOptions options;
+    options.hexadecimalValues = true;
+    auto rows = buildRows(&library, firstExported(&library), bytes, 0, options);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(8));
+    QCOMPARE(rows[0]->children[0]->value, QStringLiteral("\"RIFF\""));
+    QCOMPARE(rows[0]->children[1]->value, QStringLiteral("\"Hi\""));
+    QCOMPARE(rows[0]->children[2]->value, QStringLiteral("\"AB\""));
+    QCOMPARE(rows[0]->children[2]->children.size(), size_t(6));
+    QCOMPARE(rows[0]->children[3]->value, QStringLiteral("\"XY\""));
+    QCOMPARE(rows[0]->children[4]->value, QStringLiteral("\"00112233-4455-6677-8899-aabbccddeeff\""));
+    QCOMPARE(rows[0]->children[5]->value, QStringLiteral("\"00112233-4455-6677-8899-aabbccddeeff\""));
+    QCOMPARE(rows[0]->children[6]->value, QStringLiteral("16"));
+    QCOMPARE(rows[0]->children[7]->value, QStringLiteral("10"));
+}
+
+void StructViewTests::builderAppliesTreePresentationTags()
+{
+    // Scenario: tree("...") controls only Structure View presentation.
+    // Expected: hidden rows still advance layout, flatten promotes children, and
+    // collapsed/expanded metadata is carried on the row for the panel.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef struct _Inner { byte a; byte b; } Inner;\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  byte before;\n"
+                        "  [tree(\"hidden\")] byte hidden;\n"
+                        "  [tree(\"flatten\")] Inner flat;\n"
+                        "  [tree(\"collapsed\")] Inner collapsed;\n"
+                        "  [tree(\"expanded\")] Inner expanded;\n"
+                        "  byte after;\n"
+                        "} root;\n"));
+
+    auto rows = buildRows(&library, firstExported(&library), QByteArray::fromHex("000102030405060708"));
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(6));
+    QCOMPARE(rows[0]->children[0]->name, QStringLiteral("byte before"));
+    QCOMPARE(rows[0]->children[1]->name, QStringLiteral("byte a"));
+    QCOMPARE(rows[0]->children[1]->absoluteOffset, uint64_t(2));
+    QCOMPARE(rows[0]->children[2]->name, QStringLiteral("byte b"));
+    QCOMPARE(rows[0]->children[2]->absoluteOffset, uint64_t(3));
+    QVERIFY(!findChildNamed(rows[0].get(), QStringLiteral("byte hidden")));
+
+    StructureRow *collapsed = findChildNamed(rows[0].get(), QStringLiteral("Inner collapsed"));
+    QVERIFY(collapsed);
+    QCOMPARE(collapsed->absoluteOffset, uint64_t(4));
+    QCOMPARE(collapsed->treeMode, StructureRowTreeMode::Collapsed);
+
+    StructureRow *expanded = findChildNamed(rows[0].get(), QStringLiteral("Inner expanded"));
+    QVERIFY(expanded);
+    QCOMPARE(expanded->absoluteOffset, uint64_t(6));
+    QCOMPARE(expanded->treeMode, StructureRowTreeMode::Expanded);
+
+    StructureRow *after = findChildNamed(rows[0].get(), QStringLiteral("byte after"));
+    QVERIFY(after);
+    QCOMPARE(after->absoluteOffset, uint64_t(8));
+}
+
 void StructViewTests::builderRendersRaggedStringTables()
 {
     // Scenario: a binary format stores a table as a flat byte extent containing
@@ -1967,14 +2057,14 @@ void StructViewTests::builderSelectsUnionMembersFromFourCcExpressions()
 {
     // Scenario: FourCC fields are scalar integers, but definitions should be
     // able to display them as text and use readable FourCC literals in case tags.
-    // Expected: [fourcc] renders the original four file bytes, and
+    // Expected: [format("fourcc")] renders the original four file bytes, and
     // fourcc("....") compares using the active endian context.
     StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
                         "[export, endian(\"big\")]\n"
                         "typedef struct _Big {\n"
-                        "  [fourcc] dword tag;\n"
+                        "  [format(\"fourcc\")] dword tag;\n"
                         "  [select(tag)] union {\n"
                         "    [case(fourcc(\"ftyp\"))] byte bigHit;\n"
                         "    [default] byte bigMiss;\n"
@@ -1982,7 +2072,7 @@ void StructViewTests::builderSelectsUnionMembersFromFourCcExpressions()
                         "} Big;\n"
                         "[export, endian(\"little\")]\n"
                         "typedef struct _Little {\n"
-                        "  [fourcc] dword tag;\n"
+                        "  [format(\"fourcc\")] dword tag;\n"
                         "  [select(tag)] union {\n"
                         "    [case(fourcc(\"RIFF\"))] byte littleHit;\n"
                         "    [default] byte littleMiss;\n"

@@ -33,13 +33,13 @@ font-summary support.
 ## FourCC enums and richer properties
 
 Several formats use four-byte tags (`OTTO`, `ttcf`, `name`, `cmap`, `head`,
-MP4 box types, RIFF chunks). Strata now has `[fourcc]` scalar display and
+MP4 box types, RIFF chunks). Strata now has `format("fourcc")` scalar display and
 `fourcc("....")` case helpers, so definitions no longer need to model those as
 `[string, count(4)] char tag[]` just to get readable names.
 
 The remaining gap is richer FourCC-aware interpretation: for example PNG chunk
 type letters encode ancillary/private/reserved/safe-to-copy properties, and a
-scalar FourCC field cannot currently combine `[fourcc]` display with enum choice
+scalar FourCC field cannot currently combine `format("fourcc")` display with enum choice
 editing in a single polished view.
 
 Potential direction: layered display tags or FourCC-specific property helpers.

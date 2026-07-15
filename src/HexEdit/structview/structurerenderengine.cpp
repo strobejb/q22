@@ -41,6 +41,20 @@ struct ScalarTypeInfo
     uint8_t maxBytes = 0;
 };
 
+enum class StrataFormat
+{
+    None,
+    String,
+    Utf16,
+    Utf16Le,
+    Utf16Be,
+    FourCc,
+    Guid,
+    Uuid,
+    Hex,
+    Dec
+};
+
 ScalarTypeInfo scalarTypeInfo(TYPE type)
 {
     switch (type)
@@ -70,6 +84,99 @@ ScalarTypeInfo scalarTypeInfo(TYPE type)
     default:
         return {};
     }
+}
+
+QString tagString(Tag *tags, TOKEN token)
+{
+    ExprNode *expr = nullptr;
+    if (!FindTag(tags, token, &expr) || !expr || expr->type != EXPR_STRINGBUF || !expr->str)
+        return {};
+    return QString::fromLocal8Bit(expr->str).toLower();
+}
+
+StrataFormat formatTag(TypeDecl *typeDecl)
+{
+    const QString value = tagString(typeDecl ? typeDecl->tagList : nullptr, TOK_FORMAT);
+    if (value.isEmpty())
+        return StrataFormat::None;
+    if (value == QLatin1String("string") || value == QLatin1String("ascii") || value == QLatin1String("utf8"))
+        return StrataFormat::String;
+    if (value == QLatin1String("utf16"))
+        return StrataFormat::Utf16;
+    if (value == QLatin1String("utf16le"))
+        return StrataFormat::Utf16Le;
+    if (value == QLatin1String("utf16be"))
+        return StrataFormat::Utf16Be;
+    if (value == QLatin1String("fourcc"))
+        return StrataFormat::FourCc;
+    if (value == QLatin1String("guid"))
+        return StrataFormat::Guid;
+    if (value == QLatin1String("uuid"))
+        return StrataFormat::Uuid;
+    if (value == QLatin1String("hex"))
+        return StrataFormat::Hex;
+    if (value == QLatin1String("dec"))
+        return StrataFormat::Dec;
+    return StrataFormat::None;
+}
+
+QString hexByte(uchar value)
+{
+    return QString::number(value, 16).toLower().rightJustified(2, QLatin1Char('0'));
+}
+
+QString formatUuidBytes(const QByteArray &bytes, bool guidByteOrder)
+{
+    if (bytes.size() < 16)
+        return {};
+
+    auto byteAt = [&bytes](int index) {
+        return uchar(bytes[index]);
+    };
+    auto appendByte = [](QString *text, uchar value) {
+        text->append(hexByte(value));
+    };
+
+    QString text;
+    text.reserve(36);
+    if (guidByteOrder)
+    {
+        appendByte(&text, byteAt(3)); appendByte(&text, byteAt(2));
+        appendByte(&text, byteAt(1)); appendByte(&text, byteAt(0));
+        text.append(QLatin1Char('-'));
+        appendByte(&text, byteAt(5)); appendByte(&text, byteAt(4));
+        text.append(QLatin1Char('-'));
+        appendByte(&text, byteAt(7)); appendByte(&text, byteAt(6));
+    }
+    else
+    {
+        appendByte(&text, byteAt(0)); appendByte(&text, byteAt(1));
+        appendByte(&text, byteAt(2)); appendByte(&text, byteAt(3));
+        text.append(QLatin1Char('-'));
+        appendByte(&text, byteAt(4)); appendByte(&text, byteAt(5));
+        text.append(QLatin1Char('-'));
+        appendByte(&text, byteAt(6)); appendByte(&text, byteAt(7));
+    }
+    text.append(QLatin1Char('-'));
+    appendByte(&text, byteAt(8)); appendByte(&text, byteAt(9));
+    text.append(QLatin1Char('-'));
+    for (int i = 10; i < 16; ++i)
+        appendByte(&text, byteAt(i));
+    return text;
+}
+
+StructureRowTreeMode treeTag(TypeDecl *typeDecl)
+{
+    const QString value = tagString(typeDecl ? typeDecl->tagList : nullptr, TOK_TREE);
+    if (value == QLatin1String("hidden"))
+        return StructureRowTreeMode::Hidden;
+    if (value == QLatin1String("collapsed"))
+        return StructureRowTreeMode::Collapsed;
+    if (value == QLatin1String("expanded"))
+        return StructureRowTreeMode::Expanded;
+    if (value == QLatin1String("flatten"))
+        return StructureRowTreeMode::Flatten;
+    return StructureRowTreeMode::Default;
 }
 
 uint64_t scalarSize(TYPE type)
@@ -523,6 +630,7 @@ StructureRenderEngine::RowPtr StructureRenderEngine::makeRow(StructureRow *paren
     row->offset = formatOffset(offset);
     row->generatedOffset = true;
     row->comment = structureDisplayComment(typeDecl);
+    applyTreeTag(row.get(), typeDecl);
     return row;
 }
 
@@ -607,7 +715,7 @@ uint64_t StructureRenderEngine::appendIdentifierRow(StructureRow *parent,
     {
         if (!parent)
             return length;
-        parent->children.push_back(std::move(row));
+        appendPresentedRow(parent, std::move(row));
     }
     return length;
 }
@@ -770,7 +878,7 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
                 break;
 
             if (renderElement)
-                parent->children.push_back(std::move(row));
+                appendPresentedRow(parent, std::move(row));
         }
         return length;
     }
@@ -931,7 +1039,13 @@ uint64_t StructureRenderEngine::formatScalar(StructureRow *row, Type *type, Type
     if (!row->children.empty())
         return length;
 
-    if (applyFourCcTag(row, typeDecl, length))
+    row->valueKind = StructureRowValueKind::ScalarInteger;
+    row->scalarRawValue = raw;
+    row->scalarByteLength = length;
+    row->scalarSigned = FindType(type, typeSIGNED);
+    row->scalarCharacterSuffix.clear();
+    row->value = formatStructureIntegerValue(raw, length, row->scalarSigned, QString(), m_options);
+    if (applyFormatTag(row, typeDecl, length))
         return length;
 
     Enum *displayEnum = tagEnum(typeDecl);
@@ -2521,8 +2635,12 @@ void StructureRenderEngine::appendDynamicRows(StructureRow *parent)
         row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueDoubleClosed),
                             QString::fromLatin1(StructureBranchIcons::kBlueDoubleOpen),
                             QString::fromLatin1(StructureBranchIcons::kGrayDoubleClosed));
-        container.row = row.get();
-        parent->children.push_back(std::move(row));
+        container.row = (row->treeMode == StructureRowTreeMode::Default
+                         || row->treeMode == StructureRowTreeMode::Collapsed
+                         || row->treeMode == StructureRowTreeMode::Expanded)
+            ? row.get()
+            : nullptr;
+        appendPresentedRow(parent, std::move(row));
     }
 
     for (const DynamicRequest &request : m_dynamicRequests)
@@ -2560,7 +2678,7 @@ void StructureRenderEngine::appendDynamicRows(StructureRow *parent)
         row->byteLength = formatType(row.get(), request.renderType, request.typeDecl, m_baseOffset + fileOffset);
         if (row->value.isEmpty() && !row->children.empty())
             row->value = QStringLiteral("{...}");
-        parentRow->children.push_back(std::move(row));
+        appendPresentedRow(parentRow, std::move(row));
     }
 }
 
@@ -2720,12 +2838,12 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
                 break;
 
             if (renderElement)
-                arrayRow->children.push_back(std::move(elementRow));
+                appendPresentedRow(arrayRow.get(), std::move(elementRow));
         }
 
         arrayRow->byteLength = length;
         if (!arrayRow->children.empty())
-            parentRow->children.push_back(std::move(arrayRow));
+            appendPresentedRow(parentRow, std::move(arrayRow));
     }
 
     const size_t childCount = row->children.size();
@@ -3300,9 +3418,29 @@ void StructureRenderEngine::applyBitflagTag(StructureRow *row,
         : activeLabels.join(QStringLiteral(" | "));
 }
 
-bool StructureRenderEngine::applyFourCcTag(StructureRow *row, TypeDecl *typeDecl, uint64_t byteLength)
+bool StructureRenderEngine::applyFormatTag(StructureRow *row, TypeDecl *typeDecl, uint64_t byteLength)
 {
-    if (!row || byteLength != 4 || !FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_FOURCC, nullptr))
+    const StrataFormat format = formatTag(typeDecl);
+    if (!row)
+        return false;
+
+    if (format == StrataFormat::Hex || format == StrataFormat::Dec)
+    {
+        if (row->valueKind != StructureRowValueKind::ScalarInteger)
+            return false;
+
+        StructureDisplayOptions options = m_options;
+        options.hexadecimalValues = format == StrataFormat::Hex;
+        row->valueKind = StructureRowValueKind::Custom;
+        row->value = formatStructureIntegerValue(row->scalarRawValue,
+                                                 row->scalarByteLength,
+                                                 row->scalarSigned,
+                                                 row->scalarCharacterSuffix,
+                                                 options);
+        return true;
+    }
+
+    if (format != StrataFormat::FourCc || byteLength != 4)
         return false;
 
     QByteArray bytes(4, Qt::Uninitialized);
@@ -3324,6 +3462,38 @@ bool StructureRenderEngine::applyFourCcTag(StructureRow *row, TypeDecl *typeDecl
     row->valueKind = StructureRowValueKind::Custom;
     row->value = quoteString(text);
     return true;
+}
+
+void StructureRenderEngine::applyTreeTag(StructureRow *row, TypeDecl *typeDecl) const
+{
+    if (!row)
+        return;
+    row->treeMode = treeTag(typeDecl);
+}
+
+void StructureRenderEngine::appendPresentedRow(StructureRow *parent, RowPtr row) const
+{
+    if (!parent || !row)
+        return;
+
+    switch (row->treeMode)
+    {
+    case StructureRowTreeMode::Hidden:
+        return;
+    case StructureRowTreeMode::Flatten:
+        for (auto &child : row->children)
+        {
+            child->parent = parent;
+            parent->children.push_back(std::move(child));
+        }
+        row->children.clear();
+        return;
+    case StructureRowTreeMode::Default:
+    case StructureRowTreeMode::Collapsed:
+    case StructureRowTreeMode::Expanded:
+        parent->children.push_back(std::move(row));
+        return;
+    }
 }
 
 void StructureRenderEngine::applyEntryPointTag(StructureRow *row, TypeDecl *typeDecl)
@@ -3370,11 +3540,19 @@ QString StructureRenderEngine::stringArrayValue(StructureRow *scope, Type *type,
         return {};
 
     Type *elementType = BaseNode(arrayType->link);
-    const bool explicitString = FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_STRING, nullptr);
+    const StrataFormat format = formatTag(typeDecl);
+    const bool explicitString = FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_STRING, nullptr)
+        || format == StrataFormat::String;
+    const bool explicitUtf16 = format == StrataFormat::Utf16
+        || format == StrataFormat::Utf16Le
+        || format == StrataFormat::Utf16Be;
+    const bool explicitGuid = format == StrataFormat::Guid || format == StrataFormat::Uuid;
     if (!elementType
         || (elementType->ty != typeCHAR
             && elementType->ty != typeWCHAR
-            && !(explicitString && elementType->ty == typeBYTE)))
+            && !(explicitString && elementType->ty == typeBYTE)
+            && !(explicitUtf16 && elementType->ty == typeBYTE)
+            && !(explicitGuid && elementType->ty == typeBYTE)))
     {
         return {};
     }
@@ -3390,6 +3568,20 @@ QString StructureRenderEngine::stringArrayValue(StructureRow *scope, Type *type,
                                            static_cast<size_t>(bytes.size()))
                                 : 0;
     bytes.truncate(static_cast<int>(got));
+
+    if (explicitGuid)
+    {
+        const QString uuid = formatUuidBytes(bytes, format == StrataFormat::Guid);
+        return uuid.isEmpty() ? QString() : quoteString(uuid);
+    }
+
+    if (explicitUtf16)
+    {
+        const bool wideBigEndian = format == StrataFormat::Utf16Be
+            || (format == StrataFormat::Utf16 && m_bigEndian);
+        EndianScope endian(this, wideBigEndian);
+        return quoteString(decodeNulTerminatedText(bytes, true));
+    }
 
     return quoteString(decodeNulTerminatedText(bytes, elementType->ty == typeWCHAR));
 }
@@ -3413,11 +3605,17 @@ QString StructureRenderEngine::fieldStringValue(StructureRow *row)
         return {};
 
     Type *elementType = BaseNode(arrayType->link);
-    const bool explicitString = FindTag(row->typeDecl ? row->typeDecl->tagList : nullptr, TOK_STRING, nullptr);
+    const StrataFormat format = formatTag(row->typeDecl);
+    const bool explicitString = FindTag(row->typeDecl ? row->typeDecl->tagList : nullptr, TOK_STRING, nullptr)
+        || format == StrataFormat::String;
+    const bool explicitUtf16 = format == StrataFormat::Utf16
+        || format == StrataFormat::Utf16Le
+        || format == StrataFormat::Utf16Be;
     if (!elementType
         || (elementType->ty != typeCHAR
             && elementType->ty != typeWCHAR
-            && !(explicitString && elementType->ty == typeBYTE)))
+            && !(explicitString && elementType->ty == typeBYTE)
+            && !(explicitUtf16 && elementType->ty == typeBYTE)))
     {
         return {};
     }
@@ -3432,6 +3630,13 @@ QString StructureRenderEngine::fieldStringValue(StructureRow *row)
         return {};
 
     bytes.truncate(static_cast<int>(got));
+    if (explicitUtf16)
+    {
+        const bool wideBigEndian = format == StrataFormat::Utf16Be
+            || (format == StrataFormat::Utf16 && row->bigEndian);
+        EndianScope endian(this, wideBigEndian);
+        return decodeNulTerminatedText(bytes, true);
+    }
     return decodeNulTerminatedText(bytes, elementType->ty == typeWCHAR);
 }
 
