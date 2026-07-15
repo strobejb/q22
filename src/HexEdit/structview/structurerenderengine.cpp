@@ -153,6 +153,51 @@ QString rowNameFragment(QString value)
     return value;
 }
 
+bool tagListContains(Tag *tagList, TOKEN token)
+{
+    for (Tag *tag = tagList; tag; tag = tag->link)
+        if (tag->tok == token)
+            return true;
+    return false;
+}
+
+bool typeContainsTag(Type *type, TOKEN token, int depth = 0)
+{
+    if (!type || depth > 64)
+        return false;
+
+    if (type->parent && tagListContains(type->parent->tagList, token))
+        return true;
+
+    for (Type *cursor = type; cursor; cursor = cursor->link)
+    {
+        if (cursor->parent && tagListContains(cursor->parent->tagList, token))
+            return true;
+
+        Type *base = BaseNode(cursor);
+        if (!base || (base->ty != typeSTRUCT && base->ty != typeUNION) || !base->sptr)
+            continue;
+
+        if (tagListContains(base->sptr->tagList, token))
+            return true;
+
+        for (TypeDecl *decl : base->sptr->typeDeclList)
+        {
+            if (!decl)
+                continue;
+            if (tagListContains(decl->tagList, token))
+                return true;
+            if (typeContainsTag(decl->baseType, token, depth + 1))
+                return true;
+            for (Type *declType : decl->declList)
+                if (typeContainsTag(declType, token, depth + 1))
+                    return true;
+        }
+    }
+
+    return false;
+}
+
 QString arrayAliasPrefix()
 {
     return kPrefixArrayAliasesWithDash ? QStringLiteral(" - ") : QString();
@@ -592,6 +637,8 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
         INUMTYPE count = 0;
         if (!evaluateArrayCount(parent, typeDecl, type, &count, offset))
             return 0;
+        if (count <= 0)
+            return 0;
 
         const qsizetype dimension = arrayDimensionIndex(typeDecl, type);
         uint64_t extentLimit = 0;
@@ -607,8 +654,10 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
             }
         }
 
-        const uint64_t boundedCount = std::min<uint64_t>(count, kMaxArrayElements);
         uint64_t length = 0;
+        uint64_t logicalIndex = 0;
+        uint64_t renderedElements = 0;
+        const bool continuePastDisplayCap = typeContainsTag(type->link, TOK_COUNTAS);
         ExprNode *terminatorExpr = dimensionTagArg(typeDecl ? typeDecl->tagList : nullptr,
                                                    TOK_TERMINATEDBY,
                                                    dimension);
@@ -640,33 +689,41 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
             }
         }
 
-        for (uint64_t i = 0; i < boundedCount; ++i)
+        while (logicalIndex < static_cast<uint64_t>(count)
+               && (renderedElements < kMaxArrayElements || continuePastDisplayCap))
         {
             if (extentLimit > 0 && length >= extentLimit)
                 break;
 
+            const bool renderElement = renderedElements < kMaxArrayElements;
             auto row = makeRow(parent, type->link, elementTypeDecl ? elementTypeDecl : typeDecl, offset + length);
-            const QString indexLabel = QStringLiteral("[%1]").arg(i);
-            row->name = indexLabel;
-            row->nameTypePrefix = indexLabel;
-            row->suppressSemanticViews = true;
-            const QString enumLabel = enumNameForValue(nameEnum, i);
-            if (!enumLabel.isEmpty())
+            if (renderElement)
             {
-                row->nameIdentifier = arrayAliasPrefix() + enumLabel;
-                row->name += row->nameIdentifier;
+                const QString indexLabel = QStringLiteral("[%1]").arg(logicalIndex);
+                row->name = indexLabel;
+                row->nameTypePrefix = indexLabel;
+            }
+            row->suppressSemanticViews = true;
+            if (renderElement)
+            {
+                const QString enumLabel = enumNameForValue(nameEnum, static_cast<INUMTYPE>(logicalIndex));
+                if (!enumLabel.isEmpty())
+                {
+                    row->nameIdentifier = arrayAliasPrefix() + enumLabel;
+                    row->name += row->nameIdentifier;
+                }
             }
 
             const uint64_t elementLength = formatType(row.get(), type->link, typeDecl, offset + length);
             row->byteLength = elementLength;
-            if (row->value.isEmpty())
+            if (renderElement && row->value.isEmpty())
             {
                 const QString stringValue = stringArrayValue(row.get(), type->link, typeDecl, offset + length);
                 if (!stringValue.isNull())
                     row->value = stringValue;
             }
             const bool terminates = elementMatchesTerminator(row.get(), type->link, terminatorExpr, offset + length);
-            if (!nameEnum && nameExpr)
+            if (renderElement && !nameEnum && nameExpr)
             {
                 const QString fieldName = rowNameFragment(fieldNameValue(row.get(), type->link, nameExpr, offset + length));
                 if (!fieldName.isEmpty())
@@ -676,7 +733,7 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
                 }
             }
 
-            if (elementTypeDecl)
+            if (renderElement && elementTypeDecl)
             {
                 const size_t requestsBefore = m_dynamicArrayRequests.size();
                 collectDynamicArrayRequests(row.get());
@@ -707,10 +764,13 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
             }
 
             length += elementLength;
+            logicalIndex += std::max<uint64_t>(row->arrayCountContribution, 1);
+            ++renderedElements;
             if (terminates)
                 break;
 
-            parent->children.push_back(std::move(row));
+            if (renderElement)
+                parent->children.push_back(std::move(row));
         }
         return length;
     }
@@ -775,17 +835,30 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
                 matchedCase = true;
             }
             length = std::max(length, appendTypeDecl(parent, childDecl, offset));
+            if (parent)
+                parent->arrayCountContribution = std::max(parent->arrayCountContribution,
+                                                          evaluatedCountAs(parent, type, childDecl, offset));
         }
 
         if ((hasSwitch || hasStringSwitch) && !matchedCase)
         {
             for (TypeDecl *childDecl : defaultDecls)
+            {
                 length = std::max(length, appendTypeDecl(parent, childDecl, offset));
+                if (parent)
+                    parent->arrayCountContribution = std::max(parent->arrayCountContribution,
+                                                              evaluatedCountAs(parent, type, childDecl, offset));
+            }
         }
         else if (!hasSwitch && !hasStringSwitch)
         {
             for (TypeDecl *childDecl : defaultDecls)
+            {
                 length = std::max(length, appendTypeDecl(parent, childDecl, offset));
+                if (parent)
+                    parent->arrayCountContribution = std::max(parent->arrayCountContribution,
+                                                              evaluatedCountAs(parent, type, childDecl, offset));
+            }
         }
 
         return length;
@@ -1013,6 +1086,22 @@ bool StructureRenderEngine::evaluateArrayCount(StructureRow *scope,
         return false;
 
     return evaluate(evalScope, sizeExpr, result, offset);
+}
+
+uint64_t StructureRenderEngine::evaluatedCountAs(StructureRow *scope,
+                                                 Type *scopeType,
+                                                 TypeDecl *typeDecl,
+                                                 uint64_t offset)
+{
+    ExprNode *expr = nullptr;
+    if (!FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_COUNTAS, &expr) || !expr)
+        return 1;
+
+    INUMTYPE value = 0;
+    if (!evaluate(EvalContext{ scope, scopeType, offset }, expr, &value) || value <= 0)
+        return 1;
+
+    return static_cast<uint64_t>(value);
 }
 
 bool StructureRenderEngine::evaluate(const EvalContext &context, ExprNode *expr, INUMTYPE *result)
@@ -2066,7 +2155,7 @@ void StructureRenderEngine::validateStructTags(Type *structType, QStringList *er
         return;
 
     static constexpr TOKEN kValidatedTags[] = {
-        TOK_SWITCHIS, TOK_ENDIAN, TOK_OFFSET, TOK_SIZEIS, TOK_OPTIONAL, TOK_EXTENT, TOK_PADTO
+        TOK_SWITCHIS, TOK_ENDIAN, TOK_OFFSET, TOK_SIZEIS, TOK_OPTIONAL, TOK_EXTENT, TOK_PADTO, TOK_COUNTAS
     };
 
     for (TypeDecl *decl : base->sptr->typeDeclList)
@@ -2093,7 +2182,7 @@ QStringList StructureRenderEngine::validateStaticFieldReferences(StrataLibrary *
         return errors;
 
     static constexpr TOKEN kValidatedTags[] = {
-        TOK_SWITCHIS, TOK_ENDIAN, TOK_OFFSET, TOK_SIZEIS, TOK_OPTIONAL, TOK_EXTENT, TOK_PADTO
+        TOK_SWITCHIS, TOK_ENDIAN, TOK_OFFSET, TOK_SIZEIS, TOK_OPTIONAL, TOK_EXTENT, TOK_PADTO, TOK_COUNTAS
     };
 
     StructureRenderEngine scratch(library, nullptr, 0, StructureValueBuilder::ByteReader{}, StructureDisplayOptions{});
@@ -2564,20 +2653,27 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
         }
 
         uint64_t length = 0;
-        const uint64_t boundedCount = std::min<uint64_t>(request.maxCount, kMaxArrayElements);
-        for (uint64_t i = 0; i < boundedCount; ++i)
+        uint64_t logicalIndex = 0;
+        uint64_t renderedElements = 0;
+        const bool continuePastDisplayCap = typeContainsTag(request.renderType, TOK_COUNTAS);
+        while (logicalIndex < request.maxCount
+               && (renderedElements < kMaxArrayElements || continuePastDisplayCap))
         {
+            const bool renderElement = renderedElements < kMaxArrayElements;
             auto elementRow = makeRow(arrayRow.get(), request.renderType, request.typeDecl, m_baseOffset + fileOffset + length);
-            const QString indexLabel = QStringLiteral("[%1]").arg(i);
-            elementRow->name = indexLabel;
-            elementRow->nameTypePrefix = indexLabel;
+            if (renderElement)
+            {
+                const QString indexLabel = QStringLiteral("[%1]").arg(logicalIndex);
+                elementRow->name = indexLabel;
+                elementRow->nameTypePrefix = indexLabel;
+            }
             elementRow->kind = StructureRowKind::Dynamic;
             elementRow->suppressSemanticViews = true;
 
             const uint64_t elementLength = formatType(elementRow.get(), request.renderType, request.typeDecl, m_baseOffset + fileOffset + length);
             elementRow->byteLength = elementLength;
 
-            if (nameSourceTagExpr)
+            if (renderElement && nameSourceTagExpr)
             {
                 const QString fieldName = dynamicArrayNameString(elementRow.get(), nameSourceTagExpr);
                 if (!fieldName.isEmpty())
@@ -2591,7 +2687,7 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
             // reference this element's fields (e.g. DllName RVA, thunk RVAs) while
             // the element's children are live, then defer the actual array building
             // to a lazy loader so the initial tree open stays fast.
-            if (elementTypeHasSubArrays)
+            if (renderElement && elementTypeHasSubArrays)
             {
                 const size_t requestsBefore = m_dynamicArrayRequests.size();
                 collectDynamicArrayRequests(elementRow.get());
@@ -2618,10 +2714,13 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
                                                              request.stopExpr,
                                                              m_baseOffset + fileOffset + length);
             length += elementLength;
+            logicalIndex += std::max<uint64_t>(elementRow->arrayCountContribution, 1);
+            ++renderedElements;
             if (terminates)
                 break;
 
-            arrayRow->children.push_back(std::move(elementRow));
+            if (renderElement)
+                arrayRow->children.push_back(std::move(elementRow));
         }
 
         arrayRow->byteLength = length;

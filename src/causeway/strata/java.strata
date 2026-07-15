@@ -115,10 +115,10 @@ typedef struct _JAVA_CP_INFO
         [case(JAVA_CONSTANT_Float)]
         JAVA_CONSTANT_Integer_INFO floatBits;
 
-        [case(JAVA_CONSTANT_Long)]
+        [case(JAVA_CONSTANT_Long), count_as(2)]
         JAVA_CONSTANT_Long_INFO longValue;
 
-        [case(JAVA_CONSTANT_Double)]
+        [case(JAVA_CONSTANT_Double), count_as(2)]
         JAVA_CONSTANT_Long_INFO doubleBits;
 
         [case(JAVA_CONSTANT_Class)]

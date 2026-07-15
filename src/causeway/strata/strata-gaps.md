@@ -193,6 +193,39 @@ semantic joins:
 Potential direction: decompressed folder-stream views, archive-entry summaries,
 and cross-file cabinet-set metadata.
 
+## Raw disk images, GPT, and filesystems
+
+Raw `.img`/`.dd` disk images can start with an MBR, but useful OS-distro views
+quickly become layered:
+
+- Protective MBR entries should lead to the GPT header and partition-entry array
+  at later LBAs.
+- Partition payloads need dispatch by MBR type or GPT partition GUID.
+- Nested filesystem views such as FAT, ISO9660, SquashFS, and ext* need subfile
+  parsing over partition byte ranges.
+- Sector size is currently assumed to be 512 bytes in `rawimg.strata`.
+
+Potential direction: partition-map semantic views, GUID helpers, subfile views,
+and filesystem-specific Strata definitions.
+
+## ISO 9660, boot metadata, and filesystem extensions
+
+ISO images have a straightforward volume-descriptor area, but full distro-image
+navigation needs several layers beyond raw descriptor layout:
+
+- Directory records form variable-length lists inside directory extents; pure
+  Strata can expose the pointed-to extent bytes, but it cannot recursively parse
+  records until the directory extent is exhausted.
+- El Torito boot catalogs are referenced from boot-record descriptors and need
+  checksum validation plus boot-entry decoding.
+- Joliet supplementary descriptors change filename encoding to UCS-2, and Rock
+  Ridge stores POSIX metadata in System Use fields.
+- Hybrid ISO images may also contain MBR/GPT/APM partition maps before or around
+  the ISO 9660 filesystem.
+
+Potential direction: bounded variable-record arrays, recursive directory views,
+UCS-2 string display, checksum helpers, and cross-format subfile dispatch.
+
 ## Java class semantic resolution
 
 Java class files are structurally straightforward, but useful navigation needs

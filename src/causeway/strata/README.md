@@ -16,7 +16,7 @@ stored in `~/.config/catch22/q22/strata`.
 | Tags | [`tagset`](#tagsets) · [`tags`](#tagsets) |
 | Display | [`enum(N)`](#display) · [`bitflag(N)`](#display) · [`fourcc`](#display) · [`name`](#display) · [`string`](#display) |
 | Layout | [`offset`](#layout) · [`align`](#layout) · [`pad_to`](#layout) · [`endian`](#byte-order) · [`entrypoint`](#layout) · [`extent`](#layout) · [`optional`](#layout) |
-| Arrays | [`count`](#arrays) · [`terminated_by`](#arrays) |
+| Arrays | [`count`](#arrays) · [`count_as`](#arrays) · [`terminated_by`](#arrays) |
 | Unions | [`select`](#discriminated-unions) · [`case`](#discriminated-unions) |
 | Semantic views | [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) · [`view`](#view) |
 | Export | [`export`](#export-metadata) · [`category`](#export-metadata) · [`version`](#export-metadata) · [`assoc`](#export-metadata) · [`magic`](#export-metadata) |
@@ -260,6 +260,24 @@ This models up to 1024 NUL-terminated strings, each capped at 256 characters,
 inside a byte extent of `StringsSize`. The `extent(...)` bounds the whole field
 and stops the outer array when the table bytes have been consumed.
 
+`count_as(expr)` is for formats whose array count is a logical slot count, not
+exactly the number of serialized elements. The rendered element still advances
+by its actual byte length, but the array loop counter advances by `expr`.
+
+```c
+[count(constantPoolCount - 1)]
+CP_INFO constantPool[];
+
+typedef struct _CP_INFO {
+    byte tag;
+    [select(tag)]
+    union {
+        [case(5), count_as(2)] LongInfo longValue;
+        [default] byte raw;
+    };
+} CP_INFO;
+```
+
 ---
 
 ### Pointer access
@@ -390,6 +408,7 @@ for how that still resolves.
 | Tag | Effect |
 |-----|--------|
 | `count(expr[, expr...])` | Element count for a flexible array (`size_is` is a legacy alias); extra arguments apply to nested dimensions |
+| `count_as(expr)` | Make a rendered array element consume `expr` logical count slots instead of one |
 | `terminated_by(val[, val...])` | Stop reading when an element equals `val`; use `_` to skip a nested-array dimension |
 
 ---
@@ -759,7 +778,7 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 | Type declarations | `struct`, `union`, `enum`, `typedef`, `const`, `signed`, `unsigned` |
 | Primitive types | `byte`, `word`, `dword`, `qword`, `char`, `wchar_t`, `float`, `double`, `uleb128`, `sleb128` |
 | Display/layout tags | `align`, `bitflag`, `description`, `display`, `endian`, `entrypoint`, `extent`, `fourcc`, `ignore`, `name`, `offset`, `optional`, `pad_to`, `string`, `style` |
-| Arrays/unions | `case`, `count`, `default`, `length_is`, `select`, `select_offset`, `size_is`, `switch_is`, `terminated_by` |
+| Arrays/unions | `case`, `count`, `count_as`, `default`, `length_is`, `select`, `select_offset`, `size_is`, `switch_is`, `terminated_by` |
 | Dynamic/semantic tags | `container`, `dynamic_array`, `dynamic_container`, `dynamic_struct`, `mapper`, `offset_map`, `type`, `view` |
 | Export/detection tags | `assoc`, `category`, `export`, `magic`, `version` |
 | Tagsets/files | `include`, `tagset`, `tags` |

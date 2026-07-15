@@ -75,6 +75,7 @@ struct StructureRow
     uint64_t absoluteOffset = 0;
     uint64_t relativeOffset = 0;
     uint64_t byteLength = 0;
+    uint64_t arrayCountContribution = 1;
     StructureRow *parent = nullptr;
     std::vector<std::unique_ptr<StructureRow>> children;
     StructureLazyChildLoader lazyChildLoader;

@@ -113,6 +113,7 @@ private:
                      bool reverse,
                      uint64_t *absoluteMatch) const;
     bool evaluateArrayCount(StructureRow *scope, TypeDecl *typeDecl, Type *arrayType, INUMTYPE *result, uint64_t offset);
+    uint64_t evaluatedCountAs(StructureRow *scope, Type *scopeType, TypeDecl *typeDecl, uint64_t offset);
     StructureRow *findFieldRow(StructureRow *scope, ExprNode *expr);
     StructureRow *findDirectField(StructureRow *scope, const char *name) const;
     bool readInteger(uint64_t offset, uint64_t length, INUMTYPE *result, bool bigEndian) const;
