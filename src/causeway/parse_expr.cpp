@@ -586,7 +586,7 @@ ExprNode *Parser::TagWrappedArg(TOKEN wrappers[])
 		if(!Expected('('))
 			return 0;
 
-		ExprNode *inner = AssignmentExpression(TOK_NULL);
+		ExprNode *inner = wrapTok == TOK_OFFSET ? CommaExpression(TOK_NULL) : AssignmentExpression(TOK_NULL);
 		if(!inner)
 			return 0;
 

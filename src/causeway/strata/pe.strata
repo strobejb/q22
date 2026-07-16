@@ -279,6 +279,11 @@ typedef struct _IMAGE_NT_HEADERS {
     };
 } IMAGE_NT_HEADERS, *PIMAGE_NT_HEADERS;
 
+[
+    offset_map(VirtualAddress, SizeOfRawData, PointerToRawData),
+    offset_map("rva", VirtualAddress, SizeOfRawData, PointerToRawData),
+    dynamic_container(type(SECTION))
+]
 typedef struct _IMAGE_SECTION_HEADER 
 {
     char    Name[8]; //IMAGE_SIZEOF_SHORT_NAME];
@@ -303,9 +308,9 @@ typedef struct _IMAGE_SECTION_HEADER
 // them inline.  dynamic_array keeps the C struct honest while rendering those
 // related raw tables under the directory row.
 [
-    dynamic_array(name(ExportFunctions), type(DWORD), offset(AddressOfFunctions), count(NumberOfFunctions), mapper(offset_map)),
-    dynamic_array(name(ExportNames), type(DWORD), offset(AddressOfNames), count(NumberOfNames), mapper(offset_map)),
-    dynamic_array(name(ExportOrdinals), type(WORD), offset(AddressOfNameOrdinals), count(NumberOfNames), mapper(offset_map)),
+    dynamic_array(name(ExportFunctions), type(DWORD), offset("rva", AddressOfFunctions), count(NumberOfFunctions)),
+    dynamic_array(name(ExportNames), type(DWORD), offset("rva", AddressOfNames), count(NumberOfNames)),
+    dynamic_array(name(ExportOrdinals), type(WORD), offset("rva", AddressOfNameOrdinals), count(NumberOfNames)),
     view("pe.exports")
 ]
 typedef struct _IMAGE_EXPORT_DIRECTORY
@@ -351,11 +356,11 @@ typedef struct _IMAGE_IMPORT_BY_NAME
 // tables are rendered here, while view("pe.imports") is kept as a friendly
 // semantic overlay for correlating DLL/function names.
 [
-    dynamic_array(name(DllName), type(CHAR), offset(Name), max_count(4096), mapper(offset_map), terminated_by(0)),
-    dynamic_array(name(ImportLookup32), type(IMAGE_THUNK_DATA32), offset(OriginalFirstThunk), max_count(512), mapper(offset_map), terminated_by(Function == 0), terminator("hidden"), optional(ntHeaders.OptionalHeader32.Magic == 0x10b)),
-    dynamic_array(name(ImportAddress32), type(IMAGE_THUNK_DATA32), offset(FirstThunk), max_count(512), mapper(offset_map), terminated_by(Function == 0), terminator("hidden"), optional(ntHeaders.OptionalHeader32.Magic == 0x10b)),
-    dynamic_array(name(ImportLookup64), type(IMAGE_THUNK_DATA64), offset(OriginalFirstThunk), max_count(512), mapper(offset_map), terminated_by(Function == 0), terminator("hidden"), optional(ntHeaders.OptionalHeader64.Magic == 0x20b)),
-    dynamic_array(name(ImportAddress64), type(IMAGE_THUNK_DATA64), offset(FirstThunk), max_count(512), mapper(offset_map), terminated_by(Function == 0), terminator("hidden"), optional(ntHeaders.OptionalHeader64.Magic == 0x20b)),
+    dynamic_array(name(DllName), type(CHAR), offset("rva", Name), max_count(4096), terminated_by(0)),
+    dynamic_array(name(ImportLookup32), type(IMAGE_THUNK_DATA32), offset("rva", OriginalFirstThunk), max_count(512), terminated_by(Function == 0), terminator("hidden"), optional(ntHeaders.OptionalHeader32.Magic == 0x10b)),
+    dynamic_array(name(ImportAddress32), type(IMAGE_THUNK_DATA32), offset("rva", FirstThunk), max_count(512), terminated_by(Function == 0), terminator("hidden"), optional(ntHeaders.OptionalHeader32.Magic == 0x10b)),
+    dynamic_array(name(ImportLookup64), type(IMAGE_THUNK_DATA64), offset("rva", OriginalFirstThunk), max_count(512), terminated_by(Function == 0), terminator("hidden"), optional(ntHeaders.OptionalHeader64.Magic == 0x20b)),
+    dynamic_array(name(ImportAddress64), type(IMAGE_THUNK_DATA64), offset("rva", FirstThunk), max_count(512), terminated_by(Function == 0), terminator("hidden"), optional(ntHeaders.OptionalHeader64.Magic == 0x20b)),
     view("pe.imports"),
     name("IMAGE_IMPORT_DESCRIPTOR[]")
 ]
@@ -394,9 +399,6 @@ typedef struct _PE
   IMAGE_NT_HEADERS ntHeaders;
 
   [
-    offset_map(VirtualAddress, SizeOfRawData, PointerToRawData),
-    dynamic_container(type(SECTION)),
-
     name(Name),
     count(ntHeaders.FileHeader.NumberOfSections)
   ]

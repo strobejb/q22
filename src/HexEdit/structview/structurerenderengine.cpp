@@ -828,7 +828,9 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
                 TypeDecl *candidate = findTypeDecl(cursor->sym->name);
                 for (Tag *tag = candidate ? candidate->tagList : nullptr; tag; tag = tag->link)
                 {
-                    if (tag->tok == TOK_DYNAMICARRAY)
+                    if (tag->tok == TOK_DYNAMICARRAY
+                        || tag->tok == TOK_DYNAMICCONTAINER
+                        || tag->tok == TOK_OFFSETMAP)
                     {
                         elementTypeDecl = candidate;
                         break;
@@ -2655,11 +2657,27 @@ void StructureRenderEngine::collectDynamicRequests(StructureRow *row)
         INUMTYPE selector = 0;
         INUMTYPE condition = 1;
         INUMTYPE logicalOffset = 0;
+        QString offsetSpace;
+        ExprNode *offsetValueExpr = logicalOffsetExpr;
+        if (!offsetTagArgs(logicalOffsetExpr, &offsetSpace, &offsetValueExpr))
+            continue;
+
         if ((selectorExpr && (!rowIsArrayElement || !evaluate(row, selectorExpr, &selector, row->absoluteOffset) || selector != arrayIndex))
             || (conditionExpr && (!evaluate(row, conditionExpr, &condition, row->absoluteOffset) || condition == 0))
-            || !evaluate(row, logicalOffsetExpr, &logicalOffset, row->absoluteOffset))
+            || !evaluate(row, offsetValueExpr, &logicalOffset, row->absoluteOffset))
         {
             continue;
+        }
+
+        if (!offsetSpace.isEmpty())
+        {
+            uint64_t fileOffset = 0;
+            if (mapper != DynamicMapper::Direct
+                || !mapNamedOffset(offsetSpace, static_cast<uint64_t>(logicalOffset), &fileOffset))
+            {
+                continue;
+            }
+            logicalOffset = static_cast<INUMTYPE>(fileOffset);
         }
 
         if (!typeNameExpr || typeNameExpr->type != EXPR_IDENTIFIER || !typeNameExpr->str)
@@ -2750,12 +2768,28 @@ void StructureRenderEngine::collectDynamicArrayRequests(StructureRow *row)
         INUMTYPE logicalOffset = 0;
         INUMTYPE count = 0;
         INUMTYPE condition = 1;
-        if (!evaluate(row, logicalOffsetExpr, &logicalOffset, row->absoluteOffset)
+        QString offsetSpace;
+        ExprNode *offsetValueExpr = logicalOffsetExpr;
+        if (!offsetTagArgs(logicalOffsetExpr, &offsetSpace, &offsetValueExpr))
+            continue;
+
+        if (!evaluate(row, offsetValueExpr, &logicalOffset, row->absoluteOffset)
             || !evaluate(row, countExpr, &count, row->absoluteOffset)
             || (conditionExpr && (!evaluate(row, conditionExpr, &condition, row->absoluteOffset) || condition == 0))
             || count <= 0)
         {
             continue;
+        }
+
+        if (!offsetSpace.isEmpty())
+        {
+            uint64_t fileOffset = 0;
+            if (mapper != DynamicMapper::Direct
+                || !mapNamedOffset(offsetSpace, static_cast<uint64_t>(logicalOffset), &fileOffset))
+            {
+                continue;
+            }
+            logicalOffset = static_cast<INUMTYPE>(fileOffset);
         }
 
         QString label;
@@ -4061,16 +4095,28 @@ QString StructureRenderEngine::dynamicArrayNameString(StructureRow *elementRow, 
     if (!base || (base->ty != typeCHAR && base->ty != typeWCHAR))
         return {};
 
+    QString offsetSpace;
+    ExprNode *offsetValueExpr = logicalOffsetExpr;
+    if (!offsetTagArgs(logicalOffsetExpr, &offsetSpace, &offsetValueExpr))
+        return {};
+
     INUMTYPE logicalOffset = 0;
     INUMTYPE count = 0;
-    if (!evaluate(elementRow, logicalOffsetExpr, &logicalOffset, elementRow->absoluteOffset)
+    if (!evaluate(elementRow, offsetValueExpr, &logicalOffset, elementRow->absoluteOffset)
         || !evaluate(elementRow, countExpr, &count, elementRow->absoluteOffset)
         || count <= 0)
         return {};
 
     uint64_t fileOffset = uint64_t(logicalOffset);
-    if (mapper == DynamicMapper::OffsetMap && !mapLogicalOffset(uint64_t(logicalOffset), &fileOffset))
+    if (!offsetSpace.isEmpty())
+    {
+        if (mapper != DynamicMapper::Direct || !mapNamedOffset(offsetSpace, uint64_t(logicalOffset), &fileOffset))
+            return {};
+    }
+    else if (mapper == DynamicMapper::OffsetMap && !mapLogicalOffset(uint64_t(logicalOffset), &fileOffset))
+    {
         return {};
+    }
 
     const uint64_t unitSize = base->ty == typeWCHAR ? 2 : 1;
     // Cap independently of kMaxArrayElements: that constant bounds how many

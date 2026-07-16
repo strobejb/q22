@@ -1488,6 +1488,7 @@ void StructViewTests::builderUsesNamedOffsetMapsAndValueAt()
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
                         "typedef struct _Section { dword va; dword size; dword raw; } Section;\n"
+                        "typedef struct _Entry { dword value; } Entry;\n"
                         "[export, offset_map(\"strings\", stringBase)]\n"
                         "struct Root {\n"
                         "  dword stringBase;\n"
@@ -1499,6 +1500,7 @@ void StructViewTests::builderUsesNamedOffsetMapsAndValueAt()
                         "  [offset(\"rva\", targetRva)] dword mappedValue;\n"
                         "  [optional(value_at(\"rva\", probeRva, word) == 0x1234), offset(28)] byte mappedProbe;\n"
                         "  [optional(value_at(28, word) == 0x6b5a), offset(29)] byte localProbe;\n"
+                        "  [dynamic_array(name(Values), type(Entry), offset(\"rva\", targetRva), count(1)), offset(30)] byte owner;\n"
                         "} root;\n"));
 
     QByteArray bytes(0xa0, '\0');
@@ -1539,6 +1541,14 @@ void StructViewTests::builderUsesNamedOffsetMapsAndValueAt()
     StructureRow *localProbe = findChildNamed(rows[0].get(), QStringLiteral("byte localProbe"));
     QVERIFY2(localProbe, qPrintable(childNames(rows[0].get())));
     QCOMPARE(localProbe->value, QStringLiteral("107"));
+
+    StructureRow *owner = findChildNamed(rows[0].get(), QStringLiteral("byte owner"));
+    QVERIFY2(owner, qPrintable(childNames(rows[0].get())));
+    StructureRow *values = findChildNamed(owner, QStringLiteral("Entry Values[]"));
+    QVERIFY2(values, qPrintable(childNames(owner)));
+    QCOMPARE(values->absoluteOffset, uint64_t(0x80));
+    QCOMPARE(values->children.size(), size_t(1));
+    QCOMPARE(values->children[0]->children[0]->value, QStringLiteral("2864434397"));
 }
 
 void StructViewTests::builderUsesCountAsForLogicalArraySlots()
@@ -4352,14 +4362,15 @@ void StructViewTests::builderPlacesDynamicStructsUnderNamedDynamicContainers()
     QVERIFY(parseBuffer(parser,
                         "enum Dir { Export = 0, Import = 1 };\n"
                         "typedef struct _DataDir { dword VirtualAddress; dword Size; } DataDir;\n"
-                        "typedef struct _Section { char Name[8]; dword VirtualAddress; dword SizeOfRawData; dword PointerToRawData; } Section;\n"
                         "typedef struct _SectionBucket { } SECTION;\n"
+                        "[dynamic_container(type(SECTION)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)]\n"
+                        "typedef struct _Section { char Name[8]; dword VirtualAddress; dword SizeOfRawData; dword PointerToRawData; } Section;\n"
                         "typedef struct _ImportDesc { dword thunk; } ImportDesc;\n"
                         "typedef struct _ExportDir { dword flags; } ExportDir;\n"
                         "[export]\n"
                         "struct Root {\n"
                         "  [dynamic_struct(case(Export), type(ExportDir), offset(VirtualAddress), mapper(offset_map), optional(Size != 0)), dynamic_struct(case(Import), type(ImportDesc), offset(VirtualAddress), mapper(offset_map), optional(Size != 0))] DataDir dirs[2];\n"
-                        "  [name(Name), dynamic_container(type(SECTION)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section sections[2];\n"
+                        "  [name(Name)] Section sections[2];\n"
                         "} root;\n"));
 
     QByteArray bytes(0x90, '\0');

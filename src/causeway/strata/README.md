@@ -363,7 +363,7 @@ Layout tag affect the alignment and positioning of fields:
 | Tag | Effect |
 |-----|--------|
 | `offset(expr)` | Pin the field or type to a logical offset within the current container (added to the container's base file offset) |
-| `offset("space", expr)` | Pin the field or type to an offset resolved through a named `offset_map` space |
+| `offset("space", expr)` | Render the row at bytes resolved through a named `offset_map` space |
 | `align(n)` | Align to an n-byte boundary before this field |
 | `extent(bytes)` | Limit parsing of this field to `bytes` bytes |
 | `pad_to(n)` | Pad this field's consumed extent so the following field starts on an n-byte boundary |
@@ -463,12 +463,13 @@ dynamic_struct(type(Type), offset(expr)
 ```
 
 - `type(Type)` — the struct type to render
-- `offset(expr)` — target offset expression
+- `offset(expr)` — target file offset expression
+- `offset("space", expr)` — target offset resolved through a named `offset_map` space
 - `name(label)` — display label when attaching to the current row
 - `case(selector)` — only the matching array element emits this struct
 - `container(label)` — place the generated dynamic struct under a named root-level group
 - `mapper(direct)` — interpret `offset(expr)` as a direct file offset; this is the default
-- `mapper(offset_map)` — map `offset(expr)` through `offset_map(...)` containers before rendering
+- `mapper(offset_map)` — map `offset(expr)` through anonymous `offset_map(...)` containers before rendering; use this when the generated row should attach to a mapped dynamic container such as a PE section
 - `optional(condition)` — skip when false
 
 ```c
@@ -512,14 +513,15 @@ dynamic_array(type(ElemType), offset(expr), count(expr) | max_count(expr)
 ```
 
 - `type(ElemType)` — element type
-- `offset(expr)` — target offset expression
+- `offset(expr)` — target file offset expression
+- `offset("space", expr)` — target offset resolved through a named `offset_map` space
 - `count(expr)` — exact element count unless stopped early by `terminated_by(...)`
 - `max_count(expr)` — safety cap for a terminator-bounded dynamic array; equivalent to `count(...)` at render time, but clearer for sentinel arrays
 - `name(label)` — display label; also marks character arrays as a per-element name source
 - `case(selector)` — only the matching array element emits this array
 - `container(label)` — place the generated dynamic array under a named root-level group
 - `mapper(direct)` — interpret `offset(expr)` as a direct file offset; this is the default
-- `mapper(offset_map)` — map `offset(expr)` through `offset_map(...)` containers before rendering
+- `mapper(offset_map)` — map `offset(expr)` through anonymous `offset_map(...)` containers before rendering; use this when the generated row should attach to a mapped dynamic container such as a PE section
 - `terminated_by(stop_condition)` — stop early when this per-element expression is true
 - `terminator("hidden"|"shown")` — optional visibility override for the matching terminator element; by default `[string]`/`format("string")` arrays and zero-terminated `char` arrays hide it, while struct/scalar arrays show it
 - `optional(condition)` — render only when true
@@ -594,24 +596,40 @@ offset_map(va_base, size, file_offset)
 ```c
 [
   offset_map(VirtualAddress, SizeOfRawData, PointerToRawData),
-  dynamic_container(type(SECTION)),
-  size_is(ntHeaders.FileHeader.NumberOfSections)
+  offset_map("rva", VirtualAddress, SizeOfRawData, PointerToRawData),
+  dynamic_container(type(SECTION))
+]
+typedef struct _IMAGE_SECTION_HEADER { ... } IMAGE_SECTION_HEADER;
+
+[
+  name(Name),
+  count(ntHeaders.FileHeader.NumberOfSections)
 ]
 IMAGE_SECTION_HEADER sectionHeader[];
 ```
 
-Named maps can also be used directly from normal `offset(...)` tags and
-expressions. A two-argument named map defines a simple base-relative space:
+Named maps can also be used directly from `offset(...)` tags and expressions.
+Prefer using them from dynamic or semantic rows, where the tree already makes
+clear that the rendered bytes are reached by reference. Avoid placing
+`offset("space", ...)` fields inline in a normal raw struct when that would make
+referenced data look physically adjacent to the previous field. The rendered row
+must still point at the true file bytes; the guardrail is about tree meaning, not
+address accuracy.
+
+A two-argument named map defines a simple base-relative space:
 
 ```c
-[offset_map("strings", stringTableOffset)]
 typedef struct _Header {
     dword stringTableOffset;
     dword nameOffset;
-
-    [offset("strings", nameOffset), string, max_count(256), terminated_by(0)]
-    char name[];
 } HEADER;
+
+[
+  offset_map("strings", header.stringTableOffset),
+  dynamic_array(name(Name), type(CHAR), offset("strings", header.nameOffset),
+                max_count(256), terminated_by(0))
+]
+typedef struct _File { HEADER header; } FILE;
 ```
 
 A four-argument named map defines range translation:
@@ -893,6 +911,12 @@ Prefer pure structures for ordinary file layouts. Reach for
 `dynamic_array(...)`, `dynamic_struct(...)`, `dynamic_container(...)`, and
 `view(...)` only for related data that is not really an inline C field, such as
 PE RVA-mapped import/export tables.
+
+Named address spaces follow the same rule. Define `offset_map("space", ...)`
+where the file format defines the coordinate system, then use
+`offset("space", expr)` mainly from dynamic or semantic rows. Do not make an
+offset-target field appear as a normal inline child of a raw struct unless that
+is deliberately the clearest representation of the format.
 
 Use `enum(Name)` for one-of-N values. Use `bitflag(Name)` only for independent
 mask bits. Do not use `bitflag(...)` for packed fields whose values overlap,

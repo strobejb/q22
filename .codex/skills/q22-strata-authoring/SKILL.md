@@ -24,7 +24,8 @@ description: Write, review, and debug q22 Strata `.strata`/legacy `.struct` bina
 - For sentinel-bounded arrays, prefer `max_count(...)` plus `terminated_by(...)` over using `count(...)` as an artificial cap. `terminated_by(...)` may be a scalar value, a byte sequence such as `{ 0, 0, 1 }`, or an expression over the rendered element's fields. String-like arrays hide terminators by default; struct/scalar arrays show them unless `terminator("hidden")` is specified.
 - For ZIP-like formats, show both local records and index/trailer records when both exist; use top-level offset sorting in the renderer when physical order matters.
 - For endian-sensitive formats, put `endian(...)` high enough for nested fields to inherit it.
-- For named address spaces, define `offset_map("name", ...)` where the format defines that address space, then use `offset("name", expr)` for fields stored there. Use `value_at(...)` only for small one-off scalar probes in expressions.
+- For named address spaces, define `offset_map("name", ...)` where the format defines that address space, then use `offset("name", expr)` mainly from dynamic or semantic rows. Avoid making referenced bytes look like inline raw fields. Use `value_at(...)` only for small one-off scalar probes in expressions.
+- In `dynamic_array(...)` / `dynamic_struct(...)`, prefer `offset("name", expr)` for a named address space when the generated row should stay under the owning row. Keep `mapper(offset_map)` with anonymous maps when the generated row should attach to mapped dynamic containers, such as PE section buckets.
 - For discriminators inside union candidates, use the shared-candidate field fallback when the field is declared identically by every case; otherwise use `select_offset(byteOffset)`.
 - For exported root file associations, put every extension in one comma-separated `assoc(...)` tag, e.g. `assoc(".mp4", ".mov")`; do not repeat separate `assoc(...)` tags for the same export.
 
