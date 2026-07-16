@@ -357,7 +357,7 @@ void CausewayTests::dynamicPlacementTagsParse()
 						"typedef struct _Import { dword value; } ImportDesc;\n"
 						"[export]\n"
 						"struct Root {\n"
-						"  [dynamic_struct(case(ImportEntry), type(ImportDesc), offset(VirtualAddress), mapper(offset_map), optional(Size != 0)), dynamic_array(case(ImportEntry), type(ImportDesc), offset(VirtualAddress), count(Size / sizeof(ImportDesc)), mapper(offset_map), terminated_by(value == 0))] DataDir dirs[2];\n"
+						"  [dynamic_struct(case(ImportEntry), type(ImportDesc), offset(VirtualAddress), mapper(offset_map), optional(Size != 0)), dynamic_array(case(ImportEntry), type(ImportDesc), offset(VirtualAddress), count(Size / sizeof(ImportDesc)), mapper(offset_map), terminated_by(value == 0), terminator(\"hidden\"))] DataDir dirs[2];\n"
 						"  [dynamic_container(type(SectionBucket)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section sections[2];\n"
 						"  [size_is(16), terminated_by(0)] char name[];\n"
 						"} root;\n"));
@@ -769,12 +769,13 @@ void CausewayTests::maxCountAndByteSequenceTerminatorsParse()
 	Parser parser;
 	QVERIFY(parseBuffer(parser,
 						"struct Root {\n"
-						"  [max_count(1024), terminated_by({ 0x00, 0x00, 0x01 })] byte payload[];\n"
+						"  [max_count(1024), terminated_by({ 0x00, 0x00, 0x01 }), terminator(\"hidden\")] byte payload[];\n"
 						"} root;\n"));
 
 	TypeDecl *root = parser.GetStrataLibrary()->globalTypeDeclList[0];
 	TypeDecl *field = root->baseType->sptr->typeDeclList[0];
 	QVERIFY(FindTag(field->tagList, TOK_MAXCOUNT, nullptr));
+	QVERIFY(FindTag(field->tagList, TOK_TERMINATOR, nullptr));
 
 	ExprNode *terminatorExpr = nullptr;
 	QVERIFY(FindTag(field->tagList, TOK_TERMINATEDBY, &terminatorExpr));

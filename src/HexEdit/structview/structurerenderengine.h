@@ -94,6 +94,7 @@ private:
         uint64_t logicalOffset = 0;
         uint64_t maxCount = 0;
         ExprNode *stopExpr = nullptr;
+        ExprNode *terminatorModeExpr = nullptr;
         ExprNode *conditionExpr = nullptr;
         DynamicMapper mapper = DynamicMapper::Direct;
         bool attachToMappedContainer = false;
@@ -149,6 +150,7 @@ private:
                           ExprNode **logicalOffset,
                           ExprNode **count,
                           ExprNode **stop,
+                          ExprNode **terminatorMode,
                           ExprNode **condition,
                           DynamicMapper *mapper,
                           bool *isNameSource) const;
@@ -195,6 +197,10 @@ private:
                                    ExprNode *stopExpr,
                                    uint64_t offset,
                                    uint64_t elementLength);
+    bool terminatorShouldBeHidden(TypeDecl *typeDecl,
+                                  Type *elementType,
+                                  ExprNode *stopExpr,
+                                  ExprNode *modeExpr) const;
     QString fieldNameValue(StructureRow *scope, Type *scopeType, ExprNode *expr, uint64_t scopeOffset);
     QString dynamicContainerAlias(StructureRow *row);
     QString dynamicArrayNameString(StructureRow *elementRow, ExprNode *dynamicArrayTagExpr);

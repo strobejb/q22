@@ -1437,8 +1437,8 @@ void StructViewTests::builderUsesMaxCountAndTerminatorExpressions()
     // count, and their stop condition may inspect fields of a compound element
     // or a raw byte marker.
     // Expected: max_count(...) bounds the loop, terminated_by(...) evaluates
-    // against the rendered element row, and byte-sequence terminators are hidden
-    // but consumed as a whole.
+    // against the rendered element row, structured terminators are included by
+    // default, and byte-sequence terminators are hidden but consumed as a whole.
     StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
@@ -1458,8 +1458,10 @@ void StructViewTests::builderUsesMaxCountAndTerminatorExpressions()
 
     StructureRow *records = rows[0]->children[0].get();
     QCOMPARE(records->name, QStringLiteral("Rec records[]"));
-    QCOMPARE(records->children.size(), size_t(1));
+    QCOMPARE(records->children.size(), size_t(2));
     QCOMPARE(records->byteLength, uint64_t(4));
+    QCOMPARE(records->children[0]->children[0]->value, QStringLiteral("1"));
+    QCOMPARE(records->children[1]->children[0]->value, QStringLiteral("0"));
     QCOMPARE(rows[0]->children[1]->name, QStringLiteral("byte afterRecords"));
     QCOMPARE(rows[0]->children[1]->absoluteOffset, uint64_t(4));
     QCOMPARE(rows[0]->children[1]->value, QStringLiteral("7"));
@@ -2630,16 +2632,20 @@ void StructViewTests::builderRendersDtbHeaderAndBlocks()
     StructureRow *reserveMap = findChildNamed(rows[0].get(), QStringLiteral("FDT_RESERVE_ENTRY reserveMap[]"));
     QVERIFY(reserveMap);
     QCOMPARE(reserveMap->absoluteOffset, uint64_t(0x28));
-    QCOMPARE(reserveMap->children.size(), size_t(1));
+    QCOMPARE(reserveMap->children.size(), size_t(2));
     QCOMPARE(findChildNamed(reserveMap->children[0].get(), QStringLiteral("qword address"))->value,
              QStringLiteral("4096"));
     QCOMPARE(findChildNamed(reserveMap->children[0].get(), QStringLiteral("qword size"))->value,
              QStringLiteral("256"));
+    QCOMPARE(findChildNamed(reserveMap->children[1].get(), QStringLiteral("qword address"))->value,
+             QStringLiteral("0"));
+    QCOMPARE(findChildNamed(reserveMap->children[1].get(), QStringLiteral("qword size"))->value,
+             QStringLiteral("0"));
 
     StructureRow *structureBlock = findChildNamed(rows[0].get(), QStringLiteral("FDT_STRUCT_ITEM structureBlock[]"));
     QVERIFY(structureBlock);
     QCOMPARE(structureBlock->absoluteOffset, uint64_t(0x48));
-    QCOMPARE(structureBlock->children.size(), size_t(4));
+    QCOMPARE(structureBlock->children.size(), size_t(5));
     QCOMPARE(findChildNamed(structureBlock->children[0].get(), QStringLiteral("dword token"))->value,
              QStringLiteral("FDT_BEGIN_NODE"));
     QVERIFY(!findChildNamed(structureBlock->children[0].get(), QStringLiteral("union payload")));
@@ -2671,6 +2677,8 @@ void StructViewTests::builderRendersDtbHeaderAndBlocks()
 
     QCOMPARE(findChildNamed(structureBlock->children[3].get(), QStringLiteral("dword token"))->value,
              QStringLiteral("FDT_END_NODE"));
+    QCOMPARE(findChildNamed(structureBlock->children[4].get(), QStringLiteral("dword token"))->value,
+             QStringLiteral("FDT_END"));
 
     StructureRow *stringsBlock = findChildNamed(rows[0].get(), QStringLiteral("char stringsBlock[][]"));
     QVERIFY(stringsBlock);
@@ -2855,7 +2863,7 @@ void StructViewTests::builderRendersWasmHeaderAndSections()
     QCOMPARE(localDeclCount->value, QStringLiteral("0"));
     StructureRow *instructions = findChildNamed(body, QStringLiteral("byte instructions[]"));
     QVERIFY2(instructions, qPrintable(childNames(body)));
-    QCOMPARE(instructions->value, QStringLiteral("{ 65, 42 }"));
+    QCOMPARE(instructions->value, QStringLiteral("{ 65, 42, 11 }"));
 }
 
 void StructViewTests::builderRendersJavaClassConstantPool()
@@ -3323,10 +3331,12 @@ void StructViewTests::builderRendersGifBlocks()
     QCOMPARE(lzwMinimumCodeSize->value, QStringLiteral("2"));
     StructureRow *subBlocks = findDescendantNamed(image, QStringLiteral("GIF_DATA_SUB_BLOCK blocks[]"));
     QVERIFY2(subBlocks, qPrintable(childNames(image)));
-    QCOMPARE(subBlocks->children.size(), size_t(1));
+    QCOMPARE(subBlocks->children.size(), size_t(2));
     StructureRow *imageData = findChildNamed(subBlocks->children[0].get(), QStringLiteral("byte data[]"));
     QVERIFY2(imageData, qPrintable(childNames(subBlocks->children[0].get())));
     QCOMPARE(imageData->value, QStringLiteral("{ 76, 1 }"));
+    QCOMPARE(findChildNamed(subBlocks->children[1].get(), QStringLiteral("byte size"))->value,
+             QStringLiteral("0"));
     StructureRow *trailer = findChildNamed(rows[0].get(), QStringLiteral("byte trailer"));
     QVERIFY2(trailer, qPrintable(childNames(rows[0].get())));
     QCOMPARE(trailer->value, QStringLiteral("GIF_BLOCK_TRAILER"));
@@ -3621,8 +3631,9 @@ void StructViewTests::builderRendersTarEntries()
 
     StructureRow *entries = findChildNamed(rows[0].get(), QStringLiteral("TAR_ENTRY entries[]"));
     QVERIFY2(entries, qPrintable(childNames(rows[0].get())));
-    QCOMPARE(entries->children.size(), size_t(1));
+    QCOMPARE(entries->children.size(), size_t(2));
     QCOMPARE(entries->children[0]->name, QStringLiteral("[0]hello.txt"));
+    QCOMPARE(entries->children[1]->name, QStringLiteral("[1]"));
 
     StructureRow *header = findChildNamed(entries->children[0].get(), QStringLiteral("TAR_HEADER header"));
     QVERIFY2(header, qPrintable(childNames(entries->children[0].get())));
@@ -3900,8 +3911,9 @@ void StructViewTests::builderRendersIsoVolumeDescriptors()
 
     StructureRow *descriptors = findChildNamed(rows[0].get(), QStringLiteral("ISO_VOLUME_DESCRIPTOR volumeDescriptors[]"));
     QVERIFY2(descriptors, qPrintable(childNames(rows[0].get())));
-    QCOMPARE(descriptors->children.size(), size_t(1));
+    QCOMPARE(descriptors->children.size(), size_t(2));
     QCOMPARE(descriptors->children[0]->name, QStringLiteral("[0]ISO_VOLUME_PRIMARY"));
+    QCOMPARE(descriptors->children[1]->name, QStringLiteral("[1]ISO_VOLUME_TERMINATOR"));
 
     StructureRow *primary = findChildNamed(descriptors->children[0].get(),
                                            QStringLiteral("ISO_PRIMARY_VOLUME_DESCRIPTOR_PAYLOAD primary"));
@@ -4445,8 +4457,10 @@ void StructViewTests::builderStopsDynamicAndInlineArraysAtTerminators()
 {
     // Scenario: binary formats often use sentinel-terminated arrays for strings
     // and descriptor tables, with size_is acting only as the safety cap.
-    // Expected: terminated_by hides the terminator element, but still consumes
-    // it for layout so the following field appears at the correct offset.
+    // Expected: string terminators hide by default; explicit
+    // terminator("hidden") hides descriptor-table sentinels while still
+    // consuming them for layout so the following field appears at the correct
+    // offset.
     // Regression guard: C strings and null descriptor arrays should not require
     // one-off PE/import semantic code just to stop at zero.
     StrataLibrary library;
@@ -4459,7 +4473,7 @@ void StructViewTests::builderStopsDynamicAndInlineArraysAtTerminators()
                         "struct Root {\n"
                         "  [size_is(8), terminated_by(0)] char title[];\n"
                         "  byte afterTitle;\n"
-                        "  [dynamic_array(name(Descs), type(Desc), offset(tableRva), count(4), mapper(offset_map), terminated_by(Value == 0))] dword tableRva;\n"
+                        "  [dynamic_array(name(Descs), type(Desc), offset(tableRva), count(4), mapper(offset_map), terminated_by(Value == 0), terminator(\"hidden\"))] dword tableRva;\n"
                         "  [dynamic_container(type(SECTION)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section section[1];\n"
                         "} root;\n"));
 
@@ -4520,7 +4534,7 @@ void StructViewTests::builderRunsSemanticViewsOnceForDynamicArrayTables()
                         "typedef struct _SectionBucket { } SECTION;\n"
                         "[export]\n"
                         "struct Root {\n"
-                        "  [dynamic_array(name(Entries), type(Viewed), offset(tableRva), count(4), mapper(offset_map), terminated_by(Value == 0))] dword tableRva;\n"
+                        "  [dynamic_array(name(Entries), type(Viewed), offset(tableRva), count(4), mapper(offset_map), terminated_by(Value == 0), terminator(\"hidden\"))] dword tableRva;\n"
                         "  [dynamic_container(type(SECTION)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section section[1];\n"
                         "} root;\n"));
 

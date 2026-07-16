@@ -196,6 +196,7 @@ typedef struct _ZIP_LOCAL_FILE_SEQUENCE
     [
         max_count(4096),
         terminated_by(Signature != ZIP_LOCAL_FILE_HEADER_SIGNATURE),
+        terminator("hidden"),
         name(FileName)
     ]
     ZIP_LOCAL_FILE_HEADER localFileHeaders[];
@@ -206,6 +207,7 @@ typedef struct _ZIP_CENTRAL_DIRECTORY_SEQUENCE
     [
         max_count(4096),
         terminated_by(Signature != ZIP_CENTRAL_DIRECTORY_SIGNATURE),
+        terminator("hidden"),
         name(FileName)
     ]
     ZIP_CENTRAL_DIRECTORY_FILE_HEADER centralDirectory[];
@@ -226,6 +228,7 @@ typedef struct _ZIP
         offset(0),
         max_count(4096),
         terminated_by(Signature != ZIP_LOCAL_FILE_HEADER_SIGNATURE),
+        terminator("hidden"),
         name(FileName)
     ]
     ZIP_LOCAL_FILE_HEADER localFileHeaders[];
@@ -237,6 +240,7 @@ typedef struct _ZIP
         offset(eocd.OffsetOfStartOfCentralDirectory),
         max_count(eocd.TotalEntries),
         terminated_by(Signature != ZIP_CENTRAL_DIRECTORY_SIGNATURE),
+        terminator("hidden"),
         name(FileName)
     ]
     ZIP_CENTRAL_DIRECTORY_FILE_HEADER centralDirectory[];

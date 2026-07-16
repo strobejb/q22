@@ -18,7 +18,7 @@ View online: [Strata Language Reference](https://github.com/strobejb/q22/blob/ma
 | Tags | [`tagset`](#tagsets) · [`tags`](#tagsets) |
 | Display | [`enum(N)`](#display) · [`bitflag(N)`](#display) · [`format("...")`](#display) · [`name`](#display) · [`string`](#display) |
 | Layout | [`offset`](#layout) · [`align`](#layout) · [`pad_to`](#layout) · [`endian`](#byte-order) · [`entrypoint`](#layout) · [`extent`](#layout) · [`optional`](#layout) |
-| Arrays | [`count`](#arrays) · [`max_count`](#arrays) · [`count_as`](#arrays) · [`terminated_by`](#arrays) |
+| Arrays | [`count`](#arrays) · [`max_count`](#arrays) · [`count_as`](#arrays) · [`terminated_by`](#arrays) · [`terminator`](#arrays) |
 | Unions | [`select`](#discriminated-unions) · [`case`](#discriminated-unions) |
 | Semantic views | [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) · [`view`](#view) |
 | Export | [`export`](#export-metadata) · [`category`](#export-metadata) · [`version`](#export-metadata) · [`assoc`](#export-metadata) · [`magic`](#export-metadata) |
@@ -431,6 +431,7 @@ for how that still resolves.
 | `max_count(expr[, expr...])` | Safety cap for a flexible array that can stop earlier with `terminated_by(...)` |
 | `count_as(expr)` | Make a rendered array element consume `expr` logical count slots instead of one |
 | `terminated_by(val[, val...])` | Stop reading when an element equals `val`, when an expression over the rendered element is true, or when a byte sequence such as `{ 0, 0, 1 }` is found; use `_` to skip a nested-array dimension |
+| `terminator("hidden")`, `terminator("shown")` | Override whether a matching terminator element is displayed; string-like arrays hide terminators by default, other arrays show them by default |
 
 ---
 
@@ -504,6 +505,7 @@ dynamic_array(type(ElemType), offset(expr), count(expr) | max_count(expr)
               [, container(label)]
               [, mapper(direct | offset_map)]
               [, terminated_by(stop_condition)]
+              [, terminator("hidden" | "shown")]
               [, optional(condition)])
 ```
 
@@ -517,6 +519,7 @@ dynamic_array(type(ElemType), offset(expr), count(expr) | max_count(expr)
 - `mapper(direct)` — interpret `offset(expr)` as a direct file offset; this is the default
 - `mapper(offset_map)` — map `offset(expr)` through `offset_map(...)` containers before rendering
 - `terminated_by(stop_condition)` — stop early when this per-element expression is true
+- `terminator("hidden"|"shown")` — optional visibility override for the matching terminator element; by default `[string]`/`format("string")` arrays and zero-terminated `char` arrays hide it, while struct/scalar arrays show it
 - `optional(condition)` — render only when true
 
 ```c
@@ -524,24 +527,27 @@ dynamic_array(type(ElemType), offset(expr), count(expr) | max_count(expr)
 dynamic_array(name(CentralDirectory),
               type(ZIP_CENTRAL_DIRECTORY_FILE_HEADER),
               offset(OffsetOfStartOfCentralDirectory),
-              count(TotalEntries),
-              terminated_by(Signature != ZIP_CENTRAL_DIRECTORY_SIGNATURE))
+              max_count(TotalEntries),
+              terminated_by(Signature != ZIP_CENTRAL_DIRECTORY_SIGNATURE),
+              terminator("hidden"))
 
 // Mapped selector form, as used by PE data directories:
 dynamic_array(case(IMAGE_DIRECTORY_ENTRY_IMPORT),
               type(IMAGE_IMPORT_DESCRIPTOR),
               offset(VirtualAddress),
-              count(Size / sizeof(IMAGE_IMPORT_DESCRIPTOR)),
+              max_count(Size / sizeof(IMAGE_IMPORT_DESCRIPTOR)),
               mapper(offset_map),
-              terminated_by(OriginalFirstThunk == 0 && FirstThunk == 0))
+              terminated_by(OriginalFirstThunk == 0 && FirstThunk == 0),
+              terminator("hidden"))
 
 // With condition — only when the PE is 32-bit:
 dynamic_array(name(ImportLookup32),
               type(IMAGE_THUNK_DATA32),
               offset(OriginalFirstThunk),
-              count(512),
+              max_count(512),
               mapper(offset_map),
               terminated_by(Function == 0),
+              terminator("hidden"),
               optional(ntHeaders.OptionalHeader32.Magic == 0x10b))
 ```
 
@@ -555,7 +561,7 @@ to the element's tree label — e.g. `[0] - KERNEL32.dll` instead of just
 
 ```c
 [
-    dynamic_array(name(DllName), type(CHAR), offset(Name), count(4096),
+    dynamic_array(name(DllName), type(CHAR), offset(Name), max_count(4096),
                   mapper(offset_map), terminated_by(0)),
     ...
 ]
@@ -807,7 +813,7 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 | Type declarations | `struct`, `union`, `enum`, `typedef`, `const`, `signed`, `unsigned` |
 | Primitive types | `byte`, `word`, `dword`, `qword`, `char`, `wchar_t`, `float`, `double`, `uleb128`, `sleb128` |
 | Display/layout tags | `align`, `bitflag`, `description`, `display`, `endian`, `entrypoint`, `extent`, `format`, `ignore`, `name`, `offset`, `optional`, `pad_to`, `string`, `style`, `tree` |
-| Arrays/unions | `case`, `count`, `count_as`, `default`, `length_is`, `max_count`, `select`, `select_offset`, `size_is`, `switch_is`, `terminated_by` |
+| Arrays/unions | `case`, `count`, `count_as`, `default`, `length_is`, `max_count`, `select`, `select_offset`, `size_is`, `switch_is`, `terminated_by`, `terminator` |
 | Dynamic/semantic tags | `container`, `dynamic_array`, `dynamic_container`, `dynamic_struct`, `mapper`, `offset_map`, `type`, `view` |
 | Export/detection tags | `assoc`, `category`, `export`, `magic`, `version` |
 | Tagsets/files | `include`, `tagset`, `tags` |

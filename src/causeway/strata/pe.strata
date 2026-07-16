@@ -35,7 +35,8 @@ tagset PE_DATA_DIRECTORY_TAGS
   dynamic_struct(case(IMAGE_DIRECTORY_ENTRY_EXPORT), type(IMAGE_EXPORT_DIRECTORY), offset(VirtualAddress), mapper(offset_map), optional(Size != 0)),
   dynamic_array(case(IMAGE_DIRECTORY_ENTRY_IMPORT), type(IMAGE_IMPORT_DESCRIPTOR), offset(VirtualAddress), max_count(Size / sizeof(IMAGE_IMPORT_DESCRIPTOR)),
                 mapper(offset_map),
-                terminated_by(OriginalFirstThunk == 0 && TimeDateStamp == 0 && ForwarderChain == 0 && Name == 0 && FirstThunk == 0))
+                terminated_by(OriginalFirstThunk == 0 && TimeDateStamp == 0 && ForwarderChain == 0 && Name == 0 && FirstThunk == 0),
+                terminator("hidden"))
 ];
 
 
@@ -351,10 +352,10 @@ typedef struct _IMAGE_IMPORT_BY_NAME
 // semantic overlay for correlating DLL/function names.
 [
     dynamic_array(name(DllName), type(CHAR), offset(Name), max_count(4096), mapper(offset_map), terminated_by(0)),
-    dynamic_array(name(ImportLookup32), type(IMAGE_THUNK_DATA32), offset(OriginalFirstThunk), max_count(512), mapper(offset_map), terminated_by(Function == 0), optional(ntHeaders.OptionalHeader32.Magic == 0x10b)),
-    dynamic_array(name(ImportAddress32), type(IMAGE_THUNK_DATA32), offset(FirstThunk), max_count(512), mapper(offset_map), terminated_by(Function == 0), optional(ntHeaders.OptionalHeader32.Magic == 0x10b)),
-    dynamic_array(name(ImportLookup64), type(IMAGE_THUNK_DATA64), offset(OriginalFirstThunk), max_count(512), mapper(offset_map), terminated_by(Function == 0), optional(ntHeaders.OptionalHeader64.Magic == 0x20b)),
-    dynamic_array(name(ImportAddress64), type(IMAGE_THUNK_DATA64), offset(FirstThunk), max_count(512), mapper(offset_map), terminated_by(Function == 0), optional(ntHeaders.OptionalHeader64.Magic == 0x20b)),
+    dynamic_array(name(ImportLookup32), type(IMAGE_THUNK_DATA32), offset(OriginalFirstThunk), max_count(512), mapper(offset_map), terminated_by(Function == 0), terminator("hidden"), optional(ntHeaders.OptionalHeader32.Magic == 0x10b)),
+    dynamic_array(name(ImportAddress32), type(IMAGE_THUNK_DATA32), offset(FirstThunk), max_count(512), mapper(offset_map), terminated_by(Function == 0), terminator("hidden"), optional(ntHeaders.OptionalHeader32.Magic == 0x10b)),
+    dynamic_array(name(ImportLookup64), type(IMAGE_THUNK_DATA64), offset(OriginalFirstThunk), max_count(512), mapper(offset_map), terminated_by(Function == 0), terminator("hidden"), optional(ntHeaders.OptionalHeader64.Magic == 0x20b)),
+    dynamic_array(name(ImportAddress64), type(IMAGE_THUNK_DATA64), offset(FirstThunk), max_count(512), mapper(offset_map), terminated_by(Function == 0), terminator("hidden"), optional(ntHeaders.OptionalHeader64.Magic == 0x20b)),
     view("pe.imports"),
     name("IMAGE_IMPORT_DESCRIPTOR[]")
 ]

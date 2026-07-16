@@ -55,6 +55,13 @@ enum class StrataFormat
     Dec
 };
 
+enum class TerminatorVisibility
+{
+    Auto,
+    Hidden,
+    Shown
+};
+
 ScalarTypeInfo scalarTypeInfo(TYPE type)
 {
     switch (type)
@@ -118,6 +125,24 @@ StrataFormat formatTag(TypeDecl *typeDecl)
     if (value == QLatin1String("dec"))
         return StrataFormat::Dec;
     return StrataFormat::None;
+}
+
+TerminatorVisibility terminatorVisibilityExpr(ExprNode *expr)
+{
+    if (!expr || expr->type != EXPR_STRINGBUF || !expr->str)
+        return TerminatorVisibility::Auto;
+
+    const QString value = QString::fromLocal8Bit(expr->str).toLower();
+    if (value == QLatin1String("hidden") || value == QLatin1String("hide"))
+        return TerminatorVisibility::Hidden;
+    if (value == QLatin1String("shown") || value == QLatin1String("show") || value == QLatin1String("visible"))
+        return TerminatorVisibility::Shown;
+    return TerminatorVisibility::Auto;
+}
+
+bool expressionIsLiteralZero(ExprNode *expr)
+{
+    return expr && expr->type == EXPR_NUMBER && expr->val == 0;
 }
 
 QString hexByte(uchar value)
@@ -769,6 +794,8 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
         ExprNode *terminatorExpr = dimensionTagArg(typeDecl ? typeDecl->tagList : nullptr,
                                                    TOK_TERMINATEDBY,
                                                    dimension);
+        ExprNode *terminatorModeExpr = nullptr;
+        FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_TERMINATOR, &terminatorModeExpr);
         Enum *nameEnum = nullptr;
         ExprNode *nameExpr = nullptr;
         if (FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_NAME, &nameExpr) && m_library && nameExpr && nameExpr->str)
@@ -835,6 +862,8 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
                                                                      terminatorExpr,
                                                                      offset + length,
                                                                      elementLength);
+            const bool hideTerminator = terminatorLength > 0
+                && terminatorShouldBeHidden(typeDecl, type->link, terminatorExpr, terminatorModeExpr);
             if (renderElement && !nameEnum && nameExpr)
             {
                 const QString fieldName = rowNameFragment(fieldNameValue(row.get(), type->link, nameExpr, offset + length));
@@ -879,7 +908,11 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
             logicalIndex += std::max<uint64_t>(row->arrayCountContribution, 1);
             ++renderedElements;
             if (terminatorLength > 0)
+            {
+                if (renderElement && !hideTerminator)
+                    appendPresentedRow(parent, std::move(row));
                 break;
+            }
 
             if (renderElement)
                 appendPresentedRow(parent, std::move(row));
@@ -2539,6 +2572,7 @@ void StructureRenderEngine::collectDynamicArrayRequests(StructureRow *row)
         ExprNode *logicalOffsetExpr = nullptr;
         ExprNode *countExpr = nullptr;
         ExprNode *stopExpr = nullptr;
+        ExprNode *terminatorModeExpr = nullptr;
         ExprNode *conditionExpr = nullptr;
         DynamicMapper mapper = DynamicMapper::Direct;
         if (!dynamicArrayArgs(tag->expr,
@@ -2548,6 +2582,7 @@ void StructureRenderEngine::collectDynamicArrayRequests(StructureRow *row)
                               &logicalOffsetExpr,
                               &countExpr,
                               &stopExpr,
+                              &terminatorModeExpr,
                               &conditionExpr,
                               &mapper,
                               nullptr))
@@ -2612,6 +2647,7 @@ void StructureRenderEngine::collectDynamicArrayRequests(StructureRow *row)
             uint64_t(logicalOffset),
             uint64_t(count),
             stopExpr,
+            terminatorModeExpr,
             conditionExpr,
             mapper,
             attachToMappedContainer
@@ -2767,7 +2803,7 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
             {
                 bool isNameSource = false;
                 ExprNode *nameSourceTypeNameExpr = nullptr;
-                if (dynamicArrayArgs(tag->expr, nullptr, nullptr, &nameSourceTypeNameExpr, nullptr, nullptr, nullptr, nullptr, nullptr, &isNameSource)
+                if (dynamicArrayArgs(tag->expr, nullptr, nullptr, &nameSourceTypeNameExpr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &isNameSource)
                     && isNameSource)
                 {
                     Type *nameSourceType = nameSourceTypeNameExpr && nameSourceTypeNameExpr->str
@@ -2842,11 +2878,20 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
                                                                      request.stopExpr,
                                                                      m_baseOffset + fileOffset + length,
                                                                      elementLength);
+            const bool hideTerminator = terminatorLength > 0
+                && terminatorShouldBeHidden(request.typeDecl,
+                                            request.renderType,
+                                            request.stopExpr,
+                                            request.terminatorModeExpr);
             length += terminatorLength > 0 ? terminatorLength : elementLength;
             logicalIndex += std::max<uint64_t>(elementRow->arrayCountContribution, 1);
             ++renderedElements;
             if (terminatorLength > 0)
+            {
+                if (renderElement && !hideTerminator)
+                    appendPresentedRow(arrayRow.get(), std::move(elementRow));
                 break;
+            }
 
             if (renderElement)
                 appendPresentedRow(arrayRow.get(), std::move(elementRow));
@@ -2972,6 +3017,7 @@ bool StructureRenderEngine::dynamicArrayArgs(ExprNode *expr,
                                              ExprNode **logicalOffset,
                                              ExprNode **count,
                                              ExprNode **stop,
+                                             ExprNode **terminatorMode,
                                              ExprNode **condition,
                                              DynamicMapper *mapper,
                                              bool *isNameSource) const
@@ -2985,6 +3031,7 @@ bool StructureRenderEngine::dynamicArrayArgs(ExprNode *expr,
     ExprNode *offsetExpr = nullptr;
     ExprNode *countExpr = nullptr;
     ExprNode *stopExpr = nullptr;
+    ExprNode *terminatorModeExpr = nullptr;
     ExprNode *conditionExpr = nullptr;
     DynamicMapper mapperValue = DynamicMapper::Direct;
     bool nameSource = false;
@@ -3017,6 +3064,9 @@ bool StructureRenderEngine::dynamicArrayArgs(ExprNode *expr,
             break;
         case TOK_TERMINATEDBY:
             stopExpr = inner;
+            break;
+        case TOK_TERMINATOR:
+            terminatorModeExpr = inner;
             break;
         case TOK_OPTIONAL:
             conditionExpr = inner;
@@ -3053,6 +3103,8 @@ bool StructureRenderEngine::dynamicArrayArgs(ExprNode *expr,
         *count = countExpr;
     if (stop)
         *stop = stopExpr;
+    if (terminatorMode)
+        *terminatorMode = terminatorModeExpr;
     if (condition)
         *condition = conditionExpr;
     if (mapper)
@@ -3740,7 +3792,7 @@ QString StructureRenderEngine::dynamicArrayNameString(StructureRow *elementRow, 
     ExprNode *countExpr = nullptr;
     DynamicMapper mapper = DynamicMapper::Direct;
     if (!dynamicArrayArgs(dynamicArrayTagExpr, nullptr, nullptr, &typeNameExpr, &logicalOffsetExpr,
-                          &countExpr, nullptr, nullptr, &mapper, nullptr))
+                          &countExpr, nullptr, nullptr, nullptr, &mapper, nullptr))
         return {};
 
     Type *renderType = typeNameExpr && typeNameExpr->str
@@ -3855,6 +3907,43 @@ uint64_t StructureRenderEngine::terminatorMatchLength(StructureRow *row,
 
     INUMTYPE value = 0;
     return evaluate(row, stopExpr, &value, offset) && value != 0 ? elementLength : 0;
+}
+
+bool StructureRenderEngine::terminatorShouldBeHidden(TypeDecl *typeDecl,
+                                                     Type *elementType,
+                                                     ExprNode *stopExpr,
+                                                     ExprNode *modeExpr) const
+{
+    if (!modeExpr)
+        FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_TERMINATOR, &modeExpr);
+
+    switch (terminatorVisibilityExpr(modeExpr))
+    {
+    case TerminatorVisibility::Hidden:
+        return true;
+    case TerminatorVisibility::Shown:
+        return false;
+    case TerminatorVisibility::Auto:
+        break;
+    }
+
+    if (stopExpr && stopExpr->type == EXPR_BYTESEQ)
+        return true;
+
+    const StrataFormat format = formatTag(typeDecl);
+    if (FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_STRING, nullptr)
+        || format == StrataFormat::String
+        || format == StrataFormat::Utf16
+        || format == StrataFormat::Utf16Le
+        || format == StrataFormat::Utf16Be)
+    {
+        return true;
+    }
+
+    Type *base = BaseNode(elementType);
+    return expressionIsLiteralZero(stopExpr)
+        && base
+        && (base->ty == typeCHAR || base->ty == typeWCHAR);
 }
 
 QString StructureRenderEngine::fieldNameValue(StructureRow *scope, Type *scopeType, ExprNode *expr, uint64_t scopeOffset)
