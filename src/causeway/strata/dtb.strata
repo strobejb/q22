@@ -36,7 +36,7 @@ typedef struct _FDT_RESERVE_ENTRY
 
 typedef struct _FDT_BEGIN_NODE_PAYLOAD
 {
-    [count(256), terminated_by(0), pad_to(4)]
+    [max_count(256), terminated_by(0), pad_to(4)]
     char name[];
 } FDT_BEGIN_NODE_PAYLOAD, *PFDT_BEGIN_NODE_PAYLOAD;
 
@@ -96,14 +96,14 @@ typedef struct _FDT
 
     [
         offset(header.off_mem_rsvmap),
-        count(1024),
+        max_count(1024),
         terminated_by(address == 0 && size == 0)
     ]
     FDT_RESERVE_ENTRY reserveMap[];
 
     [
         offset(header.off_dt_struct),
-        count(4096),
+        max_count(4096),
         terminated_by(token == FDT_END),
         extent(header.size_dt_struct)
     ]
@@ -111,7 +111,7 @@ typedef struct _FDT
 
     [
         offset(header.off_dt_strings),
-        count(1024, 256),
+        max_count(1024, 256),
         terminated_by(_, 0),
         extent(header.size_dt_strings)
     ]

@@ -89,7 +89,7 @@ typedef struct _DEX_STRING_DATA_ITEM
 {
     uleb128 utf16_size;
 
-    [string, count(4096), terminated_by(0)]
+    [string, max_count(4096), terminated_by(0)]
     byte data[];
 } DEX_STRING_DATA_ITEM, *PDEX_STRING_DATA_ITEM;
 

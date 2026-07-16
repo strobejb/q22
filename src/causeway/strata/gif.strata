@@ -55,7 +55,7 @@ typedef struct _GIF_DATA_SUB_BLOCK
 
 typedef struct _GIF_DATA_SUB_BLOCKS
 {
-    [count(4096), terminated_by(size == 0)]
+    [max_count(4096), terminated_by(size == 0)]
     GIF_DATA_SUB_BLOCK blocks[];
 } GIF_DATA_SUB_BLOCKS, *PGIF_DATA_SUB_BLOCKS;
 

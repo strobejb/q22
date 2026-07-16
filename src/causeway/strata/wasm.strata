@@ -281,7 +281,7 @@ typedef struct _WASM_GLOBAL
 {
     WASM_GLOBAL_TYPE type;
 
-    [count(size), terminated_by(0x0b)]
+    [max_count(size), terminated_by(0x0b)]
     byte initExpr[];
 } WASM_GLOBAL, *PWASM_GLOBAL;
 
@@ -335,7 +335,7 @@ typedef struct _WASM_CODE_BODY
     [count(localDeclCount)]
     WASM_LOCAL_DECL locals[];
 
-    [count(size), terminated_by(0x0b)]
+    [max_count(size), terminated_by(0x0b)]
     byte instructions[];
 } WASM_CODE_BODY, *PWASM_CODE_BODY;
 
@@ -366,7 +366,7 @@ typedef struct _WASM_DATA_SEGMENT
         [case(WASM_DATA_ACTIVE_MEMORY_0)]
         struct
         {
-            [count(size), terminated_by(0x0b)]
+            [max_count(size), terminated_by(0x0b)]
             byte offsetExpr[];
 
             uleb128 byteCount;
@@ -389,7 +389,7 @@ typedef struct _WASM_DATA_SEGMENT
         {
             uleb128 memoryIndex;
 
-            [count(size), terminated_by(0x0b)]
+            [max_count(size), terminated_by(0x0b)]
             byte offsetExpr[];
 
             uleb128 byteCount;

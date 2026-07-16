@@ -8,7 +8,7 @@ description: Write, review, and debug q22 Strata `.strata`/legacy `.struct` bina
 ## Workflow
 
 1. Read `AGENTS.md` and `src/causeway/strata/README.md` before changing `.strata` files.
-2. Prefer a pure structure model first: fields in physical file order, `offset(...)` for tables elsewhere, `count(...)`/`terminated_by(...)` for arrays, and `extent(...)` when rendered children are capped but layout must advance by full byte length.
+2. Prefer a pure structure model first: fields in physical file order, `offset(...)` for tables elsewhere, `count(...)` for exact-count arrays, `max_count(...)`/`terminated_by(...)` for sentinel-bounded arrays, and `extent(...)` when rendered children are capped but layout must advance by full byte length.
 3. Use `dynamic_array`, `dynamic_struct`, `dynamic_container`, and semantic `view(...)` only when the raw structure cannot express the relationship cleanly, such as PE RVA-mapped data directories.
 4. When adding or renaming Strata keywords, update all keyword-facing surfaces in the same change: `src/causeway/strata/README.md`, `scripts/qtcreator/q22-strata.xml`, parser/lexer tests, and any shipped `.strata` examples that demonstrate the syntax.
 5. Add or update focused tests in `tests/structview_tests.cpp` for every behavior change that affects rendering.
@@ -21,6 +21,7 @@ description: Write, review, and debug q22 Strata `.strata`/legacy `.struct` bina
 - Do not use `bitflag(...)` for packed fields whose values overlap, such as PE section alignment bits. Leave those raw or add a purpose-built renderer later.
 - Leave architecture-specific fields raw unless the definition can switch safely on architecture. ELF `e_flags` is intentionally raw because architectures assign different meanings to the same bits.
 - When a variable array may exceed the display cap, pair `count(...)` with `extent(...)` so parent layout advances by the true byte length.
+- For sentinel-bounded arrays, prefer `max_count(...)` plus `terminated_by(...)` over using `count(...)` as an artificial cap. `terminated_by(...)` may be a scalar value, a byte sequence such as `{ 0, 0, 1 }`, or an expression over the rendered element's fields.
 - For ZIP-like formats, show both local records and index/trailer records when both exist; use top-level offset sorting in the renderer when physical order matters.
 - For endian-sensitive formats, put `endian(...)` high enough for nested fields to inherit it.
 - For discriminators inside union candidates, use the shared-candidate field fallback when the field is declared identically by every case; otherwise use `select_offset(byteOffset)`.

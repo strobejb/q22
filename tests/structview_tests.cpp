@@ -54,6 +54,7 @@ private slots:
     void builderPadsDeclarationsToAlignmentBoundaries();
     void builderSkipsAbsentOptionalDeclarations();
     void builderUsesSizeIsForUnsizedArrays();
+    void builderUsesMaxCountAndTerminatorExpressions();
     void builderUsesCountAsForLogicalArraySlots();
     void builderEvaluatesTernaryExpressions();
     void builderUsesCommonUnionPrefixForSizeIs();
@@ -1428,6 +1429,50 @@ void StructViewTests::builderUsesSizeIsForUnsizedArrays()
     QCOMPARE(rows[0]->children[1]->children.size(), size_t(3));
     QCOMPARE(rows[0]->children[1]->children[0]->children[0]->value, QStringLiteral("10"));
     QCOMPARE(rows[0]->children[1]->children[2]->children[0]->value, QStringLiteral("12"));
+}
+
+void StructViewTests::builderUsesMaxCountAndTerminatorExpressions()
+{
+    // Scenario: sentinel arrays often have a safety cap rather than an exact
+    // count, and their stop condition may inspect fields of a compound element
+    // or a raw byte marker.
+    // Expected: max_count(...) bounds the loop, terminated_by(...) evaluates
+    // against the rendered element row, and byte-sequence terminators are hidden
+    // but consumed as a whole.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef struct _Rec { byte kind; byte size; } Rec;\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  [max_count(8), terminated_by(kind == 0 && size == 0)] Rec records[];\n"
+                        "  byte afterRecords;\n"
+                        "  [max_count(16), terminated_by({ 0xAA, 0xBB, 0xCC })] byte payload[];\n"
+                        "  byte afterPayload;\n"
+                        "} root;\n"));
+
+    const QByteArray bytes = QByteArray::fromHex("01020000074849AABBCC55");
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(4));
+
+    StructureRow *records = rows[0]->children[0].get();
+    QCOMPARE(records->name, QStringLiteral("Rec records[]"));
+    QCOMPARE(records->children.size(), size_t(1));
+    QCOMPARE(records->byteLength, uint64_t(4));
+    QCOMPARE(rows[0]->children[1]->name, QStringLiteral("byte afterRecords"));
+    QCOMPARE(rows[0]->children[1]->absoluteOffset, uint64_t(4));
+    QCOMPARE(rows[0]->children[1]->value, QStringLiteral("7"));
+
+    StructureRow *payload = rows[0]->children[2].get();
+    QCOMPARE(payload->name, QStringLiteral("byte payload[]"));
+    QCOMPARE(payload->children.size(), size_t(2));
+    QCOMPARE(payload->byteLength, uint64_t(5));
+    QCOMPARE(payload->children[0]->value, QStringLiteral("72"));
+    QCOMPARE(payload->children[1]->value, QStringLiteral("73"));
+    QCOMPARE(rows[0]->children[3]->name, QStringLiteral("byte afterPayload"));
+    QCOMPARE(rows[0]->children[3]->absoluteOffset, uint64_t(10));
+    QCOMPARE(rows[0]->children[3]->value, QStringLiteral("85"));
 }
 
 void StructViewTests::builderUsesCountAsForLogicalArraySlots()

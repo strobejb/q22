@@ -256,7 +256,7 @@ typedef struct _ISO_IMAGE
 {
     [
         offset(16 * 2048),
-        count(64),
+        max_count(64),
         terminated_by(type == ISO_VOLUME_TERMINATOR),
         extent(file_size() - (16 * 2048)),
         name(type)

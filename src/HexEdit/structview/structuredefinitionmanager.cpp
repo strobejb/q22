@@ -564,6 +564,7 @@ bool StructureDefinitionManager::parseFiles(const QStringList &files,
     for (const QString &file : files)
     {
         Parser parser(library);
+        parser.SetErrorStream(nullptr);
         const QStringList includeDirs = QStringList{ userStrataDir() } + builtinStructDirs();
         for (const QString &includeDir : includeDirs)
         {

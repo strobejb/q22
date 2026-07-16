@@ -204,7 +204,7 @@ typedef struct _MACHO_DYLIB_COMMAND
     dword currentVersion;
     dword compatibilityVersion;
 
-    [offset(nameOffset - 8), string, count(cmdSize - nameOffset), terminated_by(0)]
+    [offset(nameOffset - 8), string, max_count(cmdSize - nameOffset), terminated_by(0)]
     char name[];
 } MACHO_DYLIB_COMMAND, *PMACHO_DYLIB_COMMAND;
 

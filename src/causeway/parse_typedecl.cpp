@@ -461,7 +461,7 @@ Type * Parser::ParseStructBody(Symbol *sym, TYPE ty)
 	{
 		TOKEN allowed[] = 
 		{ 
-			TOK_LENGTHIS, TOK_SIZEIS, TOK_IGNORE, TOK_STRING,
+			TOK_LENGTHIS, TOK_SIZEIS, TOK_MAXCOUNT, TOK_IGNORE, TOK_STRING,
 			TOK_OFFSET, TOK_ALIGN, TOK_BITFLAG, TOK_COUNTAS, TOK_STYLE,
 			TOK_DISPLAY, TOK_FORMAT,
 			TOK_ENDIAN,	TOK_SWITCHIS, TOK_CASE, TOK_NAME, TOK_PADTO, TOK_DEFAULT,
@@ -785,7 +785,9 @@ TypeDecl * Parser::ParseTypeDecl(Tag *tagList, SymbolTable &symTable, bool neste
 		// glue the basetype and variable-declaration together
 		type = AppendType(InvertType(type), typeDecl->baseType);
 
-		if(HasUnsizedArray(type) && !FindTag(typeDecl->tagList, TOK_SIZEIS, 0))
+		if(HasUnsizedArray(type)
+			&& !FindTag(typeDecl->tagList, TOK_SIZEIS, 0)
+			&& !FindTag(typeDecl->tagList, TOK_MAXCOUNT, 0))
 		{
 			Error(ERROR_UNSIZED_ARRAY_REQUIRES_SIZEIS);
 			delete type;

@@ -18,7 +18,7 @@ View online: [Strata Language Reference](https://github.com/strobejb/q22/blob/ma
 | Tags | [`tagset`](#tagsets) · [`tags`](#tagsets) |
 | Display | [`enum(N)`](#display) · [`bitflag(N)`](#display) · [`format("...")`](#display) · [`name`](#display) · [`string`](#display) |
 | Layout | [`offset`](#layout) · [`align`](#layout) · [`pad_to`](#layout) · [`endian`](#byte-order) · [`entrypoint`](#layout) · [`extent`](#layout) · [`optional`](#layout) |
-| Arrays | [`count`](#arrays) · [`count_as`](#arrays) · [`terminated_by`](#arrays) |
+| Arrays | [`count`](#arrays) · [`max_count`](#arrays) · [`count_as`](#arrays) · [`terminated_by`](#arrays) |
 | Unions | [`select`](#discriminated-unions) · [`case`](#discriminated-unions) |
 | Semantic views | [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) · [`view`](#view) |
 | Export | [`export`](#export-metadata) · [`category`](#export-metadata) · [`version`](#export-metadata) · [`assoc`](#export-metadata) · [`magic`](#export-metadata) |
@@ -244,7 +244,7 @@ Variable-sized arrays can be defined with an empty `[]` with the array bounds sp
 
 ```c
 [count(Header.Count)]           dword Entries[];
-[count(4096), terminated_by(0)] char  Name[];
+[max_count(4096), terminated_by(0)] char  Name[];
 ```
 
 Nested flexible arrays are supported for byte/string-table patterns where the
@@ -428,8 +428,9 @@ for how that still resolves.
 | Tag | Effect |
 |-----|--------|
 | `count(expr[, expr...])` | Element count for a flexible array (`size_is` is a legacy alias); extra arguments apply to nested dimensions |
+| `max_count(expr[, expr...])` | Safety cap for a flexible array that can stop earlier with `terminated_by(...)` |
 | `count_as(expr)` | Make a rendered array element consume `expr` logical count slots instead of one |
-| `terminated_by(val[, val...])` | Stop reading when an element equals `val`; use `_` to skip a nested-array dimension |
+| `terminated_by(val[, val...])` | Stop reading when an element equals `val`, when an expression over the rendered element is true, or when a byte sequence such as `{ 0, 0, 1 }` is found; use `_` to skip a nested-array dimension |
 
 ---
 
@@ -498,7 +499,7 @@ dynamic_struct(container(RelatedData),
 Renders a variable-length array at a computed offset. Arguments must be wrapped by role:
 
 ```c
-dynamic_array(type(ElemType), offset(expr), count(expr)
+dynamic_array(type(ElemType), offset(expr), count(expr) | max_count(expr)
               [, name(label) | case(selector)]
               [, container(label)]
               [, mapper(direct | offset_map)]
@@ -508,7 +509,8 @@ dynamic_array(type(ElemType), offset(expr), count(expr)
 
 - `type(ElemType)` — element type
 - `offset(expr)` — target offset expression
-- `count(expr)` — max element count
+- `count(expr)` — exact element count unless stopped early by `terminated_by(...)`
+- `max_count(expr)` — safety cap for a terminator-bounded dynamic array; equivalent to `count(...)` at render time, but clearer for sentinel arrays
 - `name(label)` — display label; also marks character arrays as a per-element name source
 - `case(selector)` — only the matching array element emits this array
 - `container(label)` — place the generated dynamic array under a named root-level group
@@ -657,6 +659,7 @@ dosHeader.e_lfanew
 | Octal text | `octal(text)` |
 | FourCC literal | `fourcc("abcd")` |
 | String lookup | `cstr_at(offset, maxLen)` |
+| Byte sequence literal | `{ 0x50, 0x4b }` |
 | Byte search | `find_first({ ... })` · `find_last({ ... })` |
 | Raw read | `select_offset(byteOffset)` |
 
@@ -664,6 +667,8 @@ dosHeader.e_lfanew
 size_is(Header.Count * sizeof(DWORD))
 optional(Signature == 0x00004550)
 terminated_by(0)
+terminated_by(kind == 0 && size == 0)
+terminated_by({ 0x00, 0x00, 0x01 })
 ```
 
 `cstr_at(offset, maxLen)` reads a NUL-terminated 8-bit string at `offset`
@@ -802,7 +807,7 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 | Type declarations | `struct`, `union`, `enum`, `typedef`, `const`, `signed`, `unsigned` |
 | Primitive types | `byte`, `word`, `dword`, `qword`, `char`, `wchar_t`, `float`, `double`, `uleb128`, `sleb128` |
 | Display/layout tags | `align`, `bitflag`, `description`, `display`, `endian`, `entrypoint`, `extent`, `format`, `ignore`, `name`, `offset`, `optional`, `pad_to`, `string`, `style`, `tree` |
-| Arrays/unions | `case`, `count`, `count_as`, `default`, `length_is`, `select`, `select_offset`, `size_is`, `switch_is`, `terminated_by` |
+| Arrays/unions | `case`, `count`, `count_as`, `default`, `length_is`, `max_count`, `select`, `select_offset`, `size_is`, `switch_is`, `terminated_by` |
 | Dynamic/semantic tags | `container`, `dynamic_array`, `dynamic_container`, `dynamic_struct`, `mapper`, `offset_map`, `type`, `view` |
 | Export/detection tags | `assoc`, `category`, `export`, `magic`, `version` |
 | Tagsets/files | `include`, `tagset`, `tags` |
@@ -822,7 +827,7 @@ Recommended workflow:
 2. Add an exported root with `export`, optional `category`, one comma-separated `assoc`, `magic`, and `offset`.
 3. Model fields in physical order where possible.
 4. Use `offset(...)` for tables or records referenced from elsewhere in the file.
-5. Use `count(...)` and `terminated_by(...)` for variable arrays.
+5. Use `count(...)` for exact-count variable arrays, or `max_count(...)` plus `terminated_by(...)` for sentinel-bounded arrays.
 6. Use `extent(...)` when a rendered field is capped or conditionally short, but
    its parent still needs to advance by the full byte length.
 7. Add display tags (`enum`, `bitflag`, `name`) after the raw layout is correct.

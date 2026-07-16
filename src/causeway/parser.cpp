@@ -206,7 +206,7 @@ bool Parser::ParseByteSequence(vector<uint8_t> *bytes)
 // Add more here -- TOK_NULL-terminated -- as more wrapped roles are needed.
 static TOKEN kDynamicTagValueWrappers[] = {
 	TOK_NAME, TOK_CASE, TOK_TYPE, TOK_OFFSET, TOK_SIZEIS,
-	TOK_MAPPER, TOK_TERMINATEDBY, TOK_OPTIONAL, TOK_CONTAINER, TOK_NULL
+	TOK_MAXCOUNT, TOK_MAPPER, TOK_TERMINATEDBY, TOK_OPTIONAL, TOK_CONTAINER, TOK_NULL
 };
 
 bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
@@ -371,6 +371,7 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 		case TOK_BITFLAG:	case TOK_ENDIAN:
 		case TOK_COUNTAS:
 		case TOK_SIZEIS:
+		case TOK_MAXCOUNT:
 		case TOK_PADTO:
 		case TOK_STYLE:		case TOK_SWITCHIS:
 		case TOK_CASE:
@@ -407,7 +408,7 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 					return false;
 				}
 			}
-			else if(tmp == TOK_SIZEIS || tmp == TOK_TERMINATEDBY || tmp == TOK_ASSOC || tmp == TOK_OFFSETMAP)
+			else if(tmp == TOK_SIZEIS || tmp == TOK_MAXCOUNT || tmp == TOK_TERMINATEDBY || tmp == TOK_ASSOC || tmp == TOK_OFFSETMAP)
 			{
 				// full comma-separated expression 
 				if((expr = CommaExpression(TOK_NULL)) == 0)
@@ -546,7 +547,7 @@ TagSet * Parser::ParseTagSet(FILEREF fileRef)
 
 	TOKEN allowed[] =
 	{
-		TOK_SIZEIS, TOK_IGNORE, TOK_STRING,
+		TOK_SIZEIS, TOK_MAXCOUNT, TOK_IGNORE, TOK_STRING,
 		TOK_OFFSET, TOK_ALIGN, TOK_BITFLAG, TOK_COUNTAS, TOK_STYLE,
 		TOK_DISPLAY,
 		TOK_ENDIAN, TOK_SWITCHIS, TOK_CASE, TOK_NAME, TOK_PADTO, TOK_DEFAULT,
@@ -699,7 +700,7 @@ int Parser::Parse()
 	{
 		TOKEN allowed[] = 
 		{ 
-			TOK_LENGTHIS, TOK_SIZEIS, TOK_IGNORE, TOK_STRING,
+			TOK_LENGTHIS, TOK_SIZEIS, TOK_MAXCOUNT, TOK_IGNORE, TOK_STRING,
 			TOK_OFFSET, TOK_ALIGN, TOK_BITFLAG, TOK_COUNTAS, TOK_STYLE, TOK_DESCRIPTION,
 			TOK_DISPLAY,
 			TOK_ENDIAN,	TOK_SWITCHIS, TOK_CASE, TOK_NAME, TOK_PADTO, TOK_DEFAULT,

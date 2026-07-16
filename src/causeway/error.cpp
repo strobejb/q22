@@ -231,7 +231,8 @@ void Parser::ErrorV(ERROR err, va_list vargs)
          snprintf (e, rem, "\n");
 	errcount++;
 
-    fprintf(fperr, "%s", errstr);
+    if (fperr)
+        fprintf(fperr, "%s", errstr);
 	lasterr = err;
 
 	if(errcallback)

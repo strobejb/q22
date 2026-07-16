@@ -190,7 +190,11 @@ private:
     void applyDeclarationName(StructureRow *row, Type *type) const;
     QString stringArrayValue(StructureRow *scope, Type *type, TypeDecl *typeDecl, uint64_t offset);
     QString scalarArrayValue(StructureRow *scope, Type *type) const;
-    bool elementMatchesTerminator(StructureRow *row, Type *elementType, ExprNode *stopExpr, uint64_t offset);
+    uint64_t terminatorMatchLength(StructureRow *row,
+                                   Type *elementType,
+                                   ExprNode *stopExpr,
+                                   uint64_t offset,
+                                   uint64_t elementLength);
     QString fieldNameValue(StructureRow *scope, Type *scopeType, ExprNode *expr, uint64_t scopeOffset);
     QString dynamicContainerAlias(StructureRow *row);
     QString dynamicArrayNameString(StructureRow *elementRow, ExprNode *dynamicArrayTagExpr);

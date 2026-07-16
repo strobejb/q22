@@ -78,6 +78,7 @@
     <item>format</item>
     <item>length_is</item>
     <item>magic</item>
+    <item>max_count</item>
     <item>mapper</item>
     <item>name</item>
     <item>offset</item>

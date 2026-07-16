@@ -75,10 +75,10 @@ typedef struct _GZIP_HEADER
     [optional((flags & GZIP_FLAG_FEXTRA) != 0)]
     GZIP_EXTRA_FIELD extra;
 
-    [optional((flags & GZIP_FLAG_FNAME) != 0), string, count(4096), terminated_by(0)]
+    [optional((flags & GZIP_FLAG_FNAME) != 0), string, max_count(4096), terminated_by(0)]
     char originalName[];
 
-    [optional((flags & GZIP_FLAG_FCOMMENT) != 0), string, count(4096), terminated_by(0)]
+    [optional((flags & GZIP_FLAG_FCOMMENT) != 0), string, max_count(4096), terminated_by(0)]
     char comment[];
 
     [optional((flags & GZIP_FLAG_FHCRC) != 0)]

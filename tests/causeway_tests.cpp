@@ -33,6 +33,7 @@ private slots:
 	void ternaryExpressionTagsParse();
 	void lengthIsIsReserved();
 	void unsizedArraysRequireSizeIs();
+	void maxCountAndByteSequenceTerminatorsParse();
 	void multiDimensionalFlexibleArraysParse();
 	void elfRootIsExportedAndAssociated();
 	void standardTypelibFilesParse();
@@ -51,6 +52,19 @@ static int countTags(Tag *tag, TOKEN tok)
 		if(tag->tok == tok)
 			count++;
 	return count;
+}
+
+static ExprNode *findByteSequenceExpr(ExprNode *expr)
+{
+	if(!expr)
+		return nullptr;
+	if(expr->type == EXPR_BYTESEQ)
+		return expr;
+	if(ExprNode *found = findByteSequenceExpr(expr->left))
+		return found;
+	if(ExprNode *found = findByteSequenceExpr(expr->right))
+		return found;
+	return findByteSequenceExpr(expr->cond);
 }
 
 void CausewayTests::defaultParsersDoNotShareTypes()
@@ -737,6 +751,39 @@ void CausewayTests::unsizedArraysRequireSizeIs()
 						"  byte count;\n"
 						"  [size_is(count)] byte data[];\n"
 						"} root;\n"));
+
+	Parser withMaxCount;
+	QVERIFY(parseBuffer(withMaxCount,
+						"struct Root {\n"
+						"  [max_count(16), terminated_by(0)] byte data[];\n"
+						"} root;\n"));
+}
+
+void CausewayTests::maxCountAndByteSequenceTerminatorsParse()
+{
+	// Scenario: terminated arrays can use a named maximum count and a byte
+	// sequence terminator.
+	// Expected: max_count(...) is accepted as an array bound tag, and
+	// terminated_by({ ... }) preserves the byte-sequence expression for the
+	// renderer.
+	Parser parser;
+	QVERIFY(parseBuffer(parser,
+						"struct Root {\n"
+						"  [max_count(1024), terminated_by({ 0x00, 0x00, 0x01 })] byte payload[];\n"
+						"} root;\n"));
+
+	TypeDecl *root = parser.GetStrataLibrary()->globalTypeDeclList[0];
+	TypeDecl *field = root->baseType->sptr->typeDeclList[0];
+	QVERIFY(FindTag(field->tagList, TOK_MAXCOUNT, nullptr));
+
+	ExprNode *terminatorExpr = nullptr;
+	QVERIFY(FindTag(field->tagList, TOK_TERMINATEDBY, &terminatorExpr));
+	ExprNode *byteSeq = findByteSequenceExpr(terminatorExpr);
+	QVERIFY(byteSeq);
+	QCOMPARE(byteSeq->byteSequence.size(), size_t(3));
+	QCOMPARE(byteSeq->byteSequence[0], uint8_t(0));
+	QCOMPARE(byteSeq->byteSequence[1], uint8_t(0));
+	QCOMPARE(byteSeq->byteSequence[2], uint8_t(1));
 }
 
 void CausewayTests::multiDimensionalFlexibleArraysParse()

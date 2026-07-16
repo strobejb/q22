@@ -79,7 +79,7 @@ typedef struct _CAB_CFFILE
     [bitflag(CAB_FILE_ATTRIBUTES)]
     word attributes;
 
-    [string, count(4096), terminated_by(0)]
+    [string, max_count(4096), terminated_by(0)]
     char fileName[];
 } CAB_CFFILE, *PCAB_CFFILE;
 
@@ -116,16 +116,16 @@ typedef struct _CAB_CFHEADER
     [optional((flags & CAB_FLAG_RESERVE_PRESENT) != 0), count(headerReserveSize)]
     byte headerReserve[];
 
-    [optional((flags & CAB_FLAG_PREV_CABINET) != 0), string, count(256), terminated_by(0)]
+    [optional((flags & CAB_FLAG_PREV_CABINET) != 0), string, max_count(256), terminated_by(0)]
     char previousCabinetName[];
 
-    [optional((flags & CAB_FLAG_PREV_CABINET) != 0), string, count(256), terminated_by(0)]
+    [optional((flags & CAB_FLAG_PREV_CABINET) != 0), string, max_count(256), terminated_by(0)]
     char previousDiskName[];
 
-    [optional((flags & CAB_FLAG_NEXT_CABINET) != 0), string, count(256), terminated_by(0)]
+    [optional((flags & CAB_FLAG_NEXT_CABINET) != 0), string, max_count(256), terminated_by(0)]
     char nextCabinetName[];
 
-    [optional((flags & CAB_FLAG_NEXT_CABINET) != 0), string, count(256), terminated_by(0)]
+    [optional((flags & CAB_FLAG_NEXT_CABINET) != 0), string, max_count(256), terminated_by(0)]
     char nextDiskName[];
 } CAB_CFHEADER, *PCAB_CFHEADER;
 

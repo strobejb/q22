@@ -830,7 +830,11 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
                 if (!stringValue.isNull())
                     row->value = stringValue;
             }
-            const bool terminates = elementMatchesTerminator(row.get(), type->link, terminatorExpr, offset + length);
+            const uint64_t terminatorLength = terminatorMatchLength(row.get(),
+                                                                     type->link,
+                                                                     terminatorExpr,
+                                                                     offset + length,
+                                                                     elementLength);
             if (renderElement && !nameEnum && nameExpr)
             {
                 const QString fieldName = rowNameFragment(fieldNameValue(row.get(), type->link, nameExpr, offset + length));
@@ -871,10 +875,10 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
                 }
             }
 
-            length += elementLength;
+            length += terminatorLength > 0 ? terminatorLength : elementLength;
             logicalIndex += std::max<uint64_t>(row->arrayCountContribution, 1);
             ++renderedElements;
-            if (terminates)
+            if (terminatorLength > 0)
                 break;
 
             if (renderElement)
@@ -1196,6 +1200,12 @@ bool StructureRenderEngine::evaluateArrayCount(StructureRow *scope,
     ExprNode *sizeExpr = dimensionTagArg(typeDecl ? typeDecl->tagList : nullptr,
                                          TOK_SIZEIS,
                                          arrayDimensionIndex(typeDecl, arrayType));
+    if (!sizeExpr)
+    {
+        sizeExpr = dimensionTagArg(typeDecl ? typeDecl->tagList : nullptr,
+                                   TOK_MAXCOUNT,
+                                   arrayDimensionIndex(typeDecl, arrayType));
+    }
     if (!sizeExpr)
         return false;
 
@@ -2269,7 +2279,7 @@ void StructureRenderEngine::validateStructTags(Type *structType, QStringList *er
         return;
 
     static constexpr TOKEN kValidatedTags[] = {
-        TOK_SWITCHIS, TOK_ENDIAN, TOK_OFFSET, TOK_SIZEIS, TOK_OPTIONAL, TOK_EXTENT, TOK_PADTO, TOK_COUNTAS
+        TOK_SWITCHIS, TOK_ENDIAN, TOK_OFFSET, TOK_SIZEIS, TOK_MAXCOUNT, TOK_OPTIONAL, TOK_EXTENT, TOK_PADTO, TOK_COUNTAS
     };
 
     for (TypeDecl *decl : base->sptr->typeDeclList)
@@ -2296,7 +2306,7 @@ QStringList StructureRenderEngine::validateStaticFieldReferences(StrataLibrary *
         return errors;
 
     static constexpr TOKEN kValidatedTags[] = {
-        TOK_SWITCHIS, TOK_ENDIAN, TOK_OFFSET, TOK_SIZEIS, TOK_OPTIONAL, TOK_EXTENT, TOK_PADTO, TOK_COUNTAS
+        TOK_SWITCHIS, TOK_ENDIAN, TOK_OFFSET, TOK_SIZEIS, TOK_MAXCOUNT, TOK_OPTIONAL, TOK_EXTENT, TOK_PADTO, TOK_COUNTAS
     };
 
     StructureRenderEngine scratch(library, nullptr, 0, StructureValueBuilder::ByteReader{}, StructureDisplayOptions{});
@@ -2827,14 +2837,15 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
                 }
             }
 
-            const bool terminates = elementMatchesTerminator(elementRow.get(),
-                                                             request.renderType,
-                                                             request.stopExpr,
-                                                             m_baseOffset + fileOffset + length);
-            length += elementLength;
+            const uint64_t terminatorLength = terminatorMatchLength(elementRow.get(),
+                                                                     request.renderType,
+                                                                     request.stopExpr,
+                                                                     m_baseOffset + fileOffset + length,
+                                                                     elementLength);
+            length += terminatorLength > 0 ? terminatorLength : elementLength;
             logicalIndex += std::max<uint64_t>(elementRow->arrayCountContribution, 1);
             ++renderedElements;
-            if (terminates)
+            if (terminatorLength > 0)
                 break;
 
             if (renderElement)
@@ -3001,6 +3012,7 @@ bool StructureRenderEngine::dynamicArrayArgs(ExprNode *expr,
             offsetExpr = inner;
             break;
         case TOK_SIZEIS:
+        case TOK_MAXCOUNT:
             countExpr = inner;
             break;
         case TOK_TERMINATEDBY:
@@ -3794,13 +3806,34 @@ QString StructureRenderEngine::scalarArrayValue(StructureRow *scope, Type *type)
     return QStringLiteral("{ %1 }").arg(values.join(QStringLiteral(", ")));
 }
 
-bool StructureRenderEngine::elementMatchesTerminator(StructureRow *row,
-                                                     Type *elementType,
-                                                     ExprNode *stopExpr,
-                                                     uint64_t offset)
+uint64_t StructureRenderEngine::terminatorMatchLength(StructureRow *row,
+                                                      Type *elementType,
+                                                      ExprNode *stopExpr,
+                                                      uint64_t offset,
+                                                      uint64_t elementLength)
 {
     if (!row || !elementType || !stopExpr)
-        return false;
+        return 0;
+
+    if (stopExpr->type == EXPR_BYTESEQ)
+    {
+        if (stopExpr->byteSequence.empty())
+            return 0;
+
+        QByteArray bytes(static_cast<int>(stopExpr->byteSequence.size()), Qt::Uninitialized);
+        const size_t got = m_reader ? m_reader(offset,
+                                               reinterpret_cast<uint8_t *>(bytes.data()),
+                                               static_cast<size_t>(bytes.size()))
+                                    : 0;
+        if (got != static_cast<size_t>(bytes.size()))
+            return 0;
+
+        for (int i = 0; i < bytes.size(); ++i)
+            if (uchar(bytes[i]) != stopExpr->byteSequence[static_cast<size_t>(i)])
+                return 0;
+
+        return static_cast<uint64_t>(stopExpr->byteSequence.size());
+    }
 
     // terminated_by(0) is the common C-string/table-sentinel form. Treat a
     // constant stop expression as an element-value comparison; richer
@@ -3812,15 +3845,16 @@ bool StructureRenderEngine::elementMatchesTerminator(StructureRow *row,
             return false;
 
         uint64_t elementValue = 0;
-        uint64_t elementLength = 0;
+        uint64_t scalarLength = 0;
         INUMTYPE terminatorValue = 0;
-        return decodeScalarValue(elementType, offset, &elementValue, &elementLength)
+        const bool matches = decodeScalarValue(elementType, offset, &elementValue, &scalarLength)
             && evaluate(row, stopExpr, &terminatorValue, offset)
             && elementValue == static_cast<uint64_t>(terminatorValue);
+        return matches ? scalarLength : 0;
     }
 
     INUMTYPE value = 0;
-    return evaluate(row, stopExpr, &value, offset) && value != 0;
+    return evaluate(row, stopExpr, &value, offset) && value != 0 ? elementLength : 0;
 }
 
 QString StructureRenderEngine::fieldNameValue(StructureRow *scope, Type *scopeType, ExprNode *expr, uint64_t scopeOffset)
