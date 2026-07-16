@@ -665,6 +665,7 @@ uint64_t StructureRenderEngine::appendTypeDecl(StructureRow *parent, TypeDecl *t
         return 0;
 
     const uint64_t originalOffset = offset;
+    collectNamedOffsetMaps(parent);
     if (declarationIsOptionalAndAbsent(typeDecl, parent, parent ? parent->type : nullptr, offset))
         return 0;
 
@@ -672,9 +673,23 @@ uint64_t StructureRenderEngine::appendTypeDecl(StructureRow *parent, TypeDecl *t
     if (FindTag(typeDecl->tagList, TOK_OFFSET, &offsetExpr))
     {
         INUMTYPE evaluated = offset;
-        if (!evaluate(parent, offsetExpr, &evaluated, offset))
+        QString offsetSpace;
+        ExprNode *positionExpr = nullptr;
+        if (!offsetTagArgs(offsetExpr, &offsetSpace, &positionExpr)
+            || !positionExpr
+            || !evaluate(parent, positionExpr, &evaluated, offset))
+        {
             return 0;
-        offset = m_baseOffset + evaluated;
+        }
+
+        if (offsetSpace.isEmpty())
+        {
+            offset = m_baseOffset + evaluated;
+        }
+        else if (!mapNamedOffset(offsetSpace, static_cast<uint64_t>(evaluated), &offset))
+        {
+            return 0;
+        }
     }
     else
     {
@@ -851,6 +866,7 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
 
             const uint64_t elementLength = formatType(row.get(), type->link, typeDecl, offset + length);
             row->byteLength = elementLength;
+            collectNamedOffsetMaps(row.get());
             if (renderElement && row->value.isEmpty())
             {
                 const QString stringValue = stringArrayValue(row.get(), type->link, typeDecl, offset + length);
@@ -925,6 +941,7 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
         if (!type->sptr)
             return 0;
 
+        collectNamedOffsetMaps(parent);
         uint64_t length = 0;
         for (TypeDecl *childDecl : type->sptr->typeDeclList)
             length += appendTypeDecl(parent, childDecl, offset + length);
@@ -1409,6 +1426,8 @@ bool StructureRenderEngine::evaluate(const EvalContext &context, ExprNode *expr,
 
         return readInteger(base + static_cast<uint64_t>(relOffset), 1, result, false);
     }
+    case EXPR_VALUEAT:
+        return evaluateValueAt(context, expr, result);
     case EXPR_FUNCTION:
         return evaluateFunction(context, expr, result);
     case EXPR_BYTESEQ:
@@ -1416,6 +1435,41 @@ bool StructureRenderEngine::evaluate(const EvalContext &context, ExprNode *expr,
     default:
         return false;
     }
+}
+
+bool StructureRenderEngine::evaluateValueAt(const EvalContext &context, ExprNode *expr, INUMTYPE *result)
+{
+    if (!expr || expr->type != EXPR_VALUEAT || !expr->right || !expr->cond || !expr->cond->str || !result)
+        return false;
+
+    INUMTYPE logicalOffset = 0;
+    if (!evaluate(context, expr->right, &logicalOffset))
+        return false;
+
+    uint64_t absoluteOffset = 0;
+    if (expr->left)
+    {
+        if (expr->left->type != EXPR_STRINGBUF || !expr->left->str)
+            return false;
+        if (!mapNamedOffset(QString::fromLocal8Bit(expr->left->str),
+                            static_cast<uint64_t>(logicalOffset),
+                            &absoluteOffset))
+        {
+            return false;
+        }
+    }
+    else
+    {
+        const uint64_t base = context.row ? context.row->absoluteOffset : context.offset;
+        absoluteOffset = base + static_cast<uint64_t>(logicalOffset);
+    }
+
+    const TYPE scalarType = scalarTypeName(expr->cond->str);
+    const uint64_t byteLength = scalarSize(scalarType);
+    if (byteLength == 0)
+        return false;
+
+    return readInteger(absoluteOffset, byteLength, result, m_bigEndian);
 }
 
 namespace
@@ -2033,8 +2087,17 @@ bool StructureRenderEngine::resolveDirectField(Type *scopeType, const char *name
         if (FindTag(decl->tagList, TOK_OFFSET, &offsetExpr))
         {
             INUMTYPE evaluated = declOffset;
-            if (evaluate(base, offsetExpr, &evaluated, scopeOffset))
-                declOffset = m_baseOffset + evaluated;
+            QString offsetSpace;
+            ExprNode *positionExpr = nullptr;
+            if (offsetTagArgs(offsetExpr, &offsetSpace, &positionExpr)
+                && positionExpr
+                && evaluate(base, positionExpr, &evaluated, scopeOffset))
+            {
+                if (offsetSpace.isEmpty())
+                    declOffset = m_baseOffset + evaluated;
+                else
+                    mapNamedOffset(offsetSpace, static_cast<uint64_t>(evaluated), &declOffset);
+            }
         }
 
         const bool bigEndian = m_evaluatingEndian
@@ -2173,6 +2236,11 @@ void collectFieldReferenceRoots(ExprNode *expr, std::vector<ExprNode *> *roots)
         collectFieldReferenceRoots(expr->left, roots);
         collectFieldReferenceRoots(expr->right, roots);
         return;
+    case EXPR_VALUEAT:
+        // left is an optional string address-space name; cond is the scalar
+        // type name. Only the offset expression can contain field references.
+        collectFieldReferenceRoots(expr->right, roots);
+        return;
     case EXPR_TERTIARY:
         collectFieldReferenceRoots(expr->cond, roots);
         collectFieldReferenceRoots(expr->left, roots);
@@ -2226,6 +2294,8 @@ QString rootOffsetUnsupportedExpressionName(ExprNode *expr)
         return QStringLiteral("sizeof(...)");
     case EXPR_RAWOFFSET:
         return QStringLiteral("select_offset(...)");
+    case EXPR_VALUEAT:
+        return QStringLiteral("value_at(...)");
     case EXPR_FUNCTION:
         return QStringLiteral("%1(...)").arg(QString::fromLocal8Bit(Parser::inenglish(expr->tok)));
     case EXPR_STRINGBUF:
@@ -2494,6 +2564,69 @@ void StructureRenderEngine::collectDynamicContainer(StructureRow *row)
 
     if (!container.maps.empty())
         m_dynamicContainers.push_back(container);
+}
+
+void StructureRenderEngine::collectNamedOffsetMaps(StructureRow *row)
+{
+    if (!row || !row->typeDecl)
+        return;
+
+    for (Tag *tag = row->typeDecl->tagList; tag; tag = tag->link)
+    {
+        if (tag->tok != TOK_OFFSETMAP)
+            continue;
+
+        QString name;
+        ExprNode *baseExpr = nullptr;
+        ExprNode *logicalStartExpr = nullptr;
+        ExprNode *logicalSizeExpr = nullptr;
+        ExprNode *fileOffsetExpr = nullptr;
+        if (!namedOffsetMapArgs(tag->expr,
+                                &name,
+                                &baseExpr,
+                                &logicalStartExpr,
+                                &logicalSizeExpr,
+                                &fileOffsetExpr)
+            || name.isEmpty())
+        {
+            continue;
+        }
+
+        if (baseExpr)
+        {
+            INUMTYPE base = 0;
+            if (!evaluate(row, baseExpr, &base, row->absoluteOffset))
+                continue;
+
+            m_namedOffsetMaps.push_back(NamedOffsetMap{
+                name,
+                0,
+                0,
+                m_baseOffset + static_cast<uint64_t>(base),
+                false
+            });
+            continue;
+        }
+
+        INUMTYPE logicalStart = 0;
+        INUMTYPE logicalSize = 0;
+        INUMTYPE fileOffset = 0;
+        if (!evaluate(row, logicalStartExpr, &logicalStart, row->absoluteOffset)
+            || !evaluate(row, logicalSizeExpr, &logicalSize, row->absoluteOffset)
+            || !evaluate(row, fileOffsetExpr, &fileOffset, row->absoluteOffset)
+            || logicalSize <= 0)
+        {
+            continue;
+        }
+
+        m_namedOffsetMaps.push_back(NamedOffsetMap{
+            name,
+            static_cast<uint64_t>(logicalStart),
+            static_cast<uint64_t>(logicalSize),
+            m_baseOffset + static_cast<uint64_t>(fileOffset),
+            true
+        });
+    }
 }
 
 void StructureRenderEngine::collectDynamicRequests(StructureRow *row)
@@ -2836,6 +2969,7 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
 
             const uint64_t elementLength = formatType(elementRow.get(), request.renderType, request.typeDecl, m_baseOffset + fileOffset + length);
             elementRow->byteLength = elementLength;
+            collectNamedOffsetMaps(elementRow.get());
 
             if (renderElement && nameSourceTagExpr)
             {
@@ -3137,6 +3271,8 @@ bool StructureRenderEngine::offsetMapArgs(ExprNode *expr,
     appendCommaArgs(expr, &args);
     if (args.size() != 3)
         return false;
+    if (args[0] && args[0]->type == EXPR_STRINGBUF)
+        return false;
 
     if (logicalStart)
         *logicalStart = args[0];
@@ -3145,6 +3281,75 @@ bool StructureRenderEngine::offsetMapArgs(ExprNode *expr,
     if (fileOffset)
         *fileOffset = args[2];
     return true;
+}
+
+bool StructureRenderEngine::namedOffsetMapArgs(ExprNode *expr,
+                                               QString *name,
+                                               ExprNode **base,
+                                               ExprNode **logicalStart,
+                                               ExprNode **logicalSize,
+                                               ExprNode **fileOffset) const
+{
+    std::vector<ExprNode *> args;
+    appendCommaArgs(expr, &args);
+    if ((args.size() != 2 && args.size() != 4)
+        || !args[0]
+        || args[0]->type != EXPR_STRINGBUF
+        || !args[0]->str)
+    {
+        return false;
+    }
+
+    if (name)
+        *name = QString::fromLocal8Bit(args[0]->str);
+
+    if (args.size() == 2)
+    {
+        if (base)
+            *base = args[1];
+        if (logicalStart)
+            *logicalStart = nullptr;
+        if (logicalSize)
+            *logicalSize = nullptr;
+        if (fileOffset)
+            *fileOffset = nullptr;
+        return true;
+    }
+
+    if (base)
+        *base = nullptr;
+    if (logicalStart)
+        *logicalStart = args[1];
+    if (logicalSize)
+        *logicalSize = args[2];
+    if (fileOffset)
+        *fileOffset = args[3];
+    return true;
+}
+
+bool StructureRenderEngine::offsetTagArgs(ExprNode *expr, QString *space, ExprNode **offsetExpr) const
+{
+    std::vector<ExprNode *> args;
+    appendCommaArgs(expr, &args);
+    if (args.size() == 1)
+    {
+        if (space)
+            space->clear();
+        if (offsetExpr)
+            *offsetExpr = args[0];
+        return true;
+    }
+
+    if (args.size() == 2 && args[0] && args[0]->type == EXPR_STRINGBUF && args[0]->str)
+    {
+        if (space)
+            *space = QString::fromLocal8Bit(args[0]->str);
+        if (offsetExpr)
+            *offsetExpr = args[1];
+        return true;
+    }
+
+    return false;
 }
 
 TypeDecl *StructureRenderEngine::findTypeDecl(const char *name) const
@@ -3216,6 +3421,60 @@ StructureRenderEngine::DynamicContainer *StructureRenderEngine::mapLogicalOffset
     }
 
     return nullptr;
+}
+
+bool StructureRenderEngine::mapNamedOffset(const QString &name, uint64_t logicalOffset, uint64_t *fileOffset) const
+{
+    if (name.isEmpty() || !fileOffset)
+        return false;
+
+    for (auto it = m_namedOffsetMaps.rbegin(); it != m_namedOffsetMaps.rend(); ++it)
+    {
+        if (it->name != name)
+            continue;
+
+        if (!it->rangeMapped)
+        {
+            *fileOffset = it->fileOffset + logicalOffset;
+            return true;
+        }
+
+        if (logicalOffset < it->logicalStart || logicalOffset >= it->logicalStart + it->logicalSize)
+            continue;
+
+        *fileOffset = it->fileOffset + (logicalOffset - it->logicalStart);
+        return true;
+    }
+
+    return false;
+}
+
+TYPE StructureRenderEngine::scalarTypeName(const char *name) const
+{
+    if (!name)
+        return typeNULL;
+
+    struct BuiltIn
+    {
+        const char *name;
+        TYPE type;
+    };
+
+    static constexpr BuiltIn builtIns[] =
+    {
+        { "char", typeCHAR },
+        { "wchar_t", typeWCHAR },
+        { "byte", typeBYTE },
+        { "word", typeWORD },
+        { "dword", typeDWORD },
+        { "qword", typeQWORD },
+    };
+
+    for (const BuiltIn &builtIn : builtIns)
+        if (std::strcmp(name, builtIn.name) == 0)
+            return builtIn.type;
+
+    return typeNULL;
 }
 
 StructureRow *StructureRenderEngine::dynamicRootGroup(const QString &label)

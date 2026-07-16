@@ -409,13 +409,20 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 					return false;
 				}
 			}
-			else if(tmp == TOK_SIZEIS || tmp == TOK_MAXCOUNT || tmp == TOK_TERMINATEDBY || tmp == TOK_ASSOC || tmp == TOK_OFFSETMAP)
+			else if(tmp == TOK_OFFSET || tmp == TOK_SIZEIS || tmp == TOK_MAXCOUNT || tmp == TOK_TERMINATEDBY || tmp == TOK_ASSOC || tmp == TOK_OFFSETMAP)
 			{
 				// full comma-separated expression 
 				if((expr = CommaExpression(TOK_NULL)) == 0)
 				{
 					Error(ERROR_SYNTAX_ERROR, inenglish(t));
 					return false;
+				}
+				if(tmp == TOK_OFFSET && expr->type == EXPR_COMMA && expr->right == 0)
+				{
+					ExprNode *singleExpr = expr->left;
+					expr->left = 0;
+					delete expr;
+					expr = singleExpr;
 				}
 			}
 			else

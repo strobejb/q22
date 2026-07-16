@@ -55,6 +55,7 @@ private slots:
     void builderSkipsAbsentOptionalDeclarations();
     void builderUsesSizeIsForUnsizedArrays();
     void builderUsesMaxCountAndTerminatorExpressions();
+    void builderUsesNamedOffsetMapsAndValueAt();
     void builderUsesCountAsForLogicalArraySlots();
     void builderEvaluatesTernaryExpressions();
     void builderUsesCommonUnionPrefixForSizeIs();
@@ -1475,6 +1476,69 @@ void StructViewTests::builderUsesMaxCountAndTerminatorExpressions()
     QCOMPARE(rows[0]->children[3]->name, QStringLiteral("byte afterPayload"));
     QCOMPARE(rows[0]->children[3]->absoluteOffset, uint64_t(10));
     QCOMPARE(rows[0]->children[3]->value, QStringLiteral("85"));
+}
+
+void StructViewTests::builderUsesNamedOffsetMapsAndValueAt()
+{
+    // Scenario: definitions can name address spaces for base-relative and
+    // range-mapped offsets, and can use value_at(...) for one-off scalar probes.
+    // Expected: offset("space", expr) places fields through the named map, and
+    // value_at(...) reads fixed-size scalars with the current endian.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef struct _Section { dword va; dword size; dword raw; } Section;\n"
+                        "[export, offset_map(\"strings\", stringBase)]\n"
+                        "struct Root {\n"
+                        "  dword stringBase;\n"
+                        "  dword nameOffset;\n"
+                        "  dword targetRva;\n"
+                        "  dword probeRva;\n"
+                        "  [offset_map(\"rva\", va, size, raw), count(1)] Section sections[];\n"
+                        "  [offset(\"strings\", nameOffset), string, max_count(16), terminated_by(0)] char name[];\n"
+                        "  [offset(\"rva\", targetRva)] dword mappedValue;\n"
+                        "  [optional(value_at(\"rva\", probeRva, word) == 0x1234), offset(28)] byte mappedProbe;\n"
+                        "  [optional(value_at(28, word) == 0x6b5a), offset(29)] byte localProbe;\n"
+                        "} root;\n"));
+
+    QByteArray bytes(0xa0, '\0');
+    writeLe32(&bytes, 0, 0x40);   // stringBase
+    writeLe32(&bytes, 4, 0x05);   // nameOffset
+    writeLe32(&bytes, 8, 0x1020); // targetRva
+    writeLe32(&bytes, 12, 0x1030);// probeRva
+    writeLe32(&bytes, 16, 0x1000);// section va
+    writeLe32(&bytes, 20, 0x80);  // section size
+    writeLe32(&bytes, 24, 0x60);  // section raw
+    writeLe32(&bytes, 0x80, 0xAABBCCDD); // rva 0x1020
+    writeLe16(&bytes, 0x90, 0x1234);     // rva 0x1030
+    bytes[0x45] = 'N';
+    bytes[0x46] = 'a';
+    bytes[0x47] = 'm';
+    bytes[0x48] = 'e';
+    bytes[0x49] = '\0';
+    bytes[0x1c] = 0x5a;
+    bytes[0x1d] = 0x6b;
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+
+    StructureRow *name = findChildNamed(rows[0].get(), QStringLiteral("char name[]"));
+    QVERIFY2(name, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(name->absoluteOffset, uint64_t(0x45));
+    QCOMPARE(name->value, QStringLiteral("\"Name\""));
+
+    StructureRow *mappedValue = findChildNamed(rows[0].get(), QStringLiteral("dword mappedValue"));
+    QVERIFY2(mappedValue, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(mappedValue->absoluteOffset, uint64_t(0x80));
+    QCOMPARE(mappedValue->value, QStringLiteral("2864434397"));
+
+    StructureRow *mappedProbe = findChildNamed(rows[0].get(), QStringLiteral("byte mappedProbe"));
+    QVERIFY2(mappedProbe, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(mappedProbe->value, QStringLiteral("90"));
+
+    StructureRow *localProbe = findChildNamed(rows[0].get(), QStringLiteral("byte localProbe"));
+    QVERIFY2(localProbe, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(localProbe->value, QStringLiteral("107"));
 }
 
 void StructViewTests::builderUsesCountAsForLogicalArraySlots()

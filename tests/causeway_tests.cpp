@@ -34,6 +34,7 @@ private slots:
 	void lengthIsIsReserved();
 	void unsizedArraysRequireSizeIs();
 	void maxCountAndByteSequenceTerminatorsParse();
+	void namedOffsetMapsAndValueAtParse();
 	void multiDimensionalFlexibleArraysParse();
 	void elfRootIsExportedAndAssociated();
 	void standardTypelibFilesParse();
@@ -785,6 +786,43 @@ void CausewayTests::maxCountAndByteSequenceTerminatorsParse()
 	QCOMPARE(byteSeq->byteSequence[0], uint8_t(0));
 	QCOMPARE(byteSeq->byteSequence[1], uint8_t(0));
 	QCOMPARE(byteSeq->byteSequence[2], uint8_t(1));
+}
+
+void CausewayTests::namedOffsetMapsAndValueAtParse()
+{
+	// Scenario: Strata definitions can define named offset spaces and use
+	// one-off scalar reads in expressions.
+	// Expected: both the new named offset(...) form and value_at(...) parse
+	// without disturbing existing anonymous offset_map(...) syntax.
+	Parser parser;
+	QVERIFY(parseBuffer(parser,
+						"typedef struct _Section { dword va; dword size; dword raw; } Section;\n"
+						"[export, offset_map(\"strings\", stringBase)]\n"
+						"struct Root {\n"
+						"  dword stringBase;\n"
+						"  dword nameOffset;\n"
+						"  dword targetRva;\n"
+						"  dword probeRva;\n"
+						"  [offset_map(\"rva\", va, size, raw), offset_map(va, size, raw), count(1)] Section sections[];\n"
+						"  [offset(\"strings\", nameOffset), string, max_count(16), terminated_by(0)] char name[];\n"
+						"  [offset(\"rva\", targetRva)] dword mappedValue;\n"
+						"  [optional(value_at(\"rva\", probeRva, word) == 0x1234)] byte mappedProbe;\n"
+						"  [optional(value_at(2, word) == 0x4433)] byte localProbe;\n"
+						"} root;\n"));
+
+	TypeDecl *root = parser.GetStrataLibrary()->globalTypeDeclList[1];
+	QVERIFY(FindTag(root->tagList, TOK_OFFSETMAP, nullptr));
+
+	TypeDecl *sections = root->baseType->sptr->typeDeclList[4];
+	QVERIFY(FindTag(sections->tagList, TOK_OFFSETMAP, nullptr));
+
+	TypeDecl *name = root->baseType->sptr->typeDeclList[5];
+	QVERIFY(FindTag(name->tagList, TOK_OFFSET, nullptr));
+
+	TypeDecl *mappedProbe = root->baseType->sptr->typeDeclList[7];
+	ExprNode *optionalExpr = nullptr;
+	QVERIFY(FindTag(mappedProbe->tagList, TOK_OPTIONAL, &optionalExpr));
+	QVERIFY(optionalExpr);
 }
 
 void CausewayTests::multiDimensionalFlexibleArraysParse()

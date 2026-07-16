@@ -308,6 +308,87 @@ ExprNode * Parser::UnaryExpression(void)
 		break;
 	}
 
+	case TOK_VALUEAT:
+	{
+		TOKEN funcTok = t;
+		Advance();
+		if(!Expected('('))
+			return new ExprNode(EXPR_NULL, TOK_NULL);
+
+		ExprNode *spaceExpr = nullptr;
+		ExprNode *offsetExpr = AssignmentExpression(TOK_NULL);
+		if(!offsetExpr)
+			return new ExprNode(EXPR_NULL, TOK_NULL);
+
+		if(offsetExpr->type == EXPR_STRINGBUF)
+		{
+			if(!Expected(','))
+			{
+				delete offsetExpr;
+				return new ExprNode(EXPR_NULL, TOK_NULL);
+			}
+			spaceExpr = offsetExpr;
+			offsetExpr = AssignmentExpression(TOK_NULL);
+			if(!offsetExpr)
+			{
+				delete spaceExpr;
+				return new ExprNode(EXPR_NULL, TOK_NULL);
+			}
+		}
+
+		if(!Expected(','))
+		{
+			delete spaceExpr;
+			delete offsetExpr;
+			return new ExprNode(EXPR_NULL, TOK_NULL);
+		}
+
+		ExprNode *typeExpr = nullptr;
+		switch(t.kind)
+		{
+		case TOK_CHAR:  case TOK_WCHAR:
+		case TOK_BYTE:  case TOK_WORD:
+		case TOK_DWORD: case TOK_QWORD:
+		{
+			TOKEN typeTok = t;
+			typeExpr = new ExprNode(EXPR_IDENTIFIER, typeTok);
+			typeExpr->str = strdup(inenglish(typeTok));
+			Advance();
+			break;
+		}
+
+		case TOK_IDENTIFIER:
+			typeExpr = PrimaryExpression();
+			break;
+
+		default:
+			Error(ERROR_SIZEOF_SCALAR_ONLY);
+			delete spaceExpr;
+			delete offsetExpr;
+			return new ExprNode(EXPR_NULL, TOK_NULL);
+		}
+
+		if(!typeExpr || typeExpr->type != EXPR_IDENTIFIER)
+		{
+			Error(ERROR_SIZEOF_SCALAR_ONLY);
+			delete spaceExpr;
+			delete offsetExpr;
+			delete typeExpr;
+			return new ExprNode(EXPR_NULL, TOK_NULL);
+		}
+
+		if(!Expected(')'))
+		{
+			delete spaceExpr;
+			delete offsetExpr;
+			delete typeExpr;
+			return new ExprNode(EXPR_NULL, TOK_NULL);
+		}
+
+		p = new ExprNode(EXPR_VALUEAT, funcTok, spaceExpr, offsetExpr, typeExpr);
+		break;
+	}
+
 	case TOK_CSTRAT:
 	case TOK_EXTENTOF:
 	case TOK_FINDFIRST:
@@ -748,6 +829,19 @@ int RecurseFlatten(stringprint &sbuf, ExprNode *expr)
 		sbuf._stprintf(TEXT(")"));
 		break;
 
+	case EXPR_VALUEAT:
+		sbuf._stprintf(TEXT("%hs("), Parser::inenglish(expr->tok));
+		if(expr->left)
+		{
+			RecurseFlatten(sbuf, expr->left);
+			sbuf._stprintf(TEXT(", "));
+		}
+		RecurseFlatten(sbuf, expr->right);
+		sbuf._stprintf(TEXT(", "));
+		RecurseFlatten(sbuf, expr->cond);
+		sbuf._stprintf(TEXT(")"));
+		break;
+
     // unimplemented; ignore
     case EXPR_ASSIGN: case EXPR_NULL:
         break;
@@ -855,6 +949,9 @@ INUMTYPE Evaluate(ExprNode *expr)
 	// Needs a file-backed render context (see structurerenderengine.cpp's
 	// evaluate()) to know which byte to read; not constant-foldable here.
 	case EXPR_RAWOFFSET:
+		return 0;
+
+	case EXPR_VALUEAT:
 		return 0;
 
 	case EXPR_FUNCTION:

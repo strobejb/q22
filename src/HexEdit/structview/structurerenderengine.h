@@ -53,6 +53,15 @@ private:
         uint64_t fileOffset = 0;
     };
 
+    struct NamedOffsetMap
+    {
+        QString name;
+        uint64_t logicalStart = 0;
+        uint64_t logicalSize = 0;
+        uint64_t fileOffset = 0;
+        bool rangeMapped = false;
+    };
+
     struct DynamicContainer
     {
         TypeDecl *typeDecl = nullptr;
@@ -103,6 +112,7 @@ private:
     bool evaluate(StructureRow *scope, ExprNode *expr, INUMTYPE *result, uint64_t scopeOffset);
     bool evaluate(Type *scopeType, ExprNode *expr, INUMTYPE *result, uint64_t scopeOffset);
     bool evaluateFunction(const EvalContext &context, ExprNode *expr, INUMTYPE *result);
+    bool evaluateValueAt(const EvalContext &context, ExprNode *expr, INUMTYPE *result);
     bool evaluateFindFunction(const EvalContext &context, ExprNode *expr, INUMTYPE *result);
     bool evaluateString(const EvalContext &context, ExprNode *expr, QString *result);
     bool evaluateStringFunction(const EvalContext &context, ExprNode *expr, QString *result);
@@ -156,9 +166,19 @@ private:
                           bool *isNameSource) const;
     bool dynamicContainerArgs(ExprNode *expr, ExprNode **typeName) const;
     bool offsetMapArgs(ExprNode *expr, ExprNode **logicalStart, ExprNode **logicalSize, ExprNode **fileOffset) const;
+    bool namedOffsetMapArgs(ExprNode *expr,
+                            QString *name,
+                            ExprNode **base,
+                            ExprNode **logicalStart,
+                            ExprNode **logicalSize,
+                            ExprNode **fileOffset) const;
+    bool offsetTagArgs(ExprNode *expr, QString *space, ExprNode **offsetExpr) const;
     TypeDecl *findTypeDecl(const char *name) const;
     Type *typeInDecl(TypeDecl *decl, const char *name) const;
     DynamicContainer *mapLogicalOffset(uint64_t logicalOffset, uint64_t *fileOffset);
+    bool mapNamedOffset(const QString &name, uint64_t logicalOffset, uint64_t *fileOffset) const;
+    void collectNamedOffsetMaps(StructureRow *row);
+    TYPE scalarTypeName(const char *name) const;
     StructureRow *dynamicRootGroup(const QString &label);
     void resolveEntryPointRows(StructureRow *row);
 
@@ -217,6 +237,7 @@ private:
     StructureValueBuilder::ByteReader m_reader;
     StructureRow *m_rootRow = nullptr;
     std::vector<DynamicContainer> m_dynamicContainers;
+    std::vector<NamedOffsetMap> m_namedOffsetMaps;
     std::vector<DynamicRequest> m_dynamicRequests;
     std::vector<DynamicArrayRequest> m_dynamicArrayRequests;
 };

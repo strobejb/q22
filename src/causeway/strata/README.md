@@ -22,7 +22,7 @@ View online: [Strata Language Reference](https://github.com/strobejb/q22/blob/ma
 | Unions | [`select`](#discriminated-unions) · [`case`](#discriminated-unions) |
 | Semantic views | [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) · [`view`](#view) |
 | Export | [`export`](#export-metadata) · [`category`](#export-metadata) · [`version`](#export-metadata) · [`assoc`](#export-metadata) · [`magic`](#export-metadata) |
-| Expressions | [`sizeof`](#expressions) · [`file_size`](#expressions) · [`extent_of`](#expressions) · [`str`](#expressions) · [`octal`](#expressions) · [`find_first`](#byte-pattern-search) · [`find_last`](#byte-pattern-search) · [`select_offset`](#select_offset) |
+| Expressions | [`sizeof`](#expressions) · [`file_size`](#expressions) · [`extent_of`](#expressions) · [`str`](#expressions) · [`octal`](#expressions) · [`find_first`](#byte-pattern-search) · [`find_last`](#byte-pattern-search) · [`select_offset`](#select_offset) · [`value_at`](#value_at) |
 
 ---
 
@@ -363,6 +363,7 @@ Layout tag affect the alignment and positioning of fields:
 | Tag | Effect |
 |-----|--------|
 | `offset(expr)` | Pin the field or type to a logical offset within the current container (added to the container's base file offset) |
+| `offset("space", expr)` | Pin the field or type to an offset resolved through a named `offset_map` space |
 | `align(n)` | Align to an n-byte boundary before this field |
 | `extent(bytes)` | Limit parsing of this field to `bytes` bytes |
 | `pad_to(n)` | Pad this field's consumed extent so the following field starts on an n-byte boundary |
@@ -445,7 +446,8 @@ attaching additional structures, arrays, or named overlays beyond the raw field 
 | `dynamic_struct(...)` | Render a single struct at a computed offset |
 | `dynamic_array(...)` | Render a variable-length array at a computed offset |
 | `dynamic_container(type(Type))` | Create a layout container per array element for mapped dynamic rows to attach into |
-| `offset_map(va, size, raw)` | Declare how virtual addresses within a container map to file offsets |
+| `offset_map(va, size, raw)` | Declare anonymous virtual-address ranges for `mapper(offset_map)` dynamic rows |
+| `offset_map("space", base)` / `offset_map("space", logical, size, raw)` | Define a named offset space for `offset("space", expr)` and `value_at("space", expr, Type)` |
 | `view("id")` | Attach a named C++ semantic view overlay to a type |
 
 ### `dynamic_struct`
@@ -581,8 +583,9 @@ IMAGE_SECTION_HEADER sectionHeader[];
 
 ### `offset_map`
 
-Declares how virtual addresses within a container map to raw file offsets.
-Required when `dynamic_array` / `dynamic_struct` uses `mapper(offset_map)` to target an alternative address scheme rather than direct file offsets, such as PE Relative Virtual Addresses.
+Declares how logical offsets or virtual addresses map to raw file offsets.
+Anonymous three-argument maps support existing `dynamic_array` /
+`dynamic_struct` declarations that use `mapper(offset_map)`.
 
 ```c
 offset_map(va_base, size, file_offset)
@@ -595,6 +598,33 @@ offset_map(va_base, size, file_offset)
   size_is(ntHeaders.FileHeader.NumberOfSections)
 ]
 IMAGE_SECTION_HEADER sectionHeader[];
+```
+
+Named maps can also be used directly from normal `offset(...)` tags and
+expressions. A two-argument named map defines a simple base-relative space:
+
+```c
+[offset_map("strings", stringTableOffset)]
+typedef struct _Header {
+    dword stringTableOffset;
+    dword nameOffset;
+
+    [offset("strings", nameOffset), string, max_count(256), terminated_by(0)]
+    char name[];
+} HEADER;
+```
+
+A four-argument named map defines range translation:
+
+```c
+[
+  offset_map("rva", VirtualAddress, SizeOfRawData, PointerToRawData),
+  count(sectionCount)
+]
+IMAGE_SECTION_HEADER sections[];
+
+[offset("rva", importRva)]
+IMAGE_IMPORT_DESCRIPTOR imports[];
 ```
 
 ### `view`
@@ -667,7 +697,7 @@ dosHeader.e_lfanew
 | String lookup | `cstr_at(offset, maxLen)` |
 | Byte sequence literal | `{ 0x50, 0x4b }` |
 | Byte search | `find_first({ ... })` · `find_last({ ... })` |
-| Raw read | `select_offset(byteOffset)` |
+| Raw read | `select_offset(byteOffset)`, `value_at(offset, Type)` |
 
 ```c
 size_is(Header.Count * sizeof(DWORD))
@@ -789,6 +819,24 @@ real field reference will. Reach for `select_offset` only when that
 shape doesn't apply. A reserved word, not a tag — `select_offset(...)` only
 means something as a sub-expression inside another tag's expression.
 
+### `value_at`
+
+`value_at(offset, Type)` reads a fixed-size scalar at `offset`, relative to
+the current structure instance. `value_at("space", offset, Type)` first
+resolves `offset` through a named `offset_map` space. This is intended for
+small one-off probes in expressions, not for rendering nested structures.
+
+Supported V1 types are `byte`, `char`, `word`, `dword`, `qword`, and
+`wchar_t`; multi-byte reads use the current endian context.
+
+```c
+[optional(value_at(8, dword) == fourcc("WEBP"))]
+RIFF_WEBP_PAYLOAD webp;
+
+[optional(value_at("rva", thunkRva, qword) != 0)]
+IMAGE_THUNK_DATA64 thunk;
+```
+
 ---
 
 ## Reserved and unsupported keywords
@@ -817,7 +865,7 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 | Dynamic/semantic tags | `container`, `dynamic_array`, `dynamic_container`, `dynamic_struct`, `mapper`, `offset_map`, `type`, `view` |
 | Export/detection tags | `assoc`, `category`, `export`, `magic`, `version` |
 | Tagsets/files | `include`, `tagset`, `tags` |
-| Expression helpers | `cstr_at`, `extent_of`, `file_size`, `find_first`, `find_last`, `fourcc`, `octal`, `sizeof`, `str` |
+| Expression helpers | `cstr_at`, `extent_of`, `file_size`, `find_first`, `find_last`, `fourcc`, `octal`, `sizeof`, `str`, `value_at` |
 
 ---
 
