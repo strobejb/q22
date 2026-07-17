@@ -160,6 +160,14 @@ ExprNode * Parser::PostfixExpression(ExprNode *p)
 			p = new ExprNode(EXPR_FIELD, op, p, q);
 			break;
 
+		case TOK_SCOPE:
+		{
+			Advance();
+			q = UnaryExpression();
+			p = new ExprNode(EXPR_SCOPE, op, p, q);
+			break;
+		}
+
 		// pointer dereference '->'
 		case TOK_DEREF:
 
@@ -308,11 +316,98 @@ ExprNode * Parser::UnaryExpression(void)
 		break;
 	}
 
+	case TOK_VALUEAT:
+	case TOK_ROOTVALUEAT:
+	{
+		TOKEN funcTok = t;
+		Advance();
+		if(!Expected('('))
+			return new ExprNode(EXPR_NULL, TOK_NULL);
+
+		ExprNode *spaceExpr = nullptr;
+		ExprNode *offsetExpr = AssignmentExpression(TOK_NULL);
+		if(!offsetExpr)
+			return new ExprNode(EXPR_NULL, TOK_NULL);
+
+		if(offsetExpr->type == EXPR_STRINGBUF)
+		{
+			if(!Expected(','))
+			{
+				delete offsetExpr;
+				return new ExprNode(EXPR_NULL, TOK_NULL);
+			}
+			spaceExpr = offsetExpr;
+			offsetExpr = AssignmentExpression(TOK_NULL);
+			if(!offsetExpr)
+			{
+				delete spaceExpr;
+				return new ExprNode(EXPR_NULL, TOK_NULL);
+			}
+		}
+
+		if(!Expected(','))
+		{
+			delete spaceExpr;
+			delete offsetExpr;
+			return new ExprNode(EXPR_NULL, TOK_NULL);
+		}
+
+		ExprNode *typeExpr = nullptr;
+		switch(t.kind)
+		{
+		case TOK_CHAR:  case TOK_WCHAR:
+		case TOK_BYTE:  case TOK_WORD:
+		case TOK_DWORD: case TOK_QWORD:
+		{
+			TOKEN typeTok = t;
+			typeExpr = new ExprNode(EXPR_IDENTIFIER, typeTok);
+			typeExpr->str = strdup(inenglish(typeTok));
+			Advance();
+			break;
+		}
+
+		case TOK_IDENTIFIER:
+			typeExpr = PrimaryExpression();
+			break;
+
+		default:
+			Error(ERROR_SIZEOF_SCALAR_ONLY);
+			delete spaceExpr;
+			delete offsetExpr;
+			return new ExprNode(EXPR_NULL, TOK_NULL);
+		}
+
+		if(!typeExpr || typeExpr->type != EXPR_IDENTIFIER)
+		{
+			Error(ERROR_SIZEOF_SCALAR_ONLY);
+			delete spaceExpr;
+			delete offsetExpr;
+			delete typeExpr;
+			return new ExprNode(EXPR_NULL, TOK_NULL);
+		}
+
+		if(!Expected(')'))
+		{
+			delete spaceExpr;
+			delete offsetExpr;
+			delete typeExpr;
+			return new ExprNode(EXPR_NULL, TOK_NULL);
+		}
+
+		p = new ExprNode(EXPR_VALUEAT, funcTok, spaceExpr, offsetExpr, typeExpr);
+		break;
+	}
+
+	case TOK_CSTR:
 	case TOK_CSTRAT:
+	case TOK_CSTRFROM:
+	case TOK_CONCAT:
 	case TOK_EXTENTOF:
+	case TOK_FIELDAT:
 	case TOK_FINDFIRST:
 	case TOK_FINDLAST:
 	case TOK_FOURCC:
+	case TOK_FMT:
 	case TOK_OCTAL:
 	case TOK_STR:
 	{
@@ -330,6 +425,9 @@ ExprNode * Parser::UnaryExpression(void)
 	}
 
 	case TOK_FILESIZE:
+	case TOK_INDEX:
+	case TOK_SELF:
+	case TOK_CURRENTOFFSET:
 	{
 		TOKEN funcTok = t;
 		Advance();
@@ -494,6 +592,10 @@ ExprNode *Parser::CommaExpression(TOKEN tok)
 //
 ExprNode *Parser::TagWrappedArg(TOKEN wrappers[])
 {
+	static TOKEN kDestTagValueWrappers[] = {
+		TOK_KEY, TOK_NAME, TOK_NULL
+	};
+
 	for(int i = 0; wrappers[i] != TOK_NULL; i++)
 	{
 		if(t != wrappers[i])
@@ -505,7 +607,13 @@ ExprNode *Parser::TagWrappedArg(TOKEN wrappers[])
 		if(!Expected('('))
 			return 0;
 
-		ExprNode *inner = AssignmentExpression(TOK_NULL);
+		ExprNode *inner = 0;
+		if(wrapTok == TOK_DEST)
+			inner = TagArgList(kDestTagValueWrappers);
+		else if(wrapTok == TOK_OFFSET || wrapTok == TOK_MAP || wrapTok == TOK_KEY || wrapTok == TOK_ATTR || wrapTok == TOK_FIELD)
+			inner = CommaExpression(TOK_NULL);
+		else
+			inner = AssignmentExpression(TOK_NULL);
 		if(!inner)
 			return 0;
 
@@ -703,6 +811,12 @@ int RecurseFlatten(stringprint &sbuf, ExprNode *expr)
 		RecurseFlatten(sbuf, expr->right);
 		break;
 
+	case EXPR_SCOPE:
+		RecurseFlatten(sbuf, expr->left);
+		sbuf._stprintf(TEXT("::"));
+		RecurseFlatten(sbuf, expr->right);
+		break;
+
 	case EXPR_TERTIARY:
 		RecurseFlatten(sbuf, expr->cond);
 		sbuf._stprintf(TEXT(" ? "));
@@ -745,6 +859,19 @@ int RecurseFlatten(stringprint &sbuf, ExprNode *expr)
 	case EXPR_RAWOFFSET:
 		sbuf._stprintf(TEXT("%hs("), Parser::inenglish(expr->tok));
 		RecurseFlatten(sbuf, expr->left);
+		sbuf._stprintf(TEXT(")"));
+		break;
+
+	case EXPR_VALUEAT:
+		sbuf._stprintf(TEXT("%hs("), Parser::inenglish(expr->tok));
+		if(expr->left)
+		{
+			RecurseFlatten(sbuf, expr->left);
+			sbuf._stprintf(TEXT(", "));
+		}
+		RecurseFlatten(sbuf, expr->right);
+		sbuf._stprintf(TEXT(", "));
+		RecurseFlatten(sbuf, expr->cond);
 		sbuf._stprintf(TEXT(")"));
 		break;
 
@@ -855,6 +982,9 @@ INUMTYPE Evaluate(ExprNode *expr)
 	// Needs a file-backed render context (see structurerenderengine.cpp's
 	// evaluate()) to know which byte to read; not constant-foldable here.
 	case EXPR_RAWOFFSET:
+		return 0;
+
+	case EXPR_VALUEAT:
 		return 0;
 
 	case EXPR_FUNCTION:

@@ -361,6 +361,105 @@ void appendCommaArgs(ExprNode *expr, std::vector<ExprNode *> *args)
     args->push_back(expr);
 }
 
+bool semanticPathLooksAtomic(const QStringList &path)
+{
+    const QString last = path.isEmpty() ? QString() : path.last();
+    return last == QStringLiteral("Functions")
+        || last == QStringLiteral("Symbols");
+}
+
+bool semanticRowHasComplexChildren(const StructureRow *row)
+{
+    if (!row)
+        return false;
+
+    for (const auto &child : row->children)
+    {
+        if (!child || child->kind != StructureRowKind::Semantic)
+            continue;
+        if (!child->children.empty())
+            return true;
+        if (child->value == QStringLiteral("{...}"))
+            return true;
+    }
+
+    return false;
+}
+
+void refreshSemanticBranchPresentation(StructureRow *row, const QString &rootLabel)
+{
+    if (!row)
+        return;
+
+    for (const auto &child : row->children)
+        refreshSemanticBranchPresentation(child.get(), rootLabel);
+
+    if (row->kind != StructureRowKind::Semantic)
+        return;
+
+    if (row->parent && row->parent->kind == StructureRowKind::Raw && row->name == rootLabel)
+        return;
+
+    if (!semanticRowHasComplexChildren(row))
+        return;
+
+    row->emphasizeName = true;
+    row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueStructure),
+                        QString::fromLatin1(StructureBranchIcons::kBlueStructureOpen),
+                        QString::fromLatin1(StructureBranchIcons::kGrayStructure));
+}
+
+void applySemanticBranchIcons(StructureRow *row, const QStringList &path, bool isArray = false)
+{
+    if (!row)
+        return;
+
+    if (path.isEmpty())
+    {
+        row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueRoot),
+                            QString::fromLatin1(StructureBranchIcons::kBlueRoot),
+                            QString::fromLatin1(StructureBranchIcons::kGrayRoot));
+        return;
+    }
+
+    if (isArray)
+    {
+        if (semanticPathLooksAtomic(path))
+        {
+            row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueElementArray),
+                                QString::fromLatin1(StructureBranchIcons::kBlueElementArray),
+                                QString::fromLatin1(StructureBranchIcons::kGrayElementArray));
+        }
+        else
+        {
+            row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueEntityArray),
+                                QString::fromLatin1(StructureBranchIcons::kBlueEntityArray),
+                                QString::fromLatin1(StructureBranchIcons::kGrayEntityArray));
+        }
+        return;
+    }
+
+    if (semanticPathLooksAtomic(path))
+    {
+        row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueElement),
+                            QString::fromLatin1(StructureBranchIcons::kBlueElement),
+                            QString::fromLatin1(StructureBranchIcons::kBlueElement));
+        return;
+    }
+
+    if (semanticRowHasComplexChildren(row))
+    {
+        row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueStructure),
+                            QString::fromLatin1(StructureBranchIcons::kBlueStructureOpen),
+                            QString::fromLatin1(StructureBranchIcons::kGrayStructure));
+        return;
+    }
+
+    row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueEntity),
+                        QString::fromLatin1(StructureBranchIcons::kBlueEntityOpen),
+                        QString::fromLatin1(StructureBranchIcons::kGrayEntity));
+}
+
 bool isDimensionPlaceholder(ExprNode *expr)
 {
     return expr && expr->type == EXPR_IDENTIFIER && expr->str && std::strcmp(expr->str, "_") == 0;
@@ -424,6 +523,22 @@ bool arrayIndexFromRow(const StructureRow *row, INUMTYPE *index)
 bool structureProfileEnabled()
 {
     return qEnvironmentVariableIntValue("QEXED_STRUCTURE_PROFILE") != 0;
+}
+
+bool semanticCppOnly(const char *environmentVariable)
+{
+    return qEnvironmentVariable(environmentVariable).trimmed().toLower() == QLatin1String("cpp");
+}
+
+bool rootUsesSemanticSchema(TypeDecl *rootType, const char *schemaName)
+{
+    ExprNode *semanticExpr = nullptr;
+    return schemaName
+        && FindTag(rootType ? rootType->tagList : nullptr, TOK_SEMANTIC, &semanticExpr)
+        && semanticExpr
+        && semanticExpr->type == EXPR_IDENTIFIER
+        && semanticExpr->str
+        && std::strcmp(semanticExpr->str, schemaName) == 0;
 }
 
 void structureProfileLog(const QString &message)
@@ -600,6 +715,25 @@ std::vector<std::unique_ptr<StructureRow>> StructureRenderEngine::build()
                                 .arg(m_dynamicArrayRequests.size())
                                 .arg(phaseTimer.restart()));
     }
+    const bool skipDeclarativeSemantic =
+        (semanticCppOnly("Q22_PE_SEMANTIC_VIEW") && rootUsesSemanticSchema(m_rootType, "PE_VIEW"))
+        || (semanticCppOnly("Q22_ELF_SEMANTIC_VIEW") && rootUsesSemanticSchema(m_rootType, "ELF_VIEW"));
+    if (!skipDeclarativeSemantic)
+    {
+        collectSemanticEmitRequests(root.get());
+        appendSemanticRowRequests();
+        appendSemanticNodeRequests();
+        appendSemanticEmitRows(root.get());
+    }
+    if (profile)
+    {
+        structureProfileLog(QStringLiteral("[StructureProfile] declarative semantic rows=%1 row_requests=%2 byte_requests=%3 skipped=%4 ms=%5")
+                                .arg(structureRowCount(root.get()))
+                                .arg(m_semanticRowRequests.size())
+                                .arg(m_semanticEmitRequests.size() + m_semanticNodeRequests.size())
+                                .arg(skipDeclarativeSemantic ? 1 : 0)
+                                .arg(phaseTimer.restart()));
+    }
     resolveEntryPointRows(root.get());
     if (profile)
     {
@@ -614,6 +748,7 @@ std::vector<std::unique_ptr<StructureRow>> StructureRenderEngine::build()
             semanticOffsetMaps.push_back(StructureOffsetMap{ map.logicalStart, map.logicalSize, map.fileOffset });
     }
     runStructureSemanticViews(m_library, root.get(), m_baseOffset, m_reader, semanticOffsetMaps);
+    refreshSemanticBranchPresentation(root.get(), semanticRootLabel());
     if (m_options.sortTopLevelRowsByOffset)
     {
         std::stable_sort(root->children.begin(), root->children.end(), [](const RowPtr &left, const RowPtr &right) {
@@ -665,6 +800,7 @@ uint64_t StructureRenderEngine::appendTypeDecl(StructureRow *parent, TypeDecl *t
         return 0;
 
     const uint64_t originalOffset = offset;
+    collectNamedOffsetMaps(parent);
     if (declarationIsOptionalAndAbsent(typeDecl, parent, parent ? parent->type : nullptr, offset))
         return 0;
 
@@ -672,9 +808,23 @@ uint64_t StructureRenderEngine::appendTypeDecl(StructureRow *parent, TypeDecl *t
     if (FindTag(typeDecl->tagList, TOK_OFFSET, &offsetExpr))
     {
         INUMTYPE evaluated = offset;
-        if (!evaluate(parent, offsetExpr, &evaluated, offset))
+        QString offsetSpace;
+        ExprNode *positionExpr = nullptr;
+        if (!offsetTagArgs(offsetExpr, &offsetSpace, &positionExpr)
+            || !positionExpr
+            || !evaluate(parent, positionExpr, &evaluated, offset))
+        {
             return 0;
-        offset = m_baseOffset + evaluated;
+        }
+
+        if (offsetSpace.isEmpty())
+        {
+            offset = m_baseOffset + evaluated;
+        }
+        else if (!mapNamedOffset(offsetSpace, static_cast<uint64_t>(evaluated), &offset))
+        {
+            return 0;
+        }
     }
     else
     {
@@ -790,7 +940,12 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
         uint64_t length = 0;
         uint64_t logicalIndex = 0;
         uint64_t renderedElements = 0;
-        const bool continuePastDisplayCap = typeContainsTag(type->link, TOK_COUNTAS);
+        const bool continuePastDisplayCap =
+            count <= INUMTYPE(kMaxArrayElements + 16)
+            || typeContainsTag(type->link, TOK_COUNTAS)
+            || typeContainsTag(type->link, TOK_SWITCHIS)
+            || typeContainsTag(type->link, TOK_SIZEIS)
+            || typeContainsTag(type->link, TOK_MAXCOUNT);
         ExprNode *terminatorExpr = dimensionTagArg(typeDecl ? typeDecl->tagList : nullptr,
                                                    TOK_TERMINATEDBY,
                                                    dimension);
@@ -813,7 +968,12 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
                 TypeDecl *candidate = findTypeDecl(cursor->sym->name);
                 for (Tag *tag = candidate ? candidate->tagList : nullptr; tag; tag = tag->link)
                 {
-                    if (tag->tok == TOK_DYNAMICARRAY)
+                    if (tag->tok == TOK_DYNAMICARRAY
+                        || tag->tok == TOK_DYNAMICCONTAINER
+                        || tag->tok == TOK_OFFSETMAP
+                        || tag->tok == TOK_EMIT
+                        || tag->tok == TOK_EMITNODE
+                        || tag->tok == TOK_EMITROW)
                     {
                         elementTypeDecl = candidate;
                         break;
@@ -851,6 +1011,7 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
 
             const uint64_t elementLength = formatType(row.get(), type->link, typeDecl, offset + length);
             row->byteLength = elementLength;
+            collectNamedOffsetMaps(row.get());
             if (renderElement && row->value.isEmpty())
             {
                 const QString stringValue = stringArrayValue(row.get(), type->link, typeDecl, offset + length);
@@ -897,8 +1058,8 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
                     {
                         StructureRow *rowPtr = row.get();
                         auto self = shared_from_this();
-                        row->lazyChildLoader = [self, rowPtr, reqs = std::move(subRequests)]() mutable {
-                            return self->buildSubArraysForElement(rowPtr, std::move(reqs));
+                        row->lazyChildLoader = [self, rowPtr, reqs = std::move(subRequests)]() {
+                            return self->buildSubArraysForElement(rowPtr, reqs);
                         };
                     }
                 }
@@ -925,6 +1086,7 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
         if (!type->sptr)
             return 0;
 
+        collectNamedOffsetMaps(parent);
         uint64_t length = 0;
         for (TypeDecl *childDecl : type->sptr->typeDeclList)
             length += appendTypeDecl(parent, childDecl, offset + length);
@@ -1272,6 +1434,13 @@ bool StructureRenderEngine::evaluate(const EvalContext &context, ExprNode *expr,
 
     switch (expr->type)
     {
+    case EXPR_SCOPE:
+    {
+        EvalContext scoped;
+        if (!resolveScopeContext(context, expr, &scoped))
+            return false;
+        return evaluate(scoped, expr->right, result);
+    }
     case EXPR_IDENTIFIER:
     case EXPR_FIELD:
     case EXPR_ARRAY:
@@ -1409,6 +1578,8 @@ bool StructureRenderEngine::evaluate(const EvalContext &context, ExprNode *expr,
 
         return readInteger(base + static_cast<uint64_t>(relOffset), 1, result, false);
     }
+    case EXPR_VALUEAT:
+        return evaluateValueAt(context, expr, result);
     case EXPR_FUNCTION:
         return evaluateFunction(context, expr, result);
     case EXPR_BYTESEQ:
@@ -1416,6 +1587,47 @@ bool StructureRenderEngine::evaluate(const EvalContext &context, ExprNode *expr,
     default:
         return false;
     }
+}
+
+bool StructureRenderEngine::evaluateValueAt(const EvalContext &context, ExprNode *expr, INUMTYPE *result)
+{
+    if (!expr || expr->type != EXPR_VALUEAT || !expr->right || !expr->cond || !expr->cond->str || !result)
+        return false;
+
+    INUMTYPE logicalOffset = 0;
+    if (!evaluate(context, expr->right, &logicalOffset))
+        return false;
+
+    uint64_t absoluteOffset = 0;
+    if (expr->tok == TOK_ROOTVALUEAT)
+    {
+        if (expr->left)
+            return false;
+        absoluteOffset = m_baseOffset + static_cast<uint64_t>(logicalOffset);
+    }
+    else if (expr->left)
+    {
+        if (expr->left->type != EXPR_STRINGBUF || !expr->left->str)
+            return false;
+        if (!mapNamedOffset(QString::fromLocal8Bit(expr->left->str),
+                            static_cast<uint64_t>(logicalOffset),
+                            &absoluteOffset))
+        {
+            return false;
+        }
+    }
+    else
+    {
+        const uint64_t base = context.row ? context.row->absoluteOffset : context.offset;
+        absoluteOffset = base + static_cast<uint64_t>(logicalOffset);
+    }
+
+    const TYPE scalarType = scalarTypeName(expr->cond->str);
+    const uint64_t byteLength = scalarSize(scalarType);
+    if (byteLength == 0)
+        return false;
+
+    return readInteger(absoluteOffset, byteLength, result, m_bigEndian);
 }
 
 namespace
@@ -1524,6 +1736,76 @@ bool StructureRenderEngine::evaluateFunction(const EvalContext &context, ExprNod
         *result = static_cast<INUMTYPE>(end - m_baseOffset);
         return true;
     }
+    case TOK_INDEX:
+    {
+        std::vector<ExprNode *> args;
+        collectExpressionArgs(expr->left, &args);
+        if (!args.empty())
+            return false;
+
+        INUMTYPE index = 0;
+        if (!arrayIndexFromRow(context.row, &index))
+            return false;
+
+        *result = index;
+        return true;
+    }
+    case TOK_SELF:
+    {
+        std::vector<ExprNode *> args;
+        collectExpressionArgs(expr->left, &args);
+        if (!args.empty() || !context.row)
+            return false;
+
+        if (context.row->valueKind == StructureRowValueKind::ScalarInteger)
+        {
+            *result = context.row->scalarRawValue;
+            return true;
+        }
+
+        return readInteger(context.row->absoluteOffset,
+                           context.row->byteLength,
+                           result,
+                           context.row->bigEndian);
+    }
+    case TOK_CURRENTOFFSET:
+    {
+        std::vector<ExprNode *> args;
+        collectExpressionArgs(expr->left, &args);
+        if (!args.empty() || !context.row || context.row->absoluteOffset < m_baseOffset)
+            return false;
+
+        *result = static_cast<INUMTYPE>(context.row->absoluteOffset - m_baseOffset);
+        return true;
+    }
+    case TOK_FIELDAT:
+    {
+        std::vector<ExprNode *> args;
+        collectExpressionArgs(expr->left, &args);
+        if (args.size() != 3 || !args[2] || args[2]->type != EXPR_IDENTIFIER || !args[2]->str)
+            return false;
+
+        StructureRow *arrayRow = findFieldRow(context.row, args[0]);
+        INUMTYPE index = 0;
+        if (!arrayRow || !evaluate(context, args[1], &index) || index < 0)
+            return false;
+
+        const size_t elementIndex = static_cast<size_t>(index);
+        if (elementIndex >= arrayRow->children.size())
+            return false;
+
+        StructureRow *fieldRow = findFieldRow(arrayRow->children[elementIndex].get(), args[2]);
+        if (!fieldRow)
+            return false;
+
+        if (fieldRow->valueKind == StructureRowValueKind::ScalarInteger)
+        {
+            *result = static_cast<INUMTYPE>(fieldRow->scalarRawValue);
+            return true;
+        }
+
+        return readInteger(fieldRow->absoluteOffset, fieldRow->byteLength, result, fieldRow->bigEndian);
+    }
     case TOK_FINDFIRST:
     case TOK_FINDLAST:
         return evaluateFindFunction(context, expr, result);
@@ -1561,6 +1843,13 @@ bool StructureRenderEngine::evaluateString(const EvalContext &context, ExprNode 
 
     switch (expr->type)
     {
+    case EXPR_SCOPE:
+    {
+        EvalContext scoped;
+        if (!resolveScopeContext(context, expr, &scoped))
+            return false;
+        return evaluateString(scoped, expr->right, result);
+    }
     case EXPR_STRINGBUF:
         *result = QString::fromUtf8(expr->str ? expr->str : "");
         return true;
@@ -1578,6 +1867,103 @@ bool StructureRenderEngine::evaluateStringFunction(const EvalContext &context, E
 
     switch (expr->tok)
     {
+    case TOK_CONCAT:
+    {
+        std::vector<ExprNode *> args;
+        collectExpressionArgs(expr->left, &args);
+        if (args.empty())
+            return false;
+
+        QString text;
+        for (ExprNode *arg : args)
+        {
+            const QString part = semanticExpressionText(context.row,
+                                                        context.row ? context.row->type : context.type,
+                                                        arg,
+                                                        context.offset);
+            if (part.isEmpty())
+                return false;
+            text += part;
+        }
+
+        *result = text;
+        return true;
+    }
+    case TOK_FMT:
+    {
+        std::vector<ExprNode *> args;
+        collectExpressionArgs(expr->left, &args);
+        if (args.empty() || !args[0] || args[0]->type != EXPR_STRINGBUF)
+            return false;
+
+        QString text = QString::fromUtf8(args[0]->str ? args[0]->str : "");
+        for (size_t i = 1; i < args.size(); ++i)
+        {
+            const QString part = semanticExpressionText(context.row,
+                                                        context.row ? context.row->type : context.type,
+                                                        args[i],
+                                                        context.offset);
+            text.replace(QStringLiteral("{%1}").arg(i - 1), part);
+        }
+
+        *result = text;
+        return true;
+    }
+    case TOK_CSTR:
+    {
+        std::vector<ExprNode *> args;
+        collectExpressionArgs(expr->left, &args);
+        if (args.empty() || args.size() > 3)
+            return false;
+
+        QString space;
+        ExprNode *offsetExpr = nullptr;
+        ExprNode *maxExpr = nullptr;
+        if (args[0] && args[0]->type == EXPR_STRINGBUF && args[0]->str)
+        {
+            if (args.size() < 2)
+                return false;
+            space = QString::fromLocal8Bit(args[0]->str);
+            offsetExpr = args[1];
+            maxExpr = args.size() == 3 ? args[2] : nullptr;
+        }
+        else
+        {
+            offsetExpr = args[0];
+            maxExpr = args.size() == 2 ? args[1] : nullptr;
+        }
+
+        INUMTYPE logicalOffset = 0;
+        if (!evaluate(context, offsetExpr, &logicalOffset) || logicalOffset < 0)
+            return false;
+
+        INUMTYPE maxLen = INUMTYPE(kMaxStringLookupBytes);
+        if (maxExpr && (!evaluate(context, maxExpr, &maxLen) || maxLen <= 0))
+            return false;
+
+        uint64_t fileOffset = static_cast<uint64_t>(logicalOffset);
+        if (!space.isEmpty() && !mapNamedOffset(space, fileOffset, &fileOffset))
+            return false;
+
+        const uint64_t cappedLength = std::min<uint64_t>(static_cast<uint64_t>(maxLen), kMaxStringLookupBytes);
+        if (m_baseOffset > std::numeric_limits<uint64_t>::max() - fileOffset)
+            return false;
+
+        QByteArray bytes(static_cast<int>(cappedLength), Qt::Uninitialized);
+        const size_t got = m_reader ? m_reader(m_baseOffset + fileOffset,
+                                               reinterpret_cast<uint8_t *>(bytes.data()),
+                                               static_cast<size_t>(bytes.size()))
+                                    : 0;
+        if (got == 0)
+            return false;
+
+        bytes.truncate(static_cast<int>(got));
+        if (!bytes.contains('\0'))
+            return false;
+
+        *result = decodeNulTerminatedText(bytes, false);
+        return true;
+    }
     case TOK_CSTRAT:
     {
         std::vector<ExprNode *> args;
@@ -1611,6 +1997,46 @@ bool StructureRenderEngine::evaluateStringFunction(const EvalContext &context, E
         *result = decodeNulTerminatedText(bytes, false);
         return true;
     }
+    case TOK_CSTRFROM:
+    {
+        std::vector<ExprNode *> args;
+        collectExpressionArgs(expr->left, &args);
+        if (args.size() < 2 || args.size() > 3)
+            return false;
+
+        INUMTYPE baseOffset = 0;
+        INUMTYPE deltaOffset = 0;
+        if (!evaluate(context, args[0], &baseOffset)
+            || !evaluate(context, args[1], &deltaOffset)
+            || baseOffset < 0
+            || deltaOffset < 0)
+        {
+            return false;
+        }
+        INUMTYPE maxLen = INUMTYPE(kMaxStringLookupBytes);
+        if (args.size() == 3 && (!evaluate(context, args[2], &maxLen) || maxLen <= 0))
+            return false;
+
+        const uint64_t fileOffset = static_cast<uint64_t>(baseOffset) + static_cast<uint64_t>(deltaOffset);
+        const uint64_t cappedLength = std::min<uint64_t>(static_cast<uint64_t>(maxLen), kMaxStringLookupBytes);
+        if (m_baseOffset > std::numeric_limits<uint64_t>::max() - fileOffset)
+            return false;
+
+        QByteArray bytes(static_cast<int>(cappedLength), Qt::Uninitialized);
+        const size_t got = m_reader ? m_reader(m_baseOffset + fileOffset,
+                                               reinterpret_cast<uint8_t *>(bytes.data()),
+                                               static_cast<size_t>(bytes.size()))
+                                    : 0;
+        if (got == 0)
+            return false;
+
+        bytes.truncate(static_cast<int>(got));
+        if (!bytes.contains('\0'))
+            return false;
+
+        *result = decodeNulTerminatedText(bytes, false);
+        return true;
+    }
     case TOK_STR:
     {
         std::vector<ExprNode *> args;
@@ -1632,6 +2058,35 @@ bool StructureRenderEngine::evaluateStringFunction(const EvalContext &context, E
     default:
         return false;
     }
+}
+
+bool StructureRenderEngine::resolveScopeContext(const EvalContext &context, ExprNode *expr, EvalContext *scoped) const
+{
+    if (!expr || expr->type != EXPR_SCOPE || !expr->left || !scoped)
+        return false;
+
+    StructureRow *row = resolveScopeRow(context.row, expr->left);
+    if (!row)
+        return false;
+
+    scoped->row = row;
+    scoped->type = row->type ? row->type : context.type;
+    scoped->offset = row->absoluteOffset;
+    return true;
+}
+
+StructureRow *StructureRenderEngine::resolveScopeRow(StructureRow *scope, ExprNode *expr) const
+{
+    if (!expr || expr->type != EXPR_IDENTIFIER || !expr->str)
+        return nullptr;
+
+    if (std::strcmp(expr->str, "root") == 0)
+        return m_rootRow ? m_rootRow : scope;
+
+    if (std::strcmp(expr->str, "parent") == 0)
+        return scope ? scope : m_rootRow;
+
+    return nullptr;
 }
 
 bool StructureRenderEngine::evaluateFindFunction(const EvalContext &context, ExprNode *expr, INUMTYPE *result)
@@ -1905,6 +2360,12 @@ StructureRow *StructureRenderEngine::findFieldRow(StructureRow *scope, ExprNode 
     if (!scope || !expr)
         return nullptr;
 
+    if (expr->type == EXPR_SCOPE)
+    {
+        StructureRow *scoped = resolveScopeRow(scope, expr->left);
+        return scoped ? findFieldRow(scoped, expr->right) : nullptr;
+    }
+
     if (expr->type == EXPR_IDENTIFIER)
         return findDirectField(scope, expr->str);
 
@@ -1939,6 +2400,15 @@ StructureRow *StructureRenderEngine::findDirectField(StructureRow *scope, const 
         {
             Type *type = child->type;
             if (type && type->ty == typeIDENTIFIER && type->sym && std::strcmp(type->sym->name, name) == 0)
+                return child.get();
+            const QString fieldName = QString::fromLocal8Bit(name);
+            if (child->name == fieldName
+                || child->name.endsWith(QStringLiteral(" ") + fieldName)
+                || child->name.endsWith(QStringLiteral(" ") + fieldName + QStringLiteral("[]")))
+            {
+                return child.get();
+            }
+            if (child->kind == StructureRowKind::Semantic && child->name == fieldName)
                 return child.get();
         }
     }
@@ -2033,8 +2503,17 @@ bool StructureRenderEngine::resolveDirectField(Type *scopeType, const char *name
         if (FindTag(decl->tagList, TOK_OFFSET, &offsetExpr))
         {
             INUMTYPE evaluated = declOffset;
-            if (evaluate(base, offsetExpr, &evaluated, scopeOffset))
-                declOffset = m_baseOffset + evaluated;
+            QString offsetSpace;
+            ExprNode *positionExpr = nullptr;
+            if (offsetTagArgs(offsetExpr, &offsetSpace, &positionExpr)
+                && positionExpr
+                && evaluate(base, positionExpr, &evaluated, scopeOffset))
+            {
+                if (offsetSpace.isEmpty())
+                    declOffset = m_baseOffset + evaluated;
+                else
+                    mapNamedOffset(offsetSpace, static_cast<uint64_t>(evaluated), &declOffset);
+            }
         }
 
         const bool bigEndian = m_evaluatingEndian
@@ -2164,13 +2643,26 @@ void collectFieldReferenceRoots(ExprNode *expr, std::vector<ExprNode *> *roots)
         collectFieldReferenceRoots(expr->left, roots);
         collectFieldReferenceRoots(expr->right, roots);
         return;
+    case EXPR_SCOPE:
+        collectFieldReferenceRoots(expr->right, roots);
+        return;
     case EXPR_UNARY:
         collectFieldReferenceRoots(expr->left, roots);
         return;
     case EXPR_BINARY:
     case EXPR_COMMA:
-    case EXPR_FUNCTION:
         collectFieldReferenceRoots(expr->left, roots);
+        collectFieldReferenceRoots(expr->right, roots);
+        return;
+    case EXPR_FUNCTION:
+        if (expr->tok == TOK_FIELDAT)
+            return;
+        collectFieldReferenceRoots(expr->left, roots);
+        collectFieldReferenceRoots(expr->right, roots);
+        return;
+    case EXPR_VALUEAT:
+        // left is an optional string address-space name; cond is the scalar
+        // type name. Only the offset expression can contain field references.
         collectFieldReferenceRoots(expr->right, roots);
         return;
     case EXPR_TERTIARY:
@@ -2180,7 +2672,8 @@ void collectFieldReferenceRoots(ExprNode *expr, std::vector<ExprNode *> *roots)
         return;
     default:
         // EXPR_FIELD (see above), EXPR_NUMBER, EXPR_STRINGBUF, EXPR_SIZEOF,
-        // EXPR_RAWOFFSET, EXPR_BYTESEQ, EXPR_TAGWRAP, etc: nothing to validate.
+        // EXPR_SCOPE, EXPR_RAWOFFSET, EXPR_BYTESEQ, EXPR_TAGWRAP, etc:
+        // nothing to validate.
         return;
     }
 }
@@ -2226,6 +2719,8 @@ QString rootOffsetUnsupportedExpressionName(ExprNode *expr)
         return QStringLiteral("sizeof(...)");
     case EXPR_RAWOFFSET:
         return QStringLiteral("select_offset(...)");
+    case EXPR_VALUEAT:
+        return QStringLiteral("value_at(...)");
     case EXPR_FUNCTION:
         return QStringLiteral("%1(...)").arg(QString::fromLocal8Bit(Parser::inenglish(expr->tok)));
     case EXPR_STRINGBUF:
@@ -2346,32 +2841,213 @@ QStringList StructureRenderEngine::validateStaticFieldReferences(StrataLibrary *
 
     for (TypeDecl *typeDecl : library->globalTypeDeclList)
     {
-        if (!typeDecl || typeDecl->typeAlias || !typeDecl->baseType)
+        if (!typeDecl || !typeDecl->baseType)
             continue;
 
-        // The typedecl's own tags (e.g. _ELF's endian(...)) are scoped to its
-        // own type, the same rule declarationBigEndian uses at the render-time
-        // root (root->type, not root->parent).
-        for (TOKEN tagTok : kValidatedTags)
+        ExprNode *semanticExpr = nullptr;
+        if (FindTag(typeDecl->tagList, TOK_SEMANTIC, &semanticExpr)
+            && semanticExpr
+            && semanticExpr->type == EXPR_IDENTIFIER)
         {
-            ExprNode *tagExpr = nullptr;
-            if (FindTag(typeDecl->tagList, tagTok, &tagExpr) && tagExpr)
+            TypeDecl *schemaDecl = semanticExpr->str ? scratch.findTypeDecl(semanticExpr->str) : nullptr;
+            ExprNode *schemaMarker = nullptr;
+            if (!schemaDecl
+                || !FindTag(schemaDecl->tagList, TOK_SEMANTIC, &schemaMarker)
+                || (schemaMarker && schemaMarker->type != EXPR_STRINGBUF))
             {
-                if (tagTok == TOK_OFFSET
-                    && FindTag(typeDecl->tagList, TOK_EXPORT, nullptr)
-                    && !rootOffsetExpressionIsConstantFoldable(tagExpr))
-                {
-                    errors.push_back(tagLocationPrefix(typeDecl)
-                                     + QStringLiteral("root offset(...) uses %1, but root offsets are "
-                                                      "evaluated before a live render context exists; "
-                                                      "use constant arithmetic only")
-                                           .arg(rootOffsetUnsupportedExpressionName(tagExpr)));
-                }
-                scratch.validateFieldTagExpressions(typeDecl->baseType, tagExpr, typeDecl, tagTok, &errors);
+                errors.push_back(tagLocationPrefix(typeDecl)
+                                 + QStringLiteral("semantic(...) references '%1', which is not a [semantic] schema")
+                                       .arg(semanticExpr->str ? QString::fromLocal8Bit(semanticExpr->str) : QStringLiteral("<invalid>")));
             }
         }
 
-        scratch.validateStructTags(typeDecl->baseType, &errors);
+        if (!typeDecl->typeAlias)
+        {
+            // The typedecl's own tags (e.g. _ELF's endian(...)) are scoped to its
+            // own type, the same rule declarationBigEndian uses at the render-time
+            // root (root->type, not root->parent).
+            for (TOKEN tagTok : kValidatedTags)
+            {
+                ExprNode *tagExpr = nullptr;
+                if (FindTag(typeDecl->tagList, tagTok, &tagExpr) && tagExpr)
+                {
+                    if (tagTok == TOK_OFFSET
+                        && FindTag(typeDecl->tagList, TOK_EXPORT, nullptr)
+                        && !rootOffsetExpressionIsConstantFoldable(tagExpr))
+                    {
+                        errors.push_back(tagLocationPrefix(typeDecl)
+                                         + QStringLiteral("root offset(...) uses %1, but root offsets are "
+                                                          "evaluated before a live render context exists; "
+                                                          "use constant arithmetic only")
+                                               .arg(rootOffsetUnsupportedExpressionName(tagExpr)));
+                    }
+                    scratch.validateFieldTagExpressions(typeDecl->baseType, tagExpr, typeDecl, tagTok, &errors);
+                }
+            }
+
+            scratch.validateStructTags(typeDecl->baseType, &errors);
+        }
+
+        TypeDecl *schemaDecl = scratch.attachedSemanticSchema(typeDecl);
+        if (schemaDecl)
+        {
+            auto validateEmitDestinations = [&](auto &&self, Type *scopeType) -> void {
+                Type *base = BaseNode(scopeType);
+                if (!base || (base->ty != typeSTRUCT && base->ty != typeUNION) || !base->sptr)
+                    return;
+
+                for (TypeDecl *decl : base->sptr->typeDeclList)
+                {
+                    if (!decl)
+                        continue;
+
+                    for (Tag *tag = decl->tagList; tag; tag = tag->link)
+                    {
+                        if (tag->tok != TOK_EMIT && tag->tok != TOK_EMITROW && tag->tok != TOK_EMITNODE)
+                            continue;
+
+                        ExprNode *destinationExpr = nullptr;
+                        ExprNode *selectorExpr = nullptr;
+                        ExprNode *labelExpr = nullptr;
+                        ExprNode *typeNameExpr = nullptr;
+                        ExprNode *offsetExpr = nullptr;
+                        ExprNode *countExpr = nullptr;
+                        ExprNode *stopExpr = nullptr;
+                        ExprNode *terminatorModeExpr = nullptr;
+                        ExprNode *conditionExpr = nullptr;
+                        ExprNode *mapExpr = nullptr;
+                        ExprNode *extentExpr = nullptr;
+                        std::vector<SemanticNodeAttr> nodeAttrs;
+                        bool parsed = false;
+                        QString tagName;
+                        if (tag->tok == TOK_EMIT)
+                        {
+                            tagName = QStringLiteral("emit");
+                            parsed = scratch.emitArgs(tag->expr,
+                                                      &destinationExpr,
+                                                      &selectorExpr,
+                                                      &labelExpr,
+                                                      &typeNameExpr,
+                                                      &offsetExpr,
+                                                      &countExpr,
+                                                      &stopExpr,
+                                                      &terminatorModeExpr,
+                                                      &conditionExpr,
+                                                      &mapExpr);
+                        }
+                        else if (tag->tok == TOK_EMITROW)
+                        {
+                            tagName = QStringLiteral("emit_row");
+                            parsed = scratch.emitRowArgs(tag->expr,
+                                                         &destinationExpr,
+                                                         &selectorExpr,
+                                                         &offsetExpr,
+                                                         &conditionExpr,
+                                                         &mapExpr);
+                        }
+                        else
+                        {
+                            tagName = QStringLiteral("emit_node");
+                            parsed = scratch.emitNodeArgs(tag->expr,
+                                                          &destinationExpr,
+                                                          &selectorExpr,
+                                                          &labelExpr,
+                                                          &offsetExpr,
+                                                          &extentExpr,
+                                                          &conditionExpr,
+                                                          &nodeAttrs);
+                        }
+                        if (!parsed)
+                        {
+                            errors.push_back(tagLocationPrefix(decl)
+                                             + QStringLiteral("%1(...) is missing a required wrapped argument")
+                                                   .arg(tagName));
+                            continue;
+                        }
+
+                        ExprNode *destinationPathExpr = nullptr;
+                        ExprNode *keyExpr = nullptr;
+                        ExprNode *nameExpr = nullptr;
+                        if (!scratch.emitDestinationArgs(destinationExpr, &destinationPathExpr, &keyExpr, &nameExpr))
+                        {
+                            errors.push_back(tagLocationPrefix(decl)
+                                             + QStringLiteral("%1(dest(...)) is malformed")
+                                                   .arg(tagName));
+                            continue;
+                        }
+                        if (tag->tok == TOK_EMITNODE && !labelExpr && nameExpr)
+                            labelExpr = nameExpr;
+
+                        Type *emitScopeType = scopeType;
+                        Type *declType = decl->declList.empty() ? decl->baseType : decl->declList[0];
+                        for (Type *cursor = declType; cursor; cursor = cursor->link)
+                        {
+                            if (cursor->ty == typeARRAY)
+                            {
+                                emitScopeType = cursor->link;
+                                break;
+                            }
+                        }
+
+                        const QStringList path = scratch.semanticPath(destinationPathExpr);
+                        if (path.isEmpty() || !scratch.semanticDestinationExists(schemaDecl, path))
+                        {
+                            errors.push_back(tagLocationPrefix(decl)
+                                             + QStringLiteral("%3(dest(%1)) does not resolve in semantic schema '%2'")
+                                                   .arg(path.isEmpty() ? QStringLiteral("<invalid>") : path.join(QLatin1Char('.')))
+                                                   .arg(schemaDecl->declList.empty() || !schemaDecl->declList[0]->sym
+                                                            ? QStringLiteral("<anonymous>")
+                                                            : QString::fromLocal8Bit(schemaDecl->declList[0]->sym->name))
+                                                   .arg(tagName));
+                        }
+
+                        TypeDecl *elementSchema = tag->tok == TOK_EMITNODE
+                            ? scratch.semanticDestinationElementSchema(schemaDecl, path)
+                            : nullptr;
+                        for (const SemanticNodeAttr &attr : nodeAttrs)
+                        {
+                            if (attr.schemaField
+                                && (!elementSchema || !scratch.semanticSchemaHasField(elementSchema, attr.name)))
+                            {
+                                errors.push_back(tagLocationPrefix(decl)
+                                                 + QStringLiteral("emit_node(field(%1, ...)) does not resolve in semantic destination '%2'")
+                                                       .arg(attr.name)
+                                                       .arg(path.isEmpty() ? QStringLiteral("<invalid>") : path.join(QLatin1Char('.'))));
+                            }
+                        }
+
+                        if (offsetExpr)
+                            scratch.validateFieldTagExpressions(emitScopeType, offsetExpr, decl, TOK_OFFSET, &errors);
+                        if (countExpr)
+                            scratch.validateFieldTagExpressions(emitScopeType, countExpr, decl, TOK_SIZEIS, &errors);
+                        if (extentExpr)
+                            scratch.validateFieldTagExpressions(emitScopeType, extentExpr, decl, TOK_EXTENT, &errors);
+                        if (conditionExpr)
+                            scratch.validateFieldTagExpressions(emitScopeType, conditionExpr, decl, TOK_OPTIONAL, &errors);
+                        if (labelExpr)
+                            scratch.validateFieldTagExpressions(emitScopeType, labelExpr, decl, TOK_LABEL, &errors);
+                        if (selectorExpr)
+                            scratch.validateFieldTagExpressions(emitScopeType, selectorExpr, decl, TOK_CASE, &errors);
+                        if (mapExpr)
+                            scratch.validateFieldTagExpressions(emitScopeType, mapExpr, decl, TOK_MAP, &errors);
+                        if (keyExpr)
+                            scratch.validateFieldTagExpressions(emitScopeType, keyExpr, decl, TOK_KEY, &errors);
+                        if (nameExpr)
+                            scratch.validateFieldTagExpressions(emitScopeType, nameExpr, decl, TOK_NAME, &errors);
+                        for (const SemanticNodeAttr &attr : nodeAttrs)
+                            if (attr.valueExpr)
+                                scratch.validateFieldTagExpressions(emitScopeType,
+                                                                    attr.valueExpr,
+                                                                    decl,
+                                                                    attr.schemaField ? TOK_FIELD : TOK_ATTR,
+                                                                    &errors);
+                    }
+
+                    self(self, decl->baseType);
+                }
+            };
+            validateEmitDestinations(validateEmitDestinations, typeDecl->baseType);
+        }
     }
 
     return errors;
@@ -2496,6 +3172,69 @@ void StructureRenderEngine::collectDynamicContainer(StructureRow *row)
         m_dynamicContainers.push_back(container);
 }
 
+void StructureRenderEngine::collectNamedOffsetMaps(StructureRow *row)
+{
+    if (!row || !row->typeDecl)
+        return;
+
+    for (Tag *tag = row->typeDecl->tagList; tag; tag = tag->link)
+    {
+        if (tag->tok != TOK_OFFSETMAP)
+            continue;
+
+        QString name;
+        ExprNode *baseExpr = nullptr;
+        ExprNode *logicalStartExpr = nullptr;
+        ExprNode *logicalSizeExpr = nullptr;
+        ExprNode *fileOffsetExpr = nullptr;
+        if (!namedOffsetMapArgs(tag->expr,
+                                &name,
+                                &baseExpr,
+                                &logicalStartExpr,
+                                &logicalSizeExpr,
+                                &fileOffsetExpr)
+            || name.isEmpty())
+        {
+            continue;
+        }
+
+        if (baseExpr)
+        {
+            INUMTYPE base = 0;
+            if (!evaluate(row, baseExpr, &base, row->absoluteOffset))
+                continue;
+
+            m_namedOffsetMaps.push_back(NamedOffsetMap{
+                name,
+                0,
+                0,
+                m_baseOffset + static_cast<uint64_t>(base),
+                false
+            });
+            continue;
+        }
+
+        INUMTYPE logicalStart = 0;
+        INUMTYPE logicalSize = 0;
+        INUMTYPE fileOffset = 0;
+        if (!evaluate(row, logicalStartExpr, &logicalStart, row->absoluteOffset)
+            || !evaluate(row, logicalSizeExpr, &logicalSize, row->absoluteOffset)
+            || !evaluate(row, fileOffsetExpr, &fileOffset, row->absoluteOffset)
+            || logicalSize <= 0)
+        {
+            continue;
+        }
+
+        m_namedOffsetMaps.push_back(NamedOffsetMap{
+            name,
+            static_cast<uint64_t>(logicalStart),
+            static_cast<uint64_t>(logicalSize),
+            m_baseOffset + static_cast<uint64_t>(fileOffset),
+            true
+        });
+    }
+}
+
 void StructureRenderEngine::collectDynamicRequests(StructureRow *row)
 {
     if (!row || !row->typeDecl)
@@ -2522,11 +3261,27 @@ void StructureRenderEngine::collectDynamicRequests(StructureRow *row)
         INUMTYPE selector = 0;
         INUMTYPE condition = 1;
         INUMTYPE logicalOffset = 0;
+        QString offsetSpace;
+        ExprNode *offsetValueExpr = logicalOffsetExpr;
+        if (!offsetTagArgs(logicalOffsetExpr, &offsetSpace, &offsetValueExpr))
+            continue;
+
         if ((selectorExpr && (!rowIsArrayElement || !evaluate(row, selectorExpr, &selector, row->absoluteOffset) || selector != arrayIndex))
             || (conditionExpr && (!evaluate(row, conditionExpr, &condition, row->absoluteOffset) || condition == 0))
-            || !evaluate(row, logicalOffsetExpr, &logicalOffset, row->absoluteOffset))
+            || !evaluate(row, offsetValueExpr, &logicalOffset, row->absoluteOffset))
         {
             continue;
+        }
+
+        if (!offsetSpace.isEmpty())
+        {
+            uint64_t fileOffset = 0;
+            if (mapper != DynamicMapper::Direct
+                || !mapNamedOffset(offsetSpace, static_cast<uint64_t>(logicalOffset), &fileOffset))
+            {
+                continue;
+            }
+            logicalOffset = static_cast<INUMTYPE>(fileOffset);
         }
 
         if (!typeNameExpr || typeNameExpr->type != EXPR_IDENTIFIER || !typeNameExpr->str)
@@ -2575,6 +3330,7 @@ void StructureRenderEngine::collectDynamicArrayRequests(StructureRow *row)
         ExprNode *terminatorModeExpr = nullptr;
         ExprNode *conditionExpr = nullptr;
         DynamicMapper mapper = DynamicMapper::Direct;
+        bool isCaseSelector = false;
         if (!dynamicArrayArgs(tag->expr,
                               &selectorOrLabelExpr,
                               &containerExpr,
@@ -2585,7 +3341,8 @@ void StructureRenderEngine::collectDynamicArrayRequests(StructureRow *row)
                               &terminatorModeExpr,
                               &conditionExpr,
                               &mapper,
-                              nullptr))
+                              nullptr,
+                              &isCaseSelector))
             continue;
 
         // dynamic_array mirrors dynamic_struct for directory arrays: when the
@@ -2593,17 +3350,18 @@ void StructureRenderEngine::collectDynamicArrayRequests(StructureRow *row)
         // which element emits the referenced table.  On ordinary rows the same
         // argument is only a display label for the generated array.
         bool attachToMappedContainer = false;
-        if (rowIsArrayElement)
+        if (isCaseSelector)
         {
             INUMTYPE arrayIndex = 0;
             INUMTYPE selector = 0;
-            if (arrayIndexFromRow(row, &arrayIndex)
-                && evaluate(row, selectorOrLabelExpr, &selector, row->absoluteOffset))
+            if (!rowIsArrayElement
+                || !arrayIndexFromRow(row, &arrayIndex)
+                || !evaluate(row, selectorOrLabelExpr, &selector, row->absoluteOffset)
+                || selector != arrayIndex)
             {
-                if (selector != arrayIndex)
-                    continue;
-                attachToMappedContainer = mapper == DynamicMapper::OffsetMap;
+                continue;
             }
+            attachToMappedContainer = mapper == DynamicMapper::OffsetMap;
         }
 
         if (!typeNameExpr || typeNameExpr->type != EXPR_IDENTIFIER || !typeNameExpr->str)
@@ -2617,12 +3375,28 @@ void StructureRenderEngine::collectDynamicArrayRequests(StructureRow *row)
         INUMTYPE logicalOffset = 0;
         INUMTYPE count = 0;
         INUMTYPE condition = 1;
-        if (!evaluate(row, logicalOffsetExpr, &logicalOffset, row->absoluteOffset)
+        QString offsetSpace;
+        ExprNode *offsetValueExpr = logicalOffsetExpr;
+        if (!offsetTagArgs(logicalOffsetExpr, &offsetSpace, &offsetValueExpr))
+            continue;
+
+        if (!evaluate(row, offsetValueExpr, &logicalOffset, row->absoluteOffset)
             || !evaluate(row, countExpr, &count, row->absoluteOffset)
             || (conditionExpr && (!evaluate(row, conditionExpr, &condition, row->absoluteOffset) || condition == 0))
             || count <= 0)
         {
             continue;
+        }
+
+        if (!offsetSpace.isEmpty())
+        {
+            uint64_t fileOffset = 0;
+            if (mapper != DynamicMapper::Direct
+                || !mapNamedOffset(offsetSpace, static_cast<uint64_t>(logicalOffset), &fileOffset))
+            {
+                continue;
+            }
+            logicalOffset = static_cast<INUMTYPE>(fileOffset);
         }
 
         QString label;
@@ -2678,9 +3452,9 @@ void StructureRenderEngine::appendDynamicRows(StructureRow *parent)
         row->value = QStringLiteral("{...}");
         row->byteLength = container.byteLength;
         row->kind = StructureRowKind::Dynamic;
-        row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueDoubleClosed),
-                            QString::fromLatin1(StructureBranchIcons::kBlueDoubleOpen),
-                            QString::fromLatin1(StructureBranchIcons::kGrayDoubleClosed));
+        row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueStructure),
+                            QString::fromLatin1(StructureBranchIcons::kBlueStructureOpen),
+                            QString::fromLatin1(StructureBranchIcons::kGrayStructure));
         container.row = (row->treeMode == StructureRowTreeMode::Default
                          || row->treeMode == StructureRowTreeMode::Collapsed
                          || row->treeMode == StructureRowTreeMode::Expanded)
@@ -2715,9 +3489,9 @@ void StructureRenderEngine::appendDynamicRows(StructureRow *parent)
         if (!request.label.isEmpty())
             row->setNameParts(QString(), request.label, QString());
         row->kind = StructureRowKind::Dynamic;
-        row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueDoubleClosed),
-                            QString::fromLatin1(StructureBranchIcons::kBlueDoubleOpen),
-                            QString::fromLatin1(StructureBranchIcons::kGrayDoubleClosed));
+        row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueStructure),
+                            QString::fromLatin1(StructureBranchIcons::kBlueStructureOpen),
+                            QString::fromLatin1(StructureBranchIcons::kGrayStructure));
         const bool bigEndian = declarationBigEndian(request.typeDecl, row.get(), request.renderType, m_baseOffset + fileOffset);
         EndianScope endian(this, bigEndian);
         row->bigEndian = m_bigEndian;
@@ -2779,9 +3553,9 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
         }
         arrayRow->value = QStringLiteral("{...}");
         arrayRow->kind = StructureRowKind::Dynamic;
-        arrayRow->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueTriad),
-                                 QString::fromLatin1(StructureBranchIcons::kBlueTriad),
-                                 QString::fromLatin1(StructureBranchIcons::kGrayDoubleClosed));
+        arrayRow->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueEntityArray),
+                                 QString::fromLatin1(StructureBranchIcons::kBlueEntityArray),
+                                 QString::fromLatin1(StructureBranchIcons::kGrayEntityArray));
 
         // Check once whether the element type declares sub-arrays.  Primitive
         // element types (DWORD, WORD, CHAR, thunk unions, …) never do, so we
@@ -2836,6 +3610,7 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
 
             const uint64_t elementLength = formatType(elementRow.get(), request.renderType, request.typeDecl, m_baseOffset + fileOffset + length);
             elementRow->byteLength = elementLength;
+            collectNamedOffsetMaps(elementRow.get());
 
             if (renderElement && nameSourceTagExpr)
             {
@@ -2867,8 +3642,8 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
 
                     StructureRow *elemPtr = elementRow.get();
                     auto self = shared_from_this();
-                    elementRow->lazyChildLoader = [self, elemPtr, reqs = std::move(subRequests)]() mutable {
-                        return self->buildSubArraysForElement(elemPtr, std::move(reqs));
+                    elementRow->lazyChildLoader = [self, elemPtr, reqs = std::move(subRequests)]() {
+                        return self->buildSubArraysForElement(elemPtr, reqs);
                     };
                 }
             }
@@ -2929,6 +3704,983 @@ std::vector<StructureRenderEngine::RowPtr> StructureRenderEngine::buildSubArrays
         elementRow->children.begin() + static_cast<ptrdiff_t>(childrenBefore),
         elementRow->children.end());
     return result;
+}
+
+void StructureRenderEngine::collectSemanticEmitRequests(StructureRow *row)
+{
+    if (!row || !row->typeDecl)
+        return;
+
+    TypeDecl *schemaDecl = attachedSemanticSchema(m_rootType);
+    if (!schemaDecl)
+        return;
+
+    for (Tag *tag = row->typeDecl->tagList; tag; tag = tag->link)
+    {
+        if (tag->tok == TOK_EMITROW)
+        {
+            ExprNode *destinationExpr = nullptr;
+            ExprNode *selectorExpr = nullptr;
+            ExprNode *logicalOffsetExpr = nullptr;
+            ExprNode *conditionExpr = nullptr;
+            ExprNode *mapExpr = nullptr;
+            if (!emitRowArgs(tag->expr, &destinationExpr, &selectorExpr, &logicalOffsetExpr, &conditionExpr, &mapExpr))
+                continue;
+
+            ExprNode *destinationPathExpr = nullptr;
+            ExprNode *keyExpr = nullptr;
+            ExprNode *nameExpr = nullptr;
+            if (!emitDestinationArgs(destinationExpr, &destinationPathExpr, &keyExpr, &nameExpr))
+                continue;
+
+            const QStringList destination = semanticPath(destinationPathExpr);
+            if (destination.isEmpty() || !semanticDestinationExists(schemaDecl, destination))
+                continue;
+
+            INUMTYPE arrayIndex = 0;
+            INUMTYPE selector = 0;
+            if (selectorExpr
+                && (!arrayIndexFromRow(row, &arrayIndex)
+                    || !evaluate(row, selectorExpr, &selector, row->absoluteOffset)
+                    || selector != arrayIndex))
+            {
+                continue;
+            }
+
+            INUMTYPE condition = 1;
+            if (conditionExpr && (!evaluate(row, conditionExpr, &condition, row->absoluteOffset) || condition == 0))
+                continue;
+
+            QString offsetSpace;
+            ExprNode *offsetValueExpr = logicalOffsetExpr;
+            INUMTYPE logicalOffset = row->absoluteOffset >= m_baseOffset ? INUMTYPE(row->absoluteOffset - m_baseOffset) : 0;
+            if (logicalOffsetExpr)
+            {
+                if (!offsetTagArgs(logicalOffsetExpr, &offsetSpace, &offsetValueExpr)
+                    || !evaluate(row, offsetValueExpr, &logicalOffset, row->absoluteOffset))
+                {
+                    continue;
+                }
+            }
+
+            QString mapSpace;
+            ExprNode *mapLogicalStartExpr = nullptr;
+            ExprNode *mapLogicalSizeExpr = nullptr;
+            ExprNode *mapFileOffsetExpr = nullptr;
+            INUMTYPE mapLogicalStart = 0;
+            INUMTYPE mapLogicalSize = 0;
+            INUMTYPE mapFileOffset = 0;
+            const bool createsMappedContainer = mapExpr
+                && emitMapArgs(mapExpr, &mapSpace, &mapLogicalStartExpr, &mapLogicalSizeExpr, &mapFileOffsetExpr)
+                && evaluate(row, mapLogicalStartExpr, &mapLogicalStart, row->absoluteOffset)
+                && evaluate(row, mapLogicalSizeExpr, &mapLogicalSize, row->absoluteOffset)
+                && evaluate(row, mapFileOffsetExpr, &mapFileOffset, row->absoluteOffset)
+                && !mapSpace.isEmpty()
+                && mapLogicalSize > 0;
+
+            uint64_t fileOffset = uint64_t(logicalOffset);
+            if (!offsetSpace.isEmpty() && !createsMappedContainer && !mapNamedOffset(offsetSpace, fileOffset, &fileOffset))
+                fileOffset = uint64_t(logicalOffset);
+
+            m_semanticRowRequests.push_back(SemanticRowRequest{
+                row,
+                destination,
+                selectorExpr,
+                keyExpr,
+                nameExpr,
+                offsetSpace,
+                uint64_t(logicalOffset),
+                fileOffset,
+                conditionExpr,
+                mapSpace,
+                uint64_t(mapLogicalStart),
+                uint64_t(mapLogicalSize),
+                uint64_t(mapFileOffset),
+                createsMappedContainer
+            });
+            continue;
+        }
+
+        if (tag->tok == TOK_EMITNODE)
+        {
+            ExprNode *destinationExpr = nullptr;
+            ExprNode *selectorExpr = nullptr;
+            ExprNode *nameExpr = nullptr;
+            ExprNode *logicalOffsetExpr = nullptr;
+            ExprNode *extentExpr = nullptr;
+            ExprNode *conditionExpr = nullptr;
+            std::vector<SemanticNodeAttr> attrs;
+            if (!emitNodeArgs(tag->expr,
+                              &destinationExpr,
+                              &selectorExpr,
+                              &nameExpr,
+                              &logicalOffsetExpr,
+                              &extentExpr,
+                              &conditionExpr,
+                              &attrs))
+            {
+                continue;
+            }
+
+            ExprNode *destinationPathExpr = nullptr;
+            ExprNode *keyExpr = nullptr;
+            ExprNode *destinationNameExpr = nullptr;
+            if (!emitDestinationArgs(destinationExpr, &destinationPathExpr, &keyExpr, &destinationNameExpr))
+                continue;
+
+            const QStringList destination = semanticPath(destinationPathExpr);
+            if (destination.isEmpty() || !semanticDestinationExists(schemaDecl, destination))
+                continue;
+
+            INUMTYPE arrayIndex = 0;
+            INUMTYPE selector = 0;
+            if (selectorExpr
+                && (!arrayIndexFromRow(row, &arrayIndex)
+                    || !evaluate(row, selectorExpr, &selector, row->absoluteOffset)
+                    || selector != arrayIndex))
+            {
+                continue;
+            }
+
+            INUMTYPE condition = 1;
+            if (conditionExpr && (!evaluate(row, conditionExpr, &condition, row->absoluteOffset) || condition == 0))
+                continue;
+
+            QString offsetSpace;
+            ExprNode *offsetValueExpr = logicalOffsetExpr;
+            INUMTYPE logicalOffset = row->absoluteOffset >= m_baseOffset ? INUMTYPE(row->absoluteOffset - m_baseOffset) : 0;
+            if (logicalOffsetExpr)
+            {
+                if (!offsetTagArgs(logicalOffsetExpr, &offsetSpace, &offsetValueExpr)
+                    || !evaluate(row, offsetValueExpr, &logicalOffset, row->absoluteOffset))
+                {
+                    continue;
+                }
+            }
+
+            uint64_t fileOffset = uint64_t(logicalOffset);
+            if (!offsetSpace.isEmpty() && !mapNamedOffset(offsetSpace, fileOffset, &fileOffset))
+                fileOffset = uint64_t(logicalOffset);
+
+            m_semanticNodeRequests.push_back(SemanticNodeRequest{
+                row,
+                destination,
+                selectorExpr,
+                keyExpr,
+                nameExpr ? nameExpr : destinationNameExpr,
+                offsetSpace,
+                uint64_t(logicalOffset),
+                fileOffset,
+                extentExpr,
+                conditionExpr,
+                attrs
+            });
+            continue;
+        }
+
+        if (tag->tok != TOK_EMIT)
+            continue;
+
+        ExprNode *destinationExpr = nullptr;
+        ExprNode *selectorExpr = nullptr;
+        ExprNode *labelExpr = nullptr;
+        ExprNode *typeNameExpr = nullptr;
+        ExprNode *logicalOffsetExpr = nullptr;
+        ExprNode *countExpr = nullptr;
+        ExprNode *stopExpr = nullptr;
+        ExprNode *terminatorModeExpr = nullptr;
+        ExprNode *conditionExpr = nullptr;
+        ExprNode *mapExpr = nullptr;
+        if (!emitArgs(tag->expr,
+                      &destinationExpr,
+                      &selectorExpr,
+                      &labelExpr,
+                      &typeNameExpr,
+                      &logicalOffsetExpr,
+                      &countExpr,
+                      &stopExpr,
+                      &terminatorModeExpr,
+                      &conditionExpr,
+                      &mapExpr))
+        {
+            continue;
+        }
+
+        const QStringList destination = semanticPath(destinationExpr);
+        if (destination.isEmpty() || !semanticDestinationExists(schemaDecl, destination))
+            continue;
+
+        if (!typeNameExpr || typeNameExpr->type != EXPR_IDENTIFIER || !typeNameExpr->str)
+            continue;
+
+        TypeDecl *targetType = findTypeDecl(typeNameExpr->str);
+        Type *renderType = typeInDecl(targetType, typeNameExpr->str);
+        if (!targetType || !renderType)
+            continue;
+
+        INUMTYPE arrayIndex = 0;
+        INUMTYPE selector = 0;
+        if (selectorExpr
+            && (!arrayIndexFromRow(row, &arrayIndex)
+                || !evaluate(row, selectorExpr, &selector, row->absoluteOffset)
+                || selector != arrayIndex))
+        {
+            continue;
+        }
+
+        INUMTYPE logicalOffset = 0;
+        INUMTYPE count = 0;
+        INUMTYPE condition = 1;
+        QString offsetSpace;
+        ExprNode *offsetValueExpr = logicalOffsetExpr;
+        if (!offsetTagArgs(logicalOffsetExpr, &offsetSpace, &offsetValueExpr))
+            continue;
+
+        if (!evaluate(row, offsetValueExpr, &logicalOffset, row->absoluteOffset)
+            || !evaluate(row, countExpr, &count, row->absoluteOffset)
+            || (conditionExpr && (!evaluate(row, conditionExpr, &condition, row->absoluteOffset) || condition == 0))
+            || count <= 0)
+        {
+            continue;
+        }
+
+        QString mapSpace;
+        ExprNode *mapLogicalStartExpr = nullptr;
+        ExprNode *mapLogicalSizeExpr = nullptr;
+        ExprNode *mapFileOffsetExpr = nullptr;
+        INUMTYPE mapLogicalStart = 0;
+        INUMTYPE mapLogicalSize = 0;
+        INUMTYPE mapFileOffset = 0;
+        const bool createsMappedContainer = mapExpr
+            && emitMapArgs(mapExpr, &mapSpace, &mapLogicalStartExpr, &mapLogicalSizeExpr, &mapFileOffsetExpr)
+            && evaluate(row, mapLogicalStartExpr, &mapLogicalStart, row->absoluteOffset)
+            && evaluate(row, mapLogicalSizeExpr, &mapLogicalSize, row->absoluteOffset)
+            && evaluate(row, mapFileOffsetExpr, &mapFileOffset, row->absoluteOffset)
+            && !mapSpace.isEmpty()
+            && mapLogicalSize > 0;
+
+        uint64_t fileOffset = uint64_t(logicalOffset);
+        if (!offsetSpace.isEmpty() && !createsMappedContainer && !mapNamedOffset(offsetSpace, fileOffset, &fileOffset))
+            fileOffset = uint64_t(logicalOffset);
+
+        m_semanticEmitRequests.push_back(SemanticEmitRequest{
+            row,
+            targetType,
+            renderType,
+            destination,
+            selectorExpr,
+            labelExpr,
+            offsetSpace,
+            uint64_t(logicalOffset),
+            fileOffset,
+            uint64_t(count),
+            stopExpr,
+            terminatorModeExpr,
+            conditionExpr,
+            mapSpace,
+            uint64_t(mapLogicalStart),
+            uint64_t(mapLogicalSize),
+            uint64_t(mapFileOffset),
+            createsMappedContainer
+        });
+    }
+
+    for (const auto &child : row->children)
+        collectSemanticEmitRequests(child.get());
+
+    if (row->lazyChildLoader)
+    {
+        std::vector<RowPtr> lazyRows = row->lazyChildLoader();
+        for (const RowPtr &lazyRow : lazyRows)
+            collectSemanticEmitRequests(lazyRow.get());
+        for (RowPtr &lazyRow : lazyRows)
+            m_semanticSourceRows.push_back(std::move(lazyRow));
+    }
+}
+
+void StructureRenderEngine::appendSemanticRowRequests()
+{
+    if (m_semanticRowRequests.empty())
+        return;
+
+    auto appendRequest = [this](const SemanticRowRequest &request) {
+        uint64_t fileOffset = request.fileOffset;
+        if (!request.owner)
+            return;
+
+        std::vector<ExprNode *> keyExprs;
+        appendCommaArgs(request.keyExpr, &keyExprs);
+        QStringList keys;
+        for (ExprNode *keyExpr : keyExprs)
+        {
+            const QString key = semanticExpressionText(request.owner,
+                                                       request.owner->type,
+                                                       keyExpr,
+                                                       request.owner->absoluteOffset);
+            if (key.isEmpty())
+                return;
+            keys.push_back(key);
+        }
+
+        StructureRow *parentRow = nullptr;
+        QStringList entityPath = request.destinationPath;
+        QString key = keys.isEmpty() ? QString() : keys.last();
+
+        if (keys.size() > 1)
+        {
+            if (request.destinationPath.size() < int(keys.size()))
+                return;
+
+            const int parentKeyCount = int(keys.size()) - 1;
+            const int parentPathLength = request.destinationPath.size() - parentKeyCount;
+            if (parentPathLength <= 0)
+                return;
+
+            QStringList parentPath = request.destinationPath.mid(0, parentPathLength);
+            uint64_t parentFileOffset = request.fileOffset;
+            StructureRow *parentGroup = semanticDestinationForPath(parentPath,
+                                                                   request.offsetSpace,
+                                                                   request.logicalOffset,
+                                                                   &parentFileOffset);
+            if (!parentGroup)
+                return;
+
+            StructureRow *entityRow = nullptr;
+            for (int i = 0; i < parentKeyCount; ++i)
+            {
+                entityPath = request.destinationPath.mid(0, parentPathLength + i);
+                entityRow = nullptr;
+                for (const SemanticEntity &entity : m_semanticEntities)
+                {
+                    if (entity.parent == parentGroup
+                        && entity.destinationPath == entityPath
+                        && entity.key == keys[i]
+                        && entity.row)
+                    {
+                        entityRow = entity.row;
+                        break;
+                    }
+                }
+
+                if (!entityRow)
+                    return;
+
+                parentGroup = entityRow;
+                if (i + 1 < parentKeyCount)
+                {
+                    QStringList nextPath = request.destinationPath.mid(0, parentPathLength + i + 1);
+                    parentGroup = semanticChildGroup(parentGroup, nextPath);
+                    if (!parentGroup)
+                        return;
+                }
+            }
+
+            parentRow = entityRow;
+            QStringList currentPath = entityPath;
+            for (int i = entityPath.size(); i < request.destinationPath.size(); ++i)
+            {
+                currentPath.append(request.destinationPath[i]);
+                parentRow = semanticChildGroup(parentRow, currentPath);
+                if (!parentRow)
+                    return;
+            }
+        }
+        else
+        {
+            parentRow = semanticDestinationForPath(request.destinationPath,
+                                                   request.offsetSpace,
+                                                   request.logicalOffset,
+                                                   &fileOffset);
+        }
+
+        if (!parentRow)
+            return;
+
+        if (!key.isEmpty())
+        {
+            for (const SemanticEntity &entity : m_semanticEntities)
+            {
+                if (entity.parent == parentRow
+                    && entity.destinationPath == request.destinationPath
+                    && entity.key == key
+                    && entity.row)
+                {
+                    if (request.createsMappedContainer)
+                    {
+                        m_semanticContainers.push_back(SemanticContainer{
+                            entity.row,
+                            request.destinationPath,
+                            request.mapSpace,
+                            request.mapLogicalStart,
+                            request.mapLogicalSize,
+                            request.mapFileOffset
+                        });
+                    }
+                    return;
+                }
+            }
+        }
+
+        QString name = semanticExpressionText(request.owner,
+                                              request.owner->type,
+                                              request.nameExpr,
+                                              request.owner->absoluteOffset);
+        if (name.isEmpty())
+            name = key;
+        if (name.isEmpty())
+            name = request.destinationPath.isEmpty() ? QStringLiteral("Semantic Row") : request.destinationPath.last();
+
+        auto row = std::make_unique<StructureRow>(parentRow);
+        row->kind = StructureRowKind::Semantic;
+        row->suppressSemanticViews = true;
+        row->name = rowNameFragment(name);
+        row->nameIdentifier = row->name;
+        row->value = QStringLiteral("{...}");
+        row->absoluteOffset = m_baseOffset + fileOffset;
+        row->relativeOffset = fileOffset;
+        row->offset = formatOffset(row->absoluteOffset);
+        row->generatedOffset = true;
+        applySemanticBranchIcons(row.get(), request.destinationPath);
+
+        StructureRow *rowPtr = row.get();
+        appendPresentedRow(parentRow, std::move(row));
+        if (!key.isEmpty())
+        {
+            m_semanticEntities.push_back(SemanticEntity{
+                parentRow,
+                rowPtr,
+                request.destinationPath,
+                key
+            });
+        }
+
+        if (request.createsMappedContainer)
+        {
+            m_semanticContainers.push_back(SemanticContainer{
+                rowPtr,
+                request.destinationPath,
+                request.mapSpace,
+                request.mapLogicalStart,
+                request.mapLogicalSize,
+                request.mapFileOffset
+            });
+        }
+    };
+
+    for (const SemanticRowRequest &request : m_semanticRowRequests)
+        if (request.createsMappedContainer)
+            appendRequest(request);
+
+    for (const SemanticRowRequest &request : m_semanticRowRequests)
+        if (!request.createsMappedContainer)
+            appendRequest(request);
+}
+
+void StructureRenderEngine::appendSemanticNodeRequests()
+{
+    if (m_semanticNodeRequests.empty())
+        return;
+
+    auto upsertAttr = [this](StructureRow *node, const QString &name, const QString &value) {
+        if (!node || name.isEmpty())
+            return;
+        for (const auto &child : node->children)
+        {
+            if (child && child->kind == StructureRowKind::Semantic && child->name == name)
+            {
+                child->value = value;
+                return;
+            }
+        }
+
+        auto attrRow = std::make_unique<StructureRow>(node);
+        attrRow->kind = StructureRowKind::Semantic;
+        attrRow->suppressSemanticViews = true;
+        attrRow->name = name;
+        attrRow->value = value;
+        attrRow->absoluteOffset = node->absoluteOffset;
+        attrRow->relativeOffset = node->relativeOffset;
+        attrRow->offset = node->offset;
+        attrRow->generatedOffset = true;
+        appendPresentedRow(node, std::move(attrRow));
+    };
+
+    auto schemaFieldNames = [](TypeDecl *schemaDecl) {
+        QStringList names;
+        Type *base = BaseNode(schemaDecl ? schemaDecl->baseType : nullptr);
+        if (!base || base->ty != typeSTRUCT || !base->sptr)
+            return names;
+
+        for (TypeDecl *decl : base->sptr->typeDeclList)
+        {
+            if (!decl)
+                continue;
+            for (Type *type : decl->declList)
+                if (type && type->sym)
+                    names.push_back(QString::fromLocal8Bit(type->sym->name));
+        }
+        return names;
+    };
+
+    auto sortSchemaFields = [&schemaFieldNames](StructureRow *node, TypeDecl *elementSchema) {
+        if (!node || !elementSchema)
+            return;
+
+        const QStringList order = schemaFieldNames(elementSchema);
+        if (order.isEmpty())
+            return;
+
+        auto orderOf = [&order](const QString &name) {
+            const int index = order.indexOf(name);
+            return index < 0 ? std::numeric_limits<int>::max() : index;
+        };
+
+        std::stable_sort(node->children.begin(), node->children.end(), [&orderOf](const RowPtr &left, const RowPtr &right) {
+            return orderOf(left ? left->name : QString()) < orderOf(right ? right->name : QString());
+        });
+    };
+
+    auto appendRequest = [this, &upsertAttr, &sortSchemaFields](const SemanticNodeRequest &request) {
+        if (!request.owner)
+            return;
+
+        uint64_t fileOffset = request.fileOffset;
+        std::vector<ExprNode *> keyExprs;
+        appendCommaArgs(request.keyExpr, &keyExprs);
+        QStringList keyParts;
+        for (ExprNode *keyExpr : keyExprs)
+        {
+            const QString keyPart = semanticExpressionText(request.owner,
+                                                           request.owner->type,
+                                                           keyExpr,
+                                                           request.owner->absoluteOffset);
+            if (keyPart.isEmpty())
+                return;
+            keyParts.push_back(keyPart);
+        }
+
+        StructureRow *parentRow = nullptr;
+        QStringList entityPath = request.destinationPath;
+        const bool useParentKeys = keyParts.size() > 1
+            && request.destinationPath.size() >= int(keyParts.size());
+        QString key = keyParts.isEmpty() ? QString()
+            : useParentKeys ? keyParts.last() : keyParts.join(QChar(0x1f));
+
+        if (useParentKeys)
+        {
+            const int parentKeyCount = int(keyParts.size()) - 1;
+            const int parentPathLength = request.destinationPath.size() - parentKeyCount;
+            if (parentPathLength <= 0)
+                return;
+
+            QStringList parentPath = request.destinationPath.mid(0, parentPathLength);
+            uint64_t parentFileOffset = request.fileOffset;
+            StructureRow *parentGroup = semanticDestinationForPath(parentPath,
+                                                                   request.offsetSpace,
+                                                                   request.logicalOffset,
+                                                                   &parentFileOffset);
+            if (!parentGroup)
+                return;
+
+            StructureRow *entityRow = nullptr;
+            for (int i = 0; i < parentKeyCount; ++i)
+            {
+                entityPath = request.destinationPath.mid(0, parentPathLength + i);
+                entityRow = nullptr;
+                for (const SemanticEntity &entity : m_semanticEntities)
+                {
+                    if (entity.parent == parentGroup
+                        && entity.destinationPath == entityPath
+                        && entity.key == keyParts[i]
+                        && entity.row)
+                    {
+                        entityRow = entity.row;
+                        break;
+                    }
+                }
+
+                if (!entityRow)
+                    return;
+
+                parentGroup = entityRow;
+                if (i + 1 < parentKeyCount)
+                {
+                    QStringList nextPath = request.destinationPath.mid(0, parentPathLength + i + 1);
+                    parentGroup = semanticChildGroup(parentGroup, nextPath);
+                    if (!parentGroup)
+                        return;
+                }
+            }
+
+            parentRow = entityRow;
+            QStringList currentPath = entityPath;
+            for (int i = entityPath.size(); i < request.destinationPath.size(); ++i)
+            {
+                currentPath.append(request.destinationPath[i]);
+                parentRow = semanticChildGroup(parentRow, currentPath);
+                if (!parentRow)
+                    return;
+            }
+        }
+        else
+        {
+            parentRow = semanticDestinationForPath(request.destinationPath,
+                                                   request.offsetSpace,
+                                                   request.logicalOffset,
+                                                   &fileOffset);
+        }
+
+        if (!parentRow)
+            return;
+
+        StructureRow *node = nullptr;
+        if (!key.isEmpty())
+        {
+            for (const SemanticEntity &entity : m_semanticEntities)
+            {
+                if (entity.parent == parentRow
+                    && entity.destinationPath == request.destinationPath
+                    && entity.key == key
+                    && entity.row)
+                {
+                    node = entity.row;
+                    break;
+                }
+            }
+        }
+
+        const bool hasExplicitName = request.nameExpr != nullptr;
+        QString name = semanticExpressionText(request.owner,
+                                              request.owner->type,
+                                              request.nameExpr,
+                                              request.owner->absoluteOffset);
+        if (name.isEmpty() && !keyParts.isEmpty())
+            name = keyParts.last();
+        if (name.isEmpty())
+            name = request.destinationPath.isEmpty() ? QStringLiteral("Semantic Node") : request.destinationPath.last();
+        name = rowNameFragment(name);
+
+        TypeDecl *elementSchema = semanticDestinationElementSchema(attachedSemanticSchema(m_rootType), request.destinationPath);
+
+        if (!node)
+        {
+            auto row = std::make_unique<StructureRow>(parentRow);
+            row->kind = StructureRowKind::Semantic;
+            row->suppressSemanticViews = true;
+            row->name = name;
+            row->nameIdentifier = name;
+            if (elementSchema)
+            {
+                row->type = elementSchema->baseType;
+                row->typeDecl = elementSchema;
+            }
+            row->absoluteOffset = m_baseOffset + fileOffset;
+            row->relativeOffset = fileOffset;
+            row->offset = formatOffset(row->absoluteOffset);
+            row->generatedOffset = true;
+            row->byteLength = request.owner->byteLength;
+            if (request.extentExpr)
+            {
+                INUMTYPE extent = 0;
+                if (evaluate(request.owner, request.extentExpr, &extent, request.owner->absoluteOffset) && extent > 0)
+                    row->byteLength = static_cast<uint64_t>(extent);
+            }
+            applySemanticBranchIcons(row.get(), request.destinationPath);
+
+            node = row.get();
+            appendPresentedRow(parentRow, std::move(row));
+            if (!key.isEmpty())
+            {
+                m_semanticEntities.push_back(SemanticEntity{
+                    parentRow,
+                    node,
+                    request.destinationPath,
+                    key
+                });
+            }
+        }
+        else if (hasExplicitName && !name.isEmpty())
+        {
+            node->name = name;
+            node->nameIdentifier = name;
+        }
+
+        if (request.extentExpr && node->byteLength == 0)
+        {
+            INUMTYPE extent = 0;
+            if (evaluate(request.owner, request.extentExpr, &extent, request.owner->absoluteOffset) && extent > 0)
+                node->byteLength = static_cast<uint64_t>(extent);
+            node->absoluteOffset = m_baseOffset + fileOffset;
+            node->relativeOffset = fileOffset;
+            node->offset = formatOffset(node->absoluteOffset);
+            node->generatedOffset = true;
+        }
+
+        for (const SemanticNodeAttr &attr : request.attrs)
+        {
+            const QString value = semanticExpressionText(request.owner,
+                                                         request.owner->type,
+                                                         attr.valueExpr,
+                                                         request.owner->absoluteOffset);
+            if (value.isEmpty())
+                continue;
+            upsertAttr(node, attr.name, value);
+        }
+
+        sortSchemaFields(node, elementSchema);
+
+        if (elementSchema && !hasExplicitName)
+        {
+            ExprNode *schemaNameExpr = nullptr;
+            if (FindTag(elementSchema->tagList, TOK_NAME, &schemaNameExpr) && schemaNameExpr)
+            {
+                const QString schemaName = semanticExpressionText(node,
+                                                                  elementSchema->baseType,
+                                                                  schemaNameExpr,
+                                                                  node->absoluteOffset);
+                if (!schemaName.isEmpty())
+                {
+                    node->name = rowNameFragment(schemaName);
+                    node->nameIdentifier = node->name;
+                }
+            }
+        }
+
+        if (!node->children.empty())
+            node->value = QStringLiteral("{...}");
+    };
+
+    for (const SemanticNodeRequest &request : m_semanticNodeRequests)
+        appendRequest(request);
+}
+
+void StructureRenderEngine::appendSemanticEmitRows(StructureRow *root)
+{
+    if (!root || m_semanticEmitRequests.empty())
+        return;
+
+    auto appendRequest = [this](const SemanticEmitRequest &request) {
+        uint64_t fileOffset = request.fileOffset;
+        StructureRow *parentRow = semanticDestinationForRequest(request, &fileOffset);
+        if (!parentRow || !request.owner || !request.renderType || !request.typeDecl)
+            return;
+
+        auto arrayRow = makeRow(parentRow, request.renderType, request.typeDecl, m_baseOffset + fileOffset);
+        arrayRow->kind = StructureRowKind::Semantic;
+        arrayRow->suppressSemanticViews = true;
+        arrayRow->value = QStringLiteral("{...}");
+        applySemanticBranchIcons(arrayRow.get(), request.destinationPath, true);
+
+        QString label = semanticExpressionText(request.owner,
+                                               request.owner->type,
+                                               request.labelExpr,
+                                               request.owner->absoluteOffset);
+        if (label.isEmpty())
+            label = typeName(request.renderType);
+        arrayRow->setNameParts(QString(), label, QString());
+
+        StructureRow *elementParent = arrayRow.get();
+        if (request.createsMappedContainer)
+        {
+            QStringList payloadPath = request.destinationPath;
+            payloadPath.append(QStringLiteral("Bytes"));
+            if (semanticDestinationExists(attachedSemanticSchema(m_rootType), payloadPath))
+                elementParent = semanticChildGroup(arrayRow.get(), payloadPath);
+        }
+
+        uint64_t length = 0;
+        uint64_t logicalIndex = 0;
+        uint64_t renderedElements = 0;
+        while (logicalIndex < request.maxCount && renderedElements < kMaxArrayElements)
+        {
+            auto row = makeRow(elementParent, request.renderType, request.typeDecl,
+                               m_baseOffset + fileOffset + length);
+            row->kind = StructureRowKind::Semantic;
+            row->suppressSemanticViews = true;
+            applySemanticBranchIcons(row.get(), request.destinationPath, true);
+            const QString indexLabel = QStringLiteral("[%1]").arg(logicalIndex);
+            row->name = indexLabel;
+            row->nameTypePrefix = indexLabel;
+
+            const bool bigEndian = declarationBigEndian(request.typeDecl,
+                                                        row.get(),
+                                                        request.renderType,
+                                                        m_baseOffset + fileOffset + length);
+            EndianScope endian(this, bigEndian);
+            row->bigEndian = m_bigEndian;
+            const uint64_t elementLength = formatType(row.get(),
+                                                      request.renderType,
+                                                      request.typeDecl,
+                                                      m_baseOffset + fileOffset + length);
+            row->byteLength = elementLength;
+
+            const uint64_t terminatorLength = terminatorMatchLength(row.get(),
+                                                                     request.renderType,
+                                                                     request.stopExpr,
+                                                                     m_baseOffset + fileOffset + length,
+                                                                     elementLength);
+            const bool hideTerminator = terminatorLength > 0
+                && terminatorShouldBeHidden(request.typeDecl,
+                                            request.renderType,
+                                            request.stopExpr,
+                                            request.terminatorModeExpr);
+            length += terminatorLength > 0 ? terminatorLength : elementLength;
+            logicalIndex += std::max<uint64_t>(row->arrayCountContribution, 1);
+            ++renderedElements;
+            if (terminatorLength > 0)
+            {
+                if (!hideTerminator)
+                    appendPresentedRow(elementParent, std::move(row));
+                break;
+            }
+
+            appendPresentedRow(elementParent, std::move(row));
+        }
+
+        arrayRow->byteLength = length;
+        if (!arrayRow->children.empty())
+        {
+            StructureRow *arrayRowPtr = arrayRow.get();
+            appendPresentedRow(parentRow, std::move(arrayRow));
+            if (request.createsMappedContainer)
+            {
+                m_semanticContainers.push_back(SemanticContainer{
+                    arrayRowPtr,
+                    request.destinationPath,
+                    request.mapSpace,
+                    request.mapLogicalStart,
+                    request.mapLogicalSize,
+                    request.mapFileOffset
+                });
+            }
+        }
+    };
+
+    for (const SemanticEmitRequest &request : m_semanticEmitRequests)
+    {
+        if (request.createsMappedContainer)
+            appendRequest(request);
+    }
+
+    for (const SemanticEmitRequest &request : m_semanticEmitRequests)
+        if (!request.createsMappedContainer)
+            appendRequest(request);
+}
+
+StructureRow *StructureRenderEngine::semanticRootGroup()
+{
+    if (!m_rootRow)
+        return nullptr;
+
+    const QString rootLabel = semanticRootLabel();
+    for (const auto &child : m_rootRow->children)
+    {
+        if (child && child->kind == StructureRowKind::Semantic && child->name == rootLabel)
+            return child.get();
+    }
+
+    auto group = std::make_unique<StructureRow>(m_rootRow);
+    group->name = rootLabel;
+    group->value = QStringLiteral("{...}");
+    group->kind = StructureRowKind::Semantic;
+    group->absoluteOffset = m_rootRow->absoluteOffset;
+    group->relativeOffset = m_rootRow->relativeOffset;
+    group->offset = formatOffset(group->absoluteOffset);
+    group->generatedOffset = true;
+    group->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueRoot),
+                          QString::fromLatin1(StructureBranchIcons::kBlueRoot),
+                          QString::fromLatin1(StructureBranchIcons::kGrayRoot));
+    StructureRow *groupPtr = group.get();
+    m_rootRow->children.push_back(std::move(group));
+    return groupPtr;
+}
+
+StructureRow *StructureRenderEngine::semanticDestinationGroup(const QStringList &path)
+{
+    StructureRow *parent = semanticRootGroup();
+    QStringList currentPath;
+    for (const QString &part : path)
+    {
+        if (!parent || part.isEmpty())
+            return nullptr;
+
+        currentPath.append(part);
+        parent = semanticChildGroup(parent, currentPath);
+    }
+
+    return parent;
+}
+
+StructureRow *StructureRenderEngine::semanticChildGroup(StructureRow *parent, const QStringList &path)
+{
+    const QString name = path.isEmpty() ? QString() : path.last();
+    if (!parent || name.isEmpty())
+        return nullptr;
+
+    TypeDecl *schemaField = semanticDestinationDecl(attachedSemanticSchema(m_rootType), path);
+    const StructureRowTreeMode treeMode = treeTag(schemaField);
+    if (treeMode == StructureRowTreeMode::Flatten)
+        return parent;
+    if (treeMode == StructureRowTreeMode::Hidden)
+        return nullptr;
+
+    for (const auto &child : parent->children)
+    {
+        if (child && child->kind == StructureRowKind::Semantic && child->name == name)
+            return child.get();
+    }
+
+    auto group = std::make_unique<StructureRow>(parent);
+    group->name = name;
+    group->value = QStringLiteral("{...}");
+    group->kind = StructureRowKind::Semantic;
+    group->treeMode = treeMode;
+    group->absoluteOffset = m_rootRow ? m_rootRow->absoluteOffset : parent->absoluteOffset;
+    group->relativeOffset = m_rootRow ? m_rootRow->relativeOffset : parent->relativeOffset;
+    group->offset = formatOffset(group->absoluteOffset);
+    group->generatedOffset = true;
+    group->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueStructure),
+                          QString::fromLatin1(StructureBranchIcons::kBlueStructureOpen),
+                          QString::fromLatin1(StructureBranchIcons::kGrayStructure));
+    StructureRow *groupPtr = group.get();
+
+    const int newOrder = semanticDestinationOrder(path);
+    auto insertAt = parent->children.end();
+    if (newOrder >= 0)
+    {
+        for (auto it = parent->children.begin(); it != parent->children.end(); ++it)
+        {
+            if (!*it || (*it)->kind != StructureRowKind::Semantic)
+                continue;
+
+            QStringList siblingPath = path;
+            siblingPath.last() = (*it)->name;
+            const int siblingOrder = semanticDestinationOrder(siblingPath);
+            if (siblingOrder >= 0 && siblingOrder > newOrder)
+            {
+                insertAt = it;
+                break;
+            }
+        }
+    }
+
+    parent->children.insert(insertAt, std::move(group));
+    return groupPtr;
+}
+
+QString StructureRenderEngine::semanticRootLabel() const
+{
+    TypeDecl *schemaDecl = attachedSemanticSchema(m_rootType);
+    ExprNode *semanticExpr = nullptr;
+    if (FindTag(schemaDecl ? schemaDecl->tagList : nullptr, TOK_SEMANTIC, &semanticExpr)
+        && semanticExpr && semanticExpr->type == EXPR_STRINGBUF && semanticExpr->str)
+    {
+        const QString label = QString::fromLocal8Bit(semanticExpr->str).trimmed();
+        if (!label.isEmpty())
+            return label;
+    }
+
+    return QStringLiteral("Semantic");
 }
 
 bool StructureRenderEngine::dynamicTagArgs(ExprNode *expr,
@@ -3020,7 +4772,8 @@ bool StructureRenderEngine::dynamicArrayArgs(ExprNode *expr,
                                              ExprNode **terminatorMode,
                                              ExprNode **condition,
                                              DynamicMapper *mapper,
-                                             bool *isNameSource) const
+                                             bool *isNameSource,
+                                             bool *isCaseSelector) const
 {
     std::vector<ExprNode *> args;
     appendCommaArgs(expr, &args);
@@ -3035,6 +4788,7 @@ bool StructureRenderEngine::dynamicArrayArgs(ExprNode *expr,
     ExprNode *conditionExpr = nullptr;
     DynamicMapper mapperValue = DynamicMapper::Direct;
     bool nameSource = false;
+    bool caseSelector = false;
 
     for (ExprNode *arg : args)
     {
@@ -3048,6 +4802,7 @@ bool StructureRenderEngine::dynamicArrayArgs(ExprNode *expr,
             break;
         case TOK_CASE:
             selector = inner;
+            caseSelector = true;
             break;
         case TOK_CONTAINER:
             containerExpr = inner;
@@ -3095,6 +4850,8 @@ bool StructureRenderEngine::dynamicArrayArgs(ExprNode *expr,
         *container = containerExpr;
     if (isNameSource)
         *isNameSource = nameSource;
+    if (isCaseSelector)
+        *isCaseSelector = caseSelector;
     if (typeName)
         *typeName = typeExpr;
     if (logicalOffset)
@@ -3128,6 +4885,327 @@ bool StructureRenderEngine::dynamicContainerArgs(ExprNode *expr, ExprNode **type
     return true;
 }
 
+bool StructureRenderEngine::emitArgs(ExprNode *expr,
+                                     ExprNode **destination,
+                                     ExprNode **selector,
+                                     ExprNode **label,
+                                     ExprNode **typeName,
+                                     ExprNode **logicalOffset,
+                                     ExprNode **count,
+                                     ExprNode **stop,
+                                     ExprNode **terminatorMode,
+                                     ExprNode **condition,
+                                     ExprNode **map) const
+{
+    std::vector<ExprNode *> args;
+    appendCommaArgs(expr, &args);
+
+    ExprNode *destinationExpr = nullptr;
+    ExprNode *selectorExpr = nullptr;
+    ExprNode *labelExpr = nullptr;
+    ExprNode *typeExpr = nullptr;
+    ExprNode *offsetExpr = nullptr;
+    ExprNode *countExpr = nullptr;
+    ExprNode *stopExpr = nullptr;
+    ExprNode *terminatorModeExpr = nullptr;
+    ExprNode *conditionExpr = nullptr;
+    ExprNode *mapExpr = nullptr;
+
+    for (ExprNode *arg : args)
+    {
+        ExprNode *inner = nullptr;
+        const TOKEN wrapTok = unwrapTagArg(arg, &inner);
+        switch (wrapTok)
+        {
+        case TOK_DEST:
+            destinationExpr = inner;
+            break;
+        case TOK_CASE:
+            selectorExpr = inner;
+            break;
+        case TOK_LABEL:
+            labelExpr = inner;
+            break;
+        case TOK_TYPE:
+            typeExpr = inner;
+            break;
+        case TOK_OFFSET:
+            offsetExpr = inner;
+            break;
+        case TOK_SIZEIS:
+        case TOK_MAXCOUNT:
+            countExpr = inner;
+            break;
+        case TOK_TERMINATEDBY:
+            stopExpr = inner;
+            break;
+        case TOK_TERMINATOR:
+            terminatorModeExpr = inner;
+            break;
+        case TOK_OPTIONAL:
+            conditionExpr = inner;
+            break;
+        case TOK_MAP:
+            mapExpr = inner;
+            break;
+        default:
+            return false;
+        }
+    }
+
+    if (!destinationExpr || !typeExpr || !offsetExpr || !countExpr)
+        return false;
+
+    ExprNode *destinationPath = nullptr;
+    if (!emitDestinationArgs(destinationExpr, &destinationPath, nullptr, nullptr))
+        return false;
+
+    if (destination)
+        *destination = destinationPath;
+    if (selector)
+        *selector = selectorExpr;
+    if (label)
+        *label = labelExpr;
+    if (typeName)
+        *typeName = typeExpr;
+    if (logicalOffset)
+        *logicalOffset = offsetExpr;
+    if (count)
+        *count = countExpr;
+    if (stop)
+        *stop = stopExpr;
+    if (terminatorMode)
+        *terminatorMode = terminatorModeExpr;
+    if (condition)
+        *condition = conditionExpr;
+    if (map)
+        *map = mapExpr;
+    return true;
+}
+
+bool StructureRenderEngine::emitRowArgs(ExprNode *expr,
+                                        ExprNode **destination,
+                                        ExprNode **selector,
+                                        ExprNode **logicalOffset,
+                                        ExprNode **condition,
+                                        ExprNode **map) const
+{
+    std::vector<ExprNode *> args;
+    appendCommaArgs(expr, &args);
+
+    ExprNode *destinationExpr = nullptr;
+    ExprNode *selectorExpr = nullptr;
+    ExprNode *offsetExpr = nullptr;
+    ExprNode *conditionExpr = nullptr;
+    ExprNode *mapExpr = nullptr;
+
+    for (ExprNode *arg : args)
+    {
+        ExprNode *inner = nullptr;
+        const TOKEN wrapTok = unwrapTagArg(arg, &inner);
+        switch (wrapTok)
+        {
+        case TOK_DEST:
+            destinationExpr = inner;
+            break;
+        case TOK_CASE:
+            selectorExpr = inner;
+            break;
+        case TOK_OFFSET:
+            offsetExpr = inner;
+            break;
+        case TOK_OPTIONAL:
+            conditionExpr = inner;
+            break;
+        case TOK_MAP:
+            mapExpr = inner;
+            break;
+        default:
+            return false;
+        }
+    }
+
+    if (!destinationExpr)
+        return false;
+
+    if (destination)
+        *destination = destinationExpr;
+    if (selector)
+        *selector = selectorExpr;
+    if (logicalOffset)
+        *logicalOffset = offsetExpr;
+    if (condition)
+        *condition = conditionExpr;
+    if (map)
+        *map = mapExpr;
+    return true;
+}
+
+bool StructureRenderEngine::emitNodeArgs(ExprNode *expr,
+                                         ExprNode **destination,
+                                         ExprNode **selector,
+                                         ExprNode **name,
+                                         ExprNode **logicalOffset,
+                                         ExprNode **extent,
+                                         ExprNode **condition,
+                                         std::vector<SemanticNodeAttr> *attrs) const
+{
+    std::vector<ExprNode *> args;
+    appendCommaArgs(expr, &args);
+
+    ExprNode *destinationExpr = nullptr;
+    ExprNode *selectorExpr = nullptr;
+    ExprNode *nameExpr = nullptr;
+    ExprNode *offsetExpr = nullptr;
+    ExprNode *extentExpr = nullptr;
+    ExprNode *conditionExpr = nullptr;
+    std::vector<SemanticNodeAttr> attrList;
+
+    for (ExprNode *arg : args)
+    {
+        ExprNode *inner = nullptr;
+        const TOKEN wrapTok = unwrapTagArg(arg, &inner);
+        switch (wrapTok)
+        {
+        case TOK_DEST:
+            destinationExpr = inner;
+            break;
+        case TOK_CASE:
+            selectorExpr = inner;
+            break;
+        case TOK_NAME:
+            nameExpr = inner;
+            break;
+        case TOK_OFFSET:
+            offsetExpr = inner;
+            break;
+        case TOK_EXTENT:
+            extentExpr = inner;
+            break;
+        case TOK_OPTIONAL:
+            conditionExpr = inner;
+            break;
+        case TOK_ATTR:
+        case TOK_FIELD:
+        {
+            QString attrName;
+            ExprNode *attrValue = nullptr;
+            if (!semanticAttrArgs(inner, &attrName, &attrValue))
+                return false;
+            attrList.push_back(SemanticNodeAttr{ attrName, attrValue, wrapTok == TOK_FIELD });
+            break;
+        }
+        default:
+            return false;
+        }
+    }
+
+    if (!destinationExpr)
+        return false;
+
+    if (destination)
+        *destination = destinationExpr;
+    if (selector)
+        *selector = selectorExpr;
+    if (name)
+        *name = nameExpr;
+    if (logicalOffset)
+        *logicalOffset = offsetExpr;
+    if (extent)
+        *extent = extentExpr;
+    if (condition)
+        *condition = conditionExpr;
+    if (attrs)
+        *attrs = std::move(attrList);
+    return true;
+}
+
+bool StructureRenderEngine::emitDestinationArgs(ExprNode *expr,
+                                                ExprNode **path,
+                                                ExprNode **key,
+                                                ExprNode **name) const
+{
+    std::vector<ExprNode *> args;
+    appendCommaArgs(expr, &args);
+    if (args.empty())
+        return false;
+
+    ExprNode *pathExpr = args[0];
+    ExprNode *keyExpr = nullptr;
+    ExprNode *nameExpr = nullptr;
+    for (size_t i = 1; i < args.size(); ++i)
+    {
+        ExprNode *inner = nullptr;
+        const TOKEN wrapTok = unwrapTagArg(args[i], &inner);
+        switch (wrapTok)
+        {
+        case TOK_KEY:
+            keyExpr = inner;
+            break;
+        case TOK_NAME:
+            nameExpr = inner;
+            break;
+        default:
+            return false;
+        }
+    }
+
+    if ((keyExpr && !key) || (nameExpr && !name))
+        return false;
+
+    if (path)
+        *path = pathExpr;
+    if (key)
+        *key = keyExpr;
+    if (name)
+        *name = nameExpr;
+    return true;
+}
+
+bool StructureRenderEngine::semanticAttrArgs(ExprNode *expr, QString *name, ExprNode **value) const
+{
+    std::vector<ExprNode *> args;
+    appendCommaArgs(expr, &args);
+    if (args.size() != 2 || !name || !value)
+        return false;
+
+    ExprNode *nameExpr = args[0];
+    QString attrName;
+    if (nameExpr && nameExpr->type == EXPR_IDENTIFIER && nameExpr->str)
+        attrName = QString::fromLocal8Bit(nameExpr->str);
+    else if (nameExpr && nameExpr->type == EXPR_STRINGBUF && nameExpr->str)
+        attrName = QString::fromUtf8(nameExpr->str);
+
+    if (attrName.isEmpty())
+        return false;
+
+    *name = attrName;
+    *value = args[1];
+    return true;
+}
+
+bool StructureRenderEngine::emitMapArgs(ExprNode *expr,
+                                        QString *name,
+                                        ExprNode **logicalStart,
+                                        ExprNode **logicalSize,
+                                        ExprNode **fileOffset) const
+{
+    std::vector<ExprNode *> args;
+    appendCommaArgs(expr, &args);
+    if (args.size() != 4 || !args[0] || args[0]->type != EXPR_STRINGBUF || !args[0]->str)
+        return false;
+
+    if (name)
+        *name = QString::fromLocal8Bit(args[0]->str);
+    if (logicalStart)
+        *logicalStart = args[1];
+    if (logicalSize)
+        *logicalSize = args[2];
+    if (fileOffset)
+        *fileOffset = args[3];
+    return true;
+}
+
 bool StructureRenderEngine::offsetMapArgs(ExprNode *expr,
                                           ExprNode **logicalStart,
                                           ExprNode **logicalSize,
@@ -3137,6 +5215,8 @@ bool StructureRenderEngine::offsetMapArgs(ExprNode *expr,
     appendCommaArgs(expr, &args);
     if (args.size() != 3)
         return false;
+    if (args[0] && args[0]->type == EXPR_STRINGBUF)
+        return false;
 
     if (logicalStart)
         *logicalStart = args[0];
@@ -3145,6 +5225,75 @@ bool StructureRenderEngine::offsetMapArgs(ExprNode *expr,
     if (fileOffset)
         *fileOffset = args[2];
     return true;
+}
+
+bool StructureRenderEngine::namedOffsetMapArgs(ExprNode *expr,
+                                               QString *name,
+                                               ExprNode **base,
+                                               ExprNode **logicalStart,
+                                               ExprNode **logicalSize,
+                                               ExprNode **fileOffset) const
+{
+    std::vector<ExprNode *> args;
+    appendCommaArgs(expr, &args);
+    if ((args.size() != 2 && args.size() != 4)
+        || !args[0]
+        || args[0]->type != EXPR_STRINGBUF
+        || !args[0]->str)
+    {
+        return false;
+    }
+
+    if (name)
+        *name = QString::fromLocal8Bit(args[0]->str);
+
+    if (args.size() == 2)
+    {
+        if (base)
+            *base = args[1];
+        if (logicalStart)
+            *logicalStart = nullptr;
+        if (logicalSize)
+            *logicalSize = nullptr;
+        if (fileOffset)
+            *fileOffset = nullptr;
+        return true;
+    }
+
+    if (base)
+        *base = nullptr;
+    if (logicalStart)
+        *logicalStart = args[1];
+    if (logicalSize)
+        *logicalSize = args[2];
+    if (fileOffset)
+        *fileOffset = args[3];
+    return true;
+}
+
+bool StructureRenderEngine::offsetTagArgs(ExprNode *expr, QString *space, ExprNode **offsetExpr) const
+{
+    std::vector<ExprNode *> args;
+    appendCommaArgs(expr, &args);
+    if (args.size() == 1)
+    {
+        if (space)
+            space->clear();
+        if (offsetExpr)
+            *offsetExpr = args[0];
+        return true;
+    }
+
+    if (args.size() == 2 && args[0] && args[0]->type == EXPR_STRINGBUF && args[0]->str)
+    {
+        if (space)
+            *space = QString::fromLocal8Bit(args[0]->str);
+        if (offsetExpr)
+            *offsetExpr = args[1];
+        return true;
+    }
+
+    return false;
 }
 
 TypeDecl *StructureRenderEngine::findTypeDecl(const char *name) const
@@ -3197,6 +5346,206 @@ Type *StructureRenderEngine::typeInDecl(TypeDecl *decl, const char *name) const
     return decl->declList.empty() ? decl->baseType : decl->declList[0];
 }
 
+TypeDecl *StructureRenderEngine::attachedSemanticSchema(TypeDecl *rootType) const
+{
+    ExprNode *semanticExpr = nullptr;
+    if (!FindTag(rootType ? rootType->tagList : nullptr, TOK_SEMANTIC, &semanticExpr) || !semanticExpr)
+        return nullptr;
+
+    if (semanticExpr->type != EXPR_IDENTIFIER || !semanticExpr->str)
+        return nullptr;
+
+    TypeDecl *schemaDecl = findTypeDecl(semanticExpr->str);
+    ExprNode *schemaMarker = nullptr;
+    if (!schemaDecl
+        || !FindTag(schemaDecl->tagList, TOK_SEMANTIC, &schemaMarker)
+        || (schemaMarker && schemaMarker->type != EXPR_STRINGBUF))
+        return nullptr;
+
+    return schemaDecl;
+}
+
+QStringList StructureRenderEngine::semanticPath(ExprNode *expr) const
+{
+    if (!expr)
+        return {};
+
+    if (expr->type == EXPR_IDENTIFIER && expr->str)
+        return { QString::fromLocal8Bit(expr->str) };
+
+    if (expr->type != EXPR_FIELD)
+        return {};
+
+    QStringList path = semanticPath(expr->left);
+    QStringList tail = semanticPath(expr->right);
+    if (path.isEmpty() || tail.isEmpty())
+        return {};
+
+    path.append(tail);
+    return path;
+}
+
+TypeDecl *StructureRenderEngine::semanticDestinationDecl(TypeDecl *schemaDecl, const QStringList &path) const
+{
+    if (!schemaDecl || path.isEmpty())
+        return nullptr;
+
+    Type *scope = schemaDecl->baseType;
+    for (int i = 0; i < path.size(); ++i)
+    {
+        Type *base = BaseNode(scope);
+        if (!base || base->ty != typeSTRUCT || !base->sptr)
+            return nullptr;
+
+        TypeDecl *matched = nullptr;
+        const QByteArray name = path[i].toLocal8Bit();
+        for (TypeDecl *decl : base->sptr->typeDeclList)
+        {
+            if (!decl)
+                continue;
+            for (Type *type : decl->declList)
+            {
+                if (type && type->sym && std::strcmp(type->sym->name, name.constData()) == 0)
+                {
+                    matched = decl;
+                    break;
+                }
+            }
+            if (matched)
+                break;
+        }
+
+        if (!matched)
+            return nullptr;
+
+        if (i == path.size() - 1)
+            return matched;
+
+        scope = matched->declList.empty() ? matched->baseType : matched->declList[0];
+    }
+
+    return nullptr;
+}
+
+TypeDecl *StructureRenderEngine::semanticDestinationElementSchema(TypeDecl *schemaDecl, const QStringList &path) const
+{
+    TypeDecl *destinationDecl = semanticDestinationDecl(schemaDecl, path);
+    if (!destinationDecl)
+        return nullptr;
+
+    Type *type = destinationDecl->declList.empty() ? destinationDecl->baseType : destinationDecl->declList[0];
+    for (Type *cursor = type; cursor; cursor = cursor->link)
+    {
+        if (cursor->ty == typeARRAY)
+        {
+            type = cursor->link;
+            break;
+        }
+    }
+
+    for (Type *cursor = type; cursor; cursor = cursor->link)
+    {
+        if ((cursor->ty == typeSTRUCT || cursor->ty == typeUNION)
+            && cursor->sptr
+            && cursor->sptr->semanticSchema)
+        {
+            return destinationDecl;
+        }
+
+        if ((cursor->ty != typeTYPEDEF && cursor->ty != typeIDENTIFIER) || !cursor->sym)
+            continue;
+
+        TypeDecl *candidate = findTypeDecl(cursor->sym->name);
+        ExprNode *semanticExpr = nullptr;
+        if (candidate && FindTag(candidate->tagList, TOK_SEMANTIC, &semanticExpr))
+            return candidate;
+    }
+
+    return nullptr;
+}
+
+bool StructureRenderEngine::semanticSchemaHasField(TypeDecl *schemaDecl, const QString &name) const
+{
+    if (!schemaDecl || name.isEmpty())
+        return false;
+
+    Type *base = BaseNode(schemaDecl->baseType);
+    if (!base || base->ty != typeSTRUCT || !base->sptr)
+        return false;
+
+    const QByteArray fieldName = name.toLocal8Bit();
+    for (TypeDecl *decl : base->sptr->typeDeclList)
+    {
+        if (!decl)
+            continue;
+        for (Type *type : decl->declList)
+            if (type && type->sym && std::strcmp(type->sym->name, fieldName.constData()) == 0)
+                return true;
+    }
+
+    return false;
+}
+
+bool StructureRenderEngine::semanticDestinationExists(TypeDecl *schemaDecl, const QStringList &path) const
+{
+    return semanticDestinationDecl(schemaDecl, path) != nullptr;
+}
+
+int StructureRenderEngine::semanticDestinationOrder(const QStringList &path) const
+{
+    TypeDecl *schemaDecl = attachedSemanticSchema(m_rootType);
+    if (!schemaDecl || path.isEmpty())
+        return -1;
+
+    Type *scope = schemaDecl->baseType;
+    for (int depth = 0; depth < path.size(); ++depth)
+    {
+        Type *base = BaseNode(scope);
+        if (!base || base->ty != typeSTRUCT || !base->sptr)
+            return -1;
+
+        TypeDecl *matched = nullptr;
+        const QByteArray name = path[depth].toLocal8Bit();
+        int order = 0;
+        for (TypeDecl *decl : base->sptr->typeDeclList)
+        {
+            if (!decl)
+            {
+                ++order;
+                continue;
+            }
+
+            bool matches = false;
+            for (Type *type : decl->declList)
+            {
+                if (type && type->sym && std::strcmp(type->sym->name, name.constData()) == 0)
+                {
+                    matches = true;
+                    break;
+                }
+            }
+
+            if (matches)
+            {
+                matched = decl;
+                break;
+            }
+
+            ++order;
+        }
+
+        if (!matched)
+            return -1;
+
+        if (depth == path.size() - 1)
+            return order;
+
+        scope = matched->declList.empty() ? matched->baseType : matched->declList[0];
+    }
+
+    return -1;
+}
+
 StructureRenderEngine::DynamicContainer *StructureRenderEngine::mapLogicalOffset(uint64_t logicalOffset,
                                                                                  uint64_t *fileOffset)
 {
@@ -3218,6 +5567,156 @@ StructureRenderEngine::DynamicContainer *StructureRenderEngine::mapLogicalOffset
     return nullptr;
 }
 
+bool StructureRenderEngine::mapNamedOffset(const QString &name, uint64_t logicalOffset, uint64_t *fileOffset) const
+{
+    if (name.isEmpty() || !fileOffset)
+        return false;
+
+    for (auto it = m_namedOffsetMaps.rbegin(); it != m_namedOffsetMaps.rend(); ++it)
+    {
+        if (it->name != name)
+            continue;
+
+        if (!it->rangeMapped)
+        {
+            *fileOffset = it->fileOffset + logicalOffset;
+            return true;
+        }
+
+        if (logicalOffset < it->logicalStart || logicalOffset >= it->logicalStart + it->logicalSize)
+            continue;
+
+        *fileOffset = it->fileOffset + (logicalOffset - it->logicalStart);
+        return true;
+    }
+
+    return false;
+}
+
+StructureRow *StructureRenderEngine::semanticDestinationForPath(const QStringList &destinationPath,
+                                                                const QString &offsetSpace,
+                                                                uint64_t logicalOffset,
+                                                                uint64_t *fileOffset)
+{
+    if (!fileOffset)
+        return nullptr;
+
+    if (!offsetSpace.isEmpty() && destinationPath.size() > 1)
+    {
+        for (const SemanticContainer &container : m_semanticContainers)
+        {
+            if (!container.row || container.mapSpace != offsetSpace)
+                continue;
+            if (container.destinationPath.size() >= destinationPath.size())
+                continue;
+
+            bool prefixMatches = true;
+            for (int i = 0; i < container.destinationPath.size(); ++i)
+            {
+                if (container.destinationPath[i] != destinationPath[i])
+                {
+                    prefixMatches = false;
+                    break;
+                }
+            }
+            if (!prefixMatches)
+                continue;
+
+            if (logicalOffset < container.logicalStart
+                || logicalOffset >= container.logicalStart + container.logicalSize)
+            {
+                continue;
+            }
+
+            *fileOffset = container.fileOffset + (logicalOffset - container.logicalStart);
+            StructureRow *parent = container.row;
+            QStringList currentPath = container.destinationPath;
+            for (int i = container.destinationPath.size(); i < destinationPath.size(); ++i)
+            {
+                currentPath.append(destinationPath[i]);
+                parent = semanticChildGroup(parent, currentPath);
+            }
+            return parent;
+        }
+    }
+
+    if (!offsetSpace.isEmpty())
+    {
+        uint64_t mapped = 0;
+        if (mapNamedOffset(offsetSpace, logicalOffset, &mapped))
+            *fileOffset = mapped;
+    }
+
+    return semanticDestinationGroup(destinationPath);
+}
+
+StructureRow *StructureRenderEngine::semanticDestinationForRequest(const SemanticEmitRequest &request,
+                                                                   uint64_t *fileOffset)
+{
+    return semanticDestinationForPath(request.destinationPath,
+                                      request.offsetSpace,
+                                      request.logicalOffset,
+                                      fileOffset);
+}
+
+QString StructureRenderEngine::semanticExpressionText(StructureRow *scope,
+                                                      Type *scopeType,
+                                                      ExprNode *expr,
+                                                      uint64_t scopeOffset)
+{
+    if (!expr)
+        return {};
+
+    QString stringValue;
+    if (evaluateString(EvalContext{ scope, scopeType, scopeOffset }, expr, &stringValue))
+        return rowNameFragment(stringValue);
+
+    QString text = fieldNameValue(scope, scopeType, expr, scopeOffset);
+    if (!text.isEmpty())
+        return rowNameFragment(text);
+
+    if (scope
+        && scope->kind == StructureRowKind::Semantic
+        && (expr->type == EXPR_IDENTIFIER || expr->type == EXPR_FIELD || expr->type == EXPR_ARRAY || expr->type == EXPR_SCOPE))
+    {
+        return {};
+    }
+
+    INUMTYPE value = 0;
+    if (evaluate(scope, expr, &value, scopeOffset))
+        return QString::number(value);
+
+    return {};
+}
+
+TYPE StructureRenderEngine::scalarTypeName(const char *name) const
+{
+    if (!name)
+        return typeNULL;
+
+    struct BuiltIn
+    {
+        const char *name;
+        TYPE type;
+    };
+
+    static constexpr BuiltIn builtIns[] =
+    {
+        { "char", typeCHAR },
+        { "wchar_t", typeWCHAR },
+        { "byte", typeBYTE },
+        { "word", typeWORD },
+        { "dword", typeDWORD },
+        { "qword", typeQWORD },
+    };
+
+    for (const BuiltIn &builtIn : builtIns)
+        if (std::strcmp(name, builtIn.name) == 0)
+            return builtIn.type;
+
+    return typeNULL;
+}
+
 StructureRow *StructureRenderEngine::dynamicRootGroup(const QString &label)
 {
     if (!m_rootRow || label.isEmpty())
@@ -3237,9 +5736,9 @@ StructureRow *StructureRenderEngine::dynamicRootGroup(const QString &label)
     group->relativeOffset = m_rootRow->relativeOffset;
     group->offset = formatOffset(group->absoluteOffset);
     group->generatedOffset = true;
-    group->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueDoubleClosed),
-                          QString::fromLatin1(StructureBranchIcons::kBlueDoubleOpen),
-                          QString::fromLatin1(StructureBranchIcons::kGrayDoubleClosed));
+    group->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueStructure),
+                          QString::fromLatin1(StructureBranchIcons::kBlueStructureOpen),
+                          QString::fromLatin1(StructureBranchIcons::kGrayStructure));
     StructureRow *groupPtr = group.get();
     m_rootRow->children.push_back(std::move(group));
     return groupPtr;
@@ -3802,16 +6301,28 @@ QString StructureRenderEngine::dynamicArrayNameString(StructureRow *elementRow, 
     if (!base || (base->ty != typeCHAR && base->ty != typeWCHAR))
         return {};
 
+    QString offsetSpace;
+    ExprNode *offsetValueExpr = logicalOffsetExpr;
+    if (!offsetTagArgs(logicalOffsetExpr, &offsetSpace, &offsetValueExpr))
+        return {};
+
     INUMTYPE logicalOffset = 0;
     INUMTYPE count = 0;
-    if (!evaluate(elementRow, logicalOffsetExpr, &logicalOffset, elementRow->absoluteOffset)
+    if (!evaluate(elementRow, offsetValueExpr, &logicalOffset, elementRow->absoluteOffset)
         || !evaluate(elementRow, countExpr, &count, elementRow->absoluteOffset)
         || count <= 0)
         return {};
 
     uint64_t fileOffset = uint64_t(logicalOffset);
-    if (mapper == DynamicMapper::OffsetMap && !mapLogicalOffset(uint64_t(logicalOffset), &fileOffset))
+    if (!offsetSpace.isEmpty())
+    {
+        if (mapper != DynamicMapper::Direct || !mapNamedOffset(offsetSpace, uint64_t(logicalOffset), &fileOffset))
+            return {};
+    }
+    else if (mapper == DynamicMapper::OffsetMap && !mapLogicalOffset(uint64_t(logicalOffset), &fileOffset))
+    {
         return {};
+    }
 
     const uint64_t unitSize = base->ty == typeWCHAR ? 2 : 1;
     // Cap independently of kMaxArrayElements: that constant bounds how many
@@ -3951,11 +6462,32 @@ QString StructureRenderEngine::fieldNameValue(StructureRow *scope, Type *scopeTy
     if (!expr)
         return {};
 
+    if (expr->type == EXPR_SCOPE)
+    {
+        EvalContext context{ scope, scopeType, scopeOffset };
+        EvalContext scoped;
+        if (!resolveScopeContext(context, expr, &scoped))
+            return {};
+
+        QString text = fieldNameValue(scoped.row, scoped.type, expr->right, scoped.offset);
+        if (!text.isEmpty())
+            return text;
+
+        INUMTYPE value = 0;
+        if (evaluate(scoped, expr->right, &value))
+            return QString::number(value);
+
+        return {};
+    }
+
     if (StructureRow *row = findFieldRow(scope, expr))
     {
         if (!row->value.isEmpty() && row->value != QStringLiteral("{...}"))
             return row->value;
     }
+
+    if (scope && scope->kind == StructureRowKind::Semantic)
+        return {};
 
     ResolvedField field;
     if (!resolveField(scopeType, expr, scopeOffset, &field))

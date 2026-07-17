@@ -17,7 +17,14 @@ typedef struct _WOFF_TABLE_DIRECTORY_ENTRY
     [format("fourcc")]
     dword tag;
 
-    [dynamic_array(name(TableData), type(BYTE), offset(offset), count(compLength), optional(compLength != 0))]
+    [
+        emit(dest(FontTables),
+             label(tag),
+             type(BYTE),
+             offset(offset),
+             count(compLength),
+             optional(compLength != 0))
+    ]
     dword offset;
 
     dword compLength;
@@ -52,6 +59,12 @@ typedef struct _WOFF_HEADER
     dword privLength;
 } WOFF_HEADER, *PWOFF_HEADER;
 
+[semantic("WOFF Summary")]
+typedef struct _WOFF_VIEW
+{
+    BYTE FontTables[];
+} WOFF_VIEW;
+
 [
     export("Web Open Font Format (WOFF)"),
     version(1),
@@ -59,7 +72,8 @@ typedef struct _WOFF_HEADER
     assoc(".woff"),
     magic({ 'w', 'O', 'F', 'F' }),
     offset(0),
-    endian("big")
+    endian("big"),
+    semantic(WOFF_VIEW)
 ]
 typedef struct _WOFF
 {

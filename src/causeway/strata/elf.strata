@@ -103,6 +103,43 @@ enum ELF_SECTION_TYPE
     SHT_SYMTAB_SHNDX = 18
 };
 
+enum ELF_DYNAMIC_TAG
+{
+    DT_NULL            = 0,
+    DT_NEEDED          = 1,
+    DT_PLTRELSZ        = 2,
+    DT_PLTGOT          = 3,
+    DT_HASH            = 4,
+    DT_STRTAB          = 5,
+    DT_SYMTAB          = 6,
+    DT_RELA            = 7,
+    DT_RELASZ          = 8,
+    DT_RELAENT         = 9,
+    DT_STRSZ           = 10,
+    DT_SYMENT          = 11,
+    DT_INIT            = 12,
+    DT_FINI            = 13,
+    DT_SONAME          = 14,
+    DT_RPATH           = 15,
+    DT_SYMBOLIC        = 16,
+    DT_REL             = 17,
+    DT_RELSZ           = 18,
+    DT_RELENT          = 19,
+    DT_PLTREL          = 20,
+    DT_DEBUG           = 21,
+    DT_TEXTREL         = 22,
+    DT_JMPREL          = 23,
+    DT_BIND_NOW        = 24,
+    DT_INIT_ARRAY      = 25,
+    DT_FINI_ARRAY      = 26,
+    DT_INIT_ARRAYSZ    = 27,
+    DT_FINI_ARRAYSZ    = 28,
+    DT_RUNPATH         = 29,
+    DT_FLAGS           = 30,
+    DT_PREINIT_ARRAY   = 32,
+    DT_PREINIT_ARRAYSZ = 33
+};
+
 enum ELF_SECTION_FLAGS
 {
     SHF_WRITE            = 0x00000001,
@@ -145,6 +182,94 @@ typedef qword e64;
 
 typedef dword e32_addr, e32_off;
 typedef qword e64_addr, e64_off;
+
+typedef struct _Elf32_Dyn
+{
+    [
+        emit_node(dest(Sections.Dependencies, key(cstr_from(field_at(sectionHeaders32, sh_link, sh_offset), d_val))),
+                  offset("section", current_offset()),
+                  optional(d_tag == DT_NEEDED),
+                  field(Name, cstr_from(field_at(sectionHeaders32, sh_link, sh_offset), d_val))),
+        enum(ELF_DYNAMIC_TAG)
+    ]
+    e32  d_tag;
+    e32  d_val;
+} Elf32_Dyn;
+
+typedef struct _Elf64_Dyn
+{
+    [
+        emit_node(dest(Sections.Dependencies, key(cstr_from(field_at(sectionHeaders64, sh_link, sh_offset), d_val))),
+                  offset("section", current_offset()),
+                  optional(d_tag == DT_NEEDED),
+                  field(Name, cstr_from(field_at(sectionHeaders64, sh_link, sh_offset), d_val))),
+        enum(ELF_DYNAMIC_TAG)
+    ]
+    e64  d_tag;
+    e64  d_val;
+} Elf64_Dyn;
+
+typedef struct _Elf32_Rel
+{
+    [
+        emit_node(dest(Sections.Relocations, key(fmt("0x{0}", r_offset))),
+                  offset("section", current_offset()),
+                  optional(r_offset != 0),
+                  field(Offset, r_offset),
+                  field(Type, r_info & 0xff),
+                  field(SymbolIndex, r_info >> 8),
+                  field(Addend, 0))
+    ]
+    e32_addr r_offset;
+    e32      r_info;
+} Elf32_Rel;
+
+typedef struct _Elf64_Rel
+{
+    [
+        emit_node(dest(Sections.Relocations, key(fmt("0x{0}", r_offset))),
+                  offset("section", current_offset()),
+                  optional(r_offset != 0),
+                  field(Offset, r_offset),
+                  field(Type, r_info & 0xffffffff),
+                  field(SymbolIndex, r_info >> 32),
+                  field(Addend, 0))
+    ]
+    e64_addr r_offset;
+    e64      r_info;
+} Elf64_Rel;
+
+typedef struct _Elf32_Rela
+{
+    [
+        emit_node(dest(Sections.Relocations, key(fmt("0x{0}", r_offset))),
+                  offset("section", current_offset()),
+                  optional(r_offset != 0),
+                  field(Offset, r_offset),
+                  field(Type, r_info & 0xff),
+                  field(SymbolIndex, r_info >> 8),
+                  field(Addend, r_addend))
+    ]
+    e32_addr r_offset;
+    e32      r_info;
+    e32      r_addend;
+} Elf32_Rela;
+
+typedef struct _Elf64_Rela
+{
+    [
+        emit_node(dest(Sections.Relocations, key(fmt("0x{0}", r_offset))),
+                  offset("section", current_offset()),
+                  optional(r_offset != 0),
+                  field(Offset, r_offset),
+                  field(Type, r_info & 0xffffffff),
+                  field(SymbolIndex, r_info >> 32),
+                  field(Addend, r_addend))
+    ]
+    e64_addr r_offset;
+    e64      r_info;
+    e64      r_addend;
+} Elf64_Rela;
 
 typedef struct _Elf32_Ehdr
 {
@@ -220,6 +345,42 @@ typedef struct _Elf64_Phdr
     e64      p_align;                   // Segment alignment
 } Elf64_Phdr;
 
+[
+    emit_row(dest(Sections, key(cstr_from(field_at(sectionHeaders32, header32.e_shstrndx, sh_offset), sh_name)),
+                       name(cstr_from(field_at(sectionHeaders32, header32.e_shstrndx, sh_offset), sh_name))),
+             offset(sh_offset),
+             map("section", sh_offset, sh_size, sh_offset),
+             optional(sh_type != SHT_NULL || sh_name != 0)),
+    emit_node(dest(Sections, key(cstr_from(field_at(sectionHeaders32, header32.e_shstrndx, sh_offset), sh_name))),
+              offset(sh_offset),
+              extent(sh_size),
+              optional(sh_type != SHT_NULL || sh_name != 0),
+              field(Index, array_index()),
+              field(Name, cstr_from(field_at(sectionHeaders32, header32.e_shstrndx, sh_offset), sh_name)),
+              field(Type, sh_type),
+              field(Offset, sh_offset),
+              field(Size, sh_size)),
+    dynamic_array(name(DynamicEntries),
+                  type(Elf32_Dyn),
+                  offset(sh_offset),
+                  count(sh_entsize != 0 ? sh_size / sh_entsize : 0),
+                  optional(sh_type == SHT_DYNAMIC)),
+    dynamic_array(name(RelocationEntries),
+                  type(Elf32_Rel),
+                  offset(sh_offset),
+                  count(sh_entsize != 0 ? sh_size / sh_entsize : 0),
+                  optional(sh_type == SHT_REL)),
+    dynamic_array(name(RelocationAddends),
+                  type(Elf32_Rela),
+                  offset(sh_offset),
+                  count(sh_entsize != 0 ? sh_size / sh_entsize : 0),
+                  optional(sh_type == SHT_RELA)),
+    dynamic_array(name(Symbols),
+                  type(Elf32_Sym),
+                  offset(sh_offset),
+                  count(sh_entsize != 0 ? sh_size / sh_entsize : 0),
+                  optional(sh_type == SHT_SYMTAB || sh_type == SHT_DYNSYM))
+]
 typedef struct _Elf32_Shdr
 {
     e32      sh_name;                   // Section name string-table offset
@@ -236,6 +397,42 @@ typedef struct _Elf32_Shdr
     e32      sh_entsize;                // Entry size for table sections
 } Elf32_Shdr;
 
+[
+    emit_row(dest(Sections, key(cstr_from(field_at(sectionHeaders64, header64.e_shstrndx, sh_offset), sh_name)),
+                       name(cstr_from(field_at(sectionHeaders64, header64.e_shstrndx, sh_offset), sh_name))),
+             offset(sh_offset),
+             map("section", sh_offset, sh_size, sh_offset),
+             optional(sh_type != SHT_NULL || sh_name != 0)),
+    emit_node(dest(Sections, key(cstr_from(field_at(sectionHeaders64, header64.e_shstrndx, sh_offset), sh_name))),
+              offset(sh_offset),
+              extent(sh_size),
+              optional(sh_type != SHT_NULL || sh_name != 0),
+              field(Index, array_index()),
+              field(Name, cstr_from(field_at(sectionHeaders64, header64.e_shstrndx, sh_offset), sh_name)),
+              field(Type, sh_type),
+              field(Offset, sh_offset),
+              field(Size, sh_size)),
+    dynamic_array(name(DynamicEntries),
+                  type(Elf64_Dyn),
+                  offset(sh_offset),
+                  count(sh_entsize != 0 ? sh_size / sh_entsize : 0),
+                  optional(sh_type == SHT_DYNAMIC)),
+    dynamic_array(name(RelocationEntries),
+                  type(Elf64_Rel),
+                  offset(sh_offset),
+                  count(sh_entsize != 0 ? sh_size / sh_entsize : 0),
+                  optional(sh_type == SHT_REL)),
+    dynamic_array(name(RelocationAddends),
+                  type(Elf64_Rela),
+                  offset(sh_offset),
+                  count(sh_entsize != 0 ? sh_size / sh_entsize : 0),
+                  optional(sh_type == SHT_RELA)),
+    dynamic_array(name(Symbols),
+                  type(Elf64_Sym),
+                  offset(sh_offset),
+                  count(sh_entsize != 0 ? sh_size / sh_entsize : 0),
+                  optional(sh_type == SHT_SYMTAB || sh_type == SHT_DYNSYM))
+]
 typedef struct _Elf64_Shdr
 {
     e32      sh_name;                   // Section name string-table offset
@@ -252,6 +449,30 @@ typedef struct _Elf64_Shdr
     e64      sh_entsize;                // Entry size for table sections
 } Elf64_Shdr;
 
+[
+    emit_node(dest(Sections.Imports),
+              offset("section", current_offset()),
+              optional(sh_type == SHT_DYNSYM && st_name != 0 && st_value == 0),
+              name(cstr_from(field_at(sectionHeaders32, sh_link, sh_offset), st_name)),
+              field(Name, cstr_from(field_at(sectionHeaders32, sh_link, sh_offset), st_name)),
+              field(Value, st_value),
+              field(Size, st_size)),
+    emit_node(dest(Sections.Exports),
+              offset("section", current_offset()),
+              optional(sh_type == SHT_DYNSYM && st_name != 0 && st_value != 0),
+              name(cstr_from(field_at(sectionHeaders32, sh_link, sh_offset), st_name)),
+              field(Name, cstr_from(field_at(sectionHeaders32, sh_link, sh_offset), st_name)),
+              field(Value, st_value),
+              field(Size, st_size)),
+    emit_node(dest(Sections.Symbols,
+                   key(cstr_from(field_at(sectionHeaders32, header32.e_shstrndx, sh_offset), sh_name),
+                       cstr_from(field_at(sectionHeaders32, sh_link, sh_offset), st_name))),
+              offset(current_offset()),
+              optional(st_name != 0),
+              field(Name, cstr_from(field_at(sectionHeaders32, sh_link, sh_offset), st_name)),
+              field(Value, st_value),
+              field(Size, st_size))
+]
 typedef struct _Elf32_Sym
 {
     e32      st_name;                   // Symbol name string-table offset
@@ -262,6 +483,30 @@ typedef struct _Elf32_Sym
     e16      st_shndx;                  // Section index
 } Elf32_Sym;
 
+[
+    emit_node(dest(Sections.Imports),
+              offset("section", current_offset()),
+              optional(sh_type == SHT_DYNSYM && st_name != 0 && st_value == 0),
+              name(cstr_from(field_at(sectionHeaders64, sh_link, sh_offset), st_name)),
+              field(Name, cstr_from(field_at(sectionHeaders64, sh_link, sh_offset), st_name)),
+              field(Value, st_value),
+              field(Size, st_size)),
+    emit_node(dest(Sections.Exports),
+              offset("section", current_offset()),
+              optional(sh_type == SHT_DYNSYM && st_name != 0 && st_value != 0),
+              name(cstr_from(field_at(sectionHeaders64, sh_link, sh_offset), st_name)),
+              field(Name, cstr_from(field_at(sectionHeaders64, sh_link, sh_offset), st_name)),
+              field(Value, st_value),
+              field(Size, st_size)),
+    emit_node(dest(Sections.Symbols,
+                   key(cstr_from(field_at(sectionHeaders64, header64.e_shstrndx, sh_offset), sh_name),
+                       cstr_from(field_at(sectionHeaders64, sh_link, sh_offset), st_name))),
+              offset(current_offset()),
+              optional(st_name != 0),
+              field(Name, cstr_from(field_at(sectionHeaders64, sh_link, sh_offset), st_name)),
+              field(Value, st_value),
+              field(Size, st_size))
+]
 typedef struct _Elf64_Sym
 {
     e32      st_name;                   // Symbol name string-table offset
@@ -272,6 +517,59 @@ typedef struct _Elf64_Sym
     e64      st_size;                   // Symbol size
 } Elf64_Sym;
 
+[semantic("ELF Image")]
+typedef struct _ELF_VIEW
+{
+    [tree("flatten"), name(concat("SECTION ", Name))]
+    struct
+    {
+        e16 Index;
+        CHAR Name[];
+        e32 Type;
+        e64 Offset;
+        e64 Size;
+
+        [name(Name)]
+        struct
+        {
+            CHAR Name[];
+        } Dependencies[];
+
+        [name(fmt("{0}", Offset))]
+        struct
+        {
+            e64_addr Offset;
+            e64 Type;
+            e64 SymbolIndex;
+            e64 Addend;
+        } Relocations[];
+
+        [name(concat("SYMBOL ", Name))]
+        struct
+        {
+            CHAR Name[];
+            e64_addr Value;
+            e64 Size;
+        } Symbols[];
+
+        [name(Name)]
+        struct
+        {
+            CHAR Name[];
+            e64_addr Value;
+            e64 Size;
+        } Imports[];
+
+        [name(Name)]
+        struct
+        {
+            CHAR Name[];
+            e64_addr Value;
+            e64 Size;
+        } Exports[];
+    } Sections[];
+} ELF_VIEW;
+
 [
     export("Executable and Linkable Format (ELF)"),
     version(1),
@@ -279,6 +577,7 @@ typedef struct _Elf64_Sym
     assoc(".elf", ".so", ".o"),
     magic({ 0x7F, 'E', 'L', 'F' }),
     offset(0),
+    semantic(ELF_VIEW),
     // e_ident[EI_DATA] lives inside whichever of Elf32_Ehdr/Elf64_Ehdr gets
     // selected below, not in a sibling field of _ELF -- resolveDirectField's
     // union-candidate fallback finds it anyway, by checking that every
@@ -300,29 +599,29 @@ typedef struct _ELF
     };
 
     [
-        offset(e_ident[EI_CLASS] == ELFCLASS32 ? header32.e_phoff : 0),
-        count(e_ident[EI_CLASS] == ELFCLASS32 ? header32.e_phnum : 0),
+        offset(select_offset(EI_CLASS) == ELFCLASS32 ? root::value_at(28, dword) : 0),
+        count(select_offset(EI_CLASS) == ELFCLASS32 ? root::value_at(44, word) : 0),
         name(p_type)
     ]
     Elf32_Phdr programHeaders32[];
 
     [
-        offset(e_ident[EI_CLASS] == ELFCLASS64 ? header64.e_phoff : 0),
-        count(e_ident[EI_CLASS] == ELFCLASS64 ? header64.e_phnum : 0),
+        offset(select_offset(EI_CLASS) == ELFCLASS64 ? root::value_at(32, qword) : 0),
+        count(select_offset(EI_CLASS) == ELFCLASS64 ? root::value_at(56, word) : 0),
         name(p_type)
     ]
     Elf64_Phdr programHeaders64[];
 
     [
-        offset(e_ident[EI_CLASS] == ELFCLASS32 ? header32.e_shoff : 0),
-        count(e_ident[EI_CLASS] == ELFCLASS32 ? header32.e_shnum : 0),
+        offset(select_offset(EI_CLASS) == ELFCLASS32 ? root::value_at(32, dword) : 0),
+        count(select_offset(EI_CLASS) == ELFCLASS32 ? root::value_at(48, word) : 0),
         name(sh_type)
     ]
     Elf32_Shdr sectionHeaders32[];
 
     [
-        offset(e_ident[EI_CLASS] == ELFCLASS64 ? header64.e_shoff : 0),
-        count(e_ident[EI_CLASS] == ELFCLASS64 ? header64.e_shnum : 0),
+        offset(select_offset(EI_CLASS) == ELFCLASS64 ? root::value_at(40, qword) : 0),
+        count(select_offset(EI_CLASS) == ELFCLASS64 ? root::value_at(60, word) : 0),
         name(sh_type)
     ]
     Elf64_Shdr sectionHeaders64[];

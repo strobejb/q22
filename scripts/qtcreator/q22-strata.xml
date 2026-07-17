@@ -14,7 +14,10 @@
 <highlighting>
 <list name="keywords">
     <item>const</item>
+    <item>concat</item>
+    <item>cstr</item>
     <item>cstr_at</item>
+    <item>current_offset</item>
     <item>default</item>
     <item>display</item>
     <item>enum</item>
@@ -22,11 +25,14 @@
     <item>file_size</item>
     <item>find_first</item>
     <item>find_last</item>
+    <item>fmt</item>
     <item>format</item>
     <item>fourcc</item>
     <item>ignore</item>
+    <item>array_index</item>
     <item>include</item>
     <item>select_offset</item>
+    <item>element_value</item>
     <item>sizeof</item>
     <item>str</item>
     <item>string</item>
@@ -58,27 +64,38 @@
 <list name="tagKeywords">
     <item>align</item>
     <item>assoc</item>
+    <item>attr</item>
     <item>bitflag</item>
     <item>case</item>
     <item>category</item>
     <item>container</item>
     <item>count_as</item>
     <item>count</item>
+    <item>cstr_from</item>
     <item>default</item>
     <item>description</item>
+    <item>dest</item>
     <item>display</item>
     <item>dynamic_array</item>
     <item>dynamic_container</item>
     <item>dynamic_struct</item>
+    <item>emit</item>
+    <item>emit_node</item>
+    <item>emit_row</item>
     <item>endian</item>
     <item>entrypoint</item>
     <item>extent</item>
     <item>enum</item>
     <item>export</item>
+    <item>field</item>
+    <item>field_at</item>
     <item>format</item>
+    <item>key</item>
     <item>length_is</item>
     <item>magic</item>
+    <item>map</item>
     <item>max_count</item>
+    <item>label</item>
     <item>mapper</item>
     <item>name</item>
     <item>offset</item>
@@ -87,6 +104,8 @@
     <item>optional</item>
     <item>pad_to</item>
     <item>select</item>
+    <item>semantic</item>
+    <item>root_value_at</item>
     <item>size_is</item>
     <item>string</item>
     <item>switch_is</item>
@@ -95,6 +114,7 @@
     <item>terminator</item>
     <item>tree</item>
     <item>type</item>
+    <item>value_at</item>
     <item>version</item>
     <item>view</item>
 </list>

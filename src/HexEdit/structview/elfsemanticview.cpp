@@ -1,5 +1,6 @@
 #include "structview/elfsemanticview.h"
 
+#include "structview/structurebranchicons.h"
 #include "structview/structuresemanticview.h"
 
 #include <QString>
@@ -256,13 +257,137 @@ void appendSymbols(StructureSemanticContext &context,
         if (name.isEmpty())
             continue;
 
-        StructureRow *symbolRow = context.appendSemanticRow(sectionRow,
+        StructureRow *symbolsRow = nullptr;
+        for (const auto &child : sectionRow->children)
+        {
+            if (child && child->kind == StructureRowKind::Semantic && child->name == QStringLiteral("Symbols"))
+            {
+                symbolsRow = child.get();
+                break;
+            }
+        }
+        if (!symbolsRow)
+        {
+            symbolsRow = context.appendSemanticRow(sectionRow,
+                                                   QStringLiteral("Symbols"),
+                                                   QStringLiteral("{...}"),
+                                                   sectionRow->absoluteOffset,
+                                                   sectionRow->byteLength);
+            if (!symbolsRow)
+                continue;
+        }
+
+        StructureRow *symbolRow = context.appendSemanticRow(symbolsRow,
                                                             QStringLiteral("SYMBOL %1").arg(name),
                                                             symbolValueText(value, size),
                                                             context.baseOffset() + entryOffset,
                                                             entrySize);
         if (symbolRow)
             symbolRow->setNameParts(QStringLiteral("SYMBOL"), name);
+    }
+}
+
+void appendImportExportGroups(StructureSemanticContext &context,
+                              StructureRow *root,
+                              const ElfHeader &header,
+                              const ElfSection &symbolSection,
+                              const ElfSection &stringTable)
+{
+    if (!root || symbolSection.type != kShtDynsym || symbolSection.fileOffset == 0 || symbolSection.size == 0)
+        return;
+
+    const uint64_t entrySize = symbolSection.entrySize ? symbolSection.entrySize : (header.is64 ? 24 : 16);
+    if (entrySize == 0)
+        return;
+
+    StructureRow *sectionRow = nullptr;
+    StructureRow *summaryRoot = nullptr;
+    for (const auto &child : root->children)
+    {
+        if (child && child->kind == StructureRowKind::Semantic && child->name == QStringLiteral("ELF Image"))
+        {
+            summaryRoot = child.get();
+            break;
+        }
+    }
+
+    StructureRow *searchRoot = summaryRoot ? summaryRoot : root;
+    for (const auto &child : searchRoot->children)
+    {
+        if (child && child->kind == StructureRowKind::Semantic && child->name == QStringLiteral("SECTION .dynsym"))
+        {
+            sectionRow = child.get();
+            break;
+        }
+    }
+
+    if (!sectionRow)
+        return;
+
+    StructureRow *importsRow = nullptr;
+    StructureRow *exportsRow = nullptr;
+    for (const auto &child : sectionRow->children)
+    {
+        if (!child || child->kind != StructureRowKind::Semantic)
+            continue;
+        if (child->name == QStringLiteral("Imports"))
+            importsRow = child.get();
+        else if (child->name == QStringLiteral("Exports"))
+            exportsRow = child.get();
+    }
+
+    const uint64_t count = std::min<uint64_t>(symbolSection.size / entrySize, kMaxSymbols);
+    for (uint64_t i = 0; i < count; ++i)
+    {
+        const uint64_t entryOffset = symbolSection.fileOffset + i * entrySize;
+        uint32_t nameOffset = 0;
+        uint64_t value = 0;
+        uint64_t size = 0;
+        if (header.is64)
+        {
+            if (!read32(context, entryOffset + 0, header.bigEndian, &nameOffset)
+                || !read64(context, entryOffset + 8, header.bigEndian, &value)
+                || !read64(context, entryOffset + 16, header.bigEndian, &size))
+            {
+                return;
+            }
+        }
+        else
+        {
+            uint32_t value32 = 0;
+            uint32_t size32 = 0;
+            if (!read32(context, entryOffset + 0, header.bigEndian, &nameOffset)
+                || !read32(context, entryOffset + 4, header.bigEndian, &value32)
+                || !read32(context, entryOffset + 8, header.bigEndian, &size32))
+            {
+                return;
+            }
+            value = value32;
+            size = size32;
+        }
+
+        const QString name = symbolName(context, stringTable, nameOffset);
+        if (name.isEmpty())
+            continue;
+
+        StructureRow **group = value == 0 ? &importsRow : &exportsRow;
+        if (!*group)
+        {
+            const QString groupName = value == 0 ? QStringLiteral("Imports") : QStringLiteral("Exports");
+            *group = context.appendSemanticRow(sectionRow,
+                                               groupName,
+                                               QStringLiteral("{...}"),
+                                               context.baseOffset() + entryOffset,
+                                               entrySize);
+            if (!*group)
+                continue;
+        }
+
+        context.appendSemanticRow(*group,
+                                  name,
+                                  symbolValueText(value, size),
+                                  context.baseOffset() + entryOffset,
+                                  entrySize);
     }
 }
 
@@ -293,6 +418,28 @@ void interpretElfSections(StructureSemanticContext &context)
         const ElfSection &stringTable = sections[header.sectionNameStringIndex];
         for (ElfSection &section : sections)
             section.name = sectionName(context, stringTable, section.nameOffset);
+    }
+
+    StructureRow *summaryRoot = nullptr;
+    for (const auto &child : root->children)
+    {
+        if (child && child->kind == StructureRowKind::Semantic && child->name == QStringLiteral("ELF Image"))
+        {
+            summaryRoot = child.get();
+            break;
+        }
+    }
+
+    if (summaryRoot)
+    {
+        for (size_t i = 0; i < sections.size(); ++i)
+        {
+            const ElfSection &section = sections[i];
+            if (section.type != kShtDynsym || section.link >= sections.size())
+                continue;
+            appendImportExportGroups(context, summaryRoot, header, section, sections[section.link]);
+        }
+        return;
     }
 
     std::vector<StructureRow *> sectionRows(sections.size(), nullptr);
@@ -328,6 +475,17 @@ void interpretElfSections(StructureSemanticContext &context)
         }
 
         appendSymbols(context, sectionRows[i], header, section, sections[section.link]);
+        appendImportExportGroups(context, root, header, section, sections[section.link]);
+    }
+
+    for (StructureRow *sectionRow : sectionRows)
+    {
+        if (!sectionRow || !sectionRow->children.empty())
+            continue;
+
+        sectionRow->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueEntity),
+                                   QString::fromLatin1(StructureBranchIcons::kBlueEntityOpen),
+                                   QString::fromLatin1(StructureBranchIcons::kGrayEntity));
     }
 }
 }

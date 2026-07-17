@@ -21,6 +21,7 @@ enum EXPR
 	EXPR_NUMBER,	EXPR_STRINGBUF, EXPR_IDENTIFIER, 
 	EXPR_POINTER,	EXPR_DEREF,		EXPR_ADDRESS,
 	EXPR_FIELD,		EXPR_ARRAY,		EXPR_FUNCTION,
+	EXPR_SCOPE,
 	EXPR_UNARY,		EXPR_BINARY,	EXPR_TERTIARY, 
 	EXPR_ASSIGN,	EXPR_COMMA,		EXPR_SIZEOF,
 	// Constant byte sequence literal, currently used by byte-search built-ins:
@@ -51,6 +52,11 @@ enum EXPR
 	// without this expression at all. If that lands, EXPR_RAWOFFSET and its
 	// callers can be removed in favour of it.
 	EXPR_RAWOFFSET,
+	// value_at(offsetExpr, TypeName) / value_at("space", offsetExpr, TypeName):
+	// reads a fixed-size scalar integer at a computed offset. 'left' optionally
+	// holds the named offset space string, 'right' holds the offset expression,
+	// and 'cond' holds the scalar type identifier.
+	EXPR_VALUEAT,
 	EXPR_NULL
 };
 

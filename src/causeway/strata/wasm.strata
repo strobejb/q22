@@ -161,6 +161,13 @@ typedef struct _WASM_RESULT_TYPE
     byte types[];
 } WASM_RESULT_TYPE, *PWASM_RESULT_TYPE;
 
+[
+    emit_node(dest(Types, key(array_index())),
+              field(Index, array_index()),
+              field(Form, form),
+              field(Params, params.count),
+              field(Results, results.count))
+]
 typedef struct _WASM_FUNCTION_TYPE
 {
     [enum(WASM_TYPE_FORM)]
@@ -189,6 +196,14 @@ typedef struct _WASM_LIMITS
     uleb128 max;
 } WASM_LIMITS, *PWASM_LIMITS;
 
+[
+    emit_node(dest(Tables, key(array_index())),
+              field(Index, array_index()),
+              field(RefType, refType),
+              field(Flags, limits.flags),
+              field(Min, limits.min),
+              field(Max, limits.max))
+]
 typedef struct _WASM_TABLE_TYPE
 {
     [enum(WASM_VALUE_TYPE)]
@@ -197,6 +212,13 @@ typedef struct _WASM_TABLE_TYPE
     WASM_LIMITS limits;
 } WASM_TABLE_TYPE, *PWASM_TABLE_TYPE;
 
+[
+    emit_node(dest(Memories, key(array_index())),
+              field(Index, array_index()),
+              field(Flags, limits.flags),
+              field(Min, limits.min),
+              field(Max, limits.max))
+]
 typedef struct _WASM_MEMORY_TYPE
 {
     WASM_LIMITS limits;
@@ -217,6 +239,13 @@ typedef struct _WASM_TAG_TYPE
     uleb128 typeIndex;
 } WASM_TAG_TYPE, *PWASM_TAG_TYPE;
 
+[
+    emit_node(dest(Imports, key(module.bytes, name.bytes)),
+              field(Module, module.bytes),
+              field(Name, name.bytes),
+              field(Kind, kind),
+              field(TypeIndex, functionTypeIndex))
+]
 typedef struct _WASM_IMPORT
 {
     WASM_NAME module;
@@ -277,6 +306,12 @@ typedef struct _WASM_MEMORY_SECTION
     WASM_MEMORY_TYPE memories[];
 } WASM_MEMORY_SECTION, *PWASM_MEMORY_SECTION;
 
+[
+    emit_node(dest(Globals, key(array_index())),
+              field(Index, array_index()),
+              field(Type, type.valueType),
+              field(Mutability, type.mutability))
+]
 typedef struct _WASM_GLOBAL
 {
     WASM_GLOBAL_TYPE type;
@@ -301,6 +336,12 @@ typedef struct _WASM_EXTERN_INDEX
     uleb128 index;
 } WASM_EXTERN_INDEX, *PWASM_EXTERN_INDEX;
 
+[
+    emit_node(dest(Exports, key(name.bytes)),
+              field(Name, name.bytes),
+              field(Kind, target.kind),
+              field(Index, target.index))
+]
 typedef struct _WASM_EXPORT
 {
     WASM_NAME name;
@@ -339,6 +380,11 @@ typedef struct _WASM_CODE_BODY
     byte instructions[];
 } WASM_CODE_BODY, *PWASM_CODE_BODY;
 
+[
+    emit_node(dest(Code, key(array_index())),
+              field(Index, array_index()),
+              field(Size, size))
+]
 typedef struct _WASM_CODE_ENTRY
 {
     uleb128 size;
@@ -355,6 +401,11 @@ typedef struct _WASM_CODE_SECTION
     WASM_CODE_ENTRY functions[];
 } WASM_CODE_SECTION, *PWASM_CODE_SECTION;
 
+[
+    emit_node(dest(Data, key(array_index())),
+              field(Index, array_index()),
+              field(Mode, mode))
+]
 typedef struct _WASM_DATA_SEGMENT
 {
     [enum(WASM_DATA_MODE)]
@@ -448,6 +499,11 @@ typedef struct _WASM_RAW_SECTION
     byte payload[];
 } WASM_RAW_SECTION, *PWASM_RAW_SECTION;
 
+[
+    emit_node(dest(Sections, key(array_index())),
+              field(Id, id),
+              field(Size, size))
+]
 typedef struct _WASM_SECTION
 {
     [enum(WASM_SECTION_ID)]
@@ -502,13 +558,100 @@ typedef struct _WASM_SECTION
     };
 } WASM_SECTION, *PWASM_SECTION;
 
+//
+// Semantic views
+//
+// This root schema describes derived Structure View presentation only. Inline
+// structs under it inherit semantic-schema behavior and are populated by
+// emit_node(...) tags on the raw structs above.
+//
+
+[semantic("WASM Summary")]
+typedef struct _WASM_SUMMARY
+{
+    [name(Id)]
+    struct
+    {
+        BYTE Id;
+        uleb128 Size;
+    } Sections[];
+
+    [name(fmt("type {0}", Index))]
+    struct
+    {
+        uleb128 Index;
+        BYTE Form;
+        uleb128 Params;
+        uleb128 Results;
+    } Types[];
+
+    [name(concat(Module, ".", Name))]
+    struct
+    {
+        CHAR Module[];
+        CHAR Name[];
+        BYTE Kind;
+        uleb128 TypeIndex;
+    } Imports[];
+
+    [name(Name)]
+    struct
+    {
+        CHAR Name[];
+        BYTE Kind;
+        uleb128 Index;
+    } Exports[];
+
+    [name(fmt("function {0}", Index))]
+    struct
+    {
+        uleb128 Index;
+        uleb128 Size;
+    } Code[];
+
+    [name(fmt("memory {0}", Index))]
+    struct
+    {
+        uleb128 Index;
+        uleb128 Flags;
+        uleb128 Min;
+        uleb128 Max;
+    } Memories[];
+
+    [name(fmt("table {0}", Index))]
+    struct
+    {
+        uleb128 Index;
+        BYTE RefType;
+        uleb128 Flags;
+        uleb128 Min;
+        uleb128 Max;
+    } Tables[];
+
+    [name(fmt("global {0}", Index))]
+    struct
+    {
+        uleb128 Index;
+        BYTE Type;
+        BYTE Mutability;
+    } Globals[];
+
+    [name(fmt("data {0}", Index))]
+    struct
+    {
+        uleb128 Index;
+        uleb128 Mode;
+    } Data[];
+} WASM_SUMMARY;
+
 [
     export("WebAssembly Module (WASM)"),
     version(1),
     category("code"),
     assoc(".wasm"),
     magic({ 0x00, 0x61, 0x73, 0x6d }),
-    offset(0)
+    offset(0),
+    semantic(WASM_SUMMARY)
 ]
 typedef struct _WASM
 {
@@ -516,7 +659,8 @@ typedef struct _WASM
 
     [
         count(4096),
-        extent(file_size() - sizeof(WASM_HEADER))
+        extent(file_size() - sizeof(WASM_HEADER)),
+        name(id)
     ]
     WASM_SECTION sections[];
 } WASM;

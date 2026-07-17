@@ -224,7 +224,7 @@ void PrintType(Type *type);
 
 struct TypeDecl
 {
-	TypeDecl() : baseType(0), tagList(0), comment(0), parent(0), typeAlias(false), nested(false), compoundType(false), exported(true)
+		TypeDecl() : baseType(0), tagList(0), comment(0), parent(0), typeAlias(false), nested(false), compoundType(false), exported(true), allowUnsizedArray(false)
 	{
 	}
 
@@ -264,6 +264,7 @@ struct TypeDecl
 	bool			nested;
 	bool			compoundType;
 	bool			exported;
+	bool			allowUnsizedArray;
 };
 
 
@@ -327,7 +328,7 @@ struct Field
 
 struct Structure
 {
-	Structure(Symbol *sym) : symbol(sym), tagList(0), exported(true)
+	Structure(Symbol *sym) : symbol(sym), tagList(0), exported(true), semanticSchema(false)
 	{
 		
 
@@ -351,6 +352,7 @@ struct Structure
 	//Container<EnumField> fieldList;
 	SymbolTable			 symbolTable;//fieldList;
 	TypeDeclList		 typeDeclList;
+	bool				 semanticSchema;
 	
 	//bool Evaluate(ExprNode *expr, unsigned *result);
 

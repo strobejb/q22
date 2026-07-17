@@ -20,9 +20,9 @@ View online: [Strata Language Reference](https://github.com/strobejb/q22/blob/ma
 | Layout | [`offset`](#layout) · [`align`](#layout) · [`pad_to`](#layout) · [`endian`](#byte-order) · [`entrypoint`](#layout) · [`extent`](#layout) · [`optional`](#layout) |
 | Arrays | [`count`](#arrays) · [`max_count`](#arrays) · [`count_as`](#arrays) · [`terminated_by`](#arrays) · [`terminator`](#arrays) |
 | Unions | [`select`](#discriminated-unions) · [`case`](#discriminated-unions) |
-| Semantic views | [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) · [`view`](#view) |
+| Semantic views | [`semantic`](#semantic-and-emit) · [`emit`](#semantic-and-emit) · [`emit_node`](#semantic-and-emit) · [`emit_row`](#semantic-and-emit) · [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) · [`view`](#view) |
 | Export | [`export`](#export-metadata) · [`category`](#export-metadata) · [`version`](#export-metadata) · [`assoc`](#export-metadata) · [`magic`](#export-metadata) |
-| Expressions | [`sizeof`](#expressions) · [`file_size`](#expressions) · [`extent_of`](#expressions) · [`str`](#expressions) · [`octal`](#expressions) · [`find_first`](#byte-pattern-search) · [`find_last`](#byte-pattern-search) · [`select_offset`](#select_offset) |
+| Expressions | [`sizeof`](#expressions) · [`file_size`](#expressions) · [`extent_of`](#expressions) · [`array_index`](#expressions) · [`element_value`](#expressions) · [`current_offset`](#expressions) · [`str`](#expressions) · [`cstr`](#expressions) · [`concat`](#expressions) · [`fmt`](#expressions) · [`octal`](#expressions) · [`find_first`](#byte-pattern-search) · [`find_last`](#byte-pattern-search) · [`select_offset`](#select_offset) · [`value_at`](#value_at) |
 
 ---
 
@@ -363,6 +363,7 @@ Layout tag affect the alignment and positioning of fields:
 | Tag | Effect |
 |-----|--------|
 | `offset(expr)` | Pin the field or type to a logical offset within the current container (added to the container's base file offset) |
+| `offset("space", expr)` | Render the row at bytes resolved through a named `offset_map` space |
 | `align(n)` | Align to an n-byte boundary before this field |
 | `extent(bytes)` | Limit parsing of this field to `bytes` bytes |
 | `pad_to(n)` | Pad this field's consumed extent so the following field starts on an n-byte boundary |
@@ -383,8 +384,9 @@ byte Data[];
 
 ### Tree presentation
 
-`tree("...")` changes only how parsed rows appear in Structure View. It does not
-change layout, expression evaluation, or byte consumption.
+`tree("...")` changes only how parsed rows and semantic schema groups appear in
+Structure View. It does not change layout, expression evaluation, or byte
+consumption.
 
 | Tag | Effect |
 |-----|--------|
@@ -445,8 +447,200 @@ attaching additional structures, arrays, or named overlays beyond the raw field 
 | `dynamic_struct(...)` | Render a single struct at a computed offset |
 | `dynamic_array(...)` | Render a variable-length array at a computed offset |
 | `dynamic_container(type(Type))` | Create a layout container per array element for mapped dynamic rows to attach into |
-| `offset_map(va, size, raw)` | Declare how virtual addresses within a container map to file offsets |
+| `offset_map(va, size, raw)` | Declare anonymous virtual-address ranges for `mapper(offset_map)` dynamic rows |
+| `offset_map("space", base)` / `offset_map("space", logical, size, raw)` | Define a named offset space for `offset("space", expr)` and `value_at("space", expr, Type)` |
+| `semantic(ViewType)` + `emit(...)` | Attach a declarative semantic tree schema and emit byte-backed rows into it |
+| `emit_node(...)` | Emit or update a lightweight semantic node with attributes |
 | `view("id")` | Attach a named C++ semantic view overlay to a type |
+
+### `semantic` and `emit`
+
+`[semantic]` marks a struct as a semantic-only tree schema. It is not rendered as
+raw file layout and may contain unsized destination arrays. Inline structs nested
+inside a semantic schema inherit semantic-schema behavior, so the semantic root
+can describe the whole summary tree structurally instead of forcing everything
+into a flat list of tags. Use `[semantic("Display Name")]` to choose the root
+branch label; unlabeled schemas fall back to `Semantic`.
+`[semantic(ViewType)]` on a raw root attaches that schema. The raw definition
+still comes first and stays byte-honest; the semantic root then defines the
+shape of the summary layer, and raw fields use `emit_node(...)`,
+`emit_row(...)`, and `emit(...)` to populate that destination tree without
+changing the raw tree.
+
+```c
+[semantic("WOFF Summary")]
+typedef struct _WOFF_VIEW {
+    BYTE FontTables[];
+} WOFF_VIEW;
+
+[semantic(WOFF_VIEW)]
+typedef struct _WOFF {
+    [
+        count(header.numTables),
+        emit(dest(FontTables),
+             label(tag),
+             type(BYTE),
+             offset(offset),
+             count(compLength))
+    ]
+    WOFF_TABLE_DIRECTORY_ENTRY tables[];
+} WOFF;
+```
+
+`emit(...)` arguments must be wrapped by role:
+
+```c
+emit(dest(Path.To.Container), label(expr), type(Type),
+     offset(expr) | offset("space", expr),
+     count(expr) | max_count(expr)
+     [, case(selector)]
+     [, map("space", logical_start, size, file_offset)]
+     [, terminated_by(stop_condition)]
+     [, terminator("hidden" | "shown")]
+     [, optional(condition)])
+```
+
+- `dest(path)` must resolve to a field in the root's attached semantic schema
+- `label(expr)` names each emitted row
+- `type(Type)` is the byte-backed type to render at the emitted offset
+- `offset(expr)` uses a direct file offset; `offset("space", expr)` resolves through a named `offset_map` space
+- `case(selector)` emits only from the matching array element
+- `map("space", logical_start, size, file_offset)` attaches an offset map to the emitted semantic row, allowing later `emit(dest(Container.Child), offset("space", expr), ...)` rows to attach under the semantic container whose range owns `expr`
+- `count(expr)` / `max_count(expr)`, `terminated_by(...)`, `terminator(...)`, and `optional(...)` mirror dynamic-array behavior
+
+`emit_row(...)` creates or reuses a visible semantic row without rendering a raw
+type. It is for semantic entities such as PE section buckets:
+
+```c
+emit_row(dest(Path.To.Rows, key(identity_expr), name(display_expr)),
+         offset(expr) | offset("space", expr),
+         [, map("space", logical_start, size, file_offset)]
+         [, case(selector)]
+         [, optional(condition)])
+```
+
+- `dest(path, key(expr), name(expr))` resolves `path` in the semantic schema,
+  finds or creates the row identified by `key(expr)`, and names it with
+  `name(expr)`; `key(...)` and `name(...)` are scoped to `dest(...)`
+- `key(parent_expr, child_expr)` targets a keyed parent semantic entity in the
+  parent destination path, then creates or reuses the keyed child row. This is
+  useful for trees such as `Sections.Imports.Functions`, where the DLL row is
+  keyed first and the imported function is keyed beneath it.
+- without `key(...)`, every `emit_row(...)` appends a new row
+- without `name(...)`, the row uses the key value, then the destination name
+- `offset(...)`, `map(...)`, `case(...)`, and `optional(...)` behave as they do
+  for byte-backed `emit(...)`
+
+`emit_node(...)` creates or updates a lightweight semantic row anchored to the
+source bytes, but does not render a raw C type subtree. It is for summaries and
+indexes where the raw view already contains the byte-honest structure. Prefer
+schema-shaped nodes: the destination array's element type defines the semantic
+fields, field order, and default row name, while `emit_node(...)` fills those
+fields from raw source expressions.
+
+```c
+[semantic("WASM Summary")]
+typedef struct _WASM_SUMMARY {
+    [name(concat(Module, ".", Name))]
+    struct {
+        CHAR Module[];
+        CHAR Name[];
+        BYTE Kind;
+        uleb128 TypeIndex;
+    } Imports[];
+} WASM_SUMMARY;
+
+emit_node(dest(Imports, key(module.bytes, name.bytes)),
+          offset(current_offset()),
+          field(Module, module.bytes),
+          field(Name, name.bytes),
+          field(Kind, kind),
+          field(TypeIndex, functionTypeIndex))
+```
+
+- `dest(path)` appends a new node under a schema destination
+- `dest(path, key(expr))` creates or updates the same node for the same key;
+  this is semantic merging, not a hidden join table
+- `key(parent_expr, child_expr)` targets an existing keyed parent semantic
+  entity in the parent destination path, then creates or updates the keyed child
+  node. This is useful for trees such as `Sections.Symbols`, where the section
+  row is keyed first and the symbol row is keyed beneath it.
+- `field(Name, expr)` sets a field declared by the destination element schema;
+  unknown field names are diagnosed by definition validation
+- schema `name(...)` on the destination element type sets the default visible
+  row name using populated semantic fields
+- `name(expr)` on `emit_node(...)` sets or overrides the visible row name. Later
+  `emit_node(...)` tags only
+  replace an existing node name when they provide an explicit non-empty
+  `name(...)`.
+- `attr(Name, expr)` adds or updates an unstructured child attribute row; use it
+  for quick summaries when there is no schema field to fill
+- `offset(...)`, `extent(...)`, `case(...)`, and `optional(...)` control source
+  anchoring and gating
+- use `concat(...)` or `fmt(...)` to build display strings directly in the tag
+
+PE semantic rendering can be isolated while the declarative view reaches parity
+with the older C++ view:
+
+```sh
+Q22_PE_SEMANTIC_VIEW=declarative   # default: skip pe.* C++ semantic interpreters
+Q22_PE_SEMANTIC_VIEW=both          # run declarative rows and C++ views
+Q22_PE_SEMANTIC_VIEW=cpp           # skip declarative PE semantic rows
+
+Q22_ELF_SEMANTIC_VIEW=declarative  # default: skip elf.* C++ semantic interpreters
+Q22_ELF_SEMANTIC_VIEW=both         # run declarative rows and C++ views
+Q22_ELF_SEMANTIC_VIEW=cpp          # skip declarative ELF semantic rows
+```
+
+When `QEXED_STRUCTURE_PROFILE=1` is set, both declarative semantic rendering and
+C++ semantic view invocations are timed in the structure profile log.
+
+Semantic child groups are ordered by their declaration order in the schema, not
+by the order in which `emit(...)` tags are encountered while walking raw file
+layout. When a mapped semantic container emits byte payload rows to a schema
+element whose item type has a `Bytes` child field, those payload rows are grouped
+under `Bytes`, so sibling semantic tables can be ordered before or after the raw
+bytes in the schema.
+
+Mapped semantic containers model PE-style section ownership declaratively:
+
+```c
+[semantic]
+typedef struct _PE_SECTION_VIEW {
+    IMAGE_IMPORT_DESCRIPTOR Imports[];
+    BYTE Bytes[];
+} PE_SECTION_VIEW;
+
+[semantic("PE Image")]
+typedef struct _PE_VIEW {
+    [tree("flatten")]
+    PE_SECTION_VIEW Sections[];
+} PE_VIEW;
+
+[
+  emit_row(dest(Sections, key(Name), name(Name)),
+           offset(PointerToRawData),
+           map("rva", VirtualAddress, SizeOfRawData, PointerToRawData)),
+  emit(dest(Sections.Bytes), type(BYTE),
+       offset("rva", VirtualAddress), count(SizeOfRawData))
+]
+IMAGE_SECTION_HEADER sectionHeader[];
+
+[
+  emit(case(IMAGE_DIRECTORY_ENTRY_IMPORT),
+       dest(Sections.Imports),
+       label("Imports"),
+       type(IMAGE_IMPORT_DESCRIPTOR),
+       offset("rva", VirtualAddress),
+       max_count(Size / sizeof(IMAGE_IMPORT_DESCRIPTOR)),
+       terminated_by(OriginalFirstThunk == 0 && FirstThunk == 0),
+       terminator("hidden"))
+]
+IMAGE_DATA_DIRECTORY dataDirectory[];
+```
+
+V1 emit rows are byte-backed only: they render real file bytes at real offsets.
+Computed-only rows, keyed merging, and attributes are reserved for a later layer.
 
 ### `dynamic_struct`
 
@@ -461,12 +655,13 @@ dynamic_struct(type(Type), offset(expr)
 ```
 
 - `type(Type)` — the struct type to render
-- `offset(expr)` — target offset expression
+- `offset(expr)` — target file offset expression
+- `offset("space", expr)` — target offset resolved through a named `offset_map` space
 - `name(label)` — display label when attaching to the current row
 - `case(selector)` — only the matching array element emits this struct
 - `container(label)` — place the generated dynamic struct under a named root-level group
 - `mapper(direct)` — interpret `offset(expr)` as a direct file offset; this is the default
-- `mapper(offset_map)` — map `offset(expr)` through `offset_map(...)` containers before rendering
+- `mapper(offset_map)` — map `offset(expr)` through anonymous `offset_map(...)` containers before rendering; use this when the generated row should attach to a mapped dynamic container such as a PE section
 - `optional(condition)` — skip when false
 
 ```c
@@ -510,14 +705,15 @@ dynamic_array(type(ElemType), offset(expr), count(expr) | max_count(expr)
 ```
 
 - `type(ElemType)` — element type
-- `offset(expr)` — target offset expression
+- `offset(expr)` — target file offset expression
+- `offset("space", expr)` — target offset resolved through a named `offset_map` space
 - `count(expr)` — exact element count unless stopped early by `terminated_by(...)`
 - `max_count(expr)` — safety cap for a terminator-bounded dynamic array; equivalent to `count(...)` at render time, but clearer for sentinel arrays
 - `name(label)` — display label; also marks character arrays as a per-element name source
 - `case(selector)` — only the matching array element emits this array
 - `container(label)` — place the generated dynamic array under a named root-level group
 - `mapper(direct)` — interpret `offset(expr)` as a direct file offset; this is the default
-- `mapper(offset_map)` — map `offset(expr)` through `offset_map(...)` containers before rendering
+- `mapper(offset_map)` — map `offset(expr)` through anonymous `offset_map(...)` containers before rendering; use this when the generated row should attach to a mapped dynamic container such as a PE section
 - `terminated_by(stop_condition)` — stop early when this per-element expression is true
 - `terminator("hidden"|"shown")` — optional visibility override for the matching terminator element; by default `[string]`/`format("string")` arrays and zero-terminated `char` arrays hide it, while struct/scalar arrays show it
 - `optional(condition)` — render only when true
@@ -581,8 +777,9 @@ IMAGE_SECTION_HEADER sectionHeader[];
 
 ### `offset_map`
 
-Declares how virtual addresses within a container map to raw file offsets.
-Required when `dynamic_array` / `dynamic_struct` uses `mapper(offset_map)` to target an alternative address scheme rather than direct file offsets, such as PE Relative Virtual Addresses.
+Declares how logical offsets or virtual addresses map to raw file offsets.
+Anonymous three-argument maps support existing `dynamic_array` /
+`dynamic_struct` declarations that use `mapper(offset_map)`.
 
 ```c
 offset_map(va_base, size, file_offset)
@@ -591,10 +788,53 @@ offset_map(va_base, size, file_offset)
 ```c
 [
   offset_map(VirtualAddress, SizeOfRawData, PointerToRawData),
-  dynamic_container(type(SECTION)),
-  size_is(ntHeaders.FileHeader.NumberOfSections)
+  offset_map("rva", VirtualAddress, SizeOfRawData, PointerToRawData),
+  dynamic_container(type(SECTION))
+]
+typedef struct _IMAGE_SECTION_HEADER { ... } IMAGE_SECTION_HEADER;
+
+[
+  name(Name),
+  count(ntHeaders.FileHeader.NumberOfSections)
 ]
 IMAGE_SECTION_HEADER sectionHeader[];
+```
+
+Named maps can also be used directly from `offset(...)` tags and expressions.
+Prefer using them from dynamic or semantic rows, where the tree already makes
+clear that the rendered bytes are reached by reference. Avoid placing
+`offset("space", ...)` fields inline in a normal raw struct when that would make
+referenced data look physically adjacent to the previous field. The rendered row
+must still point at the true file bytes; the guardrail is about tree meaning, not
+address accuracy.
+
+A two-argument named map defines a simple base-relative space:
+
+```c
+typedef struct _Header {
+    dword stringTableOffset;
+    dword nameOffset;
+} HEADER;
+
+[
+  offset_map("strings", header.stringTableOffset),
+  dynamic_array(name(Name), type(CHAR), offset("strings", header.nameOffset),
+                max_count(256), terminated_by(0))
+]
+typedef struct _File { HEADER header; } FILE;
+```
+
+A four-argument named map defines range translation:
+
+```c
+[
+  offset_map("rva", VirtualAddress, SizeOfRawData, PointerToRawData),
+  count(sectionCount)
+]
+IMAGE_SECTION_HEADER sections[];
+
+[offset("rva", importRva)]
+IMAGE_IMPORT_DESCRIPTOR imports[];
 ```
 
 ### `view`
@@ -644,7 +884,9 @@ be combined by every consumer.
 ## Expressions
 
 Tags accept C-like expressions. Fields of the enclosing struct are in scope
-by name. Nested fields are accessed with `.` (dot) notation. Pointer dereferencing is not supported:
+by name. Nested fields are accessed with `.` (dot) notation. `root::` and
+`parent::` switch lookup scope without leaving field syntax. Pointer
+dereferencing is not supported:
 
 ```
 ntHeaders.FileHeader.NumberOfSections
@@ -661,13 +903,17 @@ dosHeader.e_lfanew
 | Size | `sizeof(Type)` |
 | Runtime extent | `extent_of(field)` |
 | File size | `file_size()` |
+| Array context | `array_index()` |
+| Current scalar | `element_value()` |
+| Current offset | `current_offset()` |
 | Parsed string | `str(field)` |
+| String construction | `concat(a, b, ...)`, `fmt("{0}", value)` |
 | Octal text | `octal(text)` |
 | FourCC literal | `fourcc("abcd")` |
-| String lookup | `cstr_at(offset, maxLen)` |
+| String lookup | `cstr(offset)`, `cstr("space", offset)`, `cstr_at(offset, maxLen)`, `cstr_from(base, offset[, maxLen])` |
 | Byte sequence literal | `{ 0x50, 0x4b }` |
 | Byte search | `find_first({ ... })` · `find_last({ ... })` |
-| Raw read | `select_offset(byteOffset)` |
+| Raw read | `select_offset(byteOffset)`, `value_at(offset, Type)`, `root::value_at(offset, Type)`, `field_at(array, index, field)` |
 
 ```c
 size_is(Header.Count * sizeof(DWORD))
@@ -677,10 +923,21 @@ terminated_by(kind == 0 && size == 0)
 terminated_by({ 0x00, 0x00, 0x01 })
 ```
 
-`cstr_at(offset, maxLen)` reads a NUL-terminated 8-bit string at `offset`
-relative to the root structure base, capped at `maxLen` bytes. It returns a
-string expression, so it is primarily useful with string-valued
-`select(...)`/`case("...")` unions.
+`cstr(offset)` reads a NUL-terminated 8-bit string at `offset` relative to the
+root structure base, capped at 4096 bytes. `cstr("space", offset)` first
+resolves `offset` through a named `offset_map` space. A third argument may
+override the cap, still limited to the renderer's maximum string lookup size.
+`cstr_at(offset, maxLen)` is the older explicit-cap spelling for root-relative
+lookups. `cstr_from(base, offset[, maxLen])` reads from `base + offset`, which
+is useful when a table entry stores a string-table-relative offset and another
+expression finds that string table's file offset. These return string
+expressions, so they are useful with string-valued `select(...)`/`case("...")`
+unions and semantic row `key(...)`/`name(...)`.
+
+`concat(...)` converts each argument to display text and appends the parts.
+`fmt(...)` takes a string literal template followed by values and replaces
+`{0}`, `{1}`, and later placeholders. Both are intended for semantic row
+names and attributes.
 
 `file_size()` returns the number of readable bytes from the root structure base.
 It is useful for bounding a final stream of records when the format has no
@@ -694,6 +951,14 @@ Record records[];
 `extent_of(field)` returns the actual rendered byte length of an already-parsed
 field. This is useful with variable-width scalars such as `uleb128` and flexible
 arrays when a following payload length is relative to the current record:
+
+`array_index()` returns the current rendered array element's zero-based index.
+`element_value()` returns the current scalar row's numeric value. They are useful
+for parallel table formats where one array element names or indexes data in
+another array, such as PE export name and ordinal tables.
+`current_offset()` returns the current row's file offset relative to the root
+structure. It is useful when an already-rendered raw row wants to emit an
+expandable semantic copy of itself.
 
 ```c
 [extent(size - extent_of(length) - extent_of(name))]
@@ -789,6 +1054,32 @@ real field reference will. Reach for `select_offset` only when that
 shape doesn't apply. A reserved word, not a tag — `select_offset(...)` only
 means something as a sub-expression inside another tag's expression.
 
+### `value_at`
+
+`value_at(offset, Type)` reads a fixed-size scalar at `offset`, relative to
+the current structure instance. `value_at("space", offset, Type)` first
+resolves `offset` through a named `offset_map` space. `root::value_at(offset,
+Type)` uses the same scalar read but makes `offset` relative to the root
+structure base; `root_value_at(offset, Type)` remains as a compatibility alias.
+This is intended for small one-off probes in expressions, not for rendering
+nested structures. `field_at(array, index, field)` reads a field from an
+already rendered array element, which is useful for parallel tables and linked
+indexes.
+
+Supported V1 types are `byte`, `char`, `word`, `dword`, `qword`, and
+`wchar_t`; multi-byte reads use the current endian context.
+
+```c
+[optional(value_at(8, dword) == fourcc("WEBP"))]
+RIFF_WEBP_PAYLOAD webp;
+
+[optional(value_at("rva", thunkRva, qword) != 0)]
+IMAGE_THUNK_DATA64 thunk;
+
+[name(cstr_from(field_at(sectionHeaders32, sh_link, sh_offset), st_name))]
+Elf32_Sym symbol;
+```
+
 ---
 
 ## Reserved and unsupported keywords
@@ -814,10 +1105,10 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 | Primitive types | `byte`, `word`, `dword`, `qword`, `char`, `wchar_t`, `float`, `double`, `uleb128`, `sleb128` |
 | Display/layout tags | `align`, `bitflag`, `description`, `display`, `endian`, `entrypoint`, `extent`, `format`, `ignore`, `name`, `offset`, `optional`, `pad_to`, `string`, `style`, `tree` |
 | Arrays/unions | `case`, `count`, `count_as`, `default`, `length_is`, `max_count`, `select`, `select_offset`, `size_is`, `switch_is`, `terminated_by`, `terminator` |
-| Dynamic/semantic tags | `container`, `dynamic_array`, `dynamic_container`, `dynamic_struct`, `mapper`, `offset_map`, `type`, `view` |
+| Dynamic/semantic tags | `attr`, `container`, `dest`, `dynamic_array`, `dynamic_container`, `dynamic_struct`, `emit`, `emit_node`, `emit_row`, `field`, `key`, `label`, `map`, `mapper`, `offset_map`, `semantic`, `type`, `view` |
 | Export/detection tags | `assoc`, `category`, `export`, `magic`, `version` |
 | Tagsets/files | `include`, `tagset`, `tags` |
-| Expression helpers | `cstr_at`, `extent_of`, `file_size`, `find_first`, `find_last`, `fourcc`, `octal`, `sizeof`, `str` |
+| Expression helpers | `array_index`, `concat`, `cstr`, `cstr_at`, `cstr_from`, `current_offset`, `element_value`, `extent_of`, `field_at`, `file_size`, `find_first`, `find_last`, `fmt`, `fourcc`, `octal`, `root_value_at`, `sizeof`, `str`, `value_at` |
 
 ---
 
@@ -845,6 +1136,33 @@ Prefer pure structures for ordinary file layouts. Reach for
 `dynamic_array(...)`, `dynamic_struct(...)`, `dynamic_container(...)`, and
 `view(...)` only for related data that is not really an inline C field, such as
 PE RVA-mapped import/export tables.
+
+When a format also needs a summary view, define the raw layout first and then
+layer a single semantic root schema over it. Put the summary structure inside
+that semantic root with nested structs and arrays, so the destination shape is
+obvious from the definition instead of being inferred from a long run of
+`emit(...)` calls.
+
+Named address spaces follow the same rule. Define `offset_map("space", ...)`
+where the file format defines the coordinate system, then use
+`offset("space", expr)` mainly from dynamic or semantic rows. Do not make an
+offset-target field appear as a normal inline child of a raw struct unless that
+is deliberately the clearest representation of the format.
+
+When you keep repeating the same table-base probe, hoist it into a named
+offset space once and reuse that name for both lookups and display strings.
+That is usually cleaner than repeating `field_at(...)` or `cstr_from(...)` in
+every tag. Use it when a descendant row will consume the named space; if the
+same row needs to use the value for its own key or name, keep the direct probe
+for now:
+
+```c
+[
+  offset_map("shstr", field_at(sectionHeaders32, header32.e_shstrndx, sh_offset)),
+  name(cstr("shstr", sh_name))
+]
+typedef struct _Elf32_Shdr { ... } Elf32_Shdr;
+```
 
 Use `enum(Name)` for one-of-N values. Use `bitflag(Name)` only for independent
 mask bits. Do not use `bitflag(...)` for packed fields whose values overlap,

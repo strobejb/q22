@@ -1034,13 +1034,22 @@ Token Lexer::Next()
 	case '{': case '}':
 	case '[': case ']':
 	case '.': case ',': 
-	case ';': case ':': 
+	case ';':
 	case '~': case '^':
 	case '*': case '%': 
 	case '/': case '?':
 		tmp = TOKEN(ch);
 		ch  = nextch();
 		return Token(tmp);
+
+	case ':':
+		ch = nextch();
+		if(ch == ':')
+		{
+			ch = nextch();
+			return Token(TOK_SCOPE);
+		}
+		return Token(TOKEN(':'));
 
 	// end of input
 	case '\0':

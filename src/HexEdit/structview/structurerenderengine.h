@@ -53,6 +53,15 @@ private:
         uint64_t fileOffset = 0;
     };
 
+    struct NamedOffsetMap
+    {
+        QString name;
+        uint64_t logicalStart = 0;
+        uint64_t logicalSize = 0;
+        uint64_t fileOffset = 0;
+        bool rangeMapped = false;
+    };
+
     struct DynamicContainer
     {
         TypeDecl *typeDecl = nullptr;
@@ -99,13 +108,96 @@ private:
         DynamicMapper mapper = DynamicMapper::Direct;
         bool attachToMappedContainer = false;
     };
+
+    struct SemanticEmitRequest
+    {
+        StructureRow *owner = nullptr;
+        TypeDecl *typeDecl = nullptr;
+        Type *renderType = nullptr;
+        QStringList destinationPath;
+        ExprNode *selectorExpr = nullptr;
+        ExprNode *labelExpr = nullptr;
+        QString offsetSpace;
+        uint64_t logicalOffset = 0;
+        uint64_t fileOffset = 0;
+        uint64_t maxCount = 0;
+        ExprNode *stopExpr = nullptr;
+        ExprNode *terminatorModeExpr = nullptr;
+        ExprNode *conditionExpr = nullptr;
+        QString mapSpace;
+        uint64_t mapLogicalStart = 0;
+        uint64_t mapLogicalSize = 0;
+        uint64_t mapFileOffset = 0;
+        bool createsMappedContainer = false;
+    };
+
+    struct SemanticRowRequest
+    {
+        StructureRow *owner = nullptr;
+        QStringList destinationPath;
+        ExprNode *selectorExpr = nullptr;
+        ExprNode *keyExpr = nullptr;
+        ExprNode *nameExpr = nullptr;
+        QString offsetSpace;
+        uint64_t logicalOffset = 0;
+        uint64_t fileOffset = 0;
+        ExprNode *conditionExpr = nullptr;
+        QString mapSpace;
+        uint64_t mapLogicalStart = 0;
+        uint64_t mapLogicalSize = 0;
+        uint64_t mapFileOffset = 0;
+        bool createsMappedContainer = false;
+    };
+
+    struct SemanticNodeAttr
+    {
+        QString name;
+        ExprNode *valueExpr = nullptr;
+        bool schemaField = false;
+    };
+
+    struct SemanticNodeRequest
+    {
+        StructureRow *owner = nullptr;
+        QStringList destinationPath;
+        ExprNode *selectorExpr = nullptr;
+        ExprNode *keyExpr = nullptr;
+        ExprNode *nameExpr = nullptr;
+        QString offsetSpace;
+        uint64_t logicalOffset = 0;
+        uint64_t fileOffset = 0;
+        ExprNode *extentExpr = nullptr;
+        ExprNode *conditionExpr = nullptr;
+        std::vector<SemanticNodeAttr> attrs;
+    };
+
+    struct SemanticContainer
+    {
+        StructureRow *row = nullptr;
+        QStringList destinationPath;
+        QString mapSpace;
+        uint64_t logicalStart = 0;
+        uint64_t logicalSize = 0;
+        uint64_t fileOffset = 0;
+    };
+
+    struct SemanticEntity
+    {
+        StructureRow *parent = nullptr;
+        StructureRow *row = nullptr;
+        QStringList destinationPath;
+        QString key;
+    };
     bool evaluate(const EvalContext &context, ExprNode *expr, INUMTYPE *result);
     bool evaluate(StructureRow *scope, ExprNode *expr, INUMTYPE *result, uint64_t scopeOffset);
     bool evaluate(Type *scopeType, ExprNode *expr, INUMTYPE *result, uint64_t scopeOffset);
     bool evaluateFunction(const EvalContext &context, ExprNode *expr, INUMTYPE *result);
+    bool evaluateValueAt(const EvalContext &context, ExprNode *expr, INUMTYPE *result);
     bool evaluateFindFunction(const EvalContext &context, ExprNode *expr, INUMTYPE *result);
     bool evaluateString(const EvalContext &context, ExprNode *expr, QString *result);
     bool evaluateStringFunction(const EvalContext &context, ExprNode *expr, QString *result);
+    bool resolveScopeContext(const EvalContext &context, ExprNode *expr, EvalContext *scoped) const;
+    StructureRow *resolveScopeRow(StructureRow *scope, ExprNode *expr) const;
     QString fieldStringValue(StructureRow *row);
     uint64_t readableEnd(uint64_t startOffset) const;
     bool findPattern(uint64_t startOffset,
@@ -133,6 +225,14 @@ private:
     void collectDynamicArrayRequests(StructureRow *row);
     void appendDynamicRows(StructureRow *parent);
     void appendDynamicArrayRows(StructureRow *row);
+    void collectSemanticEmitRequests(StructureRow *row);
+    void appendSemanticRowRequests();
+    void appendSemanticNodeRequests();
+    void appendSemanticEmitRows(StructureRow *root);
+    StructureRow *semanticRootGroup();
+    StructureRow *semanticDestinationGroup(const QStringList &path);
+    StructureRow *semanticChildGroup(StructureRow *parent, const QStringList &path);
+    QString semanticRootLabel() const;
     std::vector<RowPtr> buildSubArraysForElement(StructureRow *elementRow,
                                                  std::vector<DynamicArrayRequest> subRequests);
     bool dynamicTagArgs(ExprNode *expr,
@@ -153,12 +253,71 @@ private:
                           ExprNode **terminatorMode,
                           ExprNode **condition,
                           DynamicMapper *mapper,
-                          bool *isNameSource) const;
+                          bool *isNameSource,
+                          bool *isCaseSelector = nullptr) const;
     bool dynamicContainerArgs(ExprNode *expr, ExprNode **typeName) const;
+    bool emitArgs(ExprNode *expr,
+                  ExprNode **destination,
+                  ExprNode **selector,
+                  ExprNode **label,
+                  ExprNode **typeName,
+                  ExprNode **logicalOffset,
+                  ExprNode **count,
+                  ExprNode **stop,
+                  ExprNode **terminatorMode,
+                  ExprNode **condition,
+                  ExprNode **map) const;
+    bool emitRowArgs(ExprNode *expr,
+                     ExprNode **destination,
+                     ExprNode **selector,
+                     ExprNode **logicalOffset,
+                     ExprNode **condition,
+                     ExprNode **map) const;
+    bool emitNodeArgs(ExprNode *expr,
+                      ExprNode **destination,
+                      ExprNode **selector,
+                      ExprNode **name,
+                      ExprNode **logicalOffset,
+                      ExprNode **extent,
+                      ExprNode **condition,
+                      std::vector<SemanticNodeAttr> *attrs) const;
+    bool emitDestinationArgs(ExprNode *expr,
+                             ExprNode **path,
+                             ExprNode **key,
+                             ExprNode **name) const;
+    bool semanticAttrArgs(ExprNode *expr, QString *name, ExprNode **value) const;
+    bool emitMapArgs(ExprNode *expr,
+                     QString *name,
+                     ExprNode **logicalStart,
+                     ExprNode **logicalSize,
+                     ExprNode **fileOffset) const;
     bool offsetMapArgs(ExprNode *expr, ExprNode **logicalStart, ExprNode **logicalSize, ExprNode **fileOffset) const;
+    bool namedOffsetMapArgs(ExprNode *expr,
+                            QString *name,
+                            ExprNode **base,
+                            ExprNode **logicalStart,
+                            ExprNode **logicalSize,
+                            ExprNode **fileOffset) const;
+    bool offsetTagArgs(ExprNode *expr, QString *space, ExprNode **offsetExpr) const;
     TypeDecl *findTypeDecl(const char *name) const;
     Type *typeInDecl(TypeDecl *decl, const char *name) const;
+    TypeDecl *attachedSemanticSchema(TypeDecl *rootType) const;
+    TypeDecl *semanticDestinationDecl(TypeDecl *schemaDecl, const QStringList &path) const;
+    TypeDecl *semanticDestinationElementSchema(TypeDecl *schemaDecl, const QStringList &path) const;
+    bool semanticSchemaHasField(TypeDecl *schemaDecl, const QString &name) const;
+    bool semanticDestinationExists(TypeDecl *schemaDecl, const QStringList &path) const;
+    int semanticDestinationOrder(const QStringList &path) const;
+    QStringList semanticPath(ExprNode *expr) const;
     DynamicContainer *mapLogicalOffset(uint64_t logicalOffset, uint64_t *fileOffset);
+    bool mapNamedOffset(const QString &name, uint64_t logicalOffset, uint64_t *fileOffset) const;
+    StructureRow *semanticDestinationForRequest(const SemanticEmitRequest &request, uint64_t *fileOffset);
+    StructureRow *semanticDestinationForPath(const QStringList &destinationPath,
+                                             const QString &offsetSpace,
+                                             uint64_t logicalOffset,
+                                             uint64_t *fileOffset);
+    QString semanticExpressionText(StructureRow *scope, Type *scopeType, ExprNode *expr, uint64_t scopeOffset);
+    void collectNamedOffsetMaps(StructureRow *row);
+    TYPE scalarTypeName(const char *name) const;
     StructureRow *dynamicRootGroup(const QString &label);
     void resolveEntryPointRows(StructureRow *row);
 
@@ -217,8 +376,15 @@ private:
     StructureValueBuilder::ByteReader m_reader;
     StructureRow *m_rootRow = nullptr;
     std::vector<DynamicContainer> m_dynamicContainers;
+    std::vector<NamedOffsetMap> m_namedOffsetMaps;
     std::vector<DynamicRequest> m_dynamicRequests;
     std::vector<DynamicArrayRequest> m_dynamicArrayRequests;
+    std::vector<SemanticRowRequest> m_semanticRowRequests;
+    std::vector<SemanticNodeRequest> m_semanticNodeRequests;
+    std::vector<SemanticEmitRequest> m_semanticEmitRequests;
+    std::vector<SemanticContainer> m_semanticContainers;
+    std::vector<SemanticEntity> m_semanticEntities;
+    std::vector<RowPtr> m_semanticSourceRows;
 };
 
 #endif // STRUCTVIEW_STRUCTURERENDERENGINE_H

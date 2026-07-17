@@ -55,6 +55,8 @@ private slots:
     void builderSkipsAbsentOptionalDeclarations();
     void builderUsesSizeIsForUnsizedArrays();
     void builderUsesMaxCountAndTerminatorExpressions();
+    void builderUsesNamedOffsetMapsAndValueAt();
+    void builderUsesScopePrefixesForRootAndParent();
     void builderUsesCountAsForLogicalArraySlots();
     void builderEvaluatesTernaryExpressions();
     void builderUsesCommonUnionPrefixForSizeIs();
@@ -77,6 +79,8 @@ private slots:
     void builderEvaluatesEnumIndexedArraysInExpressions();
     void builderEvaluatesEnumIndexedUnionMembersInExpressions();
     void builderUsesSimpleRootNamesForBuiltinTypedefRoots();
+    void builderRendersElfImportsAndExportsSummary();
+    void builderRendersElfDependenciesAndRelocationsSummary();
     void builderOptionallySortsTopLevelRowsByOffset();
     void builderRendersDexHeaderAndTables();
     void builderAddsDexSemanticSummaryPastArrayRenderCap();
@@ -103,15 +107,25 @@ private slots:
     void builderPlacesDirectDynamicStructsUnderOwningRows();
     void builderRendersDynamicArraysAtReferencedOffsets();
     void builderStopsDynamicAndInlineArraysAtTerminators();
+    void builderEmitsSemanticRowsUnderAttachedSchema();
+    void builderEmitsAndMergesSemanticNodes();
+    void builderEmitsSemanticRowsThroughNamedOffsetSpaces();
+    void builderRejectsUnterminatedCstrSemanticNames();
+    void builderEmitsIntoMappedSemanticContainers();
+    void definitionManagerFlagsUnknownSemanticDestinations();
+    void definitionManagerFlagsUnknownSemanticNodeFields();
     void builderRunsSemanticViewsOnceForDynamicArrayTables();
     void builderNamesPeDynamicSectionsFromStandardDefinition();
+    void builderPeSemanticModeCppSkipsDeclarativeRows();
     void builderNamesPeImportDescriptorsFromStandardDefinition();
+    void builderEmitsPeImportDllsFromStandardDefinition();
     void builderResolvesEntryPointRvaThroughSectionOffsetMap();
     void builderResolvesUnionDiscriminatorFromCandidateOnlyField();
     void definitionManagerFlagsNonStaticFieldReferences();
     void definitionManagerFlagsRuntimeExpressionsInRootOffsets();
     void semanticRegistryRunsKnownViewsAndIgnoresUnknownViews();
     void builderRunsSemanticViewsAfterDynamicPlacement();
+    void builderPeSemanticModeDeclarativeSkipsCppViews();
     void builderKeepsRawDynamicRowsWhenSemanticImportDataIsTruncated();
     void semanticPeImportsWalksPe32PlusThunkTables();
     void semanticPeImportsRespectDynamicArrayDescriptorCount();
@@ -122,6 +136,31 @@ private slots:
     void modelSupportsHierarchyAndEditableCells();
     void modelAppliesTypeDisplayOptionsWithoutResettingRows();
     void modelBuildsExpandableRowsForStructFields();
+};
+
+class ScopedEnvironmentVariable
+{
+public:
+    ScopedEnvironmentVariable(const char *name, const QByteArray &value)
+        : m_name(name)
+        , m_hadValue(qEnvironmentVariableIsSet(name))
+        , m_previous(qgetenv(name))
+    {
+        qputenv(name, value);
+    }
+
+    ~ScopedEnvironmentVariable()
+    {
+        if (m_hadValue)
+            qputenv(m_name, m_previous);
+        else
+            qunsetenv(m_name);
+    }
+
+private:
+    const char *m_name = nullptr;
+    bool m_hadValue = false;
+    QByteArray m_previous;
 };
 
 static void writeTextFile(const QString &path, const QByteArray &text)
@@ -1477,6 +1516,112 @@ void StructViewTests::builderUsesMaxCountAndTerminatorExpressions()
     QCOMPARE(rows[0]->children[3]->value, QStringLiteral("85"));
 }
 
+void StructViewTests::builderUsesNamedOffsetMapsAndValueAt()
+{
+    // Scenario: definitions can name address spaces for base-relative and
+    // range-mapped offsets, and can use value_at(...) for one-off scalar probes.
+    // Expected: offset("space", expr) places fields through the named map, and
+    // value_at(...) reads fixed-size scalars with the current endian.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef struct _Section { dword va; dword size; dword raw; } Section;\n"
+                        "typedef struct _Entry { dword value; } Entry;\n"
+                        "[export, offset_map(\"strings\", stringBase)]\n"
+                        "struct Root {\n"
+                        "  dword stringBase;\n"
+                        "  dword nameOffset;\n"
+                        "  dword targetRva;\n"
+                        "  dword probeRva;\n"
+                        "  [offset_map(\"rva\", va, size, raw), count(1)] Section sections[];\n"
+                        "  [offset(\"strings\", nameOffset), string, max_count(16), terminated_by(0)] char name[];\n"
+                        "  [offset(\"rva\", targetRva)] dword mappedValue;\n"
+                        "  [optional(value_at(\"rva\", probeRva, word) == 0x1234), offset(28)] byte mappedProbe;\n"
+                        "  [optional(value_at(28, word) == 0x6b5a), offset(29)] byte localProbe;\n"
+                        "  [dynamic_array(name(Values), type(Entry), offset(\"rva\", targetRva), count(1)), offset(30)] byte owner;\n"
+                        "} root;\n"));
+
+    QByteArray bytes(0xa0, '\0');
+    writeLe32(&bytes, 0, 0x40);   // stringBase
+    writeLe32(&bytes, 4, 0x05);   // nameOffset
+    writeLe32(&bytes, 8, 0x1020); // targetRva
+    writeLe32(&bytes, 12, 0x1030);// probeRva
+    writeLe32(&bytes, 16, 0x1000);// section va
+    writeLe32(&bytes, 20, 0x80);  // section size
+    writeLe32(&bytes, 24, 0x60);  // section raw
+    writeLe32(&bytes, 0x80, 0xAABBCCDD); // rva 0x1020
+    writeLe16(&bytes, 0x90, 0x1234);     // rva 0x1030
+    bytes[0x45] = 'N';
+    bytes[0x46] = 'a';
+    bytes[0x47] = 'm';
+    bytes[0x48] = 'e';
+    bytes[0x49] = '\0';
+    bytes[0x1c] = 0x5a;
+    bytes[0x1d] = 0x6b;
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+
+    StructureRow *name = findChildNamed(rows[0].get(), QStringLiteral("char name[]"));
+    QVERIFY2(name, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(name->absoluteOffset, uint64_t(0x45));
+    QCOMPARE(name->value, QStringLiteral("\"Name\""));
+
+    StructureRow *mappedValue = findChildNamed(rows[0].get(), QStringLiteral("dword mappedValue"));
+    QVERIFY2(mappedValue, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(mappedValue->absoluteOffset, uint64_t(0x80));
+    QCOMPARE(mappedValue->value, QStringLiteral("2864434397"));
+
+    StructureRow *mappedProbe = findChildNamed(rows[0].get(), QStringLiteral("byte mappedProbe"));
+    QVERIFY2(mappedProbe, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(mappedProbe->value, QStringLiteral("90"));
+
+    StructureRow *localProbe = findChildNamed(rows[0].get(), QStringLiteral("byte localProbe"));
+    QVERIFY2(localProbe, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(localProbe->value, QStringLiteral("107"));
+
+    StructureRow *owner = findChildNamed(rows[0].get(), QStringLiteral("byte owner"));
+    QVERIFY2(owner, qPrintable(childNames(rows[0].get())));
+    StructureRow *values = findChildNamed(owner, QStringLiteral("Entry Values[]"));
+    QVERIFY2(values, qPrintable(childNames(owner)));
+    QCOMPARE(values->absoluteOffset, uint64_t(0x80));
+    QCOMPARE(values->children.size(), size_t(1));
+    QCOMPARE(values->children[0]->children[0]->value, QStringLiteral("2864434397"));
+}
+
+void StructViewTests::builderUsesScopePrefixesForRootAndParent()
+{
+    // Scenario: scope prefixes resolve against the enclosing row hierarchy
+    // instead of being treated as literal field names.
+    // Expected: parent:: resolves within the immediate container row and
+    // root:: resolves back to the file root row.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef struct _Inner {\n"
+                        "  byte innerValue;\n"
+                        "  [optional(parent::innerValue == 0x41)] byte parentHit;\n"
+                        "  [optional(root::header == 0x41)] byte rootHit;\n"
+                        "} Inner;\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  byte header;\n"
+                        "  Inner inner;\n"
+                        "} root;\n"));
+
+    QByteArray bytes(4, '\0');
+    bytes[0] = 0x41;
+    bytes[1] = 0x41;
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+
+    StructureRow *inner = findChildNamed(rows[0].get(), QStringLiteral("Inner inner"));
+    QVERIFY2(inner, qPrintable(childNames(rows[0].get())));
+    QVERIFY2(findChildNamed(inner, QStringLiteral("byte parentHit")), qPrintable(childNames(inner)));
+    QVERIFY2(findChildNamed(inner, QStringLiteral("byte rootHit")), qPrintable(childNames(inner)));
+}
+
 void StructViewTests::builderUsesCountAsForLogicalArraySlots()
 {
     // Scenario: some serialized array elements consume more than one logical
@@ -2290,6 +2435,97 @@ void StructViewTests::builderUsesSimpleRootNamesForBuiltinTypedefRoots()
     QCOMPARE(elfRows[0]->name, QStringLiteral("ELF"));
 }
 
+void StructViewTests::builderRendersElfImportsAndExportsSummary()
+{
+    // Scenario: a shared-object style ELF file has a dynamic symbol table with
+    // both undefined symbols (imports) and defined global symbols (exports).
+    // Expected: the semantic summary groups those symbols under Imports and
+    // Exports at the ELF root, while the raw section rows remain intact. The
+    // section's symbol table should be nested under a Symbols group.
+    StrataLibrary library;
+    QVERIFY2(parseStandardElfDefinition(&library), "elf.strata failed to parse");
+
+    QByteArray bytes(0x300, '\0');
+    bytes[0] = char(0x7f);
+    bytes[1] = 'E';
+    bytes[2] = 'L';
+    bytes[3] = 'F';
+    bytes[4] = char(1);
+    bytes[5] = char(1);
+    bytes[6] = char(1);
+    writeLe16(&bytes, 16, 2);
+    writeLe16(&bytes, 18, 3);
+    writeLe32(&bytes, 20, 1);
+    writeLe32(&bytes, 32, 0x100);
+    writeLe16(&bytes, 46, 40);
+    writeLe16(&bytes, 48, 5);
+    writeLe16(&bytes, 50, 3);
+
+    auto writeSection = [&bytes](qsizetype index,
+                                 quint32 name,
+                                 quint32 type,
+                                 quint32 offset,
+                                 quint32 size,
+                                 quint32 link,
+                                 quint32 entrySize) {
+        const qsizetype base = 0x100 + index * 40;
+        writeLe32(&bytes, base + 0, name);
+        writeLe32(&bytes, base + 4, type);
+        writeLe32(&bytes, base + 16, offset);
+        writeLe32(&bytes, base + 20, size);
+        writeLe32(&bytes, base + 24, link);
+        writeLe32(&bytes, base + 36, entrySize);
+    };
+
+    const QByteArray shstr("\0.dynsym\0.dynstr\0.shstrtab\0.text\0", 32);
+    memcpy(bytes.data() + 0x260, shstr.constData(), size_t(shstr.size()));
+    const QByteArray dynstr("\0printf\0main\0", 13);
+    memcpy(bytes.data() + 0x220, dynstr.constData(), size_t(dynstr.size()));
+
+    writeSection(1, 1, 11, 0x200, 32, 2, 16);
+    writeSection(2, 9, 3, 0x220, 13, 0, 0);
+    writeSection(3, 17, 3, 0x260, quint32(shstr.size()), 0, 0);
+    writeSection(4, 27, 1, 0x240, 4, 0, 0);
+
+    writeLe32(&bytes, 0x200 + 0, 1);
+    writeLe32(&bytes, 0x200 + 4, 0);
+    writeLe32(&bytes, 0x200 + 8, 0);
+    bytes[0x200 + 12] = char(0x12);
+    writeLe16(&bytes, 0x200 + 14, 0);
+
+    writeLe32(&bytes, 0x210 + 0, 8);
+    writeLe32(&bytes, 0x210 + 4, 0x1234);
+    writeLe32(&bytes, 0x210 + 8, 4);
+    bytes[0x210 + 12] = char(0x12);
+    writeLe16(&bytes, 0x210 + 14, 4);
+
+    TypeDecl *root = exportedNamed(&library, QStringLiteral("ELF"));
+    QVERIFY(root);
+    auto rows = buildRows(&library, root, bytes);
+    QCOMPARE(rows.size(), size_t(1));
+
+    StructureRow *elfImage = findChildNamed(rows[0].get(), QStringLiteral("ELF Image"));
+    QVERIFY2(elfImage, qPrintable(childNames(rows[0].get())));
+
+    StructureRow *dynsym = findChildNamed(elfImage, QStringLiteral("SECTION .dynsym"));
+    QVERIFY2(dynsym, qPrintable(childNames(elfImage)));
+    StructureRow *imports = findChildNamed(dynsym, QStringLiteral("Imports"));
+    QVERIFY2(imports, qPrintable(childNames(dynsym)));
+    StructureRow *importSymbol = findChildNamed(imports, QStringLiteral("printf"));
+    QVERIFY2(importSymbol, qPrintable(childNames(imports)));
+    QCOMPARE(importSymbol->offset, QStringLiteral("00000200"));
+
+    StructureRow *exports = findChildNamed(dynsym, QStringLiteral("Exports"));
+    QVERIFY2(exports, qPrintable(childNames(dynsym)));
+    StructureRow *exportSymbol = findChildNamed(exports, QStringLiteral("main"));
+    QVERIFY2(exportSymbol, qPrintable(childNames(exports)));
+    QCOMPARE(exportSymbol->offset, QStringLiteral("00000210"));
+    StructureRow *symbols = findChildNamed(dynsym, QStringLiteral("Symbols"));
+    QVERIFY2(symbols, qPrintable(childNames(dynsym)));
+    QVERIFY(findChildNamed(symbols, QStringLiteral("SYMBOL printf")));
+    QVERIFY(findChildNamed(symbols, QStringLiteral("SYMBOL main")));
+}
+
 void StructViewTests::builderOptionallySortsTopLevelRowsByOffset()
 {
     // Scenario: archive formats such as ZIP may need to evaluate rows in one
@@ -2717,6 +2953,15 @@ void StructViewTests::builderRendersWasmHeaderAndSections()
     wasm.append(char(0x01));                          // type section
     wasm.append(char(0x05));                          // size
     wasm.append(QByteArray::fromHex("016000017f"));   // () -> i32
+    wasm.append(char(0x02));                          // import section
+    wasm.append(char(0x0d));                          // size
+    wasm.append(char(0x01));                          // one import
+    wasm.append(char(0x03));                          // module length
+    wasm.append("env", 3);
+    wasm.append(char(0x05));                          // import name length
+    wasm.append("print", 5);
+    wasm.append(char(0x00));                          // function import
+    wasm.append(char(0x00));                          // type index 0
     wasm.append(char(0x03));                          // function section
     wasm.append(char(0x02));                          // size
     wasm.append(QByteArray::fromHex("0100"));         // one function, type 0
@@ -2733,6 +2978,12 @@ void StructViewTests::builderRendersWasmHeaderAndSections()
     wasm.append(char(0x0a));                          // code section
     wasm.append(char(0x06));                          // size
     wasm.append(QByteArray::fromHex("010400412a0b")); // one body: i32.const 42; end
+    wasm.append(char(0x0b));                          // data section
+    wasm.append(char(0x06));                          // size
+    wasm.append(char(0x01));                          // one data segment
+    wasm.append(char(0x01));                          // passive segment
+    wasm.append(char(0x03));                          // byte count
+    wasm.append("abc", 3);
 
     auto rows = buildRows(&library, wasmRoot, wasm);
     QCOMPARE(rows.size(), size_t(1));
@@ -2746,9 +2997,10 @@ void StructViewTests::builderRendersWasmHeaderAndSections()
 
     StructureRow *sections = findChildNamed(rows[0].get(), QStringLiteral("WASM_SECTION sections[]"));
     QVERIFY(sections);
-    QCOMPARE(sections->children.size(), size_t(6));
+    QCOMPARE(sections->children.size(), size_t(8));
 
     StructureRow *customSection = sections->children[0].get();
+    QCOMPARE(customSection->name, QStringLiteral("[0]WASM_SECTION_CUSTOM"));
     StructureRow *customId = findChildNamed(customSection, QStringLiteral("byte id"));
     QVERIFY2(customId, qPrintable(childNames(customSection)));
     QCOMPARE(customId->value, QStringLiteral("WASM_SECTION_CUSTOM"));
@@ -2785,6 +3037,7 @@ void StructViewTests::builderRendersWasmHeaderAndSections()
     QCOMPARE(findChildNamed(functionDebugName, QStringLiteral("byte bytes[]"))->value, QStringLiteral("\"answer\""));
 
     StructureRow *typeSection = sections->children[1].get();
+    QCOMPARE(typeSection->name, QStringLiteral("[1]WASM_SECTION_TYPE"));
     StructureRow *typeId = findChildNamed(typeSection, QStringLiteral("byte id"));
     QVERIFY2(typeId, qPrintable(childNames(typeSection)));
     QCOMPARE(typeId->value, QStringLiteral("WASM_SECTION_TYPE"));
@@ -2803,7 +3056,25 @@ void StructViewTests::builderRendersWasmHeaderAndSections()
     QVERIFY2(typeForm, qPrintable(childNames(functionTypes->children[0].get())));
     QCOMPARE(typeForm->value, QStringLiteral("WASM_TYPE_FORM_FUNC"));
 
-    StructureRow *functionSection = sections->children[2].get();
+    StructureRow *importSection = sections->children[2].get();
+    QCOMPARE(importSection->name, QStringLiteral("[2]WASM_SECTION_IMPORT"));
+    StructureRow *importId = findChildNamed(importSection, QStringLiteral("byte id"));
+    QVERIFY2(importId, qPrintable(childNames(importSection)));
+    QCOMPARE(importId->value, QStringLiteral("WASM_SECTION_IMPORT"));
+    StructureRow *importPayload = findChildNamed(importSection, QStringLiteral("WASM_IMPORT_SECTION import"));
+    QVERIFY2(importPayload, qPrintable(childNames(importSection)));
+    StructureRow *imports = findChildNamed(importPayload, QStringLiteral("WASM_IMPORT imports[]"));
+    QVERIFY2(imports, qPrintable(childNames(importPayload)));
+    QCOMPARE(imports->children[0]->name, QStringLiteral("[0]print"));
+    StructureRow *importModule = findChildNamed(imports->children[0].get(), QStringLiteral("WASM_NAME module"));
+    QVERIFY2(importModule, qPrintable(childNames(imports->children[0].get())));
+    QCOMPARE(findChildNamed(importModule, QStringLiteral("byte bytes[]"))->value, QStringLiteral("\"env\""));
+    StructureRow *importName = findChildNamed(imports->children[0].get(), QStringLiteral("WASM_NAME name"));
+    QVERIFY2(importName, qPrintable(childNames(imports->children[0].get())));
+    QCOMPARE(findChildNamed(importName, QStringLiteral("byte bytes[]"))->value, QStringLiteral("\"print\""));
+
+    StructureRow *functionSection = sections->children[3].get();
+    QCOMPARE(functionSection->name, QStringLiteral("[3]WASM_SECTION_FUNCTION"));
     StructureRow *functionId = findChildNamed(functionSection, QStringLiteral("byte id"));
     QVERIFY2(functionId, qPrintable(childNames(functionSection)));
     QCOMPARE(functionId->value, QStringLiteral("WASM_SECTION_FUNCTION"));
@@ -2813,7 +3084,8 @@ void StructViewTests::builderRendersWasmHeaderAndSections()
     QVERIFY2(typeIndices, qPrintable(childNames(functionPayload)));
     QCOMPARE(typeIndices->value, QStringLiteral("{ 0 }"));
 
-    StructureRow *memorySection = sections->children[3].get();
+    StructureRow *memorySection = sections->children[4].get();
+    QCOMPARE(memorySection->name, QStringLiteral("[4]WASM_SECTION_MEMORY"));
     StructureRow *memoryId = findChildNamed(memorySection, QStringLiteral("byte id"));
     QVERIFY2(memoryId, qPrintable(childNames(memorySection)));
     QCOMPARE(memoryId->value, QStringLiteral("WASM_SECTION_MEMORY"));
@@ -2825,7 +3097,8 @@ void StructViewTests::builderRendersWasmHeaderAndSections()
     QVERIFY2(memoryMin, qPrintable(childNames(memories->children[0].get())));
     QCOMPARE(memoryMin->value, QStringLiteral("1"));
 
-    StructureRow *exportSection = sections->children[4].get();
+    StructureRow *exportSection = sections->children[5].get();
+    QCOMPARE(exportSection->name, QStringLiteral("[5]WASM_SECTION_EXPORT"));
     StructureRow *exportId = findChildNamed(exportSection, QStringLiteral("byte id"));
     QVERIFY2(exportId, qPrintable(childNames(exportSection)));
     QCOMPARE(exportId->value, QStringLiteral("WASM_SECTION_EXPORT"));
@@ -2848,7 +3121,8 @@ void StructViewTests::builderRendersWasmHeaderAndSections()
     QVERIFY2(exportIndex, qPrintable(childNames(exportTarget)));
     QCOMPARE(exportIndex->value, QStringLiteral("0"));
 
-    StructureRow *codeSection = sections->children[5].get();
+    StructureRow *codeSection = sections->children[6].get();
+    QCOMPARE(codeSection->name, QStringLiteral("[6]WASM_SECTION_CODE"));
     StructureRow *codeId = findChildNamed(codeSection, QStringLiteral("byte id"));
     QVERIFY2(codeId, qPrintable(childNames(codeSection)));
     QCOMPARE(codeId->value, QStringLiteral("WASM_SECTION_CODE"));
@@ -2864,6 +3138,77 @@ void StructViewTests::builderRendersWasmHeaderAndSections()
     StructureRow *instructions = findChildNamed(body, QStringLiteral("byte instructions[]"));
     QVERIFY2(instructions, qPrintable(childNames(body)));
     QCOMPARE(instructions->value, QStringLiteral("{ 65, 42, 11 }"));
+
+    StructureRow *dataSection = sections->children[7].get();
+    QCOMPARE(dataSection->name, QStringLiteral("[7]WASM_SECTION_DATA"));
+    StructureRow *dataId = findChildNamed(dataSection, QStringLiteral("byte id"));
+    QVERIFY2(dataId, qPrintable(childNames(dataSection)));
+    QCOMPARE(dataId->value, QStringLiteral("WASM_SECTION_DATA"));
+    StructureRow *dataPayload = findChildNamed(dataSection, QStringLiteral("WASM_DATA_SECTION data"));
+    QVERIFY2(dataPayload, qPrintable(childNames(dataSection)));
+    StructureRow *dataSegments = findChildNamed(dataPayload, QStringLiteral("WASM_DATA_SEGMENT data[]"));
+    QVERIFY2(dataSegments, qPrintable(childNames(dataPayload)));
+    StructureRow *passiveData = findChildNamed(dataSegments->children[0].get(), QStringLiteral("struct passive"));
+    QVERIFY2(passiveData, qPrintable(childNames(dataSegments->children[0].get())));
+    QCOMPARE(findChildNamed(passiveData, QStringLiteral("byte bytes[]"))->value, QStringLiteral("{ 97, 98, 99 }"));
+
+    StructureRow *summary = findChildNamed(rows[0].get(), QStringLiteral("WASM Summary"));
+    QVERIFY2(summary, qPrintable(childNames(rows[0].get())));
+
+    StructureRow *summarySections = findChildNamed(summary, QStringLiteral("Sections"));
+    QVERIFY2(summarySections, qPrintable(childNames(summary)));
+    StructureRow *summaryImportSection = findChildNamed(summarySections, QStringLiteral("WASM_SECTION_IMPORT"));
+    QVERIFY2(summaryImportSection, qPrintable(childNames(summarySections)));
+    QCOMPARE(summaryImportSection->offset, importSection->offset);
+    QCOMPARE(findChildNamed(summaryImportSection, QStringLiteral("Size"))->value, QStringLiteral("13"));
+
+    StructureRow *summaryTypes = findChildNamed(summary, QStringLiteral("Types"));
+    QVERIFY2(summaryTypes, qPrintable(childNames(summary)));
+    StructureRow *summaryType0 = findChildNamed(summaryTypes, QStringLiteral("type 0"));
+    QVERIFY2(summaryType0, qPrintable(childNames(summaryTypes)));
+    QCOMPARE(summaryType0->offset, functionTypes->children[0]->offset);
+    QCOMPARE(findChildNamed(summaryType0, QStringLiteral("Form"))->value, QStringLiteral("WASM_TYPE_FORM_FUNC"));
+    QCOMPARE(findChildNamed(summaryType0, QStringLiteral("Params"))->value, QStringLiteral("0"));
+    QCOMPARE(findChildNamed(summaryType0, QStringLiteral("Results"))->value, QStringLiteral("1"));
+
+    StructureRow *summaryMemories = findChildNamed(summary, QStringLiteral("Memories"));
+    QVERIFY2(summaryMemories, qPrintable(childNames(summary)));
+    StructureRow *summaryMemory0 = findChildNamed(summaryMemories, QStringLiteral("memory 0"));
+    QVERIFY2(summaryMemory0, qPrintable(childNames(summaryMemories)));
+    QCOMPARE(summaryMemory0->offset, memories->children[0]->offset);
+    QCOMPARE(findChildNamed(summaryMemory0, QStringLiteral("Min"))->value, QStringLiteral("1"));
+
+    StructureRow *summaryImports = findChildNamed(summary, QStringLiteral("Imports"));
+    QVERIFY2(summaryImports, qPrintable(childNames(summary)));
+    StructureRow *summaryImport = findChildNamed(summaryImports, QStringLiteral("env.print"));
+    QVERIFY2(summaryImport, qPrintable(childNames(summaryImports)));
+    QCOMPARE(summaryImport->offset, imports->children[0]->offset);
+    QCOMPARE(findChildNamed(summaryImport, QStringLiteral("Module"))->value, QStringLiteral("env"));
+    QCOMPARE(findChildNamed(summaryImport, QStringLiteral("Name"))->value, QStringLiteral("print"));
+    QCOMPARE(findChildNamed(summaryImport, QStringLiteral("Kind"))->value, QStringLiteral("WASM_EXTERN_FUNC"));
+    QCOMPARE(findChildNamed(summaryImport, QStringLiteral("TypeIndex"))->value, QStringLiteral("0"));
+
+    StructureRow *summaryExports = findChildNamed(summary, QStringLiteral("Exports"));
+    QVERIFY2(summaryExports, qPrintable(childNames(summary)));
+    StructureRow *summaryExport = findChildNamed(summaryExports, QStringLiteral("answer"));
+    QVERIFY2(summaryExport, qPrintable(childNames(summaryExports)));
+    QCOMPARE(summaryExport->offset, exports->children[0]->offset);
+    QCOMPARE(findChildNamed(summaryExport, QStringLiteral("Kind"))->value, QStringLiteral("WASM_EXTERN_FUNC"));
+    QCOMPARE(findChildNamed(summaryExport, QStringLiteral("Index"))->value, QStringLiteral("0"));
+
+    StructureRow *summaryCode = findChildNamed(summary, QStringLiteral("Code"));
+    QVERIFY2(summaryCode, qPrintable(childNames(summary)));
+    StructureRow *summaryCode0 = findChildNamed(summaryCode, QStringLiteral("function 0"));
+    QVERIFY2(summaryCode0, qPrintable(childNames(summaryCode)));
+    QCOMPARE(summaryCode0->offset, functions->children[0]->offset);
+    QCOMPARE(findChildNamed(summaryCode0, QStringLiteral("Size"))->value, QStringLiteral("4"));
+
+    StructureRow *summaryData = findChildNamed(summary, QStringLiteral("Data"));
+    QVERIFY2(summaryData, qPrintable(childNames(summary)));
+    StructureRow *summaryData0 = findChildNamed(summaryData, QStringLiteral("data 0"));
+    QVERIFY2(summaryData0, qPrintable(childNames(summaryData)));
+    QCOMPARE(summaryData0->offset, dataSegments->children[0]->offset);
+    QCOMPARE(findChildNamed(summaryData0, QStringLiteral("Mode"))->value, QStringLiteral("1"));
 }
 
 void StructViewTests::builderRendersJavaClassConstantPool()
@@ -3035,8 +3380,9 @@ void StructViewTests::builderRendersSfntTableDirectory()
 {
     // Scenario: TTF/OTF fonts share the big-endian SFNT table-directory
     // container. Table records carry FourCC tags plus offsets and lengths.
-    // Expected: the standard SFNT definition names table-record rows by tag and
-    // exposes the table directory fields without needing typed table payloads.
+    // Expected: the standard SFNT definition names table-record rows by tag,
+    // keeps raw table-directory fields intact, and emits table bytes under
+    // SFNT Summary/FontTables.
     StrataLibrary library;
     QVERIFY2(parseStandardDefinition(&library, QStringLiteral("sfnt.strata")), "sfnt.strata failed to parse");
     TypeDecl *sfntRoot = exportedNamed(&library, QStringLiteral("SFNT"));
@@ -3082,6 +3428,18 @@ void StructViewTests::builderRendersSfntTableDirectory()
     QCOMPARE(headTag->value, QStringLiteral("\"head\""));
     QCOMPARE(findChildNamed(tables->children[0].get(), QStringLiteral("dword offset"))->value, QStringLiteral("44"));
     QCOMPARE(findChildNamed(tables->children[1].get(), QStringLiteral("dword length"))->value, QStringLiteral("6"));
+
+    StructureRow *semantic = findChildNamed(rows[0].get(), QStringLiteral("SFNT Summary"));
+    QVERIFY2(semantic, qPrintable(childNames(rows[0].get())));
+    StructureRow *fontTables = findChildNamed(semantic, QStringLiteral("FontTables"));
+    QVERIFY2(fontTables, qPrintable(childNames(semantic)));
+    QCOMPARE(fontTables->children.size(), size_t(2));
+    QCOMPARE(fontTables->children[0]->name, QStringLiteral("head"));
+    QCOMPARE(fontTables->children[0]->offset, QStringLiteral("0000002C"));
+    QCOMPARE(fontTables->children[0]->children.size(), size_t(4));
+    QCOMPARE(fontTables->children[1]->name, QStringLiteral("name"));
+    QCOMPARE(fontTables->children[1]->offset, QStringLiteral("00000030"));
+    QCOMPARE(fontTables->children[1]->children.size(), size_t(6));
 }
 
 void StructViewTests::builderRendersPngChunks()
@@ -3205,7 +3563,7 @@ void StructViewTests::builderRendersIcoDirectoryAndImagePayload()
     // Scenario: ICO/CUR files contain a directory of image records whose
     // payloads live elsewhere in the file.
     // Expected: the standard ICO definition renders directory entries and
-    // exposes each bounded image payload as dynamic data.
+    // emits each bounded image payload under ICO Summary/Images.
     StrataLibrary library;
     QVERIFY2(parseStandardDefinition(&library, QStringLiteral("ico.strata")), "ico.strata failed to parse");
     TypeDecl *icoRoot = exportedNamed(&library, QStringLiteral("ICO"));
@@ -3242,8 +3600,15 @@ void StructViewTests::builderRendersIcoDirectoryAndImagePayload()
 
     StructureRow *imageOffset = findChildNamed(entry, QStringLiteral("dword imageOffset"));
     QVERIFY2(imageOffset, qPrintable(childNames(entry)));
-    StructureRow *imageData = findChildNamed(imageOffset, QStringLiteral("BYTE ImageData[]"));
-    QVERIFY2(imageData, qPrintable(childNames(imageOffset)));
+    QVERIFY(imageOffset->children.empty());
+
+    StructureRow *semantic = findChildNamed(rows[0].get(), QStringLiteral("ICO Summary"));
+    QVERIFY2(semantic, qPrintable(childNames(rows[0].get())));
+    StructureRow *images = findChildNamed(semantic, QStringLiteral("Images"));
+    QVERIFY2(images, qPrintable(childNames(semantic)));
+    QCOMPARE(images->children.size(), size_t(1));
+    StructureRow *imageData = images->children[0].get();
+    QCOMPARE(imageData->name, QStringLiteral("22"));
     QCOMPARE(imageData->offset, QStringLiteral("00000016"));
     QCOMPARE(imageData->children.size(), size_t(4));
     QCOMPARE(imageData->children[0]->value, QStringLiteral("137"));
@@ -3347,7 +3712,8 @@ void StructViewTests::builderRendersWoffDirectoryAndPayloads()
     // Scenario: WOFF 1.0 is a big-endian wrapper around sfnt table data with a
     // fixed header and table directory.
     // Expected: the standard WOFF definition renders the directory entries by
-    // tag and exposes compressed table and metadata payloads as dynamic bytes.
+    // tag, emits compressed tables under WOFF Summary/FontTables, and still exposes
+    // metadata payloads as dynamic bytes.
     StrataLibrary library;
     QVERIFY2(parseStandardDefinition(&library, QStringLiteral("woff.strata")), "woff.strata failed to parse");
     TypeDecl *woffRoot = exportedNamed(&library, QStringLiteral("WOFF"));
@@ -3400,8 +3766,15 @@ void StructViewTests::builderRendersWoffDirectoryAndPayloads()
 
     StructureRow *tableOffset = findChildNamed(tables->children[0].get(), QStringLiteral("dword offset"));
     QVERIFY2(tableOffset, qPrintable(childNames(tables->children[0].get())));
-    StructureRow *tableData = findChildNamed(tableOffset, QStringLiteral("BYTE TableData[]"));
-    QVERIFY2(tableData, qPrintable(childNames(tableOffset)));
+    QVERIFY(tableOffset->children.empty());
+
+    StructureRow *semantic = findChildNamed(rows[0].get(), QStringLiteral("WOFF Summary"));
+    QVERIFY2(semantic, qPrintable(childNames(rows[0].get())));
+    StructureRow *fontTables = findChildNamed(semantic, QStringLiteral("FontTables"));
+    QVERIFY2(fontTables, qPrintable(childNames(semantic)));
+    QCOMPARE(fontTables->children.size(), size_t(1));
+    StructureRow *tableData = fontTables->children[0].get();
+    QCOMPARE(tableData->name, QStringLiteral("name"));
     QCOMPARE(tableData->offset, QStringLiteral("00000040"));
     QCOMPARE(tableData->children.size(), size_t(4));
 
@@ -4288,14 +4661,15 @@ void StructViewTests::builderPlacesDynamicStructsUnderNamedDynamicContainers()
     QVERIFY(parseBuffer(parser,
                         "enum Dir { Export = 0, Import = 1 };\n"
                         "typedef struct _DataDir { dword VirtualAddress; dword Size; } DataDir;\n"
-                        "typedef struct _Section { char Name[8]; dword VirtualAddress; dword SizeOfRawData; dword PointerToRawData; } Section;\n"
                         "typedef struct _SectionBucket { } SECTION;\n"
+                        "[dynamic_container(type(SECTION)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)]\n"
+                        "typedef struct _Section { char Name[8]; dword VirtualAddress; dword SizeOfRawData; dword PointerToRawData; } Section;\n"
                         "typedef struct _ImportDesc { dword thunk; } ImportDesc;\n"
                         "typedef struct _ExportDir { dword flags; } ExportDir;\n"
                         "[export]\n"
                         "struct Root {\n"
                         "  [dynamic_struct(case(Export), type(ExportDir), offset(VirtualAddress), mapper(offset_map), optional(Size != 0)), dynamic_struct(case(Import), type(ImportDesc), offset(VirtualAddress), mapper(offset_map), optional(Size != 0))] DataDir dirs[2];\n"
-                        "  [name(Name), dynamic_container(type(SECTION)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section sections[2];\n"
+                        "  [name(Name)] Section sections[2];\n"
                         "} root;\n"));
 
     QByteArray bytes(0x90, '\0');
@@ -4509,6 +4883,296 @@ void StructViewTests::builderStopsDynamicAndInlineArraysAtTerminators()
     QCOMPARE(descs->children[0]->children[0]->value, QStringLiteral("7"));
 }
 
+void StructViewTests::builderEmitsSemanticRowsUnderAttachedSchema()
+{
+    // Scenario: a raw directory row points at byte payloads elsewhere in the
+    // file and declares a semantic destination schema.
+    // Expected: the raw tree is unchanged, while a Semantic/Payloads branch
+    // contains one labeled byte-backed row per emitting raw row.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef byte PayloadByte;\n"
+                        "typedef struct _Entry {"
+                        "  dword id;"
+                        "  [emit(dest(Payloads), label(id), type(PayloadByte), offset(payloadOffset), count(payloadSize), optional(payloadSize != 0))] dword payloadOffset;"
+                        "  dword payloadSize;"
+                        "} Entry;\n"
+                        "[semantic] typedef struct _RootView { PayloadByte Payloads[]; } RootView;\n"
+                        "[export, semantic(RootView)]\n"
+                        "typedef struct _Root { dword count; [count(count)] Entry entries[]; } Root;\n"));
+
+    QByteArray bytes(0x40, '\0');
+    writeLe32(&bytes, 0, 2);
+    writeLe32(&bytes, 4, 17);
+    writeLe32(&bytes, 8, 0x30);
+    writeLe32(&bytes, 12, 3);
+    writeLe32(&bytes, 16, 23);
+    writeLe32(&bytes, 20, 0x34);
+    writeLe32(&bytes, 24, 0);
+    bytes[0x30] = char(0xaa);
+    bytes[0x31] = char(0xbb);
+    bytes[0x32] = char(0xcc);
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+
+    StructureRow *entries = findChildNamed(rows[0].get(), QStringLiteral("Entry entries[]"));
+    QVERIFY(entries);
+    QCOMPARE(entries->children.size(), size_t(2));
+    QVERIFY(!findChildNamed(entries->children[0].get(), QStringLiteral("17")));
+
+    StructureRow *semantic = findChildNamed(rows[0].get(), QStringLiteral("Semantic"));
+    QVERIFY(semantic);
+    StructureRow *payloads = findChildNamed(semantic, QStringLiteral("Payloads"));
+    QVERIFY(payloads);
+    QCOMPARE(payloads->children.size(), size_t(1));
+
+    StructureRow *payload = payloads->children[0].get();
+    QCOMPARE(payload->name, QStringLiteral("17"));
+    QCOMPARE(payload->offset, QStringLiteral("00000030"));
+    QCOMPARE(payload->byteLength, uint64_t(3));
+    QCOMPARE(static_cast<int>(payload->kind), static_cast<int>(StructureRowKind::Semantic));
+    QCOMPARE(payload->children.size(), size_t(3));
+    QCOMPARE(payload->children[0]->value, QStringLiteral("170"));
+    QCOMPARE(payload->children[2]->value, QStringLiteral("204"));
+}
+
+void StructViewTests::builderEmitsSemanticRowsThroughNamedOffsetSpaces()
+{
+    // Scenario: semantic emit uses offset("space", expr) to target a named
+    // address space rather than a direct file offset.
+    // Expected: the emitted semantic row points at the mapped file bytes and
+    // terminator/max_count behavior matches dynamic arrays.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef byte PayloadByte;\n"
+                        "typedef struct _Entry {"
+                        "  dword logical;"
+                        "  [emit(dest(Strings), label(\"name\"), type(PayloadByte), offset(\"strings\", logical), max_count(8), terminated_by(0), terminator(\"hidden\"))] byte marker;"
+                        "} Entry;\n"
+                        "[semantic] typedef struct _RootView { PayloadByte Strings[]; } RootView;\n"
+                        "[export, semantic(RootView), offset_map(\"strings\", stringBase)]\n"
+                        "typedef struct _Root { dword stringBase; Entry entry; } Root;\n"));
+
+    QByteArray bytes(0x40, '\0');
+    writeLe32(&bytes, 0, 0x20);
+    writeLe32(&bytes, 4, 3);
+    bytes[0x23] = char(0x41);
+    bytes[0x24] = char(0x42);
+    bytes[0x25] = char(0);
+    bytes[0x26] = char(0x43);
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+
+    StructureRow *semantic = findChildNamed(rows[0].get(), QStringLiteral("Semantic"));
+    QVERIFY(semantic);
+    StructureRow *strings = findChildNamed(semantic, QStringLiteral("Strings"));
+    QVERIFY(strings);
+    QCOMPARE(strings->children.size(), size_t(1));
+
+    StructureRow *name = strings->children[0].get();
+    QCOMPARE(name->name, QStringLiteral("name"));
+    QCOMPARE(name->offset, QStringLiteral("00000023"));
+    QCOMPARE(name->children.size(), size_t(2));
+    QCOMPARE(name->children[0]->value, QStringLiteral("65"));
+    QCOMPARE(name->children[1]->value, QStringLiteral("66"));
+}
+
+void StructViewTests::builderEmitsAndMergesSemanticNodes()
+{
+    // Scenario: multiple raw rows emit lightweight semantic facts to the same
+    // destination/key.
+    // Expected: the renderer creates one semantic node, uses string helpers for
+    // names/attributes, and updates attrs on repeated emits instead of adding a
+    // duplicate node or rendering the raw source subtree again.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef struct _Entry {"
+                        "  byte key;"
+                        "  byte size;"
+                        "  [emit_node(dest(Items, key(key)), field(Key, key), field(Size, size))] byte marker;"
+                        "  [emit_node(dest(Items, key(key)), field(Label, fmt(\"entry {0}\", key)))] byte marker2;"
+                        "} Entry;\n"
+                        "[semantic] typedef struct _RootView {\n"
+                        "  [name(concat(\"item \", Key))]\n"
+                        "  struct { byte Key; byte Size; char Label[]; } Items[];\n"
+                        "} RootView;\n"
+                        "[export, semantic(RootView)] typedef struct _Root { Entry entry; } Root;\n"));
+
+    QByteArray bytes;
+    bytes.append(char(7));
+    bytes.append(char(12));
+    bytes.append(char(0xaa));
+    bytes.append(char(0xbb));
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+
+    StructureRow *semantic = findChildNamed(rows[0].get(), QStringLiteral("Semantic"));
+    QVERIFY(semantic);
+    StructureRow *items = findChildNamed(semantic, QStringLiteral("Items"));
+    QVERIFY(items);
+    QCOMPARE(items->children.size(), size_t(1));
+
+    StructureRow *item = findChildNamed(items, QStringLiteral("item 7"));
+    QVERIFY2(item, qPrintable(childNames(items)));
+    QCOMPARE(item->offset, QStringLiteral("00000002"));
+    QCOMPARE(item->children.size(), size_t(3));
+    QCOMPARE(item->children[0]->name, QStringLiteral("Key"));
+    QCOMPARE(item->children[0]->value, QStringLiteral("7"));
+    QCOMPARE(item->children[1]->name, QStringLiteral("Size"));
+    QCOMPARE(item->children[1]->value, QStringLiteral("12"));
+    QCOMPARE(item->children[2]->name, QStringLiteral("Label"));
+    QCOMPARE(item->children[2]->value, QStringLiteral("entry 7"));
+    QVERIFY(!findDescendantNamed(item, QStringLiteral("byte marker")));
+}
+
+void StructViewTests::builderRejectsUnterminatedCstrSemanticNames()
+{
+    // Scenario: cstr(...) is used as a semantic row key/name but the target
+    // bytes are not NUL-terminated within the requested cap.
+    // Expected: the semantic row is suppressed instead of showing garbage text.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef byte PayloadByte;\n"
+                        "typedef struct _Entry {"
+                        "  dword good;"
+                        "  dword bad;"
+                        "  [emit_row(dest(Strings, key(cstr(good, 8)), name(cstr(good, 8))), offset(good))] byte goodMarker;"
+                        "  [emit_row(dest(Strings, key(cstr(bad, 4)), name(cstr(bad, 4))), offset(bad))] byte badMarker;"
+                        "} Entry;\n"
+                        "[semantic] typedef struct _RootView { PayloadByte Strings[]; } RootView;\n"
+                        "[export, semantic(RootView)] typedef struct _Root { Entry entry; } Root;\n"));
+
+    QByteArray bytes(0x40, '\0');
+    writeLe32(&bytes, 0, 0x20);
+    writeLe32(&bytes, 4, 0x30);
+    writeAscii(&bytes, 0x20, "OK");
+    bytes[0x30] = 'B';
+    bytes[0x31] = 'A';
+    bytes[0x32] = 'D';
+    bytes[0x33] = '!';
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+
+    StructureRow *semantic = findChildNamed(rows[0].get(), QStringLiteral("Semantic"));
+    QVERIFY(semantic);
+    StructureRow *strings = findChildNamed(semantic, QStringLiteral("Strings"));
+    QVERIFY(strings);
+    QCOMPARE(strings->children.size(), size_t(1));
+    QCOMPARE(strings->children[0]->name, QStringLiteral("OK"));
+}
+
+void StructViewTests::builderEmitsIntoMappedSemanticContainers()
+{
+    // Scenario: a PE-like format emits section payloads as semantic containers
+    // with an RVA map, then emits a data-directory table by RVA.
+    // Expected: the table is attached under the semantic section whose map owns
+    // the target RVA, not under a flat root-level destination.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef byte PayloadByte;\n"
+                        "enum DirKind { ExportDir = 0, ImportDir = 1 };\n"
+                        "typedef struct _ImportDesc { dword thunk; } ImportDesc;\n"
+                        "[semantic] typedef struct _SectionView { ImportDesc Imports[]; PayloadByte Bytes[]; } SectionView;\n"
+                        "[semantic(\"Image\")] typedef struct _RootView { [tree(\"flatten\")] SectionView Sections[]; } RootView;\n"
+                        "typedef struct _Dir { dword va; dword size; } Dir;\n"
+                        "[offset_map(va, size, raw),\n"
+                        " emit_row(dest(Sections, key(Name), name(Name)), offset(raw), map(\"rva\", va, size, raw)),\n"
+                        " emit(dest(Sections.Bytes), type(PayloadByte), offset(\"rva\", va), count(size))]\n"
+                        "typedef struct _Section { char Name[8]; dword va; dword size; dword raw; } Section;\n"
+                        "[export, semantic(RootView)]\n"
+                        "struct Root {\n"
+                        "  [name(DirKind), emit(case(ImportDir), dest(Sections.Imports), label(\"Import Descriptors\"), type(ImportDesc), offset(\"rva\", va), max_count(size / sizeof(ImportDesc)), terminated_by(thunk == 0), terminator(\"hidden\"))] Dir dirs[2];\n"
+                        "  [count(2)] Section sections[];\n"
+                        "} root;\n"));
+
+    QByteArray bytes(0xa0, '\0');
+    writeLe32(&bytes, 8, 0x1200);  // import directory RVA
+    writeLe32(&bytes, 12, 8);      // one descriptor plus hidden terminator
+    writeAscii(&bytes, 16, ".text");
+    writeLe32(&bytes, 24, 0x1000);
+    writeLe32(&bytes, 28, 0x20);
+    writeLe32(&bytes, 32, 0x40);
+    writeAscii(&bytes, 36, ".idata");
+    writeLe32(&bytes, 44, 0x1200);
+    writeLe32(&bytes, 48, 0x20);
+    writeLe32(&bytes, 52, 0x80);
+    writeLe32(&bytes, 0x80, 0x12345678);
+    writeLe32(&bytes, 0x84, 0);
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+
+    StructureRow *image = findChildNamed(rows[0].get(), QStringLiteral("Image"));
+    QVERIFY2(image, qPrintable(childNames(rows[0].get())));
+    QVERIFY(!findChildNamed(image, QStringLiteral("Sections")));
+    QCOMPARE(image->children.size(), size_t(2));
+    QCOMPARE(image->children[0]->name, QStringLiteral(".text"));
+    QCOMPARE(image->children[0]->offset, QStringLiteral("00000040"));
+    QCOMPARE(image->children[1]->name, QStringLiteral(".idata"));
+    QCOMPARE(image->children[1]->offset, QStringLiteral("00000080"));
+
+    QCOMPARE(image->children[1]->children.size(), size_t(2));
+    QCOMPARE(image->children[1]->children[0]->name, QStringLiteral("Imports"));
+    QCOMPARE(image->children[1]->children[1]->name, QStringLiteral("Bytes"));
+    StructureRow *bytesGroup = findChildNamed(image->children[1].get(), QStringLiteral("Bytes"));
+    QVERIFY2(bytesGroup, qPrintable(childNames(image->children[1].get())));
+    QCOMPARE(bytesGroup->children.size(), size_t(1));
+    QCOMPARE(bytesGroup->children[0]->children.size(), size_t(32));
+
+    StructureRow *importsGroup = findChildNamed(image->children[1].get(), QStringLiteral("Imports"));
+    QVERIFY2(importsGroup, qPrintable(childNames(image->children[1].get())));
+    StructureRow *imports = findChildNamed(importsGroup, QStringLiteral("Import Descriptors"));
+    QVERIFY2(imports, qPrintable(childNames(importsGroup)));
+    QCOMPARE(imports->offset, QStringLiteral("00000080"));
+    QCOMPARE(imports->children.size(), size_t(1));
+    StructureRow *thunk = findChildNamed(imports->children[0].get(), QStringLiteral("dword thunk"));
+    QVERIFY(thunk);
+    QCOMPARE(thunk->value, QStringLiteral("305419896"));
+}
+
+void StructViewTests::definitionManagerFlagsUnknownSemanticDestinations()
+{
+    // Scenario: an emit destination is misspelled relative to the root's
+    // attached semantic schema.
+    // Expected: the static definition validator reports the bad destination.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef byte PayloadByte;\n"
+                        "typedef struct _Entry { [emit(dest(Missing), type(PayloadByte), offset(0), count(1))] byte marker; } Entry;\n"
+                        "[semantic] typedef struct _RootView { PayloadByte Payloads[]; } RootView;\n"
+                        "[export, semantic(RootView)] struct Root { Entry entry; } root;\n"));
+
+    const QStringList errors = StructureRenderEngine::validateStaticFieldReferences(&library);
+    QVERIFY(errors.join(QLatin1Char('\n')).contains(QStringLiteral("emit(dest(Missing))")));
+}
+
+void StructViewTests::definitionManagerFlagsUnknownSemanticNodeFields()
+{
+    // Scenario: emit_node(field(...)) names a field that is not declared in the
+    // destination element schema.
+    // Expected: the static definition validator reports the bad semantic field.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef struct _Entry { [emit_node(dest(Items), field(Missing, marker))] byte marker; } Entry;\n"
+                        "[semantic] typedef struct _RootView { struct { byte Name; } Items[]; } RootView;\n"
+                        "[export, semantic(RootView)] struct Root { Entry entry; } root;\n"));
+
+    const QStringList errors = StructureRenderEngine::validateStaticFieldReferences(&library);
+    QVERIFY2(errors.join(QLatin1Char('\n')).contains(QStringLiteral("field(Missing")),
+             qPrintable(errors.join(QLatin1Char('\n'))));
+}
+
 void StructViewTests::builderRunsSemanticViewsOnceForDynamicArrayTables()
 {
     // Scenario: PE import descriptors are now rendered as a raw dynamic array,
@@ -4616,6 +5280,15 @@ void StructViewTests::builderNamesPeDynamicSectionsFromStandardDefinition()
     QCOMPARE(idata->offset, QStringLiteral("00000280"));
     QVERIFY(!idata->name.startsWith(QStringLiteral("SECTION - ")));
 
+    StructureRow *peImage = findChildNamed(rows[0].get(), QStringLiteral("PE Image"));
+    QVERIFY2(peImage, qPrintable(childNames(rows[0].get())));
+    QVERIFY(!findChildNamed(peImage, QStringLiteral("Sections")));
+    QCOMPARE(peImage->children.size(), size_t(2));
+    QCOMPARE(peImage->children[0]->name, QStringLiteral(".text"));
+    QCOMPARE(peImage->children[0]->offset, QStringLiteral("00000200"));
+    QCOMPARE(peImage->children[1]->name, QStringLiteral(".idata"));
+    QCOMPARE(peImage->children[1]->offset, QStringLiteral("00000280"));
+
     StructureRow *fileCharacteristics = findDescendantNamed(rows[0].get(), QStringLiteral("word Characteristics"));
     QVERIFY(fileCharacteristics);
     QCOMPARE(fileCharacteristics->value, QStringLiteral("IMAGE_FILE_EXECUTABLE_IMAGE | IMAGE_FILE_DLL"));
@@ -4655,6 +5328,41 @@ void StructViewTests::builderNamesPeDynamicSectionsFromStandardDefinition()
              qPrintable(QStringLiteral("SECTION .text missing after display option pass: %1").arg(visibleNames.join(QStringLiteral(", ")))));
     QVERIFY2(visibleNames.contains(QStringLiteral("SECTION .idata")),
              qPrintable(QStringLiteral("SECTION .idata missing after display option pass: %1").arg(visibleNames.join(QStringLiteral(", ")))));
+}
+
+void StructViewTests::builderPeSemanticModeCppSkipsDeclarativeRows()
+{
+    // Scenario: PE semantic mode is forced to the legacy C++ path.
+    // Expected: the shipped PE definition still renders raw/dynamic SECTION
+    // rows, but the declarative PE Image branch is suppressed for isolated
+    // performance and shape comparisons.
+    ScopedEnvironmentVariable mode("Q22_PE_SEMANTIC_VIEW", "cpp");
+
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("pe.strata")), "pe.strata failed to parse");
+
+    QByteArray bytes(0x300, '\0');
+    writeLe32(&bytes, 0x3c, 0x80);
+    writeLe16(&bytes, 0x86, 1);
+    writeLe16(&bytes, 0x96, 0x2002);
+    writeLe16(&bytes, 0x94, 256);
+    writeLe16(&bytes, 0x98, 0x10b);
+    writeLe32(&bytes, 0x98 + 92, 16);
+
+    const qsizetype sectionTable = 0x80 + 4 + 20 + 256;
+    writeAscii(&bytes, sectionTable, ".text");
+    writeLe32(&bytes, sectionTable + 12, 0x1000);
+    writeLe32(&bytes, sectionTable + 16, 0x100);
+    writeLe32(&bytes, sectionTable + 20, 0x200);
+    writeLe32(&bytes, sectionTable + 36, 0x60000020);
+
+    TypeDecl *root = exportedNamed(&library, QStringLiteral("PE"));
+    QVERIFY(root);
+    auto rows = buildRows(&library, root, bytes);
+    QCOMPARE(rows.size(), size_t(1));
+
+    QVERIFY(findChildNamed(rows[0].get(), QStringLiteral("SECTION .text")));
+    QVERIFY(!findChildNamed(rows[0].get(), QStringLiteral("PE Image")));
 }
 
 void StructViewTests::builderNamesPeImportDescriptorsFromStandardDefinition()
@@ -4711,6 +5419,98 @@ void StructViewTests::builderNamesPeImportDescriptorsFromStandardDefinition()
     QCOMPARE(descriptors->children.size(), size_t(1));
     QVERIFY2(descriptors->children[0]->name.contains(QStringLiteral("KERNEL32.dll")),
              qPrintable(QStringLiteral("descriptor[0] name missing DLL hint: %1").arg(descriptors->children[0]->name)));
+}
+
+void StructViewTests::builderEmitsPeImportDllsFromStandardDefinition()
+{
+    // Scenario: the shipped PE definition uses declarative semantic rows to
+    // present each import DLL under PE Image/<section>/Imports.
+    // Expected: pure Strata resolves the DLL name through the RVA offset map
+    // and creates a named semantic row without relying on the legacy C++ view.
+    ScopedEnvironmentVariable mode("Q22_PE_SEMANTIC_VIEW", "declarative");
+
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("pe.strata")), "pe.strata failed to parse");
+
+    QByteArray bytes(0x360, '\0');
+    writeLe32(&bytes, 0x3c, 0x80);
+    writeLe16(&bytes, 0x86, 2);
+    writeLe16(&bytes, 0x94, 256);
+    writeLe16(&bytes, 0x98, 0x10b);
+    writeLe32(&bytes, 0x98 + 92, 16);
+
+    const qsizetype exportDirEntry = 0x98 + 96;
+    writeLe32(&bytes, exportDirEntry, 0x2050);
+    writeLe32(&bytes, exportDirEntry + 4, 40);
+
+    const qsizetype importDirEntry = 0x98 + 96 + 1 * 8;
+    writeLe32(&bytes, importDirEntry, 0x2000);
+    writeLe32(&bytes, importDirEntry + 4, 40);
+
+    const qsizetype sectionTable = 0x80 + 4 + 20 + 256;
+    writeAscii(&bytes, sectionTable, ".text");
+    writeLe32(&bytes, sectionTable + 12, 0x1000);
+    writeLe32(&bytes, sectionTable + 16, 0x100);
+    writeLe32(&bytes, sectionTable + 20, 0x200);
+
+    const qsizetype secondSection = sectionTable + 40;
+    writeAscii(&bytes, secondSection, ".idata");
+    writeLe32(&bytes, secondSection + 12, 0x2000);
+    writeLe32(&bytes, secondSection + 16, 0xc0);
+    writeLe32(&bytes, secondSection + 20, 0x280);
+
+    writeLe32(&bytes, 0x280, 0x2030);
+    writeLe32(&bytes, 0x28c, 0x2014);
+    writeLe32(&bytes, 0x290, 0x2030);
+    writeAscii(&bytes, 0x294, "KERNEL32.dll");
+    writeLe32(&bytes, 0x2b0, 0x2040);
+    writeLe32(&bytes, 0x2b4, 0);
+    writeLe16(&bytes, 0x2c0, 4660);
+    writeAscii(&bytes, 0x2c2, "CreateFileW");
+    writeLe32(&bytes, 0x2d0 + 12, 0x2080);
+    writeLe32(&bytes, 0x2d0 + 16, 1);
+    writeLe32(&bytes, 0x2d0 + 20, 1);
+    writeLe32(&bytes, 0x2d0 + 24, 1);
+    writeLe32(&bytes, 0x2d0 + 28, 0x20b8);
+    writeLe32(&bytes, 0x2d0 + 32, 0x20b0);
+    writeLe32(&bytes, 0x2d0 + 36, 0x20b4);
+    writeAscii(&bytes, 0x300, "sclib-csharp.dll");
+    writeAscii(&bytes, 0x310, "DllGetClassObject");
+    writeLe32(&bytes, 0x330, 0x2090);
+    writeLe16(&bytes, 0x334, 0);
+    writeLe32(&bytes, 0x338, 0x1000);
+
+    TypeDecl *root = exportedNamed(&library, QStringLiteral("PE"));
+    QVERIFY(root);
+    auto rows = buildRows(&library, root, bytes);
+    QCOMPARE(rows.size(), size_t(1));
+
+    StructureRow *peImage = findChildNamed(rows[0].get(), QStringLiteral("PE Image"));
+    QVERIFY2(peImage, qPrintable(childNames(rows[0].get())));
+    StructureRow *idata = findChildNamed(peImage, QStringLiteral(".idata"));
+    QVERIFY2(idata, qPrintable(childNames(peImage)));
+    StructureRow *imports = findChildNamed(idata, QStringLiteral("Imports"));
+    QVERIFY2(imports, qPrintable(childNames(idata)));
+
+    StructureRow *kernel32 = findChildNamed(imports, QStringLiteral("KERNEL32.dll"));
+    QVERIFY2(kernel32, qPrintable(childNames(imports)));
+    QCOMPARE(kernel32->offset, QStringLiteral("00000294"));
+    QCOMPARE(static_cast<int>(kernel32->kind), static_cast<int>(StructureRowKind::Semantic));
+    StructureRow *function = findChildNamed(kernel32, QStringLiteral("CreateFileW"));
+    QVERIFY2(function, qPrintable(childNames(kernel32)));
+    QCOMPARE(function->offset, QStringLiteral("000002C0"));
+    QCOMPARE(static_cast<int>(function->kind), static_cast<int>(StructureRowKind::Semantic));
+    QVERIFY(!findChildNamed(imports, QStringLiteral("sclib-csharp.dll")));
+    QVERIFY(!findChildNamed(imports, QStringLiteral("Imports")));
+    QVERIFY(!findChildNamed(imports, QStringLiteral("IMAGE_IMPORT_DESCRIPTOR[]")));
+
+    StructureRow *exports = findChildNamed(idata, QStringLiteral("Exports"));
+    QVERIFY2(exports, qPrintable(childNames(idata)));
+    StructureRow *exportedFunction = findChildNamed(exports, QStringLiteral("DllGetClassObject"));
+    QVERIFY2(exportedFunction, qPrintable(childNames(exports)));
+    QCOMPARE(exportedFunction->offset, QStringLiteral("00000310"));
+    QCOMPARE(static_cast<int>(exportedFunction->kind), static_cast<int>(StructureRowKind::Semantic));
+    QVERIFY(!findChildNamed(exports, QStringLiteral("sclib-csharp.dll")));
 }
 
 void StructViewTests::builderResolvesEntryPointRvaThroughSectionOffsetMap()
@@ -4851,7 +5651,8 @@ void StructViewTests::definitionManagerFlagsNonStaticFieldReferences()
 
     StrataLibrary peLibrary;
     QVERIFY2(parseStandardDefinition(&peLibrary, QStringLiteral("pe.strata")), "pe.strata failed to parse");
-    QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&peLibrary).isEmpty());
+    const QStringList peErrors = StructureRenderEngine::validateStaticFieldReferences(&peLibrary);
+    QVERIFY2(peErrors.isEmpty(), qPrintable(peErrors.join(QLatin1Char('\n'))));
 
     StrataLibrary zipLibrary;
     QVERIFY2(parseStandardDefinition(&zipLibrary, QStringLiteral("zip.strata")), "zip.strata failed to parse");
@@ -4984,6 +5785,8 @@ void StructViewTests::builderRunsSemanticViewsAfterDynamicPlacement()
     // DLL/function rows are appended beneath the dynamically placed import row.
     // Regression guard: PE knowledge must augment dynamic rows after RVA mapping
     // has found the containing section, not replace the raw Strata rendering.
+    ScopedEnvironmentVariable mode("Q22_PE_SEMANTIC_VIEW", "both");
+
     StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
@@ -5061,6 +5864,50 @@ void StructViewTests::builderRunsSemanticViewsAfterDynamicPlacement()
     QVERIFY(!model.canFetchMore(dllIndex));
 }
 
+void StructViewTests::builderPeSemanticModeDeclarativeSkipsCppViews()
+{
+    // Scenario: PE semantic mode is forced to declarative-only while a raw row
+    // still carries view("pe.imports").
+    // Expected: the C++ PE interpreter is skipped, leaving only the raw dynamic
+    // import descriptor under the SECTION container.
+    ScopedEnvironmentVariable mode("Q22_PE_SEMANTIC_VIEW", "declarative");
+
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "enum Dir { Import = 0 };\n"
+                        "typedef struct _DataDir { dword VirtualAddress; dword Size; } DataDir;\n"
+                        "typedef struct _Section { char Name[8]; dword VirtualAddress; dword SizeOfRawData; dword PointerToRawData; } Section;\n"
+                        "typedef struct _SectionBucket { } SECTION;\n"
+                        "[view(\"pe.imports\")]\n"
+                        "typedef struct _ImportDesc { dword OriginalFirstThunk; dword TimeDateStamp; dword ForwarderChain; dword Name; dword FirstThunk; } ImportDesc;\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  [dynamic_struct(case(Import), type(ImportDesc), offset(VirtualAddress), mapper(offset_map), optional(Size != 0))] DataDir dirs[1];\n"
+                        "  [name(Name), dynamic_container(type(SECTION)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section sections[1];\n"
+                        "} root;\n"));
+
+    QByteArray bytes(0x140, '\0');
+    writeLe32(&bytes, 0, 0x1200);
+    writeLe32(&bytes, 4, 0x80);
+    writeAscii(&bytes, 8, ".idata");
+    writeLe32(&bytes, 16, 0x1200);
+    writeLe32(&bytes, 20, 0x100);
+    writeLe32(&bytes, 24, 0x80);
+    writeLe32(&bytes, 0x80, 0x1240);
+    writeLe32(&bytes, 0x8c, 0x1260);
+    writeLe32(&bytes, 0x90, 0x1240);
+    writeAscii(&bytes, 0xe0, "KERNEL32.dll");
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+    StructureRow *section = findChildNamed(rows[0].get(), QStringLiteral("SECTION .idata"));
+    QVERIFY(section);
+    QCOMPARE(section->children.size(), size_t(1));
+    QVERIFY(findChildNamed(section, QStringLiteral("ImportDesc")));
+    QVERIFY(!findChildNamed(section, QStringLiteral("Imports")));
+}
+
 void StructViewTests::builderKeepsRawDynamicRowsWhenSemanticImportDataIsTruncated()
 {
     // Scenario: a PE import directory row is present, but the imported DLL/name
@@ -5069,6 +5916,8 @@ void StructViewTests::builderKeepsRawDynamicRowsWhenSemanticImportDataIsTruncate
     // IMAGE_IMPORT_DESCRIPTOR row and its fields remain available.
     // Regression guard: educational views must never make the base structure
     // renderer brittle when a file is malformed or partially loaded.
+    ScopedEnvironmentVariable mode("Q22_PE_SEMANTIC_VIEW", "both");
+
     StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
@@ -5232,10 +6081,11 @@ void StructViewTests::builderAddsElfSectionAndSymbolSemanticRows()
 {
     // Scenario: an ELF file has a section-header string table plus a symbol
     // table linked to its own string table.
-    // Expected: the raw Strata tables remain visible, and the semantic pass
-    // appends named SECTION rows with resolved SYMBOL children.
-    // Regression guard: ELF domain knowledge belongs in elfsemanticview.cpp,
-    // augmenting the declarative structs rather than replacing them.
+    // Expected: declarative Strata emits named section rows and a Symbols
+    // branch under ELF Image, while the legacy C++ semantic view remains
+    // available in cpp mode for comparison.
+    // Regression guard: ELF's declarative view and C++ fallback must be
+    // independently selectable while the declarative version reaches parity.
     StrataLibrary library;
     QVERIFY2(parseStandardElfDefinition(&library), "elf.strata failed to parse");
 
@@ -5293,16 +6143,144 @@ void StructViewTests::builderAddsElfSectionAndSymbolSemanticRows()
     QCOMPARE(rows.size(), size_t(1));
     QVERIFY(findChildNamed(rows[0].get(), QStringLiteral("Elf32_Shdr sectionHeaders32[]")));
 
-    StructureRow *text = findChildNamed(rows[0].get(), QStringLiteral("SECTION .text"));
-    QVERIFY(text);
+    StructureRow *elfImage = findChildNamed(rows[0].get(), QStringLiteral("ELF Image"));
+    QVERIFY2(elfImage, qPrintable(childNames(rows[0].get())));
+    StructureRow *text = findChildNamed(elfImage, QStringLiteral("SECTION .text"));
+    QVERIFY2(text, qPrintable(childNames(elfImage)));
     QCOMPARE(text->offset, QStringLiteral("00000200"));
     QCOMPARE(text->byteLength, uint64_t(4));
+    QCOMPARE(findChildNamed(text, QStringLiteral("Name"))->value, QStringLiteral(".text"));
+    QCOMPARE(findChildNamed(text, QStringLiteral("Type"))->value, QStringLiteral("SHT_PROGBITS"));
+    QCOMPARE(findChildNamed(text, QStringLiteral("Size"))->value, QStringLiteral("4"));
+    QVERIFY(!findChildNamed(text, QStringLiteral("SYMBOL main")));
 
-    StructureRow *symtab = findChildNamed(rows[0].get(), QStringLiteral("SECTION .symtab"));
+    StructureRow *symtab = findChildNamed(elfImage, QStringLiteral("SECTION .symtab"));
     QVERIFY(symtab);
-    StructureRow *symbol = findChildNamed(symtab, QStringLiteral("SYMBOL main"));
-    QVERIFY(symbol);
-    QCOMPARE(symbol->value, QStringLiteral("value 0x1000, size 4"));
+    StructureRow *symbols = findChildNamed(symtab, QStringLiteral("Symbols"));
+    QVERIFY2(symbols, qPrintable(childNames(symtab)));
+    StructureRow *symbol = findChildNamed(symbols, QStringLiteral("SYMBOL main"));
+    QVERIFY2(symbol, qPrintable(childNames(symbols)));
+    QCOMPARE(findChildNamed(symbol, QStringLiteral("Name"))->value, QStringLiteral("main"));
+    QCOMPARE(findChildNamed(symbol, QStringLiteral("Value"))->value, QStringLiteral("4096"));
+    QCOMPARE(findChildNamed(symbol, QStringLiteral("Size"))->value, QStringLiteral("4"));
+
+    {
+        ScopedEnvironmentVariable mode("Q22_ELF_SEMANTIC_VIEW", "cpp");
+        auto cppRows = buildRows(&library, root, bytes);
+        QCOMPARE(cppRows.size(), size_t(1));
+        QVERIFY(!findChildNamed(cppRows[0].get(), QStringLiteral("ELF Image")));
+
+        StructureRow *cppText = findChildNamed(cppRows[0].get(), QStringLiteral("SECTION .text"));
+        QVERIFY(cppText);
+        QCOMPARE(cppText->offset, QStringLiteral("00000200"));
+        QCOMPARE(cppText->byteLength, uint64_t(4));
+
+        StructureRow *cppSymtab = findChildNamed(cppRows[0].get(), QStringLiteral("SECTION .symtab"));
+        QVERIFY(cppSymtab);
+        StructureRow *cppSymbols = findChildNamed(cppSymtab, QStringLiteral("Symbols"));
+        QVERIFY(cppSymbols);
+        StructureRow *cppSymbol = findChildNamed(cppSymbols, QStringLiteral("SYMBOL main"));
+        QVERIFY(cppSymbol);
+        QCOMPARE(cppSymbol->value, QStringLiteral("value 0x1000, size 4"));
+    }
+}
+
+void StructViewTests::builderRendersElfDependenciesAndRelocationsSummary()
+{
+    // Scenario: an ELF shared object has a DT_NEEDED entry in .dynamic and a
+    // relocation table in a dedicated relocation section.
+    // Expected: the declarative summary shows a Dependencies branch under the
+    // dynamic section and a Relocations branch under the relocation section,
+    // while the raw section rows remain intact.
+    StrataLibrary library;
+    QVERIFY2(parseStandardElfDefinition(&library), "elf.strata failed to parse");
+
+    QByteArray bytes(0x340, '\0');
+    bytes[0] = char(0x7f);
+    bytes[1] = 'E';
+    bytes[2] = 'L';
+    bytes[3] = 'F';
+    bytes[4] = char(1);
+    bytes[5] = char(1);
+    bytes[6] = char(1);
+    writeLe16(&bytes, 16, 3);
+    writeLe16(&bytes, 18, 3);
+    writeLe32(&bytes, 20, 1);
+    writeLe32(&bytes, 32, 0x100);
+    writeLe16(&bytes, 46, 40);
+    writeLe16(&bytes, 48, 8);
+    writeLe16(&bytes, 50, 4);
+
+    auto writeSection = [&bytes](qsizetype index,
+                                 quint32 name,
+                                 quint32 type,
+                                 quint32 offset,
+                                 quint32 size,
+                                 quint32 link,
+                                 quint32 info,
+                                 quint32 entrySize) {
+        const qsizetype base = 0x100 + index * 40;
+        writeLe32(&bytes, base + 0, name);
+        writeLe32(&bytes, base + 4, type);
+        writeLe32(&bytes, base + 16, offset);
+        writeLe32(&bytes, base + 20, size);
+        writeLe32(&bytes, base + 24, link);
+        writeLe32(&bytes, base + 28, info);
+        writeLe32(&bytes, base + 36, entrySize);
+    };
+
+    const QByteArray shstr("\0.text\0.symtab\0.strtab\0.shstrtab\0.dynstr\0.dynamic\0.rel.text\0", 60);
+    memcpy(bytes.data() + 0x280, shstr.constData(), size_t(shstr.size()));
+    const QByteArray strtab("\0main\0", 6);
+    memcpy(bytes.data() + 0x260, strtab.constData(), size_t(strtab.size()));
+    const QByteArray dynstr("\0libelf.so\0", 11);
+    memcpy(bytes.data() + 0x2c0, dynstr.constData(), size_t(dynstr.size()));
+
+    writeSection(1, 1, 1, 0x200, 4, 0, 0, 0);
+    writeSection(2, 7, 2, 0x220, 32, 3, 0, 16);
+    writeSection(3, 15, 3, 0x260, 6, 0, 0, 0);
+    writeSection(4, 23, 3, 0x280, quint32(shstr.size()), 0, 0, 0);
+    writeSection(5, 33, 3, 0x2c0, quint32(dynstr.size()), 0, 0, 0);
+    writeSection(6, 41, 6, 0x2d0, 16, 5, 0, 8);
+    writeSection(7, 50, 9, 0x2e0, 8, 2, 1, 8);
+
+    writeLe32(&bytes, 0x2d0 + 0, 1);
+    writeLe32(&bytes, 0x2d0 + 4, 1);
+    writeLe32(&bytes, 0x2d8 + 0, 0);
+    writeLe32(&bytes, 0x2d8 + 4, 0);
+
+    writeLe32(&bytes, 0x2e0 + 0, 0x1234);
+    writeLe32(&bytes, 0x2e0 + 4, (5u << 8) | 3u);
+
+    TypeDecl *root = exportedNamed(&library, QStringLiteral("ELF"));
+    QVERIFY(root);
+    auto rows = buildRows(&library, root, bytes);
+    QCOMPARE(rows.size(), size_t(1));
+
+    StructureRow *elfImage = findChildNamed(rows[0].get(), QStringLiteral("ELF Image"));
+    QVERIFY2(elfImage, qPrintable(childNames(rows[0].get())));
+
+    StructureRow *dynamicSection = findChildNamed(elfImage, QStringLiteral("SECTION .dynamic"));
+    QVERIFY(dynamicSection);
+    QVERIFY2(dynamicSection->branchIconPath.contains(QStringLiteral("structure")), qPrintable(dynamicSection->branchIconPath));
+    QVERIFY(dynamicSection->emphasizeName);
+    StructureRow *dependencies = findChildNamed(dynamicSection, QStringLiteral("Dependencies"));
+    QVERIFY2(dependencies, qPrintable(childNames(dynamicSection)));
+    StructureRow *dependency = findChildNamed(dependencies, QStringLiteral("libelf.so"));
+    QVERIFY2(dependency, qPrintable(childNames(dependencies)));
+    QCOMPARE(findChildNamed(dependency, QStringLiteral("Name"))->value, QStringLiteral("libelf.so"));
+
+    StructureRow *relSection = findChildNamed(elfImage, QStringLiteral("SECTION .rel.text"));
+    QVERIFY(relSection);
+    QVERIFY2(relSection->branchIconPath.contains(QStringLiteral("structure")), qPrintable(relSection->branchIconPath));
+    QVERIFY(relSection->emphasizeName);
+    StructureRow *relocations = findChildNamed(relSection, QStringLiteral("Relocations"));
+    QVERIFY2(relocations, qPrintable(childNames(relSection)));
+    StructureRow *relocation = findChildNamed(relocations, QStringLiteral("4660"));
+    QVERIFY2(relocation, qPrintable(childNames(relocations)));
+    QCOMPARE(findChildNamed(relocation, QStringLiteral("Offset"))->value, QStringLiteral("4660"));
+    QVERIFY(findChildNamed(relocation, QStringLiteral("Type")));
+    QVERIFY(findChildNamed(relocation, QStringLiteral("SymbolIndex")));
 }
 
 void StructViewTests::builderKeepsRawElfRowsWhenSemanticDataIsTruncated()
