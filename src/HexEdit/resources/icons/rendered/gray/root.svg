@@ -20,6 +20,7 @@
     <stop offset="100%" stop-color="#555555"/>
   </linearGradient>
 </defs>
+  <g id="root-scale-v2" transform="translate(-6.886 -2.709) scale(1.21519)">
   <g id="upper">
   <polygon points="20.3,12.9 32,21.55 32,33.05 20.3,24.4" fill="url(#left)"/>
   <polygon points="32,21.55 43.7,12.9 43.7,24.4 32,33.05" fill="url(#right)"/>
@@ -47,4 +48,6 @@
   <path d="M43.7 24.4L55.4 33.05" stroke="#FEFEFE" stroke-opacity=".16" stroke-width=".54" stroke-linecap="round"/>
   <path d="M32 33.05L43.7 41.7L55.4 33.05" stroke="#747474" stroke-opacity=".14" stroke-width=".52" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 </g>
+
+  </g><!--root-scale-v2-->
 </svg>

@@ -32,15 +32,15 @@
     <path d="M32.00 7.50L50.00 21.00" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="0.65" stroke-linecap="round"/>
   </g>
 
-  <g id="array-brackets" fill="none" stroke="#0A409F" stroke-width="2.25"
-     stroke-linecap="round" stroke-linejoin="round" opacity=".92">
-    <path d="M11.5 10.5H6.5V53.5H11.5"/>
-    <path d="M52.5 10.5H57.5V53.5H52.5"/>
-  </g>
-  <g id="array-bracket-highlights" fill="none" stroke="#FFFFFF" stroke-width=".65"
-     stroke-linecap="round" stroke-linejoin="round" opacity=".42">
-    <path d="M11.5 10.5H6.5V53.5H11.5"/>
-    <path d="M52.5 10.5H57.5V53.5H52.5"/>
-  </g>
 
+  <g id="array-brackets" fill="none" stroke="#002B7D" stroke-width="3.35"
+     stroke-linecap="round" stroke-linejoin="round" opacity="1">
+    <path d="M12 9H6V55H12"/>
+    <path d="M52 9H58V55H52"/>
+  </g>
+  <g id="array-bracket-highlights" fill="none" stroke="#FFFFFF" stroke-width=".75"
+     stroke-linecap="round" stroke-linejoin="round" opacity=".34">
+    <path d="M12 9H6V55H12"/>
+    <path d="M52 9H58V55H52"/>
+  </g>
 </svg>

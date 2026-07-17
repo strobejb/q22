@@ -1,0 +1,24 @@
+{
+  "version": "2.0",
+  "changes_from_v1": [
+    "root.svg scaled up to reduce whitespace",
+    "array bracket variants use thicker, darker brackets"
+  ],
+  "colours": [
+    "blue",
+    "pink",
+    "gray",
+    "green",
+    "gold"
+  ],
+  "icons": [
+    "root.svg",
+    "structure.svg",
+    "structure-open.svg",
+    "entity.svg",
+    "entity-open.svg",
+    "element.svg",
+    "entity-array.svg",
+    "element-array.svg"
+  ]
+}
