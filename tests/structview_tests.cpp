@@ -56,6 +56,7 @@ private slots:
     void builderUsesSizeIsForUnsizedArrays();
     void builderUsesMaxCountAndTerminatorExpressions();
     void builderUsesNamedOffsetMapsAndValueAt();
+    void builderUsesScopePrefixesForRootAndParent();
     void builderUsesCountAsForLogicalArraySlots();
     void builderEvaluatesTernaryExpressions();
     void builderUsesCommonUnionPrefixForSizeIs();
@@ -1585,6 +1586,39 @@ void StructViewTests::builderUsesNamedOffsetMapsAndValueAt()
     QCOMPARE(values->absoluteOffset, uint64_t(0x80));
     QCOMPARE(values->children.size(), size_t(1));
     QCOMPARE(values->children[0]->children[0]->value, QStringLiteral("2864434397"));
+}
+
+void StructViewTests::builderUsesScopePrefixesForRootAndParent()
+{
+    // Scenario: scope prefixes resolve against the enclosing row hierarchy
+    // instead of being treated as literal field names.
+    // Expected: parent:: resolves within the immediate container row and
+    // root:: resolves back to the file root row.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef struct _Inner {\n"
+                        "  byte innerValue;\n"
+                        "  [optional(parent::innerValue == 0x41)] byte parentHit;\n"
+                        "  [optional(root::header == 0x41)] byte rootHit;\n"
+                        "} Inner;\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  byte header;\n"
+                        "  Inner inner;\n"
+                        "} root;\n"));
+
+    QByteArray bytes(4, '\0');
+    bytes[0] = 0x41;
+    bytes[1] = 0x41;
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+
+    StructureRow *inner = findChildNamed(rows[0].get(), QStringLiteral("Inner inner"));
+    QVERIFY2(inner, qPrintable(childNames(rows[0].get())));
+    QVERIFY2(findChildNamed(inner, QStringLiteral("byte parentHit")), qPrintable(childNames(inner)));
+    QVERIFY2(findChildNamed(inner, QStringLiteral("byte rootHit")), qPrintable(childNames(inner)));
 }
 
 void StructViewTests::builderUsesCountAsForLogicalArraySlots()

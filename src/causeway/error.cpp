@@ -116,6 +116,7 @@ const char * Parser::inenglish(TOKEN t)
 	case TOK_EQU:			return "==";
 	case TOK_INC:			return "++";
 	case TOK_DEC:			return "--";
+	case TOK_SCOPE:			return "::";
 		//case '=':
 
 	case TOK_NULL:			return "";

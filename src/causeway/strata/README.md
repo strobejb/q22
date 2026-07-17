@@ -883,7 +883,9 @@ be combined by every consumer.
 ## Expressions
 
 Tags accept C-like expressions. Fields of the enclosing struct are in scope
-by name. Nested fields are accessed with `.` (dot) notation. Pointer dereferencing is not supported:
+by name. Nested fields are accessed with `.` (dot) notation. `root::` and
+`parent::` switch lookup scope without leaving field syntax. Pointer
+dereferencing is not supported:
 
 ```
 ntHeaders.FileHeader.NumberOfSections
@@ -910,7 +912,7 @@ dosHeader.e_lfanew
 | String lookup | `cstr(offset)`, `cstr("space", offset)`, `cstr_at(offset, maxLen)`, `cstr_from(base, offset[, maxLen])` |
 | Byte sequence literal | `{ 0x50, 0x4b }` |
 | Byte search | `find_first({ ... })` · `find_last({ ... })` |
-| Raw read | `select_offset(byteOffset)`, `value_at(offset, Type)`, `root_value_at(offset, Type)`, `field_at(array, index, field)` |
+| Raw read | `select_offset(byteOffset)`, `value_at(offset, Type)`, `root::value_at(offset, Type)`, `field_at(array, index, field)` |
 
 ```c
 size_is(Header.Count * sizeof(DWORD))
@@ -1055,12 +1057,13 @@ means something as a sub-expression inside another tag's expression.
 
 `value_at(offset, Type)` reads a fixed-size scalar at `offset`, relative to
 the current structure instance. `value_at("space", offset, Type)` first
-resolves `offset` through a named `offset_map` space. This is intended for
-small one-off probes in expressions, not for rendering nested structures.
-`root_value_at(offset, Type)` uses the same scalar read but makes `offset`
-relative to the root structure base. `field_at(array, index, field)` reads a
-field from an already rendered array element, which is useful for parallel
-tables and linked indexes.
+resolves `offset` through a named `offset_map` space. `root::value_at(offset,
+Type)` uses the same scalar read but makes `offset` relative to the root
+structure base; `root_value_at(offset, Type)` remains as a compatibility alias.
+This is intended for small one-off probes in expressions, not for rendering
+nested structures. `field_at(array, index, field)` reads a field from an
+already rendered array element, which is useful for parallel tables and linked
+indexes.
 
 Supported V1 types are `byte`, `char`, `word`, `dword`, `qword`, and
 `wchar_t`; multi-byte reads use the current endian context.
@@ -1138,6 +1141,21 @@ where the file format defines the coordinate system, then use
 `offset("space", expr)` mainly from dynamic or semantic rows. Do not make an
 offset-target field appear as a normal inline child of a raw struct unless that
 is deliberately the clearest representation of the format.
+
+When you keep repeating the same table-base probe, hoist it into a named
+offset space once and reuse that name for both lookups and display strings.
+That is usually cleaner than repeating `field_at(...)` or `cstr_from(...)` in
+every tag. Use it when a descendant row will consume the named space; if the
+same row needs to use the value for its own key or name, keep the direct probe
+for now:
+
+```c
+[
+  offset_map("shstr", field_at(sectionHeaders32, header32.e_shstrndx, sh_offset)),
+  name(cstr("shstr", sh_name))
+]
+typedef struct _Elf32_Shdr { ... } Elf32_Shdr;
+```
 
 Use `enum(Name)` for one-of-N values. Use `bitflag(Name)` only for independent
 mask bits. Do not use `bitflag(...)` for packed fields whose values overlap,

@@ -160,6 +160,14 @@ ExprNode * Parser::PostfixExpression(ExprNode *p)
 			p = new ExprNode(EXPR_FIELD, op, p, q);
 			break;
 
+		case TOK_SCOPE:
+		{
+			Advance();
+			q = UnaryExpression();
+			p = new ExprNode(EXPR_SCOPE, op, p, q);
+			break;
+		}
+
 		// pointer dereference '->'
 		case TOK_DEREF:
 
@@ -800,6 +808,12 @@ int RecurseFlatten(stringprint &sbuf, ExprNode *expr)
 	case EXPR_FIELD:
 		RecurseFlatten(sbuf, expr->left);
 		sbuf._stprintf(TEXT("."));
+		RecurseFlatten(sbuf, expr->right);
+		break;
+
+	case EXPR_SCOPE:
+		RecurseFlatten(sbuf, expr->left);
+		sbuf._stprintf(TEXT("::"));
 		RecurseFlatten(sbuf, expr->right);
 		break;
 

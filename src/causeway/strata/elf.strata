@@ -429,29 +429,29 @@ typedef struct _ELF
     };
 
     [
-        offset(select_offset(EI_CLASS) == ELFCLASS32 ? root_value_at(28, dword) : 0),
-        count(select_offset(EI_CLASS) == ELFCLASS32 ? root_value_at(44, word) : 0),
+        offset(select_offset(EI_CLASS) == ELFCLASS32 ? root::value_at(28, dword) : 0),
+        count(select_offset(EI_CLASS) == ELFCLASS32 ? root::value_at(44, word) : 0),
         name(p_type)
     ]
     Elf32_Phdr programHeaders32[];
 
     [
-        offset(select_offset(EI_CLASS) == ELFCLASS64 ? root_value_at(32, qword) : 0),
-        count(select_offset(EI_CLASS) == ELFCLASS64 ? root_value_at(56, word) : 0),
+        offset(select_offset(EI_CLASS) == ELFCLASS64 ? root::value_at(32, qword) : 0),
+        count(select_offset(EI_CLASS) == ELFCLASS64 ? root::value_at(56, word) : 0),
         name(p_type)
     ]
     Elf64_Phdr programHeaders64[];
 
     [
-        offset(select_offset(EI_CLASS) == ELFCLASS32 ? root_value_at(32, dword) : 0),
-        count(select_offset(EI_CLASS) == ELFCLASS32 ? root_value_at(48, word) : 0),
+        offset(select_offset(EI_CLASS) == ELFCLASS32 ? root::value_at(32, dword) : 0),
+        count(select_offset(EI_CLASS) == ELFCLASS32 ? root::value_at(48, word) : 0),
         name(sh_type)
     ]
     Elf32_Shdr sectionHeaders32[];
 
     [
-        offset(select_offset(EI_CLASS) == ELFCLASS64 ? root_value_at(40, qword) : 0),
-        count(select_offset(EI_CLASS) == ELFCLASS64 ? root_value_at(60, word) : 0),
+        offset(select_offset(EI_CLASS) == ELFCLASS64 ? root::value_at(40, qword) : 0),
+        count(select_offset(EI_CLASS) == ELFCLASS64 ? root::value_at(60, word) : 0),
         name(sh_type)
     ]
     Elf64_Shdr sectionHeaders64[];

@@ -1410,6 +1410,13 @@ bool StructureRenderEngine::evaluate(const EvalContext &context, ExprNode *expr,
 
     switch (expr->type)
     {
+    case EXPR_SCOPE:
+    {
+        EvalContext scoped;
+        if (!resolveScopeContext(context, expr, &scoped))
+            return false;
+        return evaluate(scoped, expr->right, result);
+    }
     case EXPR_IDENTIFIER:
     case EXPR_FIELD:
     case EXPR_ARRAY:
@@ -1812,6 +1819,13 @@ bool StructureRenderEngine::evaluateString(const EvalContext &context, ExprNode 
 
     switch (expr->type)
     {
+    case EXPR_SCOPE:
+    {
+        EvalContext scoped;
+        if (!resolveScopeContext(context, expr, &scoped))
+            return false;
+        return evaluateString(scoped, expr->right, result);
+    }
     case EXPR_STRINGBUF:
         *result = QString::fromUtf8(expr->str ? expr->str : "");
         return true;
@@ -2020,6 +2034,35 @@ bool StructureRenderEngine::evaluateStringFunction(const EvalContext &context, E
     default:
         return false;
     }
+}
+
+bool StructureRenderEngine::resolveScopeContext(const EvalContext &context, ExprNode *expr, EvalContext *scoped) const
+{
+    if (!expr || expr->type != EXPR_SCOPE || !expr->left || !scoped)
+        return false;
+
+    StructureRow *row = resolveScopeRow(context.row, expr->left);
+    if (!row)
+        return false;
+
+    scoped->row = row;
+    scoped->type = row->type ? row->type : context.type;
+    scoped->offset = row->absoluteOffset;
+    return true;
+}
+
+StructureRow *StructureRenderEngine::resolveScopeRow(StructureRow *scope, ExprNode *expr) const
+{
+    if (!expr || expr->type != EXPR_IDENTIFIER || !expr->str)
+        return nullptr;
+
+    if (std::strcmp(expr->str, "root") == 0)
+        return m_rootRow ? m_rootRow : scope;
+
+    if (std::strcmp(expr->str, "parent") == 0)
+        return scope ? scope : m_rootRow;
+
+    return nullptr;
 }
 
 bool StructureRenderEngine::evaluateFindFunction(const EvalContext &context, ExprNode *expr, INUMTYPE *result)
@@ -2292,6 +2335,12 @@ StructureRow *StructureRenderEngine::findFieldRow(StructureRow *scope, ExprNode 
 {
     if (!scope || !expr)
         return nullptr;
+
+    if (expr->type == EXPR_SCOPE)
+    {
+        StructureRow *scoped = resolveScopeRow(scope, expr->left);
+        return scoped ? findFieldRow(scoped, expr->right) : nullptr;
+    }
 
     if (expr->type == EXPR_IDENTIFIER)
         return findDirectField(scope, expr->str);
@@ -2570,6 +2619,9 @@ void collectFieldReferenceRoots(ExprNode *expr, std::vector<ExprNode *> *roots)
         collectFieldReferenceRoots(expr->left, roots);
         collectFieldReferenceRoots(expr->right, roots);
         return;
+    case EXPR_SCOPE:
+        collectFieldReferenceRoots(expr->right, roots);
+        return;
     case EXPR_UNARY:
         collectFieldReferenceRoots(expr->left, roots);
         return;
@@ -2596,7 +2648,8 @@ void collectFieldReferenceRoots(ExprNode *expr, std::vector<ExprNode *> *roots)
         return;
     default:
         // EXPR_FIELD (see above), EXPR_NUMBER, EXPR_STRINGBUF, EXPR_SIZEOF,
-        // EXPR_RAWOFFSET, EXPR_BYTESEQ, EXPR_TAGWRAP, etc: nothing to validate.
+        // EXPR_SCOPE, EXPR_RAWOFFSET, EXPR_BYTESEQ, EXPR_TAGWRAP, etc:
+        // nothing to validate.
         return;
     }
 }
@@ -5600,7 +5653,7 @@ QString StructureRenderEngine::semanticExpressionText(StructureRow *scope,
 
     if (scope
         && scope->kind == StructureRowKind::Semantic
-        && (expr->type == EXPR_IDENTIFIER || expr->type == EXPR_FIELD || expr->type == EXPR_ARRAY))
+        && (expr->type == EXPR_IDENTIFIER || expr->type == EXPR_FIELD || expr->type == EXPR_ARRAY || expr->type == EXPR_SCOPE))
     {
         return {};
     }
@@ -6384,6 +6437,24 @@ QString StructureRenderEngine::fieldNameValue(StructureRow *scope, Type *scopeTy
 {
     if (!expr)
         return {};
+
+    if (expr->type == EXPR_SCOPE)
+    {
+        EvalContext context{ scope, scopeType, scopeOffset };
+        EvalContext scoped;
+        if (!resolveScopeContext(context, expr, &scoped))
+            return {};
+
+        QString text = fieldNameValue(scoped.row, scoped.type, expr->right, scoped.offset);
+        if (!text.isEmpty())
+            return text;
+
+        INUMTYPE value = 0;
+        if (evaluate(scoped, expr->right, &value))
+            return QString::number(value);
+
+        return {};
+    }
 
     if (StructureRow *row = findFieldRow(scope, expr))
     {

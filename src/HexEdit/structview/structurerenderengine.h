@@ -196,6 +196,8 @@ private:
     bool evaluateFindFunction(const EvalContext &context, ExprNode *expr, INUMTYPE *result);
     bool evaluateString(const EvalContext &context, ExprNode *expr, QString *result);
     bool evaluateStringFunction(const EvalContext &context, ExprNode *expr, QString *result);
+    bool resolveScopeContext(const EvalContext &context, ExprNode *expr, EvalContext *scoped) const;
+    StructureRow *resolveScopeRow(StructureRow *scope, ExprNode *expr) const;
     QString fieldStringValue(StructureRow *row);
     uint64_t readableEnd(uint64_t startOffset) const;
     bool findPattern(uint64_t startOffset,

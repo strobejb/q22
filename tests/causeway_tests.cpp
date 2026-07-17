@@ -38,6 +38,7 @@ private slots:
 	void unsizedArraysRequireSizeIs();
 	void maxCountAndByteSequenceTerminatorsParse();
 	void namedOffsetMapsAndValueAtParse();
+	void scopePrefixesParse();
 	void multiDimensionalFlexibleArraysParse();
 	void elfRootIsExportedAndAssociated();
 	void standardTypelibFilesParse();
@@ -407,7 +408,7 @@ void CausewayTests::semanticSchemaAndEmitTagsParse()
 						"  dword payloadOffset;\n"
 						"  dword payloadSize;\n"
 						"  [emit_row(dest(Payloads, key(cstr(\"payloads\", payloadOffset), payloadSize + array_index() + element_value()), name(cstr(\"payloads\", payloadOffset))), offset(payloadOffset)),\n"
-						"   emit_node(dest(Payloads, key(payloadOffset), name(fmt(\"payload {0}\", payloadOffset))), name(concat(\"payload \", payloadOffset)), offset(payloadOffset), extent(payloadSize), field(Size, root_value_at(0, dword)), attr(Note, cstr_from(root_value_at(4, dword), field_at(Items, 0, Key)))),\n"
+						"   emit_node(dest(Payloads, key(payloadOffset), name(fmt(\"payload {0}\", payloadOffset))), name(concat(\"payload \", payloadOffset)), offset(payloadOffset), extent(payloadSize), field(Size, root::value_at(0, dword)), attr(Note, cstr_from(root::value_at(4, dword), field_at(Items, 0, Key)))),\n"
 						"   emit(dest(Payloads), label(payloadOffset), type(PayloadByte), offset(payloadOffset), count(payloadSize))] byte marker;\n"
 						"} Root;\n"));
 
@@ -937,6 +938,38 @@ void CausewayTests::namedOffsetMapsAndValueAtParse()
 	ExprNode *optionalExpr = nullptr;
 	QVERIFY(FindTag(mappedProbe->tagList, TOK_OPTIONAL, &optionalExpr));
 	QVERIFY(optionalExpr);
+}
+
+void CausewayTests::scopePrefixesParse()
+{
+	// Scenario: the expression grammar recognizes scope prefixes as a distinct
+	// token instead of collapsing them into ordinary ':' punctuation.
+	// Expected: root:: and parent:: parse as scope-qualified expressions, with
+	// the right-hand side still parsed by the ordinary expression grammar.
+	Parser rootParser;
+	rootParser.Init("root::value_at(4, dword)", strlen("root::value_at(4, dword)"));
+	ExprNode *rootExpr = rootParser.ParseExpression();
+	QVERIFY(rootExpr);
+	QCOMPARE(rootExpr->type, EXPR_SCOPE);
+	QVERIFY(rootExpr->left);
+	QCOMPARE(rootExpr->left->type, EXPR_IDENTIFIER);
+	QCOMPARE(QString::fromLocal8Bit(rootExpr->left->str), QStringLiteral("root"));
+	QVERIFY(rootExpr->right);
+	QCOMPARE(rootExpr->right->type, EXPR_VALUEAT);
+	QCOMPARE(rootExpr->right->tok, TOK_VALUEAT);
+	delete rootExpr;
+
+	Parser parentParser;
+	parentParser.Init("parent::innerValue", strlen("parent::innerValue"));
+	ExprNode *parentExpr = parentParser.ParseExpression();
+	QVERIFY(parentExpr);
+	QCOMPARE(parentExpr->type, EXPR_SCOPE);
+	QVERIFY(parentExpr->left);
+	QCOMPARE(QString::fromLocal8Bit(parentExpr->left->str), QStringLiteral("parent"));
+	QVERIFY(parentExpr->right);
+	QCOMPARE(parentExpr->right->type, EXPR_IDENTIFIER);
+	QCOMPARE(QString::fromLocal8Bit(parentExpr->right->str), QStringLiteral("innerValue"));
+	delete parentExpr;
 }
 
 void CausewayTests::multiDimensionalFlexibleArraysParse()

@@ -88,6 +88,7 @@ typedef enum TOKEN
 	TOK_INC,
 	TOK_DEC,
 	TOK_DEREF,
+	TOK_SCOPE,
 	
 	// keywords
 #undef  DEFINE_KEYWORD
