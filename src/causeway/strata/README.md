@@ -560,6 +560,10 @@ emit_node(dest(Imports, key(module.bytes, name.bytes)),
 - `dest(path)` appends a new node under a schema destination
 - `dest(path, key(expr))` creates or updates the same node for the same key;
   this is semantic merging, not a hidden join table
+- `key(parent_expr, child_expr)` targets an existing keyed parent semantic
+  entity in the parent destination path, then creates or updates the keyed child
+  node. This is useful for trees such as `Sections.Symbols`, where the section
+  row is keyed first and the symbol row is keyed beneath it.
 - `field(Name, expr)` sets a field declared by the destination element schema;
   unknown field names are diagnosed by definition validation
 - schema `name(...)` on the destination element type sets the default visible
@@ -578,9 +582,13 @@ PE semantic rendering can be isolated while the declarative view reaches parity
 with the older C++ view:
 
 ```sh
-Q22_PE_SEMANTIC_VIEW=declarative  # default: skip pe.* C++ semantic interpreters
-Q22_PE_SEMANTIC_VIEW=both         # run declarative rows and C++ views
-Q22_PE_SEMANTIC_VIEW=cpp          # skip declarative PE semantic rows
+Q22_PE_SEMANTIC_VIEW=declarative   # default: skip pe.* C++ semantic interpreters
+Q22_PE_SEMANTIC_VIEW=both          # run declarative rows and C++ views
+Q22_PE_SEMANTIC_VIEW=cpp           # skip declarative PE semantic rows
+
+Q22_ELF_SEMANTIC_VIEW=declarative  # default: skip elf.* C++ semantic interpreters
+Q22_ELF_SEMANTIC_VIEW=both         # run declarative rows and C++ views
+Q22_ELF_SEMANTIC_VIEW=cpp          # skip declarative ELF semantic rows
 ```
 
 When `QEXED_STRUCTURE_PROFILE=1` is set, both declarative semantic rendering and
@@ -899,10 +907,10 @@ dosHeader.e_lfanew
 | String construction | `concat(a, b, ...)`, `fmt("{0}", value)` |
 | Octal text | `octal(text)` |
 | FourCC literal | `fourcc("abcd")` |
-| String lookup | `cstr(offset)`, `cstr("space", offset)`, `cstr_at(offset, maxLen)` |
+| String lookup | `cstr(offset)`, `cstr("space", offset)`, `cstr_at(offset, maxLen)`, `cstr_from(base, offset[, maxLen])` |
 | Byte sequence literal | `{ 0x50, 0x4b }` |
 | Byte search | `find_first({ ... })` · `find_last({ ... })` |
-| Raw read | `select_offset(byteOffset)`, `value_at(offset, Type)` |
+| Raw read | `select_offset(byteOffset)`, `value_at(offset, Type)`, `root_value_at(offset, Type)`, `field_at(array, index, field)` |
 
 ```c
 size_is(Header.Count * sizeof(DWORD))
@@ -917,8 +925,11 @@ root structure base, capped at 4096 bytes. `cstr("space", offset)` first
 resolves `offset` through a named `offset_map` space. A third argument may
 override the cap, still limited to the renderer's maximum string lookup size.
 `cstr_at(offset, maxLen)` is the older explicit-cap spelling for root-relative
-lookups. These return string expressions, so they are useful with string-valued
-`select(...)`/`case("...")` unions and semantic row `key(...)`/`name(...)`.
+lookups. `cstr_from(base, offset[, maxLen])` reads from `base + offset`, which
+is useful when a table entry stores a string-table-relative offset and another
+expression finds that string table's file offset. These return string
+expressions, so they are useful with string-valued `select(...)`/`case("...")`
+unions and semantic row `key(...)`/`name(...)`.
 
 `concat(...)` converts each argument to display text and appends the parts.
 `fmt(...)` takes a string literal template followed by values and replaces
@@ -1046,6 +1057,10 @@ means something as a sub-expression inside another tag's expression.
 the current structure instance. `value_at("space", offset, Type)` first
 resolves `offset` through a named `offset_map` space. This is intended for
 small one-off probes in expressions, not for rendering nested structures.
+`root_value_at(offset, Type)` uses the same scalar read but makes `offset`
+relative to the root structure base. `field_at(array, index, field)` reads a
+field from an already rendered array element, which is useful for parallel
+tables and linked indexes.
 
 Supported V1 types are `byte`, `char`, `word`, `dword`, `qword`, and
 `wchar_t`; multi-byte reads use the current endian context.
@@ -1056,6 +1071,9 @@ RIFF_WEBP_PAYLOAD webp;
 
 [optional(value_at("rva", thunkRva, qword) != 0)]
 IMAGE_THUNK_DATA64 thunk;
+
+[name(cstr_from(field_at(sectionHeaders32, sh_link, sh_offset), st_name))]
+Elf32_Sym symbol;
 ```
 
 ---
@@ -1086,7 +1104,7 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 | Dynamic/semantic tags | `attr`, `container`, `dest`, `dynamic_array`, `dynamic_container`, `dynamic_struct`, `emit`, `emit_node`, `emit_row`, `field`, `key`, `label`, `map`, `mapper`, `offset_map`, `semantic`, `type`, `view` |
 | Export/detection tags | `assoc`, `category`, `export`, `magic`, `version` |
 | Tagsets/files | `include`, `tagset`, `tags` |
-| Expression helpers | `array_index`, `concat`, `cstr`, `cstr_at`, `current_offset`, `element_value`, `extent_of`, `file_size`, `find_first`, `find_last`, `fmt`, `fourcc`, `octal`, `sizeof`, `str`, `value_at` |
+| Expression helpers | `array_index`, `concat`, `cstr`, `cstr_at`, `cstr_from`, `current_offset`, `element_value`, `extent_of`, `field_at`, `file_size`, `find_first`, `find_last`, `fmt`, `fourcc`, `octal`, `root_value_at`, `sizeof`, `str`, `value_at` |
 
 ---
 

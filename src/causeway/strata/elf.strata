@@ -220,6 +220,22 @@ typedef struct _Elf64_Phdr
     e64      p_align;                   // Segment alignment
 } Elf64_Phdr;
 
+[
+    emit_node(dest(Sections, key(cstr_from(root_value_at(header32.e_shoff + header32.e_shstrndx * header32.e_shentsize + 16, dword), sh_name))),
+              offset(sh_offset),
+              extent(sh_size),
+              optional(sh_type != SHT_NULL || sh_name != 0),
+              field(Index, array_index()),
+              field(Name, cstr_from(root_value_at(header32.e_shoff + header32.e_shstrndx * header32.e_shentsize + 16, dword), sh_name)),
+              field(Type, sh_type),
+              field(Offset, sh_offset),
+              field(Size, sh_size)),
+    dynamic_array(name(Symbols),
+                  type(Elf32_Sym),
+                  offset(sh_offset),
+                  count(sh_entsize != 0 ? sh_size / sh_entsize : 0),
+                  optional(sh_type == SHT_SYMTAB || sh_type == SHT_DYNSYM))
+]
 typedef struct _Elf32_Shdr
 {
     e32      sh_name;                   // Section name string-table offset
@@ -236,6 +252,22 @@ typedef struct _Elf32_Shdr
     e32      sh_entsize;                // Entry size for table sections
 } Elf32_Shdr;
 
+[
+    emit_node(dest(Sections, key(cstr_from(root_value_at(header64.e_shoff + header64.e_shstrndx * header64.e_shentsize + 24, qword), sh_name))),
+              offset(sh_offset),
+              extent(sh_size),
+              optional(sh_type != SHT_NULL || sh_name != 0),
+              field(Index, array_index()),
+              field(Name, cstr_from(root_value_at(header64.e_shoff + header64.e_shstrndx * header64.e_shentsize + 24, qword), sh_name)),
+              field(Type, sh_type),
+              field(Offset, sh_offset),
+              field(Size, sh_size)),
+    dynamic_array(name(Symbols),
+                  type(Elf64_Sym),
+                  offset(sh_offset),
+                  count(sh_entsize != 0 ? sh_size / sh_entsize : 0),
+                  optional(sh_type == SHT_SYMTAB || sh_type == SHT_DYNSYM))
+]
 typedef struct _Elf64_Shdr
 {
     e32      sh_name;                   // Section name string-table offset
@@ -252,6 +284,16 @@ typedef struct _Elf64_Shdr
     e64      sh_entsize;                // Entry size for table sections
 } Elf64_Shdr;
 
+[
+    emit_node(dest(Sections.Symbols,
+                   key(cstr_from(root_value_at(header32.e_shoff + header32.e_shstrndx * header32.e_shentsize + 16, dword), sh_name),
+                       cstr_from(field_at(sectionHeaders32, sh_link, sh_offset), st_name))),
+              offset(current_offset()),
+              optional(st_name != 0),
+              field(Name, cstr_from(field_at(sectionHeaders32, sh_link, sh_offset), st_name)),
+              field(Value, st_value),
+              field(Size, st_size))
+]
 typedef struct _Elf32_Sym
 {
     e32      st_name;                   // Symbol name string-table offset
@@ -262,6 +304,16 @@ typedef struct _Elf32_Sym
     e16      st_shndx;                  // Section index
 } Elf32_Sym;
 
+[
+    emit_node(dest(Sections.Symbols,
+                   key(cstr_from(root_value_at(header64.e_shoff + header64.e_shstrndx * header64.e_shentsize + 24, qword), sh_name),
+                       cstr_from(field_at(sectionHeaders64, sh_link, sh_offset), st_name))),
+              offset(current_offset()),
+              optional(st_name != 0),
+              field(Name, cstr_from(field_at(sectionHeaders64, sh_link, sh_offset), st_name)),
+              field(Value, st_value),
+              field(Size, st_size))
+]
 typedef struct _Elf64_Sym
 {
     e32      st_name;                   // Symbol name string-table offset
@@ -272,6 +324,28 @@ typedef struct _Elf64_Sym
     e64      st_size;                   // Symbol size
 } Elf64_Sym;
 
+[semantic("ELF Image")]
+typedef struct _ELF_VIEW
+{
+    [tree("flatten"), name(concat("SECTION ", Name))]
+    struct
+    {
+        e16 Index;
+        CHAR Name[];
+        e32 Type;
+        e64 Offset;
+        e64 Size;
+
+        [tree("flatten"), name(concat("SYMBOL ", Name))]
+        struct
+        {
+            CHAR Name[];
+            e64_addr Value;
+            e64 Size;
+        } Symbols[];
+    } Sections[];
+} ELF_VIEW;
+
 [
     export("Executable and Linkable Format (ELF)"),
     version(1),
@@ -279,6 +353,7 @@ typedef struct _Elf64_Sym
     assoc(".elf", ".so", ".o"),
     magic({ 0x7F, 'E', 'L', 'F' }),
     offset(0),
+    semantic(ELF_VIEW),
     // e_ident[EI_DATA] lives inside whichever of Elf32_Ehdr/Elf64_Ehdr gets
     // selected below, not in a sibling field of _ELF -- resolveDirectField's
     // union-candidate fallback finds it anyway, by checking that every
@@ -300,29 +375,29 @@ typedef struct _ELF
     };
 
     [
-        offset(e_ident[EI_CLASS] == ELFCLASS32 ? header32.e_phoff : 0),
-        count(e_ident[EI_CLASS] == ELFCLASS32 ? header32.e_phnum : 0),
+        offset(select_offset(EI_CLASS) == ELFCLASS32 ? root_value_at(28, dword) : 0),
+        count(select_offset(EI_CLASS) == ELFCLASS32 ? root_value_at(44, word) : 0),
         name(p_type)
     ]
     Elf32_Phdr programHeaders32[];
 
     [
-        offset(e_ident[EI_CLASS] == ELFCLASS64 ? header64.e_phoff : 0),
-        count(e_ident[EI_CLASS] == ELFCLASS64 ? header64.e_phnum : 0),
+        offset(select_offset(EI_CLASS) == ELFCLASS64 ? root_value_at(32, qword) : 0),
+        count(select_offset(EI_CLASS) == ELFCLASS64 ? root_value_at(56, word) : 0),
         name(p_type)
     ]
     Elf64_Phdr programHeaders64[];
 
     [
-        offset(e_ident[EI_CLASS] == ELFCLASS32 ? header32.e_shoff : 0),
-        count(e_ident[EI_CLASS] == ELFCLASS32 ? header32.e_shnum : 0),
+        offset(select_offset(EI_CLASS) == ELFCLASS32 ? root_value_at(32, dword) : 0),
+        count(select_offset(EI_CLASS) == ELFCLASS32 ? root_value_at(48, word) : 0),
         name(sh_type)
     ]
     Elf32_Shdr sectionHeaders32[];
 
     [
-        offset(e_ident[EI_CLASS] == ELFCLASS64 ? header64.e_shoff : 0),
-        count(e_ident[EI_CLASS] == ELFCLASS64 ? header64.e_shnum : 0),
+        offset(select_offset(EI_CLASS) == ELFCLASS64 ? root_value_at(40, qword) : 0),
+        count(select_offset(EI_CLASS) == ELFCLASS64 ? root_value_at(60, word) : 0),
         name(sh_type)
     ]
     Elf64_Shdr sectionHeaders64[];

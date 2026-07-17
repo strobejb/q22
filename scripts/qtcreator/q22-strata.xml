@@ -71,6 +71,7 @@
     <item>container</item>
     <item>count_as</item>
     <item>count</item>
+    <item>cstr_from</item>
     <item>default</item>
     <item>description</item>
     <item>dest</item>
@@ -87,6 +88,7 @@
     <item>enum</item>
     <item>export</item>
     <item>field</item>
+    <item>field_at</item>
     <item>format</item>
     <item>key</item>
     <item>length_is</item>
@@ -103,6 +105,7 @@
     <item>pad_to</item>
     <item>select</item>
     <item>semantic</item>
+    <item>root_value_at</item>
     <item>size_is</item>
     <item>string</item>
     <item>switch_is</item>

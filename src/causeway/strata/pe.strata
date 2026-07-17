@@ -418,32 +418,24 @@ typedef struct _SECTION
 {
 } SECTION, *PSECTION;
 
-[semantic]
-typedef struct _PE_IMPORT_FUNCTION_VIEW
-{
-} PE_IMPORT_FUNCTION_VIEW;
-
-[semantic]
-typedef struct _PE_IMPORT_DLL_VIEW
-{
-    [tree("flatten")]
-    PE_IMPORT_FUNCTION_VIEW Functions[];
-} PE_IMPORT_DLL_VIEW;
-
-[semantic]
-typedef struct _PE_SECTION_VIEW
-{
-    IMAGE_EXPORT_DIRECTORY Exports[];
-    PE_IMPORT_DLL_VIEW Imports[];
-    BYTE Bytes[];
-
-} PE_SECTION_VIEW;
-
 [semantic("PE Image")]
 typedef struct _PE_VIEW
 {
     [tree("flatten")]
-    PE_SECTION_VIEW Sections[];
+    struct
+    {
+        IMAGE_EXPORT_DIRECTORY Exports[];
+
+        struct
+        {
+            [tree("flatten")]
+            struct
+            {
+            } Functions[];
+        } Imports[];
+
+        BYTE Bytes[];
+    } Sections[];
 } PE_VIEW;
 
 [

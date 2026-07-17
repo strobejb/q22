@@ -248,9 +248,9 @@ enum class PeSemanticMode
     Both
 };
 
-PeSemanticMode peSemanticMode()
+PeSemanticMode semanticMode(const char *environmentVariable)
 {
-    const QString mode = qEnvironmentVariable("Q22_PE_SEMANTIC_VIEW",
+    const QString mode = qEnvironmentVariable(environmentVariable,
                                               QStringLiteral("declarative")).trimmed().toLower();
     if (mode == QLatin1String("cpp"))
         return PeSemanticMode::Cpp;
@@ -261,9 +261,11 @@ PeSemanticMode peSemanticMode()
 
 bool shouldRunCppSemanticView(const QString &id)
 {
-    if (!id.startsWith(QStringLiteral("pe.")))
-        return true;
-    return peSemanticMode() != PeSemanticMode::Declarative;
+    if (id.startsWith(QStringLiteral("pe.")))
+        return semanticMode("Q22_PE_SEMANTIC_VIEW") != PeSemanticMode::Declarative;
+    if (id.startsWith(QStringLiteral("elf.")))
+        return semanticMode("Q22_ELF_SEMANTIC_VIEW") != PeSemanticMode::Declarative;
+    return true;
 }
 
 bool structureProfileEnabled()

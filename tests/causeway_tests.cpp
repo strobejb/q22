@@ -407,7 +407,7 @@ void CausewayTests::semanticSchemaAndEmitTagsParse()
 						"  dword payloadOffset;\n"
 						"  dword payloadSize;\n"
 						"  [emit_row(dest(Payloads, key(cstr(\"payloads\", payloadOffset), payloadSize + array_index() + element_value()), name(cstr(\"payloads\", payloadOffset))), offset(payloadOffset)),\n"
-						"   emit_node(dest(Payloads, key(payloadOffset), name(fmt(\"payload {0}\", payloadOffset))), name(concat(\"payload \", payloadOffset)), offset(payloadOffset), extent(payloadSize), field(Size, payloadSize), attr(Note, payloadOffset)),\n"
+						"   emit_node(dest(Payloads, key(payloadOffset), name(fmt(\"payload {0}\", payloadOffset))), name(concat(\"payload \", payloadOffset)), offset(payloadOffset), extent(payloadSize), field(Size, root_value_at(0, dword)), attr(Note, cstr_from(root_value_at(4, dword), field_at(Items, 0, Key)))),\n"
 						"   emit(dest(Payloads), label(payloadOffset), type(PayloadByte), offset(payloadOffset), count(payloadSize))] byte marker;\n"
 						"} Root;\n"));
 

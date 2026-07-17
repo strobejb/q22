@@ -5954,10 +5954,11 @@ void StructViewTests::builderAddsElfSectionAndSymbolSemanticRows()
 {
     // Scenario: an ELF file has a section-header string table plus a symbol
     // table linked to its own string table.
-    // Expected: the raw Strata tables remain visible, and the semantic pass
-    // appends named SECTION rows with resolved SYMBOL children.
-    // Regression guard: ELF domain knowledge belongs in elfsemanticview.cpp,
-    // augmenting the declarative structs rather than replacing them.
+    // Expected: declarative Strata emits named section rows and symbol children
+    // under ELF Image, while the legacy C++ semantic view remains available in
+    // cpp mode for comparison.
+    // Regression guard: ELF's declarative view and C++ fallback must be
+    // independently selectable while the declarative version reaches parity.
     StrataLibrary library;
     QVERIFY2(parseStandardElfDefinition(&library), "elf.strata failed to parse");
 
@@ -6015,16 +6016,42 @@ void StructViewTests::builderAddsElfSectionAndSymbolSemanticRows()
     QCOMPARE(rows.size(), size_t(1));
     QVERIFY(findChildNamed(rows[0].get(), QStringLiteral("Elf32_Shdr sectionHeaders32[]")));
 
-    StructureRow *text = findChildNamed(rows[0].get(), QStringLiteral("SECTION .text"));
-    QVERIFY(text);
+    StructureRow *elfImage = findChildNamed(rows[0].get(), QStringLiteral("ELF Image"));
+    QVERIFY2(elfImage, qPrintable(childNames(rows[0].get())));
+    StructureRow *text = findChildNamed(elfImage, QStringLiteral("SECTION .text"));
+    QVERIFY2(text, qPrintable(childNames(elfImage)));
     QCOMPARE(text->offset, QStringLiteral("00000200"));
     QCOMPARE(text->byteLength, uint64_t(4));
+    QCOMPARE(findChildNamed(text, QStringLiteral("Name"))->value, QStringLiteral(".text"));
+    QCOMPARE(findChildNamed(text, QStringLiteral("Type"))->value, QStringLiteral("SHT_PROGBITS"));
+    QCOMPARE(findChildNamed(text, QStringLiteral("Size"))->value, QStringLiteral("4"));
+    QVERIFY(!findChildNamed(text, QStringLiteral("SYMBOL main")));
 
-    StructureRow *symtab = findChildNamed(rows[0].get(), QStringLiteral("SECTION .symtab"));
+    StructureRow *symtab = findChildNamed(elfImage, QStringLiteral("SECTION .symtab"));
     QVERIFY(symtab);
     StructureRow *symbol = findChildNamed(symtab, QStringLiteral("SYMBOL main"));
-    QVERIFY(symbol);
-    QCOMPARE(symbol->value, QStringLiteral("value 0x1000, size 4"));
+    QVERIFY2(symbol, qPrintable(childNames(symtab)));
+    QCOMPARE(findChildNamed(symbol, QStringLiteral("Name"))->value, QStringLiteral("main"));
+    QCOMPARE(findChildNamed(symbol, QStringLiteral("Value"))->value, QStringLiteral("4096"));
+    QCOMPARE(findChildNamed(symbol, QStringLiteral("Size"))->value, QStringLiteral("4"));
+
+    {
+        ScopedEnvironmentVariable mode("Q22_ELF_SEMANTIC_VIEW", "cpp");
+        auto cppRows = buildRows(&library, root, bytes);
+        QCOMPARE(cppRows.size(), size_t(1));
+        QVERIFY(!findChildNamed(cppRows[0].get(), QStringLiteral("ELF Image")));
+
+        StructureRow *cppText = findChildNamed(cppRows[0].get(), QStringLiteral("SECTION .text"));
+        QVERIFY(cppText);
+        QCOMPARE(cppText->offset, QStringLiteral("00000200"));
+        QCOMPARE(cppText->byteLength, uint64_t(4));
+
+        StructureRow *cppSymtab = findChildNamed(cppRows[0].get(), QStringLiteral("SECTION .symtab"));
+        QVERIFY(cppSymtab);
+        StructureRow *cppSymbol = findChildNamed(cppSymtab, QStringLiteral("SYMBOL main"));
+        QVERIFY(cppSymbol);
+        QCOMPARE(cppSymbol->value, QStringLiteral("value 0x1000, size 4"));
+    }
 }
 
 void StructViewTests::builderKeepsRawElfRowsWhenSemanticDataIsTruncated()
