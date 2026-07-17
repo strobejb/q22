@@ -32,7 +32,7 @@ typedef struct _ICO_DIRECTORY_ENTRY
     dword imageOffset;
 } ICO_DIRECTORY_ENTRY, *PICO_DIRECTORY_ENTRY;
 
-[semantic("ICO Data")]
+[semantic("ICO Summary")]
 typedef struct _ICO_VIEW
 {
     BYTE Images[];

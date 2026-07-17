@@ -3382,7 +3382,7 @@ void StructViewTests::builderRendersSfntTableDirectory()
     // container. Table records carry FourCC tags plus offsets and lengths.
     // Expected: the standard SFNT definition names table-record rows by tag,
     // keeps raw table-directory fields intact, and emits table bytes under
-    // SFNT Data/FontTables.
+    // SFNT Summary/FontTables.
     StrataLibrary library;
     QVERIFY2(parseStandardDefinition(&library, QStringLiteral("sfnt.strata")), "sfnt.strata failed to parse");
     TypeDecl *sfntRoot = exportedNamed(&library, QStringLiteral("SFNT"));
@@ -3429,7 +3429,7 @@ void StructViewTests::builderRendersSfntTableDirectory()
     QCOMPARE(findChildNamed(tables->children[0].get(), QStringLiteral("dword offset"))->value, QStringLiteral("44"));
     QCOMPARE(findChildNamed(tables->children[1].get(), QStringLiteral("dword length"))->value, QStringLiteral("6"));
 
-    StructureRow *semantic = findChildNamed(rows[0].get(), QStringLiteral("SFNT Data"));
+    StructureRow *semantic = findChildNamed(rows[0].get(), QStringLiteral("SFNT Summary"));
     QVERIFY2(semantic, qPrintable(childNames(rows[0].get())));
     StructureRow *fontTables = findChildNamed(semantic, QStringLiteral("FontTables"));
     QVERIFY2(fontTables, qPrintable(childNames(semantic)));
@@ -3563,7 +3563,7 @@ void StructViewTests::builderRendersIcoDirectoryAndImagePayload()
     // Scenario: ICO/CUR files contain a directory of image records whose
     // payloads live elsewhere in the file.
     // Expected: the standard ICO definition renders directory entries and
-    // emits each bounded image payload under ICO Data/Images.
+    // emits each bounded image payload under ICO Summary/Images.
     StrataLibrary library;
     QVERIFY2(parseStandardDefinition(&library, QStringLiteral("ico.strata")), "ico.strata failed to parse");
     TypeDecl *icoRoot = exportedNamed(&library, QStringLiteral("ICO"));
@@ -3602,7 +3602,7 @@ void StructViewTests::builderRendersIcoDirectoryAndImagePayload()
     QVERIFY2(imageOffset, qPrintable(childNames(entry)));
     QVERIFY(imageOffset->children.empty());
 
-    StructureRow *semantic = findChildNamed(rows[0].get(), QStringLiteral("ICO Data"));
+    StructureRow *semantic = findChildNamed(rows[0].get(), QStringLiteral("ICO Summary"));
     QVERIFY2(semantic, qPrintable(childNames(rows[0].get())));
     StructureRow *images = findChildNamed(semantic, QStringLiteral("Images"));
     QVERIFY2(images, qPrintable(childNames(semantic)));
@@ -3712,7 +3712,7 @@ void StructViewTests::builderRendersWoffDirectoryAndPayloads()
     // Scenario: WOFF 1.0 is a big-endian wrapper around sfnt table data with a
     // fixed header and table directory.
     // Expected: the standard WOFF definition renders the directory entries by
-    // tag, emits compressed tables under WOFF Data/FontTables, and still exposes
+    // tag, emits compressed tables under WOFF Summary/FontTables, and still exposes
     // metadata payloads as dynamic bytes.
     StrataLibrary library;
     QVERIFY2(parseStandardDefinition(&library, QStringLiteral("woff.strata")), "woff.strata failed to parse");
@@ -3768,7 +3768,7 @@ void StructViewTests::builderRendersWoffDirectoryAndPayloads()
     QVERIFY2(tableOffset, qPrintable(childNames(tables->children[0].get())));
     QVERIFY(tableOffset->children.empty());
 
-    StructureRow *semantic = findChildNamed(rows[0].get(), QStringLiteral("WOFF Data"));
+    StructureRow *semantic = findChildNamed(rows[0].get(), QStringLiteral("WOFF Summary"));
     QVERIFY2(semantic, qPrintable(childNames(rows[0].get())));
     StructureRow *fontTables = findChildNamed(semantic, QStringLiteral("FontTables"));
     QVERIFY2(fontTables, qPrintable(childNames(semantic)));

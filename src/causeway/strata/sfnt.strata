@@ -90,7 +90,7 @@ typedef struct _SFNT_COLLECTION
     dword dsigOffset;
 } SFNT_COLLECTION, *PSFNT_COLLECTION;
 
-[semantic("SFNT Data")]
+[semantic("SFNT Summary")]
 typedef struct _SFNT_VIEW
 {
     BYTE FontTables[];

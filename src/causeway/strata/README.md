@@ -468,7 +468,7 @@ shape of the summary layer, and raw fields use `emit_node(...)`,
 changing the raw tree.
 
 ```c
-[semantic("WOFF Data")]
+[semantic("WOFF Summary")]
 typedef struct _WOFF_VIEW {
     BYTE FontTables[];
 } WOFF_VIEW;
