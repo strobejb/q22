@@ -80,6 +80,7 @@ private slots:
     void builderEvaluatesEnumIndexedUnionMembersInExpressions();
     void builderUsesSimpleRootNamesForBuiltinTypedefRoots();
     void builderRendersElfImportsAndExportsSummary();
+    void builderRendersElfDependenciesAndRelocationsSummary();
     void builderOptionallySortsTopLevelRowsByOffset();
     void builderRendersDexHeaderAndTables();
     void builderAddsDexSemanticSummaryPastArrayRenderCap();
@@ -6182,6 +6183,104 @@ void StructViewTests::builderAddsElfSectionAndSymbolSemanticRows()
         QVERIFY(cppSymbol);
         QCOMPARE(cppSymbol->value, QStringLiteral("value 0x1000, size 4"));
     }
+}
+
+void StructViewTests::builderRendersElfDependenciesAndRelocationsSummary()
+{
+    // Scenario: an ELF shared object has a DT_NEEDED entry in .dynamic and a
+    // relocation table in a dedicated relocation section.
+    // Expected: the declarative summary shows a Dependencies branch under the
+    // dynamic section and a Relocations branch under the relocation section,
+    // while the raw section rows remain intact.
+    StrataLibrary library;
+    QVERIFY2(parseStandardElfDefinition(&library), "elf.strata failed to parse");
+
+    QByteArray bytes(0x340, '\0');
+    bytes[0] = char(0x7f);
+    bytes[1] = 'E';
+    bytes[2] = 'L';
+    bytes[3] = 'F';
+    bytes[4] = char(1);
+    bytes[5] = char(1);
+    bytes[6] = char(1);
+    writeLe16(&bytes, 16, 3);
+    writeLe16(&bytes, 18, 3);
+    writeLe32(&bytes, 20, 1);
+    writeLe32(&bytes, 32, 0x100);
+    writeLe16(&bytes, 46, 40);
+    writeLe16(&bytes, 48, 8);
+    writeLe16(&bytes, 50, 4);
+
+    auto writeSection = [&bytes](qsizetype index,
+                                 quint32 name,
+                                 quint32 type,
+                                 quint32 offset,
+                                 quint32 size,
+                                 quint32 link,
+                                 quint32 info,
+                                 quint32 entrySize) {
+        const qsizetype base = 0x100 + index * 40;
+        writeLe32(&bytes, base + 0, name);
+        writeLe32(&bytes, base + 4, type);
+        writeLe32(&bytes, base + 16, offset);
+        writeLe32(&bytes, base + 20, size);
+        writeLe32(&bytes, base + 24, link);
+        writeLe32(&bytes, base + 28, info);
+        writeLe32(&bytes, base + 36, entrySize);
+    };
+
+    const QByteArray shstr("\0.text\0.symtab\0.strtab\0.shstrtab\0.dynstr\0.dynamic\0.rel.text\0", 60);
+    memcpy(bytes.data() + 0x280, shstr.constData(), size_t(shstr.size()));
+    const QByteArray strtab("\0main\0", 6);
+    memcpy(bytes.data() + 0x260, strtab.constData(), size_t(strtab.size()));
+    const QByteArray dynstr("\0libelf.so\0", 11);
+    memcpy(bytes.data() + 0x2c0, dynstr.constData(), size_t(dynstr.size()));
+
+    writeSection(1, 1, 1, 0x200, 4, 0, 0, 0);
+    writeSection(2, 7, 2, 0x220, 32, 3, 0, 16);
+    writeSection(3, 15, 3, 0x260, 6, 0, 0, 0);
+    writeSection(4, 23, 3, 0x280, quint32(shstr.size()), 0, 0, 0);
+    writeSection(5, 33, 3, 0x2c0, quint32(dynstr.size()), 0, 0, 0);
+    writeSection(6, 41, 6, 0x2d0, 16, 5, 0, 8);
+    writeSection(7, 50, 9, 0x2e0, 8, 2, 1, 8);
+
+    writeLe32(&bytes, 0x2d0 + 0, 1);
+    writeLe32(&bytes, 0x2d0 + 4, 1);
+    writeLe32(&bytes, 0x2d8 + 0, 0);
+    writeLe32(&bytes, 0x2d8 + 4, 0);
+
+    writeLe32(&bytes, 0x2e0 + 0, 0x1234);
+    writeLe32(&bytes, 0x2e0 + 4, (5u << 8) | 3u);
+
+    TypeDecl *root = exportedNamed(&library, QStringLiteral("ELF"));
+    QVERIFY(root);
+    auto rows = buildRows(&library, root, bytes);
+    QCOMPARE(rows.size(), size_t(1));
+
+    StructureRow *elfImage = findChildNamed(rows[0].get(), QStringLiteral("ELF Image"));
+    QVERIFY2(elfImage, qPrintable(childNames(rows[0].get())));
+
+    StructureRow *dynamicSection = findChildNamed(elfImage, QStringLiteral("SECTION .dynamic"));
+    QVERIFY(dynamicSection);
+    QVERIFY2(dynamicSection->branchIconPath.contains(QStringLiteral("structure")), qPrintable(dynamicSection->branchIconPath));
+    QVERIFY(dynamicSection->emphasizeName);
+    StructureRow *dependencies = findChildNamed(dynamicSection, QStringLiteral("Dependencies"));
+    QVERIFY2(dependencies, qPrintable(childNames(dynamicSection)));
+    StructureRow *dependency = findChildNamed(dependencies, QStringLiteral("libelf.so"));
+    QVERIFY2(dependency, qPrintable(childNames(dependencies)));
+    QCOMPARE(findChildNamed(dependency, QStringLiteral("Name"))->value, QStringLiteral("libelf.so"));
+
+    StructureRow *relSection = findChildNamed(elfImage, QStringLiteral("SECTION .rel.text"));
+    QVERIFY(relSection);
+    QVERIFY2(relSection->branchIconPath.contains(QStringLiteral("structure")), qPrintable(relSection->branchIconPath));
+    QVERIFY(relSection->emphasizeName);
+    StructureRow *relocations = findChildNamed(relSection, QStringLiteral("Relocations"));
+    QVERIFY2(relocations, qPrintable(childNames(relSection)));
+    StructureRow *relocation = findChildNamed(relocations, QStringLiteral("4660"));
+    QVERIFY2(relocation, qPrintable(childNames(relocations)));
+    QCOMPARE(findChildNamed(relocation, QStringLiteral("Offset"))->value, QStringLiteral("4660"));
+    QVERIFY(findChildNamed(relocation, QStringLiteral("Type")));
+    QVERIFY(findChildNamed(relocation, QStringLiteral("SymbolIndex")));
 }
 
 void StructViewTests::builderKeepsRawElfRowsWhenSemanticDataIsTruncated()

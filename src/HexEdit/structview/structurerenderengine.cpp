@@ -386,6 +386,29 @@ bool semanticRowHasComplexChildren(const StructureRow *row)
     return false;
 }
 
+void refreshSemanticBranchPresentation(StructureRow *row, const QString &rootLabel)
+{
+    if (!row)
+        return;
+
+    for (const auto &child : row->children)
+        refreshSemanticBranchPresentation(child.get(), rootLabel);
+
+    if (row->kind != StructureRowKind::Semantic)
+        return;
+
+    if (row->parent && row->parent->kind == StructureRowKind::Raw && row->name == rootLabel)
+        return;
+
+    if (!semanticRowHasComplexChildren(row))
+        return;
+
+    row->emphasizeName = true;
+    row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueStructure),
+                        QString::fromLatin1(StructureBranchIcons::kBlueStructureOpen),
+                        QString::fromLatin1(StructureBranchIcons::kGrayStructure));
+}
+
 void applySemanticBranchIcons(StructureRow *row, const QStringList &path, bool isArray = false)
 {
     if (!row)
@@ -725,6 +748,7 @@ std::vector<std::unique_ptr<StructureRow>> StructureRenderEngine::build()
             semanticOffsetMaps.push_back(StructureOffsetMap{ map.logicalStart, map.logicalSize, map.fileOffset });
     }
     runStructureSemanticViews(m_library, root.get(), m_baseOffset, m_reader, semanticOffsetMaps);
+    refreshSemanticBranchPresentation(root.get(), semanticRootLabel());
     if (m_options.sortTopLevelRowsByOffset)
     {
         std::stable_sort(root->children.begin(), root->children.end(), [](const RowPtr &left, const RowPtr &right) {

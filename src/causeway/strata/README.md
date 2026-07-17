@@ -457,14 +457,15 @@ attaching additional structures, arrays, or named overlays beyond the raw field 
 
 `[semantic]` marks a struct as a semantic-only tree schema. It is not rendered as
 raw file layout and may contain unsized destination arrays. Inline structs nested
-inside a semantic schema inherit semantic-schema behavior, so destination element
-shapes can live directly inside the containing semantic root instead of requiring
-extra standalone `[semantic]` typedefs. Use `[semantic("Display Name")]` to
-choose the root branch label; unlabeled schemas fall back to `Semantic`.
-`[semantic(ViewType)]` on a raw root attaches that schema. Raw fields then use
-`emit_node(...)` for concise projected summary rows, `emit_row(...)` to create
-semantic container rows, and `emit(...)` to append byte-backed rows under
-`<schema label>/<dest>` without changing the raw tree.
+inside a semantic schema inherit semantic-schema behavior, so the semantic root
+can describe the whole summary tree structurally instead of forcing everything
+into a flat list of tags. Use `[semantic("Display Name")]` to choose the root
+branch label; unlabeled schemas fall back to `Semantic`.
+`[semantic(ViewType)]` on a raw root attaches that schema. The raw definition
+still comes first and stays byte-honest; the semantic root then defines the
+shape of the summary layer, and raw fields use `emit_node(...)`,
+`emit_row(...)`, and `emit(...)` to populate that destination tree without
+changing the raw tree.
 
 ```c
 [semantic("WOFF Data")]
@@ -1135,6 +1136,12 @@ Prefer pure structures for ordinary file layouts. Reach for
 `dynamic_array(...)`, `dynamic_struct(...)`, `dynamic_container(...)`, and
 `view(...)` only for related data that is not really an inline C field, such as
 PE RVA-mapped import/export tables.
+
+When a format also needs a summary view, define the raw layout first and then
+layer a single semantic root schema over it. Put the summary structure inside
+that semantic root with nested structs and arrays, so the destination shape is
+obvious from the definition instead of being inferred from a long run of
+`emit(...)` calls.
 
 Named address spaces follow the same rule. Define `offset_map("space", ...)`
 where the file format defines the coordinate system, then use

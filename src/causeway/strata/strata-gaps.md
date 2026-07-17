@@ -259,3 +259,17 @@ need semantic support:
 
 Potential direction: compound magic predicates, indexed string-table helpers,
 dyld metadata semantic views, and nested subfile views.
+
+## Named offset spaces and self-scoped rows
+
+`offset_map("space", ...)` plus `offset("space", expr)` and `value_at("space",
+expr, Type)` cover the common case where a row resolves bytes through a named
+address space declared by an owning row or a sibling. The awkward case is when
+a row wants to use its own named offset space while still evaluating its own
+destination/name expressions. Today that self-scope is not prebound early
+enough, so the map is only reliable for descendants and later rows.
+
+Potential direction: a narrow prebind pass for `offset_map(...)` / named spaces
+so the current row can see its own map before `dest(...)`, `key(...)`, and
+`name(...)` finish evaluation, without turning the renderer into a more general
+multi-pass interpreter.
