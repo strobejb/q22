@@ -336,9 +336,9 @@ void interpretPeImports(StructureSemanticContext &context)
         if (dllRow)
         {
             // Use blue for the unloaded state too — we know every DLL row has children.
-            dllRow->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueSingleClosed),
-                                   QString::fromLatin1(StructureBranchIcons::kBlueSingleOpen),
-                                   QString::fromLatin1(StructureBranchIcons::kBlueSingleClosed));
+            dllRow->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueStructure),
+                                   QString::fromLatin1(StructureBranchIcons::kBlueStructureOpen),
+                                   QString::fromLatin1(StructureBranchIcons::kGrayStructure));
             dllRow->lazyChildLoader = [baseOffset, reader, offsetMaps, descriptor, pe32Plus]() {
                 StructureSemanticContext lazyContext(nullptr,
                                                      nullptr,

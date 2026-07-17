@@ -78,6 +78,7 @@ private slots:
     void builderEvaluatesEnumIndexedArraysInExpressions();
     void builderEvaluatesEnumIndexedUnionMembersInExpressions();
     void builderUsesSimpleRootNamesForBuiltinTypedefRoots();
+    void builderRendersElfImportsAndExportsSummary();
     void builderOptionallySortsTopLevelRowsByOffset();
     void builderRendersDexHeaderAndTables();
     void builderAddsDexSemanticSummaryPastArrayRenderCap();
@@ -2397,6 +2398,97 @@ void StructViewTests::builderUsesSimpleRootNamesForBuiltinTypedefRoots()
     auto elfRows = buildRows(&elfLibrary, elfRoot, elfBytes);
     QCOMPARE(elfRows.size(), size_t(1));
     QCOMPARE(elfRows[0]->name, QStringLiteral("ELF"));
+}
+
+void StructViewTests::builderRendersElfImportsAndExportsSummary()
+{
+    // Scenario: a shared-object style ELF file has a dynamic symbol table with
+    // both undefined symbols (imports) and defined global symbols (exports).
+    // Expected: the semantic summary groups those symbols under Imports and
+    // Exports at the ELF root, while the raw section rows remain intact. The
+    // section's symbol table should be nested under a Symbols group.
+    StrataLibrary library;
+    QVERIFY2(parseStandardElfDefinition(&library), "elf.strata failed to parse");
+
+    QByteArray bytes(0x300, '\0');
+    bytes[0] = char(0x7f);
+    bytes[1] = 'E';
+    bytes[2] = 'L';
+    bytes[3] = 'F';
+    bytes[4] = char(1);
+    bytes[5] = char(1);
+    bytes[6] = char(1);
+    writeLe16(&bytes, 16, 2);
+    writeLe16(&bytes, 18, 3);
+    writeLe32(&bytes, 20, 1);
+    writeLe32(&bytes, 32, 0x100);
+    writeLe16(&bytes, 46, 40);
+    writeLe16(&bytes, 48, 5);
+    writeLe16(&bytes, 50, 3);
+
+    auto writeSection = [&bytes](qsizetype index,
+                                 quint32 name,
+                                 quint32 type,
+                                 quint32 offset,
+                                 quint32 size,
+                                 quint32 link,
+                                 quint32 entrySize) {
+        const qsizetype base = 0x100 + index * 40;
+        writeLe32(&bytes, base + 0, name);
+        writeLe32(&bytes, base + 4, type);
+        writeLe32(&bytes, base + 16, offset);
+        writeLe32(&bytes, base + 20, size);
+        writeLe32(&bytes, base + 24, link);
+        writeLe32(&bytes, base + 36, entrySize);
+    };
+
+    const QByteArray shstr("\0.dynsym\0.dynstr\0.shstrtab\0.text\0", 32);
+    memcpy(bytes.data() + 0x260, shstr.constData(), size_t(shstr.size()));
+    const QByteArray dynstr("\0printf\0main\0", 13);
+    memcpy(bytes.data() + 0x220, dynstr.constData(), size_t(dynstr.size()));
+
+    writeSection(1, 1, 11, 0x200, 32, 2, 16);
+    writeSection(2, 9, 3, 0x220, 13, 0, 0);
+    writeSection(3, 17, 3, 0x260, quint32(shstr.size()), 0, 0);
+    writeSection(4, 27, 1, 0x240, 4, 0, 0);
+
+    writeLe32(&bytes, 0x200 + 0, 1);
+    writeLe32(&bytes, 0x200 + 4, 0);
+    writeLe32(&bytes, 0x200 + 8, 0);
+    bytes[0x200 + 12] = char(0x12);
+    writeLe16(&bytes, 0x200 + 14, 0);
+
+    writeLe32(&bytes, 0x210 + 0, 8);
+    writeLe32(&bytes, 0x210 + 4, 0x1234);
+    writeLe32(&bytes, 0x210 + 8, 4);
+    bytes[0x210 + 12] = char(0x12);
+    writeLe16(&bytes, 0x210 + 14, 4);
+
+    TypeDecl *root = exportedNamed(&library, QStringLiteral("ELF"));
+    QVERIFY(root);
+    auto rows = buildRows(&library, root, bytes);
+    QCOMPARE(rows.size(), size_t(1));
+
+    StructureRow *elfImage = findChildNamed(rows[0].get(), QStringLiteral("ELF Image"));
+    QVERIFY2(elfImage, qPrintable(childNames(rows[0].get())));
+
+    StructureRow *dynsym = findChildNamed(elfImage, QStringLiteral("SECTION .dynsym"));
+    QVERIFY2(dynsym, qPrintable(childNames(elfImage)));
+    StructureRow *imports = findChildNamed(dynsym, QStringLiteral("Imports"));
+    QVERIFY2(imports, qPrintable(childNames(dynsym)));
+    StructureRow *importSymbol = findChildNamed(imports, QStringLiteral("printf"));
+    QVERIFY2(importSymbol, qPrintable(childNames(imports)));
+    QCOMPARE(importSymbol->offset, QStringLiteral("00000200"));
+
+    StructureRow *exports = findChildNamed(dynsym, QStringLiteral("Exports"));
+    QVERIFY2(exports, qPrintable(childNames(dynsym)));
+    StructureRow *exportSymbol = findChildNamed(exports, QStringLiteral("main"));
+    QVERIFY2(exportSymbol, qPrintable(childNames(exports)));
+    QCOMPARE(exportSymbol->offset, QStringLiteral("00000210"));
+    StructureRow *symbols = findChildNamed(dynsym, QStringLiteral("Symbols"));
+    QVERIFY2(symbols, qPrintable(childNames(dynsym)));
+    QVERIFY(findChildNamed(symbols, QStringLiteral("SYMBOL printf")));
+    QVERIFY(findChildNamed(symbols, QStringLiteral("SYMBOL main")));
 }
 
 void StructViewTests::builderOptionallySortsTopLevelRowsByOffset()
@@ -5954,9 +6046,9 @@ void StructViewTests::builderAddsElfSectionAndSymbolSemanticRows()
 {
     // Scenario: an ELF file has a section-header string table plus a symbol
     // table linked to its own string table.
-    // Expected: declarative Strata emits named section rows and symbol children
-    // under ELF Image, while the legacy C++ semantic view remains available in
-    // cpp mode for comparison.
+    // Expected: declarative Strata emits named section rows and a Symbols
+    // branch under ELF Image, while the legacy C++ semantic view remains
+    // available in cpp mode for comparison.
     // Regression guard: ELF's declarative view and C++ fallback must be
     // independently selectable while the declarative version reaches parity.
     StrataLibrary library;
@@ -6029,8 +6121,10 @@ void StructViewTests::builderAddsElfSectionAndSymbolSemanticRows()
 
     StructureRow *symtab = findChildNamed(elfImage, QStringLiteral("SECTION .symtab"));
     QVERIFY(symtab);
-    StructureRow *symbol = findChildNamed(symtab, QStringLiteral("SYMBOL main"));
-    QVERIFY2(symbol, qPrintable(childNames(symtab)));
+    StructureRow *symbols = findChildNamed(symtab, QStringLiteral("Symbols"));
+    QVERIFY2(symbols, qPrintable(childNames(symtab)));
+    StructureRow *symbol = findChildNamed(symbols, QStringLiteral("SYMBOL main"));
+    QVERIFY2(symbol, qPrintable(childNames(symbols)));
     QCOMPARE(findChildNamed(symbol, QStringLiteral("Name"))->value, QStringLiteral("main"));
     QCOMPARE(findChildNamed(symbol, QStringLiteral("Value"))->value, QStringLiteral("4096"));
     QCOMPARE(findChildNamed(symbol, QStringLiteral("Size"))->value, QStringLiteral("4"));
@@ -6048,7 +6142,9 @@ void StructViewTests::builderAddsElfSectionAndSymbolSemanticRows()
 
         StructureRow *cppSymtab = findChildNamed(cppRows[0].get(), QStringLiteral("SECTION .symtab"));
         QVERIFY(cppSymtab);
-        StructureRow *cppSymbol = findChildNamed(cppSymtab, QStringLiteral("SYMBOL main"));
+        StructureRow *cppSymbols = findChildNamed(cppSymtab, QStringLiteral("Symbols"));
+        QVERIFY(cppSymbols);
+        StructureRow *cppSymbol = findChildNamed(cppSymbols, QStringLiteral("SYMBOL main"));
         QVERIFY(cppSymbol);
         QCOMPARE(cppSymbol->value, QStringLiteral("value 0x1000, size 4"));
     }

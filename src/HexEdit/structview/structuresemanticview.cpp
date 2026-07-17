@@ -185,15 +185,15 @@ std::unique_ptr<StructureRow> StructureSemanticContext::createSemanticRow(Struct
     row->generatedOffset = byteLength > 0;
     if (value.trimmed() == QStringLiteral("{...}"))
     {
-        row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueDoubleClosed),
-                            QString::fromLatin1(StructureBranchIcons::kBlueDoubleOpen),
-                            QString::fromLatin1(StructureBranchIcons::kGrayDoubleClosed));
+        row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueStructure),
+                            QString::fromLatin1(StructureBranchIcons::kBlueStructureOpen),
+                            QString::fromLatin1(StructureBranchIcons::kGrayStructure));
     }
     else
     {
-        row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueFace),
-                            QString::fromLatin1(StructureBranchIcons::kBlueFace),
-                            QString::fromLatin1(StructureBranchIcons::kBlueFace));
+        row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueElement),
+                            QString::fromLatin1(StructureBranchIcons::kBlueElement),
+                            QString::fromLatin1(StructureBranchIcons::kBlueElement));
     }
 
     return row;
