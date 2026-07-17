@@ -280,6 +280,15 @@ typedef struct _IMAGE_NT_HEADERS {
 } IMAGE_NT_HEADERS, *PIMAGE_NT_HEADERS;
 
 [
+    emit_row(dest(Sections, key(Name), name(Name)),
+             offset(PointerToRawData),
+             optional(SizeOfRawData != 0),
+             map("rva", VirtualAddress, SizeOfRawData, PointerToRawData)),
+    emit(dest(Sections.Bytes),
+         type(BYTE),
+         offset("rva", VirtualAddress),
+         count(SizeOfRawData),
+         optional(SizeOfRawData != 0)),
     offset_map(VirtualAddress, SizeOfRawData, PointerToRawData),
     offset_map("rva", VirtualAddress, SizeOfRawData, PointerToRawData),
     dynamic_container(type(SECTION))
@@ -304,13 +313,23 @@ typedef struct _IMAGE_SECTION_HEADER
     dword   Characteristics;
 } IMAGE_SECTION_HEADER, *PIMAGE_SECTION_HEADER;
 
+[
+    emit_row(dest(Sections.Exports, key(cstr("rva", element_value())), name(cstr("rva", element_value()))),
+             offset("rva", element_value()),
+             optional(element_value() != 0))
+]
+typedef dword PE_EXPORT_NAME_RVA;
+
+typedef dword PE_EXPORT_FUNCTION_RVA;
+typedef word PE_EXPORT_ORDINAL_INDEX;
+
 // The export directory points at three parallel RVA tables rather than owning
 // them inline.  dynamic_array keeps the C struct honest while rendering those
 // related raw tables under the directory row.
 [
-    dynamic_array(name(ExportFunctions), type(DWORD), offset("rva", AddressOfFunctions), count(NumberOfFunctions)),
-    dynamic_array(name(ExportNames), type(DWORD), offset("rva", AddressOfNames), count(NumberOfNames)),
-    dynamic_array(name(ExportOrdinals), type(WORD), offset("rva", AddressOfNameOrdinals), count(NumberOfNames)),
+    dynamic_array(name(ExportFunctions), type(PE_EXPORT_FUNCTION_RVA), offset("rva", AddressOfFunctions), count(NumberOfFunctions)),
+    dynamic_array(name(ExportNames), type(PE_EXPORT_NAME_RVA), offset("rva", AddressOfNames), count(NumberOfNames)),
+    dynamic_array(name(ExportOrdinals), type(PE_EXPORT_ORDINAL_INDEX), offset("rva", AddressOfNameOrdinals), count(NumberOfNames)),
     view("pe.exports")
 ]
 typedef struct _IMAGE_EXPORT_DIRECTORY
@@ -328,6 +347,13 @@ typedef struct _IMAGE_EXPORT_DIRECTORY
     dword   AddressOfNameOrdinals;
 } IMAGE_EXPORT_DIRECTORY, *PIMAGE_EXPORT_DIRECTORY;
 
+[
+    emit_row(dest(Sections.Imports.Functions,
+                  key(cstr("rva", Name), cstr("rva", Function + 2)),
+                  name(cstr("rva", Function + 2))),
+             offset("rva", Function),
+             optional(Function != 0 && (Function & 0x80000000) == 0))
+]
 typedef union _IMAGE_THUNK_DATA32
 {
     dword ForwarderString;
@@ -336,6 +362,13 @@ typedef union _IMAGE_THUNK_DATA32
     dword AddressOfData;
 } IMAGE_THUNK_DATA32, *PIMAGE_THUNK_DATA32;
 
+[
+    emit_row(dest(Sections.Imports.Functions,
+                  key(cstr("rva", Name), cstr("rva", Function + 2)),
+                  name(cstr("rva", Function + 2))),
+             offset("rva", Function),
+             optional(Function != 0))
+]
 typedef union _IMAGE_THUNK_DATA64
 {
     uint64 ForwarderString;
@@ -356,6 +389,9 @@ typedef struct _IMAGE_IMPORT_BY_NAME
 // tables are rendered here, while view("pe.imports") is kept as a friendly
 // semantic overlay for correlating DLL/function names.
 [
+    emit_row(dest(Sections.Imports, key(cstr("rva", Name)), name(cstr("rva", Name))),
+             offset("rva", Name),
+             optional(Name != 0)),
     dynamic_array(name(DllName), type(CHAR), offset("rva", Name), max_count(4096), terminated_by(0)),
     dynamic_array(name(ImportLookup32), type(IMAGE_THUNK_DATA32), offset("rva", OriginalFirstThunk), max_count(512), terminated_by(Function == 0), terminator("hidden"), optional(ntHeaders.OptionalHeader32.Magic == 0x10b)),
     dynamic_array(name(ImportAddress32), type(IMAGE_THUNK_DATA32), offset("rva", FirstThunk), max_count(512), terminated_by(Function == 0), terminator("hidden"), optional(ntHeaders.OptionalHeader32.Magic == 0x10b)),
@@ -382,6 +418,33 @@ typedef struct _SECTION
 {
 } SECTION, *PSECTION;
 
+[semantic]
+typedef struct _PE_IMPORT_FUNCTION_VIEW
+{
+} PE_IMPORT_FUNCTION_VIEW;
+
+[semantic]
+typedef struct _PE_IMPORT_DLL_VIEW
+{
+    [tree("flatten")]
+    PE_IMPORT_FUNCTION_VIEW Functions[];
+} PE_IMPORT_DLL_VIEW;
+
+[semantic]
+typedef struct _PE_SECTION_VIEW
+{
+    IMAGE_EXPORT_DIRECTORY Exports[];
+    PE_IMPORT_DLL_VIEW Imports[];
+    BYTE Bytes[];
+
+} PE_SECTION_VIEW;
+
+[semantic("PE Image")]
+typedef struct _PE_VIEW
+{
+    [tree("flatten")]
+    PE_SECTION_VIEW Sections[];
+} PE_VIEW;
 
 [
   export("Portable Executable (PE)"),
@@ -389,7 +452,8 @@ typedef struct _SECTION
   category("code"),
   assoc(".exe", ".sys", ".dll"),
   magic({ 'M', 'Z' }),
-  offset(0)
+  offset(0),
+  semantic(PE_VIEW)
 ]
 typedef struct _PE
 {

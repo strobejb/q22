@@ -21,9 +21,22 @@ typedef struct _ICO_DIRECTORY_ENTRY
     word bitCountOrHotspotY;
     dword bytesInResource;
 
-    [dynamic_array(name(ImageData), type(BYTE), offset(imageOffset), count(bytesInResource), optional(bytesInResource != 0))]
+    [
+        emit(dest(Images),
+             label(imageOffset),
+             type(BYTE),
+             offset(imageOffset),
+             count(bytesInResource),
+             optional(bytesInResource != 0))
+    ]
     dword imageOffset;
 } ICO_DIRECTORY_ENTRY, *PICO_DIRECTORY_ENTRY;
+
+[semantic("ICO Data")]
+typedef struct _ICO_VIEW
+{
+    BYTE Images[];
+} ICO_VIEW;
 
 [
     export("Windows Icon / Cursor (ICO/CUR)"),
@@ -33,7 +46,8 @@ typedef struct _ICO_DIRECTORY_ENTRY
     magic({ 0x00, 0x00, 0x01, 0x00 }),
     magic({ 0x00, 0x00, 0x02, 0x00 }),
     offset(0),
-    endian("little")
+    endian("little"),
+    semantic(ICO_VIEW)
 ]
 typedef struct _ICO
 {

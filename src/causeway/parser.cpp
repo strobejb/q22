@@ -11,7 +11,7 @@
 
 #include "parser.h"
 
-TypeDecl * ParseTypeDecl(Tag *tagList, SymbolTable &table, bool nested = false, bool allowMultiDecl = true);
+TypeDecl * ParseTypeDecl(Tag *tagList, SymbolTable &table, bool nested = false, bool allowMultiDecl = true, bool allowUnsizedArray = false);
 const char *inenglish(TYPE ty);
 
 StrataLibrary::StrataLibrary()
@@ -209,6 +209,19 @@ static TOKEN kDynamicTagValueWrappers[] = {
 	TOK_MAXCOUNT, TOK_MAPPER, TOK_TERMINATEDBY, TOK_TERMINATOR, TOK_OPTIONAL, TOK_CONTAINER, TOK_NULL
 };
 
+static TOKEN kEmitTagValueWrappers[] = {
+	TOK_DEST, TOK_LABEL, TOK_CASE, TOK_TYPE, TOK_OFFSET, TOK_SIZEIS,
+	TOK_MAXCOUNT, TOK_TERMINATEDBY, TOK_TERMINATOR, TOK_OPTIONAL, TOK_MAP, TOK_NULL
+};
+
+static TOKEN kEmitRowTagValueWrappers[] = {
+	TOK_DEST, TOK_CASE, TOK_OFFSET, TOK_OPTIONAL, TOK_MAP, TOK_NULL
+};
+
+static TOKEN kEmitNodeTagValueWrappers[] = {
+	TOK_DEST, TOK_CASE, TOK_NAME, TOK_OFFSET, TOK_EXTENT, TOK_OPTIONAL, TOK_ATTR, TOK_NULL
+};
+
 bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 {
 	Tag *	tag = 0;
@@ -269,6 +282,24 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 		case TOK_DEFAULT:
 			tag = new Tag(t, tag);
 			Advance();
+			break;
+
+		case TOK_SEMANTIC:
+			tmp = t;
+			Advance();
+			if(t == TOKEN('('))
+			{
+				Advance();
+				if((expr = Expression(TOK_NULL)) == 0)
+					return false;
+				tag = new Tag(tmp, tag, expr);
+				if(!Expected(')'))
+					return false;
+			}
+			else
+			{
+				tag = new Tag(tmp, tag);
+			}
 			break;
 
 		// export optionally takes a description string: export or export("name")
@@ -388,6 +419,9 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 		case TOK_DYNAMICARRAY:
 		case TOK_DYNAMICCONTAINER:
 		case TOK_DYNAMICSTRUCT:
+		case TOK_EMIT:
+		case TOK_EMITNODE:
+		case TOK_EMITROW:
 		case TOK_VERSION:
 		case TOK_VIEW:
 		case TOK_TREE:
@@ -404,6 +438,30 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 				// comma-separated, each argument optionally wrapped as e.g.
 				// name(DllName) to mark its role explicitly -- see TagArgList().
 				if((expr = TagArgList(kDynamicTagValueWrappers)) == 0)
+				{
+					Error(ERROR_SYNTAX_ERROR, inenglish(t));
+					return false;
+				}
+			}
+			else if(tmp == TOK_EMIT)
+			{
+				if((expr = TagArgList(kEmitTagValueWrappers)) == 0)
+				{
+					Error(ERROR_SYNTAX_ERROR, inenglish(t));
+					return false;
+				}
+			}
+			else if(tmp == TOK_EMITROW)
+			{
+				if((expr = TagArgList(kEmitRowTagValueWrappers)) == 0)
+				{
+					Error(ERROR_SYNTAX_ERROR, inenglish(t));
+					return false;
+				}
+			}
+			else if(tmp == TOK_EMITNODE)
+			{
+				if((expr = TagArgList(kEmitNodeTagValueWrappers)) == 0)
 				{
 					Error(ERROR_SYNTAX_ERROR, inenglish(t));
 					return false;
@@ -560,7 +618,8 @@ TagSet * Parser::ParseTagSet(FILEREF fileRef)
 		TOK_DISPLAY,
 		TOK_ENDIAN, TOK_SWITCHIS, TOK_CASE, TOK_NAME, TOK_PADTO, TOK_DEFAULT,
 		TOK_ENUM, TOK_ENTRYPOINT, TOK_EXTENT, TOK_OPTIONAL, TOK_EXPORT, TOK_ASSOC, TOK_CATEGORY, TOK_MAGIC, TOK_OFFSETMAP, TOK_VERSION,
-		TOK_DYNAMICARRAY, TOK_DYNAMICCONTAINER, TOK_DYNAMICSTRUCT, TOK_TERMINATEDBY, TOK_TERMINATOR, TOK_VIEW, TOK_FORMAT, TOK_TREE,
+		TOK_DYNAMICARRAY, TOK_DYNAMICCONTAINER, TOK_DYNAMICSTRUCT, TOK_EMIT, TOK_EMITNODE, TOK_EMITROW, TOK_TERMINATEDBY, TOK_TERMINATOR, TOK_VIEW, TOK_FORMAT, TOK_TREE,
+		TOK_SEMANTIC,
 		TOK_NULL
 	};
 
@@ -713,7 +772,8 @@ int Parser::Parse()
 			TOK_DISPLAY,
 			TOK_ENDIAN,	TOK_SWITCHIS, TOK_CASE, TOK_NAME, TOK_PADTO, TOK_DEFAULT,
 			TOK_ENUM, TOK_ENTRYPOINT, TOK_EXTENT, TOK_OPTIONAL, TOK_EXPORT, TOK_ASSOC, TOK_CATEGORY, TOK_MAGIC, TOK_OFFSETMAP, TOK_VERSION,
-			TOK_DYNAMICARRAY, TOK_DYNAMICCONTAINER, TOK_DYNAMICSTRUCT, TOK_TERMINATEDBY, TOK_TERMINATOR, TOK_VIEW, TOK_TAGS, TOK_FORMAT, TOK_TREE,
+			TOK_DYNAMICARRAY, TOK_DYNAMICCONTAINER, TOK_DYNAMICSTRUCT, TOK_EMIT, TOK_EMITNODE, TOK_EMITROW, TOK_TERMINATEDBY, TOK_TERMINATOR, TOK_VIEW, TOK_TAGS, TOK_FORMAT, TOK_TREE,
+			TOK_SEMANTIC,
 			TOK_NULL 
 
 		};
@@ -766,6 +826,23 @@ int Parser::Parse()
 			// anything else must be a type-declaration
 			if((typeDecl = ParseTypeDecl(tagList, typeLibrary->globalIdentifierList, false, true)) == 0)
 				return 0;
+
+			ExprNode *semanticExpr = 0;
+			if(FindTag(typeDecl->tagList, TOK_SEMANTIC, &semanticExpr)
+				&& semanticExpr
+				&& semanticExpr->type == EXPR_IDENTIFIER)
+			{
+				TypeDecl *schemaDecl = semanticExpr->str ? LookupTypeDecl(semanticExpr->str) : 0;
+				ExprNode *schemaMarker = 0;
+				if(!schemaDecl
+					|| !FindTag(schemaDecl->tagList, TOK_SEMANTIC, &schemaMarker)
+					|| (schemaMarker && schemaMarker->type != EXPR_STRINGBUF))
+				{
+					Error(ERROR_UNKNOWN_SEMANTIC_SCHEMA, semanticExpr->str ? semanticExpr->str : "<invalid>");
+					delete typeDecl;
+					return 0;
+				}
+			}
 
 			// store in the global list
 			typeDecl->fileRef = fileRef;

@@ -6,7 +6,11 @@
 #include "structview/structurebranchicons.h"
 
 #include <QByteArray>
+#include <QDebug>
+#include <QElapsedTimer>
+#include <QFile>
 #include <QLatin1Char>
+#include <QTextStream>
 
 #include <algorithm>
 #include <cstring>
@@ -237,6 +241,61 @@ void registerBuiltInStructureSemanticViews()
 
 namespace
 {
+enum class PeSemanticMode
+{
+    Cpp,
+    Declarative,
+    Both
+};
+
+PeSemanticMode peSemanticMode()
+{
+    const QString mode = qEnvironmentVariable("Q22_PE_SEMANTIC_VIEW",
+                                              QStringLiteral("declarative")).trimmed().toLower();
+    if (mode == QLatin1String("cpp"))
+        return PeSemanticMode::Cpp;
+    if (mode == QLatin1String("both"))
+        return PeSemanticMode::Both;
+    return PeSemanticMode::Declarative;
+}
+
+bool shouldRunCppSemanticView(const QString &id)
+{
+    if (!id.startsWith(QStringLiteral("pe.")))
+        return true;
+    return peSemanticMode() != PeSemanticMode::Declarative;
+}
+
+bool structureProfileEnabled()
+{
+    return qEnvironmentVariableIntValue("QEXED_STRUCTURE_PROFILE") != 0;
+}
+
+void structureProfileLog(const QString &message)
+{
+    qInfo().noquote() << message;
+
+    const QString path = qEnvironmentVariable("QEXED_STRUCTURE_PROFILE_LOG",
+                                              QStringLiteral("structure-profile.log"));
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
+        return;
+
+    QTextStream stream(&file);
+    stream << message << Qt::endl;
+}
+
+size_t semanticRowCount(const StructureRow *row)
+{
+    if (!row)
+        return 0;
+
+    size_t count = 1;
+    for (const auto &child : row->children)
+        count += semanticRowCount(child.get());
+    return count;
+}
+
 void runSemanticViewsForRow(StructureRow *rootRow,
                             StructureRow *row,
                             StrataLibrary *library,
@@ -254,8 +313,28 @@ void runSemanticViewsForRow(StructureRow *rootRow,
             if (tag->tok != TOK_VIEW || !tag->expr || tag->expr->type != EXPR_STRINGBUF || !tag->expr->str)
                 continue;
 
+            const QString viewId = QString::fromLocal8Bit(tag->expr->str);
+            if (!shouldRunCppSemanticView(viewId))
+                continue;
+
+            const bool profile = structureProfileEnabled();
+            const size_t rowsBefore = profile ? semanticRowCount(rootRow) : 0;
+            QElapsedTimer timer;
+            if (profile)
+                timer.start();
+
             StructureSemanticContext context(library, rootRow, row, baseOffset, reader, offsetMaps);
-            StructureSemanticViewRegistry::instance().run(QString::fromLocal8Bit(tag->expr->str), context);
+            const bool ran = StructureSemanticViewRegistry::instance().run(viewId, context);
+            if (profile && ran)
+            {
+                const size_t rowsAfter = semanticRowCount(rootRow);
+                structureProfileLog(QStringLiteral("[StructureProfile] cpp semantic view id=%1 row=%2 added=%3 rows=%4 ms=%5")
+                                        .arg(viewId)
+                                        .arg(row->name)
+                                        .arg(rowsAfter >= rowsBefore ? rowsAfter - rowsBefore : 0)
+                                        .arg(rowsAfter)
+                                        .arg(timer.elapsed()));
+            }
         }
     }
 

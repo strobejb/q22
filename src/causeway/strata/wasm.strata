@@ -161,6 +161,13 @@ typedef struct _WASM_RESULT_TYPE
     byte types[];
 } WASM_RESULT_TYPE, *PWASM_RESULT_TYPE;
 
+[
+    emit_node(dest(Types, key(array_index())),
+              name(fmt("type {0}", array_index())),
+              attr(Form, form),
+              attr(Params, params.count),
+              attr(Results, results.count))
+]
 typedef struct _WASM_FUNCTION_TYPE
 {
     [enum(WASM_TYPE_FORM)]
@@ -189,6 +196,14 @@ typedef struct _WASM_LIMITS
     uleb128 max;
 } WASM_LIMITS, *PWASM_LIMITS;
 
+[
+    emit_node(dest(Tables, key(array_index())),
+              name(fmt("table {0}", array_index())),
+              attr(RefType, refType),
+              attr(Flags, limits.flags),
+              attr(Min, limits.min),
+              attr(Max, limits.max))
+]
 typedef struct _WASM_TABLE_TYPE
 {
     [enum(WASM_VALUE_TYPE)]
@@ -197,6 +212,13 @@ typedef struct _WASM_TABLE_TYPE
     WASM_LIMITS limits;
 } WASM_TABLE_TYPE, *PWASM_TABLE_TYPE;
 
+[
+    emit_node(dest(Memories, key(array_index())),
+              name(fmt("memory {0}", array_index())),
+              attr(Flags, limits.flags),
+              attr(Min, limits.min),
+              attr(Max, limits.max))
+]
 typedef struct _WASM_MEMORY_TYPE
 {
     WASM_LIMITS limits;
@@ -217,6 +239,14 @@ typedef struct _WASM_TAG_TYPE
     uleb128 typeIndex;
 } WASM_TAG_TYPE, *PWASM_TAG_TYPE;
 
+[
+    emit_node(dest(Imports, key(module.bytes, name.bytes)),
+              name(concat(module.bytes, ".", name.bytes)),
+              attr(Module, module.bytes),
+              attr(Name, name.bytes),
+              attr(Kind, kind),
+              attr(TypeIndex, functionTypeIndex))
+]
 typedef struct _WASM_IMPORT
 {
     WASM_NAME module;
@@ -277,6 +307,12 @@ typedef struct _WASM_MEMORY_SECTION
     WASM_MEMORY_TYPE memories[];
 } WASM_MEMORY_SECTION, *PWASM_MEMORY_SECTION;
 
+[
+    emit_node(dest(Globals, key(array_index())),
+              name(fmt("global {0}", array_index())),
+              attr(Type, type.valueType),
+              attr(Mutability, type.mutability))
+]
 typedef struct _WASM_GLOBAL
 {
     WASM_GLOBAL_TYPE type;
@@ -301,6 +337,12 @@ typedef struct _WASM_EXTERN_INDEX
     uleb128 index;
 } WASM_EXTERN_INDEX, *PWASM_EXTERN_INDEX;
 
+[
+    emit_node(dest(Exports, key(name.bytes)),
+              name(name.bytes),
+              attr(Kind, target.kind),
+              attr(Index, target.index))
+]
 typedef struct _WASM_EXPORT
 {
     WASM_NAME name;
@@ -339,6 +381,11 @@ typedef struct _WASM_CODE_BODY
     byte instructions[];
 } WASM_CODE_BODY, *PWASM_CODE_BODY;
 
+[
+    emit_node(dest(Code, key(array_index())),
+              name(fmt("function {0}", array_index())),
+              attr(Size, size))
+]
 typedef struct _WASM_CODE_ENTRY
 {
     uleb128 size;
@@ -355,6 +402,11 @@ typedef struct _WASM_CODE_SECTION
     WASM_CODE_ENTRY functions[];
 } WASM_CODE_SECTION, *PWASM_CODE_SECTION;
 
+[
+    emit_node(dest(Data, key(array_index())),
+              name(fmt("data {0}", array_index())),
+              attr(Mode, mode))
+]
 typedef struct _WASM_DATA_SEGMENT
 {
     [enum(WASM_DATA_MODE)]
@@ -448,6 +500,12 @@ typedef struct _WASM_RAW_SECTION
     byte payload[];
 } WASM_RAW_SECTION, *PWASM_RAW_SECTION;
 
+[
+    emit_node(dest(Sections, key(array_index())),
+              name(id),
+              attr(Id, id),
+              attr(Size, size))
+]
 typedef struct _WASM_SECTION
 {
     [enum(WASM_SECTION_ID)]
@@ -502,13 +560,28 @@ typedef struct _WASM_SECTION
     };
 } WASM_SECTION, *PWASM_SECTION;
 
+[semantic("WASM Summary")]
+typedef struct _WASM_VIEW
+{
+    BYTE Sections[];
+    BYTE Types[];
+    BYTE Imports[];
+    BYTE Exports[];
+    BYTE Code[];
+    BYTE Memories[];
+    BYTE Tables[];
+    BYTE Globals[];
+    BYTE Data[];
+} WASM_VIEW;
+
 [
     export("WebAssembly Module (WASM)"),
     version(1),
     category("code"),
     assoc(".wasm"),
     magic({ 0x00, 0x61, 0x73, 0x6d }),
-    offset(0)
+    offset(0),
+    semantic(WASM_VIEW)
 ]
 typedef struct _WASM
 {
@@ -516,7 +589,8 @@ typedef struct _WASM
 
     [
         count(4096),
-        extent(file_size() - sizeof(WASM_HEADER))
+        extent(file_size() - sizeof(WASM_HEADER)),
+        name(id)
     ]
     WASM_SECTION sections[];
 } WASM;

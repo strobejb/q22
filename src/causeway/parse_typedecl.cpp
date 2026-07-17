@@ -69,11 +69,22 @@ TypeDecl * Parser::LookupTypeDecl(const char *name)
 	for(size_t i = 0; i < table.size(); i++)
 	{
 		TypeDecl *t = table[i];
-		if(strcmp(t->baseType->sym->name, name) == 0)
+		if(t && t->baseType && t->baseType->sym && strcmp(t->baseType->sym->name, name) == 0)
 		{
 			decl = table[i];
 			break;
 		}
+		for(size_t j = 0; t && j < t->declList.size(); j++)
+		{
+			Type *type = t->declList[j];
+			if(type && type->sym && strcmp(type->sym->name, name) == 0)
+			{
+				decl = table[i];
+				break;
+			}
+		}
+		if(decl)
+			break;
 	}
 
 	return decl;
@@ -436,7 +447,7 @@ Type * Parser::ParseEnumBody(Symbol *sym)
 
 //static int cc;
 
-Type * Parser::ParseStructBody(Symbol *sym, TYPE ty)
+Type * Parser::ParseStructBody(Symbol *sym, TYPE ty, TypeDecl *ownerDecl)
 {
 	Structure	*sptr;
 	Tag			*tagList;
@@ -448,6 +459,9 @@ Type * Parser::ParseStructBody(Symbol *sym, TYPE ty)
 		sptr			= new Structure(sym);
 		sym->type		= new Type(ty);
 		sym->type->sptr	= sptr;
+		ExprNode *semanticExpr = 0;
+		sptr->semanticSchema = ownerDecl && FindTag(ownerDecl->tagList, TOK_SEMANTIC, &semanticExpr)
+			&& (!semanticExpr || semanticExpr->type == EXPR_STRINGBUF);
 		sptr->postNameRef.MakeRef(lexer.CurrentFile());
 	}
 
@@ -466,7 +480,8 @@ Type * Parser::ParseStructBody(Symbol *sym, TYPE ty)
 			TOK_DISPLAY, TOK_FORMAT,
 			TOK_ENDIAN,	TOK_SWITCHIS, TOK_CASE, TOK_NAME, TOK_PADTO, TOK_DEFAULT,
 			TOK_ENUM, TOK_ENTRYPOINT, TOK_EXTENT, TOK_OPTIONAL, TOK_BITFLAG, TOK_MAGIC, TOK_OFFSETMAP, TOK_VERSION,
-			TOK_DYNAMICARRAY, TOK_DYNAMICCONTAINER, TOK_DYNAMICSTRUCT, TOK_TERMINATEDBY, TOK_TERMINATOR, TOK_VIEW, TOK_TAGS, TOK_TREE,
+			TOK_DYNAMICARRAY, TOK_DYNAMICCONTAINER, TOK_DYNAMICSTRUCT, TOK_EMIT, TOK_EMITNODE, TOK_EMITROW, TOK_TERMINATEDBY, TOK_TERMINATOR, TOK_VIEW, TOK_TAGS, TOK_TREE,
+			TOK_SEMANTIC,
 			TOK_NULL 
 
 		};
@@ -482,7 +497,7 @@ Type * Parser::ParseStructBody(Symbol *sym, TYPE ty)
 		//	get the member-variable declaration
 		//	nested structures + multi-decls are allowed
 		//
-		if((typeDecl = ParseTypeDecl(tagList, sptr->symbolTable, true, true)) == 0)
+		if((typeDecl = ParseTypeDecl(tagList, sptr->symbolTable, true, true, sptr->semanticSchema)) == 0)
 			return 0;
 
 		//  get the optional bitfield
@@ -658,7 +673,7 @@ Type * Parser::ParseBaseType(TypeDecl *typeDecl, bool nested)
 				sym = InstallSymbol(typeLibrary->globalTagSymbolList, typeName);
 
 			
-				if((type = ParseStructBody(sym, TokenToType(tmp))) == 0)
+				if((type = ParseStructBody(sym, TokenToType(tmp), typeDecl)) == 0)
 					return 0;
 
 				//if(exportType) type->sptr->exported  = true;
@@ -713,12 +728,14 @@ Type * Parser::ParseBaseType(TypeDecl *typeDecl, bool nested)
 //
 //	table - symbol table in which to store any identifiers
 //
-TypeDecl * Parser::ParseTypeDecl(Tag *tagList, SymbolTable &symTable, bool nested /*=false*/, bool allowMultiDecl /*=true*/)
+TypeDecl * Parser::ParseTypeDecl(Tag *tagList, SymbolTable &symTable, bool nested /*=false*/, bool allowMultiDecl /*=true*/, bool allowUnsizedArray /*=false*/)
 {
 	TypeDecl *	typeDecl		= new TypeDecl();
 	//bool		allowMultiDecl	= true;
 
 	typeDecl->fileRef = FILEREF(lexer.CurrentFile());
+	typeDecl->tagList = tagList;
+	typeDecl->allowUnsizedArray = allowUnsizedArray;
 
 	switch(t.kind)
 	{
@@ -759,7 +776,6 @@ TypeDecl * Parser::ParseTypeDecl(Tag *tagList, SymbolTable &symTable, bool neste
 		return 0;
 	}
 
-	typeDecl->tagList			= tagList;
 	typeDecl->nested			= nested;
 
 	// now parse any identifiers
@@ -786,6 +802,7 @@ TypeDecl * Parser::ParseTypeDecl(Tag *tagList, SymbolTable &symTable, bool neste
 		type = AppendType(InvertType(type), typeDecl->baseType);
 
 		if(HasUnsizedArray(type)
+			&& !typeDecl->allowUnsizedArray
 			&& !FindTag(typeDecl->tagList, TOK_SIZEIS, 0)
 			&& !FindTag(typeDecl->tagList, TOK_MAXCOUNT, 0))
 		{

@@ -389,11 +389,14 @@ ExprNode * Parser::UnaryExpression(void)
 		break;
 	}
 
+	case TOK_CSTR:
 	case TOK_CSTRAT:
+	case TOK_CONCAT:
 	case TOK_EXTENTOF:
 	case TOK_FINDFIRST:
 	case TOK_FINDLAST:
 	case TOK_FOURCC:
+	case TOK_FMT:
 	case TOK_OCTAL:
 	case TOK_STR:
 	{
@@ -411,6 +414,9 @@ ExprNode * Parser::UnaryExpression(void)
 	}
 
 	case TOK_FILESIZE:
+	case TOK_INDEX:
+	case TOK_SELF:
+	case TOK_CURRENTOFFSET:
 	{
 		TOKEN funcTok = t;
 		Advance();
@@ -575,6 +581,10 @@ ExprNode *Parser::CommaExpression(TOKEN tok)
 //
 ExprNode *Parser::TagWrappedArg(TOKEN wrappers[])
 {
+	static TOKEN kDestTagValueWrappers[] = {
+		TOK_KEY, TOK_NAME, TOK_NULL
+	};
+
 	for(int i = 0; wrappers[i] != TOK_NULL; i++)
 	{
 		if(t != wrappers[i])
@@ -586,7 +596,13 @@ ExprNode *Parser::TagWrappedArg(TOKEN wrappers[])
 		if(!Expected('('))
 			return 0;
 
-		ExprNode *inner = wrapTok == TOK_OFFSET ? CommaExpression(TOK_NULL) : AssignmentExpression(TOK_NULL);
+		ExprNode *inner = 0;
+		if(wrapTok == TOK_DEST)
+			inner = TagArgList(kDestTagValueWrappers);
+		else if(wrapTok == TOK_OFFSET || wrapTok == TOK_MAP || wrapTok == TOK_KEY || wrapTok == TOK_ATTR)
+			inner = CommaExpression(TOK_NULL);
+		else
+			inner = AssignmentExpression(TOK_NULL);
 		if(!inner)
 			return 0;
 

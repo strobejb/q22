@@ -25,16 +25,23 @@ typedef struct _SFNT_TABLE_PAYLOAD
     BYTE bytes[];
 } SFNT_TABLE_PAYLOAD, *PSFNT_TABLE_PAYLOAD;
 
-[
-    dynamic_array(name(TableData), type(BYTE), offset(offset), count(length), optional(length != 0))
-]
 typedef struct _SFNT_TABLE_RECORD
 {
     [format("fourcc")]
     dword tag;
 
     dword checksum;
+
+    [
+        emit(dest(FontTables),
+             label(tag),
+             type(BYTE),
+             offset(offset),
+             count(length),
+             optional(length != 0))
+    ]
     dword offset;
+
     dword length;
 } SFNT_TABLE_RECORD, *PSFNT_TABLE_RECORD;
 
@@ -83,6 +90,12 @@ typedef struct _SFNT_COLLECTION
     dword dsigOffset;
 } SFNT_COLLECTION, *PSFNT_COLLECTION;
 
+[semantic("SFNT Data")]
+typedef struct _SFNT_VIEW
+{
+    BYTE FontTables[];
+} SFNT_VIEW;
+
 [
     export("TrueType / OpenType Font (TTF/OTF)"),
     version(1),
@@ -92,7 +105,8 @@ typedef struct _SFNT_COLLECTION
     magic({ 'O', 'T', 'T', 'O' }),
     magic({ 't', 't', 'c', 'f' }),
     offset(0),
-    endian("big")
+    endian("big"),
+    semantic(SFNT_VIEW)
 ]
 typedef struct _SFNT
 {

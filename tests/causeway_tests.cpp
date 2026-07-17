@@ -20,6 +20,9 @@ private slots:
 	void includeDefinedTagsetsCanBeUsedByParent();
 	void tagsetsDumpInSourceOrder();
 	void dynamicPlacementTagsParse();
+	void semanticSchemaAndEmitTagsParse();
+	void emitRoleWrappersAreScoped();
+	void unknownSemanticSchemaReferencesFail();
 	void viewTagsParse();
 	void formatAndTreeTagsParse();
 	void fourccBareTagIsRejected();
@@ -382,6 +385,100 @@ void CausewayTests::dynamicPlacementTagsParse()
 	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[1]->tagList, TOK_DYNAMICCONTAINER, nullptr));
 	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[1]->tagList, TOK_OFFSETMAP, nullptr));
 	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[2]->tagList, TOK_TERMINATEDBY, nullptr));
+}
+
+void CausewayTests::semanticSchemaAndEmitTagsParse()
+{
+	// Scenario: a definition declares a semantic-only schema, attaches it to a
+	// raw root, and emits byte-backed rows into a schema destination.
+	// Expected: [semantic] allows unsized destination arrays, [semantic(View)]
+	// is preserved on the root, and emit(...) keeps its role-wrapped arguments.
+	Parser parser;
+	QVERIFY(parseBuffer(parser,
+						"typedef byte PayloadByte;\n"
+						"[semantic(\"Root Data\")]\n"
+						"typedef struct _ROOT_VIEW { PayloadByte Payloads[]; } ROOT_VIEW;\n"
+						"[export, semantic(ROOT_VIEW)]\n"
+						"typedef struct _Root {\n"
+						"  dword payloadOffset;\n"
+						"  dword payloadSize;\n"
+						"  [emit_row(dest(Payloads, key(cstr(\"payloads\", payloadOffset), payloadSize + array_index() + element_value()), name(cstr(\"payloads\", payloadOffset))), offset(payloadOffset)),\n"
+						"   emit_node(dest(Payloads, key(payloadOffset), name(fmt(\"payload {0}\", payloadOffset))), name(concat(\"payload \", payloadOffset)), offset(payloadOffset), extent(payloadSize), attr(Size, payloadSize)),\n"
+						"   emit(dest(Payloads), label(payloadOffset), type(PayloadByte), offset(payloadOffset), count(payloadSize))] byte marker;\n"
+						"} Root;\n"));
+
+	QCOMPARE(parser.GetStrataLibrary()->globalTypeDeclList.size(), size_t(3));
+	TypeDecl *schema = parser.GetStrataLibrary()->globalTypeDeclList[1];
+	QVERIFY(FindTag(schema->tagList, TOK_SEMANTIC, nullptr));
+	QVERIFY(schema->baseType && schema->baseType->sptr);
+	QVERIFY(schema->baseType->sptr->semanticSchema);
+	QCOMPARE(schema->baseType->sptr->typeDeclList.size(), size_t(1));
+
+	TypeDecl *root = parser.GetStrataLibrary()->globalTypeDeclList[2];
+	ExprNode *semanticExpr = nullptr;
+	QVERIFY(FindTag(schema->tagList, TOK_SEMANTIC, &semanticExpr));
+	QVERIFY(semanticExpr);
+	QCOMPARE(semanticExpr->type, EXPR_STRINGBUF);
+	QCOMPARE(QString::fromLocal8Bit(semanticExpr->str), QStringLiteral("Root Data"));
+	semanticExpr = nullptr;
+	QVERIFY(FindTag(root->tagList, TOK_SEMANTIC, &semanticExpr));
+	QVERIFY(semanticExpr);
+	QCOMPARE(semanticExpr->type, EXPR_IDENTIFIER);
+	QCOMPARE(QString::fromLocal8Bit(semanticExpr->str), QStringLiteral("ROOT_VIEW"));
+
+	TypeDecl *marker = root->baseType->sptr->typeDeclList[2];
+	ExprNode *emitExpr = nullptr;
+	QVERIFY(FindTag(marker->tagList, TOK_EMITROW, &emitExpr));
+	QVERIFY(emitExpr);
+	QCOMPARE(emitExpr->type, EXPR_COMMA);
+	emitExpr = nullptr;
+	QVERIFY(FindTag(marker->tagList, TOK_EMIT, &emitExpr));
+	QVERIFY(emitExpr);
+	QCOMPARE(emitExpr->type, EXPR_COMMA);
+	emitExpr = nullptr;
+	QVERIFY(FindTag(marker->tagList, TOK_EMITNODE, &emitExpr));
+	QVERIFY(emitExpr);
+	QCOMPARE(emitExpr->type, EXPR_COMMA);
+}
+
+void CausewayTests::emitRoleWrappersAreScoped()
+{
+	// Scenario: dest(...), label(...), key(...), and attr(...) are only role wrappers inside
+	// semantic emit tags,
+	// not public standalone field tags.
+	// Expected: using either as a normal tag fails with the regular illegal-tag
+	// diagnostic.
+	Parser destParser;
+	QVERIFY(!parseBuffer(destParser,
+						 "struct Root { [dest(Payloads)] byte marker; } root;\n"));
+	QCOMPARE(destParser.LastErr(), ERROR_ILLEGAL_TAG);
+
+	Parser labelParser;
+	QVERIFY(!parseBuffer(labelParser,
+						 "struct Root { [label(marker)] byte marker; } root;\n"));
+	QCOMPARE(labelParser.LastErr(), ERROR_ILLEGAL_TAG);
+
+	Parser keyParser;
+	QVERIFY(!parseBuffer(keyParser,
+						 "struct Root { [key(marker)] byte marker; } root;\n"));
+	QCOMPARE(keyParser.LastErr(), ERROR_ILLEGAL_TAG);
+
+	Parser attrParser;
+	QVERIFY(!parseBuffer(attrParser,
+						 "struct Root { [attr(Name, marker)] byte marker; } root;\n"));
+	QCOMPARE(attrParser.LastErr(), ERROR_ILLEGAL_TAG);
+}
+
+void CausewayTests::unknownSemanticSchemaReferencesFail()
+{
+	// Scenario: a raw root names a semantic schema that has not been declared.
+	// Expected: parsing fails at the declaration instead of silently dropping
+	// all later emit(...) rows.
+	Parser parser;
+	QVERIFY(!parseBuffer(parser,
+						 "[export, semantic(MissingView)]\n"
+						 "typedef struct _Root { byte marker; } Root;\n"));
+	QCOMPARE(parser.LastErr(), ERROR_UNKNOWN_SEMANTIC_SCHEMA);
 }
 
 void CausewayTests::viewTagsParse()

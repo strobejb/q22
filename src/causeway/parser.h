@@ -73,7 +73,7 @@ public:
 	//int  Parse(const char *buf, size_t len);
 	int Parse();
 
-	TypeDecl * ParseTypeDecl(Tag *tagList, SymbolTable &symTable, bool nested /*=false*/, bool allowMultiDecl /*=true*/);
+	TypeDecl * ParseTypeDecl(Tag *tagList, SymbolTable &symTable, bool nested = false, bool allowMultiDecl = true, bool allowUnsizedArray = false);
 	ExprNode * ParseExpression();
 
 	
@@ -115,7 +115,7 @@ private:
 
 	// typedecls
 	Type	 * ParseBaseType(TypeDecl *typeDecl, bool nested);
-	Type	 * ParseStructBody(Symbol *sym, TYPE ty);
+	Type	 * ParseStructBody(Symbol *sym, TYPE ty, TypeDecl *ownerDecl);
 	Type	 * ParseEnumBody(Symbol *sym);
     EnumField* AddEnumField(Enum *enumPtr, const char *name, ExprNode *expr, unsigned val);
 	Type	 * Decl(TOKEN term, SymbolTable &symTable);
