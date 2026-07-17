@@ -460,8 +460,9 @@ Type * Parser::ParseStructBody(Symbol *sym, TYPE ty, TypeDecl *ownerDecl)
 		sym->type		= new Type(ty);
 		sym->type->sptr	= sptr;
 		ExprNode *semanticExpr = 0;
-		sptr->semanticSchema = ownerDecl && FindTag(ownerDecl->tagList, TOK_SEMANTIC, &semanticExpr)
+		const bool explicitSemanticSchema = ownerDecl && FindTag(ownerDecl->tagList, TOK_SEMANTIC, &semanticExpr)
 			&& (!semanticExpr || semanticExpr->type == EXPR_STRINGBUF);
+		sptr->semanticSchema = explicitSemanticSchema || (ownerDecl && ownerDecl->allowUnsizedArray);
 		sptr->postNameRef.MakeRef(lexer.CurrentFile());
 	}
 

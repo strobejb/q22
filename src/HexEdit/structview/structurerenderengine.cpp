@@ -2171,6 +2171,8 @@ StructureRow *StructureRenderEngine::findDirectField(StructureRow *scope, const 
             Type *type = child->type;
             if (type && type->ty == typeIDENTIFIER && type->sym && std::strcmp(type->sym->name, name) == 0)
                 return child.get();
+            if (child->kind == StructureRowKind::Semantic && child->name == QString::fromLocal8Bit(name))
+                return child.get();
         }
     }
     return nullptr;
@@ -2753,6 +2755,21 @@ QStringList StructureRenderEngine::validateStaticFieldReferences(StrataLibrary *
                                                    .arg(tagName));
                         }
 
+                        TypeDecl *elementSchema = tag->tok == TOK_EMITNODE
+                            ? scratch.semanticDestinationElementSchema(schemaDecl, path)
+                            : nullptr;
+                        for (const SemanticNodeAttr &attr : nodeAttrs)
+                        {
+                            if (attr.schemaField
+                                && (!elementSchema || !scratch.semanticSchemaHasField(elementSchema, attr.name)))
+                            {
+                                errors.push_back(tagLocationPrefix(decl)
+                                                 + QStringLiteral("emit_node(field(%1, ...)) does not resolve in semantic destination '%2'")
+                                                       .arg(attr.name)
+                                                       .arg(path.isEmpty() ? QStringLiteral("<invalid>") : path.join(QLatin1Char('.'))));
+                            }
+                        }
+
                         if (offsetExpr)
                             scratch.validateFieldTagExpressions(emitScopeType, offsetExpr, decl, TOK_OFFSET, &errors);
                         if (countExpr)
@@ -2773,7 +2790,11 @@ QStringList StructureRenderEngine::validateStaticFieldReferences(StrataLibrary *
                             scratch.validateFieldTagExpressions(emitScopeType, nameExpr, decl, TOK_NAME, &errors);
                         for (const SemanticNodeAttr &attr : nodeAttrs)
                             if (attr.valueExpr)
-                                scratch.validateFieldTagExpressions(emitScopeType, attr.valueExpr, decl, TOK_ATTR, &errors);
+                                scratch.validateFieldTagExpressions(emitScopeType,
+                                                                    attr.valueExpr,
+                                                                    decl,
+                                                                    attr.schemaField ? TOK_FIELD : TOK_ATTR,
+                                                                    &errors);
                     }
 
                     self(self, decl->baseType);
@@ -3941,7 +3962,42 @@ void StructureRenderEngine::appendSemanticNodeRequests()
         appendPresentedRow(node, std::move(attrRow));
     };
 
-    auto appendRequest = [this, &upsertAttr](const SemanticNodeRequest &request) {
+    auto schemaFieldNames = [](TypeDecl *schemaDecl) {
+        QStringList names;
+        Type *base = BaseNode(schemaDecl ? schemaDecl->baseType : nullptr);
+        if (!base || base->ty != typeSTRUCT || !base->sptr)
+            return names;
+
+        for (TypeDecl *decl : base->sptr->typeDeclList)
+        {
+            if (!decl)
+                continue;
+            for (Type *type : decl->declList)
+                if (type && type->sym)
+                    names.push_back(QString::fromLocal8Bit(type->sym->name));
+        }
+        return names;
+    };
+
+    auto sortSchemaFields = [&schemaFieldNames](StructureRow *node, TypeDecl *elementSchema) {
+        if (!node || !elementSchema)
+            return;
+
+        const QStringList order = schemaFieldNames(elementSchema);
+        if (order.isEmpty())
+            return;
+
+        auto orderOf = [&order](const QString &name) {
+            const int index = order.indexOf(name);
+            return index < 0 ? std::numeric_limits<int>::max() : index;
+        };
+
+        std::stable_sort(node->children.begin(), node->children.end(), [&orderOf](const RowPtr &left, const RowPtr &right) {
+            return orderOf(left ? left->name : QString()) < orderOf(right ? right->name : QString());
+        });
+    };
+
+    auto appendRequest = [this, &upsertAttr, &sortSchemaFields](const SemanticNodeRequest &request) {
         if (!request.owner)
             return;
 
@@ -3995,6 +4051,8 @@ void StructureRenderEngine::appendSemanticNodeRequests()
             name = request.destinationPath.isEmpty() ? QStringLiteral("Semantic Node") : request.destinationPath.last();
         name = rowNameFragment(name);
 
+        TypeDecl *elementSchema = semanticDestinationElementSchema(attachedSemanticSchema(m_rootType), request.destinationPath);
+
         if (!node)
         {
             auto row = std::make_unique<StructureRow>(parentRow);
@@ -4002,6 +4060,11 @@ void StructureRenderEngine::appendSemanticNodeRequests()
             row->suppressSemanticViews = true;
             row->name = name;
             row->nameIdentifier = name;
+            if (elementSchema)
+            {
+                row->type = elementSchema->baseType;
+                row->typeDecl = elementSchema;
+            }
             row->absoluteOffset = m_baseOffset + fileOffset;
             row->relativeOffset = fileOffset;
             row->offset = formatOffset(row->absoluteOffset);
@@ -4041,7 +4104,28 @@ void StructureRenderEngine::appendSemanticNodeRequests()
                                                          request.owner->type,
                                                          attr.valueExpr,
                                                          request.owner->absoluteOffset);
+            if (value.isEmpty())
+                continue;
             upsertAttr(node, attr.name, value);
+        }
+
+        sortSchemaFields(node, elementSchema);
+
+        if (elementSchema && !hasExplicitName)
+        {
+            ExprNode *schemaNameExpr = nullptr;
+            if (FindTag(elementSchema->tagList, TOK_NAME, &schemaNameExpr) && schemaNameExpr)
+            {
+                const QString schemaName = semanticExpressionText(node,
+                                                                  elementSchema->baseType,
+                                                                  schemaNameExpr,
+                                                                  node->absoluteOffset);
+                if (!schemaName.isEmpty())
+                {
+                    node->name = rowNameFragment(schemaName);
+                    node->nameIdentifier = node->name;
+                }
+            }
         }
 
         if (!node->children.empty())
@@ -4685,12 +4769,13 @@ bool StructureRenderEngine::emitNodeArgs(ExprNode *expr,
             conditionExpr = inner;
             break;
         case TOK_ATTR:
+        case TOK_FIELD:
         {
             QString attrName;
             ExprNode *attrValue = nullptr;
             if (!semanticAttrArgs(inner, &attrName, &attrValue))
                 return false;
-            attrList.push_back(SemanticNodeAttr{ attrName, attrValue });
+            attrList.push_back(SemanticNodeAttr{ attrName, attrValue, wrapTok == TOK_FIELD });
             break;
         }
         default:
@@ -5023,6 +5108,65 @@ TypeDecl *StructureRenderEngine::semanticDestinationDecl(TypeDecl *schemaDecl, c
     }
 
     return nullptr;
+}
+
+TypeDecl *StructureRenderEngine::semanticDestinationElementSchema(TypeDecl *schemaDecl, const QStringList &path) const
+{
+    TypeDecl *destinationDecl = semanticDestinationDecl(schemaDecl, path);
+    if (!destinationDecl)
+        return nullptr;
+
+    Type *type = destinationDecl->declList.empty() ? destinationDecl->baseType : destinationDecl->declList[0];
+    for (Type *cursor = type; cursor; cursor = cursor->link)
+    {
+        if (cursor->ty == typeARRAY)
+        {
+            type = cursor->link;
+            break;
+        }
+    }
+
+    for (Type *cursor = type; cursor; cursor = cursor->link)
+    {
+        if ((cursor->ty == typeSTRUCT || cursor->ty == typeUNION)
+            && cursor->sptr
+            && cursor->sptr->semanticSchema)
+        {
+            return destinationDecl;
+        }
+
+        if ((cursor->ty != typeTYPEDEF && cursor->ty != typeIDENTIFIER) || !cursor->sym)
+            continue;
+
+        TypeDecl *candidate = findTypeDecl(cursor->sym->name);
+        ExprNode *semanticExpr = nullptr;
+        if (candidate && FindTag(candidate->tagList, TOK_SEMANTIC, &semanticExpr))
+            return candidate;
+    }
+
+    return nullptr;
+}
+
+bool StructureRenderEngine::semanticSchemaHasField(TypeDecl *schemaDecl, const QString &name) const
+{
+    if (!schemaDecl || name.isEmpty())
+        return false;
+
+    Type *base = BaseNode(schemaDecl->baseType);
+    if (!base || base->ty != typeSTRUCT || !base->sptr)
+        return false;
+
+    const QByteArray fieldName = name.toLocal8Bit();
+    for (TypeDecl *decl : base->sptr->typeDeclList)
+    {
+        if (!decl)
+            continue;
+        for (Type *type : decl->declList)
+            if (type && type->sym && std::strcmp(type->sym->name, fieldName.constData()) == 0)
+                return true;
+    }
+
+    return false;
 }
 
 bool StructureRenderEngine::semanticDestinationExists(TypeDecl *schemaDecl, const QStringList &path) const

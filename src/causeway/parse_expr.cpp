@@ -599,7 +599,7 @@ ExprNode *Parser::TagWrappedArg(TOKEN wrappers[])
 		ExprNode *inner = 0;
 		if(wrapTok == TOK_DEST)
 			inner = TagArgList(kDestTagValueWrappers);
-		else if(wrapTok == TOK_OFFSET || wrapTok == TOK_MAP || wrapTok == TOK_KEY || wrapTok == TOK_ATTR)
+		else if(wrapTok == TOK_OFFSET || wrapTok == TOK_MAP || wrapTok == TOK_KEY || wrapTok == TOK_ATTR || wrapTok == TOK_FIELD)
 			inner = CommaExpression(TOK_NULL);
 		else
 			inner = AssignmentExpression(TOK_NULL);

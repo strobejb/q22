@@ -153,6 +153,7 @@ private:
     {
         QString name;
         ExprNode *valueExpr = nullptr;
+        bool schemaField = false;
     };
 
     struct SemanticNodeRequest
@@ -300,6 +301,8 @@ private:
     Type *typeInDecl(TypeDecl *decl, const char *name) const;
     TypeDecl *attachedSemanticSchema(TypeDecl *rootType) const;
     TypeDecl *semanticDestinationDecl(TypeDecl *schemaDecl, const QStringList &path) const;
+    TypeDecl *semanticDestinationElementSchema(TypeDecl *schemaDecl, const QStringList &path) const;
+    bool semanticSchemaHasField(TypeDecl *schemaDecl, const QString &name) const;
     bool semanticDestinationExists(TypeDecl *schemaDecl, const QStringList &path) const;
     int semanticDestinationOrder(const QStringList &path) const;
     QStringList semanticPath(ExprNode *expr) const;

@@ -163,10 +163,10 @@ typedef struct _WASM_RESULT_TYPE
 
 [
     emit_node(dest(Types, key(array_index())),
-              name(fmt("type {0}", array_index())),
-              attr(Form, form),
-              attr(Params, params.count),
-              attr(Results, results.count))
+              field(Index, array_index()),
+              field(Form, form),
+              field(Params, params.count),
+              field(Results, results.count))
 ]
 typedef struct _WASM_FUNCTION_TYPE
 {
@@ -198,11 +198,11 @@ typedef struct _WASM_LIMITS
 
 [
     emit_node(dest(Tables, key(array_index())),
-              name(fmt("table {0}", array_index())),
-              attr(RefType, refType),
-              attr(Flags, limits.flags),
-              attr(Min, limits.min),
-              attr(Max, limits.max))
+              field(Index, array_index()),
+              field(RefType, refType),
+              field(Flags, limits.flags),
+              field(Min, limits.min),
+              field(Max, limits.max))
 ]
 typedef struct _WASM_TABLE_TYPE
 {
@@ -214,10 +214,10 @@ typedef struct _WASM_TABLE_TYPE
 
 [
     emit_node(dest(Memories, key(array_index())),
-              name(fmt("memory {0}", array_index())),
-              attr(Flags, limits.flags),
-              attr(Min, limits.min),
-              attr(Max, limits.max))
+              field(Index, array_index()),
+              field(Flags, limits.flags),
+              field(Min, limits.min),
+              field(Max, limits.max))
 ]
 typedef struct _WASM_MEMORY_TYPE
 {
@@ -241,11 +241,10 @@ typedef struct _WASM_TAG_TYPE
 
 [
     emit_node(dest(Imports, key(module.bytes, name.bytes)),
-              name(concat(module.bytes, ".", name.bytes)),
-              attr(Module, module.bytes),
-              attr(Name, name.bytes),
-              attr(Kind, kind),
-              attr(TypeIndex, functionTypeIndex))
+              field(Module, module.bytes),
+              field(Name, name.bytes),
+              field(Kind, kind),
+              field(TypeIndex, functionTypeIndex))
 ]
 typedef struct _WASM_IMPORT
 {
@@ -309,9 +308,9 @@ typedef struct _WASM_MEMORY_SECTION
 
 [
     emit_node(dest(Globals, key(array_index())),
-              name(fmt("global {0}", array_index())),
-              attr(Type, type.valueType),
-              attr(Mutability, type.mutability))
+              field(Index, array_index()),
+              field(Type, type.valueType),
+              field(Mutability, type.mutability))
 ]
 typedef struct _WASM_GLOBAL
 {
@@ -339,9 +338,9 @@ typedef struct _WASM_EXTERN_INDEX
 
 [
     emit_node(dest(Exports, key(name.bytes)),
-              name(name.bytes),
-              attr(Kind, target.kind),
-              attr(Index, target.index))
+              field(Name, name.bytes),
+              field(Kind, target.kind),
+              field(Index, target.index))
 ]
 typedef struct _WASM_EXPORT
 {
@@ -383,8 +382,8 @@ typedef struct _WASM_CODE_BODY
 
 [
     emit_node(dest(Code, key(array_index())),
-              name(fmt("function {0}", array_index())),
-              attr(Size, size))
+              field(Index, array_index()),
+              field(Size, size))
 ]
 typedef struct _WASM_CODE_ENTRY
 {
@@ -404,8 +403,8 @@ typedef struct _WASM_CODE_SECTION
 
 [
     emit_node(dest(Data, key(array_index())),
-              name(fmt("data {0}", array_index())),
-              attr(Mode, mode))
+              field(Index, array_index()),
+              field(Mode, mode))
 ]
 typedef struct _WASM_DATA_SEGMENT
 {
@@ -502,9 +501,8 @@ typedef struct _WASM_RAW_SECTION
 
 [
     emit_node(dest(Sections, key(array_index())),
-              name(id),
-              attr(Id, id),
-              attr(Size, size))
+              field(Id, id),
+              field(Size, size))
 ]
 typedef struct _WASM_SECTION
 {
@@ -560,19 +558,91 @@ typedef struct _WASM_SECTION
     };
 } WASM_SECTION, *PWASM_SECTION;
 
+//
+// Semantic views
+//
+// This root schema describes derived Structure View presentation only. Inline
+// structs under it inherit semantic-schema behavior and are populated by
+// emit_node(...) tags on the raw structs above.
+//
+
 [semantic("WASM Summary")]
-typedef struct _WASM_VIEW
+typedef struct _WASM_SUMMARY
 {
-    BYTE Sections[];
-    BYTE Types[];
-    BYTE Imports[];
-    BYTE Exports[];
-    BYTE Code[];
-    BYTE Memories[];
-    BYTE Tables[];
-    BYTE Globals[];
-    BYTE Data[];
-} WASM_VIEW;
+    [name(Id)]
+    struct
+    {
+        BYTE Id;
+        uleb128 Size;
+    } Sections[];
+
+    [name(fmt("type {0}", Index))]
+    struct
+    {
+        uleb128 Index;
+        BYTE Form;
+        uleb128 Params;
+        uleb128 Results;
+    } Types[];
+
+    [name(concat(Module, ".", Name))]
+    struct
+    {
+        CHAR Module[];
+        CHAR Name[];
+        BYTE Kind;
+        uleb128 TypeIndex;
+    } Imports[];
+
+    [name(Name)]
+    struct
+    {
+        CHAR Name[];
+        BYTE Kind;
+        uleb128 Index;
+    } Exports[];
+
+    [name(fmt("function {0}", Index))]
+    struct
+    {
+        uleb128 Index;
+        uleb128 Size;
+    } Code[];
+
+    [name(fmt("memory {0}", Index))]
+    struct
+    {
+        uleb128 Index;
+        uleb128 Flags;
+        uleb128 Min;
+        uleb128 Max;
+    } Memories[];
+
+    [name(fmt("table {0}", Index))]
+    struct
+    {
+        uleb128 Index;
+        BYTE RefType;
+        uleb128 Flags;
+        uleb128 Min;
+        uleb128 Max;
+    } Tables[];
+
+    [name(fmt("global {0}", Index))]
+    struct
+    {
+        uleb128 Index;
+        BYTE Type;
+        BYTE Mutability;
+    } Globals[];
+
+    [name(fmt("data {0}", Index))]
+    struct
+    {
+        uleb128 Index;
+        uleb128 Mode;
+    } Data[];
+} WASM_SUMMARY;
 
 [
     export("WebAssembly Module (WASM)"),
@@ -581,7 +651,7 @@ typedef struct _WASM_VIEW
     assoc(".wasm"),
     magic({ 0x00, 0x61, 0x73, 0x6d }),
     offset(0),
-    semantic(WASM_VIEW)
+    semantic(WASM_SUMMARY)
 ]
 typedef struct _WASM
 {

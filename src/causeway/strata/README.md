@@ -456,12 +456,15 @@ attaching additional structures, arrays, or named overlays beyond the raw field 
 ### `semantic` and `emit`
 
 `[semantic]` marks a struct as a semantic-only tree schema. It is not rendered as
-raw file layout and may contain unsized destination arrays. Use
-`[semantic("Display Name")]` to choose the root branch label; unlabeled schemas
-fall back to `Semantic`. `[semantic(ViewType)]` on a raw root attaches that
-schema. Raw fields then use `emit_node(...)` for concise projected summary rows,
-`emit_row(...)` to create semantic container rows, and `emit(...)` to append
-byte-backed rows under `<schema label>/<dest>` without changing the raw tree.
+raw file layout and may contain unsized destination arrays. Inline structs nested
+inside a semantic schema inherit semantic-schema behavior, so destination element
+shapes can live directly inside the containing semantic root instead of requiring
+extra standalone `[semantic]` typedefs. Use `[semantic("Display Name")]` to
+choose the root branch label; unlabeled schemas fall back to `Semantic`.
+`[semantic(ViewType)]` on a raw root attaches that schema. Raw fields then use
+`emit_node(...)` for concise projected summary rows, `emit_row(...)` to create
+semantic container rows, and `emit(...)` to append byte-backed rows under
+`<schema label>/<dest>` without changing the raw tree.
 
 ```c
 [semantic("WOFF Data")]
@@ -529,25 +532,44 @@ emit_row(dest(Path.To.Rows, key(identity_expr), name(display_expr)),
 
 `emit_node(...)` creates or updates a lightweight semantic row anchored to the
 source bytes, but does not render a raw C type subtree. It is for summaries and
-indexes where the raw view already contains the byte-honest structure:
+indexes where the raw view already contains the byte-honest structure. Prefer
+schema-shaped nodes: the destination array's element type defines the semantic
+fields, field order, and default row name, while `emit_node(...)` fills those
+fields from raw source expressions.
 
 ```c
+[semantic("WASM Summary")]
+typedef struct _WASM_SUMMARY {
+    [name(concat(Module, ".", Name))]
+    struct {
+        CHAR Module[];
+        CHAR Name[];
+        BYTE Kind;
+        uleb128 TypeIndex;
+    } Imports[];
+} WASM_SUMMARY;
+
 emit_node(dest(Imports, key(module.bytes, name.bytes)),
-          name(concat(module.bytes, ".", name.bytes)),
           offset(current_offset()),
-          extent(byteCount),
-          attr(Module, module.bytes),
-          attr(Name, name.bytes),
-          attr(Kind, kind))
+          field(Module, module.bytes),
+          field(Name, name.bytes),
+          field(Kind, kind),
+          field(TypeIndex, functionTypeIndex))
 ```
 
 - `dest(path)` appends a new node under a schema destination
 - `dest(path, key(expr))` creates or updates the same node for the same key;
   this is semantic merging, not a hidden join table
-- `name(expr)` sets the visible row name. Later `emit_node(...)` tags only
+- `field(Name, expr)` sets a field declared by the destination element schema;
+  unknown field names are diagnosed by definition validation
+- schema `name(...)` on the destination element type sets the default visible
+  row name using populated semantic fields
+- `name(expr)` on `emit_node(...)` sets or overrides the visible row name. Later
+  `emit_node(...)` tags only
   replace an existing node name when they provide an explicit non-empty
   `name(...)`.
-- `attr(Name, expr)` adds or updates a child attribute row on the semantic node
+- `attr(Name, expr)` adds or updates an unstructured child attribute row; use it
+  for quick summaries when there is no schema field to fill
 - `offset(...)`, `extent(...)`, `case(...)`, and `optional(...)` control source
   anchoring and gating
 - use `concat(...)` or `fmt(...)` to build display strings directly in the tag
@@ -1061,7 +1083,7 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 | Primitive types | `byte`, `word`, `dword`, `qword`, `char`, `wchar_t`, `float`, `double`, `uleb128`, `sleb128` |
 | Display/layout tags | `align`, `bitflag`, `description`, `display`, `endian`, `entrypoint`, `extent`, `format`, `ignore`, `name`, `offset`, `optional`, `pad_to`, `string`, `style`, `tree` |
 | Arrays/unions | `case`, `count`, `count_as`, `default`, `length_is`, `max_count`, `select`, `select_offset`, `size_is`, `switch_is`, `terminated_by`, `terminator` |
-| Dynamic/semantic tags | `attr`, `container`, `dest`, `dynamic_array`, `dynamic_container`, `dynamic_struct`, `emit`, `emit_node`, `emit_row`, `key`, `label`, `map`, `mapper`, `offset_map`, `semantic`, `type`, `view` |
+| Dynamic/semantic tags | `attr`, `container`, `dest`, `dynamic_array`, `dynamic_container`, `dynamic_struct`, `emit`, `emit_node`, `emit_row`, `field`, `key`, `label`, `map`, `mapper`, `offset_map`, `semantic`, `type`, `view` |
 | Export/detection tags | `assoc`, `category`, `export`, `magic`, `version` |
 | Tagsets/files | `include`, `tagset`, `tags` |
 | Expression helpers | `array_index`, `concat`, `cstr`, `cstr_at`, `current_offset`, `element_value`, `extent_of`, `file_size`, `find_first`, `find_last`, `fmt`, `fourcc`, `octal`, `sizeof`, `str`, `value_at` |

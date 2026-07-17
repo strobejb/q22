@@ -110,6 +110,7 @@ private slots:
     void builderRejectsUnterminatedCstrSemanticNames();
     void builderEmitsIntoMappedSemanticContainers();
     void definitionManagerFlagsUnknownSemanticDestinations();
+    void definitionManagerFlagsUnknownSemanticNodeFields();
     void builderRunsSemanticViewsOnceForDynamicArrayTables();
     void builderNamesPeDynamicSectionsFromStandardDefinition();
     void builderPeSemanticModeCppSkipsDeclarativeRows();
@@ -4863,14 +4864,16 @@ void StructViewTests::builderEmitsAndMergesSemanticNodes()
     StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
-                        "typedef byte Node;\n"
                         "typedef struct _Entry {"
                         "  byte key;"
                         "  byte size;"
-                        "  [emit_node(dest(Items, key(key)), name(concat(\"item \", key)), attr(Size, size))] byte marker;"
-                        "  [emit_node(dest(Items, key(key)), attr(Label, fmt(\"entry {0}\", key)))] byte marker2;"
+                        "  [emit_node(dest(Items, key(key)), field(Key, key), field(Size, size))] byte marker;"
+                        "  [emit_node(dest(Items, key(key)), field(Label, fmt(\"entry {0}\", key)))] byte marker2;"
                         "} Entry;\n"
-                        "[semantic] typedef struct _RootView { Node Items[]; } RootView;\n"
+                        "[semantic] typedef struct _RootView {\n"
+                        "  [name(concat(\"item \", Key))]\n"
+                        "  struct { byte Key; byte Size; char Label[]; } Items[];\n"
+                        "} RootView;\n"
                         "[export, semantic(RootView)] typedef struct _Root { Entry entry; } Root;\n"));
 
     QByteArray bytes;
@@ -4891,9 +4894,13 @@ void StructViewTests::builderEmitsAndMergesSemanticNodes()
     StructureRow *item = findChildNamed(items, QStringLiteral("item 7"));
     QVERIFY2(item, qPrintable(childNames(items)));
     QCOMPARE(item->offset, QStringLiteral("00000002"));
-    QCOMPARE(item->children.size(), size_t(2));
-    QCOMPARE(findChildNamed(item, QStringLiteral("Size"))->value, QStringLiteral("12"));
-    QCOMPARE(findChildNamed(item, QStringLiteral("Label"))->value, QStringLiteral("entry 7"));
+    QCOMPARE(item->children.size(), size_t(3));
+    QCOMPARE(item->children[0]->name, QStringLiteral("Key"));
+    QCOMPARE(item->children[0]->value, QStringLiteral("7"));
+    QCOMPARE(item->children[1]->name, QStringLiteral("Size"));
+    QCOMPARE(item->children[1]->value, QStringLiteral("12"));
+    QCOMPARE(item->children[2]->name, QStringLiteral("Label"));
+    QCOMPARE(item->children[2]->value, QStringLiteral("entry 7"));
     QVERIFY(!findDescendantNamed(item, QStringLiteral("byte marker")));
 }
 
@@ -5020,6 +5027,23 @@ void StructViewTests::definitionManagerFlagsUnknownSemanticDestinations()
 
     const QStringList errors = StructureRenderEngine::validateStaticFieldReferences(&library);
     QVERIFY(errors.join(QLatin1Char('\n')).contains(QStringLiteral("emit(dest(Missing))")));
+}
+
+void StructViewTests::definitionManagerFlagsUnknownSemanticNodeFields()
+{
+    // Scenario: emit_node(field(...)) names a field that is not declared in the
+    // destination element schema.
+    // Expected: the static definition validator reports the bad semantic field.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef struct _Entry { [emit_node(dest(Items), field(Missing, marker))] byte marker; } Entry;\n"
+                        "[semantic] typedef struct _RootView { struct { byte Name; } Items[]; } RootView;\n"
+                        "[export, semantic(RootView)] struct Root { Entry entry; } root;\n"));
+
+    const QStringList errors = StructureRenderEngine::validateStaticFieldReferences(&library);
+    QVERIFY2(errors.join(QLatin1Char('\n')).contains(QStringLiteral("field(Missing")),
+             qPrintable(errors.join(QLatin1Char('\n'))));
 }
 
 void StructViewTests::builderRunsSemanticViewsOnceForDynamicArrayTables()

@@ -219,7 +219,7 @@ static TOKEN kEmitRowTagValueWrappers[] = {
 };
 
 static TOKEN kEmitNodeTagValueWrappers[] = {
-	TOK_DEST, TOK_CASE, TOK_NAME, TOK_OFFSET, TOK_EXTENT, TOK_OPTIONAL, TOK_ATTR, TOK_NULL
+	TOK_DEST, TOK_CASE, TOK_NAME, TOK_OFFSET, TOK_EXTENT, TOK_OPTIONAL, TOK_ATTR, TOK_FIELD, TOK_NULL
 };
 
 bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)

@@ -397,13 +397,17 @@ void CausewayTests::semanticSchemaAndEmitTagsParse()
 	QVERIFY(parseBuffer(parser,
 						"typedef byte PayloadByte;\n"
 						"[semantic(\"Root Data\")]\n"
-						"typedef struct _ROOT_VIEW { PayloadByte Payloads[]; } ROOT_VIEW;\n"
+						"typedef struct _ROOT_VIEW {\n"
+						"  PayloadByte Payloads[];\n"
+						"  [name(concat(\"item \", Key))]\n"
+						"  struct { byte Key; char Label[]; } Items[];\n"
+						"} ROOT_VIEW;\n"
 						"[export, semantic(ROOT_VIEW)]\n"
 						"typedef struct _Root {\n"
 						"  dword payloadOffset;\n"
 						"  dword payloadSize;\n"
 						"  [emit_row(dest(Payloads, key(cstr(\"payloads\", payloadOffset), payloadSize + array_index() + element_value()), name(cstr(\"payloads\", payloadOffset))), offset(payloadOffset)),\n"
-						"   emit_node(dest(Payloads, key(payloadOffset), name(fmt(\"payload {0}\", payloadOffset))), name(concat(\"payload \", payloadOffset)), offset(payloadOffset), extent(payloadSize), attr(Size, payloadSize)),\n"
+						"   emit_node(dest(Payloads, key(payloadOffset), name(fmt(\"payload {0}\", payloadOffset))), name(concat(\"payload \", payloadOffset)), offset(payloadOffset), extent(payloadSize), field(Size, payloadSize), attr(Note, payloadOffset)),\n"
 						"   emit(dest(Payloads), label(payloadOffset), type(PayloadByte), offset(payloadOffset), count(payloadSize))] byte marker;\n"
 						"} Root;\n"));
 
@@ -412,7 +416,15 @@ void CausewayTests::semanticSchemaAndEmitTagsParse()
 	QVERIFY(FindTag(schema->tagList, TOK_SEMANTIC, nullptr));
 	QVERIFY(schema->baseType && schema->baseType->sptr);
 	QVERIFY(schema->baseType->sptr->semanticSchema);
-	QCOMPARE(schema->baseType->sptr->typeDeclList.size(), size_t(1));
+	QCOMPARE(schema->baseType->sptr->typeDeclList.size(), size_t(2));
+	TypeDecl *items = schema->baseType->sptr->typeDeclList[1];
+	QVERIFY(items);
+	QVERIFY(FindTag(items->tagList, TOK_NAME, nullptr));
+	QVERIFY(!items->declList.empty());
+	Type *itemsElement = BaseNode(items->declList[0]);
+	QVERIFY(itemsElement && itemsElement->ty == typeSTRUCT && itemsElement->sptr);
+	QVERIFY(itemsElement->sptr->semanticSchema);
+	QCOMPARE(itemsElement->sptr->typeDeclList.size(), size_t(2));
 
 	TypeDecl *root = parser.GetStrataLibrary()->globalTypeDeclList[2];
 	ExprNode *semanticExpr = nullptr;
@@ -443,7 +455,7 @@ void CausewayTests::semanticSchemaAndEmitTagsParse()
 
 void CausewayTests::emitRoleWrappersAreScoped()
 {
-	// Scenario: dest(...), label(...), key(...), and attr(...) are only role wrappers inside
+	// Scenario: dest(...), label(...), key(...), attr(...), and field(...) are only role wrappers inside
 	// semantic emit tags,
 	// not public standalone field tags.
 	// Expected: using either as a normal tag fails with the regular illegal-tag
@@ -467,6 +479,11 @@ void CausewayTests::emitRoleWrappersAreScoped()
 	QVERIFY(!parseBuffer(attrParser,
 						 "struct Root { [attr(Name, marker)] byte marker; } root;\n"));
 	QCOMPARE(attrParser.LastErr(), ERROR_ILLEGAL_TAG);
+
+	Parser fieldParser;
+	QVERIFY(!parseBuffer(fieldParser,
+						 "struct Root { [field(Name, marker)] byte marker; } root;\n"));
+	QCOMPARE(fieldParser.LastErr(), ERROR_ILLEGAL_TAG);
 }
 
 void CausewayTests::unknownSemanticSchemaReferencesFail()
