@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"
+     fill="none" shape-rendering="geometricPrecision" role="img" aria-labelledby="title desc">
+  <title>Gold Root icon</title>
+  <desc id="desc">Three closed shaded blue boxes: one higher/back, two underneath, all touching exactly with no gaps and all side faces visible.</desc>
+  <defs>
+  <linearGradient id="top" gradientUnits="userSpaceOnUse" x1="6" y1="2" x2="58" y2="42">
+    <stop offset="0%" stop-color="#FFF8E6"/>
+    <stop offset="34%" stop-color="#F3DEA1"/>
+    <stop offset="72%" stop-color="#E9C45F"/>
+    <stop offset="100%" stop-color="#C99528"/>
+  </linearGradient>
+  <linearGradient id="left" gradientUnits="userSpaceOnUse" x1="5" y1="12" x2="38" y2="60">
+    <stop offset="0%" stop-color="#E9C45F"/>
+    <stop offset="58%" stop-color="#C99528"/>
+    <stop offset="100%" stop-color="#A66B0A"/>
+  </linearGradient>
+  <linearGradient id="right" gradientUnits="userSpaceOnUse" x1="28" y1="18" x2="60" y2="60">
+    <stop offset="0%" stop-color="#B47712"/>
+    <stop offset="54%" stop-color="#87540A"/>
+    <stop offset="100%" stop-color="#633B05"/>
+  </linearGradient>
+</defs>
+  <g id="upper">
+  <polygon points="20.3,12.9 32,21.55 32,33.05 20.3,24.4" fill="url(#left)"/>
+  <polygon points="32,21.55 43.7,12.9 43.7,24.4 32,33.05" fill="url(#right)"/>
+  <polygon points="32,4.25 43.7,12.9 32,21.55 20.3,12.9" fill="url(#top)"/>
+  <polygon points="32,4.85 42.75,12.9 32,20.95 21.25,12.9" fill="#FFFFFF" opacity=".11"/>
+  <path d="M32 4.25L20.3 12.9" stroke="#FFFFFF" stroke-opacity=".30" stroke-width=".68" stroke-linecap="round"/>
+  <path d="M32 4.25L43.7 12.9" stroke="#FFFFFF" stroke-opacity=".16" stroke-width=".54" stroke-linecap="round"/>
+  <path d="M20.3 12.9L32 21.55L43.7 12.9" stroke="#87540A" stroke-opacity=".14" stroke-width=".52" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+  <g id="lower-left">
+  <polygon points="8.6,33.05 20.3,41.7 20.3,53.2 8.6,44.55" fill="url(#left)"/>
+  <polygon points="20.3,41.7 32,33.05 32,44.55 20.3,53.2" fill="url(#right)"/>
+  <polygon points="20.3,24.4 32,33.05 20.3,41.7 8.6,33.05" fill="url(#top)"/>
+  <polygon points="20.3,25 31.05,33.05 20.3,41.1 9.55,33.05" fill="#FFFFFF" opacity=".11"/>
+  <path d="M20.3 24.4L8.6 33.05" stroke="#FFFFFF" stroke-opacity=".30" stroke-width=".68" stroke-linecap="round"/>
+  <path d="M20.3 24.4L32 33.05" stroke="#FFFFFF" stroke-opacity=".16" stroke-width=".54" stroke-linecap="round"/>
+  <path d="M8.6 33.05L20.3 41.7L32 33.05" stroke="#87540A" stroke-opacity=".14" stroke-width=".52" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+  <g id="lower-right">
+  <polygon points="32,33.05 43.7,41.7 43.7,53.2 32,44.55" fill="url(#left)"/>
+  <polygon points="43.7,41.7 55.4,33.05 55.4,44.55 43.7,53.2" fill="url(#right)"/>
+  <polygon points="43.7,24.4 55.4,33.05 43.7,41.7 32,33.05" fill="url(#top)"/>
+  <polygon points="43.7,25 54.45,33.05 43.7,41.1 32.95,33.05" fill="#FFFFFF" opacity=".11"/>
+  <path d="M43.7 24.4L32 33.05" stroke="#FFFFFF" stroke-opacity=".30" stroke-width=".68" stroke-linecap="round"/>
+  <path d="M43.7 24.4L55.4 33.05" stroke="#FFFFFF" stroke-opacity=".16" stroke-width=".54" stroke-linecap="round"/>
+  <path d="M32 33.05L43.7 41.7L55.4 33.05" stroke="#87540A" stroke-opacity=".14" stroke-width=".52" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+</svg>

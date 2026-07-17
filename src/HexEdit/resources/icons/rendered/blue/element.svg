@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"
+ fill="none" shape-rendering="geometricPrecision" role="img" aria-labelledby="title desc">
+  <defs>
+    <linearGradient id="top" gradientUnits="userSpaceOnUse" x1="15" y1="15" x2="50" y2="45">
+      <stop offset="0%" stop-color="#91C7EF"/>
+      <stop offset="58%" stop-color="#62A4DD"/>
+      <stop offset="100%" stop-color="#3E84C5"/>
+    </linearGradient>
+    <linearGradient id="left" gradientUnits="userSpaceOnUse" x1="14" y1="28" x2="34" y2="49">
+      <stop offset="0%" stop-color="#5C9FD7"/>
+      <stop offset="100%" stop-color="#347FBE"/>
+    </linearGradient>
+    <linearGradient id="right" gradientUnits="userSpaceOnUse" x1="31" y1="28" x2="50" y2="49">
+      <stop offset="0%" stop-color="#2C67B8"/>
+      <stop offset="100%" stop-color="#0A409F"/>
+    </linearGradient>
+    <linearGradient id="rear" gradientUnits="userSpaceOnUse" x1="16" y1="12" x2="47" y2="38">
+      <stop offset="0%" stop-color="#BCDDF6"/>
+      <stop offset="100%" stop-color="#6DA9DB"/>
+    </linearGradient>
+  </defs>
+  <title>Blue Element icon</title>
+  <desc id="desc">A simple blue gradient diamond tile representing a discrete property.</desc>
+  
+  <g opacity="1.0">
+    <polygon points="32,16.0 50,29.5 32,43.0 14,29.5"
+             fill="url(#top)"/>
+    <polygon points="14,29.5 32,43.0 32,47.0 14,33.5"
+             fill="url(#left)"/>
+    <polygon points="32,43.0 50,29.5 50,33.5 32,47.0"
+             fill="url(#right)"/>
+    <polygon points="32,16.8 48.8,29.5 32,42.2 15.2,29.5"
+             fill="#FFFFFF" opacity=".10"/>
+    <path d="M32 16.0L14 29.5" stroke="#FFFFFF" stroke-opacity=".28" stroke-width=".75" stroke-linecap="round"/>
+    <path d="M32 16.0L50 29.5" stroke="#FFFFFF" stroke-opacity=".15" stroke-width=".60" stroke-linecap="round"/>
+  </g>
+</svg>

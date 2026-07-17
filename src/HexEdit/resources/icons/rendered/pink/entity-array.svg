@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none" shape-rendering="geometricPrecision" role="img" aria-labelledby="title desc">
-  <title id="title">Pink single folder box, closed</title>
+  <title>Pink Entity array icon</title>
   <desc id="desc">The original lighter pink single-box variant used for the closed state.</desc>
   <defs>
     <linearGradient id="pink-single-closed-top" gradientUnits="userSpaceOnUse" x1="8" y1="4" x2="55" y2="40">
@@ -31,4 +31,16 @@
     <path d="M32.00 7.50L14.00 21.00" stroke="#FFFFFF" stroke-opacity="0.30" stroke-width="0.8" stroke-linecap="round"/>
     <path d="M32.00 7.50L50.00 21.00" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="0.65" stroke-linecap="round"/>
   </g>
+
+  <g id="array-brackets" fill="none" stroke="#8E175A" stroke-width="2.25"
+     stroke-linecap="round" stroke-linejoin="round" opacity=".92">
+    <path d="M11.5 10.5H6.5V53.5H11.5"/>
+    <path d="M52.5 10.5H57.5V53.5H52.5"/>
+  </g>
+  <g id="array-bracket-highlights" fill="none" stroke="#FFFFFF" stroke-width=".65"
+     stroke-linecap="round" stroke-linejoin="round" opacity=".42">
+    <path d="M11.5 10.5H6.5V53.5H11.5"/>
+    <path d="M52.5 10.5H57.5V53.5H52.5"/>
+  </g>
+
 </svg>

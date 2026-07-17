@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none" shape-rendering="geometricPrecision" role="img" aria-labelledby="title desc">
-  <title id="title">Gold single folder box, open</title>
-  <desc id="desc">The darkened single-box variant used for the open state.</desc>
+  <title>Gold Entity array icon</title>
+  <desc id="desc">The original lighter gold single-box variant used for the closed state.</desc>
   <defs>
     <linearGradient id="gold-single-closed-top" gradientUnits="userSpaceOnUse" x1="8" y1="4" x2="55" y2="40">
       <stop offset="0%" stop-color="#FFFDF3"/><stop offset="34%" stop-color="#F8EAB7"/><stop offset="72%" stop-color="#EFCF72"/><stop offset="100%" stop-color="#D9AC3F"/>
@@ -20,27 +20,27 @@
     <linearGradient id="gold-single-closed-rim-right" gradientUnits="userSpaceOnUse" x1="31" y1="17" x2="50" y2="35">
       <stop offset="0%" stop-color="#B47712"/><stop offset="100%" stop-color="#87540A"/>
     </linearGradient>
-    <linearGradient id="gold-single-darkened-top" gradientUnits="userSpaceOnUse"
-                    x1="17" y1="8" x2="50" y2="35">
-      <stop offset="0%" stop-color="#E9C45F"/>
-      <stop offset="58%" stop-color="#C99528"/>
-      <stop offset="100%" stop-color="#A66B0A"/>
-    </linearGradient>
-    <linearGradient id="gold-single-darkened-left" gradientUnits="userSpaceOnUse"
-                    x1="7" y1="14" x2="38" y2="58">
-      <stop offset="0%" stop-color="#C08A1F"/>
-      <stop offset="58%" stop-color="#91600E"/>
-      <stop offset="100%" stop-color="#674005"/>
-    </linearGradient>
   </defs>
   <g>
-    <polygon points="14.00,21.00 32.00,34.50 32.00,52.00 14.00,38.50" fill="url(#gold-single-darkened-left)"/>
+    <polygon points="14.00,21.00 32.00,34.50 32.00,52.00 14.00,38.50" fill="url(#gold-single-closed-left)"/>
     <polygon points="32.00,34.50 50.00,21.00 50.00,38.50 32.00,52.00" fill="url(#gold-single-closed-right)"/>
     <path d="M32.00 34.50V52.00" stroke="#432800" stroke-opacity="0.12" stroke-width="0.65"/>
     <path d="M14.00 21.00V38.50" stroke="#FFFFFF" stroke-opacity="0.24" stroke-width="0.7"/>
-    <polygon points="32.00,7.50 50.00,21.00 32.00,34.50 14.00,21.00" fill="url(#gold-single-darkened-top)"/>
-    <polygon points="32.00,8.45 48.74,21.00 32.00,33.55 15.26,21.00" fill="#FFFFFF" opacity="0.14"/>
+    <polygon points="32.00,7.50 50.00,21.00 32.00,34.50 14.00,21.00" fill="url(#gold-single-closed-top)"/>
+    <polygon points="32.00,8.45 48.74,21.00 32.00,33.55 15.26,21.00" fill="#FFFFFF" opacity="0.10"/>
     <path d="M32.00 7.50L14.00 21.00" stroke="#FFFFFF" stroke-opacity="0.30" stroke-width="0.8" stroke-linecap="round"/>
     <path d="M32.00 7.50L50.00 21.00" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="0.65" stroke-linecap="round"/>
   </g>
+
+  <g id="array-brackets" fill="none" stroke="#87540A" stroke-width="2.25"
+     stroke-linecap="round" stroke-linejoin="round" opacity=".92">
+    <path d="M11.5 10.5H6.5V53.5H11.5"/>
+    <path d="M52.5 10.5H57.5V53.5H52.5"/>
+  </g>
+  <g id="array-bracket-highlights" fill="none" stroke="#FFFFFF" stroke-width=".65"
+     stroke-linecap="round" stroke-linejoin="round" opacity=".42">
+    <path d="M11.5 10.5H6.5V53.5H11.5"/>
+    <path d="M52.5 10.5H57.5V53.5H52.5"/>
+  </g>
+
 </svg>

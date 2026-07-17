@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none" shape-rendering="geometricPrecision" role="img" aria-labelledby="title desc">
-  <title id="title">Blue single folder box, closed</title>
+  <title>Blue Entity icon</title>
   <desc id="desc">The original lighter blue single-box variant used for the closed state.</desc>
   <defs>
     <linearGradient id="blue-single-closed-top" gradientUnits="userSpaceOnUse" x1="8" y1="4" x2="55" y2="40">

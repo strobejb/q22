@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none" shape-rendering="geometricPrecision" role="img" aria-labelledby="title desc">
-  <title id="title">Gray single folder box, open</title>
+  <title>Mid-gray Entity open icon</title>
   <desc id="desc">The darkened single-box variant used for the open state.</desc>
   <defs>
     <linearGradient id="midgray-single-closed-top" gradientUnits="userSpaceOnUse" x1="8" y1="4" x2="55" y2="40">
