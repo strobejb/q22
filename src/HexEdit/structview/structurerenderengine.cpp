@@ -1025,8 +1025,8 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
         const bool continuePastDisplayCap =
             count <= INUMTYPE(kMaxArrayElements + 16)
             || typeContainsTag(type->link, TOK_COUNTAS)
-            || typeContainsTag(type->link, TOK_SWITCHIS)
-            || typeContainsTag(type->link, TOK_SIZEIS)
+            || typeContainsTag(type->link, TOK_SELECT)
+            || typeContainsTag(type->link, TOK_COUNT)
             || typeContainsTag(type->link, TOK_MAXCOUNT);
         ExprNode *terminatorExpr = dimensionTagArg(typeDecl ? typeDecl->tagList : nullptr,
                                                    TOK_TERMINATEDBY,
@@ -1183,7 +1183,7 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
         INUMTYPE switchValue = 0;
         QString switchString;
         ExprNode *switchExpr = nullptr;
-        const bool hasSwitchTag = FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_SWITCHIS, &switchExpr);
+        const bool hasSwitchTag = FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_SELECT, &switchExpr);
         const bool hasSwitch = hasSwitchTag && evaluate(EvalContext{ parent, type, offset }, switchExpr, &switchValue);
         const bool hasStringSwitch = hasSwitchTag
             && !hasSwitch
@@ -1475,7 +1475,7 @@ bool StructureRenderEngine::evaluateArrayCount(StructureRow *scope,
         return evaluate(evalScope, arrayType->elements, result, offset);
 
     ExprNode *sizeExpr = dimensionTagArg(typeDecl ? typeDecl->tagList : nullptr,
-                                         TOK_SIZEIS,
+                                         TOK_COUNT,
                                          arrayDimensionIndex(typeDecl, arrayType));
     if (!sizeExpr)
     {
@@ -2709,7 +2709,7 @@ bool StructureRenderEngine::isKnownEnumConstant(const char *name) const
 namespace
 {
 
-// Field references that a select/switch_is/endian/offset/size_is/optional/
+// Field references that a select/endian/offset/count/optional/
 // extent tag's expression might make: bare identifiers, possibly array-
 // indexed, composed with the usual operators. Dotted field.access chains
 // (EXPR_FIELD) are deliberately left alone -- they name their own scope
@@ -2892,7 +2892,7 @@ void StructureRenderEngine::validateStructTags(Type *structType, QStringList *er
         return;
 
     static constexpr TOKEN kValidatedTags[] = {
-        TOK_SWITCHIS, TOK_ENDIAN, TOK_OFFSET, TOK_SIZEIS, TOK_MAXCOUNT, TOK_OPTIONAL, TOK_EXTENT, TOK_PADTO, TOK_COUNTAS
+        TOK_SELECT, TOK_ENDIAN, TOK_OFFSET, TOK_COUNT, TOK_MAXCOUNT, TOK_OPTIONAL, TOK_EXTENT, TOK_PADTO, TOK_COUNTAS
     };
 
     for (TypeDecl *decl : base->sptr->typeDeclList)
@@ -2919,7 +2919,7 @@ QStringList StructureRenderEngine::validateStaticFieldReferences(StrataLibrary *
         return errors;
 
     static constexpr TOKEN kValidatedTags[] = {
-        TOK_SWITCHIS, TOK_ENDIAN, TOK_OFFSET, TOK_SIZEIS, TOK_MAXCOUNT, TOK_OPTIONAL, TOK_EXTENT, TOK_PADTO, TOK_COUNTAS
+        TOK_SELECT, TOK_ENDIAN, TOK_OFFSET, TOK_COUNT, TOK_MAXCOUNT, TOK_OPTIONAL, TOK_EXTENT, TOK_PADTO, TOK_COUNTAS
     };
 
     StructureRenderEngine scratch(library, nullptr, 0, StructureValueBuilder::ByteReader{}, StructureDisplayOptions{});
@@ -3104,7 +3104,7 @@ QStringList StructureRenderEngine::validateStaticFieldReferences(StrataLibrary *
                         if (offsetExpr)
                             scratch.validateFieldTagExpressions(emitScopeType, offsetExpr, decl, TOK_OFFSET, &errors);
                         if (countExpr)
-                            scratch.validateFieldTagExpressions(emitScopeType, countExpr, decl, TOK_SIZEIS, &errors);
+                            scratch.validateFieldTagExpressions(emitScopeType, countExpr, decl, TOK_COUNT, &errors);
                         if (extentExpr)
                             scratch.validateFieldTagExpressions(emitScopeType, extentExpr, decl, TOK_EXTENT, &errors);
                         if (conditionExpr)
@@ -4949,7 +4949,7 @@ bool StructureRenderEngine::dynamicArrayArgs(ExprNode *expr,
         case TOK_OFFSET:
             offsetExpr = inner;
             break;
-        case TOK_SIZEIS:
+        case TOK_COUNT:
         case TOK_MAXCOUNT:
             countExpr = inner;
             break;
@@ -5068,7 +5068,7 @@ bool StructureRenderEngine::emitArgs(ExprNode *expr,
         case TOK_OFFSET:
             offsetExpr = inner;
             break;
-        case TOK_SIZEIS:
+        case TOK_COUNT:
         case TOK_MAXCOUNT:
             countExpr = inner;
             break;

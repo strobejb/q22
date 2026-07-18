@@ -70,7 +70,7 @@ typedef struct _FDT_STRUCT_ITEM
     [enum(FDT_TOKEN)]
     dword token;
 
-    [switch_is(token)]
+    [select(token)]
     union
     {
         [case(FDT_BEGIN_NODE)]

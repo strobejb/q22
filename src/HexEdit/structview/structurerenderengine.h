@@ -20,7 +20,7 @@ public:
     std::vector<std::unique_ptr<StructureRow>> build();
 
     // Strata-language static analysis, not rendering: every select/
-    // switch_is/endian/offset/size_is/optional/extent tag expression in
+    // select/endian/offset/count/optional/extent tag expression in
     // `library` is checked for constructs that cannot work in its static
     // context. This catches field references that resolveDirectField
     // cannot resolve without a live file open, and exported root

@@ -34,8 +34,9 @@ private slots:
 	void extentTagsAndScalarSizeofParse();
 	void endianExpressionTagsParse();
 	void ternaryExpressionTagsParse();
+	void legacyCountAndSelectAliasesUseCanonicalTokens();
 	void lengthIsIsReserved();
-	void unsizedArraysRequireSizeIs();
+	void unsizedArraysRequireCount();
 	void maxCountAndByteSequenceTerminatorsParse();
 	void namedOffsetMapsAndValueAtParse();
 	void scopePrefixesParse();
@@ -798,7 +799,7 @@ void CausewayTests::ternaryExpressionTagsParse()
 {
 	// Scenario: a definition chooses a render-time count from file data using
 	// C-style conditional syntax.
-	// Expected: Strata preserves the ternary expression as the size_is payload,
+	// Expected: Strata preserves the ternary expression as the count payload,
 	// so the renderer can evaluate the selected branch later.
 	// Regression guard: conditional expressions should remain part of the small
 	// expression language instead of forcing format-specific C++ for simple
@@ -822,11 +823,34 @@ void CausewayTests::ternaryExpressionTagsParse()
 	QCOMPARE(root->baseType->sptr->typeDeclList.size(), size_t(2));
 
 	ExprNode *expr = nullptr;
-	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[1]->tagList, TOK_SIZEIS, &expr));
+	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[1]->tagList, TOK_COUNT, &expr));
 	QVERIFY(expr);
 	QCOMPARE(expr->type, EXPR_COMMA);
 	QVERIFY(expr->left);
 	QCOMPARE(expr->left->type, EXPR_TERTIARY);
+}
+
+void CausewayTests::legacyCountAndSelectAliasesUseCanonicalTokens()
+{
+	// Scenario: existing definitions use the historical IDL spellings.
+	// Expected: the lexer accepts them but normalizes the parsed tags to the
+	// canonical count/select token identities used by the renderer.
+	Parser parser;
+	QVERIFY(parseBuffer(parser,
+						"struct Root {\n"
+						"  byte discriminator;\n"
+						"  [size_is(discriminator)] byte values[];\n"
+						"  [switch_is(discriminator)] union { [case(0)] byte zero; } choice;\n"
+						"} root;\n"));
+
+	TypeDecl *root = parser.GetStrataLibrary()->globalTypeDeclList[0];
+	QVERIFY(root);
+	QVERIFY(root->baseType);
+	QVERIFY(root->baseType->sptr);
+	const auto &fields = root->baseType->sptr->typeDeclList;
+	QCOMPARE(fields.size(), size_t(3));
+	QVERIFY(FindTag(fields[1]->tagList, TOK_COUNT, nullptr));
+	QVERIFY(FindTag(fields[2]->tagList, TOK_SELECT, nullptr));
 }
 
 void CausewayTests::lengthIsIsReserved()
@@ -846,7 +870,7 @@ void CausewayTests::lengthIsIsReserved()
 	QCOMPARE(parser.LastErr(), ERROR_RESERVED_KEYWORD);
 }
 
-void CausewayTests::unsizedArraysRequireSizeIs()
+void CausewayTests::unsizedArraysRequireCount()
 {
 	// Scenario: a definition declares a flexible array member with [] but gives
 	// no Strata count tag.
@@ -992,7 +1016,7 @@ void CausewayTests::multiDimensionalFlexibleArraysParse()
 	QVERIFY(field->declList[0]->link->link->ty == typeARRAY);
 
 	ExprNode *countExpr = nullptr;
-	QVERIFY(FindTag(field->tagList, TOK_SIZEIS, &countExpr));
+	QVERIFY(FindTag(field->tagList, TOK_COUNT, &countExpr));
 	QVERIFY(countExpr);
 	QCOMPARE(countExpr->type, EXPR_COMMA);
 

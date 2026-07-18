@@ -28,8 +28,8 @@
 #define DEFINE_RESERVED_KEYWORD DEFINE_KEYWORD
 #endif
 
-// An alternative spelling of an existing keyword (e.g. "count" for size_is,
-// "select" for switch_is) that maps to the SAME token. Consumers that build
+// An alternative spelling of an existing keyword (e.g. "size_is" for count,
+// "switch_is" for select) that maps to the SAME token. Consumers that build
 // an enum or a switch over distinct tokens (lexer.h's TOKEN enum,
 // parser.cpp's IsContextualKeyword) must leave this undefined/a no-op --
 // defining it as DEFINE_KEYWORD would redeclare the enumerator or duplicate
@@ -100,13 +100,13 @@ DEFINE_RESERVED_KEYWORD ( TOK_SELECTOFFSET,     "select_offset" )
 DEFINE_RESERVED_KEYWORD ( TOK_SELF,             "element_value" )
 DEFINE_KEYWORD          ( TOK_SEMANTIC,         "semantic" )
 DEFINE_RESERVED_KEYWORD ( TOK_SIGNED,           "signed" )
-DEFINE_KEYWORD          ( TOK_SIZEIS,           "size_is" )
+DEFINE_KEYWORD          ( TOK_COUNT,            "count" )
 DEFINE_RESERVED_KEYWORD ( TOK_SIZEOF,           "sizeof" )
 DEFINE_KEYWORD          ( TOK_STR,              "str" )
 DEFINE_KEYWORD          ( TOK_STRING,           "string" )
 DEFINE_RESERVED_KEYWORD ( TOK_STRUCT,           "struct" )
 DEFINE_KEYWORD          ( TOK_STYLE,            "style" )
-DEFINE_KEYWORD          ( TOK_SWITCHIS,         "switch_is" )
+DEFINE_KEYWORD          ( TOK_SELECT,           "select" )
 DEFINE_KEYWORD          ( TOK_TAGS,             "tags" )
 DEFINE_KEYWORD          ( TOK_TAGSET,           "tagset" )
 DEFINE_KEYWORD          ( TOK_TERMINATEDBY,     "terminated_by" )
@@ -121,9 +121,9 @@ DEFINE_KEYWORD          ( TOK_VERSION,          "version" )
 DEFINE_KEYWORD          ( TOK_VIEW,             "view" )
 DEFINE_KEYWORD          ( TOK_MAPPER,           "mapper" )
 
-// IDL-derived alternative spellings -- see DEFINE_KEYWORD_ALIAS above.
-DEFINE_KEYWORD_ALIAS    ( TOK_SIZEIS,           "count" )
-DEFINE_KEYWORD_ALIAS    ( TOK_SWITCHIS,         "select" )
+// IDL-derived legacy spellings -- see DEFINE_KEYWORD_ALIAS above.
+DEFINE_KEYWORD_ALIAS    ( TOK_COUNT,            "size_is" )
+DEFINE_KEYWORD_ALIAS    ( TOK_SELECT,           "switch_is" )
 
 #undef DEFINE_RESERVED_KEYWORD
 #ifdef KEYWORDS_H_UNDEF_DEFINE_KEYWORD_ALIAS

@@ -183,7 +183,7 @@ For exactly that shape — the same field, declared identically by every
 candidate directly, as long as every candidate that declares it agrees on
 its position and size. This applies anywhere a field reference is evaluated
 this way, not just `select`/`switch_is`: `endian(expr)`, `offset(expr)`,
-`size_is(expr)`, `optional(expr)` and `extent(expr)` all get it too.
+`count(expr)`, `optional(expr)` and `extent(expr)` all get it too.
 
 ```c
 [endian(e_ident[EI_DATA] == ELFDATA2MSB)]
@@ -917,7 +917,7 @@ dosHeader.e_lfanew
 | Raw read | `select_offset(byteOffset)`, `value_at(offset, Type)`, `root::value_at(offset, Type)`, `field_at(array, index, field)` |
 
 ```c
-size_is(Header.Count * sizeof(DWORD))
+count(Header.Count * sizeof(DWORD))
 optional(Signature == 0x00004550)
 terminated_by(0)
 terminated_by(kind == 0 && size == 0)
