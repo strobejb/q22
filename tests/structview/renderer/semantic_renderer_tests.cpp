@@ -12,8 +12,11 @@ private slots:
     void builderRejectsUnterminatedCstrSemanticNames();
     void builderEmitsIntoMappedSemanticContainers();
     void builderElidesImplicitScalarArrayEmitRow();
+    void builderAddressesPositionalSemanticCollections();
+    void builderUsesPositionalCollectionsForParallelTables();
     void definitionManagerFlagsUnknownSemanticDestinations();
     void definitionManagerFlagsUnknownSemanticNodeFields();
+    void definitionManagerValidatesPositionalSemanticDestinations();
     void semanticRegistryRunsKnownViewsAndIgnoresUnknownViews();
 };
 
@@ -365,6 +368,115 @@ void StructViewSemanticRendererTests::builderElidesImplicitScalarArrayEmitRow()
     QVERIFY(!findChildNamed(bytesGroup, QStringLiteral("PayloadByte")));
 }
 
+void StructViewSemanticRendererTests::builderAddressesPositionalSemanticCollections()
+{
+    // Scenario: two filtered append sequences allocate one shared destination,
+    // while an earlier source row contributes through absolute and
+    // sequence-relative indexes.
+    // Expected: append order defines the complete array, optional filtering
+    // keeps sequence indexes dense, forward item(...) contributions merge
+    // fields, and invalid indexes or missing sequences add nothing.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "["
+                        " emit_node(dest(Items, item(absoluteIndex)), field(Absolute, absoluteValue)),"
+                        " emit_node(dest(Items, item(\"left\", sequenceIndex)), field(Relative, sequenceValue)),"
+                        " emit_node(dest(Items, item(\"right\", 0)), field(Other, rightValue)),"
+                        " emit_node(dest(Items, item(-1)), field(Other, 251)),"
+                        " emit_node(dest(Items, item(99)), field(Other, 252)),"
+                        " emit_node(dest(Items, item(\"missing\", 0)), field(Other, 253))"
+                        "] typedef struct _Contribution {"
+                        " byte absoluteIndex; byte sequenceIndex; byte absoluteValue; byte sequenceValue; byte rightValue;"
+                        "} Contribution;\n"
+                        "["
+                        " emit_node(dest(Items, append(\"left\")), optional(kind == 1), field(Id, id), field(Source, \"left\")),"
+                        " emit_node(dest(Items, append(\"right\")), optional(kind == 2), field(Id, id), field(Source, \"right\"))"
+                        "] typedef struct _Seed { byte kind; byte id; } Seed;\n"
+                        "[semantic] typedef struct _View {"
+                        " [name(fmt(\"item {0}\", Id))] struct {"
+                        "  byte Id; char Source[]; byte Absolute; byte Relative; byte Other;"
+                        " } Items[];"
+                        "} View;\n"
+                        "[export, semantic(View)] typedef struct _Root { Contribution contributions[1]; Seed seeds[4]; } Root;\n"));
+    QVERIFY2(StructureRenderEngine::validateStaticFieldReferences(&library).isEmpty(),
+             qPrintable(StructureRenderEngine::validateStaticFieldReferences(&library).join(QLatin1Char('\n'))));
+
+    QByteArray bytes;
+    bytes.append(char(2));  // absolute item 2
+    bytes.append(char(1));  // left-sequence item 1
+    bytes.append(char(77));
+    bytes.append(char(88));
+    bytes.append(char(66));
+    bytes.append(char(1)); bytes.append(char(10));
+    bytes.append(char(0)); bytes.append(char(99)); // filtered out of both sequences
+    bytes.append(char(2)); bytes.append(char(20));
+    bytes.append(char(1)); bytes.append(char(30));
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    StructureRow *semantic = findTopLevelNamed(rows, QStringLiteral("Semantic"));
+    QVERIFY(semantic);
+    StructureRow *items = findChildNamed(semantic, QStringLiteral("Items"));
+    QVERIFY(items);
+    QCOMPARE(items->children.size(), size_t(3));
+
+    StructureRow *item10 = items->children[0].get();
+    StructureRow *item20 = items->children[1].get();
+    StructureRow *item30 = items->children[2].get();
+    QCOMPARE(item10->name, QStringLiteral("item 10"));
+    QCOMPARE(item20->name, QStringLiteral("item 20"));
+    QCOMPARE(item30->name, QStringLiteral("item 30"));
+    QCOMPARE(findChildNamed(item10, QStringLiteral("Source"))->value, QStringLiteral("left"));
+    QCOMPARE(findChildNamed(item20, QStringLiteral("Source"))->value, QStringLiteral("right"));
+    StructureRow *other = findChildNamed(item20, QStringLiteral("Other"));
+    QVERIFY2(other, qPrintable(childNames(item20)));
+    QCOMPARE(other->value, QStringLiteral("66"));
+    StructureRow *absolute = findChildNamed(item30, QStringLiteral("Absolute"));
+    QVERIFY2(absolute, qPrintable(childNames(item30)));
+    QCOMPARE(absolute->value, QStringLiteral("77"));
+    StructureRow *relative = findChildNamed(item30, QStringLiteral("Relative"));
+    QVERIFY2(relative, qPrintable(childNames(item30)));
+    QCOMPARE(relative->value, QStringLiteral("88"));
+    QVERIFY(!findChildNamed(item10, QStringLiteral("Other")));
+    QVERIFY(!findChildNamed(item30, QStringLiteral("Other")));
+}
+
+void StructViewSemanticRendererTests::builderUsesPositionalCollectionsForParallelTables()
+{
+    // Scenario: a generic binary stores a name table before the records it
+    // describes, with each name carrying a record ordinal.
+    // Expected: the early parallel table updates later allocations without any
+    // format-specific renderer support.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "[emit_node(dest(Records, item(target)), field(Name, fmt(\"name {0}\", code)))]"
+                        " typedef struct _NameEntry { byte target; byte code; } NameEntry;\n"
+                        "[emit_node(dest(Records, append(\"records\")), field(Id, id), field(Size, size))]"
+                        " typedef struct _Record { byte id; byte size; } Record;\n"
+                        "[semantic] typedef struct _View {"
+                        " [name(Name)] struct { byte Id; byte Size; char Name[]; } Records[];"
+                        "} View;\n"
+                        "[export, semantic(View)] typedef struct _Root { NameEntry names[2]; Record records[2]; } Root;\n"));
+
+    QByteArray bytes;
+    bytes.append(char(1)); bytes.append(char(20));
+    bytes.append(char(0)); bytes.append(char(10));
+    bytes.append(char(7)); bytes.append(char(3));
+    bytes.append(char(9)); bytes.append(char(5));
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    StructureRow *semantic = findTopLevelNamed(rows, QStringLiteral("Semantic"));
+    QVERIFY(semantic);
+    StructureRow *records = findChildNamed(semantic, QStringLiteral("Records"));
+    QVERIFY(records);
+    QCOMPARE(records->children.size(), size_t(2));
+    QCOMPARE(records->children[0]->name, QStringLiteral("name 10"));
+    QCOMPARE(records->children[1]->name, QStringLiteral("name 20"));
+    QCOMPARE(findChildNamed(records->children[0].get(), QStringLiteral("Id"))->value, QStringLiteral("7"));
+    QCOMPARE(findChildNamed(records->children[1].get(), QStringLiteral("Size"))->value, QStringLiteral("5"));
+}
+
 void StructViewSemanticRendererTests::definitionManagerFlagsUnknownSemanticDestinations()
 {
     // Scenario: an emit destination is misspelled relative to the root's
@@ -397,6 +509,67 @@ void StructViewSemanticRendererTests::definitionManagerFlagsUnknownSemanticNodeF
     const QStringList errors = StructureRenderEngine::validateStaticFieldReferences(&library);
     QVERIFY2(errors.join(QLatin1Char('\n')).contains(QStringLiteral("field(Missing")),
              qPrintable(errors.join(QLatin1Char('\n'))));
+}
+
+void StructViewSemanticRendererTests::definitionManagerValidatesPositionalSemanticDestinations()
+{
+    // Valid positional forms coexist on one destination.
+    StrataLibrary validLibrary;
+    Parser validParser(&validLibrary);
+    QVERIFY(parseBuffer(validParser,
+                        "[semantic] typedef struct _View { struct { byte Value; } Items[]; } View;\n"
+                        "[export, semantic(View)] typedef struct _Root {"
+                        " [emit_node(dest(Items, append(\"rows\")), field(Value, value))] byte value;"
+                        " [emit_node(dest(Items, item(\"rows\", index)), field(Value, value))] byte index;"
+                        " [emit_node(dest(Items, item(index)), field(Value, value))] byte marker;"
+                        "} Root;\n"));
+    const QStringList validErrors = StructureRenderEngine::validateStaticFieldReferences(&validLibrary);
+    QVERIFY2(validErrors.isEmpty(), qPrintable(validErrors.join(QLatin1Char('\n'))));
+
+    // Malformed counts, non-literal/empty sequence names, and a string absolute
+    // index are rejected when definitions load.
+    StrataLibrary malformedLibrary;
+    Parser malformedParser(&malformedLibrary);
+    QVERIFY(parseBuffer(malformedParser,
+                        "[semantic] typedef struct _View { struct { byte Value; } Items[]; } View;\n"
+                        "[export, semantic(View)] typedef struct _Root {"
+                        " [emit_node(dest(Items, append(1)), field(Value, value))] byte value;"
+                        " [emit_node(dest(Items, append(\"\")), field(Value, value))] byte a;"
+                        " [emit_node(dest(Items, item(\"rows\")), field(Value, value))] byte b;"
+                        " [emit_node(dest(Items, item(\"rows\", 0, 1)), field(Value, value))] byte c;"
+                        "} Root;\n"));
+    const QString malformedErrors = StructureRenderEngine::validateStaticFieldReferences(&malformedLibrary)
+                                        .join(QLatin1Char('\n'));
+    QVERIFY2(malformedErrors.contains(QStringLiteral("malformed")), qPrintable(malformedErrors));
+
+    // Once a destination is positional, keyed and ordinary row creation would
+    // make its indexes ambiguous and is therefore rejected.
+    StrataLibrary mixedLibrary;
+    Parser mixedParser(&mixedLibrary);
+    QVERIFY(parseBuffer(mixedParser,
+                        "[semantic] typedef struct _View { struct { byte Value; } Items[]; } View;\n"
+                        "[export, semantic(View)] typedef struct _Root {"
+                        " [emit_node(dest(Items, append(\"rows\")), field(Value, value))] byte value;"
+                        " [emit_node(dest(Items, key(value)), field(Value, value))] byte keyed;"
+                        " [emit_node(dest(Items), field(Value, value))] byte ordinary;"
+                        "} Root;\n"));
+    const QString mixedErrors = StructureRenderEngine::validateStaticFieldReferences(&mixedLibrary)
+                                    .join(QLatin1Char('\n'));
+    QVERIFY2(mixedErrors.contains(QStringLiteral("mixes positional")), qPrintable(mixedErrors));
+
+    // Positional destination addresses belong only to emit_node(...).
+    StrataLibrary wrongTagLibrary;
+    Parser wrongTagParser(&wrongTagLibrary);
+    QVERIFY(parseBuffer(wrongTagParser,
+                        "typedef byte Payload;\n"
+                        "[semantic] typedef struct _View { Payload Items[]; } View;\n"
+                        "[export, semantic(View)] typedef struct _Root {"
+                        " [emit(dest(Items, append(\"rows\")), type(Payload), offset(0), count(1))] byte emitted;"
+                        " [emit_row(dest(Items, item(0)))] byte row;"
+                        "} Root;\n"));
+    const QString wrongTagErrors = StructureRenderEngine::validateStaticFieldReferences(&wrongTagLibrary)
+                                       .join(QLatin1Char('\n'));
+    QVERIFY2(wrongTagErrors.contains(QStringLiteral("only valid on emit_node")), qPrintable(wrongTagErrors));
 }
 
 void StructViewSemanticRendererTests::semanticRegistryRunsKnownViewsAndIgnoresUnknownViews()

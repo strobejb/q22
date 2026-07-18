@@ -42,6 +42,7 @@
 #endif
 
 DEFINE_KEYWORD          ( TOK_ALIGN,            "align" )
+DEFINE_KEYWORD          ( TOK_APPEND,           "append" )
 DEFINE_KEYWORD          ( TOK_ASSOC,            "assoc" )
 DEFINE_KEYWORD          ( TOK_ATTR,             "attr" )
 DEFINE_KEYWORD          ( TOK_BITFLAG,          "bitflag" )
@@ -81,6 +82,7 @@ DEFINE_RESERVED_KEYWORD ( TOK_FINDFIRST,        "find_first" )
 DEFINE_RESERVED_KEYWORD ( TOK_FINDLAST,         "find_last" )
 DEFINE_KEYWORD          ( TOK_IGNORE,           "ignore" )
 DEFINE_RESERVED_KEYWORD ( TOK_INDEX,            "array_index" )
+DEFINE_KEYWORD          ( TOK_ITEM,             "item" )
 DEFINE_KEYWORD          ( TOK_KEY,              "key" )
 DEFINE_KEYWORD          ( TOK_LABEL,            "label" )
 //DEFINE_KEYWORD ( TOK_IMPORT,		"import" )

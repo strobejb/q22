@@ -20,7 +20,7 @@ View online: [Strata Language Reference](https://github.com/strobejb/q22/blob/ma
 | Layout | [`offset`](#layout) · [`align`](#layout) · [`pad_to`](#layout) · [`endian`](#byte-order) · [`entrypoint`](#layout) · [`extent`](#layout) · [`optional`](#layout) |
 | Arrays | [`count`](#arrays) · [`max_count`](#arrays) · [`count_as`](#arrays) · [`terminated_by`](#arrays) · [`terminator`](#arrays) |
 | Unions | [`select`](#discriminated-unions) · [`case`](#discriminated-unions) |
-| Semantic views | [`semantic`](#semantic-and-emit) · [`emit`](#semantic-and-emit) · [`emit_node`](#semantic-and-emit) · [`emit_row`](#semantic-and-emit) · [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) · [`view`](#view) |
+| Semantic views | [`semantic`](#semantic-and-emit) · [`emit`](#semantic-and-emit) · [`emit_node`](#semantic-and-emit) · [`emit_row`](#semantic-and-emit) · [`append`](#positional-semantic-collection-addressing) · [`item`](#positional-semantic-collection-addressing) · [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) · [`view`](#view) |
 | Export | [`export`](#export-metadata) · [`category`](#export-metadata) · [`version`](#export-metadata) · [`assoc`](#export-metadata) · [`magic`](#export-metadata) |
 | Expressions | [`sizeof`](#expressions) · [`file_size`](#expressions) · [`extent_of`](#expressions) · [`array_index`](#expressions) · [`element_value`](#expressions) · [`current_offset`](#expressions) · [`str`](#expressions) · [`cstr`](#expressions) · [`concat`](#expressions) · [`fmt`](#expressions) · [`octal`](#expressions) · [`find_first`](#byte-pattern-search) · [`find_last`](#byte-pattern-search) · [`select_offset`](#select_offset) · [`value_at`](#value_at) |
 
@@ -451,6 +451,7 @@ attaching additional structures, arrays, or named overlays beyond the raw field 
 | `offset_map("space", base)` / `offset_map("space", logical, size, raw)` | Define a named offset space for `offset("space", expr)` and `value_at("space", expr, Type)` |
 | `semantic(ViewType)` + `emit(...)` | Attach a declarative semantic tree schema and emit byte-backed rows into it |
 | `emit_node(...)` | Emit or update a lightweight semantic node with attributes |
+| `append(...)` / `item(...)` | Allocate or address `emit_node(...)` rows by position |
 | `view("id")` | Attach a named C++ semantic view overlay to a type |
 
 ### `semantic` and `emit`
@@ -579,6 +580,44 @@ emit_node(dest(Imports, key(module.bytes, name.bytes)),
 - `offset(...)`, `extent(...)`, `case(...)`, and `optional(...)` control source
   anchoring and gating
 - use `concat(...)` or `fmt(...)` to build display strings directly in the tag
+
+#### Positional semantic collection addressing
+
+`emit_node(...)` can optionally address a destination array by position. This
+is useful when several physical tables describe the same ordered semantic
+collection:
+
+```c
+emit_node(dest(Functions, append("defined")),
+          field(TypeIndex, typeIndex))
+
+emit_node(dest(Functions, item("defined", array_index())),
+          field(CodeSize, size))
+
+emit_node(dest(Functions, item(functionIndex)),
+          field(Name, name.bytes))
+```
+
+- `append("sequence")` creates the next row in the complete destination array
+  and also records it as the next zero-based item in `sequence`
+- `item("sequence", index)` contributes fields and naming to a row previously
+  allocated in that sequence
+- `item(index)` addresses a zero-based row in the complete destination array
+- sequence names must be non-empty string literals; separate declarations may
+  append to the same sequence
+- `optional(...)` is evaluated before allocation, so filtered sequences remain
+  dense
+- all successful `append(...)` rows are allocated in source traversal order
+  before any `item(...)` contributions are applied; an earlier physical table
+  can therefore describe rows allocated later
+- missing sequences, failed or negative index expressions, and out-of-range
+  indexes emit nothing
+- positional addressing is only valid on `emit_node(...)`. A destination that
+  uses it cannot also use `key(...)`, ordinary unaddressed node creation,
+  `emit(...)`, or `emit_row(...)`
+
+Field merging, schema field order, schema `name(...)`, and explicit node
+`name(...)` behave exactly as they do for keyed `emit_node(...)` contributions.
 
 PE semantic rendering can be isolated while the declarative view reaches parity
 with the older C++ view:
@@ -1106,7 +1145,7 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 | Primitive types | `byte`, `word`, `dword`, `qword`, `char`, `wchar_t`, `float`, `double`, `uleb128`, `sleb128` |
 | Display/layout tags | `align`, `bitflag`, `description`, `display`, `endian`, `entrypoint`, `extent`, `format`, `ignore`, `name`, `offset`, `optional`, `pad_to`, `string`, `style`, `tree` |
 | Arrays/unions | `case`, `count`, `count_as`, `default`, `length_is`, `max_count`, `select`, `select_offset`, `size_is`, `switch_is`, `terminated_by`, `terminator` |
-| Dynamic/semantic tags | `attr`, `container`, `dest`, `dynamic_array`, `dynamic_container`, `dynamic_struct`, `emit`, `emit_node`, `emit_row`, `field`, `key`, `label`, `map`, `mapper`, `offset_map`, `semantic`, `type`, `view` |
+| Dynamic/semantic tags | `append`, `attr`, `container`, `dest`, `dynamic_array`, `dynamic_container`, `dynamic_struct`, `emit`, `emit_node`, `emit_row`, `field`, `item`, `key`, `label`, `map`, `mapper`, `offset_map`, `semantic`, `type`, `view` |
 | Export/detection tags | `assoc`, `category`, `export`, `magic`, `version` |
 | Tagsets/files | `include`, `tagset`, `tags` |
 | Expression helpers | `array_index`, `concat`, `cstr`, `cstr_at`, `cstr_from`, `current_offset`, `element_value`, `extent_of`, `field_at`, `file_size`, `find_first`, `find_last`, `fmt`, `fourcc`, `octal`, `root_value_at`, `sizeof`, `str`, `value_at` |

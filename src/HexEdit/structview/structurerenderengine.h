@@ -160,6 +160,13 @@ private:
         bool schemaField = false;
     };
 
+    enum class SemanticNodeAddress
+    {
+        Ordinary,
+        Append,
+        Item
+    };
+
     struct SemanticNodeRequest
     {
         StructureRow *owner = nullptr;
@@ -173,6 +180,23 @@ private:
         ExprNode *extentExpr = nullptr;
         ExprNode *conditionExpr = nullptr;
         std::vector<SemanticNodeAttr> attrs;
+        SemanticNodeAddress address = SemanticNodeAddress::Ordinary;
+        QString sequenceName;
+        ExprNode *itemIndexExpr = nullptr;
+    };
+
+    struct SemanticPositionalSequence
+    {
+        QString name;
+        std::vector<StructureRow *> rows;
+    };
+
+    struct SemanticPositionalCollection
+    {
+        StructureRow *parent = nullptr;
+        QStringList destinationPath;
+        std::vector<StructureRow *> rows;
+        std::vector<SemanticPositionalSequence> sequences;
     };
 
     struct SemanticContainer
@@ -288,7 +312,11 @@ private:
     bool emitDestinationArgs(ExprNode *expr,
                              ExprNode **path,
                              ExprNode **key,
-                             ExprNode **name) const;
+                             ExprNode **name,
+                             ExprNode **append = nullptr,
+                             ExprNode **item = nullptr) const;
+    bool semanticAppendArgs(ExprNode *expr, QString *sequence) const;
+    bool semanticItemArgs(ExprNode *expr, QString *sequence, ExprNode **index) const;
     bool semanticAttrArgs(ExprNode *expr, QString *name, ExprNode **value) const;
     bool emitMapArgs(ExprNode *expr,
                      QString *name,
@@ -389,6 +417,7 @@ private:
     std::vector<DynamicArrayRequest> m_dynamicArrayRequests;
     std::vector<SemanticRowRequest> m_semanticRowRequests;
     std::vector<SemanticNodeRequest> m_semanticNodeRequests;
+    std::vector<SemanticPositionalCollection> m_semanticPositionalCollections;
     std::vector<SemanticEmitRequest> m_semanticEmitRequests;
     std::vector<SemanticContainer> m_semanticContainers;
     std::vector<SemanticEntity> m_semanticEntities;

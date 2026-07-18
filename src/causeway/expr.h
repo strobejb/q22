@@ -32,9 +32,11 @@ enum EXPR
 	// of a plain value -- e.g. name(DllName) as an argument inside
 	// dynamic_array(name(DllName), type(CHAR), offset(Name), count(4096)).
 	// 'tok' on the ExprNode
-	// records which tag keyword wrapped it (e.g. TOK_NAME); 'left' is the
-	// wrapped value. Parsed directly by the tag-argument parser, not by the
-	// general expression grammar -- see Parser::TagWrappedArg().
+	// records which tag keyword wrapped it (e.g. TOK_NAME); 'left' owns the
+	// wrapped expression tree, including nested destination-address arguments
+	// such as item("sequence", index). Parsed directly by the tag-argument
+	// parser, not by the general expression grammar -- see
+	// Parser::TagWrappedArg().
 	EXPR_TAGWRAP,
 	// select_offset(byteOffset): reads one raw byte at byteOffset relative to
 	// the current struct/union's own base file offset, bypassing named-field

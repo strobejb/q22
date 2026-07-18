@@ -2,7 +2,7 @@
 <!DOCTYPE language>
 <language
     name="Q22 Strata"
-    version="5"
+    version="6"
     kateversion="5.79"
     section="Sources"
     extensions="*.strata;*.struct"
@@ -63,6 +63,7 @@
 
 <list name="tagKeywords">
     <item>align</item>
+    <item>append</item>
     <item>assoc</item>
     <item>attr</item>
     <item>bitflag</item>
@@ -90,6 +91,7 @@
     <item>field</item>
     <item>field_at</item>
     <item>format</item>
+    <item>item</item>
     <item>key</item>
     <item>length_is</item>
     <item>magic</item>

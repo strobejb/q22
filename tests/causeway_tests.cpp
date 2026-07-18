@@ -21,6 +21,7 @@ private slots:
 	void tagsetsDumpInSourceOrder();
 	void dynamicPlacementTagsParse();
 	void semanticSchemaAndEmitTagsParse();
+	void positionalSemanticDestinationTagsParse();
 	void emitRoleWrappersAreScoped();
 	void unknownSemanticSchemaReferencesFail();
 	void viewTagsParse();
@@ -71,6 +72,19 @@ static ExprNode *findByteSequenceExpr(ExprNode *expr)
 	if(ExprNode *found = findByteSequenceExpr(expr->right))
 		return found;
 	return findByteSequenceExpr(expr->cond);
+}
+
+static ExprNode *findTagWrapExpr(ExprNode *expr, TOKEN tok)
+{
+	if(!expr)
+		return nullptr;
+	if(expr->type == EXPR_TAGWRAP && expr->tok == tok)
+		return expr;
+	if(ExprNode *found = findTagWrapExpr(expr->left, tok))
+		return found;
+	if(ExprNode *found = findTagWrapExpr(expr->right, tok))
+		return found;
+	return findTagWrapExpr(expr->cond, tok);
 }
 
 void CausewayTests::defaultParsersDoNotShareTypes()
@@ -455,6 +469,51 @@ void CausewayTests::semanticSchemaAndEmitTagsParse()
 	QCOMPARE(emitExpr->type, EXPR_COMMA);
 }
 
+void CausewayTests::positionalSemanticDestinationTagsParse()
+{
+	// Scenario: emit_node destinations use append(...) plus absolute and
+	// sequence-relative item(...) addressing.
+	// Expected: the parser owns each nested address expression beneath the
+	// destination wrapper and preserves its keyword token.
+	Parser parser;
+	QVERIFY(parseBuffer(parser,
+						"[semantic] typedef struct _View { struct { byte Value; } Items[]; } View;\n"
+						"[export, semantic(View)] typedef struct _Root {\n"
+						"  [emit_node(dest(Items, append(\"defined\")), field(Value, a))] byte a;\n"
+						"  [emit_node(dest(Items, item(\"defined\", b)), field(Value, b))] byte b;\n"
+						"  [emit_node(dest(Items, item(c)), field(Value, c))] byte c;\n"
+						"} Root;\n"));
+
+	TypeDecl *root = parser.GetStrataLibrary()->globalTypeDeclList[1];
+	QVERIFY(root && root->baseType && root->baseType->sptr);
+	QCOMPARE(root->baseType->sptr->typeDeclList.size(), size_t(3));
+
+	ExprNode *appendEmit = nullptr;
+	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[0]->tagList, TOK_EMITNODE, &appendEmit));
+	ExprNode *appendWrap = findTagWrapExpr(appendEmit, TOK_APPEND);
+	QVERIFY(appendWrap && appendWrap->left);
+	QCOMPARE(appendWrap->left->type, EXPR_STRINGBUF);
+	QCOMPARE(QString::fromUtf8(appendWrap->left->str), QStringLiteral("defined"));
+
+	ExprNode *relativeEmit = nullptr;
+	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[1]->tagList, TOK_EMITNODE, &relativeEmit));
+	ExprNode *relativeItem = findTagWrapExpr(relativeEmit, TOK_ITEM);
+	QVERIFY(relativeItem && relativeItem->left);
+	QCOMPARE(relativeItem->left->type, EXPR_COMMA);
+
+	ExprNode *absoluteEmit = nullptr;
+	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[2]->tagList, TOK_EMITNODE, &absoluteEmit));
+	ExprNode *absoluteItem = findTagWrapExpr(absoluteEmit, TOK_ITEM);
+	QVERIFY(absoluteItem && absoluteItem->left);
+	QCOMPARE(absoluteItem->left->type, EXPR_COMMA);
+	QVERIFY(absoluteItem->left->left);
+	QCOMPARE(absoluteItem->left->left->type, EXPR_IDENTIFIER);
+
+	Parser malformed;
+	QVERIFY(!parseBuffer(malformed,
+						 "struct Root { [emit_node(dest(Items, item(\"defined\",)), attr(Value, 1))] byte marker; } root;\n"));
+}
+
 void CausewayTests::emitRoleWrappersAreScoped()
 {
 	// Scenario: dest(...), label(...), key(...), attr(...), and field(...) are only role wrappers inside
@@ -486,6 +545,16 @@ void CausewayTests::emitRoleWrappersAreScoped()
 	QVERIFY(!parseBuffer(fieldParser,
 						 "struct Root { [field(Name, marker)] byte marker; } root;\n"));
 	QCOMPARE(fieldParser.LastErr(), ERROR_ILLEGAL_TAG);
+
+	Parser appendParser;
+	QVERIFY(!parseBuffer(appendParser,
+						 "struct Root { [append(\"items\")] byte marker; } root;\n"));
+	QCOMPARE(appendParser.LastErr(), ERROR_ILLEGAL_TAG);
+
+	Parser itemParser;
+	QVERIFY(!parseBuffer(itemParser,
+						 "struct Root { [item(0)] byte marker; } root;\n"));
+	QCOMPARE(itemParser.LastErr(), ERROR_ILLEGAL_TAG);
 }
 
 void CausewayTests::unknownSemanticSchemaReferencesFail()

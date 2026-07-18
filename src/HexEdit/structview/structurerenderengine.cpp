@@ -3018,6 +3018,15 @@ QStringList StructureRenderEngine::validateStaticFieldReferences(StrataLibrary *
         TypeDecl *schemaDecl = scratch.attachedSemanticSchema(typeDecl);
         if (schemaDecl)
         {
+            struct DestinationIdentityUsage
+            {
+                QStringList path;
+                bool positional = false;
+                bool conventional = false;
+                bool conflictReported = false;
+            };
+            std::vector<DestinationIdentityUsage> destinationIdentityUsages;
+
             auto validateEmitDestinations = [&](auto &&self, Type *scopeType) -> void {
                 Type *base = BaseNode(scopeType);
                 if (!base || (base->ty != typeSTRUCT && base->ty != typeUNION) || !base->sptr)
@@ -3047,6 +3056,18 @@ QStringList StructureRenderEngine::validateStaticFieldReferences(StrataLibrary *
                         std::vector<SemanticNodeAttr> nodeAttrs;
                         bool parsed = false;
                         QString tagName;
+                        ExprNode *rawDestinationExpr = nullptr;
+                        std::vector<ExprNode *> rawTagArgs;
+                        appendCommaArgs(tag->expr, &rawTagArgs);
+                        for (ExprNode *rawArg : rawTagArgs)
+                        {
+                            ExprNode *inner = nullptr;
+                            if (unwrapTagArg(rawArg, &inner) == TOK_DEST)
+                            {
+                                rawDestinationExpr = inner;
+                                break;
+                            }
+                        }
                         if (tag->tok == TOK_EMIT)
                         {
                             tagName = QStringLiteral("emit");
@@ -3086,6 +3107,25 @@ QStringList StructureRenderEngine::validateStaticFieldReferences(StrataLibrary *
                         }
                         if (!parsed)
                         {
+                            ExprNode *rawPathExpr = nullptr;
+                            ExprNode *rawKeyExpr = nullptr;
+                            ExprNode *rawNameExpr = nullptr;
+                            ExprNode *rawAppendExpr = nullptr;
+                            ExprNode *rawItemExpr = nullptr;
+                            const bool hasPositionalDestination = rawDestinationExpr
+                                && scratch.emitDestinationArgs(rawDestinationExpr,
+                                                               &rawPathExpr,
+                                                               &rawKeyExpr,
+                                                               &rawNameExpr,
+                                                               &rawAppendExpr,
+                                                               &rawItemExpr)
+                                && (rawAppendExpr || rawItemExpr);
+                            if (tag->tok != TOK_EMITNODE && hasPositionalDestination)
+                            {
+                                errors.push_back(tagLocationPrefix(decl)
+                                                 + QStringLiteral("append(...) and item(...) destination addressing is only valid on emit_node(...)"));
+                                continue;
+                            }
                             errors.push_back(tagLocationPrefix(decl)
                                              + QStringLiteral("%1(...) is missing a required wrapped argument")
                                                    .arg(tagName));
@@ -3095,11 +3135,25 @@ QStringList StructureRenderEngine::validateStaticFieldReferences(StrataLibrary *
                         ExprNode *destinationPathExpr = nullptr;
                         ExprNode *keyExpr = nullptr;
                         ExprNode *nameExpr = nullptr;
-                        if (!scratch.emitDestinationArgs(destinationExpr, &destinationPathExpr, &keyExpr, &nameExpr))
+                        ExprNode *appendExpr = nullptr;
+                        ExprNode *itemExpr = nullptr;
+                        ExprNode *destinationAddressExpr = rawDestinationExpr ? rawDestinationExpr : destinationExpr;
+                        if (!scratch.emitDestinationArgs(destinationAddressExpr,
+                                                         &destinationPathExpr,
+                                                         &keyExpr,
+                                                         &nameExpr,
+                                                         &appendExpr,
+                                                         &itemExpr))
                         {
                             errors.push_back(tagLocationPrefix(decl)
                                              + QStringLiteral("%1(dest(...)) is malformed")
                                                    .arg(tagName));
+                            continue;
+                        }
+                        if (tag->tok != TOK_EMITNODE && (appendExpr || itemExpr))
+                        {
+                            errors.push_back(tagLocationPrefix(decl)
+                                             + QStringLiteral("append(...) and item(...) destination addressing is only valid on emit_node(...)"));
                             continue;
                         }
                         if (tag->tok == TOK_EMITNODE && !labelExpr && nameExpr)
@@ -3126,6 +3180,44 @@ QStringList StructureRenderEngine::validateStaticFieldReferences(StrataLibrary *
                                                             ? QStringLiteral("<anonymous>")
                                                             : QString::fromLocal8Bit(schemaDecl->declList[0]->sym->name))
                                                    .arg(tagName));
+                        }
+
+                        const bool positionalAddressing = appendExpr || itemExpr;
+                        DestinationIdentityUsage *identityUsage = nullptr;
+                        for (DestinationIdentityUsage &usage : destinationIdentityUsages)
+                        {
+                            if (usage.path == path)
+                            {
+                                identityUsage = &usage;
+                                break;
+                            }
+                        }
+                        if (!identityUsage)
+                        {
+                            destinationIdentityUsages.push_back(DestinationIdentityUsage{ path });
+                            identityUsage = &destinationIdentityUsages.back();
+                        }
+                        identityUsage->positional = identityUsage->positional || positionalAddressing;
+                        identityUsage->conventional = identityUsage->conventional || !positionalAddressing;
+                        if (identityUsage->positional
+                            && identityUsage->conventional
+                            && !identityUsage->conflictReported)
+                        {
+                            errors.push_back(tagLocationPrefix(decl)
+                                             + QStringLiteral("semantic destination '%1' mixes positional append/item addressing with key(...) or unaddressed emits")
+                                                   .arg(path.isEmpty() ? QStringLiteral("<invalid>") : path.join(QLatin1Char('.'))));
+                            identityUsage->conflictReported = true;
+                        }
+
+                        if (positionalAddressing)
+                        {
+                            TypeDecl *destinationDecl = scratch.semanticDestinationDecl(schemaDecl, path);
+                            if (destinationDecl && !scratch.semanticDestinationIsArray(destinationDecl))
+                            {
+                                errors.push_back(tagLocationPrefix(decl)
+                                                 + QStringLiteral("positional semantic destination '%1' is not an array")
+                                                       .arg(path.join(QLatin1Char('.'))));
+                            }
                         }
 
                         TypeDecl *elementSchema = tag->tok == TOK_EMITNODE
@@ -3161,6 +3253,13 @@ QStringList StructureRenderEngine::validateStaticFieldReferences(StrataLibrary *
                             scratch.validateFieldTagExpressions(emitScopeType, keyExpr, decl, TOK_KEY, &errors);
                         if (nameExpr)
                             scratch.validateFieldTagExpressions(emitScopeType, nameExpr, decl, TOK_NAME, &errors);
+                        if (itemExpr)
+                        {
+                            QString itemSequence;
+                            ExprNode *itemIndexExpr = nullptr;
+                            if (scratch.semanticItemArgs(itemExpr, &itemSequence, &itemIndexExpr) && itemIndexExpr)
+                                scratch.validateFieldTagExpressions(emitScopeType, itemIndexExpr, decl, TOK_ITEM, &errors);
+                        }
                         for (const SemanticNodeAttr &attr : nodeAttrs)
                             if (attr.valueExpr)
                                 scratch.validateFieldTagExpressions(emitScopeType,
@@ -3961,8 +4060,31 @@ void StructureRenderEngine::collectSemanticEmitRequests(StructureRow *row)
             ExprNode *destinationPathExpr = nullptr;
             ExprNode *keyExpr = nullptr;
             ExprNode *destinationNameExpr = nullptr;
-            if (!emitDestinationArgs(destinationExpr, &destinationPathExpr, &keyExpr, &destinationNameExpr))
+            ExprNode *appendExpr = nullptr;
+            ExprNode *itemExpr = nullptr;
+            if (!emitDestinationArgs(destinationExpr,
+                                     &destinationPathExpr,
+                                     &keyExpr,
+                                     &destinationNameExpr,
+                                     &appendExpr,
+                                     &itemExpr))
                 continue;
+
+            SemanticNodeAddress address = SemanticNodeAddress::Ordinary;
+            QString sequenceName;
+            ExprNode *itemIndexExpr = nullptr;
+            if (appendExpr)
+            {
+                if (!semanticAppendArgs(appendExpr, &sequenceName))
+                    continue;
+                address = SemanticNodeAddress::Append;
+            }
+            else if (itemExpr)
+            {
+                if (!semanticItemArgs(itemExpr, &sequenceName, &itemIndexExpr))
+                    continue;
+                address = SemanticNodeAddress::Item;
+            }
 
             const QStringList destination = semanticPath(destinationPathExpr);
             if (destination.isEmpty() || !semanticDestinationExists(schemaDecl, destination))
@@ -4009,7 +4131,10 @@ void StructureRenderEngine::collectSemanticEmitRequests(StructureRow *row)
                 fileOffset,
                 extentExpr,
                 conditionExpr,
-                attrs
+                attrs,
+                address,
+                sequenceName,
+                itemIndexExpr
             });
             continue;
         }
@@ -4393,6 +4518,18 @@ void StructureRenderEngine::appendSemanticNodeRequests()
         if (!request.owner)
             return;
 
+        if (request.address == SemanticNodeAddress::Item)
+        {
+            const bool hasAllocatedDestination = std::any_of(
+                m_semanticPositionalCollections.cbegin(),
+                m_semanticPositionalCollections.cend(),
+                [&request](const SemanticPositionalCollection &collection) {
+                    return collection.destinationPath == request.destinationPath;
+                });
+            if (!hasAllocatedDestination)
+                return;
+        }
+
         uint64_t fileOffset = request.fileOffset;
         std::vector<ExprNode *> keyExprs;
         appendCommaArgs(request.keyExpr, &keyExprs);
@@ -4483,7 +4620,47 @@ void StructureRenderEngine::appendSemanticNodeRequests()
             return;
 
         StructureRow *node = nullptr;
-        if (!key.isEmpty())
+        if (request.address == SemanticNodeAddress::Item)
+        {
+            SemanticPositionalCollection *collection = nullptr;
+            for (SemanticPositionalCollection &candidate : m_semanticPositionalCollections)
+            {
+                if (candidate.parent == parentRow && candidate.destinationPath == request.destinationPath)
+                {
+                    collection = &candidate;
+                    break;
+                }
+            }
+            if (!collection || !request.itemIndexExpr)
+                return;
+
+            INUMTYPE index = 0;
+            if (!evaluate(request.owner, request.itemIndexExpr, &index, request.owner->absoluteOffset))
+                return;
+
+            const std::vector<StructureRow *> *rows = &collection->rows;
+            if (!request.sequenceName.isEmpty())
+            {
+                rows = nullptr;
+                for (const SemanticPositionalSequence &sequence : collection->sequences)
+                {
+                    if (sequence.name == request.sequenceName)
+                    {
+                        rows = &sequence.rows;
+                        break;
+                    }
+                }
+                if (!rows)
+                    return;
+            }
+
+            if (index >= rows->size())
+                return;
+            node = (*rows)[static_cast<size_t>(index)];
+            if (!node)
+                return;
+        }
+        else if (!key.isEmpty())
         {
             for (const SemanticEntity &entity : m_semanticEntities)
             {
@@ -4510,6 +4687,9 @@ void StructureRenderEngine::appendSemanticNodeRequests()
         name = rowNameFragment(name);
 
         TypeDecl *elementSchema = semanticDestinationElementSchema(attachedSemanticSchema(m_rootType), request.destinationPath);
+
+        if (!node && request.address == SemanticNodeAddress::Item)
+            return;
 
         if (!node)
         {
@@ -4545,6 +4725,43 @@ void StructureRenderEngine::appendSemanticNodeRequests()
 
             node = row.get();
             appendPresentedRow(parentRow, std::move(row));
+            if (request.address == SemanticNodeAddress::Append)
+            {
+                SemanticPositionalCollection *collection = nullptr;
+                for (SemanticPositionalCollection &candidate : m_semanticPositionalCollections)
+                {
+                    if (candidate.parent == parentRow && candidate.destinationPath == request.destinationPath)
+                    {
+                        collection = &candidate;
+                        break;
+                    }
+                }
+                if (!collection)
+                {
+                    m_semanticPositionalCollections.push_back(SemanticPositionalCollection{
+                        parentRow,
+                        request.destinationPath
+                    });
+                    collection = &m_semanticPositionalCollections.back();
+                }
+
+                collection->rows.push_back(node);
+                SemanticPositionalSequence *sequence = nullptr;
+                for (SemanticPositionalSequence &candidate : collection->sequences)
+                {
+                    if (candidate.name == request.sequenceName)
+                    {
+                        sequence = &candidate;
+                        break;
+                    }
+                }
+                if (!sequence)
+                {
+                    collection->sequences.push_back(SemanticPositionalSequence{ request.sequenceName });
+                    sequence = &collection->sequences.back();
+                }
+                sequence->rows.push_back(node);
+            }
             if (!key.isEmpty())
             {
                 m_semanticEntities.push_back(SemanticEntity{
@@ -4606,8 +4823,21 @@ void StructureRenderEngine::appendSemanticNodeRequests()
             node->value = QStringLiteral("{...}");
     };
 
+    // Positional collections are deliberately two-phase. All successful
+    // append(...) requests allocate rows in source traversal order before any
+    // item(...) contribution is applied, so an early parallel table can safely
+    // contribute to rows declared later in the file.
     for (const SemanticNodeRequest &request : m_semanticNodeRequests)
-        appendRequest(request);
+        if (request.address == SemanticNodeAddress::Append)
+            appendRequest(request);
+
+    for (const SemanticNodeRequest &request : m_semanticNodeRequests)
+        if (request.address == SemanticNodeAddress::Item)
+            appendRequest(request);
+
+    for (const SemanticNodeRequest &request : m_semanticNodeRequests)
+        if (request.address == SemanticNodeAddress::Ordinary)
+            appendRequest(request);
 }
 
 void StructureRenderEngine::appendSemanticEmitRows(StructureRow *root)
@@ -5301,7 +5531,9 @@ bool StructureRenderEngine::emitNodeArgs(ExprNode *expr,
 bool StructureRenderEngine::emitDestinationArgs(ExprNode *expr,
                                                 ExprNode **path,
                                                 ExprNode **key,
-                                                ExprNode **name) const
+                                                ExprNode **name,
+                                                ExprNode **append,
+                                                ExprNode **item) const
 {
     std::vector<ExprNode *> args;
     appendCommaArgs(expr, &args);
@@ -5309,8 +5541,14 @@ bool StructureRenderEngine::emitDestinationArgs(ExprNode *expr,
         return false;
 
     ExprNode *pathExpr = args[0];
+    ExprNode *unusedInner = nullptr;
+    if (unwrapTagArg(pathExpr, &unusedInner) != TOK_NULL)
+        return false;
+
     ExprNode *keyExpr = nullptr;
     ExprNode *nameExpr = nullptr;
+    ExprNode *appendExpr = nullptr;
+    ExprNode *itemExpr = nullptr;
     for (size_t i = 1; i < args.size(); ++i)
     {
         ExprNode *inner = nullptr;
@@ -5323,12 +5561,33 @@ bool StructureRenderEngine::emitDestinationArgs(ExprNode *expr,
         case TOK_NAME:
             nameExpr = inner;
             break;
+        case TOK_APPEND:
+            if (appendExpr)
+                return false;
+            appendExpr = inner;
+            break;
+        case TOK_ITEM:
+            if (itemExpr)
+                return false;
+            itemExpr = inner;
+            break;
         default:
             return false;
         }
     }
 
-    if ((keyExpr && !key) || (nameExpr && !name))
+    QString sequence;
+    ExprNode *itemIndexExpr = nullptr;
+    if ((appendExpr && !semanticAppendArgs(appendExpr, &sequence))
+        || (itemExpr && !semanticItemArgs(itemExpr, &sequence, &itemIndexExpr))
+        || (appendExpr && itemExpr)
+        || (keyExpr && (appendExpr || itemExpr)))
+    {
+        return false;
+    }
+
+    if ((keyExpr && !key) || (nameExpr && !name)
+        || (appendExpr && !append) || (itemExpr && !item))
         return false;
 
     if (path)
@@ -5337,6 +5596,58 @@ bool StructureRenderEngine::emitDestinationArgs(ExprNode *expr,
         *key = keyExpr;
     if (name)
         *name = nameExpr;
+    if (append)
+        *append = appendExpr;
+    if (item)
+        *item = itemExpr;
+    return true;
+}
+
+bool StructureRenderEngine::semanticAppendArgs(ExprNode *expr, QString *sequence) const
+{
+    std::vector<ExprNode *> args;
+    appendCommaArgs(expr, &args);
+    if (args.size() != 1 || !sequence)
+        return false;
+
+    ExprNode *nameExpr = args[0];
+    if (!nameExpr || nameExpr->type != EXPR_STRINGBUF || !nameExpr->str || nameExpr->str[0] == '\0')
+        return false;
+
+    *sequence = QString::fromUtf8(nameExpr->str);
+    return !sequence->isEmpty();
+}
+
+bool StructureRenderEngine::semanticItemArgs(ExprNode *expr, QString *sequence, ExprNode **index) const
+{
+    std::vector<ExprNode *> args;
+    appendCommaArgs(expr, &args);
+    if ((args.size() != 1 && args.size() != 2) || !sequence || !index)
+        return false;
+
+    sequence->clear();
+    ExprNode *indexExpr = args[0];
+    if (args.size() == 2)
+    {
+        ExprNode *nameExpr = args[0];
+        if (!nameExpr || nameExpr->type != EXPR_STRINGBUF || !nameExpr->str || nameExpr->str[0] == '\0')
+            return false;
+        *sequence = QString::fromUtf8(nameExpr->str);
+        if (sequence->isEmpty())
+            return false;
+        indexExpr = args[1];
+    }
+
+    if (!indexExpr
+        || indexExpr->type == EXPR_NULL
+        || indexExpr->type == EXPR_STRINGBUF
+        || indexExpr->type == EXPR_BYTESEQ
+        || indexExpr->type == EXPR_TAGWRAP)
+    {
+        return false;
+    }
+
+    *index = indexExpr;
     return true;
 }
 

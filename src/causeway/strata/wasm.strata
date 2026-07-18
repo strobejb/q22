@@ -99,8 +99,8 @@ typedef struct _WASM_NAME_ASSOC
 } WASM_NAME_ASSOC, *PWASM_NAME_ASSOC;
 
 [
-    emit_node(dest(FunctionNames, key(index)),
-              field(Index, index),
+    emit_node(dest(Functions, item(index)),
+              name(name.bytes),
               field(Name, name.bytes))
 ]
 typedef struct _WASM_FUNCTION_NAME_ASSOC
@@ -110,8 +110,8 @@ typedef struct _WASM_FUNCTION_NAME_ASSOC
 } WASM_FUNCTION_NAME_ASSOC, *PWASM_FUNCTION_NAME_ASSOC;
 
 [
-    emit_node(dest(TypeNames, key(index)),
-              field(Index, index),
+    emit_node(dest(Types, item(index)),
+              name(name.bytes),
               field(Name, name.bytes))
 ]
 typedef struct _WASM_TYPE_NAME_ASSOC
@@ -200,7 +200,7 @@ typedef struct _WASM_RESULT_TYPE
 } WASM_RESULT_TYPE, *PWASM_RESULT_TYPE;
 
 [
-    emit_node(dest(Types, key(array_index())),
+    emit_node(dest(Types, append("types")),
               field(Index, array_index()),
               field(Form, form),
               field(Params, params.count),
@@ -282,6 +282,12 @@ typedef struct _WASM_TAG_TYPE
               field(Module, module.bytes),
               field(Name, name.bytes),
               field(Kind, kind),
+              field(TypeIndex, functionTypeIndex)),
+    emit_node(dest(Functions, append("imports")),
+              optional(kind == WASM_EXTERN_FUNC),
+              name(name.bytes),
+              field(Module, module.bytes),
+              field(Name, name.bytes),
               field(TypeIndex, functionTypeIndex))
 ]
 typedef struct _WASM_IMPORT
@@ -321,8 +327,8 @@ typedef struct _WASM_IMPORT_SECTION
 } WASM_IMPORT_SECTION, *PWASM_IMPORT_SECTION;
 
 [
-    emit_node(dest(DefinedFunctions, key(array_index())),
-              field(Index, array_index()),
+    emit_node(dest(Functions, append("defined")),
+              name(fmt("defined function {0}", array_index())),
               field(TypeIndex, typeIndex))
 ]
 typedef struct _WASM_DEFINED_FUNCTION
@@ -388,7 +394,11 @@ typedef struct _WASM_EXTERN_INDEX
     emit_node(dest(Exports, key(name.bytes)),
               field(Name, name.bytes),
               field(Kind, target.kind),
-              field(Index, target.index))
+              field(Index, target.index)),
+    emit_node(dest(Functions, item(target.index)),
+              optional(target.kind == WASM_EXTERN_FUNC),
+              name(name.bytes),
+              field(Export, name.bytes))
 ]
 typedef struct _WASM_EXPORT
 {
@@ -434,9 +444,8 @@ typedef struct _WASM_CODE_BODY
 } WASM_CODE_BODY, *PWASM_CODE_BODY;
 
 [
-    emit_node(dest(Code, key(array_index())),
-              field(Index, array_index()),
-              field(Size, size))
+    emit_node(dest(Functions, item("defined", array_index())),
+              field(CodeSize, size))
 ]
 typedef struct _WASM_CODE_ENTRY
 {
@@ -751,6 +760,7 @@ typedef struct _WASM_SUMMARY
     struct
     {
         uleb128 Index;
+        CHAR Name[];
         BYTE Form;
         uleb128 Params;
         uleb128 Results;
@@ -773,33 +783,15 @@ typedef struct _WASM_SUMMARY
         uleb128 Index;
     } Exports[];
 
-    [name(fmt("defined function {0}", Index))]
+    [name(Name)]
     struct
     {
-        uleb128 Index;
-        uleb128 Size;
-    } Code[];
-
-    [name(fmt("defined function {0} -> type {1}", Index, TypeIndex))]
-    struct
-    {
-        uleb128 Index;
+        CHAR Module[];
+        CHAR Name[];
         uleb128 TypeIndex;
-    } DefinedFunctions[];
-
-    [name(Name)]
-    struct
-    {
-        uleb128 Index;
-        CHAR Name[];
-    } FunctionNames[];
-
-    [name(Name)]
-    struct
-    {
-        uleb128 Index;
-        CHAR Name[];
-    } TypeNames[];
+        CHAR Export[];
+        uleb128 CodeSize;
+    } Functions[];
 
     [name("start")]
     struct

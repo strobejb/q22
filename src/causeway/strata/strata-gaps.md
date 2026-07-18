@@ -3,27 +3,26 @@
 This file records places where real binary formats expose useful structure that
 the current Strata language or semantic layer cannot express cleanly yet.
 
-## Cross-collection lookup and joins
+## Positional semantic collection addressing
 
-`emit_row(...)` and `emit_node(...)` now cover aggregation: raw rows in
-different physical sections can contribute facts to one semantic tree, and
-keyed emits can merge contributions into the same semantic entity. PE section
-summaries are an example.
+`emit_node(...)` now supports positional semantic collection addressing.
+`append("sequence")` allocates ordered destination rows, while
+`item("sequence", index)` and `item(index)` let parallel physical tables
+contribute to those rows. Allocation is completed before item contributions,
+so sections that appear earlier in the file can describe rows allocated later.
 
-The remaining gap is relational lookup between independently collected rows.
-Formats such as WebAssembly split related facts across separate physical
-sections. A useful function summary needs to look up type indexes, account for
-imported-function counts, attach export/debug names, and relate those facts to
-code-body ordinals. Pure Strata can render and aggregate each section honestly,
-but it cannot yet synthesize joined rows such as:
+This is sufficient for WebAssembly's combined function index space: function
+imports and definitions allocate one `Functions[]` collection, while function
+names, exports, and code bodies contribute by absolute or defined-function
+ordinal. The resulting declarative summary can express rows such as:
 
 ```text
 func[0] answer : type[0] () -> i32
 ```
 
-Potential direction: indexed collection lookup and declarative join expressions;
-a semantic `view(...)` remains appropriate where the derived relationship is
-too complex or expensive for a declarative renderer.
+The remaining gap is richer interpretation of referenced type signatures and
+instruction bodies. A semantic `view(...)` remains appropriate when that
+derived interpretation is too complex or expensive for declarative rendering.
 
 ## SFNT/OpenType table correlation
 
