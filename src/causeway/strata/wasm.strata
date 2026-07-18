@@ -98,6 +98,28 @@ typedef struct _WASM_NAME_ASSOC
     WASM_NAME name;
 } WASM_NAME_ASSOC, *PWASM_NAME_ASSOC;
 
+[
+    emit_node(dest(FunctionNames, key(index)),
+              field(Index, index),
+              field(Name, name.bytes))
+]
+typedef struct _WASM_FUNCTION_NAME_ASSOC
+{
+    uleb128 index;
+    WASM_NAME name;
+} WASM_FUNCTION_NAME_ASSOC, *PWASM_FUNCTION_NAME_ASSOC;
+
+[
+    emit_node(dest(TypeNames, key(index)),
+              field(Index, index),
+              field(Name, name.bytes))
+]
+typedef struct _WASM_TYPE_NAME_ASSOC
+{
+    uleb128 index;
+    WASM_NAME name;
+} WASM_TYPE_NAME_ASSOC, *PWASM_TYPE_NAME_ASSOC;
+
 typedef struct _WASM_NAME_MAP
 {
     uleb128 count;
@@ -105,6 +127,22 @@ typedef struct _WASM_NAME_MAP
     [count(count), name(name.bytes)]
     WASM_NAME_ASSOC names[];
 } WASM_NAME_MAP, *PWASM_NAME_MAP;
+
+typedef struct _WASM_FUNCTION_NAME_MAP
+{
+    uleb128 count;
+
+    [count(count), name(name.bytes)]
+    WASM_FUNCTION_NAME_ASSOC names[];
+} WASM_FUNCTION_NAME_MAP, *PWASM_FUNCTION_NAME_MAP;
+
+typedef struct _WASM_TYPE_NAME_MAP
+{
+    uleb128 count;
+
+    [count(count), name(name.bytes)]
+    WASM_TYPE_NAME_ASSOC names[];
+} WASM_TYPE_NAME_MAP, *PWASM_TYPE_NAME_MAP;
 
 typedef struct _WASM_INDIRECT_NAME_ASSOC
 {
@@ -134,13 +172,13 @@ typedef struct _WASM_NAME_SUBSECTION
         WASM_NAME module;
 
         [case(WASM_NAME_FUNCTION)]
-        WASM_NAME_MAP functions;
+        WASM_FUNCTION_NAME_MAP functions;
 
         [case(WASM_NAME_LOCAL)]
         WASM_INDIRECT_NAME_MAP locals;
 
         [case(WASM_NAME_TYPE)]
-        WASM_NAME_MAP types;
+        WASM_TYPE_NAME_MAP types;
 
         [case(WASM_NAME_FIELD)]
         WASM_INDIRECT_NAME_MAP fields;
@@ -282,12 +320,22 @@ typedef struct _WASM_IMPORT_SECTION
     WASM_IMPORT imports[];
 } WASM_IMPORT_SECTION, *PWASM_IMPORT_SECTION;
 
+[
+    emit_node(dest(DefinedFunctions, key(array_index())),
+              field(Index, array_index()),
+              field(TypeIndex, typeIndex))
+]
+typedef struct _WASM_DEFINED_FUNCTION
+{
+    uleb128 typeIndex;
+} WASM_DEFINED_FUNCTION, *PWASM_DEFINED_FUNCTION;
+
 typedef struct _WASM_FUNCTION_SECTION
 {
     uleb128 count;
 
     [count(count)]
-    uleb128 typeIndices[];
+    WASM_DEFINED_FUNCTION typeIndices[];
 } WASM_FUNCTION_SECTION, *PWASM_FUNCTION_SECTION;
 
 typedef struct _WASM_TABLE_SECTION
@@ -358,6 +406,11 @@ typedef struct _WASM_EXPORT_SECTION
 
 typedef struct _WASM_START_SECTION
 {
+    [
+        emit_node(dest(Start, key("start")),
+                  name("start"),
+                  field(FunctionIndex, functionIndex))
+    ]
     uleb128 functionIndex;
 } WASM_START_SECTION, *PWASM_START_SECTION;
 
@@ -464,13 +517,128 @@ typedef struct _WASM_DATA_COUNT_SECTION
     uleb128 count;
 } WASM_DATA_COUNT_SECTION, *PWASM_DATA_COUNT_SECTION;
 
+[
+    emit_node(dest(Tags, key(array_index())),
+              field(Index, array_index()),
+              field(Attribute, type.attribute),
+              field(TypeIndex, type.typeIndex))
+]
+typedef struct _WASM_TAG
+{
+    WASM_TAG_TYPE type;
+} WASM_TAG, *PWASM_TAG;
+
 typedef struct _WASM_TAG_SECTION
 {
     uleb128 count;
 
     [count(count)]
-    WASM_TAG_TYPE tags[];
+    WASM_TAG tags[];
 } WASM_TAG_SECTION, *PWASM_TAG_SECTION;
+
+typedef struct _WASM_INIT_EXPR
+{
+    [max_count(4096), terminated_by(0x0b)]
+    byte instructions[];
+} WASM_INIT_EXPR, *PWASM_INIT_EXPR;
+
+typedef struct _WASM_ELEMENT_FUNCTIONS
+{
+    uleb128 count;
+
+    [count(count)]
+    uleb128 indices[];
+} WASM_ELEMENT_FUNCTIONS, *PWASM_ELEMENT_FUNCTIONS;
+
+typedef struct _WASM_ELEMENT_EXPRESSIONS
+{
+    uleb128 count;
+
+    [count(count)]
+    WASM_INIT_EXPR expressions[];
+} WASM_ELEMENT_EXPRESSIONS, *PWASM_ELEMENT_EXPRESSIONS;
+
+[
+    emit_node(dest(Elements, key(array_index())),
+              field(Index, array_index()),
+              field(Flags, flags))
+]
+typedef struct _WASM_ELEMENT_SEGMENT
+{
+    uleb128 flags;
+
+    [select(flags)]
+    union
+    {
+        [case(0)]
+        struct
+        {
+            WASM_INIT_EXPR offsetExpr;
+            WASM_ELEMENT_FUNCTIONS functions;
+        } activeTable0;
+
+        [case(1)]
+        struct
+        {
+            byte elemKind;
+            WASM_ELEMENT_FUNCTIONS functions;
+        } passive;
+
+        [case(2)]
+        struct
+        {
+            uleb128 tableIndex;
+            WASM_INIT_EXPR offsetExpr;
+            byte elemKind;
+            WASM_ELEMENT_FUNCTIONS functions;
+        } activeTable;
+
+        [case(3)]
+        struct
+        {
+            byte elemKind;
+            WASM_ELEMENT_FUNCTIONS functions;
+        } declarative;
+
+        [case(4)]
+        struct
+        {
+            WASM_INIT_EXPR offsetExpr;
+            WASM_ELEMENT_EXPRESSIONS expressions;
+        } activeExpressionsTable0;
+
+        [case(5)]
+        struct
+        {
+            byte refType;
+            WASM_ELEMENT_EXPRESSIONS expressions;
+        } passiveExpressions;
+
+        [case(6)]
+        struct
+        {
+            uleb128 tableIndex;
+            WASM_INIT_EXPR offsetExpr;
+            byte refType;
+            WASM_ELEMENT_EXPRESSIONS expressions;
+        } activeExpressions;
+
+        [case(7)]
+        struct
+        {
+            byte refType;
+            WASM_ELEMENT_EXPRESSIONS expressions;
+        } declarativeExpressions;
+    };
+} WASM_ELEMENT_SEGMENT, *PWASM_ELEMENT_SEGMENT;
+
+typedef struct _WASM_ELEMENT_SECTION
+{
+    uleb128 count;
+
+    [count(count)]
+    WASM_ELEMENT_SEGMENT elements[];
+} WASM_ELEMENT_SECTION, *PWASM_ELEMENT_SECTION;
 
 typedef struct _WASM_CUSTOM_SECTION
 {
@@ -541,6 +709,9 @@ typedef struct _WASM_SECTION
         [case(WASM_SECTION_START)]
         WASM_START_SECTION start;
 
+        [case(WASM_SECTION_ELEMENT)]
+        WASM_ELEMENT_SECTION element;
+
         [case(WASM_SECTION_CODE)]
         WASM_CODE_SECTION code;
 
@@ -602,12 +773,39 @@ typedef struct _WASM_SUMMARY
         uleb128 Index;
     } Exports[];
 
-    [name(fmt("function {0}", Index))]
+    [name(fmt("defined function {0}", Index))]
     struct
     {
         uleb128 Index;
         uleb128 Size;
     } Code[];
+
+    [name(fmt("defined function {0} -> type {1}", Index, TypeIndex))]
+    struct
+    {
+        uleb128 Index;
+        uleb128 TypeIndex;
+    } DefinedFunctions[];
+
+    [name(Name)]
+    struct
+    {
+        uleb128 Index;
+        CHAR Name[];
+    } FunctionNames[];
+
+    [name(Name)]
+    struct
+    {
+        uleb128 Index;
+        CHAR Name[];
+    } TypeNames[];
+
+    [name("start")]
+    struct
+    {
+        uleb128 FunctionIndex;
+    } Start[];
 
     [name(fmt("memory {0}", Index))]
     struct
@@ -642,6 +840,21 @@ typedef struct _WASM_SUMMARY
         uleb128 Index;
         uleb128 Mode;
     } Data[];
+
+    [name(fmt("tag {0}", Index))]
+    struct
+    {
+        uleb128 Index;
+        BYTE Attribute;
+        uleb128 TypeIndex;
+    } Tags[];
+
+    [name(fmt("element {0}", Index))]
+    struct
+    {
+        uleb128 Index;
+        uleb128 Flags;
+    } Elements[];
 } WASM_SUMMARY;
 
 [

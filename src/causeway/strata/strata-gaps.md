@@ -3,18 +3,27 @@
 This file records places where real binary formats expose useful structure that
 the current Strata language or semantic layer cannot express cleanly yet.
 
-## Cross-section and index joins
+## Cross-collection lookup and joins
 
+`emit_row(...)` and `emit_node(...)` now cover aggregation: raw rows in
+different physical sections can contribute facts to one semantic tree, and
+keyed emits can merge contributions into the same semantic entity. PE section
+summaries are an example.
+
+The remaining gap is relational lookup between independently collected rows.
 Formats such as WebAssembly split related facts across separate physical
-sections. A useful function summary needs to join type indexes, import counts,
-export names, debug names, and code-body ordinals. Pure Strata can render each
-section honestly, but it cannot synthesize joined rows such as:
+sections. A useful function summary needs to look up type indexes, account for
+imported-function counts, attach export/debug names, and relate those facts to
+code-body ordinals. Pure Strata can render and aggregate each section honestly,
+but it cannot yet synthesize joined rows such as:
 
 ```text
 func[0] answer : type[0] () -> i32
 ```
 
-Potential direction: declarative collected facts or a semantic `view(...)`.
+Potential direction: indexed collection lookup and declarative join expressions;
+a semantic `view(...)` remains appropriate where the derived relationship is
+too complex or expensive for a declarative renderer.
 
 ## SFNT/OpenType table correlation
 

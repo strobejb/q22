@@ -8,6 +8,7 @@ private slots:
     void builderRendersDexHeaderAndTables();
     void builderAddsDexSemanticSummaryPastArrayRenderCap();
     void builderRendersWasmHeaderAndSections();
+    void builderRendersWasmStartTagsAndElements();
 };
 
 void StructViewDexWasmTests::builderRendersDexHeaderAndTables()
@@ -349,9 +350,9 @@ void StructViewDexWasmTests::builderRendersWasmHeaderAndSections()
     QCOMPARE(findChildNamed(moduleName, QStringLiteral("byte bytes[]"))->value, QStringLiteral("\"demo\""));
     StructureRow *functionNameSubsection = nameSubsections->children[1].get();
     QCOMPARE(findChildNamed(functionNameSubsection, QStringLiteral("byte id"))->value, QStringLiteral("WASM_NAME_FUNCTION"));
-    StructureRow *functionNameMap = findChildNamed(functionNameSubsection, QStringLiteral("WASM_NAME_MAP functions"));
+    StructureRow *functionNameMap = findChildNamed(functionNameSubsection, QStringLiteral("WASM_FUNCTION_NAME_MAP functions"));
     QVERIFY2(functionNameMap, qPrintable(childNames(functionNameSubsection)));
-    StructureRow *functionNames = findChildNamed(functionNameMap, QStringLiteral("WASM_NAME_ASSOC names[]"));
+    StructureRow *functionNames = findChildNamed(functionNameMap, QStringLiteral("WASM_FUNCTION_NAME_ASSOC names[]"));
     QVERIFY2(functionNames, qPrintable(childNames(functionNameMap)));
     QCOMPARE(functionNames->children.size(), size_t(1));
     QCOMPARE(functionNames->children[0]->name, QStringLiteral("[0]answer"));
@@ -404,9 +405,10 @@ void StructViewDexWasmTests::builderRendersWasmHeaderAndSections()
     QCOMPARE(functionId->value, QStringLiteral("WASM_SECTION_FUNCTION"));
     StructureRow *functionPayload = findChildNamed(functionSection, QStringLiteral("WASM_FUNCTION_SECTION function"));
     QVERIFY2(functionPayload, qPrintable(childNames(functionSection)));
-    StructureRow *typeIndices = findChildNamed(functionPayload, QStringLiteral("uleb128 typeIndices[]"));
+    StructureRow *typeIndices = findChildNamed(functionPayload, QStringLiteral("WASM_DEFINED_FUNCTION typeIndices[]"));
     QVERIFY2(typeIndices, qPrintable(childNames(functionPayload)));
-    QCOMPARE(typeIndices->value, QStringLiteral("{ 0 }"));
+    QCOMPARE(typeIndices->children.size(), size_t(1));
+    QCOMPARE(findChildNamed(typeIndices->children[0].get(), QStringLiteral("uleb128 typeIndex"))->value, QStringLiteral("0"));
 
     StructureRow *memorySection = sections->children[4].get();
     QCOMPARE(memorySection->name, QStringLiteral("[4]WASM_SECTION_MEMORY"));
@@ -522,7 +524,7 @@ void StructViewDexWasmTests::builderRendersWasmHeaderAndSections()
 
     StructureRow *summaryCode = findChildNamed(summary, QStringLiteral("Code"));
     QVERIFY2(summaryCode, qPrintable(childNames(summary)));
-    StructureRow *summaryCode0 = findChildNamed(summaryCode, QStringLiteral("function 0"));
+    StructureRow *summaryCode0 = findChildNamed(summaryCode, QStringLiteral("defined function 0"));
     QVERIFY2(summaryCode0, qPrintable(childNames(summaryCode)));
     QCOMPARE(summaryCode0->offset, functions->children[0]->offset);
     QCOMPARE(findChildNamed(summaryCode0, QStringLiteral("Size"))->value, QStringLiteral("4"));
@@ -533,6 +535,60 @@ void StructViewDexWasmTests::builderRendersWasmHeaderAndSections()
     QVERIFY2(summaryData0, qPrintable(childNames(summaryData)));
     QCOMPARE(summaryData0->offset, dataSegments->children[0]->offset);
     QCOMPARE(findChildNamed(summaryData0, QStringLiteral("Mode"))->value, QStringLiteral("1"));
+
+    StructureRow *summaryDefinedFunctions = findChildNamed(summary, QStringLiteral("DefinedFunctions"));
+    QVERIFY2(summaryDefinedFunctions, qPrintable(childNames(summary)));
+    StructureRow *summaryDefinedFunction = findChildNamed(summaryDefinedFunctions, QStringLiteral("defined function 0 -> type 0"));
+    QVERIFY2(summaryDefinedFunction, qPrintable(childNames(summaryDefinedFunctions)));
+    QCOMPARE(findChildNamed(summaryDefinedFunction, QStringLiteral("TypeIndex"))->value, QStringLiteral("0"));
+
+    StructureRow *summaryFunctionNames = findChildNamed(summary, QStringLiteral("FunctionNames"));
+    QVERIFY2(summaryFunctionNames, qPrintable(childNames(summary)));
+    StructureRow *summaryFunctionName = findChildNamed(summaryFunctionNames, QStringLiteral("answer"));
+    QVERIFY2(summaryFunctionName, qPrintable(childNames(summaryFunctionNames)));
+    QCOMPARE(findChildNamed(summaryFunctionName, QStringLiteral("Index"))->value, QStringLiteral("0"));
+}
+
+void StructViewDexWasmTests::builderRendersWasmStartTagsAndElements()
+{
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("wasm.strata")), "wasm.strata failed to parse");
+    TypeDecl *wasmRoot = exportedNamed(&library, QStringLiteral("WASM"));
+    QVERIFY(wasmRoot);
+
+    QByteArray wasm = QByteArray::fromHex("0061736d01000000");
+    wasm.append(QByteArray::fromHex("080100"));       // start function index 0
+    wasm.append(QByteArray::fromHex("09050101000100")); // one passive element, function 0
+    wasm.append(QByteArray::fromHex("0d03010000"));    // one tag, attribute/type index 0
+
+    auto rows = buildRows(&library, wasmRoot, wasm);
+    StructureRow *wasmRow = findTopLevelNamed(rows, QStringLiteral("WASM"));
+    QVERIFY(wasmRow);
+    StructureRow *sections = findChildNamed(wasmRow, QStringLiteral("WASM_SECTION sections[]"));
+    QVERIFY(sections);
+    QCOMPARE(sections->children.size(), size_t(3));
+    QVERIFY(findChildNamed(sections->children[1].get(), QStringLiteral("WASM_ELEMENT_SECTION element")));
+    QVERIFY(findChildNamed(sections->children[2].get(), QStringLiteral("WASM_TAG_SECTION tag")));
+
+    StructureRow *summary = findTopLevelNamed(rows, QStringLiteral("WASM Summary"));
+    QVERIFY(summary);
+    StructureRow *start = findChildNamed(summary, QStringLiteral("Start"));
+    QVERIFY(start);
+    QCOMPARE(findChildNamed(start, QStringLiteral("start"))->children[0]->value, QStringLiteral("0"));
+    StructureRow *elements = findChildNamed(summary, QStringLiteral("Elements"));
+    QVERIFY(elements);
+    StructureRow *rawElements = findChildNamed(sections->children[1].get(), QStringLiteral("WASM_ELEMENT_SECTION element"));
+    QVERIFY(rawElements);
+    StructureRow *rawElement = findChildNamed(rawElements, QStringLiteral("WASM_ELEMENT_SEGMENT elements[]"));
+    QVERIFY(rawElement);
+    QCOMPARE(findChildNamed(elements, QStringLiteral("element 0"))->offset, rawElement->children[0]->offset);
+    StructureRow *tags = findChildNamed(summary, QStringLiteral("Tags"));
+    QVERIFY(tags);
+    StructureRow *rawTags = findChildNamed(sections->children[2].get(), QStringLiteral("WASM_TAG_SECTION tag"));
+    QVERIFY(rawTags);
+    StructureRow *rawTag = findChildNamed(rawTags, QStringLiteral("WASM_TAG tags[]"));
+    QVERIFY(rawTag);
+    QCOMPARE(findChildNamed(tags, QStringLiteral("tag 0"))->offset, rawTag->children[0]->offset);
 }
 
 REGISTER_STRUCTVIEW_TEST(StructViewDexWasmTests)
