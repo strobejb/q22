@@ -36,7 +36,10 @@ tagset PE_DATA_DIRECTORY_TAGS
   dynamic_array(case(IMAGE_DIRECTORY_ENTRY_IMPORT), type(IMAGE_IMPORT_DESCRIPTOR), offset(VirtualAddress), max_count(Size / sizeof(IMAGE_IMPORT_DESCRIPTOR)),
                 mapper(offset_map),
                 terminated_by(OriginalFirstThunk == 0 && TimeDateStamp == 0 && ForwarderChain == 0 && Name == 0 && FirstThunk == 0),
-                terminator("hidden"))
+                terminator("hidden")),
+  dynamic_array(case(IMAGE_DIRECTORY_ENTRY_BASERELOC), type(IMAGE_BASE_RELOCATION), offset(VirtualAddress),
+                max_count(Size / (sizeof(dword) + sizeof(dword))),
+                mapper(offset_map))
 ];
 
 
@@ -313,10 +316,48 @@ typedef struct _IMAGE_SECTION_HEADER
     dword   Characteristics;
 } IMAGE_SECTION_HEADER, *PIMAGE_SECTION_HEADER;
 
+enum IMAGE_REL_BASED_TYPE
+{
+    IMAGE_REL_BASED_ABSOLUTE = 0,
+    IMAGE_REL_BASED_HIGHLOW  = 3,
+    IMAGE_REL_BASED_DIR64    = 10
+};
+
 [
-    emit_row(dest(Sections.Exports, key(cstr("rva", element_value())), name(cstr("rva", element_value()))),
-             offset("rva", element_value()),
-             optional(element_value() != 0))
+    emit_node(dest(Sections.Relocations),
+                   name("Relocation"))
+]
+typedef word IMAGE_BASE_RELOCATION_ENTRY;
+
+[
+    extent(SizeOfBlock)
+]
+typedef struct _IMAGE_BASE_RELOCATION
+{
+    dword VirtualAddress;
+    dword SizeOfBlock;
+
+    [max_count((SizeOfBlock - sizeof(dword) - sizeof(dword)) / sizeof(word))]
+    IMAGE_BASE_RELOCATION_ENTRY Entries[];
+} IMAGE_BASE_RELOCATION;
+
+[
+    emit_node(dest(Sections.Exports, key(cstr("rva", element_value()))),
+              offset("rva", element_value()),
+              name(cstr("rva", element_value())),
+              attr(Ordinal,
+                   parent::parent::Base
+                   + value_at("rva",
+                              parent::parent::AddressOfNameOrdinals + array_index() * sizeof(word),
+                              word)),
+              attr(TargetRva,
+                   value_at("rva",
+                            parent::parent::AddressOfFunctions
+                            + value_at("rva",
+                                       parent::parent::AddressOfNameOrdinals + array_index() * sizeof(word),
+                                       word) * sizeof(dword),
+                            dword)),
+              optional(element_value() != 0))
 ]
 typedef dword PE_EXPORT_NAME_RVA;
 
@@ -427,6 +468,10 @@ typedef struct _PE_VIEW
         struct
         {
         } Exports[];
+
+        struct
+        {
+        } Relocations[];
 
         struct
         {

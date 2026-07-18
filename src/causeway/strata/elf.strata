@@ -215,10 +215,10 @@ typedef struct _Elf32_Rel
         emit_node(dest(Sections.Relocations, key(fmt("0x{0}", r_offset))),
                   offset("section", current_offset()),
                   optional(r_offset != 0),
-                  field(Offset, r_offset),
-                  field(Type, r_info & 0xff),
-                  field(SymbolIndex, r_info >> 8),
-                  field(Addend, 0))
+              field(Offset, r_offset),
+              field(Type, r_info & 0xff),
+              field(SymbolIndex, r_info >> 8),
+              field(Addend, 0))
     ]
     e32_addr r_offset;
     e32      r_info;
@@ -230,10 +230,10 @@ typedef struct _Elf64_Rel
         emit_node(dest(Sections.Relocations, key(fmt("0x{0}", r_offset))),
                   offset("section", current_offset()),
                   optional(r_offset != 0),
-                  field(Offset, r_offset),
-                  field(Type, r_info & 0xffffffff),
-                  field(SymbolIndex, r_info >> 32),
-                  field(Addend, 0))
+              field(Offset, r_offset),
+              field(Type, r_info & 0xffffffff),
+              field(SymbolIndex, r_info >> 32),
+              field(Addend, 0))
     ]
     e64_addr r_offset;
     e64      r_info;
@@ -245,10 +245,10 @@ typedef struct _Elf32_Rela
         emit_node(dest(Sections.Relocations, key(fmt("0x{0}", r_offset))),
                   offset("section", current_offset()),
                   optional(r_offset != 0),
-                  field(Offset, r_offset),
-                  field(Type, r_info & 0xff),
-                  field(SymbolIndex, r_info >> 8),
-                  field(Addend, r_addend))
+              field(Offset, r_offset),
+              field(Type, r_info & 0xff),
+              field(SymbolIndex, r_info >> 8),
+              field(Addend, r_addend))
     ]
     e32_addr r_offset;
     e32      r_info;
@@ -261,10 +261,10 @@ typedef struct _Elf64_Rela
         emit_node(dest(Sections.Relocations, key(fmt("0x{0}", r_offset))),
                   offset("section", current_offset()),
                   optional(r_offset != 0),
-                  field(Offset, r_offset),
-                  field(Type, r_info & 0xffffffff),
-                  field(SymbolIndex, r_info >> 32),
-                  field(Addend, r_addend))
+              field(Offset, r_offset),
+              field(Type, r_info & 0xffffffff),
+              field(SymbolIndex, r_info >> 32),
+              field(Addend, r_addend))
     ]
     e64_addr r_offset;
     e64      r_info;
@@ -317,6 +317,18 @@ typedef struct _Elf64_Ehdr
     e16      e_shstrndx;                // Section-header string table index
 } Elf64_Ehdr;
 
+[
+    emit_node(dest(Segments, key(array_index())),
+              offset(p_offset),
+              extent(p_filesz),
+              field(Index, array_index()),
+              field(Type, p_type),
+              field(Offset, p_offset),
+              field(VirtualAddress, p_vaddr),
+              field(FileSize, p_filesz),
+              field(MemorySize, p_memsz),
+              field(Flags, p_flags))
+]
 typedef struct _Elf32_Phdr
 {
     [enum(ELF_PROGRAM_TYPE)]
@@ -331,6 +343,18 @@ typedef struct _Elf32_Phdr
     e32      p_align;                   // Segment alignment
 } Elf32_Phdr;
 
+[
+    emit_node(dest(Segments, key(array_index())),
+              offset(p_offset),
+              extent(p_filesz),
+              field(Index, array_index()),
+              field(Type, p_type),
+              field(Offset, p_offset),
+              field(VirtualAddress, p_vaddr),
+              field(FileSize, p_filesz),
+              field(MemorySize, p_memsz),
+              field(Flags, p_flags))
+]
 typedef struct _Elf64_Phdr
 {
     [enum(ELF_PROGRAM_TYPE)]
@@ -452,14 +476,14 @@ typedef struct _Elf64_Shdr
 [
     emit_node(dest(Sections.Imports),
               offset("section", current_offset()),
-              optional(sh_type == SHT_DYNSYM && st_name != 0 && st_value == 0),
+              optional(sh_type == SHT_DYNSYM && st_name != 0 && st_shndx == 0),
               name(cstr_from(field_at(sectionHeaders32, sh_link, sh_offset), st_name)),
               field(Name, cstr_from(field_at(sectionHeaders32, sh_link, sh_offset), st_name)),
               field(Value, st_value),
               field(Size, st_size)),
     emit_node(dest(Sections.Exports),
               offset("section", current_offset()),
-              optional(sh_type == SHT_DYNSYM && st_name != 0 && st_value != 0),
+              optional(sh_type == SHT_DYNSYM && st_name != 0 && st_shndx != 0),
               name(cstr_from(field_at(sectionHeaders32, sh_link, sh_offset), st_name)),
               field(Name, cstr_from(field_at(sectionHeaders32, sh_link, sh_offset), st_name)),
               field(Value, st_value),
@@ -486,14 +510,14 @@ typedef struct _Elf32_Sym
 [
     emit_node(dest(Sections.Imports),
               offset("section", current_offset()),
-              optional(sh_type == SHT_DYNSYM && st_name != 0 && st_value == 0),
+              optional(sh_type == SHT_DYNSYM && st_name != 0 && st_shndx == 0),
               name(cstr_from(field_at(sectionHeaders64, sh_link, sh_offset), st_name)),
               field(Name, cstr_from(field_at(sectionHeaders64, sh_link, sh_offset), st_name)),
               field(Value, st_value),
               field(Size, st_size)),
     emit_node(dest(Sections.Exports),
               offset("section", current_offset()),
-              optional(sh_type == SHT_DYNSYM && st_name != 0 && st_value != 0),
+              optional(sh_type == SHT_DYNSYM && st_name != 0 && st_shndx != 0),
               name(cstr_from(field_at(sectionHeaders64, sh_link, sh_offset), st_name)),
               field(Name, cstr_from(field_at(sectionHeaders64, sh_link, sh_offset), st_name)),
               field(Value, st_value),
@@ -568,6 +592,18 @@ typedef struct _ELF_VIEW
             e64 Size;
         } Exports[];
     } Sections[];
+
+    [tree("flatten"), name(fmt("SEGMENT {0}", Index))]
+    struct
+    {
+        e16 Index;
+        e32 Type;
+        e64 Offset;
+        e64_addr VirtualAddress;
+        e64 FileSize;
+        e64 MemorySize;
+        e32 Flags;
+    } Segments[];
 } ELF_VIEW;
 
 [

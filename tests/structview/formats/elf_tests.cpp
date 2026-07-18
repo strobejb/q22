@@ -71,7 +71,9 @@ void StructViewElfTests::builderRendersElfImportsAndExportsSummary()
     writeLe16(&bytes, 0x200 + 14, 0);
 
     writeLe32(&bytes, 0x210 + 0, 8);
-    writeLe32(&bytes, 0x210 + 4, 0x1234);
+    // A defined symbol may legitimately have a zero value. Classification is
+    // controlled by st_shndx, not st_value.
+    writeLe32(&bytes, 0x210 + 4, 0);
     writeLe32(&bytes, 0x210 + 8, 4);
     bytes[0x210 + 12] = char(0x12);
     writeLe16(&bytes, 0x210 + 14, 4);
@@ -237,7 +239,7 @@ void StructViewElfTests::builderRendersElf32AndElf64Tables()
     TypeDecl *root32 = exportedNamed(&library32, QStringLiteral("ELF"));
     QVERIFY(root32);
     auto rows32 = buildRows(&library32, root32, elf32);
-    QCOMPARE(rows32.size(), size_t(1));
+    QCOMPARE(rows32.size(), size_t(2));
     QStringList childNames32;
     for (const auto &child : rows32[0]->children)
         childNames32.push_back(child->name);
@@ -254,6 +256,9 @@ void StructViewElfTests::builderRendersElf32AndElf64Tables()
     QVERIFY2(sections32, childNames32Message.constData());
     QCOMPARE(sections32->children.size(), size_t(2));
     QCOMPARE(header32->children[4]->value, QStringLiteral("305419896"));
+    StructureRow *elfImage32 = findTopLevelNamed(rows32, QStringLiteral("ELF Image"));
+    QVERIFY(elfImage32);
+    QVERIFY2(findChildNamed(elfImage32, QStringLiteral("SEGMENT 0")), qPrintable(childNames(elfImage32)));
 
     StrataLibrary library32be;
     QVERIFY2(parseStandardElfDefinition(&library32be), "elf.strata failed to parse");
@@ -279,7 +284,7 @@ void StructViewElfTests::builderRendersElf32AndElf64Tables()
     TypeDecl *root32be = exportedNamed(&library32be, QStringLiteral("ELF"));
     QVERIFY(root32be);
     auto rows32be = buildRows(&library32be, root32be, elf32be);
-    QCOMPARE(rows32be.size(), size_t(1));
+    QCOMPARE(rows32be.size(), size_t(2));
     StructureRow *header32be = findChildNamed(rows32be[0].get(), QStringLiteral("Elf32_Ehdr header32"));
     QVERIFY(header32be);
     QCOMPARE(header32be->children[4]->value, QStringLiteral("16909060"));
@@ -304,11 +309,16 @@ void StructViewElfTests::builderRendersElf32AndElf64Tables()
     writeLe16(&elf64, 56, 1);
     writeLe16(&elf64, 58, 64);
     writeLe16(&elf64, 60, 1);
+    writeLe32(&elf64, 0x80, 1);
+    writeLe64(&elf64, 0x88, 0x80);
+    writeLe64(&elf64, 0x90, 0x400000);
+    writeLe64(&elf64, 0xa0, 0x20);
+    writeLe64(&elf64, 0xa8, 0x20);
 
     TypeDecl *root64 = exportedNamed(&library64, QStringLiteral("ELF"));
     QVERIFY(root64);
     auto rows64 = buildRows(&library64, root64, elf64);
-    QCOMPARE(rows64.size(), size_t(1));
+    QCOMPARE(rows64.size(), size_t(2));
     QVERIFY(findChildNamed(rows64[0].get(), QStringLiteral("Elf64_Ehdr header64")));
     StructureRow *programs64 = findChildNamed(rows64[0].get(), QStringLiteral("Elf64_Phdr programHeaders64[]"));
     QVERIFY(programs64);
@@ -316,6 +326,13 @@ void StructViewElfTests::builderRendersElf32AndElf64Tables()
     StructureRow *sections64 = findChildNamed(rows64[0].get(), QStringLiteral("Elf64_Shdr sectionHeaders64[]"));
     QVERIFY(sections64);
     QCOMPARE(sections64->children.size(), size_t(1));
+
+    StructureRow *elfImage64 = findTopLevelNamed(rows64, QStringLiteral("ELF Image"));
+    QVERIFY(elfImage64);
+    StructureRow *segment = findChildNamed(elfImage64, QStringLiteral("SEGMENT 0"));
+    QVERIFY2(segment, qPrintable(childNames(elfImage64)));
+    QCOMPARE(segment->offset, QStringLiteral("00000080"));
+    QCOMPARE(segment->byteLength, uint64_t(0x20));
 
     QByteArray phdr32(32, '\0');
     writeLe32(&phdr32, 24, 0x5);

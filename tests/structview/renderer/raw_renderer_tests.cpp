@@ -778,14 +778,14 @@ void StructViewRawRendererTests::builderUsesScopePrefixesForRootAndParent()
 {
     // Scenario: scope prefixes resolve against the enclosing row hierarchy
     // instead of being treated as literal field names.
-    // Expected: parent:: resolves within the immediate container row and
-    // root:: resolves back to the file root row.
+    // Expected: parent:: resolves to the immediate container row and root::
+    // resolves to the file root row.
     StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
                         "typedef struct _Inner {\n"
                         "  byte innerValue;\n"
-                        "  [optional(parent::innerValue == 0x41)] byte parentHit;\n"
+                        "  [optional(parent::header == 0x41)] byte parentHit;\n"
                         "  [optional(root::header == 0x41)] byte rootHit;\n"
                         "} Inner;\n"
                         "[export]\n"

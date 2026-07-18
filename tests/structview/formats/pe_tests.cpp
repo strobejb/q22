@@ -9,6 +9,7 @@ private slots:
     void builderPeSemanticModeCppSkipsDeclarativeRows();
     void builderNamesPeImportDescriptorsFromStandardDefinition();
     void builderEmitsPeImportDllsFromStandardDefinition();
+    void builderEmitsPeBaseRelocationsFromStandardDefinition();
     void builderResolvesEntryPointRvaThroughSectionOffsetMap();
     void builderPeSemanticModeDeclarativeSkipsCppViews();
     void builderKeepsRawDynamicRowsWhenSemanticImportDataIsTruncated();
@@ -327,7 +328,67 @@ void StructViewPeTests::builderEmitsPeImportDllsFromStandardDefinition()
     QCOMPARE(exportedFunction->branchIconPath, QString::fromLatin1(StructureBranchIcons::kBlueElement));
     QCOMPARE(exportedFunction->offset, QStringLiteral("00000310"));
     QCOMPARE(static_cast<int>(exportedFunction->kind), static_cast<int>(StructureRowKind::Semantic));
+    QCOMPARE(findChildNamed(exportedFunction, QStringLiteral("Ordinal"))->value, QStringLiteral("1"));
+    QCOMPARE(findChildNamed(exportedFunction, QStringLiteral("TargetRva"))->value, QStringLiteral("4096"));
     QVERIFY(!findChildNamed(exports, QStringLiteral("sclib-csharp.dll")));
+}
+
+void StructViewPeTests::builderEmitsPeBaseRelocationsFromStandardDefinition()
+{
+    ScopedEnvironmentVariable mode("Q22_PE_SEMANTIC_VIEW", "declarative");
+
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("pe.strata")), "pe.strata failed to parse");
+
+    QByteArray bytes(0x340, '\0');
+    writeLe32(&bytes, 0x3c, 0x80);
+    writeLe16(&bytes, 0x86, 1);
+    writeLe16(&bytes, 0x94, 256);
+    writeLe16(&bytes, 0x98, 0x10b);
+    writeLe32(&bytes, 0x98 + 92, 16);
+
+    // The base relocation directory is a single 12-byte block at RVA 0x2000:
+    // one HIGHLOW entry for RVA 0x3123 and one ABSOLUTE padding entry.
+    const qsizetype relocDirEntry = 0x98 + 96 + 5 * 8;
+    writeLe32(&bytes, relocDirEntry, 0x2000);
+    writeLe32(&bytes, relocDirEntry + 4, 12);
+
+    const qsizetype sectionTable = 0x80 + 4 + 20 + 256;
+    writeAscii(&bytes, sectionTable, ".reloc");
+    writeLe32(&bytes, sectionTable + 12, 0x2000);
+    writeLe32(&bytes, sectionTable + 16, 0x100);
+    writeLe32(&bytes, sectionTable + 20, 0x200);
+
+    writeLe32(&bytes, 0x200, 0x3000);
+    writeLe32(&bytes, 0x204, 12);
+    writeLe16(&bytes, 0x208, 0x3123);
+    writeLe16(&bytes, 0x20a, 0);
+
+    TypeDecl *root = exportedNamed(&library, QStringLiteral("PE"));
+    QVERIFY(root);
+    auto rows = buildRows(&library, root, bytes);
+
+    StructureRow *peRow = findTopLevelNamed(rows, QStringLiteral("PE"));
+    QVERIFY(peRow);
+    StructureRow *rawRelocSection = findChildNamed(peRow, QStringLiteral("SECTION .reloc"));
+    QVERIFY2(rawRelocSection, qPrintable(childNames(peRow)));
+    StructureRow *blocks = findDescendantNamed(rawRelocSection, QStringLiteral("IMAGE_BASE_RELOCATION IMAGE_DIRECTORY_ENTRY_BASERELOC[]"));
+    QVERIFY2(blocks, qPrintable(childNames(rawRelocSection)));
+    QCOMPARE(blocks->children.size(), size_t(1));
+    StructureRow *entries = findChildNamed(blocks->children[0].get(), QStringLiteral("IMAGE_BASE_RELOCATION_ENTRY Entries[]"));
+    QVERIFY2(entries, qPrintable(childNames(blocks->children[0].get())));
+    QCOMPARE(entries->children.size(), size_t(2));
+    QVERIFY(entries->children[0]->typeDecl);
+    QVERIFY(FindTag(entries->children[0]->typeDecl->tagList, TOK_EMITNODE, nullptr));
+
+    StructureRow *peImage = findTopLevelNamed(rows, QStringLiteral("PE Image"));
+    QVERIFY(peImage);
+    StructureRow *relocSection = findChildNamed(peImage, QStringLiteral("SECTION .reloc"));
+    QVERIFY2(relocSection, qPrintable(childNames(peImage)));
+    StructureRow *relocations = findChildNamed(relocSection, QStringLiteral("Relocations"));
+    QVERIFY2(relocations, qPrintable(childNames(relocSection)));
+    QCOMPARE(relocations->children.size(), size_t(2));
+
 }
 
 void StructViewPeTests::builderResolvesEntryPointRvaThroughSectionOffsetMap()

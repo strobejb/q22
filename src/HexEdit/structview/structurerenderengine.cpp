@@ -2159,14 +2159,17 @@ bool StructureRenderEngine::resolveScopeContext(const EvalContext &context, Expr
 
 StructureRow *StructureRenderEngine::resolveScopeRow(StructureRow *scope, ExprNode *expr) const
 {
-    if (!expr || expr->type != EXPR_IDENTIFIER || !expr->str)
+    if (!expr)
+        return nullptr;
+
+    if (expr->type != EXPR_IDENTIFIER || !expr->str)
         return nullptr;
 
     if (std::strcmp(expr->str, "root") == 0)
         return m_rootRow ? m_rootRow : scope;
 
     if (std::strcmp(expr->str, "parent") == 0)
-        return scope ? scope : m_rootRow;
+        return scope ? scope->parent : nullptr;
 
     return nullptr;
 }
@@ -4493,7 +4496,10 @@ void StructureRenderEngine::appendSemanticNodeRequests()
             applySemanticBranchIcons(row.get(),
                                      request.destinationPath,
                                      false,
-                                     semanticDestinationIsScalarArray(destinationDecl));
+                                     semanticDestinationIsScalarArray(destinationDecl),
+                                     false,
+                                     false,
+                                     semanticDestinationElementIsEmptyCompound(destinationDecl));
 
             node = row.get();
             appendPresentedRow(parentRow, std::move(row));
@@ -5801,11 +5807,16 @@ StructureRow *StructureRenderEngine::semanticDestinationForPath(const QStringLis
     if (!fileOffset)
         return nullptr;
 
-    if (!offsetSpace.isEmpty() && destinationPath.size() > 1)
+    // A source row with an explicit offset space is located by its logical
+    // address.  Otherwise its existing file extent is sufficient to select a
+    // mapped semantic container (for example, an inline table within a PE
+    // section).  Prefer the most specific matching container in either case.
+    if (destinationPath.size() > 1)
     {
+        const SemanticContainer *bestContainer = nullptr;
         for (const SemanticContainer &container : m_semanticContainers)
         {
-            if (!container.row || container.mapSpace != offsetSpace)
+            if (!container.row || (!offsetSpace.isEmpty() && container.mapSpace != offsetSpace))
                 continue;
             if (container.destinationPath.size() >= destinationPath.size())
                 continue;
@@ -5822,16 +5833,26 @@ StructureRow *StructureRenderEngine::semanticDestinationForPath(const QStringLis
             if (!prefixMatches)
                 continue;
 
-            if (logicalOffset < container.logicalStart
-                || logicalOffset >= container.logicalStart + container.logicalSize)
-            {
+            const bool containsSource = offsetSpace.isEmpty()
+                ? (*fileOffset >= container.fileOffset
+                   && *fileOffset < container.fileOffset + container.logicalSize)
+                : (logicalOffset >= container.logicalStart
+                   && logicalOffset < container.logicalStart + container.logicalSize);
+            if (!containsSource)
                 continue;
-            }
 
-            *fileOffset = container.fileOffset + (logicalOffset - container.logicalStart);
-            StructureRow *parent = container.row;
-            QStringList currentPath = container.destinationPath;
-            for (int i = container.destinationPath.size(); i < destinationPath.size(); ++i)
+            if (!bestContainer || container.destinationPath.size() > bestContainer->destinationPath.size())
+                bestContainer = &container;
+        }
+
+        if (bestContainer)
+        {
+            if (!offsetSpace.isEmpty())
+                *fileOffset = bestContainer->fileOffset + (logicalOffset - bestContainer->logicalStart);
+
+            StructureRow *parent = bestContainer->row;
+            QStringList currentPath = bestContainer->destinationPath;
+            for (int i = bestContainer->destinationPath.size(); i < destinationPath.size(); ++i)
             {
                 currentPath.append(destinationPath[i]);
                 parent = semanticChildGroup(parent, currentPath);
