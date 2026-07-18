@@ -971,7 +971,7 @@ Token Lexer::Next()
 		else if(ch == '<')		// <<
 		{
 			ch = nextch();
-			return Token(TOK_SHR);
+			return Token(TOK_SHL);
 		}
 		return Token(TOKEN('<'));		// <
 
@@ -985,7 +985,7 @@ Token Lexer::Next()
 		else if(ch == '>')		// >>
 		{
 			ch = nextch();
-			return Token(TOK_SHL);
+			return Token(TOK_SHR);
 		}
 		return Token(TOKEN('>'));		// >
 

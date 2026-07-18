@@ -39,7 +39,21 @@ tagset PE_DATA_DIRECTORY_TAGS
                 terminator("hidden")),
   dynamic_array(case(IMAGE_DIRECTORY_ENTRY_BASERELOC), type(IMAGE_BASE_RELOCATION), offset(VirtualAddress),
                 max_count(Size / (sizeof(dword) + sizeof(dword))),
-                mapper(offset_map))
+                mapper(offset_map)),
+  dynamic_array(case(IMAGE_DIRECTORY_ENTRY_DEBUG), type(IMAGE_DEBUG_DIRECTORY), offset(VirtualAddress),
+                count(Size / sizeof(IMAGE_DEBUG_DIRECTORY)),
+                mapper(offset_map)),
+  dynamic_struct(case(IMAGE_DIRECTORY_ENTRY_TLS), type(IMAGE_TLS_DIRECTORY32), offset(VirtualAddress),
+                 mapper(offset_map), optional(ntHeaders.OptionalHeader32.Magic == 0x10b)),
+  dynamic_struct(case(IMAGE_DIRECTORY_ENTRY_TLS), type(IMAGE_TLS_DIRECTORY64), offset(VirtualAddress),
+                 mapper(offset_map), optional(ntHeaders.OptionalHeader64.Magic == 0x20b)),
+  dynamic_struct(case(IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG), type(IMAGE_LOAD_CONFIG_DIRECTORY32), offset(VirtualAddress),
+                 mapper(offset_map), optional(ntHeaders.OptionalHeader32.Magic == 0x10b)),
+  dynamic_struct(case(IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG), type(IMAGE_LOAD_CONFIG_DIRECTORY64), offset(VirtualAddress),
+                 mapper(offset_map), optional(ntHeaders.OptionalHeader64.Magic == 0x20b)),
+  dynamic_array(case(IMAGE_DIRECTORY_ENTRY_EXCEPTION), type(IMAGE_RUNTIME_FUNCTION_ENTRY), offset(VirtualAddress),
+                max_count(Size / sizeof(IMAGE_RUNTIME_FUNCTION_ENTRY)), mapper(offset_map),
+                optional(ntHeaders.OptionalHeader64.Magic == 0x20b))
 ];
 
 
@@ -325,7 +339,10 @@ enum IMAGE_REL_BASED_TYPE
 
 [
     emit_node(dest(Sections.Relocations),
-                   name("Relocation"))
+              name("Relocation"),
+              attr(Type, element_value() >> 12),
+              attr(Offset, element_value() & 0x0fff),
+              attr(TargetRva, parent::parent::VirtualAddress + (element_value() & 0x0fff)))
 ]
 typedef word IMAGE_BASE_RELOCATION_ENTRY;
 
@@ -340,6 +357,227 @@ typedef struct _IMAGE_BASE_RELOCATION
     [max_count((SizeOfBlock - sizeof(dword) - sizeof(dword)) / sizeof(word))]
     IMAGE_BASE_RELOCATION_ENTRY Entries[];
 } IMAGE_BASE_RELOCATION;
+
+[
+    emit_node(dest(Sections.Debug, key(current_offset())),
+              name("Debug"),
+              attr(Type, Type),
+              attr(SizeOfData, SizeOfData),
+              attr(AddressOfRawData, AddressOfRawData),
+              attr(PointerToRawData, PointerToRawData))
+]
+typedef struct _IMAGE_DEBUG_DIRECTORY
+{
+    dword Characteristics;
+    dword TimeDateStamp;
+    word MajorVersion;
+    word MinorVersion;
+    dword Type;
+    dword SizeOfData;
+    dword AddressOfRawData;
+    dword PointerToRawData;
+} IMAGE_DEBUG_DIRECTORY;
+
+[
+    emit_node(dest(Sections.TLS, key(current_offset())),
+              name("TLS"),
+              attr(StartAddressOfRawData, StartAddressOfRawData),
+              attr(EndAddressOfRawData, EndAddressOfRawData),
+              attr(AddressOfIndex, AddressOfIndex),
+              attr(AddressOfCallbacks, AddressOfCallbacks),
+              attr(SizeOfZeroFill, SizeOfZeroFill),
+              attr(Characteristics, Characteristics))
+]
+typedef struct _IMAGE_TLS_DIRECTORY32
+{
+    dword StartAddressOfRawData;
+    dword EndAddressOfRawData;
+    dword AddressOfIndex;
+    dword AddressOfCallbacks;
+    dword SizeOfZeroFill;
+    dword Characteristics;
+} IMAGE_TLS_DIRECTORY32;
+
+[
+    emit_node(dest(Sections.TLS, key(current_offset())),
+              name("TLS"),
+              attr(StartAddressOfRawData, StartAddressOfRawData),
+              attr(EndAddressOfRawData, EndAddressOfRawData),
+              attr(AddressOfIndex, AddressOfIndex),
+              attr(AddressOfCallbacks, AddressOfCallbacks),
+              attr(SizeOfZeroFill, SizeOfZeroFill),
+              attr(Characteristics, Characteristics))
+]
+typedef struct _IMAGE_TLS_DIRECTORY64
+{
+    uint64 StartAddressOfRawData;
+    uint64 EndAddressOfRawData;
+    uint64 AddressOfIndex;
+    uint64 AddressOfCallbacks;
+    dword  SizeOfZeroFill;
+    dword  Characteristics;
+} IMAGE_TLS_DIRECTORY64;
+
+enum IMAGE_GUARD_FLAGS
+{
+    IMAGE_GUARD_CF_INSTRUMENTED                         = 0x00000100,
+    IMAGE_GUARD_CF_W_INSTRUMENTED                       = 0x00000200,
+    IMAGE_GUARD_CF_FUNCTION_TABLE_PRESENT               = 0x00000400,
+    IMAGE_GUARD_SECURITY_COOKIE_UNUSED                  = 0x00000800,
+    IMAGE_GUARD_PROTECT_DELAYLOAD_IAT                   = 0x00001000,
+    IMAGE_GUARD_DELAYLOAD_IAT_IN_ITS_OWN_SECTION        = 0x00002000,
+    IMAGE_GUARD_CF_EXPORT_SUPPRESSION_INFO_PRESENT      = 0x00004000,
+    IMAGE_GUARD_CF_ENABLE_EXPORT_SUPPRESSION            = 0x00008000,
+    IMAGE_GUARD_CF_LONGJUMP_TABLE_PRESENT               = 0x00010000
+};
+
+[
+    extent(Size),
+    emit_node(dest(Sections.LoadConfig, key(current_offset())),
+              name("Load Config"),
+              attr(SecurityCookie, SecurityCookie),
+              attr(SEHandlerTable, SEHandlerTable),
+              attr(SEHandlerCount, SEHandlerCount),
+              attr(GuardCFCheckFunctionPointer, GuardCFCheckFunctionPointer),
+              attr(GuardCFDispatchFunctionPointer, GuardCFDispatchFunctionPointer),
+              attr(GuardCFFunctionTable, GuardCFFunctionTable),
+              attr(GuardCFFunctionCount, GuardCFFunctionCount),
+              attr(GuardFlags, GuardFlags),
+              optional(Size >= 0x5c))
+]
+typedef struct _IMAGE_LOAD_CONFIG_DIRECTORY32
+{
+    dword Size;
+    [optional(Size >= 0x08)]
+    dword TimeDateStamp;
+    [optional(Size >= 0x0c)]
+    word  MajorVersion;
+    [optional(Size >= 0x0c)]
+    word  MinorVersion;
+    [optional(Size >= 0x10)]
+    dword GlobalFlagsClear;
+    [optional(Size >= 0x14)]
+    dword GlobalFlagsSet;
+    [optional(Size >= 0x18)]
+    dword CriticalSectionDefaultTimeout;
+    [optional(Size >= 0x1c)]
+    dword DeCommitFreeBlockThreshold;
+    [optional(Size >= 0x20)]
+    dword DeCommitTotalFreeThreshold;
+    [optional(Size >= 0x24)]
+    dword LockPrefixTable;
+    [optional(Size >= 0x28)]
+    dword MaximumAllocationSize;
+    [optional(Size >= 0x2c)]
+    dword VirtualMemoryThreshold;
+    [optional(Size >= 0x30)]
+    dword ProcessAffinityMask;
+    [optional(Size >= 0x34)]
+    dword ProcessHeapFlags;
+    [optional(Size >= 0x36)]
+    word  CSDVersion;
+    [optional(Size >= 0x38)]
+    word  DependentLoadFlags;
+    [optional(Size >= 0x3c)]
+    dword EditList;
+    [optional(Size >= 0x40)]
+    dword SecurityCookie;
+    [optional(Size >= 0x44)]
+    dword SEHandlerTable;
+    [optional(Size >= 0x48)]
+    dword SEHandlerCount;
+    [optional(Size >= 0x4c)]
+    dword GuardCFCheckFunctionPointer;
+    [optional(Size >= 0x50)]
+    dword GuardCFDispatchFunctionPointer;
+    [optional(Size >= 0x54)]
+    dword GuardCFFunctionTable;
+    [optional(Size >= 0x58)]
+    dword GuardCFFunctionCount;
+    [optional(Size >= 0x5c), bitflag(IMAGE_GUARD_FLAGS)]
+    dword GuardFlags;
+} IMAGE_LOAD_CONFIG_DIRECTORY32;
+
+[
+    extent(Size),
+    emit_node(dest(Sections.LoadConfig, key(current_offset())),
+              name("Load Config"),
+              attr(SecurityCookie, SecurityCookie),
+              attr(SEHandlerTable, SEHandlerTable),
+              attr(SEHandlerCount, SEHandlerCount),
+              attr(GuardCFCheckFunctionPointer, GuardCFCheckFunctionPointer),
+              attr(GuardCFDispatchFunctionPointer, GuardCFDispatchFunctionPointer),
+              attr(GuardCFFunctionTable, GuardCFFunctionTable),
+              attr(GuardCFFunctionCount, GuardCFFunctionCount),
+              attr(GuardFlags, GuardFlags),
+              optional(Size >= 0x94))
+]
+typedef struct _IMAGE_LOAD_CONFIG_DIRECTORY64
+{
+    dword  Size;
+    [optional(Size >= 0x08)]
+    dword  TimeDateStamp;
+    [optional(Size >= 0x0c)]
+    word   MajorVersion;
+    [optional(Size >= 0x0c)]
+    word   MinorVersion;
+    [optional(Size >= 0x10)]
+    dword  GlobalFlagsClear;
+    [optional(Size >= 0x14)]
+    dword  GlobalFlagsSet;
+    [optional(Size >= 0x18)]
+    dword  CriticalSectionDefaultTimeout;
+    [optional(Size >= 0x20)]
+    uint64 DeCommitFreeBlockThreshold;
+    [optional(Size >= 0x28)]
+    uint64 DeCommitTotalFreeThreshold;
+    [optional(Size >= 0x30)]
+    uint64 LockPrefixTable;
+    [optional(Size >= 0x38)]
+    uint64 MaximumAllocationSize;
+    [optional(Size >= 0x40)]
+    uint64 VirtualMemoryThreshold;
+    [optional(Size >= 0x48)]
+    uint64 ProcessAffinityMask;
+    [optional(Size >= 0x4c)]
+    dword  ProcessHeapFlags;
+    [optional(Size >= 0x4e)]
+    word   CSDVersion;
+    [optional(Size >= 0x50)]
+    word   DependentLoadFlags;
+    [optional(Size >= 0x58)]
+    uint64 EditList;
+    [optional(Size >= 0x60)]
+    uint64 SecurityCookie;
+    [optional(Size >= 0x68)]
+    uint64 SEHandlerTable;
+    [optional(Size >= 0x70)]
+    uint64 SEHandlerCount;
+    [optional(Size >= 0x78)]
+    uint64 GuardCFCheckFunctionPointer;
+    [optional(Size >= 0x80)]
+    uint64 GuardCFDispatchFunctionPointer;
+    [optional(Size >= 0x88)]
+    uint64 GuardCFFunctionTable;
+    [optional(Size >= 0x90)]
+    uint64 GuardCFFunctionCount;
+    [optional(Size >= 0x94), bitflag(IMAGE_GUARD_FLAGS)]
+    dword  GuardFlags;
+} IMAGE_LOAD_CONFIG_DIRECTORY64;
+
+[
+    emit_node(dest(Sections.Exceptions, key(current_offset())),
+              name(fmt("0x{0}", BeginAddress)),
+              attr(BeginRva, BeginAddress),
+              attr(EndRva, EndAddress),
+              attr(UnwindInfoRva, UnwindInfoAddress))
+]
+typedef struct _IMAGE_RUNTIME_FUNCTION_ENTRY
+{
+    dword BeginAddress;
+    dword EndAddress;
+    dword UnwindInfoAddress;
+} IMAGE_RUNTIME_FUNCTION_ENTRY;
 
 [
     emit_node(dest(Sections.Exports, key(cstr("rva", element_value()))),
@@ -472,6 +710,22 @@ typedef struct _PE_VIEW
         struct
         {
         } Relocations[];
+
+        struct
+        {
+        } Debug[];
+
+        struct
+        {
+        } TLS[];
+
+        struct
+        {
+        } LoadConfig[];
+
+        struct
+        {
+        } Exceptions[];
 
         struct
         {

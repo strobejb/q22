@@ -10,6 +10,10 @@ private slots:
     void builderNamesPeImportDescriptorsFromStandardDefinition();
     void builderEmitsPeImportDllsFromStandardDefinition();
     void builderEmitsPeBaseRelocationsFromStandardDefinition();
+    void builderEmitsPeDebugDirectoriesFromStandardDefinition();
+    void builderEmitsPeTlsDirectoryFromStandardDefinition();
+    void builderEmitsPeLoadConfigFromStandardDefinition();
+    void builderEmitsPeExceptionDirectoryFromStandardDefinition();
     void builderResolvesEntryPointRvaThroughSectionOffsetMap();
     void builderPeSemanticModeDeclarativeSkipsCppViews();
     void builderKeepsRawDynamicRowsWhenSemanticImportDataIsTruncated();
@@ -388,7 +392,238 @@ void StructViewPeTests::builderEmitsPeBaseRelocationsFromStandardDefinition()
     StructureRow *relocations = findChildNamed(relocSection, QStringLiteral("Relocations"));
     QVERIFY2(relocations, qPrintable(childNames(relocSection)));
     QCOMPARE(relocations->children.size(), size_t(2));
+    StructureRow *relocation = relocations->children[0].get();
+    QCOMPARE(findChildNamed(relocation, QStringLiteral("Type"))->value, QStringLiteral("3"));
+    QCOMPARE(findChildNamed(relocation, QStringLiteral("Offset"))->value, QStringLiteral("291"));
+    QCOMPARE(findChildNamed(relocation, QStringLiteral("TargetRva"))->value, QStringLiteral("12579"));
 
+}
+
+void StructViewPeTests::builderEmitsPeDebugDirectoriesFromStandardDefinition()
+{
+    ScopedEnvironmentVariable mode("Q22_PE_SEMANTIC_VIEW", "declarative");
+
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("pe.strata")), "pe.strata failed to parse");
+
+    QByteArray bytes(0x340, '\0');
+    writeLe32(&bytes, 0x3c, 0x80);
+    writeLe16(&bytes, 0x86, 1);
+    writeLe16(&bytes, 0x94, 256);
+    writeLe16(&bytes, 0x98, 0x10b);
+    writeLe32(&bytes, 0x98 + 92, 16);
+
+    const qsizetype debugDirEntry = 0x98 + 96 + 6 * 8;
+    writeLe32(&bytes, debugDirEntry, 0x2000);
+    writeLe32(&bytes, debugDirEntry + 4, 28);
+
+    const qsizetype sectionTable = 0x80 + 4 + 20 + 256;
+    writeAscii(&bytes, sectionTable, ".rdata");
+    writeLe32(&bytes, sectionTable + 12, 0x2000);
+    writeLe32(&bytes, sectionTable + 16, 0x100);
+    writeLe32(&bytes, sectionTable + 20, 0x200);
+
+    // IMAGE_DEBUG_DIRECTORY: CodeView data at RVA 0x2040, file offset 0x240.
+    writeLe32(&bytes, 0x20c, 2);
+    writeLe32(&bytes, 0x210, 36);
+    writeLe32(&bytes, 0x214, 0x2040);
+    writeLe32(&bytes, 0x218, 0x240);
+
+    TypeDecl *root = exportedNamed(&library, QStringLiteral("PE"));
+    QVERIFY(root);
+    auto rows = buildRows(&library, root, bytes);
+
+    StructureRow *peRow = findTopLevelNamed(rows, QStringLiteral("PE"));
+    QVERIFY(peRow);
+    StructureRow *rawSection = findChildNamed(peRow, QStringLiteral("SECTION .rdata"));
+    QVERIFY2(rawSection, qPrintable(childNames(peRow)));
+    StructureRow *debugDirectories = findDescendantNamed(rawSection,
+        QStringLiteral("IMAGE_DEBUG_DIRECTORY IMAGE_DIRECTORY_ENTRY_DEBUG[]"));
+    QVERIFY2(debugDirectories, qPrintable(childNames(rawSection)));
+    QCOMPARE(debugDirectories->children.size(), size_t(1));
+
+    StructureRow *peImage = findTopLevelNamed(rows, QStringLiteral("PE Image"));
+    QVERIFY(peImage);
+    StructureRow *semanticSection = findChildNamed(peImage, QStringLiteral("SECTION .rdata"));
+    QVERIFY2(semanticSection, qPrintable(childNames(peImage)));
+    StructureRow *debug = findChildNamed(semanticSection, QStringLiteral("Debug"));
+    QVERIFY2(debug, qPrintable(childNames(semanticSection)));
+    QVERIFY2(debug->children.size() == size_t(1), qPrintable(childNames(debug)));
+    StructureRow *entry = debug->children[0].get();
+    QCOMPARE(findChildNamed(entry, QStringLiteral("Type"))->value, QStringLiteral("2"));
+    QCOMPARE(findChildNamed(entry, QStringLiteral("SizeOfData"))->value, QStringLiteral("36"));
+    QCOMPARE(findChildNamed(entry, QStringLiteral("AddressOfRawData"))->value, QStringLiteral("8256"));
+    QCOMPARE(findChildNamed(entry, QStringLiteral("PointerToRawData"))->value, QStringLiteral("576"));
+}
+
+void StructViewPeTests::builderEmitsPeTlsDirectoryFromStandardDefinition()
+{
+    ScopedEnvironmentVariable mode("Q22_PE_SEMANTIC_VIEW", "declarative");
+
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("pe.strata")), "pe.strata failed to parse");
+
+    QByteArray bytes(0x340, '\0');
+    writeLe32(&bytes, 0x3c, 0x80);
+    writeLe16(&bytes, 0x86, 1);
+    writeLe16(&bytes, 0x94, 256);
+    writeLe16(&bytes, 0x98, 0x10b);
+    writeLe32(&bytes, 0x98 + 92, 16);
+
+    const qsizetype tlsDirEntry = 0x98 + 96 + 9 * 8;
+    writeLe32(&bytes, tlsDirEntry, 0x2000);
+    writeLe32(&bytes, tlsDirEntry + 4, 24);
+
+    const qsizetype sectionTable = 0x80 + 4 + 20 + 256;
+    writeAscii(&bytes, sectionTable, ".rdata");
+    writeLe32(&bytes, sectionTable + 12, 0x2000);
+    writeLe32(&bytes, sectionTable + 16, 0x100);
+    writeLe32(&bytes, sectionTable + 20, 0x200);
+
+    writeLe32(&bytes, 0x200, 0x401000);
+    writeLe32(&bytes, 0x204, 0x401020);
+    writeLe32(&bytes, 0x208, 0x402000);
+    writeLe32(&bytes, 0x20c, 0x403000);
+    writeLe32(&bytes, 0x210, 16);
+    writeLe32(&bytes, 0x214, 0);
+
+    TypeDecl *root = exportedNamed(&library, QStringLiteral("PE"));
+    QVERIFY(root);
+    auto rows = buildRows(&library, root, bytes);
+
+    StructureRow *peRow = findTopLevelNamed(rows, QStringLiteral("PE"));
+    QVERIFY(peRow);
+    StructureRow *rawSection = findChildNamed(peRow, QStringLiteral("SECTION .rdata"));
+    QVERIFY2(rawSection, qPrintable(childNames(peRow)));
+    QVERIFY2(findDescendantNamed(rawSection, QStringLiteral("IMAGE_TLS_DIRECTORY32")),
+             qPrintable(childNames(rawSection)));
+
+    StructureRow *peImage = findTopLevelNamed(rows, QStringLiteral("PE Image"));
+    QVERIFY(peImage);
+    StructureRow *semanticSection = findChildNamed(peImage, QStringLiteral("SECTION .rdata"));
+    QVERIFY2(semanticSection, qPrintable(childNames(peImage)));
+    StructureRow *tls = findChildNamed(semanticSection, QStringLiteral("TLS"));
+    QVERIFY2(tls, qPrintable(childNames(semanticSection)));
+    QCOMPARE(tls->children.size(), size_t(1));
+    StructureRow *entry = tls->children[0].get();
+    QCOMPARE(findChildNamed(entry, QStringLiteral("StartAddressOfRawData"))->value, QStringLiteral("4198400"));
+    QCOMPARE(findChildNamed(entry, QStringLiteral("AddressOfCallbacks"))->value, QStringLiteral("4206592"));
+    QCOMPARE(findChildNamed(entry, QStringLiteral("SizeOfZeroFill"))->value, QStringLiteral("16"));
+}
+
+void StructViewPeTests::builderEmitsPeLoadConfigFromStandardDefinition()
+{
+    ScopedEnvironmentVariable mode("Q22_PE_SEMANTIC_VIEW", "declarative");
+
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("pe.strata")), "pe.strata failed to parse");
+
+    QByteArray bytes(0x400, '\0');
+    writeLe32(&bytes, 0x3c, 0x80);
+    writeLe16(&bytes, 0x86, 1);
+    writeLe16(&bytes, 0x94, 256);
+    writeLe16(&bytes, 0x98, 0x20b);
+    writeLe32(&bytes, 0x98 + 108, 16);
+
+    const qsizetype loadConfigDirEntry = 0x98 + 112 + 10 * 8;
+    writeLe32(&bytes, loadConfigDirEntry, 0x2000);
+    writeLe32(&bytes, loadConfigDirEntry + 4, 0x9c);
+
+    const qsizetype sectionTable = 0x80 + 4 + 20 + 256;
+    writeAscii(&bytes, sectionTable, ".rdata");
+    writeLe32(&bytes, sectionTable + 12, 0x2000);
+    writeLe32(&bytes, sectionTable + 16, 0x200);
+    writeLe32(&bytes, sectionTable + 20, 0x200);
+
+    writeLe32(&bytes, 0x200, 0x9c);
+    writeLe64(&bytes, 0x258, 0x140005000);
+    writeLe64(&bytes, 0x270, 0x140006000);
+    writeLe64(&bytes, 0x278, 0x140007000);
+    writeLe64(&bytes, 0x280, 0x140008000);
+    writeLe64(&bytes, 0x288, 42);
+    writeLe32(&bytes, 0x290, 0x500);
+
+    TypeDecl *root = exportedNamed(&library, QStringLiteral("PE"));
+    QVERIFY(root);
+    auto rows = buildRows(&library, root, bytes);
+
+    StructureRow *peRow = findTopLevelNamed(rows, QStringLiteral("PE"));
+    QVERIFY(peRow);
+    StructureRow *rawSection = findChildNamed(peRow, QStringLiteral("SECTION .rdata"));
+    QVERIFY2(rawSection, qPrintable(childNames(peRow)));
+    QVERIFY2(findDescendantNamed(rawSection, QStringLiteral("IMAGE_LOAD_CONFIG_DIRECTORY64")),
+             qPrintable(childNames(rawSection)));
+
+    StructureRow *peImage = findTopLevelNamed(rows, QStringLiteral("PE Image"));
+    QVERIFY(peImage);
+    StructureRow *semanticSection = findChildNamed(peImage, QStringLiteral("SECTION .rdata"));
+    QVERIFY2(semanticSection, qPrintable(childNames(peImage)));
+    StructureRow *loadConfig = findChildNamed(semanticSection, QStringLiteral("LoadConfig"));
+    QVERIFY2(loadConfig, qPrintable(childNames(semanticSection)));
+    QCOMPARE(loadConfig->children.size(), size_t(1));
+    StructureRow *entry = loadConfig->children[0].get();
+    QCOMPARE(findChildNamed(entry, QStringLiteral("SecurityCookie"))->value, QStringLiteral("5368729600"));
+    QCOMPARE(findChildNamed(entry, QStringLiteral("GuardCFFunctionTable"))->value, QStringLiteral("5368741888"));
+    QCOMPARE(findChildNamed(entry, QStringLiteral("GuardCFFunctionCount"))->value, QStringLiteral("42"));
+    QCOMPARE(findChildNamed(entry, QStringLiteral("GuardFlags"))->value,
+             QStringLiteral("IMAGE_GUARD_CF_INSTRUMENTED | IMAGE_GUARD_CF_FUNCTION_TABLE_PRESENT"));
+}
+
+void StructViewPeTests::builderEmitsPeExceptionDirectoryFromStandardDefinition()
+{
+    ScopedEnvironmentVariable mode("Q22_PE_SEMANTIC_VIEW", "declarative");
+
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("pe.strata")), "pe.strata failed to parse");
+
+    QByteArray bytes(0x400, '\0');
+    writeLe32(&bytes, 0x3c, 0x80);
+    writeLe16(&bytes, 0x86, 1);
+    writeLe16(&bytes, 0x94, 256);
+    writeLe16(&bytes, 0x98, 0x20b);
+    writeLe32(&bytes, 0x98 + 108, 16);
+
+    const qsizetype exceptionDirEntry = 0x98 + 112 + 3 * 8;
+    writeLe32(&bytes, exceptionDirEntry, 0x2000);
+    writeLe32(&bytes, exceptionDirEntry + 4, 24);
+
+    const qsizetype sectionTable = 0x80 + 4 + 20 + 256;
+    writeAscii(&bytes, sectionTable, ".pdata");
+    writeLe32(&bytes, sectionTable + 12, 0x2000);
+    writeLe32(&bytes, sectionTable + 16, 0x100);
+    writeLe32(&bytes, sectionTable + 20, 0x200);
+
+    writeLe32(&bytes, 0x200, 0x1010);
+    writeLe32(&bytes, 0x204, 0x1040);
+    writeLe32(&bytes, 0x208, 0x3000);
+    writeLe32(&bytes, 0x20c, 0x1040);
+    writeLe32(&bytes, 0x210, 0x1080);
+    writeLe32(&bytes, 0x214, 0x3010);
+
+    TypeDecl *root = exportedNamed(&library, QStringLiteral("PE"));
+    QVERIFY(root);
+    auto rows = buildRows(&library, root, bytes);
+
+    StructureRow *peRow = findTopLevelNamed(rows, QStringLiteral("PE"));
+    QVERIFY(peRow);
+    StructureRow *rawSection = findChildNamed(peRow, QStringLiteral("SECTION .pdata"));
+    QVERIFY2(rawSection, qPrintable(childNames(peRow)));
+    StructureRow *runtimeFunctions = findDescendantNamed(rawSection,
+        QStringLiteral("IMAGE_RUNTIME_FUNCTION_ENTRY IMAGE_DIRECTORY_ENTRY_EXCEPTION[]"));
+    QVERIFY2(runtimeFunctions, qPrintable(childNames(rawSection)));
+    QCOMPARE(runtimeFunctions->children.size(), size_t(2));
+
+    StructureRow *peImage = findTopLevelNamed(rows, QStringLiteral("PE Image"));
+    QVERIFY(peImage);
+    StructureRow *semanticSection = findChildNamed(peImage, QStringLiteral("SECTION .pdata"));
+    QVERIFY2(semanticSection, qPrintable(childNames(peImage)));
+    StructureRow *exceptions = findChildNamed(semanticSection, QStringLiteral("Exceptions"));
+    QVERIFY2(exceptions, qPrintable(childNames(semanticSection)));
+    QCOMPARE(exceptions->children.size(), size_t(2));
+    StructureRow *entry = exceptions->children[0].get();
+    QCOMPARE(findChildNamed(entry, QStringLiteral("BeginRva"))->value, QStringLiteral("4112"));
+    QCOMPARE(findChildNamed(entry, QStringLiteral("EndRva"))->value, QStringLiteral("4160"));
+    QCOMPARE(findChildNamed(entry, QStringLiteral("UnwindInfoRva"))->value, QStringLiteral("12288"));
 }
 
 void StructViewPeTests::builderResolvesEntryPointRvaThroughSectionOffsetMap()
