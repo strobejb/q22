@@ -270,7 +270,7 @@ struct TypeDecl
 
 struct EnumField
 {
-	EnumField(Symbol *s, ExprNode *e) : name(s), expr(e), val(0)
+	EnumField(Symbol *s, ExprNode *e, Tag *tags = 0) : name(s), expr(e), tagList(tags), val(0)
 	{
 	}
 
@@ -283,10 +283,12 @@ struct EnumField
 		// 'identifier list' so we must not delete that one here
 		//
 		delete expr;
+		delete tagList;
 	}
 
 	Symbol	 *	name;
 	ExprNode *	expr;
+	Tag      *tagList;
 	INUMTYPE	val;
 
 	FILEREF	fileRef;

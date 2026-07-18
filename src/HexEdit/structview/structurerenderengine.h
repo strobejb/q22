@@ -309,8 +309,8 @@ private:
                       ExprNode **extent,
                       ExprNode **condition,
                       std::vector<SemanticNodeAttr> *attrs) const;
-    bool codeTagArgs(ExprNode *expr, QString *architecture,
-                     ExprNode **offset, ExprNode **extent) const;
+    bool codeTagArgs(ExprNode *expr, QString *architecture, ExprNode **architectureField,
+                     QString *offsetSpace, ExprNode **offset, ExprNode **extent) const;
     void applyCodeTag(StructureRow *target, TypeDecl *typeDecl, StructureRow *scope);
     void linkWasmFunctionCodeTargets(StructureRow *root);
     void linkWasmSemanticFunctionCodeTargets(StructureRow *root);
@@ -350,7 +350,8 @@ private:
     int semanticDestinationOrder(const QStringList &path) const;
     QStringList semanticPath(ExprNode *expr) const;
     DynamicContainer *mapLogicalOffset(uint64_t logicalOffset, uint64_t *fileOffset);
-    bool mapNamedOffset(const QString &name, uint64_t logicalOffset, uint64_t *fileOffset) const;
+    bool mapNamedOffset(const QString &name, uint64_t logicalOffset, uint64_t *fileOffset,
+                        uint64_t *mappedLength = nullptr) const;
     StructureRow *semanticDestinationForRequest(const SemanticEmitRequest &request, uint64_t *fileOffset);
     StructureRow *semanticDestinationForPath(const QStringList &destinationPath,
                                              const QString &offsetSpace,

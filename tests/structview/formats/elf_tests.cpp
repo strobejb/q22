@@ -8,6 +8,7 @@ private slots:
     void builderRendersElfImportsAndExportsSummary();
     void builderRendersElfDependenciesAndRelocationsSummary();
     void builderRendersElf32AndElf64Tables();
+    void builderResolvesElfEntryPointThroughLoadSegmentAndMachineMetadata();
     void builderAddsElfSectionAndSymbolSemanticRows();
     void builderKeepsRawElfRowsWhenSemanticDataIsTruncated();
 };
@@ -103,6 +104,53 @@ void StructViewElfTests::builderRendersElfImportsAndExportsSummary()
     QVERIFY2(symbols, qPrintable(childNames(dynsym)));
     QVERIFY(findChildNamed(symbols, QStringLiteral("SYMBOL printf")));
     QVERIFY(findChildNamed(symbols, QStringLiteral("SYMBOL main")));
+}
+
+void StructViewElfTests::builderResolvesElfEntryPointThroughLoadSegmentAndMachineMetadata()
+{
+    // Scenario: an ELF64 executable describes its entry point as a virtual
+    // address and has one PT_LOAD segment mapping that address into the file.
+    // Expected: the machine enum provides the disassembler architecture, the
+    // named vaddr map produces the file target, and the target is bounded by
+    // the remaining mapped segment rather than the 64 KiB defensive cap.
+    StrataLibrary library;
+    QVERIFY2(parseStandardElfDefinition(&library), "elf.strata failed to parse");
+
+    QByteArray bytes(0x400, '\0');
+    bytes[0] = char(0x7f);
+    bytes[1] = 'E';
+    bytes[2] = 'L';
+    bytes[3] = 'F';
+    bytes[4] = char(2); // ELFCLASS64
+    bytes[5] = char(1); // little-endian
+    bytes[6] = char(1);
+    writeLe16(&bytes, 16, 2);       // ET_EXEC
+    writeLe16(&bytes, 18, 62);      // EM_X86_64
+    writeLe32(&bytes, 20, 1);
+    writeLe64(&bytes, 24, 0x400120);
+    writeLe64(&bytes, 32, 0x40);    // e_phoff
+    writeLe16(&bytes, 52, 64);      // e_ehsize
+    writeLe16(&bytes, 54, 56);      // e_phentsize
+    writeLe16(&bytes, 56, 1);       // e_phnum
+
+    writeLe32(&bytes, 0x40, 1);     // PT_LOAD
+    writeLe64(&bytes, 0x48, 0x100); // p_offset
+    writeLe64(&bytes, 0x50, 0x400000); // p_vaddr
+    writeLe64(&bytes, 0x60, 0x300); // p_filesz
+
+    TypeDecl *root = exportedNamed(&library, QStringLiteral("ELF"));
+    QVERIFY(root);
+    auto rows = buildRows(&library, root, bytes);
+    StructureRow *elfRow = findTopLevelNamed(rows, QStringLiteral("ELF"));
+    QVERIFY(elfRow);
+
+    StructureRow *entry = findDescendantNamed(elfRow, QStringLiteral("e64_addr e_entry"));
+    QVERIFY2(entry, "ELF64 e_entry row not found in rendered tree");
+    QVERIFY(entry->hasCodeTarget);
+    QCOMPARE(entry->codeArchitecture, QStringLiteral("x86-64"));
+    QCOMPARE(entry->codeLogicalOffset, uint64_t(0x400120));
+    QCOMPARE(entry->codeTargetOffset, uint64_t(0x220));
+    QCOMPARE(entry->codeByteLength, uint64_t(0x1e0));
 }
 
 void StructViewElfTests::builderRendersElfDependenciesAndRelocationsSummary()

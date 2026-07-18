@@ -223,7 +223,7 @@ static TOKEN kEmitNodeTagValueWrappers[] = {
 };
 
 static TOKEN kCodeTagValueWrappers[] = {
-	TOK_OFFSET, TOK_EXTENT, TOK_NULL
+	TOK_ARCHITECTURE, TOK_OFFSET, TOK_EXTENT, TOK_NULL
 };
 
 bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
@@ -419,6 +419,7 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 		case TOK_TERMINATOR:
 		case TOK_ASSOC:
 		case TOK_CATEGORY:
+		case TOK_ARCHITECTURE:
 		case TOK_CODE:
 		case TOK_OFFSETMAP:
 		case TOK_DYNAMICARRAY:

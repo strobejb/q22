@@ -82,7 +82,7 @@ typedef struct _IMAGE_DOS_HEADER {      // DOS .EXE header
 typedef enum _IMAGE_FILE_MACHINE
 {
 	IMAGE_FILE_MACHINE_UNKNOWN       = 0,
-	IMAGE_FILE_MACHINE_I386          = 0x014c,  // Intel 386.
+	[architecture("x86-32")] IMAGE_FILE_MACHINE_I386 = 0x014c,  // Intel 386.
 	IMAGE_FILE_MACHINE_R3000         = 0x0162,  // MIPS little-endian, 0x160 big-endian
 	IMAGE_FILE_MACHINE_R4000         = 0x0166,  // MIPS little-endian
 	IMAGE_FILE_MACHINE_R10000        = 0x0168,  // MIPS little-endian
@@ -93,8 +93,8 @@ typedef enum _IMAGE_FILE_MACHINE
 	IMAGE_FILE_MACHINE_SH3E          = 0x01a4,  // SH3E little-endian
 	IMAGE_FILE_MACHINE_SH4           = 0x01a6,  // SH4 little-endian
 	IMAGE_FILE_MACHINE_SH5           = 0x01a8,  // SH5
-	IMAGE_FILE_MACHINE_ARM           = 0x01c0,  // ARM Little-Endian
-	IMAGE_FILE_MACHINE_THUMB         = 0x01c2,
+	[architecture("arm")] IMAGE_FILE_MACHINE_ARM = 0x01c0,  // ARM Little-Endian
+	[architecture("thumb")] IMAGE_FILE_MACHINE_THUMB = 0x01c2,
 	IMAGE_FILE_MACHINE_AM33          = 0x01d3,
 	IMAGE_FILE_MACHINE_POWERPC       = 0x01F0,  // IBM PowerPC Little-Endian
 	IMAGE_FILE_MACHINE_POWERPCFP     = 0x01f1,
@@ -107,7 +107,8 @@ typedef enum _IMAGE_FILE_MACHINE
 	IMAGE_FILE_MACHINE_TRICORE       = 0x0520,  // Infineon
 	IMAGE_FILE_MACHINE_CEF           = 0x0CEF,
 	IMAGE_FILE_MACHINE_EBC           = 0x0EBC,  // EFI Byte Code
-	IMAGE_FILE_MACHINE_AMD64         = 0x8664,  // AMD64 (K8)
+	[architecture("x86-64")] IMAGE_FILE_MACHINE_AMD64 = 0x8664,  // AMD64 (K8)
+	[architecture("arm64")] IMAGE_FILE_MACHINE_ARM64 = 0xaa64,
 	IMAGE_FILE_MACHINE_M32R          = 0x9041,  // M32R little-endian
 	IMAGE_FILE_MACHINE_CEE           = 0xC0EE,
 
@@ -203,7 +204,7 @@ typedef struct _IMAGE_OPTIONAL_HEADER {
     dword   SizeOfCode;
     dword   SizeOfInitializedData;
     dword   SizeOfUninitializedData;
-    [entrypoint]
+    [entrypoint, code(architecture(root::ntHeaders.FileHeader.Machine), offset("rva", AddressOfEntryPoint), extent(65536))]
     dword   AddressOfEntryPoint;
     dword   BaseOfCode;
     dword   BaseOfData;
@@ -248,7 +249,7 @@ typedef struct _IMAGE_OPTIONAL_HEADER64 {
     dword       SizeOfCode;
     dword       SizeOfInitializedData;
     dword       SizeOfUninitializedData;
-    [entrypoint]
+    [entrypoint, code(architecture(root::ntHeaders.FileHeader.Machine), offset("rva", AddressOfEntryPoint), extent(65536))]
     dword       AddressOfEntryPoint;
     dword       BaseOfCode;
     uint64      ImageBase;

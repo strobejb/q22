@@ -6172,7 +6172,8 @@ StructureRenderEngine::DynamicContainer *StructureRenderEngine::mapLogicalOffset
     return nullptr;
 }
 
-bool StructureRenderEngine::mapNamedOffset(const QString &name, uint64_t logicalOffset, uint64_t *fileOffset) const
+bool StructureRenderEngine::mapNamedOffset(const QString &name, uint64_t logicalOffset, uint64_t *fileOffset,
+                                           uint64_t *mappedLength) const
 {
     if (name.isEmpty() || !fileOffset)
         return false;
@@ -6185,6 +6186,8 @@ bool StructureRenderEngine::mapNamedOffset(const QString &name, uint64_t logical
         if (!it->rangeMapped)
         {
             *fileOffset = it->fileOffset + logicalOffset;
+            if (mappedLength)
+                *mappedLength = std::numeric_limits<uint64_t>::max();
             return true;
         }
 
@@ -6192,6 +6195,8 @@ bool StructureRenderEngine::mapNamedOffset(const QString &name, uint64_t logical
             continue;
 
         *fileOffset = it->fileOffset + (logicalOffset - it->logicalStart);
+        if (mappedLength)
+            *mappedLength = it->logicalSize - (logicalOffset - it->logicalStart);
         return true;
     }
 
@@ -6369,7 +6374,15 @@ void StructureRenderEngine::resolveEntryPointRows(StructureRow *row)
     if (!row)
         return;
 
-    if (row->hasCodeTarget)
+    // Some code tags (notably ELF entry points) refer to named maps declared
+    // later in the file. Re-evaluate after raw rendering has collected every
+    // map; applyCodeTag is deliberately a no-op until all of its inputs exist.
+    applyCodeTag(row, row->typeDecl, row);
+
+    // [entrypoint] stores an unresolved logical address and is mapped after
+    // dynamic containers have been collected. [code(...)] already resolved
+    // its explicit offset (including named offset spaces), so keep it intact.
+    if (row->hasCodeTarget && row->codeArchitecture.isEmpty())
     {
         uint64_t mappedOffset = 0;
         if (mapLogicalOffset(row->codeLogicalOffset, &mappedOffset))
@@ -6692,28 +6705,42 @@ void StructureRenderEngine::applyEntryPointTag(StructureRow *row, TypeDecl *type
     row->codeTargetOffset = m_baseOffset + row->codeLogicalOffset;
 }
 
-bool StructureRenderEngine::codeTagArgs(ExprNode *expr, QString *architecture,
-                                         ExprNode **offset, ExprNode **extent) const
+bool StructureRenderEngine::codeTagArgs(ExprNode *expr, QString *architecture, ExprNode **architectureField,
+                                         QString *offsetSpace, ExprNode **offset, ExprNode **extent) const
 {
     std::vector<ExprNode *> args;
     appendCommaArgs(expr, &args);
-    if (args.empty() || !args[0] || args[0]->type != EXPR_STRINGBUF || !args[0]->str)
-        return false;
-
-    const QString arch = QString::fromLocal8Bit(args[0]->str).trimmed().toLower();
-    if (arch.isEmpty())
-        return false;
-
+    QString arch;
+    ExprNode *architectureExpr = nullptr;
+    QString space;
     ExprNode *offsetExpr = nullptr;
     ExprNode *extentExpr = nullptr;
-    for (size_t i = 1; i < args.size(); ++i)
+    for (ExprNode *arg : args)
     {
-        ExprNode *inner = nullptr;
-        switch (unwrapTagArg(args[i], &inner))
+        if (arg && arg->type == EXPR_STRINGBUF && arg->str)
         {
+            arch = QString::fromLocal8Bit(arg->str).trimmed().toLower();
+            continue;
+        }
+        ExprNode *inner = nullptr;
+        switch (unwrapTagArg(arg, &inner))
+        {
+        case TOK_ARCHITECTURE: architectureExpr = inner; break;
         case TOK_OFFSET:
-            offsetExpr = unwrapSingleCommaArg(inner);
+        {
+            std::vector<ExprNode *> offsetArgs;
+            appendCommaArgs(inner, &offsetArgs);
+            if (offsetArgs.size() == 1)
+                offsetExpr = offsetArgs[0];
+            else if (offsetArgs.size() == 2 && offsetArgs[0]->type == EXPR_STRINGBUF && offsetArgs[0]->str)
+            {
+                space = QString::fromLocal8Bit(offsetArgs[0]->str);
+                offsetExpr = offsetArgs[1];
+            }
+            else
+                return false;
             break;
+        }
         case TOK_EXTENT:
             extentExpr = inner;
             break;
@@ -6721,8 +6748,15 @@ bool StructureRenderEngine::codeTagArgs(ExprNode *expr, QString *architecture,
         }
     }
 
+    if (arch.isEmpty() && !architectureExpr)
+        return false;
+
     if (architecture)
         *architecture = arch;
+    if (architectureField)
+        *architectureField = architectureExpr;
+    if (offsetSpace)
+        *offsetSpace = space;
     if (offset)
         *offset = offsetExpr;
     if (extent)
@@ -6751,15 +6785,62 @@ void StructureRenderEngine::applyCodeTag(StructureRow *target, TypeDecl *typeDec
     }
 
     QString architecture;
+    ExprNode *architectureField = nullptr;
+    QString offsetSpace;
     ExprNode *offsetExpr = nullptr;
     ExprNode *extentExpr = nullptr;
-    if (!codeTagArgs(expr, &architecture, &offsetExpr, &extentExpr))
+    if (!codeTagArgs(expr, &architecture, &architectureField, &offsetSpace, &offsetExpr, &extentExpr))
         return;
 
+    if (architectureField)
+    {
+        StructureRow *architectureRow = findFieldRow(scope, architectureField);
+        if (!architectureRow && scope->parent)
+            architectureRow = findFieldRow(scope->parent, architectureField);
+        Enum *architectureEnum = architectureRow ? tagEnum(architectureRow->typeDecl) : nullptr;
+        EnumField *architectureValue = nullptr;
+        if (architectureEnum && architectureRow)
+            for (EnumField *field : architectureEnum->fieldList)
+                if (field && field->val == architectureRow->scalarRawValue)
+                    architectureValue = field;
+        // Scalar rows can be produced from a typedef-expanded declaration,
+        // where the original [enum(...)] field declaration is not retained on
+        // the row. The rendered enum label still resolves to the enum-value
+        // symbol, which owns the same metadata.
+        if (!architectureValue && m_library && architectureRow && !architectureRow->value.isEmpty())
+        {
+            const QByteArray enumName = architectureRow->value.toLocal8Bit();
+            if (Symbol *symbol = LookupSymbol(m_library->globalIdentifierList, enumName.constData()))
+                if (symbol->type && symbol->type->ty == typeENUMVALUE)
+                    architectureValue = symbol->type->evptr;
+        }
+        ExprNode *architectureExpr = nullptr;
+        if (!architectureValue || !FindTag(architectureValue->tagList, TOK_ARCHITECTURE, &architectureExpr)
+            || !architectureExpr || architectureExpr->type != EXPR_STRINGBUF || !architectureExpr->str)
+            return;
+        architecture = QString::fromLocal8Bit(architectureExpr->str).trimmed().toLower();
+    }
+
     uint64_t absoluteOffset = scope->absoluteOffset;
+    uint64_t mappedLength = std::numeric_limits<uint64_t>::max();
+    uint64_t codeLogicalOffset = absoluteOffset >= m_baseOffset ? absoluteOffset - m_baseOffset : 0;
     StructureRow *codeRow = nullptr;
     if (offsetExpr)
     {
+        if (!offsetSpace.isEmpty())
+        {
+            INUMTYPE logicalOffset = 0;
+            if (!evaluate(scope, offsetExpr, &logicalOffset, scope->absoluteOffset)
+                || logicalOffset < 0
+                || !mapNamedOffset(offsetSpace, static_cast<uint64_t>(logicalOffset), &absoluteOffset,
+                                   &mappedLength))
+            {
+                return;
+            }
+            codeLogicalOffset = static_cast<uint64_t>(logicalOffset);
+        }
+        else
+        {
         codeRow = findFieldRow(scope, offsetExpr);
         if (codeRow)
             absoluteOffset = codeRow->absoluteOffset;
@@ -6775,6 +6856,7 @@ void StructureRenderEngine::applyCodeTag(StructureRow *target, TypeDecl *typeDec
                     return;
                 absoluteOffset = m_baseOffset + static_cast<uint64_t>(logicalOffset);
             }
+        }
         }
     }
 
@@ -6792,10 +6874,18 @@ void StructureRenderEngine::applyCodeTag(StructureRow *target, TypeDecl *typeDec
     if (length == 0)
         return;
 
+    // A named range map is also the authoritative physical extent of mapped
+    // code. Keep a defensive explicit extent (such as 64 KiB) within the
+    // remaining section/segment rather than allowing it to spill into the
+    // next mapping.
+    length = std::min(length, mappedLength);
+    if (length == 0)
+        return;
+
     target->hasCodeTarget = true;
     target->codeArchitecture = architecture;
     target->codeTargetOffset = absoluteOffset;
-    target->codeLogicalOffset = absoluteOffset >= m_baseOffset ? absoluteOffset - m_baseOffset : 0;
+    target->codeLogicalOffset = codeLogicalOffset;
     target->codeByteLength = length;
 
     // A raw function record has several useful selectable rows (the body,

@@ -117,7 +117,7 @@ private:
 	Type	 * ParseBaseType(TypeDecl *typeDecl, bool nested);
 	Type	 * ParseStructBody(Symbol *sym, TYPE ty, TypeDecl *ownerDecl);
 	Type	 * ParseEnumBody(Symbol *sym);
-    EnumField* AddEnumField(Enum *enumPtr, const char *name, ExprNode *expr, unsigned val);
+    EnumField* AddEnumField(Enum *enumPtr, const char *name, ExprNode *expr, Tag *tagList, unsigned val);
 	Type	 * Decl(TOKEN term, SymbolTable &symTable);
 	Type	 * PrefixDecl(SymbolTable &symTable);
 	Type	 * PostfixDecl(Type *tptr);

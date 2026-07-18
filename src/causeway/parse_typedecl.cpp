@@ -332,7 +332,7 @@ Type * Parser::Decl(TOKEN term, SymbolTable &symTable)
 	return type;
 }
 
-EnumField * Parser::AddEnumField(Enum *enumPtr, const char *name, ExprNode *expr, unsigned val)
+EnumField * Parser::AddEnumField(Enum *enumPtr, const char *name, ExprNode *expr, Tag *tagList, unsigned val)
 {
 	Symbol *sym;
 	EnumField *field = 0;
@@ -350,7 +350,7 @@ EnumField * Parser::AddEnumField(Enum *enumPtr, const char *name, ExprNode *expr
 		sym = InstallSymbol(typeLibrary->globalIdentifierList, name);
 
 		// add to the enumeration
-		field = new EnumField(sym, expr);//, enumPtr);
+		field = new EnumField(sym, expr, tagList);//, enumPtr);
 		enumPtr->fieldList.push_back(field);
 
 		field->val = val;
@@ -390,6 +390,10 @@ Type * Parser::ParseEnumBody(Symbol *sym)
 	{
 		ExprNode *expr = 0;
 		EnumField *field;
+		Tag *tagList = 0;
+		TOKEN allowed[] = { TOK_ARCHITECTURE, TOK_NULL };
+		if (!ParseTags(&tagList, allowed))
+			return 0;
 
         safe_strcpy(fieldName, MAX_STRING_LEN, t.str);
 
@@ -413,7 +417,7 @@ Type * Parser::ParseEnumBody(Symbol *sym)
 		}
 
 		// install the symbol and expression in the enumeration
-		if((field = AddEnumField(enumPtr, fieldName, expr, i)) == 0)
+		if((field = AddEnumField(enumPtr, fieldName, expr, tagList, i)) == 0)
 			return 0;
 
 		field->fileRef	= fileRef1;

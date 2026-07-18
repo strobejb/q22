@@ -42,6 +42,7 @@
 #endif
 
 DEFINE_KEYWORD          ( TOK_ALIGN,            "align" )
+DEFINE_KEYWORD          ( TOK_ARCHITECTURE,     "architecture" )
 DEFINE_KEYWORD          ( TOK_APPEND,           "append" )
 DEFINE_KEYWORD          ( TOK_ASSOC,            "assoc" )
 DEFINE_KEYWORD          ( TOK_ATTR,             "attr" )

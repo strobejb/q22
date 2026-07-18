@@ -316,6 +316,10 @@ size_t RecurseDisplayType(FILE *fp, TypeDecl *typeDecl, Type *type, int indent, 
 					else
 						len += print_indent(fp, indent+1);
 
+					len += DisplayTags(fp, eptr->fieldList[i]->tagList);
+					if (eptr->fieldList[i]->tagList)
+						len += fprintf(fp, " ");
+
 					len += fprintf(fp, "%s", (char *)eptr->fieldList[i]->name);
 					
 					if(eptr->fieldList[i]->expr)

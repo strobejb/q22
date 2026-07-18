@@ -52,14 +52,14 @@ enum ELF_MACHINE
     EM_NONE    = 0,
     EM_M32     = 1,
     EM_SPARC   = 2,
-    EM_386     = 3,
+    [architecture("x86-32")] EM_386 = 3,
     EM_68K     = 4,
     EM_88K     = 5,
     EM_860     = 7,
     EM_MIPS    = 8,
-    EM_ARM     = 40,
-    EM_X86_64  = 62,
-    EM_AARCH64 = 183,
+    [architecture("arm")] EM_ARM = 40,
+    [architecture("x86-64")] EM_X86_64 = 62,
+    [architecture("arm64")] EM_AARCH64 = 183,
     EM_RISCV   = 243
 };
 
@@ -279,7 +279,7 @@ typedef struct _Elf32_Ehdr
     [enum(ELF_MACHINE)]
     e16      e_machine;                 // Architecture
     e32      e_version;                 // Object file version
-    [entrypoint]
+    [entrypoint, code(architecture(e_machine), offset("vaddr", e_entry), extent(65536))]
     e32_addr e_entry;                   // Entry point virtual address
     e32_off  e_phoff;                   // Program header table file offset
     e32_off  e_shoff;                   // Section header table file offset
@@ -302,7 +302,7 @@ typedef struct _Elf64_Ehdr
     [enum(ELF_MACHINE)]
     e16      e_machine;                 // Architecture
     e32      e_version;                 // Object file version
-    [entrypoint]
+    [entrypoint, code(architecture(e_machine), offset("vaddr", e_entry), extent(65536))]
     e64_addr e_entry;                   // Entry point virtual address
     e64_off  e_phoff;                   // Program header table file offset
     e64_off  e_shoff;                   // Section header table file offset
@@ -327,7 +327,8 @@ typedef struct _Elf64_Ehdr
               field(VirtualAddress, p_vaddr),
               field(FileSize, p_filesz),
               field(MemorySize, p_memsz),
-              field(Flags, p_flags))
+              field(Flags, p_flags)),
+    offset_map("vaddr", p_vaddr, p_type == PT_LOAD ? p_filesz : 0, p_offset)
 ]
 typedef struct _Elf32_Phdr
 {
@@ -353,7 +354,8 @@ typedef struct _Elf32_Phdr
               field(VirtualAddress, p_vaddr),
               field(FileSize, p_filesz),
               field(MemorySize, p_memsz),
-              field(Flags, p_flags))
+              field(Flags, p_flags)),
+    offset_map("vaddr", p_vaddr, p_type == PT_LOAD ? p_filesz : 0, p_offset)
 ]
 typedef struct _Elf64_Phdr
 {
