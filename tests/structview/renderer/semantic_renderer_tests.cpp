@@ -6,6 +6,7 @@ class StructViewSemanticRendererTests : public QObject
 
 private slots:
     void builderEmitsSemanticRowsUnderAttachedSchema();
+    void rendererDefersSemanticOverlayUntilRequested();
     void builderEmitsSemanticRowsThroughNamedOffsetSpaces();
     void builderEmitsAndMergesSemanticNodes();
     void builderRejectsUnterminatedCstrSemanticNames();
@@ -79,6 +80,44 @@ void StructViewSemanticRendererTests::builderEmitsSemanticRowsUnderAttachedSchem
     QVERIFY(payload->children[0]->branchEmptyIconPath.isEmpty());
     QCOMPARE(payload->children[0]->value, QStringLiteral("170"));
     QCOMPARE(payload->children[2]->value, QStringLiteral("204"));
+}
+
+void StructViewSemanticRendererTests::rendererDefersSemanticOverlayUntilRequested()
+{
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef byte PayloadByte;\n"
+                        "typedef struct _Entry {"
+                        "  [emit(dest(Payloads), label(\"payload\"), type(PayloadByte), offset(payloadOffset), count(payloadSize))] dword payloadOffset;"
+                        "  dword payloadSize;"
+                        "} Entry;\n"
+                        "[semantic] typedef struct _RootView { PayloadByte Payloads[]; } RootView;\n"
+                        "[export, semantic(RootView)] typedef struct _Root { Entry entry; } Root;\n"));
+
+    QByteArray bytes(0x20, '\0');
+    writeLe32(&bytes, 0, 0x10);
+    writeLe32(&bytes, 4, 1);
+    bytes[0x10] = char(0xaa);
+    const auto reader = [&bytes](uint64_t offset, uint8_t *buffer, size_t length) -> size_t {
+        if (offset >= static_cast<uint64_t>(bytes.size()))
+            return 0;
+        const size_t available = static_cast<size_t>(bytes.size() - static_cast<int>(offset));
+        const size_t copied = qMin(length, available);
+        memcpy(buffer, bytes.constData() + offset, copied);
+        return copied;
+    };
+
+    StructureRenderEngine renderer(&library, firstExported(&library), 0, reader, {});
+    QVERIFY(renderer.hasSemanticOverlay());
+    auto rawRows = renderer.buildRaw();
+    QCOMPARE(rawRows.size(), size_t(1));
+    QVERIFY(!findTopLevelNamed(rawRows, QStringLiteral("Semantic")));
+
+    auto semanticRows = renderer.buildSemanticOverlay(rawRows.front().get());
+    QCOMPARE(semanticRows.size(), size_t(1));
+    QCOMPARE(semanticRows.front()->name, QStringLiteral("Semantic"));
+    QVERIFY(findChildNamed(semanticRows.front().get(), QStringLiteral("Payloads")));
 }
 
 void StructViewSemanticRendererTests::builderEmitsSemanticRowsThroughNamedOffsetSpaces()

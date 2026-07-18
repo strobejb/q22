@@ -722,6 +722,18 @@ StructureRenderEngine::StructureRenderEngine(StrataLibrary *library,
 
 std::vector<std::unique_ptr<StructureRow>> StructureRenderEngine::build()
 {
+    std::vector<RowPtr> rows = buildRaw();
+    if (rows.empty())
+        return rows;
+
+    std::vector<RowPtr> semanticRoots = buildSemanticOverlay(rows.front().get());
+    for (RowPtr &semanticRoot : semanticRoots)
+        rows.push_back(std::move(semanticRoot));
+    return rows;
+}
+
+std::vector<std::unique_ptr<StructureRow>> StructureRenderEngine::buildRaw()
+{
     std::vector<RowPtr> rows;
     if (!m_rootType)
         return rows;
@@ -781,40 +793,8 @@ std::vector<std::unique_ptr<StructureRow>> StructureRenderEngine::build()
                                 .arg(m_dynamicArrayRequests.size())
                                 .arg(phaseTimer.restart()));
     }
-    const bool skipDeclarativeSemantic =
-        (semanticCppOnly("Q22_PE_SEMANTIC_VIEW") && rootUsesSemanticSchema(m_rootType, "PE_VIEW"))
-        || (semanticCppOnly("Q22_ELF_SEMANTIC_VIEW") && rootUsesSemanticSchema(m_rootType, "ELF_VIEW"));
-    if (!skipDeclarativeSemantic)
-    {
-        collectSemanticEmitRequests(root.get());
-        appendSemanticRowRequests();
-        appendSemanticNodeRequests();
-        appendSemanticEmitRows(root.get());
-    }
-    if (profile)
-    {
-        structureProfileLog(QStringLiteral("[StructureProfile] declarative semantic rows=%1 row_requests=%2 byte_requests=%3 skipped=%4 ms=%5")
-                                .arg(structureRowCount(root.get()))
-                                .arg(m_semanticRowRequests.size())
-                                .arg(m_semanticEmitRequests.size() + m_semanticNodeRequests.size())
-                                .arg(skipDeclarativeSemantic ? 1 : 0)
-                                .arg(phaseTimer.restart()));
-    }
-    resolveEntryPointRows(root.get());
-    if (profile)
-    {
-        structureProfileLog(QStringLiteral("[StructureProfile] engine entrypoints ms=%1")
-                                .arg(phaseTimer.restart()));
-    }
 
-    std::vector<StructureOffsetMap> semanticOffsetMaps;
-    for (const DynamicContainer &container : m_dynamicContainers)
-    {
-        for (const OffsetMap &map : container.maps)
-            semanticOffsetMaps.push_back(StructureOffsetMap{ map.logicalStart, map.logicalSize, map.fileOffset });
-    }
-    runStructureSemanticViews(m_library, root.get(), m_baseOffset, m_reader, semanticOffsetMaps);
-    refreshSemanticBranchPresentation(root.get(), semanticRootLabel());
+    resolveEntryPointRows(root.get());
     if (m_options.sortTopLevelRowsByOffset)
     {
         std::stable_sort(root->children.begin(), root->children.end(), [](const RowPtr &left, const RowPtr &right) {
@@ -823,32 +803,94 @@ std::vector<std::unique_ptr<StructureRow>> StructureRenderEngine::build()
     }
     if (profile)
     {
-        structureProfileLog(QStringLiteral("[StructureProfile] engine semantic rows=%1 maps=%2 ms=%3 total=%4")
+        structureProfileLog(QStringLiteral("[StructureProfile] engine raw complete rows=%1 ms=%2 total=%3")
                                 .arg(structureRowCount(root.get()))
+                                .arg(phaseTimer.restart())
+                                .arg(totalTimer.elapsed()));
+    }
+
+    rows.push_back(std::move(root));
+    return rows;
+}
+
+std::vector<std::unique_ptr<StructureRow>> StructureRenderEngine::buildSemanticOverlay(StructureRow *rawRoot)
+{
+    std::vector<RowPtr> semanticRoots;
+    if (!rawRoot || !m_rootType)
+        return semanticRoots;
+
+    const bool profile = structureProfileEnabled();
+    QElapsedTimer totalTimer;
+    QElapsedTimer phaseTimer;
+    if (profile)
+    {
+        totalTimer.start();
+        phaseTimer.start();
+    }
+
+    m_rootRow = rawRoot;
+    const bool skipDeclarativeSemantic =
+        (semanticCppOnly("Q22_PE_SEMANTIC_VIEW") && rootUsesSemanticSchema(m_rootType, "PE_VIEW"))
+        || (semanticCppOnly("Q22_ELF_SEMANTIC_VIEW") && rootUsesSemanticSchema(m_rootType, "ELF_VIEW"));
+    if (!skipDeclarativeSemantic)
+    {
+        collectSemanticEmitRequests(rawRoot);
+        appendSemanticRowRequests();
+        appendSemanticNodeRequests();
+        appendSemanticEmitRows(rawRoot);
+    }
+    if (profile)
+    {
+        structureProfileLog(QStringLiteral("[StructureProfile] declarative semantic rows=%1 row_requests=%2 byte_requests=%3 skipped=%4 ms=%5")
+                                .arg(structureRowCount(rawRoot))
+                                .arg(m_semanticRowRequests.size())
+                                .arg(m_semanticEmitRequests.size() + m_semanticNodeRequests.size())
+                                .arg(skipDeclarativeSemantic ? 1 : 0)
+                                .arg(phaseTimer.restart()));
+    }
+    std::vector<StructureOffsetMap> semanticOffsetMaps;
+    for (const DynamicContainer &container : m_dynamicContainers)
+    {
+        for (const OffsetMap &map : container.maps)
+            semanticOffsetMaps.push_back(StructureOffsetMap{ map.logicalStart, map.logicalSize, map.fileOffset });
+    }
+    runStructureSemanticViews(m_library, rawRoot, m_baseOffset, m_reader, semanticOffsetMaps);
+    refreshSemanticBranchPresentation(rawRoot, semanticRootLabel());
+    resolveEntryPointRows(rawRoot);
+    if (profile)
+    {
+        structureProfileLog(QStringLiteral("[StructureProfile] engine semantic rows=%1 maps=%2 ms=%3 total=%4")
+                                .arg(structureRowCount(rawRoot))
                                 .arg(semanticOffsetMaps.size())
                                 .arg(phaseTimer.restart())
                                 .arg(totalTimer.elapsed()));
     }
 
-    std::vector<RowPtr> semanticRoots;
-    for (auto it = root->children.begin(); it != root->children.end();)
+    for (auto it = rawRoot->children.begin(); it != rawRoot->children.end();)
     {
         if (shouldPromoteSemanticRootSibling(it->get()))
         {
             (*it)->parent = nullptr;
             semanticRoots.push_back(std::move(*it));
-            it = root->children.erase(it);
+            it = rawRoot->children.erase(it);
             continue;
         }
 
         ++it;
     }
 
-    rows.push_back(std::move(root));
-    for (RowPtr &semanticRoot : semanticRoots)
-        rows.push_back(std::move(semanticRoot));
     m_rootRow = nullptr;
-    return rows;
+    return semanticRoots;
+}
+
+bool StructureRenderEngine::hasSemanticOverlay() const
+{
+    return attachedSemanticSchema(m_rootType) != nullptr;
+}
+
+QString StructureRenderEngine::semanticRootLabelForDisplay() const
+{
+    return semanticRootLabel();
 }
 
 StructureRenderEngine::RowPtr StructureRenderEngine::makeRow(StructureRow *parent,

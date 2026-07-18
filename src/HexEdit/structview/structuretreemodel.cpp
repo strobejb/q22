@@ -308,6 +308,31 @@ void StructureTreeModel::setRows(std::vector<std::unique_ptr<StructureRow>> rows
     endResetModel();
 }
 
+void StructureTreeModel::replaceTopLevelRowsAfterFirst(std::vector<std::unique_ptr<StructureRow>> rows)
+{
+    const int existingCount = static_cast<int>(m_root->children.size());
+    if (existingCount > 1)
+    {
+        beginRemoveRows(QModelIndex(), 1, existingCount - 1);
+        m_root->children.erase(m_root->children.begin() + 1, m_root->children.end());
+        endRemoveRows();
+    }
+
+    if (rows.empty())
+        return;
+
+    const int first = static_cast<int>(m_root->children.size());
+    const int last = first + static_cast<int>(rows.size()) - 1;
+    beginInsertRows(QModelIndex(), first, last);
+    for (auto &row : rows)
+    {
+        row->parent = m_root.get();
+        applyDisplayOptionsToRow(row.get(), m_displayOptions, QModelIndex());
+        m_root->children.push_back(std::move(row));
+    }
+    endInsertRows();
+}
+
 void StructureTreeModel::setRowsForTests(std::vector<std::unique_ptr<StructureRow>> rows)
 {
     setRows(std::move(rows));

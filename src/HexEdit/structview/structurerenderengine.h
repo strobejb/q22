@@ -18,6 +18,10 @@ public:
                           const StructureDisplayOptions &options);
 
     std::vector<std::unique_ptr<StructureRow>> build();
+    std::vector<std::unique_ptr<StructureRow>> buildRaw();
+    std::vector<std::unique_ptr<StructureRow>> buildSemanticOverlay(StructureRow *rawRoot);
+    bool hasSemanticOverlay() const;
+    QString semanticRootLabelForDisplay() const;
 
     // Strata-language static analysis, not rendering: every select/
     // select/endian/offset/count/optional/extent tag expression in

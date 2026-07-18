@@ -137,6 +137,9 @@ public:
     void setStrataLibrary(StrataLibrary *library);
     void setTypeDecls(const QList<TypeDecl *> &typeDecls);
     void setRows(std::vector<std::unique_ptr<StructureRow>> rows);
+    // Replaces semantic top-level siblings while retaining the already-visible
+    // raw root and its expansion state.
+    void replaceTopLevelRowsAfterFirst(std::vector<std::unique_ptr<StructureRow>> rows);
     void setRowsForTests(std::vector<std::unique_ptr<StructureRow>> rows);
     void applyDisplayOptions(const StructureDisplayOptions &options);
     StructureRow *rowForIndex(const QModelIndex &index) const;

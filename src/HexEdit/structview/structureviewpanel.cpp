@@ -6,8 +6,9 @@
 #include "filestats/widgets.h"
 #include "structview/structuredefinitionmanager.h"
 #include "structview/structuregriditemdelegate.h"
+#include "structview/structurerenderengine.h"
+#include "structview/structurebranchicons.h"
 #include "structview/structuretreemodel.h"
-#include "structview/structurevaluebuilder.h"
 #include "settings/settings.h"
 #include "theme.h"
 
@@ -2633,6 +2634,9 @@ void StructureViewPanel::rebuildRows()
     if (!m_model || !m_hv || !m_definitions || !m_definitions->library())
         return;
 
+    const uint64_t renderGeneration = ++m_renderGeneration;
+    m_deferredSemanticEngine.reset();
+
     const bool profile = structureProfileEnabled();
     QElapsedTimer totalTimer;
     QElapsedTimer phaseTimer;
@@ -2662,16 +2666,29 @@ void StructureViewPanel::rebuildRows()
     const uint64_t baseOffset = hasExplicitOffset ? explicitOffset
         : (m_pinned ? m_pinnedOffset : m_hv->cursorOffset());
     m_offsetEdit->setText(QString::number(baseOffset, 16).toUpper().rightJustified(8, QLatin1Char('0')));
-    StructureValueBuilder builder;
     const StructureDisplayOptions options = displayOptions();
+    auto engine = std::make_shared<StructureRenderEngine>(
+        m_definitions->library(),
+        rootType,
+        baseOffset,
+        [this](uint64_t offset, uint8_t *buffer, size_t length) -> size_t {
+            return m_hv ? m_hv->getData(static_cast<size_w>(offset), buffer, length) : 0;
+        },
+        options);
+    const bool deferSemanticOverlay = engine->hasSemanticOverlay();
     m_rebuildingRows = true;
-    auto rows = builder.build(m_definitions->library(),
-                              rootType,
-                              baseOffset,
-                              [this](uint64_t offset, uint8_t *buffer, size_t length) -> size_t {
-                                  return m_hv ? m_hv->getData(static_cast<size_w>(offset), buffer, length) : 0;
-                              },
-                              options);
+    auto rows = deferSemanticOverlay ? engine->buildRaw() : engine->build();
+    if (deferSemanticOverlay && !rows.empty())
+    {
+        auto loadingRow = std::make_unique<StructureRow>();
+        loadingRow->kind = StructureRowKind::Semantic;
+        loadingRow->name = engine->semanticRootLabelForDisplay();
+        loadingRow->value = tr("Loading...");
+        loadingRow->branchIconPath = QStringLiteral(":/icons/actions/circle-repeat.svg");
+        loadingRow->branchOpenIconPath = loadingRow->branchIconPath;
+        loadingRow->branchEmptyIconPath = loadingRow->branchIconPath;
+        rows.push_back(std::move(loadingRow));
+    }
     const size_t rowCount = profile ? structureRowCount(rows) : 0;
     if (profile)
     {
@@ -2712,6 +2729,35 @@ void StructureViewPanel::rebuildRows()
         structureProfileLog(QStringLiteral("[StructureProfile] panel total ms=%1")
                                 .arg(totalTimer.elapsed()));
     }
+
+    if (!deferSemanticOverlay)
+        return;
+
+    m_deferredSemanticEngine = engine;
+    // Let the raw model paint before the semantic traversal walks the source
+    // rows (and any lazy rows it needs for semantic emit requests).
+    QTimer::singleShot(25, this, [this, renderGeneration, engine]() {
+        if (renderGeneration != m_renderGeneration || !m_model)
+            return;
+
+        const QModelIndex rawRootIndex = m_model->index(0, StructureTreeModel::NameColumn);
+        StructureRow *rawRoot = m_model->rowForIndex(rawRootIndex);
+        if (!rawRoot)
+            return;
+
+        m_rebuildingRows = true;
+        std::vector<std::unique_ptr<StructureRow>> semanticRows = engine->buildSemanticOverlay(rawRoot);
+        m_model->replaceTopLevelRowsAfterFirst(std::move(semanticRows));
+        m_rebuildingRows = false;
+        m_deferredSemanticEngine.reset();
+        applyPendingRestore();
+
+        if (m_hv)
+        {
+            uint64_t ep = 0;
+            m_hv->notifyStructureEntryPoint(findFirstCodeTarget(m_model, QModelIndex(), &ep), ep);
+        }
+    });
 }
 
 void StructureViewPanel::applyInitialExpansion()

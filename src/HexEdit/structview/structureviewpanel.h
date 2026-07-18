@@ -10,6 +10,8 @@
 #include <QPoint>
 #include <QWidget>
 
+#include <memory>
+
 class HexView;
 class QAction;
 class QDialog;
@@ -24,6 +26,7 @@ class SourceViewButton;
 class StructureContentFrame;
 class StructureDefinitionManager;
 class StructureTreeModel;
+class StructureRenderEngine;
 struct ExportedStructureType;
 struct StructureMagicSignature;
 struct StructureRow;
@@ -151,6 +154,8 @@ private:
     bool                        m_preserveRootComboSelectionOnce = false;
     bool                        m_updatingHexViewFromStructure = false;
     bool                        m_rebuildingRows = false;
+    uint64_t                    m_renderGeneration = 0;
+    std::shared_ptr<StructureRenderEngine> m_deferredSemanticEngine;
     uint64_t                    m_pinnedOffset = 0;
     QString                     m_pendingRestoreName;
     uint64_t                    m_pendingRestoreOffset = 0;
