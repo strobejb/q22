@@ -54,6 +54,21 @@ set_tests_properties(findpanel_tests PROPERTIES
         "PATH=path_list_prepend:${QT_RUNTIME_BIN_DIR}"
 )
 
+add_executable(disasm_tests
+    disasm_tests.cpp
+)
+
+target_link_libraries(disasm_tests PRIVATE
+    capstone
+    Qt${QT_VERSION_MAJOR}::Test
+)
+
+add_test(NAME disasm_tests COMMAND disasm_tests)
+set_tests_properties(disasm_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION
+        "PATH=path_list_prepend:${QT_RUNTIME_BIN_DIR}"
+)
+
 add_executable(causeway_tests
     causeway_tests.cpp
 )

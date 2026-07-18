@@ -63,6 +63,7 @@ static const ArchEntry kArchEntries[] = {
     { "ARM",         CS_ARCH_ARM,     CS_MODE_ARM   },
     { "ARM Thumb",   CS_ARCH_ARM,     CS_MODE_THUMB },
     { "AArch64",     CS_ARCH_ARM64,   (cs_mode)0    },
+    { "WebAssembly", CS_ARCH_WASM,    (cs_mode)0    },
 };
 static constexpr int kArchCount = (int)(sizeof(kArchEntries) / sizeof(kArchEntries[0]));
 
