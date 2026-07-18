@@ -70,6 +70,11 @@ UX:
 1. Qt framework 6.10+
 2. QtCreator
 
+run the following command to install the desktop icon in Gnome
+```
+/scripts/install-dev-desktop.sh
+```
+
 ### Steps to build:
 
 1. Open QtCreator (6.10 or above).

@@ -2913,8 +2913,20 @@ void StructureViewPanel::showOptionsContextMenu(int column, const QPoint &global
             codeRow = findCodeDescendant(findCodeDescendant, row);
         }
         addSeparatorIfNeeded();
-        QAction *openCode = menu.addAction(tr("Open in Disassembler"));
         const bool hasTarget = codeRow && m_hv;
+        QString openCodeText = tr("Open in Disassembler");
+        if (!hasTarget)
+        {
+            const auto hasSemanticField = [row](const QString &name) {
+                return row && std::any_of(row->children.cbegin(), row->children.cend(), [&name](const auto &child) {
+                    return child && child->kind == StructureRowKind::Semantic && child->name == name;
+                });
+            };
+            openCodeText = hasSemanticField(QStringLiteral("Module"))
+                ? tr("Open in Disassembler — imported (no local code)")
+                : tr("Open in Disassembler — no code at selection");
+        }
+        QAction *openCode = menu.addAction(openCodeText);
         openCode->setEnabled(hasTarget);
         if (hasTarget)
         {

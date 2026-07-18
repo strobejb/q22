@@ -649,6 +649,16 @@ TOKEN unwrapTagArg(ExprNode *arg, ExprNode **inner)
         *inner = arg;
     return TOK_NULL;
 }
+
+// offset(...) is parsed with CommaExpression(), including for its single
+// argument.  Consumers of a tagged offset need the contained expression, not
+// that one-element comma-list wrapper.
+ExprNode *unwrapSingleCommaArg(ExprNode *expr)
+{
+    if (expr && expr->type == EXPR_COMMA && !expr->right)
+        return expr->left;
+    return expr;
+}
 }
 
 struct StructureRenderEngine::ResolvedField
@@ -794,6 +804,7 @@ std::vector<std::unique_ptr<StructureRow>> StructureRenderEngine::buildRaw()
                                 .arg(phaseTimer.restart()));
     }
 
+    linkWasmFunctionCodeTargets(root.get());
     resolveEntryPointRows(root.get());
     if (m_options.sortTopLevelRowsByOffset)
     {
@@ -835,9 +846,12 @@ std::vector<std::unique_ptr<StructureRow>> StructureRenderEngine::buildSemanticO
     if (!skipDeclarativeSemantic)
     {
         collectSemanticEmitRequests(rawRoot);
+        for (const RowPtr &row : m_truncatedSemanticRows)
+            collectSemanticEmitRequests(row.get());
         appendSemanticRowRequests();
         appendSemanticNodeRequests();
         appendSemanticEmitRows(rawRoot);
+        linkWasmSemanticFunctionCodeTargets(rawRoot);
     }
     if (profile)
     {
@@ -1065,12 +1079,6 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
         uint64_t length = 0;
         uint64_t logicalIndex = 0;
         uint64_t renderedElements = 0;
-        const bool continuePastDisplayCap =
-            count <= INUMTYPE(kMaxArrayElements + 16)
-            || typeContainsTag(type->link, TOK_COUNTAS)
-            || typeContainsTag(type->link, TOK_SELECT)
-            || typeContainsTag(type->link, TOK_COUNT)
-            || typeContainsTag(type->link, TOK_MAXCOUNT);
         ExprNode *terminatorExpr = dimensionTagArg(typeDecl ? typeDecl->tagList : nullptr,
                                                    TOK_TERMINATEDBY,
                                                    dimension);
@@ -1086,6 +1094,7 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
         }
 
         TypeDecl *elementTypeDecl = nullptr;
+        bool elementTypeEmitsSemanticRows = false;
         for (Type *cursor = type->link; cursor; cursor = cursor->link)
         {
             if ((cursor->ty == typeTYPEDEF || cursor->ty == typeIDENTIFIER) && cursor->sym)
@@ -1093,6 +1102,12 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
                 TypeDecl *candidate = findTypeDecl(cursor->sym->name);
                 for (Tag *tag = candidate ? candidate->tagList : nullptr; tag; tag = tag->link)
                 {
+                    if (tag->tok == TOK_EMIT
+                        || tag->tok == TOK_EMITNODE
+                        || tag->tok == TOK_EMITROW)
+                    {
+                        elementTypeEmitsSemanticRows = true;
+                    }
                     if (tag->tok == TOK_DYNAMICARRAY
                         || tag->tok == TOK_DYNAMICCONTAINER
                         || tag->tok == TOK_OFFSETMAP
@@ -1109,6 +1124,21 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
             }
         }
 
+        const bool continuePastDisplayCap =
+            count <= INUMTYPE(kMaxArrayElements + 16)
+            || typeContainsTag(type->link, TOK_COUNTAS)
+            || typeContainsTag(type->link, TOK_SELECT)
+            || typeContainsTag(type->link, TOK_COUNT)
+            || typeContainsTag(type->link, TOK_MAXCOUNT)
+            // Semantic rows and code targets may be sourced from entries that
+            // are deliberately omitted from the raw-tree preview. Keep
+            // walking those declarations so their semantic tags still
+            // populate the summary and its disassembler target.
+            || typeContainsTag(type->link, TOK_EMIT)
+            || typeContainsTag(type->link, TOK_EMITNODE)
+            || typeContainsTag(type->link, TOK_EMITROW)
+            || elementTypeEmitsSemanticRows;
+
         while (logicalIndex < static_cast<uint64_t>(count)
                && (renderedElements < kMaxArrayElements || continuePastDisplayCap))
         {
@@ -1117,11 +1147,11 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
 
             const bool renderElement = renderedElements < kMaxArrayElements;
             auto row = makeRow(parent, type->link, elementTypeDecl ? elementTypeDecl : typeDecl, offset + length);
+            const QString indexLabel = QStringLiteral("[%1]").arg(logicalIndex);
+            row->nameTypePrefix = indexLabel;
             if (renderElement)
             {
-                const QString indexLabel = QStringLiteral("[%1]").arg(logicalIndex);
                 row->name = indexLabel;
-                row->nameTypePrefix = indexLabel;
             }
             row->suppressSemanticViews = true;
             if (renderElement)
@@ -1136,6 +1166,10 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
 
             const uint64_t elementLength = formatType(row.get(), type->link, typeDecl, offset + length);
             row->byteLength = elementLength;
+            // Array elements are formatted directly from their base type, so
+            // appendIdentifierRow() does not get a chance to apply a code()
+            // tag attached to the element declaration itself.
+            applyCodeTag(row.get(), row->typeDecl, row.get());
             collectNamedOffsetMaps(row.get());
             if (renderElement && row->value.isEmpty())
             {
@@ -1202,6 +1236,15 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
 
             if (renderElement)
                 appendPresentedRow(parent, std::move(row));
+            else if (row->typeDecl
+                     && (tagListContains(row->typeDecl->tagList, TOK_EMIT)
+                         || tagListContains(row->typeDecl->tagList, TOK_EMITNODE)
+                         || tagListContains(row->typeDecl->tagList, TOK_EMITROW)))
+            {
+                // Raw arrays are capped for responsiveness, but their
+                // omitted tagged entries still contribute to semantic views.
+                m_truncatedSemanticRows.push_back(std::move(row));
+            }
         }
         return length;
     }
@@ -6668,8 +6711,12 @@ bool StructureRenderEngine::codeTagArgs(ExprNode *expr, QString *architecture,
         ExprNode *inner = nullptr;
         switch (unwrapTagArg(args[i], &inner))
         {
-        case TOK_OFFSET: offsetExpr = inner; break;
-        case TOK_EXTENT: extentExpr = inner; break;
+        case TOK_OFFSET:
+            offsetExpr = unwrapSingleCommaArg(inner);
+            break;
+        case TOK_EXTENT:
+            extentExpr = inner;
+            break;
         default: return false;
         }
     }
@@ -6716,15 +6763,18 @@ void StructureRenderEngine::applyCodeTag(StructureRow *target, TypeDecl *typeDec
         codeRow = findFieldRow(scope, offsetExpr);
         if (codeRow)
             absoluteOffset = codeRow->absoluteOffset;
-        ResolvedField field;
-        if (!codeRow && resolveField(scope->type, offsetExpr, scope->absoluteOffset, &field))
-            absoluteOffset = field.offset;
         else
         {
-            INUMTYPE logicalOffset = 0;
-            if (!evaluate(scope, offsetExpr, &logicalOffset, scope->absoluteOffset))
-                return;
-            absoluteOffset = m_baseOffset + static_cast<uint64_t>(logicalOffset);
+            ResolvedField field;
+            if (resolveField(scope->type, offsetExpr, scope->absoluteOffset, &field))
+                absoluteOffset = field.offset;
+            else
+            {
+                INUMTYPE logicalOffset = 0;
+                if (!evaluate(scope, offsetExpr, &logicalOffset, scope->absoluteOffset))
+                    return;
+                absoluteOffset = m_baseOffset + static_cast<uint64_t>(logicalOffset);
+            }
         }
     }
 
@@ -6767,6 +6817,106 @@ void StructureRenderEngine::applyCodeTag(StructureRow *target, TypeDecl *typeDec
             }
         };
         inheritCodeTarget(inheritCodeTarget, target);
+    }
+}
+
+void StructureRenderEngine::linkWasmFunctionCodeTargets(StructureRow *root)
+{
+    if (!root)
+        return;
+
+    TypeDecl *definedFunctionDecl = findTypeDecl("WASM_DEFINED_FUNCTION");
+    TypeDecl *codeEntryDecl = findTypeDecl("WASM_CODE_ENTRY");
+    if (!definedFunctionDecl || !codeEntryDecl)
+        return;
+
+    std::vector<StructureRow *> definedFunctions;
+    std::vector<StructureRow *> codeEntries;
+    const auto collect = [&](const auto &self, StructureRow *row) -> void {
+        if (!row)
+            return;
+
+        if (row->typeDecl == definedFunctionDecl)
+            definedFunctions.push_back(row);
+        if (row->typeDecl == codeEntryDecl
+            && row->hasCodeTarget
+            && row->codeArchitecture == QStringLiteral("wasm"))
+        {
+            codeEntries.push_back(row);
+        }
+
+        for (const RowPtr &child : row->children)
+            self(self, child.get());
+    };
+    collect(collect, root);
+
+    const auto copyTarget = [](const auto &self, StructureRow *target, const StructureRow *source) -> void {
+        target->hasCodeTarget = true;
+        target->codeArchitecture = source->codeArchitecture;
+        target->codeTargetOffset = source->codeTargetOffset;
+        target->codeLogicalOffset = source->codeLogicalOffset;
+        target->codeByteLength = source->codeByteLength;
+        for (const RowPtr &child : target->children)
+            self(self, child.get(), source);
+    };
+
+    const size_t count = std::min(definedFunctions.size(), codeEntries.size());
+    for (size_t index = 0; index < count; ++index)
+        copyTarget(copyTarget, definedFunctions[index], codeEntries[index]);
+}
+
+void StructureRenderEngine::linkWasmSemanticFunctionCodeTargets(StructureRow *root)
+{
+    if (!root)
+        return;
+
+    TypeDecl *codeEntryDecl = findTypeDecl("WASM_CODE_ENTRY");
+    if (!codeEntryDecl)
+        return;
+
+    std::vector<StructureRow *> codeEntries;
+    StructureRow *functions = nullptr;
+    const auto collect = [&](const auto &self, StructureRow *row) -> void {
+        if (!row)
+            return;
+
+        if (row->typeDecl == codeEntryDecl
+            && row->hasCodeTarget
+            && row->codeArchitecture == QStringLiteral("wasm"))
+        {
+            codeEntries.push_back(row);
+        }
+        if (row->kind == StructureRowKind::Semantic && row->name == QStringLiteral("Functions"))
+            functions = row;
+
+        for (const RowPtr &child : row->children)
+            self(self, child.get());
+    };
+    collect(collect, root);
+    if (!functions || codeEntries.empty())
+        return;
+
+    const auto hasCodeSize = [](const StructureRow *row) {
+        return std::any_of(row->children.cbegin(), row->children.cend(), [](const RowPtr &child) {
+            return child && child->kind == StructureRowKind::Semantic && child->name == QStringLiteral("CodeSize");
+        });
+    };
+    const auto copyTarget = [](const auto &self, StructureRow *target, const StructureRow *source) -> void {
+        target->hasCodeTarget = true;
+        target->codeArchitecture = source->codeArchitecture;
+        target->codeTargetOffset = source->codeTargetOffset;
+        target->codeLogicalOffset = source->codeLogicalOffset;
+        target->codeByteLength = source->codeByteLength;
+        for (const RowPtr &child : target->children)
+            self(self, child.get(), source);
+    };
+
+    size_t codeIndex = 0;
+    for (const RowPtr &child : functions->children)
+    {
+        if (!child || !hasCodeSize(child.get()) || codeIndex >= codeEntries.size())
+            continue;
+        copyTarget(copyTarget, child.get(), codeEntries[codeIndex++]);
     }
 }
 

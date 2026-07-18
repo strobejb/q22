@@ -312,6 +312,8 @@ private:
     bool codeTagArgs(ExprNode *expr, QString *architecture,
                      ExprNode **offset, ExprNode **extent) const;
     void applyCodeTag(StructureRow *target, TypeDecl *typeDecl, StructureRow *scope);
+    void linkWasmFunctionCodeTargets(StructureRow *root);
+    void linkWasmSemanticFunctionCodeTargets(StructureRow *root);
     bool emitDestinationArgs(ExprNode *expr,
                              ExprNode **path,
                              ExprNode **key,
@@ -425,6 +427,7 @@ private:
     std::vector<SemanticContainer> m_semanticContainers;
     std::vector<SemanticEntity> m_semanticEntities;
     std::vector<RowPtr> m_semanticSourceRows;
+    std::vector<RowPtr> m_truncatedSemanticRows;
 };
 
 #endif // STRUCTVIEW_STRUCTURERENDERENGINE_H

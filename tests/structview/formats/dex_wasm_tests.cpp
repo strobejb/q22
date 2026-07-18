@@ -8,6 +8,7 @@ private slots:
     void builderRendersDexHeaderAndTables();
     void builderAddsDexSemanticSummaryPastArrayRenderCap();
     void builderRendersWasmHeaderAndSections();
+    void builderKeepsWasmCodeTargetsPastRawArrayCap();
     void builderRendersWasmStartTagsAndElements();
 };
 
@@ -467,6 +468,9 @@ void StructViewDexWasmTests::builderRendersWasmHeaderAndSections()
     StructureRow *instructions = findChildNamed(body, QStringLiteral("byte instructions[]"));
     QVERIFY2(instructions, qPrintable(childNames(body)));
     QCOMPARE(instructions->value, QStringLiteral("{ 65, 42, 11 }"));
+    QVERIFY(typeIndices->children[0]->hasCodeTarget);
+    QCOMPARE(typeIndices->children[0]->codeArchitecture, QStringLiteral("wasm"));
+    QCOMPARE(typeIndices->children[0]->codeTargetOffset, functions->children[0]->codeTargetOffset);
 
     StructureRow *dataSection = sections->children[7].get();
     QCOMPARE(dataSection->name, QStringLiteral("[7]WASM_SECTION_DATA"));
@@ -558,6 +562,44 @@ void StructViewDexWasmTests::builderRendersWasmHeaderAndSections()
     QCOMPARE(summaryDefinedFunction->codeByteLength, uint64_t(3));
     QVERIFY(functions->children[0]->hasCodeTarget);
     QCOMPARE(functions->children[0]->codeTargetOffset, summaryDefinedFunction->codeTargetOffset);
+}
+
+void StructViewDexWasmTests::builderKeepsWasmCodeTargetsPastRawArrayCap()
+{
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("wasm.strata")), "wasm.strata failed to parse");
+    TypeDecl *wasmRoot = exportedNamed(&library, QStringLiteral("WASM"));
+    QVERIFY(wasmRoot);
+
+    constexpr int kFunctionCount = 117;
+    QByteArray wasm = QByteArray::fromHex("0061736d01000000");
+
+    // One () -> () type.
+    wasm.append(QByteArray::fromHex("010401600000"));
+    // Every defined function has type index zero.
+    wasm.append(char(0x03));
+    wasm.append(char(0x76)); // 118-byte payload: count + 117 type indices.
+    wasm.append(char(kFunctionCount));
+    wasm.append(QByteArray(kFunctionCount, '\0'));
+    // Every body is: local-decl-count 0, nop, end.
+    wasm.append(char(0x0a));
+    wasm.append(QByteArray::fromHex("d503")); // 469-byte payload.
+    wasm.append(char(kFunctionCount));
+    for (int i = 0; i < kFunctionCount; ++i)
+        wasm.append(QByteArray::fromHex("0300010b"));
+
+    auto rows = buildRows(&library, wasmRoot, wasm);
+    StructureRow *summary = findTopLevelNamed(rows, QStringLiteral("WASM Summary"));
+    QVERIFY(summary);
+    StructureRow *functions = findChildNamed(summary, QStringLiteral("Functions"));
+    QVERIFY(functions);
+    QCOMPARE(functions->children.size(), size_t(kFunctionCount));
+
+    StructureRow *lastFunction = functions->children.back().get();
+    QCOMPARE(lastFunction->name, QStringLiteral("defined function 116"));
+    QVERIFY(lastFunction->hasCodeTarget);
+    QCOMPARE(lastFunction->codeArchitecture, QStringLiteral("wasm"));
+    QCOMPARE(lastFunction->codeByteLength, uint64_t(2));
 }
 
 void StructViewDexWasmTests::builderRendersWasmStartTagsAndElements()
