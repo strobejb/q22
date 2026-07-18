@@ -1,0 +1,337 @@
+#include "../structview_testsupport.h"
+
+class StructViewSemanticRendererTests : public QObject
+{
+    Q_OBJECT
+
+private slots:
+    void builderEmitsSemanticRowsUnderAttachedSchema();
+    void builderEmitsSemanticRowsThroughNamedOffsetSpaces();
+    void builderEmitsAndMergesSemanticNodes();
+    void builderRejectsUnterminatedCstrSemanticNames();
+    void builderEmitsIntoMappedSemanticContainers();
+    void definitionManagerFlagsUnknownSemanticDestinations();
+    void definitionManagerFlagsUnknownSemanticNodeFields();
+    void semanticRegistryRunsKnownViewsAndIgnoresUnknownViews();
+};
+
+void StructViewSemanticRendererTests::builderEmitsSemanticRowsUnderAttachedSchema()
+{
+    // Scenario: a raw directory row points at byte payloads elsewhere in the
+    // file and declares a semantic destination schema.
+    // Expected: the raw tree is unchanged, while a top-level Semantic/Payloads
+    // branch contains one labeled byte-backed row per emitting raw row.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef byte PayloadByte;\n"
+                        "typedef struct _Entry {"
+                        "  dword id;"
+                        "  [emit(dest(Payloads), label(id), type(PayloadByte), offset(payloadOffset), count(payloadSize), optional(payloadSize != 0))] dword payloadOffset;"
+                        "  dword payloadSize;"
+                        "} Entry;\n"
+                        "[semantic] typedef struct _RootView { PayloadByte Payloads[]; } RootView;\n"
+                        "[export, semantic(RootView)]\n"
+                        "typedef struct _Root { dword count; [count(count)] Entry entries[]; } Root;\n"));
+
+    QByteArray bytes(0x40, '\0');
+    writeLe32(&bytes, 0, 2);
+    writeLe32(&bytes, 4, 17);
+    writeLe32(&bytes, 8, 0x30);
+    writeLe32(&bytes, 12, 3);
+    writeLe32(&bytes, 16, 23);
+    writeLe32(&bytes, 20, 0x34);
+    writeLe32(&bytes, 24, 0);
+    bytes[0x30] = char(0xaa);
+    bytes[0x31] = char(0xbb);
+    bytes[0x32] = char(0xcc);
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    StructureRow *rootRow = findTopLevelNamed(rows, QStringLiteral("Root"));
+    QVERIFY(rootRow);
+
+    StructureRow *entries = findChildNamed(rootRow, QStringLiteral("Entry entries[]"));
+    QVERIFY(entries);
+    QCOMPARE(entries->children.size(), size_t(2));
+    QVERIFY(!findChildNamed(entries->children[0].get(), QStringLiteral("17")));
+
+    StructureRow *semantic = findTopLevelNamed(rows, QStringLiteral("Semantic"));
+    QVERIFY(semantic);
+    StructureRow *payloads = findChildNamed(semantic, QStringLiteral("Payloads"));
+    QVERIFY(payloads);
+    QCOMPARE(payloads->children.size(), size_t(1));
+
+    StructureRow *payload = payloads->children[0].get();
+    QCOMPARE(payload->name, QStringLiteral("17"));
+    QCOMPARE(payload->offset, QStringLiteral("00000030"));
+    QCOMPARE(payload->byteLength, uint64_t(3));
+    QCOMPARE(static_cast<int>(payload->kind), static_cast<int>(StructureRowKind::Semantic));
+    QCOMPARE(payload->children.size(), size_t(3));
+    QCOMPARE(payload->children[0]->value, QStringLiteral("170"));
+    QCOMPARE(payload->children[2]->value, QStringLiteral("204"));
+}
+
+void StructViewSemanticRendererTests::builderEmitsSemanticRowsThroughNamedOffsetSpaces()
+{
+    // Scenario: semantic emit uses offset("space", expr) to target a named
+    // address space rather than a direct file offset.
+    // Expected: the emitted semantic row points at the mapped file bytes and
+    // terminator/max_count behavior matches dynamic arrays.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef byte PayloadByte;\n"
+                        "typedef struct _Entry {"
+                        "  dword logical;"
+                        "  [emit(dest(Strings), label(\"name\"), type(PayloadByte), offset(\"strings\", logical), max_count(8), terminated_by(0), terminator(\"hidden\"))] byte marker;"
+                        "} Entry;\n"
+                        "[semantic] typedef struct _RootView { PayloadByte Strings[]; } RootView;\n"
+                        "[export, semantic(RootView), offset_map(\"strings\", stringBase)]\n"
+                        "typedef struct _Root { dword stringBase; Entry entry; } Root;\n"));
+
+    QByteArray bytes(0x40, '\0');
+    writeLe32(&bytes, 0, 0x20);
+    writeLe32(&bytes, 4, 3);
+    bytes[0x23] = char(0x41);
+    bytes[0x24] = char(0x42);
+    bytes[0x25] = char(0);
+    bytes[0x26] = char(0x43);
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QVERIFY(findTopLevelNamed(rows, QStringLiteral("Root")));
+
+    StructureRow *semantic = findTopLevelNamed(rows, QStringLiteral("Semantic"));
+    QVERIFY(semantic);
+    StructureRow *strings = findChildNamed(semantic, QStringLiteral("Strings"));
+    QVERIFY(strings);
+    QCOMPARE(strings->children.size(), size_t(1));
+
+    StructureRow *name = strings->children[0].get();
+    QCOMPARE(name->name, QStringLiteral("name"));
+    QCOMPARE(name->offset, QStringLiteral("00000023"));
+    QCOMPARE(name->children.size(), size_t(2));
+    QCOMPARE(name->children[0]->value, QStringLiteral("65"));
+    QCOMPARE(name->children[1]->value, QStringLiteral("66"));
+}
+
+void StructViewSemanticRendererTests::builderEmitsAndMergesSemanticNodes()
+{
+    // Scenario: multiple raw rows emit lightweight semantic facts to the same
+    // destination/key.
+    // Expected: the renderer creates one semantic node, uses string helpers for
+    // names/attributes, and updates attrs on repeated emits instead of adding a
+    // duplicate node or rendering the raw source subtree again.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef struct _Entry {"
+                        "  byte key;"
+                        "  byte size;"
+                        "  [emit_node(dest(Items, key(key)), field(Key, key), field(Size, size))] byte marker;"
+                        "  [emit_node(dest(Items, key(key)), field(Label, fmt(\"entry {0}\", key)))] byte marker2;"
+                        "} Entry;\n"
+                        "[semantic] typedef struct _RootView {\n"
+                        "  [name(concat(\"item \", Key))]\n"
+                        "  struct { byte Key; byte Size; char Label[]; } Items[];\n"
+                        "} RootView;\n"
+                        "[export, semantic(RootView)] typedef struct _Root { Entry entry; } Root;\n"));
+
+    QByteArray bytes;
+    bytes.append(char(7));
+    bytes.append(char(12));
+    bytes.append(char(0xaa));
+    bytes.append(char(0xbb));
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QVERIFY(findTopLevelNamed(rows, QStringLiteral("Root")));
+
+    StructureRow *semantic = findTopLevelNamed(rows, QStringLiteral("Semantic"));
+    QVERIFY(semantic);
+    StructureRow *items = findChildNamed(semantic, QStringLiteral("Items"));
+    QVERIFY(items);
+    QCOMPARE(items->children.size(), size_t(1));
+
+    StructureRow *item = findChildNamed(items, QStringLiteral("item 7"));
+    QVERIFY2(item, qPrintable(childNames(items)));
+    QCOMPARE(item->offset, QStringLiteral("00000002"));
+    QCOMPARE(item->children.size(), size_t(3));
+    QCOMPARE(item->children[0]->name, QStringLiteral("Key"));
+    QCOMPARE(item->children[0]->value, QStringLiteral("7"));
+    QCOMPARE(item->children[1]->name, QStringLiteral("Size"));
+    QCOMPARE(item->children[1]->value, QStringLiteral("12"));
+    QCOMPARE(item->children[2]->name, QStringLiteral("Label"));
+    QCOMPARE(item->children[2]->value, QStringLiteral("entry 7"));
+    QVERIFY(!findDescendantNamed(item, QStringLiteral("byte marker")));
+}
+
+void StructViewSemanticRendererTests::builderRejectsUnterminatedCstrSemanticNames()
+{
+    // Scenario: cstr(...) is used as a semantic row key/name but the target
+    // bytes are not NUL-terminated within the requested cap.
+    // Expected: the semantic row is suppressed instead of showing garbage text.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef byte PayloadByte;\n"
+                        "typedef struct _Entry {"
+                        "  dword good;"
+                        "  dword bad;"
+                        "  [emit_row(dest(Strings, key(cstr(good, 8)), name(cstr(good, 8))), offset(good))] byte goodMarker;"
+                        "  [emit_row(dest(Strings, key(cstr(bad, 4)), name(cstr(bad, 4))), offset(bad))] byte badMarker;"
+                        "} Entry;\n"
+                        "[semantic] typedef struct _RootView { PayloadByte Strings[]; } RootView;\n"
+                        "[export, semantic(RootView)] typedef struct _Root { Entry entry; } Root;\n"));
+
+    QByteArray bytes(0x40, '\0');
+    writeLe32(&bytes, 0, 0x20);
+    writeLe32(&bytes, 4, 0x30);
+    writeAscii(&bytes, 0x20, "OK");
+    bytes[0x30] = 'B';
+    bytes[0x31] = 'A';
+    bytes[0x32] = 'D';
+    bytes[0x33] = '!';
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QVERIFY(findTopLevelNamed(rows, QStringLiteral("Root")));
+
+    StructureRow *semantic = findTopLevelNamed(rows, QStringLiteral("Semantic"));
+    QVERIFY(semantic);
+    StructureRow *strings = findChildNamed(semantic, QStringLiteral("Strings"));
+    QVERIFY(strings);
+    QCOMPARE(strings->children.size(), size_t(1));
+    QCOMPARE(strings->children[0]->name, QStringLiteral("OK"));
+}
+
+void StructViewSemanticRendererTests::builderEmitsIntoMappedSemanticContainers()
+{
+    // Scenario: a PE-like format emits section payloads as semantic containers
+    // with an RVA map, then emits a data-directory table by RVA.
+    // Expected: the table is attached under the semantic section whose map owns
+    // the target RVA, not under a flat root-level destination.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef byte PayloadByte;\n"
+                        "enum DirKind { ExportDir = 0, ImportDir = 1 };\n"
+                        "typedef struct _ImportDesc { dword thunk; } ImportDesc;\n"
+                        "[semantic] typedef struct _SectionView { ImportDesc Imports[]; PayloadByte Bytes[]; } SectionView;\n"
+                        "[semantic(\"Image\")] typedef struct _RootView { [tree(\"flatten\")] SectionView Sections[]; } RootView;\n"
+                        "typedef struct _Dir { dword va; dword size; } Dir;\n"
+                        "[offset_map(va, size, raw),\n"
+                        " emit_row(dest(Sections, key(Name), name(Name)), offset(raw), map(\"rva\", va, size, raw)),\n"
+                        " emit(dest(Sections.Bytes), type(PayloadByte), offset(\"rva\", va), count(size))]\n"
+                        "typedef struct _Section { char Name[8]; dword va; dword size; dword raw; } Section;\n"
+                        "[export, semantic(RootView)]\n"
+                        "struct Root {\n"
+                        "  [name(DirKind), emit(case(ImportDir), dest(Sections.Imports), label(\"Import Descriptors\"), type(ImportDesc), offset(\"rva\", va), max_count(size / sizeof(ImportDesc)), terminated_by(thunk == 0), terminator(\"hidden\"))] Dir dirs[2];\n"
+                        "  [count(2)] Section sections[];\n"
+                        "} root;\n"));
+
+    QByteArray bytes(0xa0, '\0');
+    writeLe32(&bytes, 8, 0x1200);  // import directory RVA
+    writeLe32(&bytes, 12, 8);      // one descriptor plus hidden terminator
+    writeAscii(&bytes, 16, ".text");
+    writeLe32(&bytes, 24, 0x1000);
+    writeLe32(&bytes, 28, 0x20);
+    writeLe32(&bytes, 32, 0x40);
+    writeAscii(&bytes, 36, ".idata");
+    writeLe32(&bytes, 44, 0x1200);
+    writeLe32(&bytes, 48, 0x20);
+    writeLe32(&bytes, 52, 0x80);
+    writeLe32(&bytes, 0x80, 0x12345678);
+    writeLe32(&bytes, 0x84, 0);
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QVERIFY(findTopLevelNamed(rows, QStringLiteral("struct Root root")));
+
+    StructureRow *image = findTopLevelNamed(rows, QStringLiteral("Image"));
+    QVERIFY2(image, "Image top-level row not found");
+    QVERIFY(!findChildNamed(image, QStringLiteral("Sections")));
+    QCOMPARE(image->children.size(), size_t(2));
+    QCOMPARE(image->children[0]->name, QStringLiteral(".text"));
+    QCOMPARE(image->children[0]->offset, QStringLiteral("00000040"));
+    QCOMPARE(image->children[1]->name, QStringLiteral(".idata"));
+    QCOMPARE(image->children[1]->offset, QStringLiteral("00000080"));
+
+    QCOMPARE(image->children[1]->children.size(), size_t(2));
+    QCOMPARE(image->children[1]->children[0]->name, QStringLiteral("Imports"));
+    QCOMPARE(image->children[1]->children[1]->name, QStringLiteral("Bytes"));
+    StructureRow *bytesGroup = findChildNamed(image->children[1].get(), QStringLiteral("Bytes"));
+    QVERIFY2(bytesGroup, qPrintable(childNames(image->children[1].get())));
+    QCOMPARE(bytesGroup->children.size(), size_t(1));
+    QCOMPARE(bytesGroup->children[0]->children.size(), size_t(32));
+
+    StructureRow *importsGroup = findChildNamed(image->children[1].get(), QStringLiteral("Imports"));
+    QVERIFY2(importsGroup, qPrintable(childNames(image->children[1].get())));
+    StructureRow *imports = findChildNamed(importsGroup, QStringLiteral("Import Descriptors"));
+    QVERIFY2(imports, qPrintable(childNames(importsGroup)));
+    QCOMPARE(imports->offset, QStringLiteral("00000080"));
+    QCOMPARE(imports->children.size(), size_t(1));
+    StructureRow *thunk = findChildNamed(imports->children[0].get(), QStringLiteral("dword thunk"));
+    QVERIFY(thunk);
+    QCOMPARE(thunk->value, QStringLiteral("305419896"));
+}
+
+void StructViewSemanticRendererTests::definitionManagerFlagsUnknownSemanticDestinations()
+{
+    // Scenario: an emit destination is misspelled relative to the root's
+    // attached semantic schema.
+    // Expected: the static definition validator reports the bad destination.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef byte PayloadByte;\n"
+                        "typedef struct _Entry { [emit(dest(Missing), type(PayloadByte), offset(0), count(1))] byte marker; } Entry;\n"
+                        "[semantic] typedef struct _RootView { PayloadByte Payloads[]; } RootView;\n"
+                        "[export, semantic(RootView)] struct Root { Entry entry; } root;\n"));
+
+    const QStringList errors = StructureRenderEngine::validateStaticFieldReferences(&library);
+    QVERIFY(errors.join(QLatin1Char('\n')).contains(QStringLiteral("emit(dest(Missing))")));
+}
+
+void StructViewSemanticRendererTests::definitionManagerFlagsUnknownSemanticNodeFields()
+{
+    // Scenario: emit_node(field(...)) names a field that is not declared in the
+    // destination element schema.
+    // Expected: the static definition validator reports the bad semantic field.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef struct _Entry { [emit_node(dest(Items), field(Missing, marker))] byte marker; } Entry;\n"
+                        "[semantic] typedef struct _RootView { struct { byte Name; } Items[]; } RootView;\n"
+                        "[export, semantic(RootView)] struct Root { Entry entry; } root;\n"));
+
+    const QStringList errors = StructureRenderEngine::validateStaticFieldReferences(&library);
+    QVERIFY2(errors.join(QLatin1Char('\n')).contains(QStringLiteral("field(Missing")),
+             qPrintable(errors.join(QLatin1Char('\n'))));
+}
+
+void StructViewSemanticRendererTests::semanticRegistryRunsKnownViewsAndIgnoresUnknownViews()
+{
+    // Scenario: semantic rendering is an optional interpreter layer selected by
+    // string ids in Strata definitions.
+    // Expected: known ids can append semantic rows through the shared context,
+    // while unknown ids are ignored without affecting the raw row tree.
+    // Regression guard: new semantic views must be pluggable and safe, not a
+    // fragile type-name switch buried inside StructureRenderEngine.
+    StructureSemanticViewRegistry &registry = StructureSemanticViewRegistry::instance();
+    registry.registerInterpreter(QStringLiteral("test.semantic"), [](StructureSemanticContext &context) {
+        context.appendSemanticRow(context.currentRow(), QStringLiteral("semantic row"), QStringLiteral("value"));
+    });
+
+    StructureRow root;
+    root.name = QStringLiteral("root");
+    std::vector<StructureOffsetMap> maps;
+    StructureSemanticContext context(nullptr, &root, &root, 0, {}, maps);
+
+    QVERIFY(!registry.run(QStringLiteral("missing.semantic"), context));
+    QCOMPARE(root.children.size(), size_t(0));
+
+    QVERIFY(registry.run(QStringLiteral("test.semantic"), context));
+    QCOMPARE(root.children.size(), size_t(1));
+    QCOMPARE(static_cast<int>(root.children[0]->kind), static_cast<int>(StructureRowKind::Semantic));
+    QCOMPARE(root.children[0]->name, QStringLiteral("semantic row"));
+}
+
+REGISTER_STRUCTVIEW_TEST(StructViewSemanticRendererTests)
+#include "semantic_renderer_tests.moc"

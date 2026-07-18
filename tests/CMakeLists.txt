@@ -76,8 +76,26 @@ set_tests_properties(causeway_tests PROPERTIES
         "PATH=path_list_prepend:${QT_RUNTIME_BIN_DIR}"
 )
 
-add_executable(structview_tests
+set(STRUCTVIEW_TEST_SOURCES
     structview_tests.cpp
+    structview/structview_testsupport.h
+    structview/formats/archive_tests.cpp
+    structview/formats/dex_wasm_tests.cpp
+    structview/formats/disk_image_tests.cpp
+    structview/formats/dtb_tests.cpp
+    structview/formats/elf_tests.cpp
+    structview/formats/font_tests.cpp
+    structview/formats/image_tests.cpp
+    structview/formats/java_class_tests.cpp
+    structview/formats/macho_tests.cpp
+    structview/formats/media_tests.cpp
+    structview/formats/pe_tests.cpp
+    structview/formats/root_format_tests.cpp
+    structview/manager/definition_manager_tests.cpp
+    structview/model/tree_model_tests.cpp
+    structview/renderer/dynamic_placement_tests.cpp
+    structview/renderer/raw_renderer_tests.cpp
+    structview/renderer/semantic_renderer_tests.cpp
     ../src/HexEdit/settings/appconfig.cpp
     ../src/HexEdit/structview/dexsemanticview.cpp
     ../src/HexEdit/structview/elfsemanticview.cpp
@@ -90,9 +108,36 @@ add_executable(structview_tests
     ../src/HexEdit/structview/structurevaluebuilder.cpp
 )
 
+add_executable(structview_tests
+    ${STRUCTVIEW_TEST_SOURCES}
+)
+
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" PREFIX "structview_tests" FILES
+    structview_tests.cpp
+    structview/structview_testsupport.h
+    structview/formats/archive_tests.cpp
+    structview/formats/dex_wasm_tests.cpp
+    structview/formats/disk_image_tests.cpp
+    structview/formats/dtb_tests.cpp
+    structview/formats/elf_tests.cpp
+    structview/formats/font_tests.cpp
+    structview/formats/image_tests.cpp
+    structview/formats/java_class_tests.cpp
+    structview/formats/macho_tests.cpp
+    structview/formats/media_tests.cpp
+    structview/formats/pe_tests.cpp
+    structview/formats/root_format_tests.cpp
+    structview/manager/definition_manager_tests.cpp
+    structview/model/tree_model_tests.cpp
+    structview/renderer/dynamic_placement_tests.cpp
+    structview/renderer/raw_renderer_tests.cpp
+    structview/renderer/semantic_renderer_tests.cpp
+)
+
 target_include_directories(structview_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/src
     ${PROJECT_SOURCE_DIR}/src/HexEdit
+    ${PROJECT_SOURCE_DIR}/tests
 )
 
 target_link_libraries(structview_tests PRIVATE

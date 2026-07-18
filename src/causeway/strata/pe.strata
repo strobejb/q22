@@ -280,7 +280,7 @@ typedef struct _IMAGE_NT_HEADERS {
 } IMAGE_NT_HEADERS, *PIMAGE_NT_HEADERS;
 
 [
-    emit_row(dest(Sections, key(Name), name(Name)),
+    emit_row(dest(Sections, key(Name), name(concat("SECTION ", Name))),
              offset(PointerToRawData),
              optional(SizeOfRawData != 0),
              map("rva", VirtualAddress, SizeOfRawData, PointerToRawData)),

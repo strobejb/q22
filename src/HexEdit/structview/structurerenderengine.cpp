@@ -409,6 +409,17 @@ void refreshSemanticBranchPresentation(StructureRow *row, const QString &rootLab
                         QString::fromLatin1(StructureBranchIcons::kGrayStructure));
 }
 
+bool shouldPromoteSemanticRootSibling(const StructureRow *row)
+{
+    if (!row || row->kind != StructureRowKind::Semantic)
+        return false;
+
+    if (row->branchIconPath == QString::fromLatin1(StructureBranchIcons::kBlueRoot))
+        return true;
+
+    return row->name.endsWith(QStringLiteral(" Summary"));
+}
+
 void applySemanticBranchIcons(StructureRow *row, const QStringList &path, bool isArray = false)
 {
     if (!row)
@@ -764,7 +775,23 @@ std::vector<std::unique_ptr<StructureRow>> StructureRenderEngine::build()
                                 .arg(totalTimer.elapsed()));
     }
 
+    std::vector<RowPtr> semanticRoots;
+    for (auto it = root->children.begin(); it != root->children.end();)
+    {
+        if (shouldPromoteSemanticRootSibling(it->get()))
+        {
+            (*it)->parent = nullptr;
+            semanticRoots.push_back(std::move(*it));
+            it = root->children.erase(it);
+            continue;
+        }
+
+        ++it;
+    }
+
     rows.push_back(std::move(root));
+    for (RowPtr &semanticRoot : semanticRoots)
+        rows.push_back(std::move(semanticRoot));
     m_rootRow = nullptr;
     return rows;
 }

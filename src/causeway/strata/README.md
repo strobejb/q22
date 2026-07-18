@@ -460,7 +460,8 @@ raw file layout and may contain unsized destination arrays. Inline structs neste
 inside a semantic schema inherit semantic-schema behavior, so the semantic root
 can describe the whole summary tree structurally instead of forcing everything
 into a flat list of tags. Use `[semantic("Display Name")]` to choose the root
-branch label; unlabeled schemas fall back to `Semantic`.
+branch label; unlabeled schemas fall back to `Semantic`. The rendered semantic
+root is a top-level sibling of the raw root, not a child inside the raw tree.
 `[semantic(ViewType)]` on a raw root attaches that schema. The raw definition
 still comes first and stays byte-honest; the semantic root then defines the
 shape of the summary layer, and raw fields use `emit_node(...)`,
