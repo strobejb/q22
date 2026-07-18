@@ -17,7 +17,7 @@ View online: [Strata Language Reference](https://github.com/strobejb/q22/blob/ma
 | Types | [`struct`](#structs) · [`union`](#unions) · [`enum`](#enums) · [`typedef`](#type-declarations) |
 | Tags | [`tagset`](#tagsets) · [`tags`](#tagsets) |
 | Display | [`enum(N)`](#display) · [`bitflag(N)`](#display) · [`format("...")`](#display) · [`name`](#display) · [`string`](#display) |
-| Layout | [`offset`](#layout) · [`align`](#layout) · [`pad_to`](#layout) · [`endian`](#byte-order) · [`entrypoint`](#layout) · [`extent`](#layout) · [`optional`](#layout) |
+| Layout | [`offset`](#layout) · [`align`](#layout) · [`pad_to`](#layout) · [`endian`](#byte-order) · [`entrypoint`](#layout) · [`code`](#layout) · [`extent`](#layout) · [`optional`](#layout) |
 | Arrays | [`count`](#arrays) · [`max_count`](#arrays) · [`count_as`](#arrays) · [`terminated_by`](#arrays) · [`terminator`](#arrays) |
 | Unions | [`select`](#discriminated-unions) · [`case`](#discriminated-unions) |
 | Semantic views | [`semantic`](#semantic-and-emit) · [`emit`](#semantic-and-emit) · [`emit_node`](#semantic-and-emit) · [`emit_row`](#semantic-and-emit) · [`append`](#positional-semantic-collection-addressing) · [`item`](#positional-semantic-collection-addressing) · [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) · [`view`](#view) |
@@ -369,6 +369,7 @@ Layout tag affect the alignment and positioning of fields:
 | `pad_to(n)` | Pad this field's consumed extent so the following field starts on an n-byte boundary |
 | `optional(cond)` | Skip this field when `cond` is false |
 | `entrypoint` | Mark this scalar field's own value as a code entry point address for disassembly |
+| `code("arch"[, offset(expr), extent(expr)])` | Mark a byte range as code for the disassembler; `arch` is a Capstone id such as `"wasm"` |
 
 ```c
 [offset(dosHeader.e_lfanew)]
@@ -380,6 +381,9 @@ IMAGE_OPTIONAL_HEADER OptionalHeader;
 
 [count(len), pad_to(4)]
 byte Data[];
+
+[code("wasm")]
+byte instructions[];
 ```
 
 ### Tree presentation
@@ -579,6 +583,9 @@ emit_node(dest(Imports, key(module.bytes, name.bytes)),
   for quick summaries when there is no schema field to fill
 - `offset(...)`, `extent(...)`, `case(...)`, and `optional(...)` control source
   anchoring and gating
+- `code("arch"[, offset(expr), extent(expr)])` marks the semantic node as a
+  disassembly target. This lets a semantic function row select the correct
+  byte range and Capstone engine, for example `code("wasm")`.
 - use `concat(...)` or `fmt(...)` to build display strings directly in the tag
 
 #### Positional semantic collection addressing
@@ -1143,7 +1150,7 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 |----------|----------|
 | Type declarations | `struct`, `union`, `enum`, `typedef`, `const`, `signed`, `unsigned` |
 | Primitive types | `byte`, `word`, `dword`, `qword`, `char`, `wchar_t`, `float`, `double`, `uleb128`, `sleb128` |
-| Display/layout tags | `align`, `bitflag`, `description`, `display`, `endian`, `entrypoint`, `extent`, `format`, `ignore`, `name`, `offset`, `optional`, `pad_to`, `string`, `style`, `tree` |
+| Display/layout tags | `align`, `bitflag`, `code`, `description`, `display`, `endian`, `entrypoint`, `extent`, `format`, `ignore`, `name`, `offset`, `optional`, `pad_to`, `string`, `style`, `tree` |
 | Arrays/unions | `case`, `count`, `count_as`, `default`, `length_is`, `max_count`, `select`, `select_offset`, `size_is`, `switch_is`, `terminated_by`, `terminator` |
 | Dynamic/semantic tags | `append`, `attr`, `container`, `dest`, `dynamic_array`, `dynamic_container`, `dynamic_struct`, `emit`, `emit_node`, `emit_row`, `field`, `item`, `key`, `label`, `map`, `mapper`, `offset_map`, `semantic`, `type`, `view` |
 | Export/detection tags | `assoc`, `category`, `export`, `magic`, `version` |

@@ -553,6 +553,11 @@ void StructViewDexWasmTests::builderRendersWasmHeaderAndSections()
     QCOMPARE(findChildNamed(summaryDefinedFunction, QStringLiteral("TypeIndex"))->value, QStringLiteral("0"));
     QCOMPARE(findChildNamed(summaryDefinedFunction, QStringLiteral("Export"))->value, QStringLiteral("answer"));
     QCOMPARE(findChildNamed(summaryDefinedFunction, QStringLiteral("CodeSize"))->value, QStringLiteral("4"));
+    QVERIFY(summaryDefinedFunction->hasCodeTarget);
+    QCOMPARE(summaryDefinedFunction->codeArchitecture, QStringLiteral("wasm"));
+    QCOMPARE(summaryDefinedFunction->codeByteLength, uint64_t(3));
+    QVERIFY(functions->children[0]->hasCodeTarget);
+    QCOMPARE(functions->children[0]->codeTargetOffset, summaryDefinedFunction->codeTargetOffset);
 }
 
 void StructViewDexWasmTests::builderRendersWasmStartTagsAndElements()

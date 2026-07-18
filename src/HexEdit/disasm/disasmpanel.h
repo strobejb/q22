@@ -39,7 +39,8 @@ signals:
 public slots:
     void refresh();
     void goToOffset(uint64_t offset);
-    void goToRange(uint64_t offset, uint64_t length, const QString &functionName);
+    void goToRange(uint64_t offset, uint64_t length, const QString &functionName,
+                   const QString &architecture = QString());
     // Pushed in by DisassemblerPanelHost (which owns the long-lived cache,
     // since this panel itself is destroyed/recreated each time it's
     // closed/reopened) whenever CodeDiscoveryEngine's results change.
@@ -195,7 +196,8 @@ public:
     // toggle()) and jumps it to offset, bypassing "pin" since this is an
     // explicit navigation request rather than incidental cursor movement.
     void openAtOffset(uint64_t offset);
-    void openRange(uint64_t offset, uint64_t length, const QString &functionName);
+    void openRange(uint64_t offset, uint64_t length, const QString &functionName,
+                   const QString &architecture = QString());
 
     // The host outlives the panel widget (which is destroyed/recreated each
     // close/reopen), so it -- not HexView, not the panel -- is where

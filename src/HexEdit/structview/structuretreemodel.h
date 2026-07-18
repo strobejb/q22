@@ -81,6 +81,8 @@ struct StructureRow
     bool hasCodeTarget = false;
     uint64_t codeLogicalOffset = 0;
     uint64_t codeTargetOffset = 0;
+    uint64_t codeByteLength = 0;
+    QString codeArchitecture;
     uint64_t absoluteOffset = 0;
     uint64_t relativeOffset = 0;
     uint64_t byteLength = 0;

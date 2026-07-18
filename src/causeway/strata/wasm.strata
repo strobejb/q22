@@ -444,6 +444,7 @@ typedef struct _WASM_CODE_BODY
 } WASM_CODE_BODY, *PWASM_CODE_BODY;
 
 [
+    code("wasm", offset(body.instructions), extent(extent_of(body.instructions))),
     emit_node(dest(Functions, item("defined", array_index())),
               field(CodeSize, size))
 ]

@@ -2853,55 +2853,80 @@ void StructureViewPanel::showHeaderContextMenu(int column, const QPoint &globalP
 void StructureViewPanel::showOptionsContextMenu(int column, const QPoint &globalPos, bool includeAllColumns, const QModelIndex &rowIndex)
 {
     QMenu menu(this);
+    // Header/options context menus do not have an index at the click point,
+    // but they still act on the selected structure row. This also covers
+    // platform context-menu gestures that arrive without a viewport index.
+    const QModelIndex targetIndex = rowIndex.isValid()
+        ? rowIndex
+        : (m_tree ? m_tree->currentIndex().siblingAtColumn(StructureTreeModel::NameColumn) : QModelIndex());
 
     const auto addSeparatorIfNeeded = [&menu]() {
         if (!menu.actions().isEmpty())
             menu.addSeparator();
     };
 
-    if (rowIndex.isValid() && m_model && m_model->hasChildren(rowIndex))
+    if (targetIndex.isValid() && m_model && m_model->hasChildren(targetIndex))
     {
         QAction *expand = menu.addAction(tr("Expand"));
         connect(expand, &QAction::triggered,
-                this, [this, rowIndex]() { m_tree->expand(rowIndex); });
+                this, [this, targetIndex]() { m_tree->expand(targetIndex); });
 
         QAction *collapse = menu.addAction(tr("Collapse"));
         connect(collapse, &QAction::triggered,
-                this, [this, rowIndex]() { m_tree->collapse(rowIndex); });
+                this, [this, targetIndex]() { m_tree->collapse(targetIndex); });
 
         QAction *expandTree = menu.addAction(tr("Expand subtree"));
         connect(expandTree, &QAction::triggered,
-                this, [this, rowIndex]() { expandSubtree(rowIndex); });
+                this, [this, targetIndex]() { expandSubtree(targetIndex); });
 
         QAction *collapseTree = menu.addAction(tr("Collapse subtree"));
         connect(collapseTree, &QAction::triggered,
-                this, [this, rowIndex]() { collapseSubtree(rowIndex); });
+                this, [this, targetIndex]() { collapseSubtree(targetIndex); });
     }
 
-    if (sourceRowForIndex(rowIndex))
+    if (sourceRowForIndex(targetIndex))
     {
         addSeparatorIfNeeded();
         QAction *locateSource = menu.addAction(tr("Locate in source"));
         connect(locateSource, &QAction::triggered,
-                this, [this, rowIndex]() { locateIndexInSource(rowIndex); });
+                this, [this, targetIndex]() { locateIndexInSource(targetIndex); });
     }
 
     {
-        StructureRow *row = m_model && rowIndex.isValid() ? m_model->rowForIndex(rowIndex) : nullptr;
+        StructureRow *row = m_model && targetIndex.isValid() ? m_model->rowForIndex(targetIndex) : nullptr;
+        StructureRow *codeRow = row;
+        for (; codeRow && !codeRow->hasCodeTarget; codeRow = codeRow->parent)
+        {
+        }
+        if (!codeRow && row)
+        {
+            const auto findCodeDescendant = [](auto &&self, StructureRow *candidate) -> StructureRow * {
+                if (!candidate)
+                    return nullptr;
+                if (candidate->hasCodeTarget)
+                    return candidate;
+                for (const auto &child : candidate->children)
+                    if (StructureRow *found = self(self, child.get()))
+                        return found;
+                return nullptr;
+            };
+            codeRow = findCodeDescendant(findCodeDescendant, row);
+        }
         addSeparatorIfNeeded();
         QAction *openCode = menu.addAction(tr("Open in Disassembler"));
-        const bool hasTarget = row && row->hasCodeTarget && m_hv;
+        const bool hasTarget = codeRow && m_hv;
         openCode->setEnabled(hasTarget);
         if (hasTarget)
         {
             connect(openCode, &QAction::triggered,
-                    this, [this, row]() {
-                        const size_w offset = static_cast<size_w>(row->codeTargetOffset);
+                    this, [this, codeRow]() {
+                        const size_w offset = static_cast<size_w>(codeRow->codeTargetOffset);
                         // preserveCursor=false: this is an explicit "go to", the
                         // disassembler reads the cursor, not just the selection.
                         m_hv->setCurSel(offset, offset, false);
                         m_hv->scrollCenterIfOffScreen(offset, 1);
-                        emit openDisassemblerRequested(row->codeTargetOffset);
+                        emit openDisassemblerRequested(codeRow->codeTargetOffset, codeRow->codeByteLength,
+                                                       codeRow->codeArchitecture, codeRow->name);
                     });
         }
     }

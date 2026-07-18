@@ -65,6 +65,20 @@ UX:
 
 ## Build
 
+### Pre-requisites
+
+1. Qt framework 6.10+
+2. QtCreator
+
+### Steps to build:
+
+1. Open QtCreator (6.10 or above).
+2. Open the ~/qq/CMakeList.txt project
+3. Select the Projects tab, and then `Configure Project` at the bottom-right
+4. Select Build -> Build All Projects
+
+From the commandline:
+
 ```sh
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel

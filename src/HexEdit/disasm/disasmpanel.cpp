@@ -50,6 +50,7 @@
 
 struct ArchEntry
 {
+    const char *id;
     const char *label;
     cs_arch     arch;
     cs_mode     mode;
@@ -58,12 +59,12 @@ struct ArchEntry
 QColor blend(const QColor &a, const QColor &b, double r = 0.5);
 
 static const ArchEntry kArchEntries[] = {
-    { "x86 64-bit",  CS_ARCH_X86,     CS_MODE_64    },
-    { "x86 32-bit",  CS_ARCH_X86,     CS_MODE_32    },
-    { "ARM",         CS_ARCH_ARM,     CS_MODE_ARM   },
-    { "ARM Thumb",   CS_ARCH_ARM,     CS_MODE_THUMB },
-    { "AArch64",     CS_ARCH_ARM64,   (cs_mode)0    },
-    { "WebAssembly", CS_ARCH_WASM,    (cs_mode)0    },
+    { "x86-64", "x86 64-bit",  CS_ARCH_X86,     CS_MODE_64    },
+    { "x86-32", "x86 32-bit",  CS_ARCH_X86,     CS_MODE_32    },
+    { "arm",    "ARM",         CS_ARCH_ARM,     CS_MODE_ARM   },
+    { "thumb",  "ARM Thumb",   CS_ARCH_ARM,     CS_MODE_THUMB },
+    { "arm64",  "AArch64",     CS_ARCH_ARM64,   (cs_mode)0    },
+    { "wasm",   "WebAssembly", CS_ARCH_WASM,    (cs_mode)0    },
 };
 static constexpr int kArchCount = (int)(sizeof(kArchEntries) / sizeof(kArchEntries[0]));
 
@@ -1348,8 +1349,16 @@ void DisassemblerPanel::goToOffset(uint64_t offset)
     }
 }
 
-void DisassemblerPanel::goToRange(uint64_t offset, uint64_t length, const QString &functionName)
+void DisassemblerPanel::goToRange(uint64_t offset, uint64_t length, const QString &functionName,
+                                  const QString &architecture)
 {
+    if (!architecture.isEmpty() && m_archCombo)
+        for (int i = 0; i < kArchCount; ++i)
+            if (architecture.compare(QLatin1String(kArchEntries[i].id), Qt::CaseInsensitive) == 0)
+            {
+                m_archCombo->setCurrentIndex(i);
+                break;
+            }
     if (!m_hv || length == 0)
         return;
 
@@ -1617,12 +1626,13 @@ void DisassemblerPanelHost::openAtOffset(uint64_t offset)
         panel->goToOffset(offset);
 }
 
-void DisassemblerPanelHost::openRange(uint64_t offset, uint64_t length, const QString &functionName)
+void DisassemblerPanelHost::openRange(uint64_t offset, uint64_t length, const QString &functionName,
+                                      const QString &architecture)
 {
     if (!isOpen())
         openPanel();
     if (auto *panel = qobject_cast<DisassemblerPanel *>(panelWidget()))
-        panel->goToRange(offset, length, functionName);
+        panel->goToRange(offset, length, functionName, architecture);
 }
 
 void DisassemblerPanelHost::setDiscoveredFunctions(QList<DiscoveredFunction> functions)

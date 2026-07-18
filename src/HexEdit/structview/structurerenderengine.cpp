@@ -996,6 +996,7 @@ uint64_t StructureRenderEngine::appendIdentifierRow(StructureRow *parent,
     const uint64_t length = recurseType(row.get(), type ? type->link : nullptr, typeDecl, offset);
     row->byteLength = length;
     applyEntryPointTag(row.get(), typeDecl);
+    applyCodeTag(row.get(), typeDecl, row.get());
     const QString stringValue = stringArrayValue(row.get(), type ? type->link : nullptr, typeDecl, offset);
     if (!stringValue.isNull())
         row->value = stringValue;
@@ -4789,6 +4790,8 @@ void StructureRenderEngine::appendSemanticNodeRequests()
             node->generatedOffset = true;
         }
 
+        applyCodeTag(node, request.owner->typeDecl, request.owner);
+
         for (const SemanticNodeAttr &attr : request.attrs)
         {
             const QString value = semanticExpressionText(request.owner,
@@ -6644,6 +6647,127 @@ void StructureRenderEngine::applyEntryPointTag(StructureRow *row, TypeDecl *type
     row->hasCodeTarget = true;
     row->codeLogicalOffset = static_cast<uint64_t>(row->scalarRawValue);
     row->codeTargetOffset = m_baseOffset + row->codeLogicalOffset;
+}
+
+bool StructureRenderEngine::codeTagArgs(ExprNode *expr, QString *architecture,
+                                         ExprNode **offset, ExprNode **extent) const
+{
+    std::vector<ExprNode *> args;
+    appendCommaArgs(expr, &args);
+    if (args.empty() || !args[0] || args[0]->type != EXPR_STRINGBUF || !args[0]->str)
+        return false;
+
+    const QString arch = QString::fromLocal8Bit(args[0]->str).trimmed().toLower();
+    if (arch.isEmpty())
+        return false;
+
+    ExprNode *offsetExpr = nullptr;
+    ExprNode *extentExpr = nullptr;
+    for (size_t i = 1; i < args.size(); ++i)
+    {
+        ExprNode *inner = nullptr;
+        switch (unwrapTagArg(args[i], &inner))
+        {
+        case TOK_OFFSET: offsetExpr = inner; break;
+        case TOK_EXTENT: extentExpr = inner; break;
+        default: return false;
+        }
+    }
+
+    if (architecture)
+        *architecture = arch;
+    if (offset)
+        *offset = offsetExpr;
+    if (extent)
+        *extent = extentExpr;
+    return true;
+}
+
+void StructureRenderEngine::applyCodeTag(StructureRow *target, TypeDecl *typeDecl, StructureRow *scope)
+{
+    ExprNode *expr = nullptr;
+    if (!target || !scope)
+        return;
+
+    if (!FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_CODE, &expr))
+    {
+        for (Type *type = scope->type; type; type = type->link)
+        {
+            if (type->ty != typeIDENTIFIER || !type->sym)
+                continue;
+            TypeDecl *decl = findTypeDecl(type->sym->name);
+            if (FindTag(decl ? decl->tagList : nullptr, TOK_CODE, &expr))
+                break;
+        }
+        if (!expr)
+            return;
+    }
+
+    QString architecture;
+    ExprNode *offsetExpr = nullptr;
+    ExprNode *extentExpr = nullptr;
+    if (!codeTagArgs(expr, &architecture, &offsetExpr, &extentExpr))
+        return;
+
+    uint64_t absoluteOffset = scope->absoluteOffset;
+    StructureRow *codeRow = nullptr;
+    if (offsetExpr)
+    {
+        codeRow = findFieldRow(scope, offsetExpr);
+        if (codeRow)
+            absoluteOffset = codeRow->absoluteOffset;
+        ResolvedField field;
+        if (!codeRow && resolveField(scope->type, offsetExpr, scope->absoluteOffset, &field))
+            absoluteOffset = field.offset;
+        else
+        {
+            INUMTYPE logicalOffset = 0;
+            if (!evaluate(scope, offsetExpr, &logicalOffset, scope->absoluteOffset))
+                return;
+            absoluteOffset = m_baseOffset + static_cast<uint64_t>(logicalOffset);
+        }
+    }
+
+    uint64_t length = target->byteLength;
+    if (extentExpr)
+    {
+        INUMTYPE extent = 0;
+        if (evaluate(scope, extentExpr, &extent, scope->absoluteOffset))
+            length = static_cast<uint64_t>(extent);
+        else if (codeRow)
+            length = codeRow->byteLength;
+        else
+            return;
+    }
+    if (length == 0)
+        return;
+
+    target->hasCodeTarget = true;
+    target->codeArchitecture = architecture;
+    target->codeTargetOffset = absoluteOffset;
+    target->codeLogicalOffset = absoluteOffset >= m_baseOffset ? absoluteOffset - m_baseOffset : 0;
+    target->codeByteLength = length;
+
+    // A raw function record has several useful selectable rows (the body,
+    // locals and instruction byte array). They all describe the same code
+    // range, so make the context-menu action available from any of them.
+    if (target->kind != StructureRowKind::Semantic)
+    {
+        const auto inheritCodeTarget = [&architecture, absoluteOffset, length](auto &&self, StructureRow *row) -> void {
+            for (const auto &child : row->children)
+            {
+                if (!child)
+                    continue;
+                child->hasCodeTarget = true;
+                child->codeArchitecture = architecture;
+                child->codeTargetOffset = absoluteOffset;
+                child->codeLogicalOffset = absoluteOffset >= row->absoluteOffset ? absoluteOffset - row->absoluteOffset : 0;
+                child->codeByteLength = length;
+                self(self, child.get());
+            }
+        };
+        inheritCodeTarget(inheritCodeTarget, target);
+    }
 }
 
 void StructureRenderEngine::applyDeclarationName(StructureRow *row, Type *type) const

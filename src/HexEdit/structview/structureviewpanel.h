@@ -55,7 +55,8 @@ public:
 
 signals:
     void closeRequested();
-    void openDisassemblerRequested(uint64_t offset);
+    void openDisassemblerRequested(uint64_t offset, uint64_t length,
+                                   const QString &architecture, const QString &name);
     void selectionIdentityChanged(const QString &name, uint64_t offset);
 
 public slots:
@@ -169,7 +170,8 @@ public:
     explicit StructureViewPanelHost(HexView *hv, QWidget *parent = nullptr);
 
 signals:
-    void openDisassemblerRequested(uint64_t offset);
+    void openDisassemblerRequested(uint64_t offset, uint64_t length,
+                                   const QString &architecture, const QString &name);
 
 protected:
     QWidget *createPanelWidget() override;

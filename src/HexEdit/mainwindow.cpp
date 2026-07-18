@@ -926,7 +926,9 @@ MainWindow::MainWindow(QWidget *parent)
             m_disasmPanelHost->closePanel();
     });
     connect(m_structurePanelHost, &StructureViewPanelHost::openDisassemblerRequested,
-            this, &MainWindow::openDisassemblerAtOffset);
+            this, [this](uint64_t offset, uint64_t length, const QString &architecture, const QString &name) {
+                openDisassemblerRange(offset, length, name, architecture);
+            });
 
     // ── Edit menu ─────────────────────────────────────────────────────────────
     // Shortcuts not set in the .ui file are assigned here so they are also
@@ -1601,7 +1603,8 @@ void MainWindow::openDisassemblerAtOffset(uint64_t offset)
     m_disasmPanelHost->openAtOffset(offset);
 }
 
-void MainWindow::openDisassemblerRange(uint64_t offset, uint64_t length, const QString &name)
+void MainWindow::openDisassemblerRange(uint64_t offset, uint64_t length, const QString &name,
+                                       const QString &architecture)
 {
     if (!m_disasmPanelHost || length == 0)
         return;
@@ -1614,7 +1617,7 @@ void MainWindow::openDisassemblerRange(uint64_t offset, uint64_t length, const Q
             m_structurePanelHost->closePanel();
     }
 
-    m_disasmPanelHost->openRange(offset, length, name);
+    m_disasmPanelHost->openRange(offset, length, name, architecture);
 }
 
 void MainWindow::disassembleSelection()

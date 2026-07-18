@@ -309,6 +309,9 @@ private:
                       ExprNode **extent,
                       ExprNode **condition,
                       std::vector<SemanticNodeAttr> *attrs) const;
+    bool codeTagArgs(ExprNode *expr, QString *architecture,
+                     ExprNode **offset, ExprNode **extent) const;
+    void applyCodeTag(StructureRow *target, TypeDecl *typeDecl, StructureRow *scope);
     bool emitDestinationArgs(ExprNode *expr,
                              ExprNode **path,
                              ExprNode **key,
