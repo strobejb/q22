@@ -304,6 +304,10 @@ private:
     TypeDecl *attachedSemanticSchema(TypeDecl *rootType) const;
     TypeDecl *semanticDestinationDecl(TypeDecl *schemaDecl, const QStringList &path) const;
     TypeDecl *semanticDestinationElementSchema(TypeDecl *schemaDecl, const QStringList &path) const;
+    bool semanticTypeIsCompound(Type *type) const;
+    bool semanticDestinationIsScalarArray(TypeDecl *destinationDecl) const;
+    bool semanticDestinationIsArray(TypeDecl *destinationDecl) const;
+    bool semanticDestinationElementIsEmptyCompound(TypeDecl *destinationDecl) const;
     bool semanticSchemaHasField(TypeDecl *schemaDecl, const QString &name) const;
     bool semanticDestinationExists(TypeDecl *schemaDecl, const QStringList &path) const;
     int semanticDestinationOrder(const QStringList &path) const;

@@ -424,7 +424,9 @@ typedef struct _PE_VIEW
     [tree("flatten")]
     struct
     {
-        IMAGE_EXPORT_DIRECTORY Exports[];
+        struct
+        {
+        } Exports[];
 
         struct
         {

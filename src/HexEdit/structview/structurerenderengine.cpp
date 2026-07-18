@@ -22,6 +22,9 @@ namespace
 static constexpr uint64_t kMaxArrayElements = 100;
 static constexpr qsizetype kMaxArrayPreviewElements = 8;
 static constexpr bool kPrefixArrayAliasesWithDash = false;
+// Dynamic rows expose raw layout navigation, so leave their semantic-style
+// branch icons disabled unless that presentation is explicitly wanted.
+static constexpr bool kShowDynamicViewBranchIcons = false;
 static constexpr uint64_t kSearchChunkSize = 64 * 1024;
 static constexpr uint64_t kMaxStringLookupBytes = 4096;
 
@@ -361,13 +364,6 @@ void appendCommaArgs(ExprNode *expr, std::vector<ExprNode *> *args)
     args->push_back(expr);
 }
 
-bool semanticPathLooksAtomic(const QStringList &path)
-{
-    const QString last = path.isEmpty() ? QString() : path.last();
-    return last == QStringLiteral("Functions")
-        || last == QStringLiteral("Symbols");
-}
-
 bool semanticRowHasComplexChildren(const StructureRow *row)
 {
     if (!row)
@@ -377,6 +373,11 @@ bool semanticRowHasComplexChildren(const StructureRow *row)
     {
         if (!child || child->kind != StructureRowKind::Semantic)
             continue;
+        if (child->branchIconPath == QString::fromLatin1(StructureBranchIcons::kBlueElementArray)
+            || child->branchIconPath == QString::fromLatin1(StructureBranchIcons::kGrayElementArray))
+        {
+            continue;
+        }
         if (!child->children.empty())
             return true;
         if (child->value == QStringLiteral("{...}"))
@@ -400,7 +401,31 @@ void refreshSemanticBranchPresentation(StructureRow *row, const QString &rootLab
     if (row->parent && row->parent->kind == StructureRowKind::Raw && row->name == rootLabel)
         return;
 
-    if (!semanticRowHasComplexChildren(row))
+    if (row->branchIconPath == QString::fromLatin1(StructureBranchIcons::kBlueElementArray)
+        || row->branchIconPath == QString::fromLatin1(StructureBranchIcons::kGrayElementArray))
+    {
+        return;
+    }
+
+    const bool hasComplexChildren = semanticRowHasComplexChildren(row);
+    if (row->branchIconPath == QString::fromLatin1(StructureBranchIcons::kBlueEntityArray)
+        || row->branchIconPath == QString::fromLatin1(StructureBranchIcons::kGrayEntityArray))
+    {
+        row->emphasizeName = hasComplexChildren;
+        const QString icon = hasComplexChildren
+            ? QString::fromLatin1(StructureBranchIcons::kBlueEntityArray)
+            : QString::fromLatin1(StructureBranchIcons::kGrayEntityArray);
+        row->setBranchIcons(icon, icon, icon);
+        return;
+    }
+
+    if (row->branchIconPath == QString::fromLatin1(StructureBranchIcons::kBlueEntity)
+        || row->branchIconPath == QString::fromLatin1(StructureBranchIcons::kBlueElement))
+    {
+        return;
+    }
+
+    if (!hasComplexChildren)
         return;
 
     row->emphasizeName = true;
@@ -420,10 +445,24 @@ bool shouldPromoteSemanticRootSibling(const StructureRow *row)
     return row->name.endsWith(QStringLiteral(" Summary"));
 }
 
-void applySemanticBranchIcons(StructureRow *row, const QStringList &path, bool isArray = false)
+void applySemanticBranchIcons(StructureRow *row,
+                              const QStringList &path,
+                              bool isArray = false,
+                              bool isScalarArray = false,
+                              bool isScalarArrayElement = false,
+                              bool isContainer = false,
+                              bool isSemanticElement = false)
 {
     if (!row)
         return;
+
+    if (isScalarArrayElement)
+    {
+        row->branchIconPath.clear();
+        row->branchOpenIconPath.clear();
+        row->branchEmptyIconPath.clear();
+        return;
+    }
 
     if (path.isEmpty())
     {
@@ -433,9 +472,25 @@ void applySemanticBranchIcons(StructureRow *row, const QStringList &path, bool i
         return;
     }
 
+    if (isContainer)
+    {
+        row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kGrayStructure),
+                            QString::fromLatin1(StructureBranchIcons::kGrayStructure),
+                            QString::fromLatin1(StructureBranchIcons::kGrayStructure));
+        return;
+    }
+
+    if (isSemanticElement)
+    {
+        row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueElement),
+                            QString::fromLatin1(StructureBranchIcons::kBlueElement),
+                            QString::fromLatin1(StructureBranchIcons::kBlueElement));
+        return;
+    }
+
     if (isArray)
     {
-        if (semanticPathLooksAtomic(path))
+        if (isScalarArray)
         {
             row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueElementArray),
                                 QString::fromLatin1(StructureBranchIcons::kBlueElementArray),
@@ -443,18 +498,18 @@ void applySemanticBranchIcons(StructureRow *row, const QStringList &path, bool i
         }
         else
         {
-            row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueEntityArray),
-                                QString::fromLatin1(StructureBranchIcons::kBlueEntityArray),
-                                QString::fromLatin1(StructureBranchIcons::kGrayEntityArray));
+            row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueEntity),
+                                QString::fromLatin1(StructureBranchIcons::kBlueEntityOpen),
+                                QString::fromLatin1(StructureBranchIcons::kGrayEntity));
         }
         return;
     }
 
-    if (semanticPathLooksAtomic(path))
+    if (isScalarArray)
     {
-        row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueElement),
-                            QString::fromLatin1(StructureBranchIcons::kBlueElement),
-                            QString::fromLatin1(StructureBranchIcons::kBlueElement));
+        row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueElementArray),
+                            QString::fromLatin1(StructureBranchIcons::kBlueElementArray),
+                            QString::fromLatin1(StructureBranchIcons::kGrayElementArray));
         return;
     }
 
@@ -3479,9 +3534,12 @@ void StructureRenderEngine::appendDynamicRows(StructureRow *parent)
         row->value = QStringLiteral("{...}");
         row->byteLength = container.byteLength;
         row->kind = StructureRowKind::Dynamic;
-        row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueStructure),
-                            QString::fromLatin1(StructureBranchIcons::kBlueStructureOpen),
-                            QString::fromLatin1(StructureBranchIcons::kGrayStructure));
+        if (kShowDynamicViewBranchIcons)
+        {
+            row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueStructure),
+                                QString::fromLatin1(StructureBranchIcons::kBlueStructureOpen),
+                                QString::fromLatin1(StructureBranchIcons::kGrayStructure));
+        }
         container.row = (row->treeMode == StructureRowTreeMode::Default
                          || row->treeMode == StructureRowTreeMode::Collapsed
                          || row->treeMode == StructureRowTreeMode::Expanded)
@@ -3516,9 +3574,12 @@ void StructureRenderEngine::appendDynamicRows(StructureRow *parent)
         if (!request.label.isEmpty())
             row->setNameParts(QString(), request.label, QString());
         row->kind = StructureRowKind::Dynamic;
-        row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueStructure),
-                            QString::fromLatin1(StructureBranchIcons::kBlueStructureOpen),
-                            QString::fromLatin1(StructureBranchIcons::kGrayStructure));
+        if (kShowDynamicViewBranchIcons)
+        {
+            row->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueStructure),
+                                QString::fromLatin1(StructureBranchIcons::kBlueStructureOpen),
+                                QString::fromLatin1(StructureBranchIcons::kGrayStructure));
+        }
         const bool bigEndian = declarationBigEndian(request.typeDecl, row.get(), request.renderType, m_baseOffset + fileOffset);
         EndianScope endian(this, bigEndian);
         row->bigEndian = m_bigEndian;
@@ -3580,9 +3641,12 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
         }
         arrayRow->value = QStringLiteral("{...}");
         arrayRow->kind = StructureRowKind::Dynamic;
-        arrayRow->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueEntityArray),
-                                 QString::fromLatin1(StructureBranchIcons::kBlueEntityArray),
-                                 QString::fromLatin1(StructureBranchIcons::kGrayEntityArray));
+        if (kShowDynamicViewBranchIcons)
+        {
+            arrayRow->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueEntityArray),
+                                     QString::fromLatin1(StructureBranchIcons::kBlueEntityArray),
+                                     QString::fromLatin1(StructureBranchIcons::kGrayEntityArray));
+        }
 
         // Check once whether the element type declares sub-arrays.  Primitive
         // element types (DWORD, WORD, CHAR, thunk unions, …) never do, so we
@@ -4167,7 +4231,20 @@ void StructureRenderEngine::appendSemanticRowRequests()
         row->relativeOffset = fileOffset;
         row->offset = formatOffset(row->absoluteOffset);
         row->generatedOffset = true;
-        applySemanticBranchIcons(row.get(), request.destinationPath);
+        // A mapped semantic row represents the mapped file range, not merely
+        // its starting offset. This also makes it selectable in HexView.
+        if (request.createsMappedContainer)
+            row->byteLength = request.mapLogicalSize;
+        TypeDecl *destinationDecl = semanticDestinationDecl(attachedSemanticSchema(m_rootType), request.destinationPath);
+        const bool semanticElement = !request.createsMappedContainer
+            && semanticDestinationElementIsEmptyCompound(destinationDecl);
+        applySemanticBranchIcons(row.get(),
+                                 request.destinationPath,
+                                 false,
+                                 semanticDestinationIsScalarArray(destinationDecl),
+                                 false,
+                                 request.createsMappedContainer,
+                                 semanticElement);
 
         StructureRow *rowPtr = row.get();
         appendPresentedRow(parentRow, std::move(row));
@@ -4412,7 +4489,11 @@ void StructureRenderEngine::appendSemanticNodeRequests()
                 if (evaluate(request.owner, request.extentExpr, &extent, request.owner->absoluteOffset) && extent > 0)
                     row->byteLength = static_cast<uint64_t>(extent);
             }
-            applySemanticBranchIcons(row.get(), request.destinationPath);
+            TypeDecl *destinationDecl = semanticDestinationDecl(attachedSemanticSchema(m_rootType), request.destinationPath);
+            applySemanticBranchIcons(row.get(),
+                                     request.destinationPath,
+                                     false,
+                                     semanticDestinationIsScalarArray(destinationDecl));
 
             node = row.get();
             appendPresentedRow(parentRow, std::move(row));
@@ -4496,17 +4577,29 @@ void StructureRenderEngine::appendSemanticEmitRows(StructureRow *root)
         arrayRow->kind = StructureRowKind::Semantic;
         arrayRow->suppressSemanticViews = true;
         arrayRow->value = QStringLiteral("{...}");
-        applySemanticBranchIcons(arrayRow.get(), request.destinationPath, true);
+        TypeDecl *destinationDecl = semanticDestinationDecl(attachedSemanticSchema(m_rootType), request.destinationPath);
+        const bool scalarArrayDestination = semanticDestinationIsScalarArray(destinationDecl);
 
         QString label = semanticExpressionText(request.owner,
                                                request.owner->type,
                                                request.labelExpr,
                                                request.owner->absoluteOffset);
+        const bool hasExplicitLabel = request.labelExpr != nullptr;
         if (label.isEmpty())
             label = typeName(request.renderType);
-        arrayRow->setNameParts(QString(), label, QString());
 
-        StructureRow *elementParent = arrayRow.get();
+        // The destination array already names an unlabeled scalar payload.  A
+        // second row named after its scalar type adds no semantic information.
+        const bool elideImplicitScalarArrayRow = scalarArrayDestination
+            && !hasExplicitLabel
+            && !request.createsMappedContainer;
+        if (!elideImplicitScalarArrayRow)
+        {
+            applySemanticBranchIcons(arrayRow.get(), request.destinationPath, true, scalarArrayDestination);
+            arrayRow->setNameParts(QString(), label, QString());
+        }
+
+        StructureRow *elementParent = elideImplicitScalarArrayRow ? parentRow : arrayRow.get();
         if (request.createsMappedContainer)
         {
             QStringList payloadPath = request.destinationPath;
@@ -4524,7 +4617,11 @@ void StructureRenderEngine::appendSemanticEmitRows(StructureRow *root)
                                m_baseOffset + fileOffset + length);
             row->kind = StructureRowKind::Semantic;
             row->suppressSemanticViews = true;
-            applySemanticBranchIcons(row.get(), request.destinationPath, true);
+            applySemanticBranchIcons(row.get(),
+                                     request.destinationPath,
+                                     false,
+                                     scalarArrayDestination,
+                                     scalarArrayDestination);
             const QString indexLabel = QStringLiteral("[%1]").arg(logicalIndex);
             row->name = indexLabel;
             row->nameTypePrefix = indexLabel;
@@ -4662,13 +4759,19 @@ StructureRow *StructureRenderEngine::semanticChildGroup(StructureRow *parent, co
     group->value = QStringLiteral("{...}");
     group->kind = StructureRowKind::Semantic;
     group->treeMode = treeMode;
-    group->absoluteOffset = m_rootRow ? m_rootRow->absoluteOffset : parent->absoluteOffset;
-    group->relativeOffset = m_rootRow ? m_rootRow->relativeOffset : parent->relativeOffset;
+    group->absoluteOffset = parent->absoluteOffset;
+    group->relativeOffset = parent->relativeOffset;
     group->offset = formatOffset(group->absoluteOffset);
     group->generatedOffset = true;
-    group->setBranchIcons(QString::fromLatin1(StructureBranchIcons::kBlueStructure),
-                          QString::fromLatin1(StructureBranchIcons::kBlueStructureOpen),
-                          QString::fromLatin1(StructureBranchIcons::kGrayStructure));
+    // Groups are semantic organization only. Keep their owner's range so a
+    // click on a group such as Bytes or Imports still selects meaningful data.
+    group->byteLength = parent->byteLength;
+    applySemanticBranchIcons(group.get(),
+                             path,
+                             false,
+                             semanticDestinationIsScalarArray(schemaField),
+                             false,
+                             !semanticDestinationIsScalarArray(schemaField));
     StructureRow *groupPtr = group.get();
 
     const int newOrder = semanticDestinationOrder(path);
@@ -5489,6 +5592,76 @@ TypeDecl *StructureRenderEngine::semanticDestinationElementSchema(TypeDecl *sche
     }
 
     return nullptr;
+}
+
+bool StructureRenderEngine::semanticTypeIsCompound(Type *type) const
+{
+    for (Type *cursor = type; cursor; cursor = cursor->link)
+    {
+        if (cursor->ty == typeSTRUCT || cursor->ty == typeUNION)
+            return true;
+
+        if ((cursor->ty != typeTYPEDEF && cursor->ty != typeIDENTIFIER) || !cursor->sym)
+            continue;
+
+        TypeDecl *candidate = findTypeDecl(cursor->sym->name);
+        Type *base = BaseNode(candidate ? candidate->baseType : nullptr);
+        if (base && (base->ty == typeSTRUCT || base->ty == typeUNION))
+            return true;
+    }
+
+    return false;
+}
+
+bool StructureRenderEngine::semanticDestinationIsScalarArray(TypeDecl *destinationDecl) const
+{
+    if (!destinationDecl)
+        return false;
+
+    Type *type = destinationDecl->declList.empty() ? destinationDecl->baseType : destinationDecl->declList[0];
+    for (Type *cursor = type; cursor; cursor = cursor->link)
+    {
+        if (cursor->ty != typeARRAY)
+            continue;
+
+        Type *elementType = cursor->link;
+        return !semanticTypeIsCompound(elementType);
+    }
+
+    return false;
+}
+
+bool StructureRenderEngine::semanticDestinationIsArray(TypeDecl *destinationDecl) const
+{
+    if (!destinationDecl)
+        return false;
+
+    Type *type = destinationDecl->declList.empty() ? destinationDecl->baseType : destinationDecl->declList[0];
+    for (Type *cursor = type; cursor; cursor = cursor->link)
+        if (cursor->ty == typeARRAY)
+            return true;
+
+    return false;
+}
+
+bool StructureRenderEngine::semanticDestinationElementIsEmptyCompound(TypeDecl *destinationDecl) const
+{
+    if (!destinationDecl)
+        return false;
+
+    Type *type = destinationDecl->declList.empty() ? destinationDecl->baseType : destinationDecl->declList[0];
+    for (Type *cursor = type; cursor; cursor = cursor->link)
+    {
+        if (cursor->ty == typeARRAY)
+        {
+            type = cursor->link;
+            break;
+        }
+    }
+
+    Type *base = BaseNode(type);
+    return base && (base->ty == typeSTRUCT || base->ty == typeUNION)
+        && base->sptr && base->sptr->typeDeclList.empty();
 }
 
 bool StructureRenderEngine::semanticSchemaHasField(TypeDecl *schemaDecl, const QString &name) const

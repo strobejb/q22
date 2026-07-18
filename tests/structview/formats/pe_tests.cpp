@@ -60,11 +60,13 @@ void StructViewPeTests::builderNamesPeDynamicSectionsFromStandardDefinition()
     StructureRow *text = findChildNamed(peRow, QStringLiteral("SECTION .text"));
     QVERIFY(text);
     QCOMPARE(text->offset, QStringLiteral("00000200"));
+    QVERIFY(text->branchIconPath.isEmpty());
     QVERIFY(!text->name.startsWith(QStringLiteral("SECTION - ")));
 
     StructureRow *idata = findChildNamed(peRow, QStringLiteral("SECTION .idata"));
     QVERIFY(idata);
     QCOMPARE(idata->offset, QStringLiteral("00000280"));
+    QVERIFY(idata->branchIconPath.isEmpty());
     QVERIFY(!idata->name.startsWith(QStringLiteral("SECTION - ")));
 
     StructureRow *peImage = findTopLevelNamed(rows, QStringLiteral("PE Image"));
@@ -73,8 +75,14 @@ void StructViewPeTests::builderNamesPeDynamicSectionsFromStandardDefinition()
     QCOMPARE(peImage->children.size(), size_t(2));
     QCOMPARE(peImage->children[0]->name, QStringLiteral("SECTION .text"));
     QCOMPARE(peImage->children[0]->offset, QStringLiteral("00000200"));
+    QCOMPARE(peImage->children[0]->byteLength, uint64_t(0x100));
     QCOMPARE(peImage->children[1]->name, QStringLiteral("SECTION .idata"));
     QCOMPARE(peImage->children[1]->offset, QStringLiteral("00000280"));
+    QCOMPARE(peImage->children[1]->byteLength, uint64_t(0x80));
+
+    StructureRow *textBytes = findChildNamed(peImage->children[0].get(), QStringLiteral("Bytes"));
+    QVERIFY(textBytes);
+    QCOMPARE(textBytes->byteLength, uint64_t(0x100));
 
     StructureRow *fileCharacteristics = findDescendantNamed(peRow, QStringLiteral("word Characteristics"));
     QVERIFY(fileCharacteristics);
@@ -272,21 +280,40 @@ void StructViewPeTests::builderEmitsPeImportDllsFromStandardDefinition()
     TypeDecl *root = exportedNamed(&library, QStringLiteral("PE"));
     QVERIFY(root);
     auto rows = buildRows(&library, root, bytes);
-    QVERIFY(findTopLevelNamed(rows, QStringLiteral("PE")));
+    StructureRow *peRow = findTopLevelNamed(rows, QStringLiteral("PE"));
+    QVERIFY(peRow);
 
     StructureRow *peImage = findTopLevelNamed(rows, QStringLiteral("PE Image"));
     QVERIFY2(peImage, "PE Image top-level row not found");
     StructureRow *idata = findChildNamed(peImage, QStringLiteral("SECTION .idata"));
     QVERIFY2(idata, qPrintable(childNames(peImage)));
+
+    StructureRow *rawIdata = findChildNamed(peRow, QStringLiteral("SECTION .idata"));
+    QVERIFY2(rawIdata, qPrintable(childNames(peRow)));
+    StructureRow *exportDirectory = findDescendantNamed(rawIdata, QStringLiteral("IMAGE_EXPORT_DIRECTORY"));
+    QVERIFY2(exportDirectory, qPrintable(childNames(rawIdata)));
+    QVERIFY(exportDirectory->branchIconPath.isEmpty());
+    StructureRow *exportFunctions = findChildNamed(exportDirectory, QStringLiteral("PE_EXPORT_FUNCTION_RVA ExportFunctions[]"));
+    QVERIFY2(exportFunctions,
+             qPrintable(childNames(exportDirectory)));
+    QVERIFY(exportFunctions->branchIconPath.isEmpty());
+    QVERIFY2(findChildNamed(exportDirectory, QStringLiteral("PE_EXPORT_NAME_RVA ExportNames[]")),
+             qPrintable(childNames(exportDirectory)));
+    QVERIFY2(findChildNamed(exportDirectory, QStringLiteral("PE_EXPORT_ORDINAL_INDEX ExportOrdinals[]")),
+             qPrintable(childNames(exportDirectory)));
+
     StructureRow *imports = findChildNamed(idata, QStringLiteral("Imports"));
     QVERIFY2(imports, qPrintable(childNames(idata)));
+    QCOMPARE(imports->branchIconPath, QString::fromLatin1(StructureBranchIcons::kBlueStructure));
 
     StructureRow *kernel32 = findChildNamed(imports, QStringLiteral("KERNEL32.dll"));
     QVERIFY2(kernel32, qPrintable(childNames(imports)));
+    QCOMPARE(kernel32->branchIconPath, QString::fromLatin1(StructureBranchIcons::kBlueEntity));
     QCOMPARE(kernel32->offset, QStringLiteral("00000294"));
     QCOMPARE(static_cast<int>(kernel32->kind), static_cast<int>(StructureRowKind::Semantic));
     StructureRow *function = findChildNamed(kernel32, QStringLiteral("CreateFileW"));
     QVERIFY2(function, qPrintable(childNames(kernel32)));
+    QCOMPARE(function->branchIconPath, QString::fromLatin1(StructureBranchIcons::kBlueElement));
     QCOMPARE(function->offset, QStringLiteral("000002C0"));
     QCOMPARE(static_cast<int>(function->kind), static_cast<int>(StructureRowKind::Semantic));
     QVERIFY(!findChildNamed(imports, QStringLiteral("sclib-csharp.dll")));
@@ -297,6 +324,7 @@ void StructViewPeTests::builderEmitsPeImportDllsFromStandardDefinition()
     QVERIFY2(exports, qPrintable(childNames(idata)));
     StructureRow *exportedFunction = findChildNamed(exports, QStringLiteral("DllGetClassObject"));
     QVERIFY2(exportedFunction, qPrintable(childNames(exports)));
+    QCOMPARE(exportedFunction->branchIconPath, QString::fromLatin1(StructureBranchIcons::kBlueElement));
     QCOMPARE(exportedFunction->offset, QStringLiteral("00000310"));
     QCOMPARE(static_cast<int>(exportedFunction->kind), static_cast<int>(StructureRowKind::Semantic));
     QVERIFY(!findChildNamed(exports, QStringLiteral("sclib-csharp.dll")));

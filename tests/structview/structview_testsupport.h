@@ -2,6 +2,7 @@
 #define TESTS_STRUCTVIEW_TESTSUPPORT_H
 
 #include "structview/structuredefinitionmanager.h"
+#include "structview/structurebranchicons.h"
 #include "structview/structurerenderengine.h"
 #include "structview/structuresemanticview.h"
 #include "structview/structuretreemodel.h"

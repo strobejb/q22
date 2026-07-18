@@ -10,6 +10,7 @@ private slots:
     void builderEmitsAndMergesSemanticNodes();
     void builderRejectsUnterminatedCstrSemanticNames();
     void builderEmitsIntoMappedSemanticContainers();
+    void builderElidesImplicitScalarArrayEmitRow();
     void definitionManagerFlagsUnknownSemanticDestinations();
     void definitionManagerFlagsUnknownSemanticNodeFields();
     void semanticRegistryRunsKnownViewsAndIgnoresUnknownViews();
@@ -59,14 +60,23 @@ void StructViewSemanticRendererTests::builderEmitsSemanticRowsUnderAttachedSchem
     QVERIFY(semantic);
     StructureRow *payloads = findChildNamed(semantic, QStringLiteral("Payloads"));
     QVERIFY(payloads);
+    QCOMPARE(payloads->branchIconPath, QString::fromLatin1(StructureBranchIcons::kBlueElementArray));
+    QCOMPARE(payloads->branchOpenIconPath, QString::fromLatin1(StructureBranchIcons::kBlueElementArray));
+    QCOMPARE(payloads->branchEmptyIconPath, QString::fromLatin1(StructureBranchIcons::kGrayElementArray));
     QCOMPARE(payloads->children.size(), size_t(1));
 
     StructureRow *payload = payloads->children[0].get();
     QCOMPARE(payload->name, QStringLiteral("17"));
+    QCOMPARE(payload->branchIconPath, QString::fromLatin1(StructureBranchIcons::kBlueElementArray));
+    QCOMPARE(payload->branchOpenIconPath, QString::fromLatin1(StructureBranchIcons::kBlueElementArray));
+    QCOMPARE(payload->branchEmptyIconPath, QString::fromLatin1(StructureBranchIcons::kGrayElementArray));
     QCOMPARE(payload->offset, QStringLiteral("00000030"));
     QCOMPARE(payload->byteLength, uint64_t(3));
     QCOMPARE(static_cast<int>(payload->kind), static_cast<int>(StructureRowKind::Semantic));
     QCOMPARE(payload->children.size(), size_t(3));
+    QVERIFY(payload->children[0]->branchIconPath.isEmpty());
+    QVERIFY(payload->children[0]->branchOpenIconPath.isEmpty());
+    QVERIFY(payload->children[0]->branchEmptyIconPath.isEmpty());
     QCOMPARE(payload->children[0]->value, QStringLiteral("170"));
     QCOMPARE(payload->children[2]->value, QStringLiteral("204"));
 }
@@ -250,26 +260,70 @@ void StructViewSemanticRendererTests::builderEmitsIntoMappedSemanticContainers()
     QCOMPARE(image->children.size(), size_t(2));
     QCOMPARE(image->children[0]->name, QStringLiteral(".text"));
     QCOMPARE(image->children[0]->offset, QStringLiteral("00000040"));
+    QCOMPARE(image->children[0]->byteLength, uint64_t(0x20));
+    QCOMPARE(image->children[0]->branchIconPath, QString::fromLatin1(StructureBranchIcons::kGrayStructure));
     QCOMPARE(image->children[1]->name, QStringLiteral(".idata"));
     QCOMPARE(image->children[1]->offset, QStringLiteral("00000080"));
+    QCOMPARE(image->children[1]->byteLength, uint64_t(0x20));
+    QCOMPARE(image->children[1]->branchIconPath, QString::fromLatin1(StructureBranchIcons::kBlueStructure));
+    QCOMPARE(image->children[1]->branchOpenIconPath, QString::fromLatin1(StructureBranchIcons::kBlueStructureOpen));
+    QCOMPARE(image->children[1]->branchEmptyIconPath, QString::fromLatin1(StructureBranchIcons::kGrayStructure));
 
     QCOMPARE(image->children[1]->children.size(), size_t(2));
     QCOMPARE(image->children[1]->children[0]->name, QStringLiteral("Imports"));
     QCOMPARE(image->children[1]->children[1]->name, QStringLiteral("Bytes"));
     StructureRow *bytesGroup = findChildNamed(image->children[1].get(), QStringLiteral("Bytes"));
     QVERIFY2(bytesGroup, qPrintable(childNames(image->children[1].get())));
-    QCOMPARE(bytesGroup->children.size(), size_t(1));
-    QCOMPARE(bytesGroup->children[0]->children.size(), size_t(32));
+    QCOMPARE(bytesGroup->branchIconPath, QString::fromLatin1(StructureBranchIcons::kBlueElementArray));
+    QCOMPARE(bytesGroup->branchOpenIconPath, QString::fromLatin1(StructureBranchIcons::kBlueElementArray));
+    QCOMPARE(bytesGroup->branchEmptyIconPath, QString::fromLatin1(StructureBranchIcons::kGrayElementArray));
+    QCOMPARE(bytesGroup->children.size(), size_t(32));
+    QCOMPARE(bytesGroup->children[0]->name, QStringLiteral("[0]"));
+    QVERIFY(bytesGroup->children[0]->branchIconPath.isEmpty());
 
     StructureRow *importsGroup = findChildNamed(image->children[1].get(), QStringLiteral("Imports"));
     QVERIFY2(importsGroup, qPrintable(childNames(image->children[1].get())));
+    QCOMPARE(importsGroup->branchIconPath, QString::fromLatin1(StructureBranchIcons::kBlueStructure));
     StructureRow *imports = findChildNamed(importsGroup, QStringLiteral("Import Descriptors"));
     QVERIFY2(imports, qPrintable(childNames(importsGroup)));
     QCOMPARE(imports->offset, QStringLiteral("00000080"));
     QCOMPARE(imports->children.size(), size_t(1));
+    QCOMPARE(imports->children[0]->branchIconPath, QString::fromLatin1(StructureBranchIcons::kBlueEntity));
     StructureRow *thunk = findChildNamed(imports->children[0].get(), QStringLiteral("dword thunk"));
     QVERIFY(thunk);
     QCOMPARE(thunk->value, QStringLiteral("305419896"));
+}
+
+void StructViewSemanticRendererTests::builderElidesImplicitScalarArrayEmitRow()
+{
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef byte PayloadByte;\n"
+                        "typedef struct _Entry {\n"
+                        "  dword offset;\n"
+                        "  dword size;\n"
+                        "  [emit(dest(Bytes), type(PayloadByte), offset(offset), count(size))] byte marker;\n"
+                        "} Entry;\n"
+                        "[semantic] typedef struct _RootView { PayloadByte Bytes[]; } RootView;\n"
+                        "[export, semantic(RootView)] typedef struct _Root { Entry entry; } Root;\n"));
+
+    QByteArray bytes(0x20, '\0');
+    writeLe32(&bytes, 0, 0x10);
+    writeLe32(&bytes, 4, 3);
+    bytes[0x10] = char(0xaa);
+    bytes[0x11] = char(0xbb);
+    bytes[0x12] = char(0xcc);
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    StructureRow *semantic = findTopLevelNamed(rows, QStringLiteral("Semantic"));
+    QVERIFY(semantic);
+    StructureRow *bytesGroup = findChildNamed(semantic, QStringLiteral("Bytes"));
+    QVERIFY(bytesGroup);
+    QCOMPARE(bytesGroup->children.size(), size_t(3));
+    QCOMPARE(bytesGroup->children[0]->name, QStringLiteral("[0]"));
+    QCOMPARE(bytesGroup->children[0]->value, QStringLiteral("170"));
+    QVERIFY(!findChildNamed(bytesGroup, QStringLiteral("PayloadByte")));
 }
 
 void StructViewSemanticRendererTests::definitionManagerFlagsUnknownSemanticDestinations()

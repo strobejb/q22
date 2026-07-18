@@ -71,11 +71,11 @@ void StructViewDynamicPlacementTests::builderPlacesDynamicStructsUnderNamedDynam
     QCOMPARE(sections->children[1]->children.size(), size_t(4));
     QCOMPARE(rows[0]->children[2]->name, QStringLiteral("SECTION .text"));
     QVERIFY(!rows[0]->children[2]->name.startsWith(QStringLiteral("SECTION - ")));
-    verifyBranchIconsPresent(rows[0]->children[2].get());
+    QVERIFY(rows[0]->children[2]->branchIconPath.isEmpty());
     QCOMPARE(rows[0]->children[2]->children.size(), size_t(0));
     QCOMPARE(rows[0]->children[3]->name, QStringLiteral("SECTION .idata"));
     QVERIFY(!rows[0]->children[3]->name.startsWith(QStringLiteral("SECTION - ")));
-    verifyBranchIconsPresent(rows[0]->children[3].get());
+    QVERIFY(rows[0]->children[3]->branchIconPath.isEmpty());
     QCOMPARE(rows[0]->children[3]->offset, QStringLiteral("00000080"));
 
     StructureRow *dynamicImport = rows[0]->children[3]->children[0].get();
@@ -83,7 +83,7 @@ void StructViewDynamicPlacementTests::builderPlacesDynamicStructsUnderNamedDynam
     QCOMPARE(dynamicImport->offset, QStringLiteral("00000080"));
     QCOMPARE(static_cast<int>(rows[0]->children[3]->kind), static_cast<int>(StructureRowKind::Dynamic));
     QCOMPARE(static_cast<int>(dynamicImport->kind), static_cast<int>(StructureRowKind::Dynamic));
-    verifyBranchIconsPresent(dynamicImport);
+    QVERIFY(dynamicImport->branchIconPath.isEmpty());
     QCOMPARE(dynamicImport->children.size(), size_t(1));
     QCOMPARE(dynamicImport->children[0]->name, QStringLiteral("dword thunk"));
     QCOMPARE(dynamicImport->children[0]->value, QStringLiteral("305419896"));
@@ -99,8 +99,10 @@ void StructViewDynamicPlacementTests::builderPlacesDynamicStructsUnderNamedDynam
     QVERIFY(emptySectionIndex.isValid());
     QVERIFY(sectionIndex.isValid());
     QVERIFY(dynamicIndex.isValid());
-    QVERIFY(model.hasChildren(emptySectionIndex));
+    QVERIFY(!model.hasChildren(emptySectionIndex));
     QCOMPARE(model.rowCount(emptySectionIndex), 0);
+    QVERIFY(model.hasChildren(sectionIndex));
+    QVERIFY(model.hasChildren(dynamicIndex));
     QVERIFY(!(model.flags(sectionIndex) & Qt::ItemIsEditable));
     QVERIFY(!(model.flags(dynamicIndex) & Qt::ItemIsEditable));
 }

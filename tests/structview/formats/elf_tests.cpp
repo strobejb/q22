@@ -178,9 +178,14 @@ void StructViewElfTests::builderRendersElfDependenciesAndRelocationsSummary()
     StructureRow *elfImage = findTopLevelNamed(rows, QStringLiteral("ELF Image"));
     QVERIFY2(elfImage, "ELF Image top-level row not found");
 
+    StructureRow *textSection = findChildNamed(elfImage, QStringLiteral("SECTION .text"));
+    QVERIFY(textSection);
+    QCOMPARE(textSection->branchIconPath, QString::fromLatin1(StructureBranchIcons::kGrayStructure));
+    QVERIFY(!textSection->emphasizeName);
+
     StructureRow *dynamicSection = findChildNamed(elfImage, QStringLiteral("SECTION .dynamic"));
     QVERIFY(dynamicSection);
-    QVERIFY2(dynamicSection->branchIconPath.contains(QStringLiteral("structure")), qPrintable(dynamicSection->branchIconPath));
+    QCOMPARE(dynamicSection->branchIconPath, QString::fromLatin1(StructureBranchIcons::kBlueStructure));
     QVERIFY(dynamicSection->emphasizeName);
     StructureRow *dependencies = findChildNamed(dynamicSection, QStringLiteral("Dependencies"));
     QVERIFY2(dependencies, qPrintable(childNames(dynamicSection)));
@@ -190,7 +195,7 @@ void StructViewElfTests::builderRendersElfDependenciesAndRelocationsSummary()
 
     StructureRow *relSection = findChildNamed(elfImage, QStringLiteral("SECTION .rel.text"));
     QVERIFY(relSection);
-    QVERIFY2(relSection->branchIconPath.contains(QStringLiteral("structure")), qPrintable(relSection->branchIconPath));
+    QCOMPARE(relSection->branchIconPath, QString::fromLatin1(StructureBranchIcons::kBlueStructure));
     QVERIFY(relSection->emphasizeName);
     StructureRow *relocations = findChildNamed(relSection, QStringLiteral("Relocations"));
     QVERIFY2(relocations, qPrintable(childNames(relSection)));
