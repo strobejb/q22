@@ -133,6 +133,7 @@ DEFINE_KEYWORD          ( TOK_MAPPER,           "mapper" )
 
 // IDL-derived legacy spellings -- see DEFINE_KEYWORD_ALIAS above.
 DEFINE_KEYWORD_ALIAS    ( TOK_COUNT,            "size_is" )
+DEFINE_KEYWORD_ALIAS    ( TOK_OPENAS,           "nested" )
 DEFINE_KEYWORD_ALIAS    ( TOK_SELECT,           "switch_is" )
 
 #undef DEFINE_RESERVED_KEYWORD

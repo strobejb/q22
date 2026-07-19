@@ -1550,13 +1550,13 @@ void StructViewRawRendererTests::builderExposesOpenAsTargets()
 {
     // Scenario: a container element describes a physical byte range that can be
     // opened as another Strata root.
-    // Expected: the renderer attaches one open_as target per rendered element,
-    // evaluating offset/extent/name in that element's field scope.
+    // Expected: the renderer attaches one nested/open_as target per rendered
+    // element, evaluating offset/extent/name in that element's field scope.
     StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
                         "typedef struct _Child { byte magic; } Child;\n"
-                        "[open_as(type(Child), offset(dataOffset), extent(dataSize), name(fmt(\"slice {0}\", dataOffset)))]\n"
+                        "[nested(type(Child), offset(dataOffset), extent(dataSize), name(fmt(\"slice {0}\", dataOffset)))]\n"
                         "typedef struct _Entry {\n"
                         "  dword dataOffset;\n"
                         "  dword dataSize;\n"

@@ -73,7 +73,7 @@ typedef struct _TAR_HEADER
 } TAR_HEADER, *PTAR_HEADER;
 
 [
-    open_as(type(auto), offset(current_offset() + 512), extent(octal(str(header.size))), name(header.name))
+    nested(type(auto), offset(current_offset() + 512), extent(octal(str(header.size))), name(header.name))
 ]
 typedef struct _TAR_ENTRY
 {

@@ -48,9 +48,10 @@ than turning raw layout evaluation into a general query engine.
 
 ### Nested source and transformed-stream views
 
-`open_as(...)` can expose a bounded byte range as another detected format and
-the UI can navigate nested sources. This covers direct physical slices such as
-TAR entries and nested TAR/TAR/WASM cases.
+`nested(...)` can expose a bounded byte range as another detected format and
+the UI can navigate nested sources. `open_as(...)` remains accepted as the
+compatibility/action spelling. This covers direct physical slices such as TAR
+entries and nested TAR/TAR/WASM cases.
 
 There is still no reusable way to render a decompressed or otherwise transformed
 stream with an existing Strata definition.
@@ -59,11 +60,10 @@ This blocks embedded ICO PNGs, WOFF table inflation, `.tar.gz` nesting, CAB
 folder decompression, fat Mach-O slices, and filesystem views inside disk-image
 partitions.
 
-Potential direction: keep `open_as(...)` as the compatibility/action spelling,
-add a more declarative alias such as `nested(...)`, and pair it with explicit
-transform providers for zlib/DEFLATE, Brotli, LZX, and other codecs. Transformed
-rows must retain a clear relationship to their source bytes without pretending
-that decompressed offsets are physical file offsets.
+Potential direction: pair `nested(...)` with explicit transform providers for
+zlib/DEFLATE, Brotli, LZX, and other codecs. Transformed rows must retain a
+clear relationship to their source bytes without pretending that decompressed
+offsets are physical file offsets.
 
 ### Computed validation and diagnostics
 
@@ -94,6 +94,12 @@ sub-ranges, and is used by GIF, MP4, PE, and Mach-O definitions.
 Remaining display gaps:
 
   - enum/bitflag/bitfield style controls;
+  - a possible `tree("sealed")` presentation mode for value-like structs whose
+    parsed children should not be expandable in the normal tree. This is not the
+    same as `tree("collapsed")`: sealed would deliberately remove the expansion
+    affordance despite internal child rows. Its usefulness is uncertain unless
+    the row has a strong summarized value/comment and some alternate inspect or
+    debug path exists for the hidden parsed fields;
   - derived FourCC properties such as PNG ancillary/private/reserved/safe-to-copy
     bits in one polished row.
 

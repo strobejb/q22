@@ -17,7 +17,7 @@ View online: [Strata Language Reference](https://github.com/strobejb/q22/blob/ma
 | Types | [`struct`](#structs) · [`union`](#unions) · [`enum`](#enums) · [`typedef`](#type-declarations) |
 | Reusable tags | [`tagset`](#tagsets) · [`tags`](#tagsets) |
 | Presentation | [`enum(Name)`](#display) · [`bitflag(Name)`](#display) · [`bitfield(Name)`](#display) · [`format("...")`](#display) · [`name`](#display) · [`string`](#display) · [`tree("...")`](#tree-presentation) · [`warn`](#display) · [`assert`](#display) |
-| Layout | [`offset`](#layout) · [`align`](#layout) · [`pad_to`](#layout) · [`endian`](#byte-order) · [`entrypoint`](#layout) · [`code`](#layout) · [`open_as`](#layout) · [`extent`](#layout) · [`optional`](#layout) |
+| Layout | [`offset`](#layout) · [`align`](#layout) · [`pad_to`](#layout) · [`endian`](#byte-order) · [`entrypoint`](#layout) · [`code`](#layout) · [`nested`](#layout) / [`open_as`](#layout) · [`extent`](#layout) · [`optional`](#layout) |
 | Arrays | [`count`](#arrays) · [`max_count`](#arrays) · [`count_as`](#arrays) · [`terminated_by`](#arrays) · [`terminator`](#arrays) |
 | Unions | [`select`](#discriminated-unions) · [`case`](#discriminated-unions) |
 | Dynamic/semantic views | [`semantic`](#semantic-and-emit) · [`emit`](#semantic-and-emit) · [`emit_node`](#semantic-and-emit) · [`emit_row`](#semantic-and-emit) · [`append`](#positional-semantic-collection-addressing) · [`item`](#positional-semantic-collection-addressing) · [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) · [`view`](#view) |
@@ -436,8 +436,19 @@ consumption.
 | `tree("expanded")` | Show an expandable row initially open |
 | `tree("flatten")` | Suppress the wrapper row and promote its children |
 
-There is no separate `inline` keyword today; use `tree("flatten")`. `sealed`
-display is not implemented yet.
+There is no separate `inline` keyword today; use `tree("flatten")`. `flatten`
+is intentionally about tree presentation: the wrapper row is suppressed and its
+children are promoted. An `inline` alias can be added later if we want a softer
+authoring spelling, but `inline` should not replace `flatten` abruptly because
+it can be confused with physical inline layout.
+
+`sealed` display is not implemented yet. If added, it would mean the row cannot
+be expanded even though the renderer may have parsed child items internally.
+That is intentionally different from `tree("collapsed")`, which still allows
+the user to inspect children. The open design question is whether this is useful
+enough: it only makes sense for value-like structs with a strong summarized
+display value, and may need an alternate debug/inspect path so parsed child data
+is not permanently hidden.
 
 ## Layout tags
 
@@ -455,7 +466,7 @@ Layout tags affect the alignment and positioning of fields:
 | `optional(cond)` | Skip this field when `cond` is false |
 | `entrypoint` | Mark this scalar field's own value as a code entry point address for disassembly |
 | `code("arch" \| architecture(field)[, offset(expr), extent(expr)])` | Mark a byte range as code for the disassembler. `architecture(field)` obtains the Capstone id from the matching enum member's `[architecture("...")]` metadata. |
-| `open_as(type(RootType \| auto), offset(expr), extent(expr)[, name(expr)])` | Mark the row as a navigable physical slice that can be opened as another Strata root |
+| `nested(type(RootType \| auto), offset(expr), extent(expr)[, name(expr)])` | Mark the row as a navigable physical slice that can be opened as another Strata root; `open_as(...)` is a compatibility alias |
 
 ```c
 [offset(dosHeader.e_lfanew)]
@@ -471,7 +482,7 @@ byte Data[];
 [code("wasm")]
 byte instructions[];
 
-[open_as(type(MACHO), offset(offset), extent(size),
+[nested(type(MACHO), offset(offset), extent(size),
          name(fmt("Mach-O slice {0}", cputype)))]
 typedef struct _FAT_ARCH {
     [enum(CPU_TYPE)] dword cputype;
@@ -489,11 +500,13 @@ typedef struct _FAT_ARCH {
 dword AddressOfEntryPoint;
 ```
 
-`open_as(...)` describes a bounded byte range inside the current source. The
+`nested(...)` describes a bounded byte range inside the current source. The
 first implementation is physical only: `offset(...)` and `extent(...)` select
 bytes from the current source. `type(auto)` asks q22 to detect the nested format
-from those bytes; `type(RootType)` forces a specific Strata root. Compressed or
-decoded child sources, such as `tar.gz`, require a later transform layer.
+from those bytes; `type(RootType)` forces a specific Strata root. `open_as(...)`
+remains accepted as a compatibility alias and matches the UI action wording.
+Compressed or decoded child sources, such as `tar.gz`, require a later transform
+layer.
 
 ### Byte order
 
@@ -1254,7 +1267,7 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 | Primitive types | `byte`, `word`, `dword`, `qword`, `char`, `wchar_t`, `float`, `double`, `uleb128`, `sleb128` |
 | Presentation tags | `assert`, `bitfield`, `bitflag`, `enum`, `format`, `name`, `string`, `tree`, `warn` |
 | Presentation argument wrappers | `width` |
-| Layout tags | `align`, `architecture`, `code`, `endian`, `entrypoint`, `extent`, `offset`, `open_as`, `optional`, `pad_to` |
+| Layout tags | `align`, `architecture`, `code`, `endian`, `entrypoint`, `extent`, `nested`, `offset`, `open_as`, `optional`, `pad_to` |
 | Arrays/unions | `case`, `count`, `count_as`, `default`, `max_count`, `select`, `size_is`, `switch_is`, `terminated_by`, `terminator` |
 | Dynamic/semantic tags | `dynamic_array`, `dynamic_container`, `dynamic_struct`, `emit`, `emit_node`, `emit_row`, `offset_map`, `semantic`, `view` |
 | Dynamic/semantic argument wrappers | `append`, `attr`, `container`, `dest`, `field`, `item`, `key`, `label`, `map`, `mapper`, `type` |
