@@ -3020,26 +3020,27 @@ void StructureViewPanel::showOptionsContextMenu(int column, const QPoint &global
 
     if (targetIndex.isValid() && m_model && m_model->hasChildren(targetIndex))
     {
-        QAction *expand = menu.addAction(tr("Expand"));
-        connect(expand, &QAction::triggered,
-                this, [this, targetIndex]() { m_tree->expand(targetIndex); });
-
-        QAction *collapse = menu.addAction(tr("Collapse"));
-        connect(collapse, &QAction::triggered,
-                this, [this, targetIndex]() { m_tree->collapse(targetIndex); });
+        QAction *focus = menu.addAction(tr("Focus here"));
+        connect(focus, &QAction::triggered,
+                this, [this, targetIndex]() { focusSubtree(targetIndex); });
 
         QAction *expandTree = menu.addAction(tr("Expand subtree"));
         connect(expandTree, &QAction::triggered,
                 this, [this, targetIndex]() { expandSubtree(targetIndex); });
-
-        QAction *collapseTree = menu.addAction(tr("Collapse subtree"));
-        connect(collapseTree, &QAction::triggered,
-                this, [this, targetIndex]() { collapseSubtree(targetIndex); });
     }
+
+    bool actionGroupStarted = false;
+    const auto startActionGroup = [&]() {
+        if (!actionGroupStarted)
+        {
+            addSeparatorIfNeeded();
+            actionGroupStarted = true;
+        }
+    };
 
     if (sourceRowForIndex(targetIndex))
     {
-        addSeparatorIfNeeded();
+        startActionGroup();
         QAction *locateSource = menu.addAction(tr("Locate in source"));
         connect(locateSource, &QAction::triggered,
                 this, [this, targetIndex]() { locateIndexInSource(targetIndex); });
@@ -3049,7 +3050,7 @@ void StructureViewPanel::showOptionsContextMenu(int column, const QPoint &global
         StructureRow *openAsRow = openAsRowForIndex(targetIndex);
         if (openAsRow)
         {
-            addSeparatorIfNeeded();
+            startActionGroup();
             TypeDecl *resolvedRootType = resolvedOpenAsRootType(openAsRow);
             QString resolvedRootName = displayNameForTypeDecl(resolvedRootType);
             if (resolvedRootName.isEmpty())
@@ -3099,7 +3100,7 @@ void StructureViewPanel::showOptionsContextMenu(int column, const QPoint &global
             };
             codeRow = findCodeDescendant(findCodeDescendant, row);
         }
-        addSeparatorIfNeeded();
+        startActionGroup();
         const bool hasTarget = codeRow && m_hv;
         QString openCodeText = tr("Open in Disassembler");
         if (!hasTarget)
@@ -3130,9 +3131,18 @@ void StructureViewPanel::showOptionsContextMenu(int column, const QPoint &global
         }
     }
 
+    bool displayGroupStarted = false;
+    const auto startDisplayGroup = [&]() {
+        if (!displayGroupStarted)
+        {
+            addSeparatorIfNeeded();
+            displayGroupStarted = true;
+        }
+    };
+
     if (includeAllColumns || column == StructureTreeModel::NameColumn)
     {
-        addSeparatorIfNeeded();
+        startDisplayGroup();
         QAction *definedTypes = menu.addAction(tr("Use defined type names"));
         definedTypes->setCheckable(true);
         definedTypes->setChecked(m_useDefinedTypeNames);
@@ -3142,7 +3152,7 @@ void StructureViewPanel::showOptionsContextMenu(int column, const QPoint &global
 
     if (includeAllColumns || column == StructureTreeModel::ValueColumn)
     {
-        addSeparatorIfNeeded();
+        startDisplayGroup();
         QAction *hexadecimalValues = menu.addAction(includeAllColumns ? tr("Hexadecimal values") : tr("Hexadecimal"));
         hexadecimalValues->setCheckable(true);
         hexadecimalValues->setChecked(m_useHexadecimalValues);
@@ -3152,7 +3162,7 @@ void StructureViewPanel::showOptionsContextMenu(int column, const QPoint &global
 
     if (includeAllColumns || column == StructureTreeModel::OffsetColumn)
     {
-        addSeparatorIfNeeded();
+        startDisplayGroup();
         QAction *hexadecimalOffsets = menu.addAction(includeAllColumns ? tr("Hexadecimal offsets") : tr("Hexadecimal"));
         hexadecimalOffsets->setCheckable(true);
         hexadecimalOffsets->setChecked(m_useHexadecimalOffsets);
@@ -3170,6 +3180,55 @@ void StructureViewPanel::showOptionsContextMenu(int column, const QPoint &global
         menu.exec(globalPos);
 }
 
+void StructureViewPanel::focusSubtree(const QModelIndex &index)
+{
+    if (!m_tree || !m_model || !index.isValid())
+        return;
+
+    const QModelIndex target = index.siblingAtColumn(StructureTreeModel::NameColumn);
+    if (!target.isValid())
+        return;
+
+    auto isAncestorOfTarget = [](const QModelIndex &candidate, const QModelIndex &targetIndex) {
+        for (QModelIndex parent = targetIndex.parent(); parent.isValid(); parent = parent.parent())
+            if (parent == candidate)
+                return true;
+        return false;
+    };
+
+    auto isDescendantOfTarget = [](const QModelIndex &candidate, const QModelIndex &targetIndex) {
+        for (QModelIndex parent = candidate.parent(); parent.isValid(); parent = parent.parent())
+            if (parent == targetIndex)
+                return true;
+        return false;
+    };
+
+    std::function<void(const QModelIndex &)> visit = [&](const QModelIndex &parent) {
+        const int rows = m_model->rowCount(parent);
+        for (int row = 0; row < rows; ++row)
+        {
+            const QModelIndex child = m_model->index(row, StructureTreeModel::NameColumn, parent);
+            if (!child.isValid())
+                continue;
+
+            const bool targetRow = child == target;
+            const bool ancestor = isAncestorOfTarget(child, target);
+            const bool descendant = isDescendantOfTarget(child, target);
+            if (targetRow || ancestor)
+                m_tree->expand(child);
+            else if (!descendant)
+                m_tree->collapse(child);
+
+            visit(child);
+        }
+    };
+
+    visit(QModelIndex());
+    m_tree->expand(target);
+    m_tree->scrollTo(target, QAbstractItemView::PositionAtCenter);
+    m_tree->setCurrentIndex(target);
+}
+
 void StructureViewPanel::expandSubtree(const QModelIndex &index)
 {
     if (!m_tree || !m_model || !index.isValid())
@@ -3182,17 +3241,6 @@ void StructureViewPanel::expandSubtree(const QModelIndex &index)
     const int rows = m_model->rowCount(index);
     for (int row = 0; row < rows; ++row)
         expandSubtree(m_model->index(row, StructureTreeModel::NameColumn, index));
-}
-
-void StructureViewPanel::collapseSubtree(const QModelIndex &index)
-{
-    if (!m_tree || !m_model || !index.isValid())
-        return;
-
-    const int rows = m_model->rowCount(index);
-    for (int row = 0; row < rows; ++row)
-        collapseSubtree(m_model->index(row, StructureTreeModel::NameColumn, index));
-    m_tree->collapse(index);
 }
 
 void StructureViewPanel::repositionSourceViewButtons()

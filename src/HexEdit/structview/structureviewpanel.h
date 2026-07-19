@@ -87,8 +87,8 @@ private:
     void showRootComboContextMenu(const QPoint &pos);
     void showHeaderContextMenu(int column, const QPoint &globalPos);
     void showOptionsContextMenu(int column, const QPoint &globalPos, bool includeAllColumns, const QModelIndex &rowIndex = QModelIndex());
+    void focusSubtree(const QModelIndex &index);
     void expandSubtree(const QModelIndex &index);
-    void collapseSubtree(const QModelIndex &index);
     void showGridPage();
     void showSourcePage(TypeDecl *typeDecl = nullptr);
     void showLogPage();
