@@ -68,7 +68,9 @@ typedef signed   word   SHORT;
 typedef signed   dword  int, long;
 ```
 
-Built-in special types: `DOSTIME`, `DOSDATE`, `FILETIME`, `time_t`.
+Built-in special types: `DOSTIME`, `DOSDATE`, `FILETIME`, `time_t`. Structure
+View renders these as timestamps by default: `time_t` and `FILETIME` are shown
+as UTC date-times, `DOSDATE` as a date, and `DOSTIME` as a time.
 
 `uleb128` and `sleb128` are scalar integer types whose byte length is decoded
 from the file at render time. They advance layout by the encoded byte count and
@@ -362,7 +364,10 @@ The following 'display' tags can be used to alter the rendered value or name of 
 | `format("string")`, `format("ascii")`, `format("utf8")` | Render a byte or char array as a string preview |
 | `format("utf16")`, `format("utf16le")`, `format("utf16be")` | Render a byte array as a UTF-16 string preview |
 | `format("guid")`, `format("uuid")` | Render a 16-byte array as a canonical GUID/UUID string |
-| `format("hex")`, `format("dec")` | Force integer display base for this row only |
+| `format("hex"[, width(N)])` | Force zero-padded hexadecimal integer display for this row only; default width is the scalar byte width |
+| `format("bin"[, width(N)])`, `format("binary"[, width(N)])` | Force zero-padded binary integer display for this row only; default width is 8 |
+| `format("dec")` | Force decimal integer display for this row only; decimal is not padded |
+| `format("timestamp"[, "unix"\|"filetime"\|"dosdate"\|"dostime"])` | Render an integer as a timestamp; the default is Unix seconds |
 | `name("label")` | Override the display label with a string literal |
 | `name(field)` | Use the value of `field` as the display label |
 | `string` | Legacy sugar for `format("string")` |
@@ -376,6 +381,9 @@ The following 'display' tags can be used to alter the rendered value or name of 
 [name(SectionName)] dword Offset;
 [name("Alternative name")] dword Offset;
 [format("fourcc")] dword Tag;
+[format("hex", width(8))] dword Rva;
+[format("bin")] byte PackedFlags;
+[format("timestamp", "unix")] dword TimeDateStamp;
 [string] byte Name[32];
 [format("utf16le")] byte WideName[64];
 [assert(element_value() == fourcc("RIFF"), "Expected RIFF magic")] dword Magic;
@@ -1229,7 +1237,7 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 |----------|----------|
 | Type declarations | `struct`, `union`, `enum`, `typedef`, `const`, `signed`, `unsigned` |
 | Primitive types | `byte`, `word`, `dword`, `qword`, `char`, `wchar_t`, `float`, `double`, `uleb128`, `sleb128` |
-| Display/layout tags | `align`, `architecture`, `assert`, `bitfield`, `bitflag`, `code`, `description`, `display`, `endian`, `entrypoint`, `extent`, `format`, `ignore`, `name`, `offset`, `open_as`, `optional`, `pad_to`, `string`, `style`, `tree`, `warn` |
+| Display/layout tags | `align`, `architecture`, `assert`, `bitfield`, `bitflag`, `code`, `description`, `display`, `endian`, `entrypoint`, `extent`, `format`, `ignore`, `name`, `offset`, `open_as`, `optional`, `pad_to`, `string`, `style`, `tree`, `warn`, `width` |
 | Arrays/unions | `case`, `count`, `count_as`, `default`, `length_is`, `max_count`, `select`, `select_offset`, `size_is`, `switch_is`, `terminated_by`, `terminator` |
 | Dynamic/semantic tags | `append`, `attr`, `container`, `dest`, `dynamic_array`, `dynamic_container`, `dynamic_struct`, `emit`, `emit_node`, `emit_row`, `field`, `item`, `key`, `label`, `map`, `mapper`, `offset_map`, `semantic`, `type`, `view` |
 | Export/detection tags | `assoc`, `category`, `export`, `magic`, `version` |

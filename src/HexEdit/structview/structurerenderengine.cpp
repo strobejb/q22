@@ -6,11 +6,15 @@
 #include "structview/structuretypenameformatter.h"
 
 #include <QByteArray>
+#include <QDate>
+#include <QDateTime>
 #include <QDebug>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QLatin1String>
 #include <QStringList>
+#include <QTime>
+#include <QTimeZone>
 #include <QTextStream>
 
 #include <algorithm>
@@ -57,8 +61,29 @@ enum class StrataFormat
     Guid,
     Uuid,
     Hex,
-    Dec
+    Dec,
+    Binary,
+    Timestamp
 };
+
+enum class TimestampFormat
+{
+    None,
+    Unix,
+    FileTime,
+    DosDate,
+    DosTime
+};
+
+struct FormatTagInfo
+{
+    StrataFormat format = StrataFormat::None;
+    TimestampFormat timestamp = TimestampFormat::None;
+    ExprNode *widthExpr = nullptr;
+};
+
+void appendCommaArgs(ExprNode *expr, std::vector<ExprNode *> *args);
+TOKEN unwrapTagArg(ExprNode *arg, ExprNode **inner);
 
 enum class TerminatorVisibility
 {
@@ -106,9 +131,8 @@ QString tagString(Tag *tags, TOKEN token)
     return QString::fromLocal8Bit(expr->str).toLower();
 }
 
-StrataFormat formatTag(TypeDecl *typeDecl)
+StrataFormat strataFormatFromName(const QString &value)
 {
-    const QString value = tagString(typeDecl ? typeDecl->tagList : nullptr, TOK_FORMAT);
     if (value.isEmpty())
         return StrataFormat::None;
     if (value == QLatin1String("string") || value == QLatin1String("ascii") || value == QLatin1String("utf8"))
@@ -129,7 +153,86 @@ StrataFormat formatTag(TypeDecl *typeDecl)
         return StrataFormat::Hex;
     if (value == QLatin1String("dec"))
         return StrataFormat::Dec;
+    if (value == QLatin1String("bin") || value == QLatin1String("binary"))
+        return StrataFormat::Binary;
+    if (value == QLatin1String("timestamp")
+        || value == QLatin1String("time_t")
+        || value == QLatin1String("unix")
+        || value == QLatin1String("filetime")
+        || value == QLatin1String("dosdate")
+        || value == QLatin1String("dostime"))
+    {
+        return StrataFormat::Timestamp;
+    }
     return StrataFormat::None;
+}
+
+TimestampFormat timestampFormatFromName(const QString &value)
+{
+    if (value.isEmpty()
+        || value == QLatin1String("timestamp")
+        || value == QLatin1String("time_t")
+        || value == QLatin1String("unix")
+        || value == QLatin1String("unix_time"))
+    {
+        return TimestampFormat::Unix;
+    }
+    if (value == QLatin1String("filetime"))
+        return TimestampFormat::FileTime;
+    if (value == QLatin1String("dosdate") || value == QLatin1String("dos_date"))
+        return TimestampFormat::DosDate;
+    if (value == QLatin1String("dostime") || value == QLatin1String("dos_time"))
+        return TimestampFormat::DosTime;
+    return TimestampFormat::None;
+}
+
+FormatTagInfo formatTagInfo(TypeDecl *typeDecl)
+{
+    FormatTagInfo info;
+
+    ExprNode *expr = nullptr;
+    if (!FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_FORMAT, &expr) || !expr)
+        return info;
+
+    std::vector<ExprNode *> args;
+    appendCommaArgs(expr, &args);
+    if (args.empty())
+        return info;
+
+    ExprNode *formatExpr = nullptr;
+    if (unwrapTagArg(args[0], &formatExpr) != TOK_NULL)
+        return info;
+    if (!formatExpr || formatExpr->type != EXPR_STRINGBUF || !formatExpr->str)
+        return info;
+
+    info.format = strataFormatFromName(QString::fromLocal8Bit(formatExpr->str).toLower());
+    if (info.format == StrataFormat::Timestamp)
+        info.timestamp = timestampFormatFromName(QString::fromLocal8Bit(formatExpr->str).toLower());
+
+    for (size_t i = 1; i < args.size(); ++i)
+    {
+        ExprNode *inner = nullptr;
+        switch (unwrapTagArg(args[i], &inner))
+        {
+        case TOK_WIDTH:
+            info.widthExpr = inner;
+            break;
+        default:
+            if (inner && inner->type == EXPR_STRINGBUF && inner->str && info.format == StrataFormat::Timestamp)
+                info.timestamp = timestampFormatFromName(QString::fromLocal8Bit(inner->str).toLower());
+            break;
+        }
+    }
+
+    if (info.format == StrataFormat::Timestamp && info.timestamp == TimestampFormat::None)
+        info.timestamp = TimestampFormat::Unix;
+
+    return info;
+}
+
+StrataFormat formatTag(TypeDecl *typeDecl)
+{
+    return formatTagInfo(typeDecl).format;
 }
 
 TerminatorVisibility terminatorVisibilityExpr(ExprNode *expr)
@@ -153,6 +256,80 @@ bool expressionIsLiteralZero(ExprNode *expr)
 QString hexByte(uchar value)
 {
     return QString::number(value, 16).toLower().rightJustified(2, QLatin1Char('0'));
+}
+
+QString formatUtcDateTime(const QDateTime &dateTime)
+{
+    if (!dateTime.isValid())
+        return QStringLiteral("Invalid");
+
+    return dateTime.toUTC().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss 'UTC'"));
+}
+
+QString formatUnixTime(uint64_t rawValue, uint64_t byteLength)
+{
+    return formatUtcDateTime(QDateTime::fromSecsSinceEpoch(signedStructureValue(rawValue, byteLength),
+                                                           QTimeZone::UTC));
+}
+
+QString formatFileTime(uint64_t rawValue)
+{
+    const QDateTime epoch(QDate(1601, 1, 1), QTime(0, 0), QTimeZone::UTC);
+    return formatUtcDateTime(epoch.addMSecs(qint64(rawValue / 10000)));
+}
+
+QString formatDosDate(uint64_t rawValue)
+{
+    const uint16_t raw = static_cast<uint16_t>(rawValue);
+    const int year = 1980 + ((raw >> 9) & 0x7f);
+    const int month = (raw >> 5) & 0x0f;
+    const int day = raw & 0x1f;
+    const QDate date(year, month, day);
+    return date.isValid() ? date.toString(QStringLiteral("yyyy-MM-dd"))
+                          : QStringLiteral("Invalid");
+}
+
+QString formatDosTime(uint64_t rawValue)
+{
+    const uint16_t raw = static_cast<uint16_t>(rawValue);
+    const int hour = (raw >> 11) & 0x1f;
+    const int minute = (raw >> 5) & 0x3f;
+    const int second = (raw & 0x1f) * 2;
+    const QTime time(hour, minute, second);
+    return time.isValid() ? time.toString(QStringLiteral("HH:mm:ss"))
+                          : QStringLiteral("Invalid");
+}
+
+QString formatTimestampValue(TimestampFormat format, uint64_t rawValue, uint64_t byteLength)
+{
+    switch (format)
+    {
+    case TimestampFormat::Unix:
+        return formatUnixTime(rawValue, byteLength);
+    case TimestampFormat::FileTime:
+        return formatFileTime(rawValue);
+    case TimestampFormat::DosDate:
+        return formatDosDate(rawValue);
+    case TimestampFormat::DosTime:
+        return formatDosTime(rawValue);
+    case TimestampFormat::None:
+        break;
+    }
+
+    return {};
+}
+
+TimestampFormat timestampFormatForType(Type *type)
+{
+    if (FindType(type, typeTIMET))
+        return TimestampFormat::Unix;
+    if (FindType(type, typeFILETIME))
+        return TimestampFormat::FileTime;
+    if (FindType(type, typeDOSDATE))
+        return TimestampFormat::DosDate;
+    if (FindType(type, typeDOSTIME))
+        return TimestampFormat::DosTime;
+    return TimestampFormat::None;
 }
 
 QString formatUuidBytes(const QByteArray &bytes, bool guidByteOrder)
@@ -1536,6 +1713,14 @@ uint64_t StructureRenderEngine::formatScalar(StructureRow *row, Type *type, Type
     if (applyFormatTag(row, typeDecl, length))
     {
         applyBitfieldTag(row, type, typeDecl, raw, length);
+        return length;
+    }
+
+    const TimestampFormat builtinTimestamp = timestampFormatForType(type);
+    if (builtinTimestamp != TimestampFormat::None)
+    {
+        row->valueKind = StructureRowValueKind::Custom;
+        row->value = formatTimestampValue(builtinTimestamp, raw, length);
         return length;
     }
 
@@ -7008,23 +7193,64 @@ void StructureRenderEngine::applyBitfieldTag(StructureRow *row,
 
 bool StructureRenderEngine::applyFormatTag(StructureRow *row, TypeDecl *typeDecl, uint64_t byteLength)
 {
-    const StrataFormat format = formatTag(typeDecl);
+    const FormatTagInfo formatInfo = formatTagInfo(typeDecl);
+    const StrataFormat format = formatInfo.format;
     if (!row)
         return false;
 
-    if (format == StrataFormat::Hex || format == StrataFormat::Dec)
+    if (format == StrataFormat::Hex
+        || format == StrataFormat::Dec
+        || format == StrataFormat::Binary
+        || format == StrataFormat::Timestamp)
     {
         if (row->valueKind != StructureRowValueKind::ScalarInteger)
             return false;
 
-        StructureDisplayOptions options = m_options;
-        options.hexadecimalValues = format == StrataFormat::Hex;
         row->valueKind = StructureRowValueKind::Custom;
-        row->value = formatStructureIntegerValue(row->scalarRawValue,
-                                                 row->scalarByteLength,
-                                                 row->scalarSigned,
-                                                 row->scalarCharacterSuffix,
-                                                 options);
+        if (format == StrataFormat::Timestamp)
+        {
+            row->value = formatTimestampValue(formatInfo.timestamp,
+                                              row->scalarRawValue,
+                                              row->scalarByteLength);
+            if (row->value.isEmpty())
+                return false;
+        }
+        else if (format == StrataFormat::Binary)
+        {
+            int width = 8;
+            if (formatInfo.widthExpr)
+            {
+                INUMTYPE evaluatedWidth = 0;
+                if (evaluate(row, formatInfo.widthExpr, &evaluatedWidth, row->absoluteOffset) && evaluatedWidth > 0)
+                    width = int(std::min<INUMTYPE>(evaluatedWidth, 64));
+            }
+            row->value = QString::number(row->scalarRawValue, 2).rightJustified(width, QLatin1Char('0'));
+            if (!row->scalarCharacterSuffix.isEmpty())
+                row->value += row->scalarCharacterSuffix;
+        }
+        else if (format == StrataFormat::Hex)
+        {
+            int width = qMax(1, int(row->scalarByteLength * 2));
+            if (formatInfo.widthExpr)
+            {
+                INUMTYPE evaluatedWidth = 0;
+                if (evaluate(row, formatInfo.widthExpr, &evaluatedWidth, row->absoluteOffset) && evaluatedWidth > 0)
+                    width = int(std::min<INUMTYPE>(evaluatedWidth, 64));
+            }
+            row->value = QString::number(row->scalarRawValue, 16).toUpper().rightJustified(width, QLatin1Char('0'));
+            if (!row->scalarCharacterSuffix.isEmpty())
+                row->value += row->scalarCharacterSuffix;
+        }
+        else
+        {
+            StructureDisplayOptions options = m_options;
+            options.hexadecimalValues = false;
+            row->value = formatStructureIntegerValue(row->scalarRawValue,
+                                                     row->scalarByteLength,
+                                                     row->scalarSigned,
+                                                     row->scalarCharacterSuffix,
+                                                     options);
+        }
         return true;
     }
 

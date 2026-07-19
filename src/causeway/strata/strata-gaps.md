@@ -7,10 +7,29 @@ capabilities belong in `README.md`, not here.
 The raw layout language already supports variable-width scalars, logical array
 counts, extent-bounded recursion, terminated fields, named offset spaces,
 FourCC display and selection, positional semantic collections, architecture-aware
-code ranges, and lazily rendered dynamic data. The remaining work is dominated
-by cross-table correlation, transformed byte streams, and derived semantics.
+code ranges, lazily rendered dynamic data, row diagnostics, nested source slices,
+and reusable bitfield display schemas. The remaining work is dominated by
+cross-table correlation, transformed byte streams, richer derived display, and
+format-specific semantics that need lookups rather than physical layout alone.
 
 ## Cross-cutting engine gaps
+
+### Declarative semantic views
+
+This is now mostly a strength rather than a core gap. Declarative semantic roots
+exist for PE, ELF, WASM, SFNT, WOFF, and ICO. PE and ELF still have older C++
+semantic-view implementations, but the default path is declarative and the C++
+path is retained mainly as fallback/compatibility.
+
+Remaining work:
+
+  - convert DEX's C++ semantic view to declarative Strata if the language can
+    express it cleanly;
+  - reduce WASM-specific renderer glue for function/code linkage and
+    disassembler targeting where possible;
+  - retire PE/ELF C++ semantic fallbacks once declarative coverage and
+    performance are trusted;
+  - improve semantic-view ergonomics, diagnostics, and profiling.
 
 ### Keyed lookup and cross-table correlation
 
@@ -27,42 +46,56 @@ Potential direction: bounded array lookup helpers and reusable keyed physical
 collections. Complicated or expensive joins should remain semantic views rather
 than turning raw layout evaluation into a general query engine.
 
-### Subfile and transformed-stream views
+### Nested source and transformed-stream views
 
-Dynamic rows always read the original file. There is no reusable way to expose
-a bounded byte range as another detected format, or to render a decompressed or
-otherwise transformed stream with an existing Strata definition.
+`open_as(...)` can expose a bounded byte range as another detected format and
+the UI can navigate nested sources. This covers direct physical slices such as
+TAR entries and nested TAR/TAR/WASM cases.
+
+There is still no reusable way to render a decompressed or otherwise transformed
+stream with an existing Strata definition.
 
 This blocks embedded ICO PNGs, WOFF table inflation, `.tar.gz` nesting, CAB
 folder decompression, fat Mach-O slices, and filesystem views inside disk-image
 partitions.
 
-Potential direction: a bounded subfile source abstraction plus explicit
+Potential direction: keep `open_as(...)` as the compatibility/action spelling,
+add a more declarative alias such as `nested(...)`, and pair it with explicit
 transform providers for zlib/DEFLATE, Brotli, LZX, and other codecs. Transformed
 rows must retain a clear relationship to their source bytes without pretending
 that decompressed offsets are physical file offsets.
 
-### Computed validation
+### Computed validation and diagnostics
 
-Expressions can read and compare stored values but cannot compute checksums or
-attach validation results to rows. PNG CRC-32, ISO/El Torito checksums, archive
-integrity fields, and redundant-endian ISO values therefore render as data
-without a verified/invalid state.
+`warn(...)` and `assert(...)` can attach row diagnostics from ordinary
+expressions. The remaining gap is computed validation over byte ranges:
+PNG CRC-32, ISO/El Torito checksums, archive integrity fields, and
+redundant-endian ISO values still render as data without a verified/invalid
+state.
 
 Potential direction: bounded checksum helpers and semantic validation
 attributes with explicit source extents.
 
-### Packed-field and layered display
+### Formatting and layered display
 
-`bitflag(...)` correctly handles independent masks, but there is no declarative
-display for named bit ranges whose values overlap. A scalar also cannot combine
-`format("fourcc")`, enum choice editing, and derived FourCC properties in one
-polished view.
+`format(...)` covers string/ascii/utf8, utf16 variants, FourCC, GUID/UUID,
+decimal, hexadecimal, and binary scalar display. Hexadecimal is zero-padded by
+default to the scalar byte width and `format("hex", width(N))` can override it.
+Binary defaults to width 8 and accepts `format("bin", width(N))` /
+`format("binary", width(N))`. Decimal is intentionally unpadded for now.
+Built-in `time_t`, `FILETIME`, `DOSDATE`, and `DOSTIME` types render as
+timestamps by default. Plain integer fields can opt into the same rendering path
+with `format("timestamp", "unix")`, `format("timestamp", "filetime")`,
+`format("timestamp", "dosdate")`, or `format("timestamp", "dostime")`.
 
-This affects GIF packed fields, processor-specific packed header fields, and PNG
-ancillary/private/reserved/safe-to-copy chunk properties.
+`bitfield` now covers packed fields whose masks overlap or contain named
+sub-ranges, and is used by GIF, MP4, PE, and Mach-O definitions.
 
-Potential direction: named bit-slice display plus composable display metadata.
+Remaining display gaps:
+
+  - enum/bitflag/bitfield style controls;
+  - derived FourCC properties such as PNG ancillary/private/reserved/safe-to-copy
+    bits in one polished row.
 
 ### Profile-aware dispatch and compound detection
 

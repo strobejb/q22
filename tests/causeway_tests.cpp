@@ -686,6 +686,8 @@ void CausewayTests::formatAndTreeTagsParse()
 						 "[export]\n"
 						 "struct Root {\n"
 						 "  [format(\"fourcc\")] dword tag;\n"
+						 "  [format(\"hex\", width(8))] dword offset;\n"
+						 "  [format(\"timestamp\", \"filetime\")] qword created;\n"
 						 "  [tree(\"collapsed\")] byte payload;\n"
 						 "  [case(fourcc(\"RIFF\"))] byte selected;\n"
 						 "} root;\n"));
@@ -698,10 +700,19 @@ void CausewayTests::formatAndTreeTagsParse()
 	QVERIFY(root);
 	QVERIFY(root->baseType);
 	QVERIFY(root->baseType->sptr);
-	QCOMPARE(root->baseType->sptr->typeDeclList.size(), size_t(3));
+	QCOMPARE(root->baseType->sptr->typeDeclList.size(), size_t(5));
 	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[0]->tagList, TOK_FORMAT, nullptr));
-	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[1]->tagList, TOK_TREE, nullptr));
-	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[2]->tagList, TOK_CASE, nullptr));
+	ExprNode *formatExpr = nullptr;
+	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[1]->tagList, TOK_FORMAT, &formatExpr));
+	QVERIFY(formatExpr);
+	QCOMPARE(formatExpr->type, EXPR_COMMA);
+	QVERIFY(formatExpr->right);
+	QVERIFY(formatExpr->right->left);
+	QCOMPARE(formatExpr->right->left->type, EXPR_TAGWRAP);
+	QCOMPARE(formatExpr->right->left->tok, TOK_WIDTH);
+	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[2]->tagList, TOK_FORMAT, nullptr));
+	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[3]->tagList, TOK_TREE, nullptr));
+	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[4]->tagList, TOK_CASE, nullptr));
 }
 
 void CausewayTests::diagnosticTagsParse()

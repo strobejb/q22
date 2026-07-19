@@ -14,6 +14,7 @@ private slots:
     void builderFormatsCharacterArraysAsStrings();
     void builderFormatsTaggedByteArraysAsStrings();
     void builderFormatsGenericDisplayTags();
+    void builderFormatsBuiltinTimestampTypes();
     void builderAppliesTreePresentationTags();
     void builderRendersRaggedStringTables();
     void builderSupportsExtentBoundedRecursiveArrays();
@@ -334,6 +335,10 @@ void StructViewRawRendererTests::builderFormatsGenericDisplayTags()
                         "  [format(\"guid\")] byte guid[16];\n"
                         "  [format(\"uuid\")] byte uuid[16];\n"
                         "  [format(\"dec\")] byte decValue;\n"
+                        "  [format(\"hex\")] word hexDefault;\n"
+                        "  [format(\"hex\", width(8))] word hexWide;\n"
+                        "  [format(\"bin\")] byte binDefault;\n"
+                        "  [format(\"bin\", width(16))] byte binWide;\n"
                         "  byte normalValue;\n"
                         "} root;\n"));
 
@@ -343,12 +348,14 @@ void StructViewRawRendererTests::builderFormatsGenericDisplayTags()
                              + QByteArray::fromHex("005800590000")
                              + QByteArray::fromHex("33221100554477668899AABBCCDDEEFF")
                              + QByteArray::fromHex("00112233445566778899AABBCCDDEEFF")
-                             + QByteArray::fromHex("1010");
+                             + QByteArray::fromHex("10")
+                             + QByteArray::fromHex("010002000505")
+                             + QByteArray::fromHex("10");
     StructureDisplayOptions options;
     options.hexadecimalValues = true;
     auto rows = buildRows(&library, firstExported(&library), bytes, 0, options);
     QCOMPARE(rows.size(), size_t(1));
-    QCOMPARE(rows[0]->children.size(), size_t(8));
+    QCOMPARE(rows[0]->children.size(), size_t(12));
     QCOMPARE(rows[0]->children[0]->value, QStringLiteral("\"RIFF\""));
     QCOMPARE(rows[0]->children[1]->value, QStringLiteral("\"Hi\""));
     QCOMPARE(rows[0]->children[2]->value, QStringLiteral("\"AB\""));
@@ -357,7 +364,55 @@ void StructViewRawRendererTests::builderFormatsGenericDisplayTags()
     QCOMPARE(rows[0]->children[4]->value, QStringLiteral("\"00112233-4455-6677-8899-aabbccddeeff\""));
     QCOMPARE(rows[0]->children[5]->value, QStringLiteral("\"00112233-4455-6677-8899-aabbccddeeff\""));
     QCOMPARE(rows[0]->children[6]->value, QStringLiteral("16"));
-    QCOMPARE(rows[0]->children[7]->value, QStringLiteral("10"));
+    QCOMPARE(rows[0]->children[7]->value, QStringLiteral("0001"));
+    QCOMPARE(rows[0]->children[8]->value, QStringLiteral("00000002"));
+    QCOMPARE(rows[0]->children[9]->value, QStringLiteral("00000101"));
+    QCOMPARE(rows[0]->children[10]->value, QStringLiteral("0000000000000101"));
+    QCOMPARE(rows[0]->children[11]->value, QStringLiteral("10"));
+}
+
+void StructViewRawRendererTests::builderFormatsBuiltinTimestampTypes()
+{
+    // Scenario: Causeway's built-in timestamp aliases are used in a structure.
+    // Expected: Structure View renders the semantic date/time value by default,
+    // while an explicit format("hex") override still wins for that row.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  time_t unixEpoch;\n"
+                        "  FILETIME filetimeEpoch;\n"
+                        "  DOSDATE dosDate;\n"
+                        "  DOSTIME dosTime;\n"
+                        "  [format(\"hex\")] time_t rawUnix;\n"
+                        "  [format(\"timestamp\")] dword unixFormat;\n"
+                        "  [format(\"timestamp\", \"filetime\")] qword filetimeFormat;\n"
+                        "  [format(\"dosdate\")] word dosDateFormat;\n"
+                        "  [format(\"dostime\")] word dosTimeFormat;\n"
+                        "} root;\n"));
+
+    const QByteArray bytes = QByteArray::fromHex("00000000")
+                             + QByteArray::fromHex("0000000000000000")
+                             + QByteArray::fromHex("F358")
+                             + QByteArray::fromHex("5C64")
+                             + QByteArray::fromHex("00000000")
+                             + QByteArray::fromHex("00000000")
+                             + QByteArray::fromHex("0000000000000000")
+                             + QByteArray::fromHex("F358")
+                             + QByteArray::fromHex("5C64");
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(9));
+    QCOMPARE(rows[0]->children[0]->value, QStringLiteral("1970-01-01 00:00:00 UTC"));
+    QCOMPARE(rows[0]->children[1]->value, QStringLiteral("1601-01-01 00:00:00 UTC"));
+    QCOMPARE(rows[0]->children[2]->value, QStringLiteral("2024-07-19"));
+    QCOMPARE(rows[0]->children[3]->value, QStringLiteral("12:34:56"));
+    QCOMPARE(rows[0]->children[4]->value, QStringLiteral("00000000"));
+    QCOMPARE(rows[0]->children[5]->value, QStringLiteral("1970-01-01 00:00:00 UTC"));
+    QCOMPARE(rows[0]->children[6]->value, QStringLiteral("1601-01-01 00:00:00 UTC"));
+    QCOMPARE(rows[0]->children[7]->value, QStringLiteral("2024-07-19"));
+    QCOMPARE(rows[0]->children[8]->value, QStringLiteral("12:34:56"));
 }
 
 void StructViewRawRendererTests::builderAppliesTreePresentationTags()

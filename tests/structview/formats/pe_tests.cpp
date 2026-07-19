@@ -95,6 +95,10 @@ void StructViewPeTests::builderNamesPeDynamicSectionsFromStandardDefinition()
     QVERIFY(findChildNamed(fileCharacteristics, QStringLiteral("IMAGE_FILE_EXECUTABLE_IMAGE")));
     QVERIFY(findChildNamed(fileCharacteristics, QStringLiteral("IMAGE_FILE_DLL")));
 
+    StructureRow *timeDateStamp = findDescendantNamed(peRow, QStringLiteral("dword TimeDateStamp"));
+    QVERIFY(timeDateStamp);
+    QCOMPARE(timeDateStamp->value, QStringLiteral("1970-01-01 00:00:00 UTC"));
+
     StructureRow *dllCharacteristics = findDescendantNamed(peRow, QStringLiteral("word DllCharacteristics"));
     QVERIFY(dllCharacteristics);
     QCOMPARE(dllCharacteristics->value, QStringLiteral("IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE | IMAGE_DLLCHARACTERISTICS_NX_COMPAT"));

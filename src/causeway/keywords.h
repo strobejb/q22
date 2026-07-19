@@ -128,6 +128,7 @@ DEFINE_RESERVED_KEYWORD ( TOK_VALUEAT,          "value_at" )
 DEFINE_KEYWORD          ( TOK_VERSION,          "version" )
 DEFINE_KEYWORD          ( TOK_VIEW,             "view" )
 DEFINE_KEYWORD          ( TOK_WARN,             "warn" )
+DEFINE_KEYWORD          ( TOK_WIDTH,            "width" )
 DEFINE_KEYWORD          ( TOK_MAPPER,           "mapper" )
 
 // IDL-derived legacy spellings -- see DEFINE_KEYWORD_ALIAS above.

@@ -233,6 +233,7 @@ typedef struct _IMAGE_FILE_HEADER {
     word    Machine;
 
     word    NumberOfSections;
+    [format("timestamp", "unix")]
     dword   TimeDateStamp;
     dword   PointerToSymbolTable;
     dword   NumberOfSymbols;
@@ -424,6 +425,7 @@ typedef struct _IMAGE_BASE_RELOCATION
 typedef struct _IMAGE_DEBUG_DIRECTORY
 {
     dword Characteristics;
+    [format("timestamp", "unix")]
     dword TimeDateStamp;
     word MajorVersion;
     word MinorVersion;
@@ -522,7 +524,7 @@ bitfield IMAGE_GUARD_FLAG_FIELDS
 typedef struct _IMAGE_LOAD_CONFIG_DIRECTORY32
 {
     dword Size;
-    [optional(Size >= 0x08)]    dword TimeDateStamp;
+    [optional(Size >= 0x08), format("timestamp", "unix")]    dword TimeDateStamp;
     [optional(Size >= 0x0c)]    word  MajorVersion;
     [optional(Size >= 0x0c)]    word  MinorVersion;
     [optional(Size >= 0x10)]    dword GlobalFlagsClear;
@@ -567,7 +569,7 @@ typedef struct _IMAGE_LOAD_CONFIG_DIRECTORY32
 typedef struct _IMAGE_LOAD_CONFIG_DIRECTORY64
 {
     dword  Size;
-    [optional(Size >= 0x08)]    dword  TimeDateStamp;
+    [optional(Size >= 0x08), format("timestamp", "unix")]    dword  TimeDateStamp;
     [optional(Size >= 0x0c)]    word   MajorVersion;
     [optional(Size >= 0x0c)]    word   MinorVersion;
     [optional(Size >= 0x10)]    dword  GlobalFlagsClear;
@@ -643,6 +645,7 @@ typedef word PE_EXPORT_ORDINAL_INDEX;
 typedef struct _IMAGE_EXPORT_DIRECTORY
 {
     dword   Characteristics;
+    [format("timestamp", "unix")]
     dword   TimeDateStamp;
     word    MajorVersion;
     word    MinorVersion;
@@ -711,6 +714,7 @@ typedef struct _IMAGE_IMPORT_BY_NAME
 typedef struct _IMAGE_IMPORT_DESCRIPTOR
 {
     dword   OriginalFirstThunk;
+    [format("timestamp", "unix")]
     dword   TimeDateStamp;
     dword   ForwarderChain;
     dword   Name;

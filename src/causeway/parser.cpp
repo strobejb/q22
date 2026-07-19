@@ -236,6 +236,10 @@ static TOKEN kOpenAsTagValueWrappers[] = {
 	TOK_TYPE, TOK_OFFSET, TOK_EXTENT, TOK_NAME, TOK_NULL
 };
 
+static TOKEN kFormatTagValueWrappers[] = {
+	TOK_WIDTH, TOK_NULL
+};
+
 static TOKEN kBitfieldFieldValueWrappers[] = {
 	TOK_ENUM, TOK_NULL
 };
@@ -539,6 +543,14 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 			else if(tmp == TOK_OPENAS)
 			{
 				if((expr = TagArgList(kOpenAsTagValueWrappers)) == 0)
+				{
+					Error(ERROR_SYNTAX_ERROR, inenglish(t));
+					return false;
+				}
+			}
+			else if(tmp == TOK_FORMAT)
+			{
+				if((expr = TagArgList(kFormatTagValueWrappers)) == 0)
 				{
 					Error(ERROR_SYNTAX_ERROR, inenglish(t));
 					return false;
