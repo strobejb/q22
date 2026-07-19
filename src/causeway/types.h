@@ -54,6 +54,8 @@ enum TYPE
 
 #include "tchar_compat.h"
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 #include <vector>
 using std::vector;
 
@@ -66,12 +68,21 @@ struct Function;
 struct Type;
 struct TypeDecl;
 struct TagSet;
+struct Bitfield;
+struct BitfieldEntry;
+enum BITFIELD_ENTRY_KIND
+{
+	bitfieldMATCH,
+	bitfieldFIELD
+};
+
 struct FILEREF;
 
 typedef vector<Symbol *> SymbolTable;
 typedef vector<Type *> TypeList;
 typedef vector<TypeDecl *> TypeDeclList;
 typedef vector<TagSet *> TagSetList;
+typedef vector<Bitfield *> BitfieldList;
 
 Symbol *InstallSymbol(SymbolTable &table, const char *name);
 Symbol *LookupSymbol(SymbolTable &table, const char *name);
@@ -174,6 +185,54 @@ struct TagSet
 
 	FILEREF			fileRef;
 	FILEREF			tagRef;
+	FILEREF			postRef;
+};
+
+struct BitfieldEntry
+{
+	BitfieldEntry(BITFIELD_ENTRY_KIND k = bitfieldFIELD, ExprNode *e = 0)
+		: kind(k), expr(e), valueExpr(0), maskValue(0), matchValue(0), inferredName(0), displayName(0), valueEnumName(0)
+	{
+	}
+
+	~BitfieldEntry()
+	{
+		delete expr;
+		delete valueExpr;
+		free(inferredName);
+		free(displayName);
+		free(valueEnumName);
+	}
+
+	BITFIELD_ENTRY_KIND kind;
+	ExprNode	*	expr;
+	ExprNode	*	valueExpr;
+	INUMTYPE		maskValue;
+	INUMTYPE		matchValue;
+	char		*	inferredName;
+	char		*	displayName;
+	char		*	valueEnumName;
+
+	FILEREF			fileRef;
+	FILEREF			postRef;
+};
+
+struct Bitfield
+{
+	Bitfield(char *n)
+	{
+		strcpy(name, n);
+	}
+
+	~Bitfield()
+	{
+		EmptyVector(entries);
+	}
+
+	char			name[MAX_STRING_LEN];
+	vector<BitfieldEntry *> entries;
+
+	FILEREF			fileRef;
 	FILEREF			postRef;
 };
 

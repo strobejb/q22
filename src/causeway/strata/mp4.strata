@@ -5,6 +5,12 @@
 
 include "basetypes.strata";
 
+bitfield MP4_VERSION_AND_FLAGS_FIELDS
+{
+    field("Version", 0xff000000);
+    field("Flags", 0x00ffffff);
+};
+
 typedef struct _MP4_FILE_TYPE_BOX
 {
     [string, count(4)]
@@ -115,6 +121,7 @@ typedef struct _MP4_BOX
         [case(fourcc("meta"))]
         struct _MP4_FULL_CONTAINER_BOX
         {
+            [bitfield(MP4_VERSION_AND_FLAGS_FIELDS)]
             dword versionAndFlags;
 
             [

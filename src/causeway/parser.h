@@ -48,6 +48,7 @@ struct StrataLibrary
 	SymbolTable globalTagSymbolList;
 	TypeDeclList globalTypeDeclList;
 	TagSetList globalTagSetList;
+	BitfieldList globalBitfieldList;
 	vector <FILE_DESC *> globalFileHistory;
 
 	bool aliasesInstalled;
@@ -105,11 +106,13 @@ private:
 	bool		ParseByteSequence(vector<uint8_t> *bytes);
 	Statement * ParseInclude();
 	TagSet   * ParseTagSet(FILEREF fileRef);
+	Bitfield * ParseBitfield(FILEREF fileRef);
 	void		ExportStructs();
 	void		Cleanup();
 	void		InstallTypeAliases();
     TypeDecl *	LookupTypeDecl(const char *name);
     TagSet   *  LookupTagSet(const char *name);
+    Bitfield *  LookupBitfield(const char *name);
     Type	 *	MakeTypeDef(TYPE base, const char *name, TYPE base2 = typeNULL);
     Enum	 *	FindEnum(const char *enumName);
 

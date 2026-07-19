@@ -10,6 +10,7 @@ private slots:
     void builderFormatsLeb128ScalarsAndAdvancesByEncodedLength();
     void builderUsesLeb128ValuesInExpressions();
     void builderRendersBitflagsAsExpandableRows();
+    void builderRendersBitfieldsAsExpandableRows();
     void builderFormatsCharacterArraysAsStrings();
     void builderFormatsTaggedByteArraysAsStrings();
     void builderFormatsGenericDisplayTags();
@@ -221,6 +222,48 @@ void StructViewRawRendererTests::builderRendersBitflagsAsExpandableRows()
     QCOMPARE(unknown->children.size(), size_t(1));
     QCOMPARE(unknown->children[0]->name, QStringLiteral("Unknown bits"));
     QCOMPARE(unknown->children[0]->value, QStringLiteral("08"));
+}
+
+void StructViewRawRendererTests::builderRendersBitfieldsAsExpandableRows()
+{
+    // Scenario: bitfield(Name) annotates a packed scalar whose exact matches
+    // and extracted bit ranges are described by reusable bitfield entries.
+    // Expected: the parent scalar keeps its normal value and expands to named
+    // child rows containing extracted mask values.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "enum PackedMasks { Flag = 0x80, Width = 0x70, Sort = 0x08, Size = 0x07, Mode = 0x84 };\n"
+                        "enum SortValue { NotSorted = 0, Sorted = 1 };\n"
+                        "enum ModeValue { ModeA = 0x00, ModeC = 0x84 };\n"
+                        "bitfield PackedBits {\n"
+                        "  match(Flag);\n"
+                        "  field(\"Width bits\", Width);\n"
+                        "  field(\"Sort\", Sort, enum(SortValue));\n"
+                        "  field(\"Size\", Size);\n"
+                        "  field(\"Mode\", Mode, enum(ModeValue));\n"
+                        "};\n"
+                        "[export]\n"
+                        "struct Root { [bitfield(PackedBits)] byte packed; } root;\n"));
+
+    auto rows = buildRows(&library, firstExported(&library), QByteArray::fromHex("ED"));
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(1));
+
+    StructureRow *packed = rows[0]->children[0].get();
+    QCOMPARE(packed->name, QStringLiteral("byte packed"));
+    QCOMPARE(packed->value, QStringLiteral("Flag"));
+    QCOMPARE(packed->children.size(), size_t(5));
+    QCOMPARE(packed->children[0]->name, QStringLiteral("Flag"));
+    QCOMPARE(packed->children[0]->value, QStringLiteral("1"));
+    QCOMPARE(packed->children[1]->name, QStringLiteral("Width bits"));
+    QCOMPARE(packed->children[1]->value, QStringLiteral("6"));
+    QCOMPARE(packed->children[2]->name, QStringLiteral("Sort"));
+    QCOMPARE(packed->children[2]->value, QStringLiteral("Sorted"));
+    QCOMPARE(packed->children[3]->name, QStringLiteral("Size"));
+    QCOMPARE(packed->children[3]->value, QStringLiteral("5"));
+    QCOMPARE(packed->children[4]->name, QStringLiteral("Mode"));
+    QCOMPARE(packed->children[4]->value, QStringLiteral("ModeC"));
 }
 
 void StructViewRawRendererTests::builderFormatsCharacterArraysAsStrings()

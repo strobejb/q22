@@ -67,6 +67,11 @@ void StrataLibrary::Cleanup()
 		delete globalTagSetList[i];
 	}
 
+	for(i = 0; i < globalBitfieldList.size(); i++)
+	{
+		delete globalBitfieldList[i];
+	}
+
 	for(i = 0; i < globalFileHistory.size(); i++)
 	{
 		free(globalFileHistory[i]->buf);
@@ -77,6 +82,7 @@ void StrataLibrary::Cleanup()
 	globalTagSymbolList.clear();
 	globalTypeDeclList.clear();
 	globalTagSetList.clear();
+	globalBitfieldList.clear();
 	globalFileHistory.clear();
 	aliasesInstalled = false;
 }
@@ -229,6 +235,47 @@ static TOKEN kCodeTagValueWrappers[] = {
 static TOKEN kOpenAsTagValueWrappers[] = {
 	TOK_TYPE, TOK_OFFSET, TOK_EXTENT, TOK_NAME, TOK_NULL
 };
+
+static TOKEN kBitfieldFieldValueWrappers[] = {
+	TOK_ENUM, TOK_NULL
+};
+
+static void collectExpressionArgs(ExprNode *expr, vector<ExprNode *> *args)
+{
+	if(!expr || !args)
+		return;
+
+	if(expr->type == EXPR_COMMA)
+	{
+		collectExpressionArgs(expr->left, args);
+		collectExpressionArgs(expr->right, args);
+		return;
+	}
+
+	args->push_back(expr);
+}
+
+static ExprNode *findTagWrapExpr(ExprNode *expr, TOKEN tok)
+{
+	if(!expr)
+		return 0;
+	if(expr->type == EXPR_TAGWRAP && expr->tok == tok)
+		return expr;
+	if(ExprNode *found = findTagWrapExpr(expr->left, tok))
+		return found;
+	if(ExprNode *found = findTagWrapExpr(expr->right, tok))
+		return found;
+	return findTagWrapExpr(expr->cond, tok);
+}
+
+static char *bitfieldDisplayNameFromExpr(ExprNode *expr)
+{
+	if(!expr || !expr->str)
+		return 0;
+	if(expr->type == EXPR_STRINGBUF || expr->type == EXPR_IDENTIFIER)
+		return strdup(expr->str);
+	return 0;
+}
 
 bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 {
@@ -408,6 +455,7 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 		// TAGS which take expression-parameters
 		case TOK_OFFSET:	case TOK_ALIGN:
 		case TOK_BITFLAG:	case TOK_ENDIAN:
+		case TOK_BITFIELD:
 		case TOK_COUNTAS:
 		case TOK_COUNT:
 		case TOK_MAXCOUNT:
@@ -519,6 +567,16 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 					return false;
 			}
 
+			if(tmp == TOK_BITFIELD)
+			{
+				if(!expr || !expr->str || !LookupBitfield(expr->str))
+				{
+					Error(ERROR_UNKNOWN_BITFIELD, expr && expr->str ? expr->str : "<invalid>");
+					delete expr;
+					return false;
+				}
+			}
+
 			tag = new Tag(tmp, tag, expr);
 
 			if(!Expected(')'))
@@ -559,6 +617,18 @@ TagSet * Parser::LookupTagSet(const char *name)
 		TagSet *tagSet = typeLibrary->globalTagSetList[i];
 		if(tagSet && strcmp(tagSet->name, name) == 0)
 			return tagSet;
+	}
+
+	return 0;
+}
+
+Bitfield * Parser::LookupBitfield(const char *name)
+{
+	for(size_t i = 0; i < typeLibrary->globalBitfieldList.size(); i++)
+	{
+		Bitfield *bitfield = typeLibrary->globalBitfieldList[i];
+		if(bitfield && strcmp(bitfield->name, name) == 0)
+			return bitfield;
 	}
 
 	return 0;
@@ -643,7 +713,7 @@ TagSet * Parser::ParseTagSet(FILEREF fileRef)
 	TOKEN allowed[] =
 	{
 		TOK_COUNT, TOK_MAXCOUNT, TOK_IGNORE, TOK_STRING,
-		TOK_OFFSET, TOK_ALIGN, TOK_BITFLAG, TOK_COUNTAS, TOK_STYLE,
+		TOK_OFFSET, TOK_ALIGN, TOK_BITFLAG, TOK_BITFIELD, TOK_COUNTAS, TOK_STYLE,
 		TOK_DISPLAY,
 		TOK_ENDIAN, TOK_SELECT, TOK_CASE, TOK_NAME, TOK_PADTO, TOK_DEFAULT,
 		TOK_ENUM, TOK_ENTRYPOINT, TOK_EXTENT, TOK_OPTIONAL, TOK_EXPORT, TOK_ASSOC, TOK_CATEGORY, TOK_CODE, TOK_MAGIC, TOK_OFFSETMAP, TOK_OPENAS, TOK_VERSION, TOK_WARN, TOK_ASSERT,
@@ -668,6 +738,235 @@ TagSet * Parser::ParseTagSet(FILEREF fileRef)
 
 	lexer.FileRef(&tagSet->postRef);
 	return tagSet;
+}
+
+Bitfield * Parser::ParseBitfield(FILEREF fileRef)
+{
+	char bitfieldName[MAX_STRING_LEN];
+	auto resolveEnumValue = [&](ExprNode *expr, INUMTYPE *value, char **name) -> bool
+	{
+		if(!expr || expr->type != EXPR_IDENTIFIER || !expr->str)
+			return false;
+
+		Symbol *sym = LookupSymbol(typeLibrary->globalIdentifierList, expr->str);
+		if(!sym || !sym->type || sym->type->ty != typeENUMVALUE || !sym->type->evptr)
+			return false;
+
+		if(value)
+			*value = sym->type->evptr->val;
+		if(name)
+			*name = strdup(sym->name);
+		return true;
+	};
+	auto resolveMaskValue = [&](ExprNode *expr, INUMTYPE *value, char **name) -> bool
+	{
+		if(resolveEnumValue(expr, value, name))
+			return true;
+		if(!expr || expr->type == EXPR_STRINGBUF || expr->type == EXPR_TAGWRAP)
+			return false;
+		if(value)
+			*value = Evaluate(expr);
+		return true;
+	};
+	auto parseEntryArgs = [&](TOKEN entryToken, ExprNode **expr, vector<ExprNode *> *args) -> bool
+	{
+		if(!Expected(entryToken))
+			return false;
+		if(!Expected('('))
+			return false;
+
+		*expr = TagArgList(kBitfieldFieldValueWrappers);
+		if(!*expr)
+		{
+			Error(ERROR_SYNTAX_ERROR, inenglish(t));
+			return false;
+		}
+
+		collectExpressionArgs(*expr, args);
+		if(!Expected(')'))
+		{
+			delete *expr;
+			*expr = 0;
+			return false;
+		}
+
+		return true;
+	};
+
+	if(!Expected(TOK_BITFIELD))
+		return 0;
+
+	safe_strcpy(bitfieldName, MAX_STRING_LEN, t.str);
+	if(!Expected(TOK_IDENTIFIER))
+		return 0;
+
+	if(LookupBitfield(bitfieldName))
+	{
+		Error(ERROR_BITFIELD_REDEFINITION, bitfieldName);
+		return 0;
+	}
+
+	Bitfield *bitfield = new Bitfield(bitfieldName);
+	bitfield->fileRef = fileRef;
+
+	if(!Expected('{'))
+	{
+		delete bitfield;
+		return 0;
+	}
+
+	while(t != '}')
+	{
+		FILEREF entryRef(lexer.CurrentFile());
+		TOKEN entryToken = t;
+
+		if(entryToken != TOK_MATCH && entryToken != TOK_FIELD)
+		{
+			Error(ERROR_BITFIELD_ENTRY_SYNTAX);
+			delete bitfield;
+			return 0;
+		}
+
+		ExprNode *expr = 0;
+		vector<ExprNode *> args;
+		if(!parseEntryArgs(entryToken, &expr, &args))
+		{
+			delete bitfield;
+			return 0;
+		}
+
+		BitfieldEntry *entry = new BitfieldEntry(entryToken == TOK_MATCH ? bitfieldMATCH : bitfieldFIELD, expr);
+		entry->fileRef = entryRef;
+
+		if(entryToken == TOK_MATCH)
+		{
+			if(args.empty() || args.size() > 2)
+			{
+				Error(ERROR_BITFIELD_ENTRY_SYNTAX);
+				delete entry;
+				delete bitfield;
+				return 0;
+			}
+
+			size_t maskIndex = 0;
+			if(args.size() == 2)
+			{
+				entry->displayName = bitfieldDisplayNameFromExpr(args[0]);
+				if(!entry->displayName)
+				{
+					Error(ERROR_BITFIELD_ENTRY_SYNTAX);
+					delete entry;
+					delete bitfield;
+					return 0;
+				}
+				maskIndex = 1;
+			}
+
+			if(!resolveMaskValue(args[maskIndex], &entry->maskValue, entry->displayName ? 0 : &entry->inferredName))
+			{
+				Error(ERROR_BITFIELD_ENTRY_SYNTAX);
+				delete entry;
+				delete bitfield;
+				return 0;
+			}
+
+			entry->matchValue = entry->maskValue;
+
+			if(t == '=')
+			{
+				Advance();
+				entry->valueExpr = AssignmentExpression(TOK_NULL);
+				if(!entry->valueExpr)
+				{
+					Error(ERROR_BITFIELD_ENTRY_SYNTAX);
+					delete entry;
+					delete bitfield;
+					return 0;
+				}
+
+				char *rhsName = 0;
+				if(resolveEnumValue(entry->valueExpr, &entry->matchValue, &rhsName))
+				{
+					if(!entry->displayName && !entry->inferredName)
+						entry->inferredName = rhsName;
+					else
+						free(rhsName);
+				}
+				else if(!resolveMaskValue(entry->valueExpr, &entry->matchValue, 0))
+				{
+					Error(ERROR_BITFIELD_ENTRY_SYNTAX);
+					delete entry;
+					delete bitfield;
+					return 0;
+				}
+			}
+
+			if(!entry->displayName && !entry->inferredName)
+			{
+				Error(ERROR_BITFIELD_ENTRY_SYNTAX);
+				delete entry;
+				delete bitfield;
+				return 0;
+			}
+		}
+		else
+		{
+			if(args.size() < 2 || args.size() > 3)
+			{
+				Error(ERROR_BITFIELD_ENTRY_SYNTAX);
+				delete entry;
+				delete bitfield;
+				return 0;
+			}
+
+			entry->displayName = bitfieldDisplayNameFromExpr(args[0]);
+			if(!entry->displayName || !resolveMaskValue(args[1], &entry->maskValue, 0))
+			{
+				Error(ERROR_BITFIELD_ENTRY_SYNTAX);
+				delete entry;
+				delete bitfield;
+				return 0;
+			}
+
+			if(args.size() == 3)
+			{
+				ExprNode *inner = args[2]->type == EXPR_TAGWRAP ? args[2]->left : 0;
+				if(args[2]->type != EXPR_TAGWRAP || args[2]->tok != TOK_ENUM || !inner || !inner->str ||
+					(inner->type != EXPR_IDENTIFIER && inner->type != EXPR_STRINGBUF))
+				{
+					Error(ERROR_BITFIELD_ENTRY_SYNTAX);
+					delete entry;
+					delete bitfield;
+					return 0;
+				}
+				entry->valueEnumName = strdup(inner->str);
+			}
+		}
+
+		if(!Expected(';'))
+		{
+			delete entry;
+			delete bitfield;
+			return 0;
+		}
+
+		lexer.FileRef(&entry->postRef);
+		bitfield->entries.push_back(entry);
+	}
+
+	if(!Expected('}'))
+	{
+		delete bitfield;
+		return 0;
+	}
+	if(!Expected(';'))
+	{
+		delete bitfield;
+		return 0;
+	}
+
+	lexer.FileRef(&bitfield->postRef);
+	return bitfield;
 }
 
 void Parser::Initialize()
@@ -797,7 +1096,7 @@ int Parser::Parse()
 		TOKEN allowed[] = 
 		{ 
 			TOK_LENGTHIS, TOK_COUNT, TOK_MAXCOUNT, TOK_IGNORE, TOK_STRING,
-			TOK_OFFSET, TOK_ALIGN, TOK_BITFLAG, TOK_COUNTAS, TOK_STYLE, TOK_DESCRIPTION,
+			TOK_OFFSET, TOK_ALIGN, TOK_BITFLAG, TOK_BITFIELD, TOK_COUNTAS, TOK_STYLE, TOK_DESCRIPTION,
 			TOK_DISPLAY,
 			TOK_ENDIAN,	TOK_SELECT, TOK_CASE, TOK_NAME, TOK_PADTO, TOK_DEFAULT,
 			TOK_ENUM, TOK_ENTRYPOINT, TOK_EXTENT, TOK_OPTIONAL, TOK_EXPORT, TOK_ASSOC, TOK_CATEGORY, TOK_CODE, TOK_MAGIC, TOK_OFFSETMAP, TOK_OPENAS, TOK_VERSION, TOK_WARN, TOK_ASSERT,
@@ -834,6 +1133,24 @@ int Parser::Parse()
 
 			typeLibrary->globalTagSetList.push_back(tagSet);
 			lexer.CurrentFile()->stmtList.push_back(new Statement(tagSet));
+			break;
+		}
+
+		case TOK_BITFIELD:
+		{
+			if(tagList)
+			{
+				Error(ERROR_ILLEGAL_TAG, inenglish(tagList->tok));
+				delete tagList;
+				return 0;
+			}
+
+			Bitfield *bitfield = ParseBitfield(fileRef);
+			if(!bitfield)
+				return 0;
+
+			typeLibrary->globalBitfieldList.push_back(bitfield);
+			lexer.CurrentFile()->stmtList.push_back(new Statement(bitfield));
 			break;
 		}
 

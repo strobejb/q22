@@ -19,6 +19,7 @@ private slots:
 	void tagsetErrorsArePrecise();
 	void includeDefinedTagsetsCanBeUsedByParent();
 	void tagsetsDumpInSourceOrder();
+	void bitfieldsParseAndValidate();
 	void dynamicPlacementTagsParse();
 	void semanticSchemaAndEmitTagsParse();
 	void positionalSemanticDestinationTagsParse();
@@ -373,6 +374,76 @@ void CausewayTests::tagsetsDumpInSourceOrder()
 	QVERIFY(valuePos > tagsetPos);
 	QVERIFY(dumped.contains("[offset(4)]"));
 	QVERIFY(!dumped.contains("tags(COMMON)"));
+}
+
+void CausewayTests::bitfieldsParseAndValidate()
+{
+	StrataLibrary library;
+	Parser parser(&library);
+	QVERIFY(parseBuffer(parser,
+						"enum Masks { Flag = 0x80, Width = 0x70, Mode = 0x84 };\n"
+						"enum Values { Off = 0, On = 1 };\n"
+						"enum Patterns { ModePattern = 0x84 };\n"
+						"bitfield Packed {\n"
+						"  match(Flag);\n"
+						"  match(\"Mode pattern\", Mode) = ModePattern;\n"
+						"  field(\"Width bits\", Width);\n"
+						"  field(\"Mode\", Mode, enum(Values));\n"
+						"  field(Size, 0x07);\n"
+						"};\n"
+						"[export]\n"
+						"struct Root { [bitfield(Packed)] byte packed; } root;\n"));
+
+	QCOMPARE(library.globalBitfieldList.size(), size_t(1));
+	QVERIFY(!library.globalFileHistory.empty());
+	bool sawBitfieldStatement = false;
+	for(Statement *stmt : library.globalFileHistory[0]->stmtList)
+		if(stmt && stmt->stmtType == stmtBITFIELD)
+			sawBitfieldStatement = true;
+	QVERIFY(sawBitfieldStatement);
+
+	Bitfield *bitfield = library.globalBitfieldList[0];
+	QVERIFY(bitfield);
+	QCOMPARE(QString::fromLocal8Bit(bitfield->name), QStringLiteral("Packed"));
+	QCOMPARE(bitfield->entries.size(), size_t(5));
+	QCOMPARE(bitfield->entries[0]->kind, bitfieldMATCH);
+	QCOMPARE(bitfield->entries[0]->maskValue, INUMTYPE(0x80));
+	QCOMPARE(bitfield->entries[0]->matchValue, INUMTYPE(0x80));
+	QCOMPARE(QString::fromLocal8Bit(bitfield->entries[0]->inferredName), QStringLiteral("Flag"));
+	QCOMPARE(QString::fromLocal8Bit(bitfield->entries[1]->displayName), QStringLiteral("Mode pattern"));
+	QCOMPARE(bitfield->entries[1]->matchValue, INUMTYPE(0x84));
+	QCOMPARE(bitfield->entries[2]->kind, bitfieldFIELD);
+	QCOMPARE(QString::fromLocal8Bit(bitfield->entries[2]->displayName), QStringLiteral("Width bits"));
+	QCOMPARE(bitfield->entries[4]->maskValue, INUMTYPE(0x07));
+	QCOMPARE(QString::fromLocal8Bit(bitfield->entries[4]->displayName), QStringLiteral("Size"));
+	QCOMPARE(QString::fromLocal8Bit(bitfield->entries[3]->valueEnumName), QStringLiteral("Values"));
+
+	TypeDecl *root = nullptr;
+	for(TypeDecl *decl : library.globalTypeDeclList)
+		if(decl && FindTag(decl->tagList, TOK_EXPORT, nullptr))
+			root = decl;
+	QVERIFY(root);
+	QVERIFY(root->baseType);
+	QVERIFY(root->baseType->sptr);
+	TypeDecl *packed = root->baseType->sptr->typeDeclList[0];
+	QVERIFY(FindTag(packed->tagList, TOK_BITFIELD, nullptr));
+
+	Parser duplicate;
+	QVERIFY(!parseBuffer(duplicate,
+						 "enum Masks { Flag = 0x80 };\n"
+						 "bitfield Packed { match(Flag); };\n"
+						 "bitfield Packed { match(Flag); };\n"));
+	QCOMPARE(duplicate.LastErr(), ERROR_BITFIELD_REDEFINITION);
+
+	Parser namelessMatch;
+	QVERIFY(!parseBuffer(namelessMatch,
+						 "bitfield Packed { match(0x80); };\n"));
+	QCOMPARE(namelessMatch.LastErr(), ERROR_BITFIELD_ENTRY_SYNTAX);
+
+	Parser unknown;
+	QVERIFY(!parseBuffer(unknown,
+						 "struct Root { [bitfield(Missing)] byte packed; } root;\n"));
+	QCOMPARE(unknown.LastErr(), ERROR_UNKNOWN_BITFIELD);
 }
 
 void CausewayTests::dynamicPlacementTagsParse()

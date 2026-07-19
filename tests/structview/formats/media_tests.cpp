@@ -131,7 +131,7 @@ void StructViewMediaTests::builderRendersFragmentedAndMetadataMp4Containers()
 
     writeBe32(&mp4, 24, 20);
     mp4.replace(28, 4, "meta");
-    writeBe32(&mp4, 32, 0);
+    writeBe32(&mp4, 32, 0x01020304);
     writeBe32(&mp4, 36, 8);
     mp4.replace(40, 4, "free");
 
@@ -168,6 +168,12 @@ void StructViewMediaTests::builderRendersFragmentedAndMetadataMp4Containers()
     StructureRow *versionAndFlags = findChildNamed(metadata, QStringLiteral("dword versionAndFlags"));
     QVERIFY2(versionAndFlags, qPrintable(childNames(metadata)));
     QCOMPARE(versionAndFlags->absoluteOffset, uint64_t(32));
+    QCOMPARE(versionAndFlags->value, QStringLiteral("16909060"));
+    QCOMPARE(versionAndFlags->children.size(), size_t(2));
+    QCOMPARE(versionAndFlags->children[0]->name, QStringLiteral("Version"));
+    QCOMPARE(versionAndFlags->children[0]->value, QStringLiteral("1"));
+    QCOMPARE(versionAndFlags->children[1]->name, QStringLiteral("Flags"));
+    QCOMPARE(versionAndFlags->children[1]->value, QStringLiteral("131844"));
     StructureRow *metadataChildren = findChildNamed(metadata, QStringLiteral("struct _MP4_BOX children[]"));
     QVERIFY2(metadataChildren, qPrintable(childNames(metadata)));
     QCOMPARE(metadataChildren->children.size(), size_t(1));

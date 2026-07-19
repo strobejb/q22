@@ -20,6 +20,44 @@ enum GIF_EXTENSION_LABEL
     GIF_EXTENSION_APPLICATION     = 0xff
 };
 
+enum GIF_LOGICAL_SCREEN_PACKED_MASKS
+{
+    GlobalColorTableSize = 0x07,
+    SortFlag             = 0x08,
+    ColorResolution      = 0x70,
+    GlobalColorTableFlag = 0x80
+};
+
+enum GIF_GRAPHIC_CONTROL_PACKED_MASKS
+{
+    TransparentColorFlag = 0x01,
+    UserInputFlag        = 0x02,
+    DisposalMethod       = 0x1c
+};
+
+enum GIF_DISPOSAL_METHOD
+{
+    GIF_DISPOSAL_UNSPECIFIED         = 0,
+    GIF_DISPOSAL_DO_NOT_DISPOSE      = 1,
+    GIF_DISPOSAL_RESTORE_BACKGROUND  = 2,
+    GIF_DISPOSAL_RESTORE_PREVIOUS    = 3
+};
+
+bitfield GIF_LOGICAL_SCREEN_PACKED_FIELDS
+{
+    field("GlobalColorTableSize", GlobalColorTableSize);
+    match(SortFlag);
+    field("ColorResolution", ColorResolution);
+    match(GlobalColorTableFlag);
+};
+
+bitfield GIF_GRAPHIC_CONTROL_PACKED_FIELDS
+{
+    match(TransparentColorFlag);
+    match(UserInputFlag);
+    field("DisposalMethod", DisposalMethod, enum(GIF_DISPOSAL_METHOD));
+};
+
 typedef struct _GIF_HEADER
 {
     [string]
@@ -33,7 +71,10 @@ typedef struct _GIF_LOGICAL_SCREEN_DESCRIPTOR
 {
     word width;
     word height;
+
+    [bitfield(GIF_LOGICAL_SCREEN_PACKED_FIELDS)]
     byte packedFields;
+
     byte backgroundColorIndex;
     byte pixelAspectRatio;
 } GIF_LOGICAL_SCREEN_DESCRIPTOR, *PGIF_LOGICAL_SCREEN_DESCRIPTOR;
@@ -62,7 +103,10 @@ typedef struct _GIF_DATA_SUB_BLOCKS
 typedef struct _GIF_GRAPHIC_CONTROL_EXTENSION
 {
     byte blockSize;
+
+    [bitfield(GIF_GRAPHIC_CONTROL_PACKED_FIELDS)]
     byte packedFields;
+
     word delayTime;
     byte transparentColorIndex;
     byte terminator;

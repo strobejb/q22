@@ -72,6 +72,67 @@ enum MACHO_LOAD_COMMAND_TYPE
     MACHO_LC_BUILD_VERSION = 0x00000032
 };
 
+enum MACHO_SECTION_FLAG_MASKS
+{
+    MACHO_SECTION_TYPE_MASK = 0x000000ff
+};
+
+enum MACHO_SECTION_TYPE
+{
+    MACHO_S_REGULAR                             = 0x00,
+    MACHO_S_ZEROFILL                            = 0x01,
+    MACHO_S_CSTRING_LITERALS                    = 0x02,
+    MACHO_S_4BYTE_LITERALS                      = 0x03,
+    MACHO_S_8BYTE_LITERALS                      = 0x04,
+    MACHO_S_LITERAL_POINTERS                    = 0x05,
+    MACHO_S_NON_LAZY_SYMBOL_POINTERS            = 0x06,
+    MACHO_S_LAZY_SYMBOL_POINTERS                = 0x07,
+    MACHO_S_SYMBOL_STUBS                        = 0x08,
+    MACHO_S_MOD_INIT_FUNC_POINTERS              = 0x09,
+    MACHO_S_MOD_TERM_FUNC_POINTERS              = 0x0a,
+    MACHO_S_COALESCED                           = 0x0b,
+    MACHO_S_GB_ZEROFILL                         = 0x0c,
+    MACHO_S_INTERPOSING                         = 0x0d,
+    MACHO_S_16BYTE_LITERALS                     = 0x0e,
+    MACHO_S_DTRACE_DOF                          = 0x0f,
+    MACHO_S_LAZY_DYLIB_SYMBOL_POINTERS          = 0x10,
+    MACHO_S_THREAD_LOCAL_REGULAR                = 0x11,
+    MACHO_S_THREAD_LOCAL_ZEROFILL               = 0x12,
+    MACHO_S_THREAD_LOCAL_VARIABLES              = 0x13,
+    MACHO_S_THREAD_LOCAL_VARIABLE_POINTERS      = 0x14,
+    MACHO_S_THREAD_LOCAL_INIT_FUNCTION_POINTERS = 0x15,
+    MACHO_S_INIT_FUNC_OFFSETS                   = 0x16
+};
+
+enum MACHO_SECTION_ATTRIBUTES
+{
+    MACHO_S_ATTR_PURE_INSTRUCTIONS   = 0x80000000,
+    MACHO_S_ATTR_NO_TOC              = 0x40000000,
+    MACHO_S_ATTR_STRIP_STATIC_SYMS   = 0x20000000,
+    MACHO_S_ATTR_NO_DEAD_STRIP       = 0x10000000,
+    MACHO_S_ATTR_LIVE_SUPPORT        = 0x08000000,
+    MACHO_S_ATTR_SELF_MODIFYING_CODE = 0x04000000,
+    MACHO_S_ATTR_DEBUG               = 0x02000000,
+    MACHO_S_ATTR_SOME_INSTRUCTIONS   = 0x00000400,
+    MACHO_S_ATTR_EXT_RELOC           = 0x00000200,
+    MACHO_S_ATTR_LOC_RELOC           = 0x00000100
+};
+
+bitfield MACHO_SECTION_FLAG_FIELDS
+{
+    field("Section type", MACHO_SECTION_TYPE_MASK, enum(MACHO_SECTION_TYPE));
+    match(MACHO_S_ATTR_PURE_INSTRUCTIONS);
+    match(MACHO_S_ATTR_NO_TOC);
+    match(MACHO_S_ATTR_STRIP_STATIC_SYMS);
+    match(MACHO_S_ATTR_NO_DEAD_STRIP);
+    match(MACHO_S_ATTR_LIVE_SUPPORT);
+    match(MACHO_S_ATTR_SELF_MODIFYING_CODE);
+    match(MACHO_S_ATTR_DEBUG);
+    match(MACHO_S_ATTR_SOME_INSTRUCTIONS);
+    match(MACHO_S_ATTR_EXT_RELOC);
+    match(MACHO_S_ATTR_LOC_RELOC);
+};
+
 typedef struct _MACHO_HEADER32
 {
     [enum(MACHO_CPU_TYPE)]
@@ -122,6 +183,7 @@ typedef struct _MACHO_SECTION32
     dword align;
     dword relocationOffset;
     dword relocationCount;
+    [bitfield(MACHO_SECTION_FLAG_FIELDS)]
     dword flags;
     dword reserved1;
     dword reserved2;
@@ -141,6 +203,7 @@ typedef struct _MACHO_SECTION64
     dword align;
     dword relocationOffset;
     dword relocationCount;
+    [bitfield(MACHO_SECTION_FLAG_FIELDS)]
     dword flags;
     dword reserved1;
     dword reserved2;

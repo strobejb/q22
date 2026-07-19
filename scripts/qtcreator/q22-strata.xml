@@ -29,6 +29,7 @@
     <item>format</item>
     <item>fourcc</item>
     <item>ignore</item>
+    <item>bitfield</item>
     <item>array_index</item>
     <item>include</item>
     <item>select_offset</item>
@@ -68,6 +69,7 @@
     <item>assoc</item>
     <item>attr</item>
     <item>bitflag</item>
+    <item>bitfield</item>
     <item>case</item>
     <item>category</item>
     <item>code</item>
@@ -99,6 +101,7 @@
     <item>length_is</item>
     <item>magic</item>
     <item>map</item>
+    <item>match</item>
     <item>max_count</item>
     <item>label</item>
     <item>mapper</item>

@@ -398,11 +398,14 @@ private:
                                         Type *scopeType,
                                         uint64_t scopeOffset);
     bool declarationBigEndian(TypeDecl *typeDecl, StructureRow *scope, Type *scopeType, uint64_t scopeOffset);
+    Bitfield *tagValueBitfield(TypeDecl *typeDecl) const;
     Enum *tagValueEnum(TypeDecl *typeDecl, TOKEN tagTok) const;
+    Enum *enumForName(const char *name) const;
     Enum *tagEnum(TypeDecl *typeDecl) const;
     QString enumNameForValue(Enum *eptr, INUMTYPE value) const;
     QStringList enumChoiceLabels(Enum *eptr) const;
     void applyBitflagTag(StructureRow *row, Type *type, TypeDecl *typeDecl, uint64_t rawValue, uint64_t byteLength);
+    void applyBitfieldTag(StructureRow *row, Type *type, TypeDecl *typeDecl, uint64_t rawValue, uint64_t byteLength);
     bool applyFormatTag(StructureRow *row, TypeDecl *typeDecl, uint64_t byteLength);
     void applyTreeTag(StructureRow *row, TypeDecl *typeDecl) const;
     void appendPresentedRow(StructureRow *parent, RowPtr row) const;

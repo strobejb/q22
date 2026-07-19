@@ -1511,6 +1511,7 @@ uint64_t StructureRenderEngine::formatScalar(StructureRow *row, Type *type, Type
         row->scalarSigned = info.signedValue;
         row->scalarCharacterSuffix.clear();
         row->value = formatStructureIntegerValue(raw, row->scalarByteLength, row->scalarSigned, QString(), m_options);
+        applyBitfieldTag(row, type, typeDecl, raw, row->scalarByteLength);
         return length;
     }
 
@@ -1533,7 +1534,10 @@ uint64_t StructureRenderEngine::formatScalar(StructureRow *row, Type *type, Type
     row->scalarCharacterSuffix.clear();
     row->value = formatStructureIntegerValue(raw, length, row->scalarSigned, QString(), m_options);
     if (applyFormatTag(row, typeDecl, length))
+    {
+        applyBitfieldTag(row, type, typeDecl, raw, length);
         return length;
+    }
 
     Enum *displayEnum = tagEnum(typeDecl);
     if (!displayEnum && base->ty == typeENUM)
@@ -1545,6 +1549,7 @@ uint64_t StructureRenderEngine::formatScalar(StructureRow *row, Type *type, Type
         row->value = enumName.isEmpty() ? QString::number(raw, 16).toUpper().rightJustified(int(length * 2), QLatin1Char('0'))
                                         : enumName;
         row->valueChoices = enumChoiceLabels(displayEnum);
+        applyBitfieldTag(row, type, typeDecl, raw, length);
         return length;
     }
 
@@ -1607,6 +1612,7 @@ uint64_t StructureRenderEngine::formatScalar(StructureRow *row, Type *type, Type
         break;
     }
 
+    applyBitfieldTag(row, type, typeDecl, raw, length);
     return length;
 }
 
@@ -6758,17 +6764,29 @@ bool StructureRenderEngine::declarationBigEndian(TypeDecl *typeDecl,
     return ok ? value != 0 : m_bigEndian;
 }
 
-Enum *StructureRenderEngine::tagValueEnum(TypeDecl *typeDecl, TOKEN tagTok) const
+Bitfield *StructureRenderEngine::tagValueBitfield(TypeDecl *typeDecl) const
 {
     ExprNode *expr = nullptr;
-    if (!m_library || !FindTag(typeDecl ? typeDecl->tagList : nullptr, tagTok, &expr) || !expr || !expr->str)
+    if (!m_library || !FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_BITFIELD, &expr) || !expr || !expr->str)
         return nullptr;
 
-    if (Symbol *sym = LookupSymbol(m_library->globalTagSymbolList, expr->str))
+    for (Bitfield *bitfield : m_library->globalBitfieldList)
+        if (bitfield && std::strcmp(bitfield->name, expr->str) == 0)
+            return bitfield;
+
+    return nullptr;
+}
+
+Enum *StructureRenderEngine::enumForName(const char *name) const
+{
+    if (!m_library || !name)
+        return nullptr;
+
+    if (Symbol *sym = LookupSymbol(m_library->globalTagSymbolList, name))
         if (sym->type && sym->type->ty == typeENUM)
             return sym->type->eptr;
 
-    if (Symbol *sym = LookupSymbol(m_library->globalIdentifierList, expr->str))
+    if (Symbol *sym = LookupSymbol(m_library->globalIdentifierList, name))
     {
         Type *base = BaseNode(sym->type);
         if (base && base->ty == typeENUM)
@@ -6776,6 +6794,15 @@ Enum *StructureRenderEngine::tagValueEnum(TypeDecl *typeDecl, TOKEN tagTok) cons
     }
 
     return nullptr;
+}
+
+Enum *StructureRenderEngine::tagValueEnum(TypeDecl *typeDecl, TOKEN tagTok) const
+{
+    ExprNode *expr = nullptr;
+    if (!m_library || !FindTag(typeDecl ? typeDecl->tagList : nullptr, tagTok, &expr) || !expr || !expr->str)
+        return nullptr;
+
+    return enumForName(expr->str);
 }
 
 Enum *StructureRenderEngine::tagEnum(TypeDecl *typeDecl) const
@@ -6862,6 +6889,121 @@ void StructureRenderEngine::applyBitflagTag(StructureRow *row,
     row->value = activeLabels.isEmpty()
         ? formatStructureIntegerValue(rawValue, byteLength, false, QString(), m_options)
         : activeLabels.join(QStringLiteral(" | "));
+}
+
+namespace
+{
+bool isContiguousMask(uint64_t mask)
+{
+    if (mask == 0)
+        return false;
+
+    while ((mask & 1) == 0)
+        mask >>= 1;
+
+    return (mask & (mask + 1)) == 0;
+}
+
+uint64_t maskShift(uint64_t mask)
+{
+    uint64_t shift = 0;
+    while (mask && (mask & 1) == 0)
+    {
+        ++shift;
+        mask >>= 1;
+    }
+    return shift;
+}
+
+QString bitfieldEntryName(BitfieldEntry *entry)
+{
+    if (entry && entry->displayName)
+        return QString::fromLocal8Bit(entry->displayName);
+    return entry && entry->inferredName ? QString::fromLocal8Bit(entry->inferredName) : QString();
+}
+
+} // namespace
+
+void StructureRenderEngine::applyBitfieldTag(StructureRow *row,
+                                             Type *type,
+                                             TypeDecl *typeDecl,
+                                             uint64_t rawValue,
+                                             uint64_t byteLength)
+{
+    if (!row)
+        return;
+
+    Bitfield *bitfield = tagValueBitfield(typeDecl);
+    if (!bitfield)
+        return;
+
+    QStringList activeLabels;
+    uint64_t coveredBits = 0;
+    bool hasMatchEntries = false;
+
+    for (BitfieldEntry *entry : bitfield->entries)
+    {
+        if (!entry || entry->maskValue < 0)
+            continue;
+
+        const uint64_t mask = static_cast<uint64_t>(entry->maskValue);
+        coveredBits |= mask;
+        const uint64_t extractedField = isContiguousMask(mask)
+            ? ((rawValue & mask) >> maskShift(mask))
+            : (rawValue & mask);
+        const bool matched = (rawValue & mask) == static_cast<uint64_t>(entry->matchValue);
+        const uint64_t displayValue = entry->kind == bitfieldMATCH ? (matched ? 1 : 0) : extractedField;
+
+        QString name = bitfieldEntryName(entry);
+        if (name.isEmpty())
+            continue;
+
+        if (entry->kind == bitfieldMATCH)
+        {
+            hasMatchEntries = true;
+            if (matched)
+                activeLabels.push_back(name);
+        }
+
+        auto child = makeRow(row, type, typeDecl, row->absoluteOffset);
+        child->name = name;
+        child->comment.clear();
+        child->byteLength = byteLength;
+        child->valueKind = StructureRowValueKind::ScalarInteger;
+        child->scalarRawValue = displayValue;
+        child->scalarByteLength = byteLength;
+        child->scalarSigned = false;
+        child->scalarCharacterSuffix.clear();
+
+        Enum *displayEnum = entry->kind == bitfieldFIELD ? enumForName(entry->valueEnumName) : nullptr;
+
+        if (displayEnum)
+        {
+            const QString enumName = enumNameForValue(displayEnum, static_cast<INUMTYPE>(displayValue));
+            child->value = enumName.isEmpty()
+                ? formatStructureIntegerValue(displayValue, byteLength, false, QString(), m_options)
+                : enumName;
+            child->valueChoices = enumChoiceLabels(displayEnum);
+        }
+        else
+        {
+            child->value = formatStructureIntegerValue(displayValue, byteLength, false, QString(), m_options);
+        }
+
+        row->children.push_back(std::move(child));
+    }
+
+    if (hasMatchEntries)
+    {
+        const uint64_t unknownBits = rawValue & ~coveredBits;
+        if (unknownBits != 0)
+            activeLabels.push_front(QStringLiteral("Unknown bits"));
+
+        row->valueKind = StructureRowValueKind::Custom;
+        row->value = activeLabels.isEmpty()
+            ? formatStructureIntegerValue(rawValue, byteLength, false, QString(), m_options)
+            : activeLabels.join(QStringLiteral(" | "));
+    }
 }
 
 bool StructureRenderEngine::applyFormatTag(StructureRow *row, TypeDecl *typeDecl, uint64_t byteLength)

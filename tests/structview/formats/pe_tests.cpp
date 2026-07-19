@@ -47,7 +47,7 @@ void StructViewPeTests::builderNamesPeDynamicSectionsFromStandardDefinition()
     writeLe32(&bytes, sectionTable + 12, 0x1000);
     writeLe32(&bytes, sectionTable + 16, 0x100);
     writeLe32(&bytes, sectionTable + 20, 0x200);
-    writeLe32(&bytes, sectionTable + 36, 0x60000020);
+    writeLe32(&bytes, sectionTable + 36, 0x60500020);
 
     const qsizetype secondSection = sectionTable + 40;
     writeAscii(&bytes, secondSection, ".idata");
@@ -106,12 +106,21 @@ void StructViewPeTests::builderNamesPeDynamicSectionsFromStandardDefinition()
     StructureRow *textCharacteristics = findChildNamed(textHeader, QStringLiteral("dword Characteristics"));
     QVERIFY(textCharacteristics);
     QCOMPARE(textCharacteristics->value, QStringLiteral("IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_READ"));
+    QVERIFY(findChildNamed(textCharacteristics, QStringLiteral("IMAGE_SCN_CNT_CODE")));
+    StructureRow *textAlignment = findChildNamed(textCharacteristics, QStringLiteral("Alignment"));
+    QVERIFY(textAlignment);
+    QCOMPARE(textAlignment->value, QStringLiteral("IMAGE_SCN_ALIGN_16BYTES"));
+    QCOMPARE(findChildNamed(textCharacteristics, QStringLiteral("IMAGE_SCN_MEM_EXECUTE"))->value, QStringLiteral("1"));
+    QCOMPARE(findChildNamed(textCharacteristics, QStringLiteral("IMAGE_SCN_MEM_READ"))->value, QStringLiteral("1"));
 
     StructureRow *idataHeader = findDescendantNamed(peRow, QStringLiteral("[1].idata"));
     QVERIFY(idataHeader);
     StructureRow *idataCharacteristics = findChildNamed(idataHeader, QStringLiteral("dword Characteristics"));
     QVERIFY(idataCharacteristics);
     QCOMPARE(idataCharacteristics->value, QStringLiteral("IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_WRITE"));
+    QCOMPARE(findChildNamed(idataCharacteristics, QStringLiteral("IMAGE_SCN_CNT_INITIALIZED_DATA"))->value, QStringLiteral("1"));
+    QCOMPARE(findChildNamed(idataCharacteristics, QStringLiteral("IMAGE_SCN_MEM_READ"))->value, QStringLiteral("1"));
+    QCOMPARE(findChildNamed(idataCharacteristics, QStringLiteral("IMAGE_SCN_MEM_WRITE"))->value, QStringLiteral("1"));
 
     StructureTreeModel model;
     model.setRowsForTests(std::move(rows));
@@ -541,7 +550,7 @@ void StructViewPeTests::builderEmitsPeLoadConfigFromStandardDefinition()
     writeLe64(&bytes, 0x278, 0x140007000);
     writeLe64(&bytes, 0x280, 0x140008000);
     writeLe64(&bytes, 0x288, 42);
-    writeLe32(&bytes, 0x290, 0x500);
+    writeLe32(&bytes, 0x290, 0x30000500);
 
     TypeDecl *root = exportedNamed(&library, QStringLiteral("PE"));
     QVERIFY(root);
@@ -553,6 +562,12 @@ void StructViewPeTests::builderEmitsPeLoadConfigFromStandardDefinition()
     QVERIFY2(rawSection, qPrintable(childNames(peRow)));
     QVERIFY2(findDescendantNamed(rawSection, QStringLiteral("IMAGE_LOAD_CONFIG_DIRECTORY64")),
              qPrintable(childNames(rawSection)));
+    StructureRow *rawGuardFlags = findDescendantNamed(rawSection, QStringLiteral("dword GuardFlags"));
+    QVERIFY2(rawGuardFlags, qPrintable(childNames(rawSection)));
+    QCOMPARE(rawGuardFlags->value, QStringLiteral("IMAGE_GUARD_CF_INSTRUMENTED | IMAGE_GUARD_CF_FUNCTION_TABLE_PRESENT"));
+    QCOMPARE(findChildNamed(rawGuardFlags, QStringLiteral("IMAGE_GUARD_CF_INSTRUMENTED"))->value, QStringLiteral("1"));
+    QCOMPARE(findChildNamed(rawGuardFlags, QStringLiteral("IMAGE_GUARD_CF_FUNCTION_TABLE_PRESENT"))->value, QStringLiteral("1"));
+    QCOMPARE(findChildNamed(rawGuardFlags, QStringLiteral("Function table size"))->value, QStringLiteral("3"));
 
     StructureRow *peImage = findSemanticRootChildNamed(rows, QStringLiteral("PE Image"));
     QVERIFY(peImage);

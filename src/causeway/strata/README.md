@@ -357,6 +357,7 @@ The following 'display' tags can be used to alter the rendered value or name of 
 |-----|--------|
 | `enum(Name)` | Show the value as a named enum constant |
 | `bitflag(Name)` | Show the value as named bit masks and expand the row to list active flags |
+| `bitfield(Name)` | Expand a packed scalar with a reusable `bitfield` schema |
 | `format("fourcc")` | Show a 4-byte scalar as an ASCII FourCC read from the file bytes |
 | `format("string")`, `format("ascii")`, `format("utf8")` | Render a byte or char array as a string preview |
 | `format("utf16")`, `format("utf16le")`, `format("utf16be")` | Render a byte array as a UTF-16 string preview |
@@ -371,6 +372,7 @@ The following 'display' tags can be used to alter the rendered value or name of 
 ```c
 [enum(ELF_TYPE)] e16 e_type;
 [bitflag(ELF_SECTION_FLAGS)] e64 sh_flags;
+[bitfield(GIF_LOGICAL_SCREEN_PACKED_FIELDS)] byte packedFields;
 [name(SectionName)] dword Offset;
 [name("Alternative name")] dword Offset;
 [format("fourcc")] dword Tag;
@@ -379,6 +381,33 @@ The following 'display' tags can be used to alter the rendered value or name of 
 [assert(element_value() == fourcc("RIFF"), "Expected RIFF magic")] dword Magic;
 [warn(element_value() > file_size(), "Size extends past end of file")] dword Size;
 ```
+
+Reusable bitfield display schemas are file-level declarations. They do not
+change layout; they only describe child rows for scalar fields tagged with
+`bitfield(Name)`.
+
+```c
+enum GIF_PACKED_MASKS
+{
+    GlobalColorTableSize = 0x07,
+    SortFlag             = 0x08,
+    ColorResolution      = 0x70,
+    GlobalColorTableFlag = 0x80
+};
+
+bitfield GIF_LOGICAL_SCREEN_PACKED_FIELDS
+{
+    field("GlobalColorTableSize", GlobalColorTableSize);
+    match(SortFlag);
+    field("ColorResolution", ColorResolution);
+    match(GlobalColorTableFlag);
+};
+```
+
+`match(mask)` is shorthand for `(value & mask) == mask`, intended for named
+single-bit flags. `match(name, mask) = value` tests an exact masked value.
+`field(name, mask[, enum(ValueEnum)])` extracts the masked bits and displays the
+result, shifting contiguous masks down before optional enum lookup.
 
 ### Layout
 
@@ -1200,11 +1229,11 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 |----------|----------|
 | Type declarations | `struct`, `union`, `enum`, `typedef`, `const`, `signed`, `unsigned` |
 | Primitive types | `byte`, `word`, `dword`, `qword`, `char`, `wchar_t`, `float`, `double`, `uleb128`, `sleb128` |
-| Display/layout tags | `align`, `architecture`, `assert`, `bitflag`, `code`, `description`, `display`, `endian`, `entrypoint`, `extent`, `format`, `ignore`, `name`, `offset`, `open_as`, `optional`, `pad_to`, `string`, `style`, `tree`, `warn` |
+| Display/layout tags | `align`, `architecture`, `assert`, `bitfield`, `bitflag`, `code`, `description`, `display`, `endian`, `entrypoint`, `extent`, `format`, `ignore`, `name`, `offset`, `open_as`, `optional`, `pad_to`, `string`, `style`, `tree`, `warn` |
 | Arrays/unions | `case`, `count`, `count_as`, `default`, `length_is`, `max_count`, `select`, `select_offset`, `size_is`, `switch_is`, `terminated_by`, `terminator` |
 | Dynamic/semantic tags | `append`, `attr`, `container`, `dest`, `dynamic_array`, `dynamic_container`, `dynamic_struct`, `emit`, `emit_node`, `emit_row`, `field`, `item`, `key`, `label`, `map`, `mapper`, `offset_map`, `semantic`, `type`, `view` |
 | Export/detection tags | `assoc`, `category`, `export`, `magic`, `version` |
-| Tagsets/files | `include`, `tagset`, `tags` |
+| Tagsets/files | `bitfield`, `include`, `match`, `tagset`, `tags` |
 | Expression helpers | `array_index`, `concat`, `cstr`, `cstr_at`, `cstr_from`, `current_offset`, `element_value`, `extent_of`, `field_at`, `file_size`, `find_first`, `find_last`, `fmt`, `fourcc`, `octal`, `root_value_at`, `sizeof`, `str`, `value_at` |
 
 ---

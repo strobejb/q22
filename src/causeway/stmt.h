@@ -14,16 +14,19 @@ enum STATEMENT
 {
 	stmtINCLUDE,
 	stmtTAGSET,
+	stmtBITFIELD,
 	stmtTYPEDECL,
 };
 
 struct TagSet;
+struct Bitfield;
 
 struct Statement
 {
     //Statement()					: str(0),		stmtType(stmtINVALID),  expr(0) {}
 	Statement(char *s)			: str(s),		stmtType(stmtINCLUDE),  expr(0) {}
     Statement(TagSet *t)		: tagSet(t),	stmtType(stmtTAGSET),   expr(0) {}
+	Statement(Bitfield *b)		: bitfield(b),	stmtType(stmtBITFIELD), expr(0) {}
 	Statement(TypeDecl *t)		: typeDecl(t),	stmtType(stmtTYPEDECL), expr(0) {}
 
 	STATEMENT	stmtType;
@@ -33,6 +36,7 @@ struct Statement
 	{
 		char		*str;			// 'include' statements
 		TagSet		*tagSet;		// reusable tag aliases
+		Bitfield	*bitfield;		// reusable packed-scalar display schema
 		TypeDecl	*typeDecl;		// any type decl
 	};
 

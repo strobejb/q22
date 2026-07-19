@@ -81,36 +81,41 @@ typedef struct _IMAGE_DOS_HEADER {      // DOS .EXE header
 
 typedef enum _IMAGE_FILE_MACHINE
 {
-	IMAGE_FILE_MACHINE_UNKNOWN       = 0,
-	[architecture("x86-32")] IMAGE_FILE_MACHINE_I386 = 0x014c,  // Intel 386.
-	IMAGE_FILE_MACHINE_R3000         = 0x0162,  // MIPS little-endian, 0x160 big-endian
-	IMAGE_FILE_MACHINE_R4000         = 0x0166,  // MIPS little-endian
-	IMAGE_FILE_MACHINE_R10000        = 0x0168,  // MIPS little-endian
-	IMAGE_FILE_MACHINE_WCEMIPSV2     = 0x0169,  // MIPS little-endian WCE v2
-	IMAGE_FILE_MACHINE_ALPHA         = 0x0184,  // Alpha_AXP
-	IMAGE_FILE_MACHINE_SH3           = 0x01a2,  // SH3 little-endian
-	IMAGE_FILE_MACHINE_SH3DSP        = 0x01a3,
-	IMAGE_FILE_MACHINE_SH3E          = 0x01a4,  // SH3E little-endian
-	IMAGE_FILE_MACHINE_SH4           = 0x01a6,  // SH4 little-endian
-	IMAGE_FILE_MACHINE_SH5           = 0x01a8,  // SH5
-	[architecture("arm")] IMAGE_FILE_MACHINE_ARM = 0x01c0,  // ARM Little-Endian
-	[architecture("thumb")] IMAGE_FILE_MACHINE_THUMB = 0x01c2,
-	IMAGE_FILE_MACHINE_AM33          = 0x01d3,
-	IMAGE_FILE_MACHINE_POWERPC       = 0x01F0,  // IBM PowerPC Little-Endian
-	IMAGE_FILE_MACHINE_POWERPCFP     = 0x01f1,
-	IMAGE_FILE_MACHINE_IA64          = 0x0200,  // Intel 64
-	IMAGE_FILE_MACHINE_MIPS16        = 0x0266,  // MIPS
-	IMAGE_FILE_MACHINE_ALPHA64       = 0x0284,  // ALPHA64
-	IMAGE_FILE_MACHINE_MIPSFPU       = 0x0366,  // MIPS
-	IMAGE_FILE_MACHINE_MIPSFPU16     = 0x0466,  // MIPS
-	IMAGE_FILE_MACHINE_AXP64         = IMAGE_FILE_MACHINE_ALPHA64,
-	IMAGE_FILE_MACHINE_TRICORE       = 0x0520,  // Infineon
-	IMAGE_FILE_MACHINE_CEF           = 0x0CEF,
-	IMAGE_FILE_MACHINE_EBC           = 0x0EBC,  // EFI Byte Code
-	[architecture("x86-64")] IMAGE_FILE_MACHINE_AMD64 = 0x8664,  // AMD64 (K8)
-	[architecture("arm64")] IMAGE_FILE_MACHINE_ARM64 = 0xaa64,
-	IMAGE_FILE_MACHINE_M32R          = 0x9041,  // M32R little-endian
-	IMAGE_FILE_MACHINE_CEE           = 0xC0EE,
+    IMAGE_FILE_MACHINE_UNKNOWN       = 0,
+    [architecture("x86-32")]
+    IMAGE_FILE_MACHINE_I386          = 0x014c,  // Intel 386.
+    IMAGE_FILE_MACHINE_R3000         = 0x0162,  // MIPS little-endian, 0x160 big-endian
+    IMAGE_FILE_MACHINE_R4000         = 0x0166,  // MIPS little-endian
+    IMAGE_FILE_MACHINE_R10000        = 0x0168,  // MIPS little-endian
+    IMAGE_FILE_MACHINE_WCEMIPSV2     = 0x0169,  // MIPS little-endian WCE v2
+    IMAGE_FILE_MACHINE_ALPHA         = 0x0184,  // Alpha_AXP
+    IMAGE_FILE_MACHINE_SH3           = 0x01a2,  // SH3 little-endian
+    IMAGE_FILE_MACHINE_SH3DSP        = 0x01a3,
+    IMAGE_FILE_MACHINE_SH3E          = 0x01a4,  // SH3E little-endian
+    IMAGE_FILE_MACHINE_SH4           = 0x01a6,  // SH4 little-endian
+    IMAGE_FILE_MACHINE_SH5           = 0x01a8,  // SH5
+    [architecture("arm")]
+    IMAGE_FILE_MACHINE_ARM           = 0x01c0,  // ARM Little-Endian
+    [architecture("thumb")]
+    IMAGE_FILE_MACHINE_THUMB         = 0x01c2,
+    IMAGE_FILE_MACHINE_AM33          = 0x01d3,
+    IMAGE_FILE_MACHINE_POWERPC       = 0x01F0,  // IBM PowerPC Little-Endian
+    IMAGE_FILE_MACHINE_POWERPCFP     = 0x01f1,
+    IMAGE_FILE_MACHINE_IA64          = 0x0200,  // Intel 64
+    IMAGE_FILE_MACHINE_MIPS16        = 0x0266,  // MIPS
+    IMAGE_FILE_MACHINE_ALPHA64       = 0x0284,  // ALPHA64
+    IMAGE_FILE_MACHINE_MIPSFPU       = 0x0366,  // MIPS
+    IMAGE_FILE_MACHINE_MIPSFPU16     = 0x0466,  // MIPS
+    IMAGE_FILE_MACHINE_AXP64         = IMAGE_FILE_MACHINE_ALPHA64,
+    IMAGE_FILE_MACHINE_TRICORE       = 0x0520,  // Infineon
+    IMAGE_FILE_MACHINE_CEF           = 0x0CEF,
+    IMAGE_FILE_MACHINE_EBC           = 0x0EBC,  // EFI Byte Code
+    [architecture("x86-64")]
+    IMAGE_FILE_MACHINE_AMD64         = 0x8664,  // AMD64 (K8)
+    [architecture("arm64")]
+    IMAGE_FILE_MACHINE_ARM64         = 0xaa64,
+    IMAGE_FILE_MACHINE_M32R          = 0x9041,  // M32R little-endian
+    IMAGE_FILE_MACHINE_CEE           = 0xC0EE,
 
 } IMAGE_FILE_MACHINE;
 
@@ -172,6 +177,55 @@ typedef enum _IMAGE_SECTION_CHARACTERISTICS
     IMAGE_SCN_MEM_READ               = 0x40000000,
     IMAGE_SCN_MEM_WRITE              = 0x80000000
 } IMAGE_SECTION_CHARACTERISTICS;
+
+enum IMAGE_SECTION_CHARACTERISTIC_MASKS
+{
+    IMAGE_SCN_ALIGN_MASK = 0x00f00000
+};
+
+enum IMAGE_SECTION_ALIGNMENT
+{
+    IMAGE_SCN_ALIGN_NONE      = 0,
+    IMAGE_SCN_ALIGN_1BYTES    = 1,
+    IMAGE_SCN_ALIGN_2BYTES    = 2,
+    IMAGE_SCN_ALIGN_4BYTES    = 3,
+    IMAGE_SCN_ALIGN_8BYTES    = 4,
+    IMAGE_SCN_ALIGN_16BYTES   = 5,
+    IMAGE_SCN_ALIGN_32BYTES   = 6,
+    IMAGE_SCN_ALIGN_64BYTES   = 7,
+    IMAGE_SCN_ALIGN_128BYTES  = 8,
+    IMAGE_SCN_ALIGN_256BYTES  = 9,
+    IMAGE_SCN_ALIGN_512BYTES  = 10,
+    IMAGE_SCN_ALIGN_1024BYTES = 11,
+    IMAGE_SCN_ALIGN_2048BYTES = 12,
+    IMAGE_SCN_ALIGN_4096BYTES = 13,
+    IMAGE_SCN_ALIGN_8192BYTES = 14
+};
+
+bitfield IMAGE_SECTION_CHARACTERISTIC_FIELDS
+{
+    match(IMAGE_SCN_TYPE_NO_PAD);
+    match(IMAGE_SCN_CNT_CODE);
+    match(IMAGE_SCN_CNT_INITIALIZED_DATA);
+    match(IMAGE_SCN_CNT_UNINITIALIZED_DATA);
+    match(IMAGE_SCN_LNK_OTHER);
+    match(IMAGE_SCN_LNK_INFO);
+    match(IMAGE_SCN_LNK_REMOVE);
+    match(IMAGE_SCN_LNK_COMDAT);
+    match(IMAGE_SCN_GPREL);
+    match(IMAGE_SCN_MEM_16BIT);
+    match(IMAGE_SCN_MEM_LOCKED);
+    match(IMAGE_SCN_MEM_PRELOAD);
+    field("Alignment", IMAGE_SCN_ALIGN_MASK, enum(IMAGE_SECTION_ALIGNMENT));
+    match(IMAGE_SCN_LNK_NRELOC_OVFL);
+    match(IMAGE_SCN_MEM_DISCARDABLE);
+    match(IMAGE_SCN_MEM_NOT_CACHED);
+    match(IMAGE_SCN_MEM_NOT_PAGED);
+    match(IMAGE_SCN_MEM_SHARED);
+    match(IMAGE_SCN_MEM_EXECUTE);
+    match(IMAGE_SCN_MEM_READ);
+    match(IMAGE_SCN_MEM_WRITE);
+};
 
 typedef struct _IMAGE_FILE_HEADER {
 
@@ -327,7 +381,7 @@ typedef struct _IMAGE_SECTION_HEADER
     word    NumberOfRelocations;
     word    NumberOfLinenumbers;
 
-    [bitflag(IMAGE_SECTION_CHARACTERISTICS)]
+    [bitfield(IMAGE_SECTION_CHARACTERISTIC_FIELDS)]
     dword   Characteristics;
 } IMAGE_SECTION_HEADER, *PIMAGE_SECTION_HEADER;
 
@@ -432,6 +486,25 @@ enum IMAGE_GUARD_FLAGS
     IMAGE_GUARD_CF_LONGJUMP_TABLE_PRESENT               = 0x00010000
 };
 
+enum IMAGE_GUARD_FLAG_MASKS
+{
+    IMAGE_GUARD_CF_FUNCTION_TABLE_SIZE_MASK = 0xf0000000
+};
+
+bitfield IMAGE_GUARD_FLAG_FIELDS
+{
+    match(IMAGE_GUARD_CF_INSTRUMENTED);
+    match(IMAGE_GUARD_CF_W_INSTRUMENTED);
+    match(IMAGE_GUARD_CF_FUNCTION_TABLE_PRESENT);
+    match(IMAGE_GUARD_SECURITY_COOKIE_UNUSED);
+    match(IMAGE_GUARD_PROTECT_DELAYLOAD_IAT);
+    match(IMAGE_GUARD_DELAYLOAD_IAT_IN_ITS_OWN_SECTION);
+    match(IMAGE_GUARD_CF_EXPORT_SUPPRESSION_INFO_PRESENT);
+    match(IMAGE_GUARD_CF_ENABLE_EXPORT_SUPPRESSION);
+    match(IMAGE_GUARD_CF_LONGJUMP_TABLE_PRESENT);
+    field("Function table size", IMAGE_GUARD_CF_FUNCTION_TABLE_SIZE_MASK);
+};
+
 [
     extent(Size),
     emit_node(dest(Sections.LoadConfig, key(current_offset())),
@@ -449,54 +522,32 @@ enum IMAGE_GUARD_FLAGS
 typedef struct _IMAGE_LOAD_CONFIG_DIRECTORY32
 {
     dword Size;
-    [optional(Size >= 0x08)]
-    dword TimeDateStamp;
-    [optional(Size >= 0x0c)]
-    word  MajorVersion;
-    [optional(Size >= 0x0c)]
-    word  MinorVersion;
-    [optional(Size >= 0x10)]
-    dword GlobalFlagsClear;
-    [optional(Size >= 0x14)]
-    dword GlobalFlagsSet;
-    [optional(Size >= 0x18)]
-    dword CriticalSectionDefaultTimeout;
-    [optional(Size >= 0x1c)]
-    dword DeCommitFreeBlockThreshold;
-    [optional(Size >= 0x20)]
-    dword DeCommitTotalFreeThreshold;
-    [optional(Size >= 0x24)]
-    dword LockPrefixTable;
-    [optional(Size >= 0x28)]
-    dword MaximumAllocationSize;
-    [optional(Size >= 0x2c)]
-    dword VirtualMemoryThreshold;
-    [optional(Size >= 0x30)]
-    dword ProcessAffinityMask;
-    [optional(Size >= 0x34)]
-    dword ProcessHeapFlags;
-    [optional(Size >= 0x36)]
-    word  CSDVersion;
-    [optional(Size >= 0x38)]
-    word  DependentLoadFlags;
-    [optional(Size >= 0x3c)]
-    dword EditList;
-    [optional(Size >= 0x40)]
-    dword SecurityCookie;
-    [optional(Size >= 0x44)]
-    dword SEHandlerTable;
-    [optional(Size >= 0x48)]
-    dword SEHandlerCount;
-    [optional(Size >= 0x4c)]
-    dword GuardCFCheckFunctionPointer;
-    [optional(Size >= 0x50)]
-    dword GuardCFDispatchFunctionPointer;
-    [optional(Size >= 0x54)]
-    dword GuardCFFunctionTable;
-    [optional(Size >= 0x58)]
-    dword GuardCFFunctionCount;
-    [optional(Size >= 0x5c), bitflag(IMAGE_GUARD_FLAGS)]
+    [optional(Size >= 0x08)]    dword TimeDateStamp;
+    [optional(Size >= 0x0c)]    word  MajorVersion;
+    [optional(Size >= 0x0c)]    word  MinorVersion;
+    [optional(Size >= 0x10)]    dword GlobalFlagsClear;
+    [optional(Size >= 0x14)]    dword GlobalFlagsSet;
+    [optional(Size >= 0x18)]    dword CriticalSectionDefaultTimeout;
+    [optional(Size >= 0x1c)]    dword DeCommitFreeBlockThreshold;
+    [optional(Size >= 0x20)]    dword DeCommitTotalFreeThreshold;
+    [optional(Size >= 0x24)]    dword LockPrefixTable;
+    [optional(Size >= 0x28)]    dword MaximumAllocationSize;
+    [optional(Size >= 0x2c)]    dword VirtualMemoryThreshold;
+    [optional(Size >= 0x30)]    dword ProcessAffinityMask;
+    [optional(Size >= 0x34)]    dword ProcessHeapFlags;
+    [optional(Size >= 0x36)]    word  CSDVersion;
+    [optional(Size >= 0x38)]    word  DependentLoadFlags;
+    [optional(Size >= 0x3c)]    dword EditList;
+    [optional(Size >= 0x40)]    dword SecurityCookie;
+    [optional(Size >= 0x44)]    dword SEHandlerTable;
+    [optional(Size >= 0x48)]    dword SEHandlerCount;
+    [optional(Size >= 0x4c)]    dword GuardCFCheckFunctionPointer;
+    [optional(Size >= 0x50)]    dword GuardCFDispatchFunctionPointer;
+    [optional(Size >= 0x54)]    dword GuardCFFunctionTable;
+    [optional(Size >= 0x58)]    dword GuardCFFunctionCount;
+    [optional(Size >= 0x5c), bitfield(IMAGE_GUARD_FLAG_FIELDS)]
     dword GuardFlags;
+
 } IMAGE_LOAD_CONFIG_DIRECTORY32;
 
 [
@@ -516,53 +567,30 @@ typedef struct _IMAGE_LOAD_CONFIG_DIRECTORY32
 typedef struct _IMAGE_LOAD_CONFIG_DIRECTORY64
 {
     dword  Size;
-    [optional(Size >= 0x08)]
-    dword  TimeDateStamp;
-    [optional(Size >= 0x0c)]
-    word   MajorVersion;
-    [optional(Size >= 0x0c)]
-    word   MinorVersion;
-    [optional(Size >= 0x10)]
-    dword  GlobalFlagsClear;
-    [optional(Size >= 0x14)]
-    dword  GlobalFlagsSet;
-    [optional(Size >= 0x18)]
-    dword  CriticalSectionDefaultTimeout;
-    [optional(Size >= 0x20)]
-    uint64 DeCommitFreeBlockThreshold;
-    [optional(Size >= 0x28)]
-    uint64 DeCommitTotalFreeThreshold;
-    [optional(Size >= 0x30)]
-    uint64 LockPrefixTable;
-    [optional(Size >= 0x38)]
-    uint64 MaximumAllocationSize;
-    [optional(Size >= 0x40)]
-    uint64 VirtualMemoryThreshold;
-    [optional(Size >= 0x48)]
-    uint64 ProcessAffinityMask;
-    [optional(Size >= 0x4c)]
-    dword  ProcessHeapFlags;
-    [optional(Size >= 0x4e)]
-    word   CSDVersion;
-    [optional(Size >= 0x50)]
-    word   DependentLoadFlags;
-    [optional(Size >= 0x58)]
-    uint64 EditList;
-    [optional(Size >= 0x60)]
-    uint64 SecurityCookie;
-    [optional(Size >= 0x68)]
-    uint64 SEHandlerTable;
-    [optional(Size >= 0x70)]
-    uint64 SEHandlerCount;
-    [optional(Size >= 0x78)]
-    uint64 GuardCFCheckFunctionPointer;
-    [optional(Size >= 0x80)]
-    uint64 GuardCFDispatchFunctionPointer;
-    [optional(Size >= 0x88)]
-    uint64 GuardCFFunctionTable;
-    [optional(Size >= 0x90)]
-    uint64 GuardCFFunctionCount;
-    [optional(Size >= 0x94), bitflag(IMAGE_GUARD_FLAGS)]
+    [optional(Size >= 0x08)]    dword  TimeDateStamp;
+    [optional(Size >= 0x0c)]    word   MajorVersion;
+    [optional(Size >= 0x0c)]    word   MinorVersion;
+    [optional(Size >= 0x10)]    dword  GlobalFlagsClear;
+    [optional(Size >= 0x14)]    dword  GlobalFlagsSet;
+    [optional(Size >= 0x18)]    dword  CriticalSectionDefaultTimeout;
+    [optional(Size >= 0x20)]    uint64 DeCommitFreeBlockThreshold;
+    [optional(Size >= 0x28)]    uint64 DeCommitTotalFreeThreshold;
+    [optional(Size >= 0x30)]    uint64 LockPrefixTable;
+    [optional(Size >= 0x38)]    uint64 MaximumAllocationSize;
+    [optional(Size >= 0x40)]    uint64 VirtualMemoryThreshold;
+    [optional(Size >= 0x48)]    uint64 ProcessAffinityMask;
+    [optional(Size >= 0x4c)]    dword  ProcessHeapFlags;
+    [optional(Size >= 0x4e)]    word   CSDVersion;
+    [optional(Size >= 0x50)]    word   DependentLoadFlags;
+    [optional(Size >= 0x58)]    uint64 EditList;
+    [optional(Size >= 0x60)]    uint64 SecurityCookie;
+    [optional(Size >= 0x68)]    uint64 SEHandlerTable;
+    [optional(Size >= 0x70)]    uint64 SEHandlerCount;
+    [optional(Size >= 0x78)]    uint64 GuardCFCheckFunctionPointer;
+    [optional(Size >= 0x80)]    uint64 GuardCFDispatchFunctionPointer;
+    [optional(Size >= 0x88)]    uint64 GuardCFFunctionTable;
+    [optional(Size >= 0x90)]    uint64 GuardCFFunctionCount;
+    [optional(Size >= 0x94), bitfield(IMAGE_GUARD_FLAG_FIELDS)]
     dword  GuardFlags;
 } IMAGE_LOAD_CONFIG_DIRECTORY64;
 

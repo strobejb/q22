@@ -597,6 +597,35 @@ size_t DisplayTagSet(FILE *fp, TagSet *tagSet)
 	return len;
 }
 
+size_t DisplayBitfield(FILE *fp, Bitfield *bitfield)
+{
+	size_t len = 0;
+
+	if(!bitfield)
+		return 0;
+
+	len += fprintf(fp, "bitfield %s", bitfield->name);
+	len += fprintf(fp, "\n{\n");
+	for(size_t i = 0; i < bitfield->entries.size(); i++)
+	{
+		BitfieldEntry *entry = bitfield->entries[i];
+		if(!entry)
+			continue;
+		len += fprintf(fp, entry->kind == bitfieldMATCH ? "    match(" : "    field(");
+		len += Flatten(fp, entry->expr);
+		len += fprintf(fp, ")");
+		if(entry->kind == bitfieldMATCH && entry->valueExpr)
+		{
+			len += fprintf(fp, " = ");
+			len += Flatten(fp, entry->valueExpr);
+		}
+		len += fprintf(fp, ";\n");
+	}
+	len += fprintf(fp, "}");
+
+	return len;
+}
+
 void Parser::Dump(FILE *fp)
 {
 	size_t i;
@@ -619,6 +648,16 @@ void Parser::Dump(FILE *fp)
 				DisplayWhitespace(fp, &stmt->tagSet->fileRef);
 
 			DisplayTagSet(fp, stmt->tagSet);
+			fprintf(fp, ";");
+
+			break;
+
+		case stmtBITFIELD:
+
+			if(fPreserveWhitespace)
+				DisplayWhitespace(fp, &stmt->bitfield->fileRef);
+
+			DisplayBitfield(fp, stmt->bitfield);
 			fprintf(fp, ";");
 
 			break;
