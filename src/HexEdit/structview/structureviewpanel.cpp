@@ -1904,29 +1904,52 @@ bool magicSignatureMatchesFile(HexView *hv, const StructureMagicSignature &signa
     return bytesRead == static_cast<size_t>(fileBytes.size()) && fileBytes == signature.bytes;
 }
 
+QString normalizedAssocExtension(QString ext)
+{
+    ext = ext.trimmed().toLower();
+    if (!ext.isEmpty() && !ext.startsWith(QLatin1Char('.')))
+        ext.prepend(QLatin1Char('.'));
+    return ext;
+}
+
+int associatedRootTypeIndexForFileName(const QList<ExportedStructureType> &exportedTypes,
+                                       const QString &fileName)
+{
+    const QString lowerFileName = fileName.toLower();
+    if (lowerFileName.isEmpty())
+        return -1;
+
+    for (int i = 0; i < exportedTypes.size(); ++i)
+    {
+        for (QString ext : exportedTypes[i].assocExtensions)
+        {
+            ext = normalizedAssocExtension(ext);
+            if (!ext.isEmpty() && lowerFileName.endsWith(ext))
+                return i;
+        }
+    }
+
+    for (int i = 0; i < exportedTypes.size(); ++i)
+    {
+        for (QString ext : exportedTypes[i].assocExtensions)
+        {
+            ext = normalizedAssocExtension(ext);
+            if (!ext.isEmpty() && lowerFileName.contains(ext + QLatin1Char('.')))
+                return i;
+        }
+    }
+
+    return -1;
+}
+
 TypeDecl *detectAssociatedRootType(const QList<ExportedStructureType> &exportedTypes, HexView *hv)
 {
     if (!hv || exportedTypes.isEmpty())
         return nullptr;
 
-    const QString fileName = QFileInfo(hv->filePath()).fileName().toLower();
-    if (!fileName.isEmpty())
-    {
-        for (const ExportedStructureType &exported : exportedTypes)
-        {
-            for (QString ext : exported.assocExtensions)
-            {
-                ext = ext.trimmed().toLower();
-                if (ext.isEmpty())
-                    continue;
-                if (!ext.startsWith(QLatin1Char('.')))
-                    ext.prepend(QLatin1Char('.'));
-
-                if (fileName.endsWith(ext) || fileName.contains(ext + QLatin1Char('.')))
-                    return exported.typeDecl;
-            }
-        }
-    }
+    const int associatedIndex = associatedRootTypeIndexForFileName(exportedTypes, QFileInfo(hv->filePath()).fileName());
+    if (associatedIndex >= 0)
+        return exportedTypes[associatedIndex].typeDecl;
 
     for (const ExportedStructureType &exported : exportedTypes)
         for (const StructureMagicSignature &signature : exported.magicSignatures)
@@ -3683,24 +3706,9 @@ int StructureViewPanel::associatedRootTypeIndex(const QList<ExportedStructureTyp
     if (!m_hv || exportedTypes.isEmpty())
         return -1;
 
-    const QString fileName = QFileInfo(m_hv->filePath()).fileName().toLower();
-    if (!fileName.isEmpty())
-    {
-        for (int i = 0; i < exportedTypes.size(); ++i)
-        {
-            for (QString ext : exportedTypes[i].assocExtensions)
-            {
-                ext = ext.trimmed().toLower();
-                if (ext.isEmpty())
-                    continue;
-                if (!ext.startsWith(QLatin1Char('.')))
-                    ext.prepend(QLatin1Char('.'));
-
-                if (fileName.endsWith(ext) || fileName.contains(ext + QLatin1Char('.')))
-                    return i;
-            }
-        }
-    }
+    const int associatedIndex = associatedRootTypeIndexForFileName(exportedTypes, QFileInfo(m_hv->filePath()).fileName());
+    if (associatedIndex >= 0)
+        return associatedIndex;
 
     for (int i = 0; i < exportedTypes.size(); ++i)
     {

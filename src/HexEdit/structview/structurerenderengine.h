@@ -312,6 +312,9 @@ private:
     bool codeTagArgs(ExprNode *expr, QString *architecture, ExprNode **architectureField,
                      QString *offsetSpace, ExprNode **offset, ExprNode **extent) const;
     void applyCodeTag(StructureRow *target, TypeDecl *typeDecl, StructureRow *scope);
+    bool openAsTagArgs(ExprNode *expr, ExprNode **typeName, QString *offsetSpace,
+                       ExprNode **offset, ExprNode **extent, ExprNode **name) const;
+    void applyOpenAsTag(StructureRow *target, TypeDecl *typeDecl, StructureRow *scope);
     void linkWasmFunctionCodeTargets(StructureRow *root);
     void linkWasmSemanticFunctionCodeTargets(StructureRow *root);
     bool emitDestinationArgs(ExprNode *expr,

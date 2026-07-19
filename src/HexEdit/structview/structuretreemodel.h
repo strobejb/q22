@@ -83,6 +83,12 @@ struct StructureRow
     uint64_t codeTargetOffset = 0;
     uint64_t codeByteLength = 0;
     QString codeArchitecture;
+    bool hasOpenAsTarget = false;
+    TypeDecl *openAsRootType = nullptr;
+    QString openAsRootTypeName;
+    QString openAsName;
+    uint64_t openAsOffset = 0;
+    uint64_t openAsByteLength = 0;
     uint64_t absoluteOffset = 0;
     uint64_t relativeOffset = 0;
     uint64_t byteLength = 0;

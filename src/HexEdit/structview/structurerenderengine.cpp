@@ -1022,6 +1022,7 @@ uint64_t StructureRenderEngine::appendIdentifierRow(StructureRow *parent,
     row->byteLength = length;
     applyEntryPointTag(row.get(), typeDecl);
     applyCodeTag(row.get(), typeDecl, row.get());
+    applyOpenAsTag(row.get(), typeDecl, row.get());
     const QString stringValue = stringArrayValue(row.get(), type ? type->link : nullptr, typeDecl, offset);
     if (!stringValue.isNull())
         row->value = stringValue;
@@ -1074,6 +1075,8 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
             return 0;
 
         const qsizetype dimension = arrayDimensionIndex(typeDecl, type);
+        Type *fixedScalarElement = type->link && type->link->ty == typeARRAY ? nullptr : BaseNode(type->link);
+        const uint64_t fixedScalarElementSize = fixedScalarElement ? scalarSize(fixedScalarElement->ty) : 0;
         uint64_t extentLimit = 0;
         if (dimension == 0)
         {
@@ -1122,6 +1125,7 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
                     if (tag->tok == TOK_DYNAMICARRAY
                         || tag->tok == TOK_DYNAMICCONTAINER
                         || tag->tok == TOK_OFFSETMAP
+                        || tag->tok == TOK_OPENAS
                         || tag->tok == TOK_EMIT
                         || tag->tok == TOK_EMITNODE
                         || tag->tok == TOK_EMITROW)
@@ -1178,9 +1182,10 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
             const uint64_t elementLength = formatType(row.get(), type->link, typeDecl, offset + length);
             row->byteLength = elementLength;
             // Array elements are formatted directly from their base type, so
-            // appendIdentifierRow() does not get a chance to apply a code()
-            // tag attached to the element declaration itself.
+            // appendIdentifierRow() does not get a chance to apply tags
+            // attached to the element declaration itself.
             applyCodeTag(row.get(), row->typeDecl, row.get());
+            applyOpenAsTag(row.get(), row->typeDecl, row.get());
             collectNamedOffsetMaps(row.get());
             if (renderElement && row->value.isEmpty())
             {
@@ -1266,6 +1271,13 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
                 // omitted tagged entries still contribute to semantic views.
                 m_truncatedSemanticRows.push_back(std::move(row));
             }
+        }
+        if (!terminatorExpr && fixedScalarElementSize > 0)
+        {
+            const uint64_t totalBytes = static_cast<uint64_t>(count) <= std::numeric_limits<uint64_t>::max() / fixedScalarElementSize
+                ? static_cast<uint64_t>(count) * fixedScalarElementSize
+                : std::numeric_limits<uint64_t>::max();
+            length = std::max(length, extentLimit > 0 ? std::min(totalBytes, extentLimit) : totalBytes);
         }
         return length;
     }
@@ -6947,6 +6959,137 @@ void StructureRenderEngine::applyCodeTag(StructureRow *target, TypeDecl *typeDec
         };
         inheritCodeTarget(inheritCodeTarget, target);
     }
+}
+
+bool StructureRenderEngine::openAsTagArgs(ExprNode *expr,
+                                          ExprNode **typeName,
+                                          QString *offsetSpace,
+                                          ExprNode **offset,
+                                          ExprNode **extent,
+                                          ExprNode **name) const
+{
+    std::vector<ExprNode *> args;
+    appendCommaArgs(expr, &args);
+
+    ExprNode *typeExpr = nullptr;
+    QString space;
+    ExprNode *offsetExpr = nullptr;
+    ExprNode *extentExpr = nullptr;
+    ExprNode *nameExpr = nullptr;
+
+    for (ExprNode *arg : args)
+    {
+        ExprNode *inner = nullptr;
+        switch (unwrapTagArg(arg, &inner))
+        {
+        case TOK_TYPE:
+            typeExpr = inner;
+            break;
+        case TOK_OFFSET:
+            if (!offsetTagArgs(inner, &space, &offsetExpr))
+                return false;
+            break;
+        case TOK_EXTENT:
+            extentExpr = inner;
+            break;
+        case TOK_NAME:
+            nameExpr = inner;
+            break;
+        default:
+            return false;
+        }
+    }
+
+    if (!typeExpr || typeExpr->type != EXPR_IDENTIFIER || !typeExpr->str || !offsetExpr || !extentExpr)
+        return false;
+
+    if (typeName)
+        *typeName = typeExpr;
+    if (offsetSpace)
+        *offsetSpace = space;
+    if (offset)
+        *offset = offsetExpr;
+    if (extent)
+        *extent = extentExpr;
+    if (name)
+        *name = nameExpr;
+    return true;
+}
+
+void StructureRenderEngine::applyOpenAsTag(StructureRow *target, TypeDecl *typeDecl, StructureRow *scope)
+{
+    ExprNode *expr = nullptr;
+    if (!target || !scope)
+        return;
+
+    if (!FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_OPENAS, &expr))
+    {
+        for (Type *type = scope->type; type; type = type->link)
+        {
+            if (type->ty != typeIDENTIFIER || !type->sym)
+                continue;
+            TypeDecl *decl = findTypeDecl(type->sym->name);
+            if (FindTag(decl ? decl->tagList : nullptr, TOK_OPENAS, &expr))
+                break;
+        }
+        if (!expr)
+            return;
+    }
+
+    ExprNode *typeExpr = nullptr;
+    QString offsetSpace;
+    ExprNode *offsetExpr = nullptr;
+    ExprNode *extentExpr = nullptr;
+    ExprNode *nameExpr = nullptr;
+    if (!openAsTagArgs(expr, &typeExpr, &offsetSpace, &offsetExpr, &extentExpr, &nameExpr))
+        return;
+
+    TypeDecl *rootType = findTypeDecl(typeExpr->str);
+    if (!rootType)
+        return;
+
+    uint64_t absoluteOffset = 0;
+    if (!offsetSpace.isEmpty())
+    {
+        INUMTYPE logicalOffset = 0;
+        if (!evaluate(scope, offsetExpr, &logicalOffset, scope->absoluteOffset)
+            || logicalOffset < 0
+            || !mapNamedOffset(offsetSpace, static_cast<uint64_t>(logicalOffset), &absoluteOffset))
+        {
+            return;
+        }
+    }
+    else
+    {
+        INUMTYPE logicalOffset = 0;
+        if (!evaluate(scope, offsetExpr, &logicalOffset, scope->absoluteOffset) || logicalOffset < 0)
+            return;
+        absoluteOffset = m_baseOffset + static_cast<uint64_t>(logicalOffset);
+    }
+
+    INUMTYPE extent = 0;
+    if (!evaluate(scope, extentExpr, &extent, scope->absoluteOffset) || extent <= 0)
+        return;
+    uint64_t byteLength = static_cast<uint64_t>(extent);
+    const uint64_t readable = readableEnd(absoluteOffset);
+    if (readable <= absoluteOffset)
+        return;
+    byteLength = std::min(byteLength, readable - absoluteOffset);
+    if (byteLength == 0)
+        return;
+
+    QString name;
+    if (nameExpr)
+        evaluateString(EvalContext{ scope, scope->type, scope->absoluteOffset }, nameExpr, &name);
+    if (name.trimmed().isEmpty())
+        name = QString::fromLocal8Bit(typeExpr->str);
+
+    target->hasOpenAsTarget = true;
+    target->openAsRootType = rootType;
+    target->openAsRootTypeName = QString::fromLocal8Bit(typeExpr->str);
+    target->openAsName = name.trimmed();
+    target->openAsOffset = absoluteOffset;
+    target->openAsByteLength = byteLength;
 }
 
 void StructureRenderEngine::linkWasmFunctionCodeTargets(StructureRow *root)

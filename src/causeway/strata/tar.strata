@@ -76,7 +76,7 @@ typedef struct _TAR_ENTRY
 {
     TAR_HEADER header;
 
-    [count(octal(str(header.size))), pad_to(512)]
+    [count(octal(str(header.size))), extent(octal(str(header.size))), pad_to(512)]
     byte data[];
 } TAR_ENTRY, *PTAR_ENTRY;
 

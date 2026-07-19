@@ -104,6 +104,7 @@
     <item>name</item>
     <item>offset</item>
     <item>offset_map</item>
+    <item>open_as</item>
     <item>octal</item>
     <item>optional</item>
     <item>pad_to</item>

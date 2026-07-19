@@ -1,5 +1,46 @@
 #include "../structview_testsupport.h"
 
+namespace {
+
+qsizetype writeIsoDirectoryRecord(QByteArray *image,
+                                   qsizetype offset,
+                                   const QByteArray &identifier,
+                                   quint32 extentSector,
+                                   quint32 dataLength,
+                                   quint8 flags)
+{
+    const qsizetype padding = (identifier.size() % 2) == 0 ? 1 : 0;
+    const qsizetype length = 33 + identifier.size() + padding;
+    (*image)[offset] = char(length);
+    writeLe32(image, offset + 2, extentSector);
+    writeBe32(image, offset + 6, extentSector);
+    writeLe32(image, offset + 10, dataLength);
+    writeBe32(image, offset + 14, dataLength);
+    (*image)[offset + 25] = char(flags);
+    writeLe16(image, offset + 28, 1);
+    writeBe16(image, offset + 30, 1);
+    (*image)[offset + 32] = char(identifier.size());
+    image->replace(offset + 33, identifier.size(), identifier);
+    return length;
+}
+
+void loadLazyChildren(StructureRow *row)
+{
+    if (!row || !row->lazyChildLoader)
+        return;
+
+    StructureLazyChildLoader loader = std::move(row->lazyChildLoader);
+    row->lazyChildrenLoaded = true;
+    auto children = loader();
+    for (auto &child : children)
+    {
+        child->parent = row;
+        row->children.push_back(std::move(child));
+    }
+}
+
+} // namespace
+
 class StructViewDiskImageTests : public QObject
 {
     Q_OBJECT
@@ -7,6 +48,7 @@ class StructViewDiskImageTests : public QObject
 private slots:
     void builderRendersRawImgMbrPartitions();
     void builderRendersIsoVolumeDescriptors();
+    void builderRendersIsoDirectoryTreesAcrossSectorPadding();
 };
 
 void StructViewDiskImageTests::builderRendersRawImgMbrPartitions()
@@ -173,9 +215,136 @@ void StructViewDiskImageTests::builderRendersIsoVolumeDescriptors()
     StructureRow *fileFlags = findChildNamed(rootDirectoryRecord, QStringLiteral("byte fileFlags"));
     QVERIFY2(fileFlags, qPrintable(childNames(rootDirectoryRecord)));
     QCOMPARE(fileFlags->value, QStringLiteral("ISO_FILE_FLAG_DIRECTORY"));
-    StructureRow *directoryData = findChildNamed(fileFlags, QStringLiteral("BYTE DirectoryData[]"));
-    QVERIFY2(directoryData, qPrintable(childNames(fileFlags)));
-    QCOMPARE(directoryData->offset, QStringLiteral("00009000"));
+    StructureRow *directoryEntries = findChildNamed(rootDirectoryRecord,
+                                                     QStringLiteral("ISO_DIRECTORY_ITEM DirectoryEntries[]"));
+    QVERIFY2(directoryEntries, qPrintable(childNames(rootDirectoryRecord)));
+    QCOMPARE(directoryEntries->offset, QStringLiteral("00009000"));
+}
+
+void StructViewDiskImageTests::builderRendersIsoDirectoryTreesAcrossSectorPadding()
+{
+    // Scenario: ISO directory extents are byte-bounded variable-record streams.
+    // A zero record length pads to the next 2048-byte sector, after which more
+    // records may follow; directory records recursively point at another such
+    // stream. Expected: parsing resumes in sector two, a subdirectory expands
+    // lazily, and its dot entries do not create recursive cycles.
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("iso.strata")), "iso.strata failed to parse");
+    TypeDecl *isoRoot = exportedNamed(&library, QStringLiteral("ISO_IMAGE"));
+    QVERIFY(isoRoot);
+
+    constexpr qsizetype sectorSize = 2048;
+    constexpr qsizetype pvd = 16 * sectorSize;
+    constexpr qsizetype terminator = 17 * sectorSize;
+    constexpr quint32 rootSector = 18;
+    constexpr quint32 secondRootSector = 19;
+    constexpr quint32 childSector = 21;
+    QByteArray iso(24 * sectorSize, '\0');
+
+    iso[pvd] = char(1);
+    writeAscii(&iso, pvd + 1, "CD001");
+    iso[pvd + 6] = char(1);
+    writeLe16(&iso, pvd + 128, sectorSize);
+    writeBe16(&iso, pvd + 130, sectorSize);
+    writeIsoDirectoryRecord(&iso,
+                            pvd + 156,
+                            QByteArray(1, '\0'),
+                            rootSector,
+                            2 * sectorSize,
+                            0x02);
+
+    iso[terminator] = char(255);
+    writeAscii(&iso, terminator + 1, "CD001");
+    iso[terminator + 6] = char(1);
+
+    qsizetype rootOffset = rootSector * sectorSize;
+    rootOffset += writeIsoDirectoryRecord(&iso,
+                                          rootOffset,
+                                          QByteArray(1, '\0'),
+                                          rootSector,
+                                          2 * sectorSize,
+                                          0x02);
+    rootOffset += writeIsoDirectoryRecord(&iso,
+                                          rootOffset,
+                                          QByteArrayLiteral("ROOT.TXT;1"),
+                                          22,
+                                          1,
+                                          0);
+    QCOMPARE(rootOffset < secondRootSector * sectorSize, true);
+
+    writeIsoDirectoryRecord(&iso,
+                            secondRootSector * sectorSize,
+                            QByteArrayLiteral("SUB"),
+                            childSector,
+                            sectorSize,
+                            0x02);
+
+    qsizetype childOffset = childSector * sectorSize;
+    childOffset += writeIsoDirectoryRecord(&iso,
+                                           childOffset,
+                                           QByteArray(1, '\0'),
+                                           childSector,
+                                           sectorSize,
+                                           0x02);
+    childOffset += writeIsoDirectoryRecord(&iso,
+                                           childOffset,
+                                           QByteArray(1, '\1'),
+                                           rootSector,
+                                           2 * sectorSize,
+                                           0x02);
+    writeIsoDirectoryRecord(&iso,
+                            childOffset,
+                            QByteArrayLiteral("NEST.BIN;1"),
+                            23,
+                            1,
+                            0);
+
+    auto rows = buildRows(&library, isoRoot, iso);
+    QCOMPARE(rows.size(), size_t(1));
+    StructureRow *rootRecord = findDescendantNamed(rows[0].get(),
+                                                    QStringLiteral("ISO_DIRECTORY_RECORD rootDirectoryRecord"));
+    QVERIFY(rootRecord);
+    StructureRow *rootEntries = findChildNamed(rootRecord,
+                                               QStringLiteral("ISO_DIRECTORY_ITEM DirectoryEntries[]"));
+    QVERIFY2(rootEntries, qPrintable(childNames(rootRecord)));
+    QCOMPARE(rootEntries->byteLength, uint64_t(2 * sectorSize));
+    QCOMPARE(rootEntries->children.size(), size_t(5));
+    QCOMPARE(rootEntries->children[0]->absoluteOffset, uint64_t(rootSector * sectorSize));
+    QCOMPARE(rootEntries->children[2]->absoluteOffset, uint64_t(rootOffset));
+    QCOMPARE(rootEntries->children[2]->byteLength,
+             uint64_t(secondRootSector * sectorSize - rootOffset));
+    QCOMPARE(rootEntries->children[3]->absoluteOffset, uint64_t(secondRootSector * sectorSize));
+
+    StructureRow *subdirectoryRecord = findDescendantNamed(rootEntries->children[3].get(),
+                                                            QStringLiteral("ISO_DIRECTORY_RECORD record"));
+    QVERIFY2(subdirectoryRecord, qPrintable(childNames(rootEntries->children[3].get())));
+    StructureRow *subdirectoryFlags = findChildNamed(subdirectoryRecord, QStringLiteral("byte fileFlags"));
+    QVERIFY2(subdirectoryFlags, qPrintable(childNames(subdirectoryRecord)));
+    QVERIFY(rootEntries->children[3]->lazyChildLoader);
+    loadLazyChildren(rootEntries->children[3].get());
+
+    StructureRow *childEntries = findChildNamed(rootEntries->children[3].get(),
+                                                QStringLiteral("ISO_DIRECTORY_ITEM DirectoryEntries[]"));
+    QVERIFY2(childEntries, qPrintable(childNames(rootEntries->children[3].get())));
+    QCOMPARE(childEntries->byteLength, uint64_t(sectorSize));
+    QCOMPARE(childEntries->children.size(), size_t(4));
+
+    for (size_t dotIndex = 0; dotIndex < 2; ++dotIndex)
+    {
+        StructureRow *dotRecord = findDescendantNamed(childEntries->children[dotIndex].get(),
+                                                       QStringLiteral("ISO_DIRECTORY_RECORD record"));
+        QVERIFY(dotRecord);
+        StructureRow *dotFlags = findChildNamed(dotRecord, QStringLiteral("byte fileFlags"));
+        QVERIFY(dotFlags);
+        QVERIFY(!childEntries->children[dotIndex]->lazyChildLoader);
+    }
+
+    StructureRow *nestedFile = findDescendantNamed(childEntries->children[2].get(),
+                                                    QStringLiteral("ISO_DIRECTORY_RECORD record"));
+    QVERIFY(nestedFile);
+    StructureRow *nestedIdentifier = findChildNamed(nestedFile, QStringLiteral("byte fileIdentifier[]"));
+    QVERIFY2(nestedIdentifier, qPrintable(childNames(nestedFile)));
+    QCOMPARE(nestedIdentifier->value, QStringLiteral("\"NEST.BIN;1\""));
 }
 
 REGISTER_STRUCTVIEW_TEST(StructViewDiskImageTests)

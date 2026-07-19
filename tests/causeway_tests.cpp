@@ -32,6 +32,7 @@ private slots:
 	void magicTagRequiresByteSequenceBeforeOptionalOffset();
 	void findSearchExpressionsParse();
 	void alignAndEntrypointTagsParse();
+	void openAsTagsParse();
 	void extentTagsAndScalarSizeofParse();
 	void endianExpressionTagsParse();
 	void ternaryExpressionTagsParse();
@@ -790,6 +791,36 @@ void CausewayTests::alignAndEntrypointTagsParse()
 	QCOMPARE(root->baseType->sptr->typeDeclList.size(), size_t(2));
 	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[1]->tagList, TOK_ALIGN, nullptr));
 	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[1]->tagList, TOK_ENTRYPOINT, nullptr));
+}
+
+void CausewayTests::openAsTagsParse()
+{
+	// Scenario: a row can declare that it opens a bounded byte range as another
+	// Strata root. Expected: open_as arguments are role-wrapped, so argument
+	// order stays explicit and future transform-style arguments can be added
+	// without positional ambiguity.
+	Parser parser;
+	QVERIFY(parseBuffer(parser,
+						"typedef struct _Child { byte magic; } Child;\n"
+						"[open_as(type(Child), offset(dataOffset), extent(dataSize), name(fmt(\"slice {0}\", dataOffset)))]\n"
+						"typedef struct _Entry {\n"
+						"  dword dataOffset;\n"
+						"  dword dataSize;\n"
+						"} Entry;\n"));
+
+	TypeDecl *entry = nullptr;
+	for(TypeDecl *decl : parser.GetStrataLibrary()->globalTypeDeclList)
+		if(decl && FindTag(decl->tagList, TOK_OPENAS, nullptr))
+			entry = decl;
+
+	QVERIFY(entry);
+	ExprNode *openAs = nullptr;
+	QVERIFY(FindTag(entry->tagList, TOK_OPENAS, &openAs));
+	QVERIFY(openAs);
+	QVERIFY(findTagWrapExpr(openAs, TOK_TYPE));
+	QVERIFY(findTagWrapExpr(openAs, TOK_OFFSET));
+	QVERIFY(findTagWrapExpr(openAs, TOK_EXTENT));
+	QVERIFY(findTagWrapExpr(openAs, TOK_NAME));
 }
 
 void CausewayTests::extentTagsAndScalarSizeofParse()

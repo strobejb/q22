@@ -16,6 +16,7 @@ private slots:
     void builderRendersRaggedStringTables();
     void builderSupportsExtentBoundedRecursiveArrays();
     void builderFormatsScalarArraysAsPreviewLists();
+    void builderAdvancesExactCountScalarArraysPastPreviewCap();
     void builderPopulatesCommentsFromTypeDeclarations();
     void builderUsesPackedLayoutByDefault();
     void builderAppliesStructAndFieldAlignment();
@@ -40,6 +41,7 @@ private slots:
     void builderBuildsNestedStructRowsAndOffsets();
     void builderSupportsArraysOffsetsEnumsAndSwitchCases();
     void builderExposesEnumChoicesAndEntrypoints();
+    void builderExposesOpenAsTargets();
     void builderEvaluatesUnionSwitchSelectorsFromTypedLayout();
     void builderEvaluatesFieldsAndCorrectedExpressions();
     void builderEvaluatesFindSearchExpressions();
@@ -452,6 +454,39 @@ void StructViewRawRendererTests::builderFormatsScalarArraysAsPreviewLists()
     QCOMPARE(rows[0]->children[1]->value, QStringLiteral("{ 0, 1, 2, 3, 4, 5, 6, 7, ... }"));
     QCOMPARE(rows[0]->children[1]->children.size(), size_t(10));
     QVERIFY(!rows[0]->children[1]->emphasizeName);
+}
+
+void StructViewRawRendererTests::builderAdvancesExactCountScalarArraysPastPreviewCap()
+{
+    // Scenario: a large exact-count scalar array renders as a capped preview.
+    // Expected: the display cap does not become the consumed layout length.
+    // Regression guard: archive payload arrays such as TAR data[] must not
+    // desynchronize following fields just because only the first 100 bytes are
+    // shown in the tree.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  word size;\n"
+                        "  [count(size)] byte payload[];\n"
+                        "  byte tail;\n"
+                        "} root;\n"));
+
+    QByteArray bytes(130, '\0');
+    writeLe16(&bytes, 0, 127);
+    bytes[129] = char(0x42);
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(3));
+    StructureRow *payload = rows[0]->children[1].get();
+    QCOMPARE(payload->name, QStringLiteral("byte payload[]"));
+    QCOMPARE(payload->children.size(), size_t(100));
+    QCOMPARE(payload->byteLength, uint64_t(127));
+    StructureRow *tail = rows[0]->children[2].get();
+    QCOMPARE(tail->absoluteOffset, uint64_t(129));
+    QCOMPARE(tail->value, QStringLiteral("66"));
 }
 
 void StructViewRawRendererTests::builderPopulatesCommentsFromTypeDeclarations()
@@ -1320,6 +1355,55 @@ void StructViewRawRendererTests::builderExposesEnumChoicesAndEntrypoints()
     QVERIFY(entry->hasCodeTarget);
     QCOMPARE(entry->codeLogicalOffset, uint64_t(0x10));
     QCOMPARE(entry->codeTargetOffset, uint64_t(0x14));
+}
+
+void StructViewRawRendererTests::builderExposesOpenAsTargets()
+{
+    // Scenario: a container element describes a physical byte range that can be
+    // opened as another Strata root.
+    // Expected: the renderer attaches one open_as target per rendered element,
+    // evaluating offset/extent/name in that element's field scope.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef struct _Child { byte magic; } Child;\n"
+                        "[open_as(type(Child), offset(dataOffset), extent(dataSize), name(fmt(\"slice {0}\", dataOffset)))]\n"
+                        "typedef struct _Entry {\n"
+                        "  dword dataOffset;\n"
+                        "  dword dataSize;\n"
+                        "} Entry;\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  byte count;\n"
+                        "  [count(count)] Entry entries[];\n"
+                        "} root;\n"));
+
+    QByteArray bytes(0x40, '\0');
+    bytes[0] = char(2);
+    writeLe32(&bytes, 1, 0x20);
+    writeLe32(&bytes, 5, 0x04);
+    writeLe32(&bytes, 9, 0x30);
+    writeLe32(&bytes, 13, 0x08);
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(2));
+
+    StructureRow *entries = rows[0]->children[1].get();
+    QCOMPARE(entries->children.size(), size_t(2));
+
+    StructureRow *first = entries->children[0].get();
+    QVERIFY(first->hasOpenAsTarget);
+    QVERIFY(first->openAsRootType);
+    QCOMPARE(first->openAsRootTypeName, QStringLiteral("Child"));
+    QCOMPARE(first->openAsName, QStringLiteral("slice 32"));
+    QCOMPARE(first->openAsOffset, uint64_t(0x20));
+    QCOMPARE(first->openAsByteLength, uint64_t(4));
+
+    StructureRow *second = entries->children[1].get();
+    QVERIFY(second->hasOpenAsTarget);
+    QCOMPARE(second->openAsName, QStringLiteral("slice 48"));
+    QCOMPARE(second->openAsOffset, uint64_t(0x30));
+    QCOMPARE(second->openAsByteLength, uint64_t(8));
 }
 
 void StructViewRawRendererTests::builderEvaluatesUnionSwitchSelectorsFromTypedLayout()

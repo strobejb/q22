@@ -6,6 +6,7 @@ class StructViewArchiveTests : public QObject
 
 private slots:
     void builderRendersTarEntries();
+    void builderAdvancesTarEntriesByFullPayloadExtent();
     void builderRendersGzipHeaderAndTrailer();
     void builderRendersCabinetHeaderFilesAndData();
     void builderRendersZipCentralDirectoryFromEocd();
@@ -55,6 +56,59 @@ void StructViewArchiveTests::builderRendersTarEntries()
     QVERIFY2(data, qPrintable(childNames(entries->children[0].get())));
     QCOMPARE(data->offset, QStringLiteral("00000200"));
     QCOMPARE(data->value, QStringLiteral("{ 104, 101, 108, 108, 111 }"));
+}
+
+void StructViewArchiveTests::builderAdvancesTarEntriesByFullPayloadExtent()
+{
+    // Scenario: TAR entries may contain large payloads such as WASM files.
+    // Expected: the entry consumes the full padded payload extent even though
+    // the byte array preview only renders the first display-capped elements.
+    // Regression guard: without extent(...) on TAR_ENTRY.data, the following
+    // header is parsed from inside the payload and Structure View can appear to
+    // hang while walking garbage records.
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("tar.strata")), "tar.strata failed to parse");
+    TypeDecl *tarRoot = exportedNamed(&library, QStringLiteral("TAR"));
+    QVERIFY(tarRoot);
+
+    QByteArray tar(4096, '\0');
+    writeAscii(&tar, 0, "module.wasm");
+    writeAscii(&tar, 100, "0000644");
+    writeAscii(&tar, 108, "0000000");
+    writeAscii(&tar, 116, "0000000");
+    writeAscii(&tar, 124, "00000002000"); // 1024 bytes
+    writeAscii(&tar, 136, "00000000000");
+    writeAscii(&tar, 148, "        ");
+    tar[156] = char('0');
+    writeAscii(&tar, 257, "ustar");
+    writeAscii(&tar, 263, "00");
+    for (int i = 0; i < 1024; ++i)
+        tar[512 + i] = char(i & 0xff);
+
+    const int secondHeader = 512 + 1024;
+    writeAscii(&tar, secondHeader, "next.bin");
+    writeAscii(&tar, secondHeader + 100, "0000644");
+    writeAscii(&tar, secondHeader + 108, "0000000");
+    writeAscii(&tar, secondHeader + 116, "0000000");
+    writeAscii(&tar, secondHeader + 124, "00000000001");
+    writeAscii(&tar, secondHeader + 136, "00000000000");
+    writeAscii(&tar, secondHeader + 148, "        ");
+    tar[secondHeader + 156] = char('0');
+    writeAscii(&tar, secondHeader + 257, "ustar");
+    writeAscii(&tar, secondHeader + 263, "00");
+    tar[secondHeader + 512] = char('x');
+
+    auto rows = buildRows(&library, tarRoot, tar);
+    QCOMPARE(rows.size(), size_t(1));
+    StructureRow *entries = findChildNamed(rows[0].get(), QStringLiteral("TAR_ENTRY entries[]"));
+    QVERIFY2(entries, qPrintable(childNames(rows[0].get())));
+    QVERIFY(entries->children.size() >= size_t(3));
+    QCOMPARE(entries->children[0]->name, QStringLiteral("[0]module.wasm"));
+    QCOMPARE(entries->children[1]->name, QStringLiteral("[1]next.bin"));
+
+    StructureRow *secondHeaderRow = findChildNamed(entries->children[1].get(), QStringLiteral("TAR_HEADER header"));
+    QVERIFY2(secondHeaderRow, qPrintable(childNames(entries->children[1].get())));
+    QCOMPARE(secondHeaderRow->absoluteOffset, uint64_t(secondHeader));
 }
 
 void StructViewArchiveTests::builderRendersGzipHeaderAndTrailer()

@@ -62,13 +62,6 @@ typedef struct _ISO_DIRECTORY_RECORD
     [
         bitflag(ISO_FILE_FLAGS),
         dynamic_array(
-            name(DirectoryData),
-            type(BYTE),
-            offset(extentLocation.le * 2048),
-            count(dataLength.le),
-            optional((fileFlags & ISO_FILE_FLAG_DIRECTORY) != 0 && dataLength.le != 0)
-        ),
-        dynamic_array(
             name(FileData),
             type(BYTE),
             offset(extentLocation.le * 2048),
@@ -83,12 +76,61 @@ typedef struct _ISO_DIRECTORY_RECORD
     ISO_U16_BOTH volumeSequenceNumber;
     byte fileIdentifierLength;
 
-    [count(fileIdentifierLength)]
+    [format("string"), count(fileIdentifierLength)]
     byte fileIdentifier[];
 
-    [count(length - 33 - fileIdentifierLength)]
+    [count(length > 33 + fileIdentifierLength ? length - 33 - fileIdentifierLength : 0)]
     byte systemUse[];
 } ISO_DIRECTORY_RECORD, *PISO_DIRECTORY_RECORD;
+
+// Directory records cannot cross a logical-block boundary. A zero length byte
+// means that the rest of the current 2048-byte block is padding; records may
+// resume in the next block. count_as() makes a DirectoryEntries dynamic array's
+// logical count track bytes consumed rather than the number of rendered items.
+[
+    dynamic_array(
+        name(DirectoryEntries),
+        type(ISO_DIRECTORY_ITEM),
+        offset(record.extentLocation.le * 2048),
+        max_count(record.dataLength.le),
+        optional(
+            select_offset(0) != 0
+            && (record.fileFlags & ISO_FILE_FLAG_DIRECTORY) != 0
+            && record.dataLength.le != 0
+            && (record.fileIdentifierLength != 1
+                || (record.fileIdentifier[0] != 0 && record.fileIdentifier[0] != 1))
+        )
+    )
+]
+typedef struct _ISO_DIRECTORY_ITEM
+{
+    [
+        select(select_offset(0)),
+        extent(
+            select_offset(0) == 0
+                ? 2048 - (current_offset() - ((current_offset() / 2048) * 2048))
+                : select_offset(0)
+        )
+    ]
+    union
+    {
+        [
+            case(0),
+            count_as(2048 - (current_offset() - ((current_offset() / 2048) * 2048)))
+        ]
+        struct _ISO_DIRECTORY_PADDING
+        {
+            [
+                count(2048 - (current_offset() - ((current_offset() / 2048) * 2048))),
+                extent(2048 - (current_offset() - ((current_offset() / 2048) * 2048)))
+            ]
+            byte bytes[];
+        } padding;
+
+        [default, count_as(select_offset(0))]
+        ISO_DIRECTORY_RECORD record;
+    };
+} ISO_DIRECTORY_ITEM, *PISO_DIRECTORY_ITEM;
 
 typedef struct _ISO_BOOT_RECORD_PAYLOAD
 {
@@ -153,6 +195,15 @@ typedef struct _ISO_PRIMARY_VOLUME_DESCRIPTOR_PAYLOAD
     [endian("big")]
     dword optionalTypeMPathTableLocation;
 
+    [
+        dynamic_array(
+            name(DirectoryEntries),
+            type(ISO_DIRECTORY_ITEM),
+            offset(extentLocation.le * 2048),
+            max_count(dataLength.le),
+            optional(dataLength.le != 0)
+        )
+    ]
     ISO_DIRECTORY_RECORD rootDirectoryRecord;
 
     [string, count(128), extent(128)]

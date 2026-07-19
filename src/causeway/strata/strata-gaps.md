@@ -1,286 +1,218 @@
 # Strata Gaps
 
-This file records places where real binary formats expose useful structure that
-the current Strata language or semantic layer cannot express cleanly yet.
+This file records useful binary-format behavior that the current Strata
+language, renderer, or semantic layer still cannot express cleanly. Completed
+capabilities belong in `README.md`, not here.
 
-## Positional semantic collection addressing
+The raw layout language already supports variable-width scalars, logical array
+counts, extent-bounded recursion, terminated fields, named offset spaces,
+FourCC display and selection, positional semantic collections, architecture-aware
+code ranges, and lazily rendered dynamic data. The remaining work is dominated
+by cross-table correlation, transformed byte streams, and derived semantics.
 
-`emit_node(...)` now supports positional semantic collection addressing.
-`append("sequence")` allocates ordered destination rows, while
-`item("sequence", index)` and `item(index)` let parallel physical tables
-contribute to those rows. Allocation is completed before item contributions,
-so sections that appear earlier in the file can describe rows allocated later.
+## Cross-cutting engine gaps
 
-This is sufficient for WebAssembly's combined function index space: function
-imports and definitions allocate one `Functions[]` collection, while function
-names, exports, and code bodies contribute by absolute or defined-function
-ordinal. The resulting declarative summary can express rows such as:
+### Keyed lookup and cross-table correlation
 
-```text
-func[0] answer : type[0] () -> i32
-```
+Definitions can address rendered array elements by numeric position with
+`field_at(...)`, and semantic collections can merge rows by key. They cannot yet
+search a physical array for an element whose field matches a value, then reuse
+that element's fields in a later expression.
 
-The remaining gap is richer interpretation of referenced type signatures and
-instruction bodies. A semantic `view(...)` remains appropriate when that
-derived interpretation is too complex or expensive for declarative rendering.
+This affects SFNT table lookup by FourCC, Java constant-pool resolution, MP4
+sample-table joins, CAB file/folder correlation, and Mach-O symbol/string-table
+metadata.
 
-## SFNT/OpenType table correlation
+Potential direction: bounded array lookup helpers and reusable keyed physical
+collections. Complicated or expensive joins should remain semantic views rather
+than turning raw layout evaluation into a general query engine.
 
-SFNT fonts store a table directory with four-character tags, offsets, and
-lengths. Pure Strata can render the directory and raw table payloads, but typed
-table parsing wants lookup-by-tag over an array of table records:
+### Subfile and transformed-stream views
 
-```text
-find table record where tag == "name", then render NAME_TABLE at offset
-find table record where tag == "cmap", then render CMAP_TABLE at offset
-```
+Dynamic rows always read the original file. There is no reusable way to expose
+a bounded byte range as another detected format, or to render a decompressed or
+otherwise transformed stream with an existing Strata definition.
 
-Potential direction: array lookup helpers, keyed collections, or semantic
-font-summary support.
+This blocks embedded ICO PNGs, WOFF table inflation, `.tar.gz` nesting, CAB
+folder decompression, fat Mach-O slices, and filesystem views inside disk-image
+partitions.
 
-## FourCC enums and richer properties
+Potential direction: a bounded subfile source abstraction plus explicit
+transform providers for zlib/DEFLATE, Brotli, LZX, and other codecs. Transformed
+rows must retain a clear relationship to their source bytes without pretending
+that decompressed offsets are physical file offsets.
 
-Several formats use four-byte tags (`OTTO`, `ttcf`, `name`, `cmap`, `head`,
-MP4 box types, RIFF chunks). Strata now has `format("fourcc")` scalar display and
-`fourcc("....")` case helpers, so definitions no longer need to model those as
-`[string, count(4)] char tag[]` just to get readable names.
+### Computed validation
 
-The remaining gap is richer FourCC-aware interpretation: for example PNG chunk
-type letters encode ancillary/private/reserved/safe-to-copy properties, and a
-scalar FourCC field cannot currently combine `format("fourcc")` display with enum choice
-editing in a single polished view.
+Expressions can read and compare stored values but cannot compute checksums or
+attach validation results to rows. PNG CRC-32, ISO/El Torito checksums, archive
+integrity fields, and redundant-endian ISO values therefore render as data
+without a verified/invalid state.
 
-Potential direction: layered display tags or FourCC-specific property helpers.
+Potential direction: bounded checksum helpers and semantic validation
+attributes with explicit source extents.
 
-## Derived summaries
+### Packed-field and layered display
 
-Summaries such as "WASM Summary" or "Font Tables" are not physical byte ranges.
-They should be explicitly modeled as derived semantic views rather than fake
-structs, so byte-accurate layout remains honest.
+`bitflag(...)` correctly handles independent masks, but there is no declarative
+display for named bit ranges whose values overlap. A scalar also cannot combine
+`format("fourcc")`, enum choice editing, and derived FourCC properties in one
+polished view.
 
-## PNG chunk semantics
+This affects GIF packed fields, processor-specific packed header fields, and PNG
+ancillary/private/reserved/safe-to-copy chunk properties.
 
-PNG chunks are easy to render structurally, but several useful checks are
-semantic rather than layout:
+Potential direction: named bit-slice display plus composable display metadata.
 
-- CRC validation needs computed CRC-32 over chunk type + data.
-- IDAT payloads are a zlib/DEFLATE stream split across one or more chunks.
-- Text chunks (`tEXt`, `zTXt`, `iTXt`) contain NUL-separated variable fields
-  followed by remaining payload bytes; pure Strata cannot express "remaining
-  bytes after a terminated subfield" cleanly yet.
-- Chunk type letter case encodes ancillary/private/reserved/safe-to-copy
-  properties; a FourCC-aware display/helper would make this cleaner.
+### Profile-aware dispatch and compound detection
 
-## BMP palette and bitfield payloads
+Union selection works from fields and raw probes in the current structure, but
+shared envelope formats often need dispatch inherited from an outer profile.
+RIFF payload meaning, for example, depends on form type, nested LIST type, and
+sometimes AVI stream kind.
 
-BMP/DIB headers determine follow-on payloads from several fields at once:
-header size, bit depth, compression, `colorsUsed`, and the pixel offset in the
-outer file header. Pure Strata can select the DIB header variant and expose the
-pixel payload at `bfOffBits`, but it cannot yet cleanly express:
+Export metadata also treats multiple `magic(...)` declarations as alternative
+signatures. It cannot require a compound predicate such as `RIFF` at offset 0
+and `WEBP` at offset 8, or distinguish Java classes from fat Mach-O using header
+plausibility after their shared `CA FE BA BE` magic.
 
-- palette entry count as `colorsUsed != 0 ? colorsUsed : (1 << bitCount)` only
-  for indexed-color formats;
-- RGB bit masks that may either live in V2/V3/V4/V5 headers or immediately after
-  a 40-byte BITMAPINFOHEADER when compression is `BI_BITFIELDS`;
-- a byte range between "end of selected DIB header" and `bfOffBits` as typed
-  palette/mask data without duplicating header-specific arithmetic.
+Potential direction: explicit profile/context propagation for nested dispatch
+and conjunctive detection predicates with bounded scalar probes.
 
-Potential direction: range fields (`bytes_until(offset)`), richer derived
-expressions, or semantic image-summary support.
+### Self-scoped named offset spaces
 
-## ICO/CUR embedded image dispatch
+`offset_map("space", ...)`, `offset("space", expr)`, and
+`value_at("space", expr, Type)` work for descendants and later rows. A row
+cannot reliably use a named offset map declared by that same row while its own
+destination, key, and name expressions are still being evaluated.
 
-ICO/CUR directory entries point at image payloads elsewhere in the file. Modern
-icons commonly embed PNG images, while older entries store DIB-style bitmap
-data without a BMP file header. Pure Strata can render the directory and raw
-bounded image bytes, but it cannot dispatch a dynamic payload type based on the
-bytes found at that target offset.
+Potential direction: a narrow prebind pass for named spaces, without making the
+renderer a general multi-pass interpreter.
 
-Potential direction: dynamic payload `select_offset(offset, ...)`, reusable
-subfile views, or semantic icon-summary support.
-
-## GIF packed field display and LZW image data
-
-GIF packs several independent values into bytes in the Logical Screen Descriptor,
-Image Descriptor, and Graphic Control Extension. Pure Strata can use bit
-expressions to size optional color tables and render the block stream, but it
-does not currently split those packed bytes into named bitfield sub-values.
-
-GIF image data is also LZW-compressed in a chain of data sub-blocks. Structure
-View can show the sub-block boundaries honestly, but decoding pixels would need
-semantic image support.
-
-Potential direction: declarative packed-bitfield display and optional semantic
-image/frame summaries.
-
-## WOFF decompression and WOFF2
-
-WOFF 1.0 wraps sfnt tables with optional zlib compression. Pure Strata can render
-the WOFF header, table directory, and compressed table byte ranges, but it cannot
-inflate compressed tables and then reuse the SFNT/OpenType table definitions on
-the decompressed stream.
-
-WOFF2 is a separate format (`wOF2`) with a variable-length table directory and
-Brotli-compressed transformed font data. Modeling it cleanly needs either new
-variable integer types (`UIntBase128`, `255UInt16`) plus Brotli-aware semantic
-support, or a dedicated semantic parser.
+## Format-specific gaps
 
-Potential direction: decompressed subfile views and reusable transformed-font
-semantic support.
-
-## ISO BMFF / MP4 sample semantics
-
-ISO Base Media recursive box trees can now be represented directly by an
-extent-bounded self-referential array. The shipped MP4 definition uses this for
-the common movie/sample-table hierarchy, fragmented-media containers
-(`moof`/`traf`/`mvex`/`mfra`), and common metadata/item-property containers while
-keeping each child list inside its owning box payload. Full-box containers such
-as `meta` and `iref` also account for their version-and-flags prefix before the
-nested box stream.
-
-Useful reverse-engineering views also need to join sample tables (`stco`/`co64`,
-`stsc`, `stsz`, `stts`, `ctts`, `stss`) into derived media extents and timelines.
-That is semantic data synthesized from several boxes rather than a physical
-layout field.
-
-Potential direction: broader typed box coverage, FourCC-aware
-selection/display, and semantic sample-table summaries.
-
-## RIFF profile dispatch and recursive chunk lists
-
-RIFF-family files share the same chunk envelope but assign chunk meaning by both
-form type and nested list type. Pure Strata can render generic RIFF/WAVE/WebP
-roots, FourCC chunk labels, even-byte chunk padding, and selected known payloads,
-but it cannot yet express profile-scoped dispatch such as "`fmt `" only for WAVE
-or `strf` differently for AVI stream kinds.
-
-RIFF `LIST` chunks can also contain nested chunks whose interpretation depends
-on the list FourCC. The shipped definition now parses those nested chunk streams
-recursively and bounds each one to its containing `LIST` payload. The remaining
-gap is profile-aware interpretation of the nested chunks.
-
-File detection has a related limitation: Structure View metadata can list
-several `magic(...)` signatures, but they are alternatives rather than a compound
-predicate. A precise WebP detector wants `RIFF` at offset 0 and `WEBP` at offset
-8, not either signature independently.
-
-Potential direction: profile-aware union dispatch and compound `magic`
-predicates.
-
-## TAR/GZip archive semantics
-
-TAR headers store numeric fields as fixed-width ASCII octal text. Strata now has
-`octal(text)` so the basic entry payload extent can be modeled honestly, but
-full archive semantics still need more than raw layout:
-
-- PAX/GNU long-name and long-link records apply metadata to the following entry;
-  pure Strata renders those records physically but cannot merge the derived name
-  into the next entry row.
-- Sparse-file maps and vendor-specific typeflags need profile-aware parsing.
-- GZip can render its header, optional filename/comment fields, compressed byte
-  stream, and trailer, but it cannot inflate DEFLATE data or expose the wrapped
-  subfile (for example a `.tar.gz`) as a nested Structure View.
-
-Potential direction: derived archive-entry views, decompressed subfile views, and
-profile-specific TAR extension handling.
-
-## CAB folder streams and cabinet sets
-
-Windows Cabinet files separate file metadata (`CFFILE`) from compressed folder
-streams (`CFFOLDER`/`CFDATA`). Pure Strata can render the header, folder table,
-file table, and raw compressed data blocks, but useful archive browsing needs
-semantic joins:
-
-- `CFFILE.iFolder` and `uoffFolderStart` need correlation with folder streams to
-  show which data range belongs to each file.
-- MSZIP, Quantum, and LZX folder streams need decompression before file payloads
-  can be shown.
-- Header-level reserve sizes affect per-folder and per-data-block reserve bytes;
-  modeling those cleanly wants parameterized/reusable structs or profile-aware
-  parsing.
-- Multi-part cabinet sets link previous/next cabinet and disk names across
-  separate files.
-
-Potential direction: decompressed folder-stream views, archive-entry summaries,
-and cross-file cabinet-set metadata.
-
-## Raw disk images, GPT, and filesystems
-
-Raw `.img`/`.dd` disk images can start with an MBR, but useful OS-distro views
-quickly become layered:
-
-- Protective MBR entries should lead to the GPT header and partition-entry array
-  at later LBAs.
-- Partition payloads need dispatch by MBR type or GPT partition GUID.
-- Nested filesystem views such as FAT, ISO9660, SquashFS, and ext* need subfile
-  parsing over partition byte ranges.
-- Sector size is currently assumed to be 512 bytes in `rawimg.strata`.
-
-Potential direction: partition-map semantic views, GUID helpers, subfile views,
-and filesystem-specific Strata definitions.
-
-## ISO 9660, boot metadata, and filesystem extensions
-
-ISO images have a straightforward volume-descriptor area, but full distro-image
-navigation needs several layers beyond raw descriptor layout:
-
-- Directory records form variable-length lists inside directory extents; pure
-  Strata can expose the pointed-to extent bytes, but it cannot recursively parse
-  records until the directory extent is exhausted.
-- El Torito boot catalogs are referenced from boot-record descriptors and need
-  checksum validation plus boot-entry decoding.
-- Joliet supplementary descriptors change filename encoding to UCS-2, and Rock
-  Ridge stores POSIX metadata in System Use fields.
-- Hybrid ISO images may also contain MBR/GPT/APM partition maps before or around
-  the ISO 9660 filesystem.
-
-Potential direction: bounded variable-record arrays, recursive directory views,
-UCS-2 string display, checksum helpers, and cross-format subfile dispatch.
-
-## Java class semantic resolution
-
-Java class files are structurally straightforward, but useful navigation needs
-semantic interpretation of the constant pool:
-
-- `CONSTANT_Long` and `CONSTANT_Double` occupy two constant-pool indexes even
-  though only one `cp_info` structure is present. Pure Strata renders physical
-  entries honestly but cannot decrement the remaining logical index count or
-  insert a synthetic skipped slot.
-- Class, field, method, descriptor, and attribute names are indexes into the
-  constant pool. A readable class summary needs lookup-by-index and UTF-8
-  decoding, including Java's modified UTF-8 details.
-- Attribute payloads such as `Code`, `LineNumberTable`, and annotations need
-  string-keyed dispatch through the attribute-name constant.
-
-Potential direction: indexed collection lookup helpers, derived class summaries,
-and attribute-name based payload dispatch.
-
-## Mach-O universal binaries and dyld metadata
-
-The thin Mach-O layout can be represented in Strata with endian-sensitive
-headers and typed load commands. Several useful reverse-engineering views still
-need semantic support:
-
-- Universal/fat Mach-O starts with `CA FE BA BE`, which collides with Java class
-  file magic. Precise auto-detection wants compound predicates using both magic
-  and surrounding header plausibility.
-- Symbol tables, indirect symbols, exports, rebases, binds, and chained fixups
-  need joins between multiple load commands and string tables.
-- Fat/universal binaries need subfile views for each architecture slice.
-
-Potential direction: compound magic predicates, indexed string-table helpers,
-dyld metadata semantic views, and nested subfile views.
-
-## Named offset spaces and self-scoped rows
-
-`offset_map("space", ...)` plus `offset("space", expr)` and `value_at("space",
-expr, Type)` cover the common case where a row resolves bytes through a named
-address space declared by an owning row or a sibling. The awkward case is when
-a row wants to use its own named offset space while still evaluating its own
-destination/name expressions. Today that self-scope is not prebound early
-enough, so the map is only reliable for descendants and later rows.
-
-Potential direction: a narrow prebind pass for `offset_map(...)` / named spaces
-so the current row can see its own map before `dest(...)`, `key(...)`, and
-`name(...)` finish evaluation, without turning the renderer into a more general
-multi-pass interpreter.
+### WebAssembly derived interpretation
+
+The declarative WASM summary can combine imported and defined functions, names,
+exports, types, and code bodies in one positional function collection. Remaining
+work is richer presentation of referenced signatures and instruction bodies.
+Disassembly already handles executable code; a higher-level semantic view may
+still be appropriate for control-flow and stack interpretation.
+
+### SFNT/OpenType tables
+
+The shipped definition renders the table directory and bounded table payloads.
+Typed `name`, `cmap`, `head`, and related tables need lookup-by-tag over directory
+records, followed by table-specific semantic interpretation. This primarily
+depends on keyed physical lookup; compressed WOFF variants also depend on
+transformed-stream views.
+
+### PNG chunks
+
+The raw chunk stream and known payload layouts are representable. Terminated
+text fields followed by remaining payload bytes can now be modeled with
+`terminated_by(...)` and `extent_of(...)`; adding `tEXt`, `zTXt`, and `iTXt`
+layouts is definition work.
+
+The genuine remaining gaps are CRC validation, FourCC property presentation,
+and joining/decompressing split IDAT data into an image stream.
+
+### BMP palettes and bitfield payloads
+
+Ternary expressions, shifts, and `optional(...)` can express indexed palette
+counts such as `colorsUsed != 0 ? colorsUsed : (1 << bitCount)`. Adding the
+ordinary palette cases is definition work.
+
+The awkward case is typing the range between the selected DIB header and
+`bfOffBits`: RGB masks may live inside V2/V3/V4/V5 headers or immediately after
+a 40-byte BITMAPINFOHEADER. Expressing that without duplicated variant-specific
+arithmetic may warrant a range-to-offset helper or a semantic image summary.
+
+### ICO/CUR embedded image dispatch
+
+Directory entries and bounded image payloads are covered. Dispatching a target
+payload as PNG or headerless DIB based on bytes at that dynamic target still
+needs a subfile view or dynamic target-type selection.
+
+### GIF images
+
+The block stream, optional color tables, and LZW sub-block boundaries are
+covered. Named packed-field slices need richer display support, while decoded
+frames require LZW transformation and image/frame semantics.
+
+### WOFF and WOFF2
+
+WOFF 1.0 headers, table directories, and compressed byte ranges are covered.
+Inflating tables and reusing SFNT definitions needs transformed-stream views.
+
+WOFF2 additionally needs `UIntBase128` and `255UInt16` scalar decoding plus
+Brotli and transformed-font reconstruction, or a dedicated semantic parser.
+
+### ISO BMFF / MP4
+
+Extent-bounded box recursion covers the common movie/sample-table hierarchy,
+fragmented-media containers, metadata/item-property containers, and full-box
+container prefixes. Broader typed box coverage remains definition work.
+
+Useful media views must join `stco`/`co64`, `stsc`, `stsz`, `stts`, `ctts`, and
+`stss` into derived sample extents and timelines. That depends on cross-table
+correlation and is likely best presented as a semantic summary.
+
+### RIFF families
+
+Generic RIFF/WAVE/WebP roots, FourCC labels, even-byte padding, selected payloads,
+and recursive bounded LIST streams are covered. Remaining work is profile-aware
+payload dispatch and precise compound detection, especially for AVI and WebP.
+
+### TAR and GZip
+
+TAR entry extents and ASCII-octal sizes are covered. PAX/GNU long names apply to
+the following entry, sparse maps vary by profile, and derived names therefore
+need archive-entry semantics.
+
+GZip headers, optional strings, compressed bytes, and trailers are covered.
+Inflating DEFLATE and presenting a wrapped format such as TAR needs transformed
+subfile support.
+
+### Cabinet archives
+
+CAB headers, folder/file tables, and raw CFDATA blocks are covered. Remaining
+work includes correlating `CFFILE` entries with folder streams, handling reserve
+sizes cleanly, decompressing MSZIP/Quantum/LZX, and linking multipart cabinet
+sets. These require keyed joins, transformed streams, and in the multipart case
+cross-file metadata.
+
+### Raw disk images and partitioned filesystems
+
+The shipped raw-image definition covers an MBR and referenced partition bytes.
+Remaining work includes GPT headers and entry arrays, dispatch by MBR type or GPT
+partition GUID, non-512-byte sector assumptions, and nested filesystem views for
+FAT, ISO 9660, SquashFS, ext*, and similar formats.
+
+### ISO 9660 extensions and boot metadata
+
+Volume descriptors, byte-bounded directory streams, logical-block padding,
+multi-sector directories, recursive subdirectories, and `.`/`..` cycle
+suppression are covered.
+
+Remaining work is El Torito catalog decoding and validation, Joliet UCS-2 names,
+Rock Ridge System Use semantics, and hybrid MBR/GPT/APM navigation. Some payload
+layouts are definition work; polished names, checksums, and hybrid navigation
+depend on the cross-cutting gaps above.
+
+### Java classes
+
+Constant-pool physical layout and the two-slot contribution of
+`CONSTANT_Long`/`CONSTANT_Double` are covered with `count_as(2)`.
+
+Readable class, field, method, descriptor, and attribute names still require
+constant-pool lookup and Java modified UTF-8 handling. Typed `Code`,
+`LineNumberTable`, annotation, and other attribute payloads also need dispatch
+through the resolved attribute-name constant.
+
+### Mach-O and universal binaries
+
+Thin Mach-O headers and typed load commands are covered. Symbols, indirect
+symbols, exports, rebases, binds, and chained fixups require load-command and
+string-table correlation. Fat slices need bounded subfile views, and reliable
+Java/fat-Mach-O auto-detection needs compound predicates.

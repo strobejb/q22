@@ -17,7 +17,7 @@ View online: [Strata Language Reference](https://github.com/strobejb/q22/blob/ma
 | Types | [`struct`](#structs) · [`union`](#unions) · [`enum`](#enums) · [`typedef`](#type-declarations) |
 | Tags | [`tagset`](#tagsets) · [`tags`](#tagsets) |
 | Display | [`enum(N)`](#display) · [`bitflag(N)`](#display) · [`format("...")`](#display) · [`name`](#display) · [`string`](#display) |
-| Layout | [`offset`](#layout) · [`align`](#layout) · [`pad_to`](#layout) · [`endian`](#byte-order) · [`entrypoint`](#layout) · [`code`](#layout) · [`extent`](#layout) · [`optional`](#layout) |
+| Layout | [`offset`](#layout) · [`align`](#layout) · [`pad_to`](#layout) · [`endian`](#byte-order) · [`entrypoint`](#layout) · [`code`](#layout) · [`open_as`](#layout) · [`extent`](#layout) · [`optional`](#layout) |
 | Arrays | [`count`](#arrays) · [`max_count`](#arrays) · [`count_as`](#arrays) · [`terminated_by`](#arrays) · [`terminator`](#arrays) |
 | Unions | [`select`](#discriminated-unions) · [`case`](#discriminated-unions) |
 | Semantic views | [`semantic`](#semantic-and-emit) · [`emit`](#semantic-and-emit) · [`emit_node`](#semantic-and-emit) · [`emit_row`](#semantic-and-emit) · [`append`](#positional-semantic-collection-addressing) · [`item`](#positional-semantic-collection-addressing) · [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) · [`view`](#view) |
@@ -390,6 +390,7 @@ Layout tag affect the alignment and positioning of fields:
 | `optional(cond)` | Skip this field when `cond` is false |
 | `entrypoint` | Mark this scalar field's own value as a code entry point address for disassembly |
 | `code("arch" \| architecture(field)[, offset(expr), extent(expr)])` | Mark a byte range as code for the disassembler. `architecture(field)` obtains the Capstone id from the matching enum member's `[architecture("...")]` metadata. |
+| `open_as(type(RootType), offset(expr), extent(expr)[, name(expr)])` | Mark the row as a navigable physical slice that can be opened as another Strata root |
 
 ```c
 [offset(dosHeader.e_lfanew)]
@@ -405,6 +406,16 @@ byte Data[];
 [code("wasm")]
 byte instructions[];
 
+[open_as(type(MACHO), offset(offset), extent(size),
+         name(fmt("Mach-O slice {0}", cputype)))]
+typedef struct _FAT_ARCH {
+    [enum(CPU_TYPE)] dword cputype;
+    dword cpusubtype;
+    dword offset;
+    dword size;
+    dword align;
+} FAT_ARCH;
+
 // PE/ELF-style mapped entry point: resolve a scalar logical address through
 // a named offset map, and take the architecture from the machine enum.
 [entrypoint,
@@ -412,6 +423,11 @@ byte instructions[];
       offset("rva", AddressOfEntryPoint), extent(65536))]
 dword AddressOfEntryPoint;
 ```
+
+`open_as(...)` describes a bounded byte range inside the current source. The
+first implementation is physical only: `offset(...)` and `extent(...)` select
+bytes from the current source. Compressed or decoded child sources, such as
+`tar.gz`, require a later transform layer.
 
 ### Tree presentation
 
@@ -1180,7 +1196,7 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 |----------|----------|
 | Type declarations | `struct`, `union`, `enum`, `typedef`, `const`, `signed`, `unsigned` |
 | Primitive types | `byte`, `word`, `dword`, `qword`, `char`, `wchar_t`, `float`, `double`, `uleb128`, `sleb128` |
-| Display/layout tags | `align`, `architecture`, `bitflag`, `code`, `description`, `display`, `endian`, `entrypoint`, `extent`, `format`, `ignore`, `name`, `offset`, `optional`, `pad_to`, `string`, `style`, `tree` |
+| Display/layout tags | `align`, `architecture`, `bitflag`, `code`, `description`, `display`, `endian`, `entrypoint`, `extent`, `format`, `ignore`, `name`, `offset`, `open_as`, `optional`, `pad_to`, `string`, `style`, `tree` |
 | Arrays/unions | `case`, `count`, `count_as`, `default`, `length_is`, `max_count`, `select`, `select_offset`, `size_is`, `switch_is`, `terminated_by`, `terminator` |
 | Dynamic/semantic tags | `append`, `attr`, `container`, `dest`, `dynamic_array`, `dynamic_container`, `dynamic_struct`, `emit`, `emit_node`, `emit_row`, `field`, `item`, `key`, `label`, `map`, `mapper`, `offset_map`, `semantic`, `type`, `view` |
 | Export/detection tags | `assoc`, `category`, `export`, `magic`, `version` |
