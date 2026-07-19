@@ -64,6 +64,7 @@
 <list name="tagKeywords">
     <item>align</item>
     <item>append</item>
+    <item>assert</item>
     <item>assoc</item>
     <item>attr</item>
     <item>bitflag</item>
@@ -122,6 +123,7 @@
     <item>value_at</item>
     <item>version</item>
     <item>view</item>
+    <item>warn</item>
 </list>
 
 <contexts>

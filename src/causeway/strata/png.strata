@@ -73,8 +73,12 @@ typedef struct _PNG_SIGNATURE
 
 typedef struct _PNG_IHDR
 {
+    [assert(element_value() != 0, "PNG width must be non-zero")]
     dword width;
+
+    [assert(element_value() != 0, "PNG height must be non-zero")]
     dword height;
+
     byte bitDepth;
 
     [enum(PNG_COLOR_TYPE)]

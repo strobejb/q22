@@ -5,6 +5,7 @@
 
 #include <QAbstractItemView>
 #include <QApplication>
+#include <QBrush>
 #include <QEvent>
 #include <QFont>
 #include <QFontMetrics>
@@ -47,6 +48,38 @@ QAbstractItemView *itemViewForWidget(const QWidget *widget)
     return nullptr;
 }
 
+QColor diagnosticBackgroundColour(const QStyleOptionViewItem &option, const QModelIndex &index)
+{
+    if (option.state & QStyle::State_Selected)
+        return {};
+
+    const auto severity = static_cast<StructureRowDiagnosticSeverity>(
+        index.data(StructureTreeModel::DiagnosticSeverityRole).toInt());
+    if (severity == StructureRowDiagnosticSeverity::None)
+        return {};
+
+    const QColor base = option.palette.color(QPalette::Base);
+    const QColor tint = severity == StructureRowDiagnosticSeverity::Error
+        ? QColor(220, 64, 64)
+        : QColor(230, 170, 40);
+    constexpr qreal tintWeight = 0.26;
+    const qreal baseWeight = 1.0 - tintWeight;
+    return QColor(qRound(base.red() * baseWeight + tint.red() * tintWeight),
+                  qRound(base.green() * baseWeight + tint.green() * tintWeight),
+                  qRound(base.blue() * baseWeight + tint.blue() * tintWeight),
+                  base.alpha());
+}
+
+void applyDiagnosticBackground(QStyleOptionViewItem *option, const QModelIndex &index)
+{
+    if (!option)
+        return;
+
+    const QColor colour = diagnosticBackgroundColour(*option, index);
+    if (colour.isValid())
+        option->backgroundBrush = colour;
+}
+
 }
 
 StructureGridItemDelegate::StructureGridItemDelegate(QObject *parent)
@@ -72,6 +105,22 @@ void StructureGridItemDelegate::paint(QPainter *painter,
 {
     QStyleOptionViewItem opt(option);
     initStyleOption(&opt, index);
+    applyDiagnosticBackground(&opt, index);
+
+    if (index.column() == StructureTreeModel::NameColumn
+        && !(opt.state & QStyle::State_Selected))
+    {
+        const QColor diagnosticBackground = diagnosticBackgroundColour(opt, index);
+        if (diagnosticBackground.isValid())
+        {
+            const QRect textRect = itemTextRect(opt, index);
+            QRect bandRect = opt.rect;
+            bandRect.setLeft(qMax(opt.rect.left(), textRect.left() - opt.decorationSize.width() - 4));
+            if (auto *view = itemViewForWidget(opt.widget))
+                bandRect.setRight(view->viewport()->rect().right());
+            painter->fillRect(bandRect, diagnosticBackground);
+        }
+    }
 
     if (kAlignStructureNameIdentifiers && paintAlignedName(painter, &opt, index))
     {

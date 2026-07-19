@@ -19,6 +19,7 @@ private slots:
     void builderFormatsScalarArraysAsPreviewLists();
     void builderAdvancesExactCountScalarArraysPastPreviewCap();
     void builderPopulatesCommentsFromTypeDeclarations();
+    void builderAppliesDiagnosticTags();
     void builderUsesPackedLayoutByDefault();
     void builderAppliesStructAndFieldAlignment();
     void builderLetsOffsetOverrideAlignment();
@@ -537,6 +538,49 @@ void StructViewRawRendererTests::builderPopulatesCommentsFromTypeDeclarations()
     QCOMPARE(rows[0]->children.size(), size_t(2));
     QCOMPARE(rows[0]->children[0]->comment, QStringLiteral("file signature"));
     QCOMPARE(rows[0]->children[1]->comment, QStringLiteral("flag bits"));
+}
+
+void StructViewRawRendererTests::builderAppliesDiagnosticTags()
+{
+    // Scenario: definitions can mark suspicious or invalid values without
+    // aborting rendering.
+    // Expected: failed assert(...) and fired warn(...) annotate the row comment
+    // and expose severity to the model/delegate. Missing messages fall back to
+    // the existing expression stringifier.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "[export, warn(Size > file_size(), \"Size extends past end of file\")]\n"
+                        "struct Root {\n"
+                        "  [assert(element_value() == fourcc(\"RIFF\"), \"Expected RIFF magic\")]\n"
+                        "  dword Magic; // file signature\n"
+                        "  dword Size;\n"
+                        "  [assert(element_value() == 0x42)] byte Marker;\n"
+                        "} root;\n"));
+
+    auto rows = buildRows(&library, firstExported(&library), QByteArray::fromHex("4E4F5045FFFFFFFF41"));
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(3));
+
+    StructureRow *root = rows[0].get();
+    QCOMPARE(root->diagnostics.size(), size_t(1));
+    QCOMPARE(root->diagnostics[0].severity, StructureRowDiagnosticSeverity::Warning);
+    QCOMPARE(root->diagnostics[0].message, QStringLiteral("Size extends past end of file"));
+    QCOMPARE(root->comment, QStringLiteral("Size extends past end of file"));
+
+    StructureRow *magic = rows[0]->children[0].get();
+    QCOMPARE(magic->diagnostics.size(), size_t(1));
+    QCOMPARE(magic->diagnostics[0].severity, StructureRowDiagnosticSeverity::Error);
+    QCOMPARE(magic->diagnostics[0].message, QStringLiteral("Expected RIFF magic"));
+    QCOMPARE(magic->comment, QStringLiteral("file signature; Expected RIFF magic"));
+
+    StructureRow *marker = rows[0]->children[2].get();
+    QCOMPARE(marker->diagnostics.size(), size_t(1));
+    QCOMPARE(marker->diagnostics[0].severity, StructureRowDiagnosticSeverity::Error);
+    QVERIFY2(marker->diagnostics[0].message.startsWith(QStringLiteral("assertion failed: ")),
+             qPrintable(marker->diagnostics[0].message));
+    QVERIFY2(marker->diagnostics[0].message.contains(QStringLiteral("element_value() == 0x42")),
+             qPrintable(marker->diagnostics[0].message));
 }
 
 void StructViewRawRendererTests::builderUsesPackedLayoutByDefault()

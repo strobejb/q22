@@ -14,6 +14,7 @@
 #include <QTextStream>
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <limits>
 
@@ -846,6 +847,7 @@ std::vector<std::unique_ptr<StructureRow>> StructureRenderEngine::buildRaw()
 
     linkWasmFunctionCodeTargets(root.get());
     resolveEntryPointRows(root.get());
+    applyDiagnosticTags(root.get(), m_rootType, root.get());
     if (m_options.sortTopLevelRowsByOffset)
     {
         std::stable_sort(root->children.begin(), root->children.end(), [](const RowPtr &left, const RowPtr &right) {
@@ -1090,6 +1092,7 @@ uint64_t StructureRenderEngine::appendIdentifierRow(StructureRow *parent,
     }
     if (row->value.isEmpty() && !row->children.empty())
         row->value = QStringLiteral("{...}");
+    applyDiagnosticTags(row.get(), typeDecl, row.get());
     if (!row->value.isEmpty() || !row->children.empty())
     {
         if (!parent)
@@ -1243,6 +1246,7 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
             // attached to the element declaration itself.
             applyCodeTag(row.get(), row->typeDecl, row.get());
             applyOpenAsTag(row.get(), row->typeDecl, row.get());
+            applyDiagnosticTags(row.get(), row->typeDecl, row.get());
             collectNamedOffsetMaps(row.get());
             if (renderElement && row->value.isEmpty())
             {
@@ -3123,7 +3127,7 @@ void StructureRenderEngine::validateStructTags(Type *structType, QStringList *er
         return;
 
     static constexpr TOKEN kValidatedTags[] = {
-        TOK_SELECT, TOK_ENDIAN, TOK_OFFSET, TOK_COUNT, TOK_MAXCOUNT, TOK_OPTIONAL, TOK_EXTENT, TOK_PADTO, TOK_COUNTAS
+        TOK_SELECT, TOK_ENDIAN, TOK_OFFSET, TOK_COUNT, TOK_MAXCOUNT, TOK_OPTIONAL, TOK_EXTENT, TOK_PADTO, TOK_COUNTAS, TOK_WARN, TOK_ASSERT
     };
 
     for (TypeDecl *decl : base->sptr->typeDeclList)
@@ -3150,7 +3154,7 @@ QStringList StructureRenderEngine::validateStaticFieldReferences(StrataLibrary *
         return errors;
 
     static constexpr TOKEN kValidatedTags[] = {
-        TOK_SELECT, TOK_ENDIAN, TOK_OFFSET, TOK_COUNT, TOK_MAXCOUNT, TOK_OPTIONAL, TOK_EXTENT, TOK_PADTO, TOK_COUNTAS
+        TOK_SELECT, TOK_ENDIAN, TOK_OFFSET, TOK_COUNT, TOK_MAXCOUNT, TOK_OPTIONAL, TOK_EXTENT, TOK_PADTO, TOK_COUNTAS, TOK_WARN, TOK_ASSERT
     };
 
     StructureRenderEngine scratch(library, nullptr, 0, StructureValueBuilder::ByteReader{}, StructureDisplayOptions{});
@@ -7158,6 +7162,119 @@ void StructureRenderEngine::applyCodeTag(StructureRow *target, TypeDecl *typeDec
         };
         inheritCodeTarget(inheritCodeTarget, target);
     }
+}
+
+bool StructureRenderEngine::diagnosticTagArgs(ExprNode *expr, ExprNode **condition, QString *message) const
+{
+    if (condition)
+        *condition = nullptr;
+    if (message)
+        message->clear();
+
+    std::vector<ExprNode *> args;
+    appendCommaArgs(expr, &args);
+    if (args.empty() || args.size() > 2 || !args[0])
+        return false;
+
+    if (condition)
+        *condition = args[0];
+
+    if (args.size() == 2)
+    {
+        if (!args[1] || args[1]->type != EXPR_STRINGBUF || !args[1]->str)
+            return false;
+        if (message)
+            *message = QString::fromUtf8(args[1]->str);
+    }
+
+    return true;
+}
+
+bool StructureRenderEngine::evaluateDiagnosticCondition(StructureRow *scope,
+                                                        ExprNode *condition,
+                                                        INUMTYPE *result)
+{
+    if (!condition || !result)
+        return false;
+
+    const uint64_t offset = scope ? scope->absoluteOffset : m_baseOffset;
+    if (evaluate(scope, condition, result, offset))
+        return true;
+
+    if (scope && scope->parent && evaluate(scope->parent, condition, result, scope->parent->absoluteOffset))
+        return true;
+
+    return false;
+}
+
+QString StructureRenderEngine::diagnosticExpressionText(ExprNode *expr) const
+{
+    if (!expr)
+        return QString();
+
+    std::array<TCHAR, 1024> buffer = {};
+    Flatten(buffer.data(), buffer.size(), expr);
+    return QString::fromLocal8Bit(buffer.data()).trimmed();
+}
+
+void StructureRenderEngine::addDiagnostic(StructureRow *target,
+                                          StructureRowDiagnosticSeverity severity,
+                                          const QString &message)
+{
+    if (!target || severity == StructureRowDiagnosticSeverity::None || message.isEmpty())
+        return;
+
+    target->diagnostics.push_back(StructureRowDiagnostic{ severity, message });
+    if (target->comment.isEmpty())
+    {
+        target->comment = message;
+    }
+    else
+    {
+        target->comment += QStringLiteral("; ");
+        target->comment += message;
+    }
+}
+
+void StructureRenderEngine::applyDiagnosticTags(StructureRow *target, TypeDecl *typeDecl, StructureRow *scope)
+{
+    if (!target || !scope)
+        return;
+
+    const auto apply = [&](TOKEN token) {
+        ExprNode *expr = nullptr;
+        if (!FindTag(typeDecl ? typeDecl->tagList : nullptr, token, &expr) || !expr)
+            return;
+
+        ExprNode *condition = nullptr;
+        QString message;
+        if (!diagnosticTagArgs(expr, &condition, &message) || !condition)
+            return;
+
+        INUMTYPE value = 0;
+        if (!evaluateDiagnosticCondition(scope, condition, &value))
+            return;
+
+        const bool failed = token == TOK_ASSERT ? value == 0 : value != 0;
+        if (!failed)
+            return;
+
+        if (message.isEmpty())
+        {
+            const QString expression = diagnosticExpressionText(condition);
+            message = token == TOK_ASSERT
+                ? QStringLiteral("assertion failed: %1").arg(expression)
+                : QStringLiteral("warning: %1").arg(expression);
+        }
+
+        addDiagnostic(target,
+                      token == TOK_ASSERT ? StructureRowDiagnosticSeverity::Error
+                                          : StructureRowDiagnosticSeverity::Warning,
+                      message);
+    };
+
+    apply(TOK_WARN);
+    apply(TOK_ASSERT);
 }
 
 bool StructureRenderEngine::openAsTagArgs(ExprNode *expr,

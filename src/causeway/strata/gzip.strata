@@ -58,10 +58,10 @@ typedef struct _GZIP_HEADER
     byte id1;
     byte id2;
 
-    [enum(GZIP_COMPRESSION_METHOD)]
+    [enum(GZIP_COMPRESSION_METHOD), assert(element_value() == GZIP_COMPRESSION_DEFLATE, "GZip compression method must be deflate")]
     byte compressionMethod;
 
-    [bitflag(GZIP_FLAGS)]
+    [bitflag(GZIP_FLAGS), warn((element_value() & 0xe0) != 0, "GZip reserved flag bits are set")]
     byte flags;
 
     dword modificationTime;

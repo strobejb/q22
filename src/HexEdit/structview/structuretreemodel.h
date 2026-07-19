@@ -36,6 +36,19 @@ enum class StructureRowTreeMode
     Flatten
 };
 
+enum class StructureRowDiagnosticSeverity
+{
+    None,
+    Warning,
+    Error
+};
+
+struct StructureRowDiagnostic
+{
+    StructureRowDiagnosticSeverity severity = StructureRowDiagnosticSeverity::None;
+    QString message;
+};
+
 struct StructureRow;
 using StructureLazyChildLoader = std::function<std::vector<std::unique_ptr<StructureRow>>()>;
 
@@ -70,6 +83,7 @@ struct StructureRow
     QString offset;
     bool generatedOffset = false;
     QString comment;
+    std::vector<StructureRowDiagnostic> diagnostics;
     Type *type = nullptr;
     TypeDecl *typeDecl = nullptr;
     FILEREF sourceRef;
@@ -123,6 +137,8 @@ public:
         BranchOpenIconPathRole,
         BranchEmptyIconPathRole,
         RowKindRole,
+        DiagnosticSeverityRole,
+        DiagnosticMessagesRole,
         ValueChoicesRole,
         HasValueChoicesRole
     };

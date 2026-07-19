@@ -44,6 +44,7 @@
 DEFINE_KEYWORD          ( TOK_ALIGN,            "align" )
 DEFINE_KEYWORD          ( TOK_ARCHITECTURE,     "architecture" )
 DEFINE_KEYWORD          ( TOK_APPEND,           "append" )
+DEFINE_KEYWORD          ( TOK_ASSERT,           "assert" )
 DEFINE_KEYWORD          ( TOK_ASSOC,            "assoc" )
 DEFINE_KEYWORD          ( TOK_ATTR,             "attr" )
 DEFINE_KEYWORD          ( TOK_BITFLAG,          "bitflag" )
@@ -124,6 +125,7 @@ DEFINE_RESERVED_KEYWORD ( TOK_UNSIGNED,         "unsigned" )
 DEFINE_RESERVED_KEYWORD ( TOK_VALUEAT,          "value_at" )
 DEFINE_KEYWORD          ( TOK_VERSION,          "version" )
 DEFINE_KEYWORD          ( TOK_VIEW,             "view" )
+DEFINE_KEYWORD          ( TOK_WARN,             "warn" )
 DEFINE_KEYWORD          ( TOK_MAPPER,           "mapper" )
 
 // IDL-derived legacy spellings -- see DEFINE_KEYWORD_ALIAS above.

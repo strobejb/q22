@@ -894,7 +894,7 @@ size_t Flatten(FILE *fp, ExprNode *expr)
 	return sbuf.length();
 }
 
-size_t Flatten(TCHAR *buf, int len, ExprNode *expr)
+size_t Flatten(TCHAR *buf, size_t len, ExprNode *expr)
 {
 	stringprint sbuf(buf, len);
 	RecurseFlatten(sbuf, expr);

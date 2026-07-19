@@ -129,6 +129,7 @@ typedef struct _WAVE
     [format("fourcc")]
     dword signature;
 
+    [warn(element_value() + 8 > file_size(), "RIFF declared file size exceeds actual file size")]
     dword fileSize;
 
     [format("fourcc")]

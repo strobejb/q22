@@ -365,6 +365,8 @@ The following 'display' tags can be used to alter the rendered value or name of 
 | `name("label")` | Override the display label with a string literal |
 | `name(field)` | Use the value of `field` as the display label |
 | `string` | Legacy sugar for `format("string")` |
+| `warn(cond[, "message"])` | Add a warning diagnostic to the row when `cond` is true |
+| `assert(cond[, "message"])` | Add an error diagnostic to the row when `cond` is false |
 
 ```c
 [enum(ELF_TYPE)] e16 e_type;
@@ -374,6 +376,8 @@ The following 'display' tags can be used to alter the rendered value or name of 
 [format("fourcc")] dword Tag;
 [string] byte Name[32];
 [format("utf16le")] byte WideName[64];
+[assert(element_value() == fourcc("RIFF"), "Expected RIFF magic")] dword Magic;
+[warn(element_value() > file_size(), "Size extends past end of file")] dword Size;
 ```
 
 ### Layout
@@ -1196,7 +1200,7 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 |----------|----------|
 | Type declarations | `struct`, `union`, `enum`, `typedef`, `const`, `signed`, `unsigned` |
 | Primitive types | `byte`, `word`, `dword`, `qword`, `char`, `wchar_t`, `float`, `double`, `uleb128`, `sleb128` |
-| Display/layout tags | `align`, `architecture`, `bitflag`, `code`, `description`, `display`, `endian`, `entrypoint`, `extent`, `format`, `ignore`, `name`, `offset`, `open_as`, `optional`, `pad_to`, `string`, `style`, `tree` |
+| Display/layout tags | `align`, `architecture`, `assert`, `bitflag`, `code`, `description`, `display`, `endian`, `entrypoint`, `extent`, `format`, `ignore`, `name`, `offset`, `open_as`, `optional`, `pad_to`, `string`, `style`, `tree`, `warn` |
 | Arrays/unions | `case`, `count`, `count_as`, `default`, `length_is`, `max_count`, `select`, `select_offset`, `size_is`, `switch_is`, `terminated_by`, `terminator` |
 | Dynamic/semantic tags | `append`, `attr`, `container`, `dest`, `dynamic_array`, `dynamic_container`, `dynamic_struct`, `emit`, `emit_node`, `emit_row`, `field`, `item`, `key`, `label`, `map`, `mapper`, `offset_map`, `semantic`, `type`, `view` |
 | Export/detection tags | `assoc`, `category`, `export`, `magic`, `version` |

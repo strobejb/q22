@@ -233,6 +233,11 @@ private:
     bool evaluateFindFunction(const EvalContext &context, ExprNode *expr, INUMTYPE *result);
     bool evaluateString(const EvalContext &context, ExprNode *expr, QString *result);
     bool evaluateStringFunction(const EvalContext &context, ExprNode *expr, QString *result);
+    void applyDiagnosticTags(StructureRow *target, TypeDecl *typeDecl, StructureRow *scope);
+    bool diagnosticTagArgs(ExprNode *expr, ExprNode **condition, QString *message) const;
+    bool evaluateDiagnosticCondition(StructureRow *scope, ExprNode *condition, INUMTYPE *result);
+    QString diagnosticExpressionText(ExprNode *expr) const;
+    void addDiagnostic(StructureRow *target, StructureRowDiagnosticSeverity severity, const QString &message);
     bool resolveScopeContext(const EvalContext &context, ExprNode *expr, EvalContext *scoped) const;
     StructureRow *resolveScopeRow(StructureRow *scope, ExprNode *expr) const;
     QString fieldStringValue(StructureRow *row);

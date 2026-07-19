@@ -26,6 +26,7 @@ private slots:
 	void unknownSemanticSchemaReferencesFail();
 	void viewTagsParse();
 	void formatAndTreeTagsParse();
+	void diagnosticTagsParse();
 	void fourccBareTagIsRejected();
 	void descriptionTagsParseAndDisplayRemainsSeparate();
 	void magicTagsParse();
@@ -86,6 +87,19 @@ static ExprNode *findTagWrapExpr(ExprNode *expr, TOKEN tok)
 	if(ExprNode *found = findTagWrapExpr(expr->right, tok))
 		return found;
 	return findTagWrapExpr(expr->cond, tok);
+}
+
+static void collectCommaArgs(ExprNode *expr, std::vector<ExprNode *> *args)
+{
+	if(!expr || !args)
+		return;
+	if(expr->type == EXPR_COMMA)
+	{
+		collectCommaArgs(expr->left, args);
+		collectCommaArgs(expr->right, args);
+		return;
+	}
+	args->push_back(expr);
 }
 
 void CausewayTests::defaultParsersDoNotShareTypes()
@@ -617,6 +631,39 @@ void CausewayTests::formatAndTreeTagsParse()
 	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[0]->tagList, TOK_FORMAT, nullptr));
 	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[1]->tagList, TOK_TREE, nullptr));
 	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[2]->tagList, TOK_CASE, nullptr));
+}
+
+void CausewayTests::diagnosticTagsParse()
+{
+	StrataLibrary library;
+	Parser parser(&library);
+	QVERIFY(parseBuffer(parser,
+						"[export]\n"
+						"struct Root {\n"
+						"  [assert(element_value() == fourcc(\"RIFF\")), warn(Size > file_size(), \"oversized\")]\n"
+						"  dword Magic;\n"
+						"  dword Size;\n"
+						"} root;\n"));
+
+	TypeDecl *root = nullptr;
+	for(TypeDecl *decl : library.globalTypeDeclList)
+		if(decl && FindTag(decl->tagList, TOK_EXPORT, nullptr))
+			root = decl;
+
+	QVERIFY(root);
+	QVERIFY(root->baseType);
+	QVERIFY(root->baseType->sptr);
+	TypeDecl *magic = root->baseType->sptr->typeDeclList[0];
+	ExprNode *assertExpr = nullptr;
+	ExprNode *warnExpr = nullptr;
+	QVERIFY(FindTag(magic->tagList, TOK_ASSERT, &assertExpr));
+	QVERIFY(assertExpr);
+	QVERIFY(FindTag(magic->tagList, TOK_WARN, &warnExpr));
+	QVERIFY(warnExpr);
+	std::vector<ExprNode *> warnArgs;
+	collectCommaArgs(warnExpr, &warnArgs);
+	QCOMPARE(warnArgs.size(), size_t(2));
+	QCOMPARE(warnArgs[1]->type, EXPR_STRINGBUF);
 }
 
 void CausewayTests::fourccBareTagIsRejected()

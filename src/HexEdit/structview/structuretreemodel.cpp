@@ -11,6 +11,34 @@
 namespace
 {
 static constexpr int kMaxDefinitionDepth = 8;
+
+StructureRowDiagnosticSeverity effectiveDiagnosticSeverity(const StructureRow *row)
+{
+    StructureRowDiagnosticSeverity severity = StructureRowDiagnosticSeverity::None;
+    if (!row)
+        return severity;
+
+    for (const StructureRowDiagnostic &diagnostic : row->diagnostics)
+    {
+        if (diagnostic.severity == StructureRowDiagnosticSeverity::Error)
+            return StructureRowDiagnosticSeverity::Error;
+        if (diagnostic.severity == StructureRowDiagnosticSeverity::Warning)
+            severity = StructureRowDiagnosticSeverity::Warning;
+    }
+    return severity;
+}
+
+QStringList diagnosticMessages(const StructureRow *row)
+{
+    QStringList messages;
+    if (!row)
+        return messages;
+
+    for (const StructureRowDiagnostic &diagnostic : row->diagnostics)
+        if (!diagnostic.message.isEmpty())
+            messages.push_back(diagnostic.message);
+    return messages;
+}
 }
 
 StructureRow::StructureRow(StructureRow *parentRow)
@@ -124,6 +152,19 @@ QVariant StructureTreeModel::data(const QModelIndex &index, int role) const
 
     if (role == RowKindRole)
         return static_cast<int>(row->kind);
+
+    if (role == DiagnosticSeverityRole)
+        return static_cast<int>(effectiveDiagnosticSeverity(row));
+
+    if (role == DiagnosticMessagesRole)
+        return diagnosticMessages(row);
+
+    if (role == Qt::ToolTipRole)
+    {
+        const QStringList messages = diagnosticMessages(row);
+        if (!messages.isEmpty())
+            return messages.join(QLatin1Char('\n'));
+    }
 
     if (index.column() == ValueColumn)
     {

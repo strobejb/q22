@@ -61,6 +61,7 @@ typedef struct _BMP_FILE_HEADER
     [enum(BMP_FILE_TYPE)]
     word type;
 
+    [warn(element_value() > file_size(), "BMP header file size exceeds actual file size")]
     dword fileSize;
     word reserved1;
     word reserved2;
