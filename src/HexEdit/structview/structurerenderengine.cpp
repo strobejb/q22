@@ -450,6 +450,9 @@ bool shouldPromoteSemanticRootSibling(const StructureRow *row)
     if (!row || row->kind != StructureRowKind::Semantic)
         return false;
 
+    if (row->branchIconPath == QStringLiteral(":/icons/actions/circle-repeat.svg"))
+        return false;
+
     if (row->branchIconPath == QString::fromLatin1(StructureBranchIcons::kBlueRoot))
         return true;
 
@@ -5085,8 +5088,11 @@ StructureRow *StructureRenderEngine::semanticRootGroup()
     const QString rootLabel = semanticRootLabel();
     for (const auto &child : m_rootRow->children)
     {
-        if (child && child->kind == StructureRowKind::Semantic && child->name == rootLabel)
+        if (child && child->kind == StructureRowKind::Semantic && child->name == rootLabel
+            && child->branchIconPath != QStringLiteral(":/icons/actions/circle-repeat.svg"))
+        {
             return child.get();
+        }
     }
 
     auto group = std::make_unique<StructureRow>(m_rootRow);

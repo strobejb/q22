@@ -117,9 +117,21 @@ void StructViewSemanticRendererTests::rendererDefersSemanticOverlayUntilRequeste
     QCOMPARE(rawRows.size(), size_t(1));
     QVERIFY(!findTopLevelNamed(rawRows, QStringLiteral("Semantic")));
 
+    auto loadingRow = std::make_unique<StructureRow>();
+    loadingRow->kind = StructureRowKind::Semantic;
+    loadingRow->name = QStringLiteral("Semantic");
+    loadingRow->value = QStringLiteral("Loading...");
+    loadingRow->branchIconPath = QStringLiteral(":/icons/actions/circle-repeat.svg");
+    loadingRow->branchOpenIconPath = loadingRow->branchIconPath;
+    loadingRow->branchEmptyIconPath = loadingRow->branchIconPath;
+    loadingRow->parent = rawRows.front().get();
+    rawRows.front()->children.push_back(std::move(loadingRow));
+
     auto semanticRows = renderer.buildSemanticOverlay(rawRows.front().get());
     QCOMPARE(semanticRows.size(), size_t(1));
     QCOMPARE(semanticRows.front()->name, QStringLiteral("Semantic"));
+    QCOMPARE(semanticRows.front()->value, QStringLiteral("{...}"));
+    QVERIFY(semanticRows.front()->branchIconPath != QStringLiteral(":/icons/actions/circle-repeat.svg"));
     QVERIFY(findChildNamed(semanticRows.front().get(), QStringLiteral("Payloads")));
 }
 
