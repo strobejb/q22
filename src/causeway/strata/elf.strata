@@ -621,7 +621,7 @@ typedef struct _ELF_VIEW
     // union-candidate fallback finds it anyway, by checking that every
     // case(...) candidate of the union below declares e_ident identically.
     endian(e_ident[EI_DATA] == ELFDATA2MSB),
-    view("elf.sections")
+    native_view("elf.sections")
 ]
 typedef struct _ELF
 {

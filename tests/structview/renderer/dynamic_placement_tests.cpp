@@ -296,7 +296,7 @@ void StructViewDynamicPlacementTests::builderRunsSemanticViewsOnceForDynamicArra
     StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
-                        "[view(\"test.dynamic_array.once\")]\n"
+                        "[native_view(\"test.dynamic_array.once\")]\n"
                         "typedef struct _Viewed { dword Value; } Viewed;\n"
                         "typedef struct _Section { char Name[8]; dword VirtualAddress; dword SizeOfRawData; dword PointerToRawData; } Section;\n"
                         "typedef struct _SectionBucket { } SECTION;\n"

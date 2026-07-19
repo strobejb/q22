@@ -20,7 +20,7 @@ View online: [Strata Language Reference](https://github.com/strobejb/q22/blob/ma
 | Layout | [`offset`](#layout) · [`align`](#layout) · [`pad_to`](#layout) · [`endian`](#byte-order) · [`entrypoint`](#layout) · [`code`](#layout) · [`nested`](#layout) / [`open_as`](#layout) · [`extent`](#layout) · [`optional`](#layout) |
 | Arrays | [`count`](#arrays) · [`max_count`](#arrays) · [`count_as`](#arrays) · [`terminated_by`](#arrays) · [`terminator`](#arrays) |
 | Unions | [`select`](#discriminated-unions) · [`case`](#discriminated-unions) |
-| Dynamic/semantic views | [`semantic`](#semantic-and-emit) · [`emit`](#semantic-and-emit) · [`emit_node`](#semantic-and-emit) · [`emit_row`](#semantic-and-emit) · [`append`](#positional-semantic-collection-addressing) · [`item`](#positional-semantic-collection-addressing) · [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) · [`view`](#view) |
+| Dynamic/semantic views | [`semantic`](#semantic-and-emit) · [`emit`](#semantic-and-emit) · [`emit_node`](#semantic-and-emit) · [`emit_row`](#semantic-and-emit) · [`append`](#positional-semantic-collection-addressing) · [`item`](#positional-semantic-collection-addressing) · [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) |
 | Export | [`export`](#export-metadata) · [`category`](#export-metadata) · [`version`](#export-metadata) · [`assoc`](#export-metadata) · [`magic`](#export-metadata) |
 | Expressions | [`sizeof`](#expressions) · [`file_size`](#expressions) · [`extent_of`](#expressions) · [`array_index`](#expressions) · [`element_value`](#expressions) · [`current_offset`](#expressions) · [`str`](#expressions) · [`cstr`](#expressions) · [`concat`](#expressions) · [`fmt`](#expressions) · [`octal`](#expressions) · [`find_first`](#byte-pattern-search) · [`find_last`](#byte-pattern-search) · [`select_offset`](#select_offset) · [`value_at`](#value_at) |
 
@@ -550,22 +550,30 @@ for how that still resolves.
 
 ---
 
-## Semantic views
+## Semantic and referenced-data views
 
 These tags are placed on a `typedef` to extend how the renderer presents a type —
 attaching additional structures, arrays, or named overlays beyond the raw field layout.
 
+After the byte-honest raw structures are defined, a declarative semantic view is
+the preferred next step for most user-facing interpretation: summaries, imports,
+exports, functions, archive entries, cross-table presentation, and other derived
+navigation. Dynamic placement is still useful, but it is specialized raw-tree
+machinery for rendering real referenced bytes at computed offsets. The two
+approaches can be combined in one definition: use dynamic rows for byte-backed
+referenced objects when their physical placement matters, and semantic rows for
+the polished view users should normally navigate.
+
 | Tag | Effect |
 |-----|--------|
-| `dynamic_struct(...)` | Render a single struct at a computed offset |
-| `dynamic_array(...)` | Render a variable-length array at a computed offset |
-| `dynamic_container(type(Type))` | Create a layout container per array element for mapped dynamic rows to attach into |
-| `offset_map(va, size, raw)` | Declare anonymous virtual-address ranges for `mapper(offset_map)` dynamic rows |
-| `offset_map("space", base)` / `offset_map("space", logical, size, raw)` | Define a named offset space for `offset("space", expr)` and `value_at("space", expr, Type)` |
 | `semantic(ViewType)` + `emit(...)` | Attach a declarative semantic tree schema and emit byte-backed rows into it |
 | `emit_node(...)` | Emit or update a lightweight semantic node with attributes |
 | `append(...)` / `item(...)` | Allocate or address `emit_node(...)` rows by position |
-| `view("id")` | Attach a named C++ semantic view overlay to a type |
+| `dynamic_struct(...)` | Render a single referenced struct at a computed offset in the raw tree |
+| `dynamic_array(...)` | Render a referenced variable-length array at a computed offset in the raw tree |
+| `dynamic_container(type(Type))` | Niche feature: create a layout container per array element for mapped dynamic rows to attach into |
+| `offset_map(va, size, raw)` | Declare anonymous virtual-address ranges for `mapper(offset_map)` dynamic rows |
+| `offset_map("space", base)` / `offset_map("space", logical, size, raw)` | Define a named offset space for `offset("space", expr)` and `value_at("space", expr, Type)` |
 
 ### `semantic` and `emit`
 
@@ -805,7 +813,10 @@ merging, and attributes.
 
 ### `dynamic_struct`
 
-Renders a single struct at a computed offset. Arguments must be wrapped by role:
+Renders a single referenced struct at a computed offset in the raw tree. Prefer
+a semantic view when the goal is a summary or navigation layer; use
+`dynamic_struct` when the row should represent real bytes elsewhere in the file.
+Arguments must be wrapped by role:
 
 ```c
 dynamic_struct(type(Type), offset(expr)
@@ -853,7 +864,10 @@ dynamic_struct(container(RelatedData),
 
 ### `dynamic_array`
 
-Renders a variable-length array at a computed offset. Arguments must be wrapped by role:
+Renders a referenced variable-length array at a computed offset in the raw tree.
+Prefer a semantic view when the goal is a derived UX summary; use
+`dynamic_array` when the row should expose real referenced bytes. Arguments must
+be wrapped by role:
 
 ```c
 dynamic_array(type(ElemType), offset(expr), count(expr) | max_count(expr)
@@ -929,7 +943,9 @@ typedef struct _IMAGE_IMPORT_DESCRIPTOR { ... } IMAGE_IMPORT_DESCRIPTOR;
 
 Applied to an array field. Creates one opaque layout container per element;
 other `dynamic_array` / `dynamic_struct` declarations resolve their offsets
-against these containers.
+against these containers. This is a niche feature for mapped raw placement, such
+as PE sections: it is not the default way to build a user-facing summary.
+Semantic views and dynamic containers can coexist when both are useful.
 
 ```c
 [dynamic_container(type(SECTION)), ...]
@@ -997,19 +1013,6 @@ IMAGE_SECTION_HEADER sections[];
 [offset("rva", importRva)]
 IMAGE_IMPORT_DESCRIPTOR imports[];
 ```
-
-### `view`
-
-`view("id")` registers a semantic view overlay for a type. When the renderer
-encounters an instance of that type it invokes the named C++ view to produce
-a human-readable summary alongside the raw fields.
-
-```c
-[view("pe.imports")]
-typedef struct _IMAGE_IMPORT_DESCRIPTOR { ... } IMAGE_IMPORT_DESCRIPTOR;
-```
-
----
 
 ## Export metadata
 
@@ -1269,7 +1272,7 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 | Presentation argument wrappers | `width` |
 | Layout tags | `align`, `architecture`, `code`, `endian`, `entrypoint`, `extent`, `nested`, `offset`, `open_as`, `optional`, `pad_to` |
 | Arrays/unions | `case`, `count`, `count_as`, `default`, `max_count`, `select`, `size_is`, `switch_is`, `terminated_by`, `terminator` |
-| Dynamic/semantic tags | `dynamic_array`, `dynamic_container`, `dynamic_struct`, `emit`, `emit_node`, `emit_row`, `offset_map`, `semantic`, `view` |
+| Dynamic/semantic tags | `dynamic_array`, `dynamic_container`, `dynamic_struct`, `emit`, `emit_node`, `emit_row`, `offset_map`, `semantic` |
 | Dynamic/semantic argument wrappers | `append`, `attr`, `container`, `dest`, `field`, `item`, `key`, `label`, `map`, `mapper`, `type` |
 | Export/detection tags | `assoc`, `category`, `export`, `magic`, `version` |
 | Top-level/reusable declarations | `bitfield`, `field`, `include`, `match`, `tagset`, `tags` |
@@ -1293,21 +1296,31 @@ Recommended workflow:
 5. Use `count(...)` for exact-count variable arrays, or `max_count(...)` plus `terminated_by(...)` for sentinel-bounded arrays.
 6. Use `extent(...)` when a rendered field is capped or conditionally short, but
    its parent still needs to advance by the full byte length.
-7. Add display tags (`enum`, `bitflag`, `name`) after the raw layout is correct.
-8. Add dynamic or semantic views only when pure structure data cannot express the
-   relationship cleanly.
-9. Add focused Structure View tests for new rendering behavior.
+7. Add display tags (`enum`, `bitflag`, `bitfield`, `format`, `name`) after the
+   raw layout is correct.
+8. Add a declarative semantic view as the primary next layer when the format
+   needs a clearer user-facing tree: summaries, imports, exports, functions,
+   archive entries, or cross-table presentation.
+9. Add `dynamic_array(...)` or `dynamic_struct(...)` only for byte-backed
+   referenced data that should appear in the raw tree at computed offsets.
+10. Use `dynamic_container(...)` only for niche mapped-placement buckets, such
+    as PE sections, where other dynamic rows should attach to a specific
+    physical/virtual range.
+11. Add focused Structure View tests for new rendering behavior.
 
 Prefer pure structures for ordinary file layouts. Reach for
-`dynamic_array(...)`, `dynamic_struct(...)`, `dynamic_container(...)`, and
-`view(...)` only for related data that is not really an inline C field, such as
-PE RVA-mapped import/export tables.
+`dynamic_array(...)` and `dynamic_struct(...)` only for related data that is not
+really an inline C field but still represents real referenced bytes, such as PE
+RVA-mapped import/export tables. Treat `dynamic_container(...)` as a narrower
+bucket/attachment feature, not a general authoring pattern.
 
-When a format also needs a summary view, define the raw layout first and then
-layer a single semantic root schema over it. Put the summary structure inside
-that semantic root with nested structs and arrays, so the destination shape is
+When a format needs a summary view, define the raw layout first and then layer a
+single semantic root schema over it. Put the summary structure inside that
+semantic root with nested structs and arrays, so the destination shape is
 obvious from the definition instead of being inferred from a long run of
-`emit(...)` calls.
+`emit(...)` calls. This is not an either/or choice: a definition may use
+dynamic rows for byte-backed referenced objects and semantic rows for the
+polished navigation tree at the same time.
 
 Named address spaces follow the same rule. Define `offset_map("space", ...)`
 where the file format defines the coordinate system, then use

@@ -126,7 +126,7 @@ DEFINE_RESERVED_KEYWORD ( TOK_UNION,			"union" )
 DEFINE_RESERVED_KEYWORD ( TOK_UNSIGNED,         "unsigned" )
 DEFINE_RESERVED_KEYWORD ( TOK_VALUEAT,          "value_at" )
 DEFINE_KEYWORD          ( TOK_VERSION,          "version" )
-DEFINE_KEYWORD          ( TOK_VIEW,             "view" )
+DEFINE_KEYWORD          ( TOK_VIEW,             "native_view" )
 DEFINE_KEYWORD          ( TOK_WARN,             "warn" )
 DEFINE_KEYWORD          ( TOK_WIDTH,            "width" )
 DEFINE_KEYWORD          ( TOK_MAPPER,           "mapper" )
@@ -135,6 +135,7 @@ DEFINE_KEYWORD          ( TOK_MAPPER,           "mapper" )
 DEFINE_KEYWORD_ALIAS    ( TOK_COUNT,            "size_is" )
 DEFINE_KEYWORD_ALIAS    ( TOK_OPENAS,           "nested" )
 DEFINE_KEYWORD_ALIAS    ( TOK_SELECT,           "switch_is" )
+DEFINE_KEYWORD_ALIAS    ( TOK_VIEW,             "view" )
 
 #undef DEFINE_RESERVED_KEYWORD
 #ifdef KEYWORDS_H_UNDEF_DEFINE_KEYWORD_ALIAS

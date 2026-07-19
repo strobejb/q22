@@ -106,6 +106,7 @@
     <item>label</item>
     <item>mapper</item>
     <item>name</item>
+    <item>native_view</item>
     <item>nested</item>
     <item>offset</item>
     <item>offset_map</item>
@@ -126,7 +127,6 @@
     <item>type</item>
     <item>value_at</item>
     <item>version</item>
-    <item>view</item>
     <item>warn</item>
     <item>width</item>
 </list>

@@ -659,22 +659,32 @@ void CausewayTests::unknownSemanticSchemaReferencesFail()
 void CausewayTests::viewTagsParse()
 {
 	// Scenario: a Strata declaration opts into a C++ semantic interpreter with
-	// a compact view("id") hook.
+	// a compact native_view("id") hook.
 	// Expected: the parser preserves the string expression on the TypeDecl, so
-	// Structure View can run optional interpreters after raw rendering.
+	// Structure View can run optional interpreters after raw rendering. The old
+	// view("id") spelling remains accepted as an undocumented compatibility
+	// alias.
 	// Regression guard: semantic interpretation must remain declarative Strata
 	// metadata, not a hard-coded type-name check in the renderer.
 	Parser parser;
 	QVERIFY(parseBuffer(parser,
-						"[view(\"pe.imports\")]\n"
-						"typedef struct _Import { dword thunk; } ImportDesc;\n"));
+						"[native_view(\"pe.imports\")]\n"
+						"typedef struct _Import { dword thunk; } ImportDesc;\n"
+						"[view(\"legacy.imports\")]\n"
+						"typedef struct _LegacyImport { dword thunk; } LegacyImportDesc;\n"));
 
-	QCOMPARE(parser.GetStrataLibrary()->globalTypeDeclList.size(), size_t(1));
+	QCOMPARE(parser.GetStrataLibrary()->globalTypeDeclList.size(), size_t(2));
 	ExprNode *expr = nullptr;
 	QVERIFY(FindTag(parser.GetStrataLibrary()->globalTypeDeclList[0]->tagList, TOK_VIEW, &expr));
 	QVERIFY(expr);
 	QCOMPARE(expr->type, EXPR_STRINGBUF);
 	QCOMPARE(QString::fromLocal8Bit(expr->str), QStringLiteral("pe.imports"));
+
+	expr = nullptr;
+	QVERIFY(FindTag(parser.GetStrataLibrary()->globalTypeDeclList[1]->tagList, TOK_VIEW, &expr));
+	QVERIFY(expr);
+	QCOMPARE(expr->type, EXPR_STRINGBUF);
+	QCOMPARE(QString::fromLocal8Bit(expr->str), QStringLiteral("legacy.imports"));
 }
 
 void CausewayTests::formatAndTreeTagsParse()

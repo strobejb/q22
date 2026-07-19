@@ -640,7 +640,7 @@ typedef word PE_EXPORT_ORDINAL_INDEX;
     dynamic_array(name(ExportFunctions), type(PE_EXPORT_FUNCTION_RVA), offset("rva", AddressOfFunctions), count(NumberOfFunctions)),
     dynamic_array(name(ExportNames), type(PE_EXPORT_NAME_RVA), offset("rva", AddressOfNames), count(NumberOfNames)),
     dynamic_array(name(ExportOrdinals), type(PE_EXPORT_ORDINAL_INDEX), offset("rva", AddressOfNameOrdinals), count(NumberOfNames)),
-    view("pe.exports")
+    native_view("pe.exports")
 ]
 typedef struct _IMAGE_EXPORT_DIRECTORY
 {
@@ -697,8 +697,8 @@ typedef struct _IMAGE_IMPORT_BY_NAME
 } IMAGE_IMPORT_BY_NAME, *PIMAGE_IMPORT_BY_NAME;
 
 // Import descriptors similarly point at DLL names and thunk tables.  The raw
-// tables are rendered here, while view("pe.imports") is kept as a friendly
-// semantic overlay for correlating DLL/function names.
+// tables are rendered here, while native_view("pe.imports") is kept as a
+// compatibility native overlay for correlating DLL/function names.
 [
     emit_row(dest(Sections.Imports, key(cstr("rva", Name)), name(cstr("rva", Name))),
              offset("rva", Name),
@@ -708,7 +708,7 @@ typedef struct _IMAGE_IMPORT_BY_NAME
     dynamic_array(name(ImportAddress32), type(IMAGE_THUNK_DATA32), offset("rva", FirstThunk), max_count(512), terminated_by(Function == 0), terminator("hidden"), optional(ntHeaders.OptionalHeader32.Magic == 0x10b)),
     dynamic_array(name(ImportLookup64), type(IMAGE_THUNK_DATA64), offset("rva", OriginalFirstThunk), max_count(512), terminated_by(Function == 0), terminator("hidden"), optional(ntHeaders.OptionalHeader64.Magic == 0x20b)),
     dynamic_array(name(ImportAddress64), type(IMAGE_THUNK_DATA64), offset("rva", FirstThunk), max_count(512), terminated_by(Function == 0), terminator("hidden"), optional(ntHeaders.OptionalHeader64.Magic == 0x20b)),
-    view("pe.imports"),
+    native_view("pe.imports"),
     name("IMAGE_IMPORT_DESCRIPTOR[]")
 ]
 typedef struct _IMAGE_IMPORT_DESCRIPTOR

@@ -7582,7 +7582,11 @@ QString StructureRenderEngine::diagnosticExpressionText(ExprNode *expr) const
 
     std::array<TCHAR, 1024> buffer = {};
     Flatten(buffer.data(), buffer.size(), expr);
+#if defined(_WIN32) && defined(UNICODE)
+    return QString::fromWCharArray(buffer.data()).trimmed();
+#else
     return QString::fromLocal8Bit(buffer.data()).trimmed();
+#endif
 }
 
 void StructureRenderEngine::addDiagnostic(StructureRow *target,

@@ -168,7 +168,7 @@ typedef struct _DEX_MAP_LIST
     magic({ 'd', 'e', 'x', 0x0a }),
     offset(0),
     endian(select_offset(40) == 0x12),
-    view("dex.summary")
+    native_view("dex.summary")
 ]
 typedef struct _DEX
 {

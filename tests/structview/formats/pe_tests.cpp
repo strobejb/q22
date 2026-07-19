@@ -696,7 +696,7 @@ void StructViewPeTests::builderResolvesEntryPointRvaThroughSectionOffsetMap()
 void StructViewPeTests::builderPeSemanticModeDeclarativeSkipsCppViews()
 {
     // Scenario: PE semantic mode is forced to declarative-only while a raw row
-    // still carries view("pe.imports").
+    // still carries native_view("pe.imports").
     // Expected: the C++ PE interpreter is skipped, leaving only the raw dynamic
     // import descriptor under the SECTION container.
     ScopedEnvironmentVariable mode("Q22_PE_SEMANTIC_VIEW", "declarative");
@@ -708,7 +708,7 @@ void StructViewPeTests::builderPeSemanticModeDeclarativeSkipsCppViews()
                         "typedef struct _DataDir { dword VirtualAddress; dword Size; } DataDir;\n"
                         "typedef struct _Section { char Name[8]; dword VirtualAddress; dword SizeOfRawData; dword PointerToRawData; } Section;\n"
                         "typedef struct _SectionBucket { } SECTION;\n"
-                        "[view(\"pe.imports\")]\n"
+                        "[native_view(\"pe.imports\")]\n"
                         "typedef struct _ImportDesc { dword OriginalFirstThunk; dword TimeDateStamp; dword ForwarderChain; dword Name; dword FirstThunk; } ImportDesc;\n"
                         "[export]\n"
                         "struct Root {\n"
@@ -754,7 +754,7 @@ void StructViewPeTests::builderKeepsRawDynamicRowsWhenSemanticImportDataIsTrunca
                         "typedef struct _DataDir { dword VirtualAddress; dword Size; } DataDir;\n"
                         "typedef struct _Section { char Name[8]; dword VirtualAddress; dword SizeOfRawData; dword PointerToRawData; } Section;\n"
                         "typedef struct _SectionBucket { } SECTION;\n"
-                        "[view(\"pe.imports\")]\n"
+                        "[native_view(\"pe.imports\")]\n"
                         "typedef struct _ImportDesc { dword OriginalFirstThunk; dword TimeDateStamp; dword ForwarderChain; dword Name; dword FirstThunk; } ImportDesc;\n"
                         "[export]\n"
                         "struct Root {\n"
@@ -909,7 +909,7 @@ void StructViewPeTests::semanticPeImportsRespectDynamicArrayDescriptorCount()
 void StructViewPeTests::builderRunsSemanticViewsAfterDynamicPlacement()
 {
     // Scenario: a PE import directory is declared as a dynamic structure and
-    // marked with view("pe.imports").
+    // marked with native_view("pe.imports").
     // Expected: raw IMAGE_IMPORT_DESCRIPTOR fields stay visible, then semantic
     // DLL/function rows are appended beneath the dynamically placed import row.
     // Regression guard: PE knowledge must augment dynamic rows after RVA mapping
@@ -923,7 +923,7 @@ void StructViewPeTests::builderRunsSemanticViewsAfterDynamicPlacement()
                         "typedef struct _DataDir { dword VirtualAddress; dword Size; } DataDir;\n"
                         "typedef struct _Section { char Name[8]; dword VirtualAddress; dword SizeOfRawData; dword PointerToRawData; } Section;\n"
                         "typedef struct _SectionBucket { } SECTION;\n"
-                        "[view(\"pe.imports\")]\n"
+                        "[native_view(\"pe.imports\")]\n"
                         "typedef struct _ImportDesc { dword OriginalFirstThunk; dword TimeDateStamp; dword ForwarderChain; dword Name; dword FirstThunk; } ImportDesc;\n"
                         "[export]\n"
                         "struct Root {\n"
