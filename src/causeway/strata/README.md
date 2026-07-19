@@ -15,12 +15,12 @@ View online: [Strata Language Reference](https://github.com/strobejb/q22/blob/ma
 |----------|----------|
 | Files | [`include`](#comments-and-includes) |
 | Types | [`struct`](#structs) · [`union`](#unions) · [`enum`](#enums) · [`typedef`](#type-declarations) |
-| Tags | [`tagset`](#tagsets) · [`tags`](#tagsets) |
-| Display | [`enum(N)`](#display) · [`bitflag(N)`](#display) · [`format("...")`](#display) · [`name`](#display) · [`string`](#display) |
+| Reusable tags | [`tagset`](#tagsets) · [`tags`](#tagsets) |
+| Presentation | [`enum(Name)`](#display) · [`bitflag(Name)`](#display) · [`bitfield(Name)`](#display) · [`format("...")`](#display) · [`name`](#display) · [`string`](#display) · [`tree("...")`](#tree-presentation) · [`warn`](#display) · [`assert`](#display) |
 | Layout | [`offset`](#layout) · [`align`](#layout) · [`pad_to`](#layout) · [`endian`](#byte-order) · [`entrypoint`](#layout) · [`code`](#layout) · [`open_as`](#layout) · [`extent`](#layout) · [`optional`](#layout) |
 | Arrays | [`count`](#arrays) · [`max_count`](#arrays) · [`count_as`](#arrays) · [`terminated_by`](#arrays) · [`terminator`](#arrays) |
 | Unions | [`select`](#discriminated-unions) · [`case`](#discriminated-unions) |
-| Semantic views | [`semantic`](#semantic-and-emit) · [`emit`](#semantic-and-emit) · [`emit_node`](#semantic-and-emit) · [`emit_row`](#semantic-and-emit) · [`append`](#positional-semantic-collection-addressing) · [`item`](#positional-semantic-collection-addressing) · [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) · [`view`](#view) |
+| Dynamic/semantic views | [`semantic`](#semantic-and-emit) · [`emit`](#semantic-and-emit) · [`emit_node`](#semantic-and-emit) · [`emit_row`](#semantic-and-emit) · [`append`](#positional-semantic-collection-addressing) · [`item`](#positional-semantic-collection-addressing) · [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) · [`view`](#view) |
 | Export | [`export`](#export-metadata) · [`category`](#export-metadata) · [`version`](#export-metadata) · [`assoc`](#export-metadata) · [`magic`](#export-metadata) |
 | Expressions | [`sizeof`](#expressions) · [`file_size`](#expressions) · [`extent_of`](#expressions) · [`array_index`](#expressions) · [`element_value`](#expressions) · [`current_offset`](#expressions) · [`str`](#expressions) · [`cstr`](#expressions) · [`concat`](#expressions) · [`fmt`](#expressions) · [`octal`](#expressions) · [`find_first`](#byte-pattern-search) · [`find_last`](#byte-pattern-search) · [`select_offset`](#select_offset) · [`value_at`](#value_at) |
 
@@ -349,11 +349,13 @@ IMAGE_DATA_DIRECTORY DataDirectory[16];
 
 ---
 
-## Field tags
+## Presentation tags
 
 ### Display
 
-The following 'display' tags can be used to alter the rendered value or name of a field in the structure view:
+The following tags change rendered values, labels, diagnostics, or tree shape in
+Structure View. They do not change byte layout unless explicitly stated
+elsewhere.
 
 | Tag | Effect |
 |-----|--------|
@@ -367,7 +369,7 @@ The following 'display' tags can be used to alter the rendered value or name of 
 | `format("hex"[, width(N)])` | Force zero-padded hexadecimal integer display for this row only; default width is the scalar byte width |
 | `format("bin"[, width(N)])`, `format("binary"[, width(N)])` | Force zero-padded binary integer display for this row only; default width is 8 |
 | `format("dec")` | Force decimal integer display for this row only; decimal is not padded |
-| `format("timestamp"[, "unix"\|"filetime"\|"dosdate"\|"dostime"])` | Render an integer as a timestamp; the default is Unix seconds |
+| `format("timestamp"[, "unix" \| "filetime" \| "dosdate" \| "dostime"])` | Render an integer as a timestamp; the default is Unix seconds |
 | `name("label")` | Override the display label with a string literal |
 | `name(field)` | Use the value of `field` as the display label |
 | `string` | Legacy sugar for `format("string")` |
@@ -417,9 +419,31 @@ single-bit flags. `match(name, mask) = value` tests an exact masked value.
 `field(name, mask[, enum(ValueEnum)])` extracts the masked bits and displays the
 result, shifting contiguous masks down before optional enum lookup.
 
+`format("time_t")`, `format("unix")`, `format("filetime")`,
+`format("dosdate")`, and `format("dostime")` are accepted timestamp aliases,
+but `format("timestamp", "...")` is the clearest spelling for new definitions.
+
+### Tree presentation
+
+`tree("...")` changes only how parsed rows and semantic schema groups appear in
+Structure View. It does not change layout, expression evaluation, or byte
+consumption.
+
+| Tag | Effect |
+|-----|--------|
+| `tree("hidden")` | Parse and lay out the field normally, but suppress its row |
+| `tree("collapsed")` | Show an expandable row initially closed |
+| `tree("expanded")` | Show an expandable row initially open |
+| `tree("flatten")` | Suppress the wrapper row and promote its children |
+
+There is no separate `inline` keyword today; use `tree("flatten")`. `sealed`
+display is not implemented yet.
+
+## Layout tags
+
 ### Layout
 
-Layout tag affect the alignment and positioning of fields:
+Layout tags affect the alignment and positioning of fields:
 
 | Tag | Effect |
 |-----|--------|
@@ -431,7 +455,7 @@ Layout tag affect the alignment and positioning of fields:
 | `optional(cond)` | Skip this field when `cond` is false |
 | `entrypoint` | Mark this scalar field's own value as a code entry point address for disassembly |
 | `code("arch" \| architecture(field)[, offset(expr), extent(expr)])` | Mark a byte range as code for the disassembler. `architecture(field)` obtains the Capstone id from the matching enum member's `[architecture("...")]` metadata. |
-| `open_as(type(RootType), offset(expr), extent(expr)[, name(expr)])` | Mark the row as a navigable physical slice that can be opened as another Strata root |
+| `open_as(type(RootType \| auto), offset(expr), extent(expr)[, name(expr)])` | Mark the row as a navigable physical slice that can be opened as another Strata root |
 
 ```c
 [offset(dosHeader.e_lfanew)]
@@ -467,21 +491,9 @@ dword AddressOfEntryPoint;
 
 `open_as(...)` describes a bounded byte range inside the current source. The
 first implementation is physical only: `offset(...)` and `extent(...)` select
-bytes from the current source. Compressed or decoded child sources, such as
-`tar.gz`, require a later transform layer.
-
-### Tree presentation
-
-`tree("...")` changes only how parsed rows and semantic schema groups appear in
-Structure View. It does not change layout, expression evaluation, or byte
-consumption.
-
-| Tag | Effect |
-|-----|--------|
-| `tree("hidden")` | Parse and lay out the field normally, but suppress its row |
-| `tree("collapsed")` | Show an expandable row initially closed |
-| `tree("expanded")` | Show an expandable row initially open |
-| `tree("flatten")` | Suppress the wrapper row and promote its children |
+bytes from the current source. `type(auto)` asks q22 to detect the nested format
+from those bytes; `type(RootType)` forces a specific Strata root. Compressed or
+decoded child sources, such as `tar.gz`, require a later transform layer.
 
 ### Byte order
 
@@ -550,12 +562,13 @@ inside a semantic schema inherit semantic-schema behavior, so the semantic root
 can describe the whole summary tree structurally instead of forcing everything
 into a flat list of tags. Use `[semantic("Display Name")]` to choose the root
 branch label; unlabeled schemas fall back to `Semantic`. The rendered semantic
-root is a top-level sibling of the raw root, not a child inside the raw tree.
+root is shown under the raw root by default so raw and summary navigation stay
+in one tree.
 `[semantic(ViewType)]` on a raw root attaches that schema. The raw definition
 still comes first and stays byte-honest; the semantic root then defines the
 shape of the summary layer, and raw fields use `emit_node(...)`,
 `emit_row(...)`, and `emit(...)` to populate that destination tree without
-changing the raw tree.
+changing the raw layout.
 
 ```c
 [semantic("WOFF Summary")]
@@ -713,8 +726,8 @@ emit_node(dest(Functions, item(functionIndex)),
 Field merging, schema field order, schema `name(...)`, and explicit node
 `name(...)` behave exactly as they do for keyed `emit_node(...)` contributions.
 
-PE semantic rendering can be isolated while the declarative view reaches parity
-with the older C++ view:
+PE/ELF semantic rendering can be isolated when comparing the declarative view
+against the older C++ compatibility view:
 
 ```sh
 Q22_PE_SEMANTIC_VIEW=declarative   # default: skip pe.* C++ semantic interpreters
@@ -773,8 +786,9 @@ IMAGE_SECTION_HEADER sectionHeader[];
 IMAGE_DATA_DIRECTORY dataDirectory[];
 ```
 
-V1 emit rows are byte-backed only: they render real file bytes at real offsets.
-Computed-only rows, keyed merging, and attributes are reserved for a later layer.
+`emit(...)` rows are byte-backed: they render real file bytes at real offsets.
+Use `emit_node(...)` and `emit_row(...)` for computed summary nodes, keyed
+merging, and attributes.
 
 ### `dynamic_struct`
 
@@ -1223,8 +1237,9 @@ syntax instead of treating the word as an ordinary identifier.
 
 | Keyword | Intended purpose |
 |---------|-----------------|
+| `description(...)` | Separate descriptive metadata; use `export("name")` for exported format names today |
 | `display(expr)` | Override the displayed value |
-| `ignore` | Parse but hide a field |
+| `ignore` | Parse but hide a field; use `tree("hidden")` today |
 | `length_is(expr)` | Byte length of a flexible array |
 | `style(...)` | Rendering style hint |
 
@@ -1237,12 +1252,16 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 |----------|----------|
 | Type declarations | `struct`, `union`, `enum`, `typedef`, `const`, `signed`, `unsigned` |
 | Primitive types | `byte`, `word`, `dword`, `qword`, `char`, `wchar_t`, `float`, `double`, `uleb128`, `sleb128` |
-| Display/layout tags | `align`, `architecture`, `assert`, `bitfield`, `bitflag`, `code`, `description`, `display`, `endian`, `entrypoint`, `extent`, `format`, `ignore`, `name`, `offset`, `open_as`, `optional`, `pad_to`, `string`, `style`, `tree`, `warn`, `width` |
-| Arrays/unions | `case`, `count`, `count_as`, `default`, `length_is`, `max_count`, `select`, `select_offset`, `size_is`, `switch_is`, `terminated_by`, `terminator` |
-| Dynamic/semantic tags | `append`, `attr`, `container`, `dest`, `dynamic_array`, `dynamic_container`, `dynamic_struct`, `emit`, `emit_node`, `emit_row`, `field`, `item`, `key`, `label`, `map`, `mapper`, `offset_map`, `semantic`, `type`, `view` |
+| Presentation tags | `assert`, `bitfield`, `bitflag`, `enum`, `format`, `name`, `string`, `tree`, `warn` |
+| Presentation argument wrappers | `width` |
+| Layout tags | `align`, `architecture`, `code`, `endian`, `entrypoint`, `extent`, `offset`, `open_as`, `optional`, `pad_to` |
+| Arrays/unions | `case`, `count`, `count_as`, `default`, `max_count`, `select`, `size_is`, `switch_is`, `terminated_by`, `terminator` |
+| Dynamic/semantic tags | `dynamic_array`, `dynamic_container`, `dynamic_struct`, `emit`, `emit_node`, `emit_row`, `offset_map`, `semantic`, `view` |
+| Dynamic/semantic argument wrappers | `append`, `attr`, `container`, `dest`, `field`, `item`, `key`, `label`, `map`, `mapper`, `type` |
 | Export/detection tags | `assoc`, `category`, `export`, `magic`, `version` |
-| Tagsets/files | `bitfield`, `include`, `match`, `tagset`, `tags` |
-| Expression helpers | `array_index`, `concat`, `cstr`, `cstr_at`, `cstr_from`, `current_offset`, `element_value`, `extent_of`, `field_at`, `file_size`, `find_first`, `find_last`, `fmt`, `fourcc`, `octal`, `root_value_at`, `sizeof`, `str`, `value_at` |
+| Top-level/reusable declarations | `bitfield`, `field`, `include`, `match`, `tagset`, `tags` |
+| Expression helpers | `array_index`, `concat`, `cstr`, `cstr_at`, `cstr_from`, `current_offset`, `element_value`, `extent_of`, `field_at`, `file_size`, `find_first`, `find_last`, `fmt`, `fourcc`, `octal`, `root_value_at`, `select_offset`, `sizeof`, `str`, `value_at` |
+| Reserved/unsupported | `description`, `display`, `ignore`, `length_is`, `style` |
 
 ---
 
