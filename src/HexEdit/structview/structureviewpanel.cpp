@@ -43,6 +43,7 @@
 #include <QPlainTextEdit>
 #include <QRegularExpression>
 #include <QSignalBlocker>
+#include <QSizePolicy>
 #include <QStyle>
 #include <QStackedWidget>
 #include <QStringList>
@@ -81,6 +82,11 @@ enum class InitialStructureExpansion
 static constexpr InitialStructureExpansion kInitialStructureExpansion =
     InitialStructureExpansion::FirstLevel;
 static constexpr int kBranchIconSize = 16;
+
+static QString formatStructureSourceOffset(uint64_t offset)
+{
+    return QString::number(offset, 16).toUpper().rightJustified(8, QLatin1Char('0'));
+}
 
 static QString markdownAnchorSlug(const QString &text)
 {
@@ -1904,6 +1910,28 @@ bool magicSignatureMatchesFile(HexView *hv, const StructureMagicSignature &signa
     return bytesRead == static_cast<size_t>(fileBytes.size()) && fileBytes == signature.bytes;
 }
 
+bool magicSignatureMatchesSlice(HexView *hv, uint64_t baseOffset, uint64_t byteLength, const StructureMagicSignature &signature)
+{
+    if (!hv || signature.bytes.isEmpty() || signature.offset > byteLength)
+        return false;
+
+    const uint64_t remaining = byteLength - signature.offset;
+    if (remaining < static_cast<uint64_t>(signature.bytes.size()))
+        return false;
+
+    const uint64_t absoluteOffset = baseOffset > UINT64_MAX - signature.offset
+        ? UINT64_MAX
+        : baseOffset + signature.offset;
+    if (absoluteOffset == UINT64_MAX)
+        return false;
+
+    QByteArray fileBytes(signature.bytes.size(), Qt::Uninitialized);
+    const size_t bytesRead = hv->getData(static_cast<size_w>(absoluteOffset),
+                                         reinterpret_cast<uint8_t *>(fileBytes.data()),
+                                         static_cast<size_t>(fileBytes.size()));
+    return bytesRead == static_cast<size_t>(fileBytes.size()) && fileBytes == signature.bytes;
+}
+
 QString normalizedAssocExtension(QString ext)
 {
     ext = ext.trimmed().toLower();
@@ -2066,7 +2094,17 @@ void StructureViewPanel::changeEvent(QEvent *event)
 
 bool StructureViewPanel::eventFilter(QObject *watched, QEvent *event)
 {
-    if (m_sourceView && (watched == m_sourceView || watched == m_sourceView->viewport()))
+    if (m_sourceStackWidget && watched == m_sourceStackWidget && event->type() == QEvent::Leave)
+    {
+        setSourceStackActiveHighlightVisible(true);
+    }
+    else if (watched
+             && watched->objectName() == QStringLiteral("structureSourceStackRow")
+             && event->type() == QEvent::Enter)
+    {
+        setSourceStackActiveHighlightVisible(false);
+    }
+    else if (m_sourceView && (watched == m_sourceView || watched == m_sourceView->viewport()))
     {
         if (event->type() == QEvent::Resize)
             repositionSourceViewButtons();
@@ -2176,6 +2214,64 @@ void StructureViewPanel::buildUi()
     const int offsetW = m_offsetEdit->fontMetrics().horizontalAdvance(QStringLiteral("00000000")) + 40
                         + 16 + 8; // icon + Qt's action button right margin
     m_offsetEdit->setFixedWidth(offsetW);
+
+    m_sourceStackWidget = new QWidget(content);
+    m_sourceStackWidget->setObjectName(QStringLiteral("structureSourceStack"));
+    m_sourceStackWidget->installEventFilter(this);
+    m_sourceStackLayout = new QVBoxLayout(m_sourceStackWidget);
+    m_sourceStackLayout->setContentsMargins(4, 4, 4, 4);
+    m_sourceStackLayout->setSpacing(2);
+    m_sourceStackCloseButton = new QToolButton(m_sourceStackWidget);
+    m_sourceStackCloseButton->setObjectName(QStringLiteral("structureSourceStackCloseButton"));
+    m_sourceStackCloseButton->setAutoRaise(true);
+    m_sourceStackCloseButton->setCursor(Qt::PointingHandCursor);
+    m_sourceStackCloseButton->setToolTip(tr("Exit nested source view"));
+    m_sourceStackCloseButton->setIcon(recoloredIcon(QStringLiteral("actions/edit-clear-symbolic"),
+                                                    filestats::subduedTextColor(palette()), 14));
+    m_sourceStackCloseButton->setIconSize(QSize(14, 14));
+    m_sourceStackCloseButton->setFixedSize(24, 24);
+    m_sourceStackCloseButton->hide();
+    m_sourceStackWidget->setStyleSheet(QStringLiteral(R"(
+        QWidget#structureSourceStack {
+            background: palette(base);
+            border: 1px solid palette(mid);
+            border-radius: 5px;
+        }
+        QPushButton#structureSourceStackRow {
+            background: transparent;
+            border: none;
+            border-radius: 4px;
+            color: palette(window-text);
+            padding: 0px;
+            text-align: left;
+        }
+        QPushButton#structureSourceStackRow QLabel {
+            background: transparent;
+            color: palette(window-text);
+        }
+        QPushButton#structureSourceStackRow:hover {
+            background: palette(button);
+        }
+        QPushButton#structureSourceStackRow[current="true"] {
+            background: palette(button);
+        }
+        QToolButton#structureSourceStackCloseButton {
+            background: transparent;
+            border: none;
+            border-radius: 6px;
+            padding: 3px;
+        }
+        QToolButton#structureSourceStackCloseButton:hover {
+            background: palette(button);
+        }
+        QToolButton#structureSourceStackCloseButton:pressed {
+            background: palette(midlight);
+        }
+    )"));
+    connect(m_sourceStackCloseButton, &QToolButton::clicked,
+            this, &StructureViewPanel::exitSourceStack);
+    m_sourceStackWidget->hide();
+    contentLay->addWidget(m_sourceStackWidget);
 
     optLay->addWidget(m_rootCombo, 1);
     optLay->addWidget(m_offsetEdit);
@@ -2486,6 +2582,8 @@ void StructureViewPanel::buildUi()
             this, &StructureViewPanel::showRootComboContextMenu);
     connect(m_rootCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, [this](int) {
+                m_openAsPinnedBase = false;
+                clearSourceStack();
                 rebuildRows();
                 // Refresh which widget occupies the Struct slot (tree vs. load-error
                 // message) if that's what's currently showing; leave Source/Log alone.
@@ -2644,6 +2742,11 @@ void StructureViewPanel::updatePinAction()
 void StructureViewPanel::setPinned(bool pinned)
 {
     m_pinned = pinned;
+    if (!pinned)
+    {
+        m_openAsPinnedBase = false;
+        clearSourceStack();
+    }
     if (pinned && m_hv)
         m_pinnedOffset = m_hv->cursorOffset();
     updatePinAction();
@@ -2681,21 +2784,47 @@ void StructureViewPanel::rebuildRows()
 
     uint64_t explicitOffset = 0;
     const bool hasExplicitOffset = explicitRootOffset(rootType, &explicitOffset);
-    if (hasExplicitOffset && m_pinned)
+    if (hasExplicitOffset && m_pinned && !m_openAsPinnedBase)
     {
         m_pinned = false;
         updatePinAction();
     }
-    const uint64_t baseOffset = hasExplicitOffset ? explicitOffset
+    const uint64_t baseOffset = hasExplicitOffset
+        ? (m_openAsPinnedBase ? m_pinnedOffset + explicitOffset : explicitOffset)
         : (m_pinned ? m_pinnedOffset : m_hv->cursorOffset());
     m_offsetEdit->setText(QString::number(baseOffset, 16).toUpper().rightJustified(8, QLatin1Char('0')));
     const StructureDisplayOptions options = displayOptions();
+    bool hasSourceExtent = false;
+    uint64_t sourceExtentBase = baseOffset;
+    uint64_t sourceExtentLength = 0;
+    if (m_activeSourceFrame >= 0 && m_activeSourceFrame < m_sourceStack.size())
+    {
+        const SourceFrame &frame = m_sourceStack[m_activeSourceFrame];
+        if (frame.sliceRoot && frame.rootType == rootType && frame.baseOffset == baseOffset)
+        {
+            hasSourceExtent = true;
+            sourceExtentBase = frame.baseOffset;
+            sourceExtentLength = frame.byteLength;
+        }
+    }
     auto engine = std::make_shared<StructureRenderEngine>(
         m_definitions->library(),
         rootType,
         baseOffset,
-        [this](uint64_t offset, uint8_t *buffer, size_t length) -> size_t {
-            return m_hv ? m_hv->getData(static_cast<size_w>(offset), buffer, length) : 0;
+        [this, hasSourceExtent, sourceExtentBase, sourceExtentLength](uint64_t offset, uint8_t *buffer, size_t length) -> size_t {
+            if (!m_hv)
+                return 0;
+            if (hasSourceExtent)
+            {
+                if (offset < sourceExtentBase)
+                    return 0;
+                const uint64_t relativeOffset = offset - sourceExtentBase;
+                if (relativeOffset >= sourceExtentLength)
+                    return 0;
+                length = static_cast<size_t>(qMin<uint64_t>(static_cast<uint64_t>(length),
+                                                            sourceExtentLength - relativeOffset));
+            }
+            return m_hv->getData(static_cast<size_w>(offset), buffer, length);
         },
         options);
     const bool deferSemanticOverlay = engine->hasSemanticOverlay();
@@ -2913,6 +3042,40 @@ void StructureViewPanel::showOptionsContextMenu(int column, const QPoint &global
         QAction *locateSource = menu.addAction(tr("Locate in source"));
         connect(locateSource, &QAction::triggered,
                 this, [this, targetIndex]() { locateIndexInSource(targetIndex); });
+    }
+
+    {
+        StructureRow *openAsRow = openAsRowForIndex(targetIndex);
+        if (openAsRow)
+        {
+            addSeparatorIfNeeded();
+            TypeDecl *resolvedRootType = resolvedOpenAsRootType(openAsRow);
+            QString resolvedRootName = displayNameForTypeDecl(resolvedRootType);
+            if (resolvedRootName.isEmpty())
+                resolvedRootName = openAsRow->openAsRootTypeName;
+            const bool autoDetect = openAsRow->openAsRootTypeName.compare(QStringLiteral("auto"), Qt::CaseInsensitive) == 0;
+            QString label;
+            if (openAsRow->openAsName.isEmpty())
+                label = autoDetect ? tr("Open as detected format") : tr("Open as %1").arg(resolvedRootName);
+            else
+                label = autoDetect
+                    ? tr("Open \"%1\" as %2").arg(openAsRow->openAsName, resolvedRootName)
+                    : tr("Open \"%1\" as %2").arg(openAsRow->openAsName, resolvedRootName);
+            const bool canOpen = m_hv
+                && resolvedRootType
+                && rootComboIndexForType(resolvedRootType) >= 0
+                && openAsRow->openAsByteLength > 0
+                && openAsRow->openAsOffset < m_hv->size();
+            if (!canOpen)
+                label = tr("%1 — unavailable").arg(label);
+            QAction *openAs = menu.addAction(label);
+            openAs->setEnabled(canOpen);
+            if (canOpen)
+            {
+                connect(openAs, &QAction::triggered,
+                        this, [this, targetIndex]() { openIndexAsStructure(targetIndex); });
+            }
+        }
     }
 
     {
@@ -3500,6 +3663,380 @@ void StructureViewPanel::restoreSelection(const QString &name, uint64_t offset)
     m_hasPendingRestore = true;
 }
 
+StructureRow *StructureViewPanel::openAsRowForIndex(const QModelIndex &index) const
+{
+    StructureRow *row = m_model && index.isValid() ? m_model->rowForIndex(index) : nullptr;
+    for (StructureRow *candidate = row; candidate; candidate = candidate->parent)
+    {
+        if (candidate->hasOpenAsTarget)
+            return candidate;
+    }
+
+    if (!row)
+        return nullptr;
+
+    const auto findOpenAsDescendant = [](auto &&self, StructureRow *candidate) -> StructureRow * {
+        if (!candidate)
+            return nullptr;
+        if (candidate->hasOpenAsTarget)
+            return candidate;
+        for (const auto &child : candidate->children)
+            if (StructureRow *found = self(self, child.get()))
+                return found;
+        return nullptr;
+    };
+    return findOpenAsDescendant(findOpenAsDescendant, row);
+}
+
+TypeDecl *StructureViewPanel::resolvedOpenAsRootType(const StructureRow *row) const
+{
+    if (!row)
+        return nullptr;
+    if (row->openAsRootType)
+        return row->openAsRootType;
+    if (row->openAsRootTypeName.compare(QStringLiteral("auto"), Qt::CaseInsensitive) != 0)
+        return nullptr;
+    if (!m_definitions || !m_hv)
+        return nullptr;
+
+    const QList<ExportedStructureType> exportedTypes = sortedExportedTypes(m_definitions->exportedTypes());
+    const int associatedIndex = associatedRootTypeIndexForFileName(exportedTypes, row->openAsName);
+    if (associatedIndex >= 0)
+        return exportedTypes[associatedIndex].typeDecl;
+
+    for (const ExportedStructureType &exported : exportedTypes)
+    {
+        for (const StructureMagicSignature &signature : exported.magicSignatures)
+        {
+            if (magicSignatureMatchesSlice(m_hv, row->openAsOffset, row->openAsByteLength, signature))
+                return exported.typeDecl;
+        }
+    }
+
+    return nullptr;
+}
+
+void StructureViewPanel::openIndexAsStructure(const QModelIndex &index)
+{
+    StructureRow *row = openAsRowForIndex(index);
+    if (!row || !m_hv || !m_rootCombo)
+        return;
+
+    TypeDecl *rootType = resolvedOpenAsRootType(row);
+    const int rootIndex = rootComboIndexForType(rootType);
+    if (rootIndex < 0)
+    {
+        QMessageBox::information(this,
+                                 tr("Cannot open structure slice"),
+                                 tr("No exported root structure matches \"%1\".")
+                                     .arg(row->openAsName.isEmpty() ? row->openAsRootTypeName : row->openAsName));
+        return;
+    }
+
+    if (row->openAsOffset >= m_hv->size() || row->openAsByteLength == 0)
+        return;
+
+    const uint64_t requestedEnd = row->openAsOffset > UINT64_MAX - row->openAsByteLength
+        ? UINT64_MAX
+        : row->openAsOffset + row->openAsByteLength;
+    const size_w start = static_cast<size_w>(row->openAsOffset);
+    const size_w end = static_cast<size_w>(qMin<uint64_t>(requestedEnd, m_hv->size()));
+    if (end <= start)
+        return;
+
+    TypeDecl *parentRootType = selectedRootType();
+    ensureSourceStackRootFrame(parentRootType);
+    if (m_activeSourceFrame >= 0 && m_activeSourceFrame < m_sourceStack.size() - 1)
+    {
+        while (m_sourceStack.size() > m_activeSourceFrame + 1)
+            m_sourceStack.removeLast();
+    }
+    if (m_activeSourceFrame >= 0 && m_activeSourceFrame < m_sourceStack.size())
+    {
+        SourceFrame &parentFrame = m_sourceStack[m_activeSourceFrame];
+        parentFrame.returnRowName = row->name;
+        parentFrame.returnRowOffset = row->absoluteOffset;
+        parentFrame.returnRowLength = row->byteLength;
+        parentFrame.hasReturnRow = true;
+    }
+
+    SourceFrame childFrame;
+    childFrame.rootType = rootType;
+    childFrame.rootDisplayName = displayNameForTypeDecl(rootType);
+    childFrame.sourceName = row->openAsName.isEmpty() ? childFrame.rootDisplayName : row->openAsName;
+    childFrame.baseOffset = row->openAsOffset;
+    childFrame.byteLength = end - start;
+    childFrame.sliceRoot = true;
+    m_sourceStack.push_back(childFrame);
+    m_activeSourceFrame = m_sourceStack.size() - 1;
+
+    m_pinned = true;
+    m_pinnedOffset = row->openAsOffset;
+    m_openAsPinnedBase = true;
+    updatePinAction();
+
+    {
+        const QSignalBlocker blocker(m_rootCombo);
+        m_rootCombo->setCurrentIndex(rootIndex);
+    }
+
+    setHexViewSelectionFromStructure(start, end);
+    updateSourceStackWidget();
+    rebuildRows();
+    showGridPage();
+}
+
+uint64_t StructureViewPanel::currentRootBaseOffset(TypeDecl *rootType) const
+{
+    if (!m_hv)
+        return 0;
+
+    uint64_t explicitOffset = 0;
+    const bool hasExplicitOffset = explicitRootOffset(rootType, &explicitOffset);
+    if (hasExplicitOffset)
+        return m_openAsPinnedBase ? m_pinnedOffset + explicitOffset : explicitOffset;
+    return m_pinned ? m_pinnedOffset : m_hv->cursorOffset();
+}
+
+void StructureViewPanel::ensureSourceStackRootFrame(TypeDecl *rootType)
+{
+    if (!rootType || !m_hv || !m_sourceStack.isEmpty())
+        return;
+
+    SourceFrame frame;
+    frame.rootType = rootType;
+    frame.rootDisplayName = displayNameForTypeDecl(rootType);
+    frame.sourceName = QFileInfo(m_hv->filePath()).fileName();
+    if (frame.sourceName.isEmpty())
+        frame.sourceName = tr("Current file");
+    frame.baseOffset = currentRootBaseOffset(rootType);
+    frame.byteLength = m_hv->size() > frame.baseOffset ? m_hv->size() - frame.baseOffset : 0;
+    frame.sliceRoot = false;
+    m_sourceStack.push_back(frame);
+    m_activeSourceFrame = 0;
+}
+
+void StructureViewPanel::updateSourceStackWidget()
+{
+    if (!m_sourceStackWidget || !m_sourceStackLayout)
+        return;
+
+    if (m_sourceStackCloseButton)
+    {
+        m_sourceStackCloseButton->hide();
+        m_sourceStackCloseButton->setParent(m_sourceStackWidget);
+    }
+
+    while (QLayoutItem *item = m_sourceStackLayout->takeAt(0))
+    {
+        if (QWidget *widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+
+    if (m_sourceStack.size() <= 1)
+    {
+        m_sourceStackWidget->hide();
+        if (m_rootCombo)
+            m_rootCombo->show();
+        if (m_offsetEdit)
+            m_offsetEdit->show();
+        return;
+    }
+
+    if (m_rootCombo)
+        m_rootCombo->hide();
+    if (m_offsetEdit)
+        m_offsetEdit->hide();
+
+    for (int i = 0; i < m_sourceStack.size(); ++i)
+    {
+        const SourceFrame &frame = m_sourceStack[i];
+        const QString marker = i == 0 ? QString() : QStringLiteral("└─ ");
+        const QString source = frame.sourceName.isEmpty() ? frame.rootDisplayName : frame.sourceName;
+        const QString text = QStringLiteral("%1%2  %3")
+            .arg(marker,
+                 frame.rootDisplayName.isEmpty() ? tr("Structure") : frame.rootDisplayName,
+                 source);
+
+        auto *button = new QPushButton(m_sourceStackWidget);
+        button->setObjectName(QStringLiteral("structureSourceStackRow"));
+        button->setFlat(true);
+        button->setCursor(Qt::PointingHandCursor);
+        button->setProperty("sourceFrameIndex", i);
+        button->setProperty("current", i == m_activeSourceFrame);
+        button->setMinimumHeight(m_rootCombo ? m_rootCombo->height() : 28);
+
+        auto *rowLayout = new QHBoxLayout(button);
+        rowLayout->setContentsMargins(7 + i * 18, 4, 7, 4);
+        rowLayout->setSpacing(6);
+
+        auto *textLabel = new QLabel(text, button);
+        textLabel->setTextFormat(Qt::PlainText);
+        textLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        textLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+
+        auto *offsetLabel = new QLabel(QStringLiteral("@ %1").arg(formatStructureSourceOffset(frame.baseOffset)), button);
+        offsetLabel->setTextFormat(Qt::PlainText);
+        offsetLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        offsetLabel->setFixedWidth(m_offsetEdit ? m_offsetEdit->width() : 112);
+
+        rowLayout->addWidget(textLabel, 1);
+        rowLayout->addWidget(offsetLabel);
+        if (i == 0 && m_sourceStackCloseButton)
+        {
+            m_sourceStackCloseButton->setParent(button);
+            m_sourceStackCloseButton->show();
+            rowLayout->addWidget(m_sourceStackCloseButton, 0, Qt::AlignVCenter);
+        }
+        else
+        {
+            auto *closeSpacer = new QWidget(button);
+            closeSpacer->setFixedSize(m_sourceStackCloseButton ? m_sourceStackCloseButton->size() : QSize(24, 24));
+            rowLayout->addWidget(closeSpacer, 0, Qt::AlignVCenter);
+        }
+
+        button->setToolTip(tr("%1\nOffset: 0x%2\nLength: %3 bytes")
+                               .arg(source,
+                                    formatStructureSourceOffset(frame.baseOffset),
+                                    QString::number(frame.byteLength)));
+        button->installEventFilter(this);
+        connect(button, &QPushButton::clicked,
+                this, [this, i]() { navigateToSourceFrame(i); });
+        m_sourceStackLayout->addWidget(button);
+    }
+
+    m_sourceStackWidget->show();
+}
+
+void StructureViewPanel::setSourceStackActiveHighlightVisible(bool visible)
+{
+    if (!m_sourceStackWidget)
+        return;
+
+    const QList<QPushButton *> rows = m_sourceStackWidget->findChildren<QPushButton *>(QStringLiteral("structureSourceStackRow"));
+    for (QPushButton *row : rows)
+    {
+        const int rowIndex = row->property("sourceFrameIndex").toInt();
+        row->setProperty("current", visible && rowIndex == m_activeSourceFrame);
+        row->style()->unpolish(row);
+        row->style()->polish(row);
+        row->update();
+    }
+}
+
+void StructureViewPanel::navigateToSourceFrame(int index)
+{
+    if (!m_hv || !m_rootCombo || index < 0 || index >= m_sourceStack.size())
+        return;
+
+    SourceFrame frame = m_sourceStack[index];
+    m_activeSourceFrame = index;
+
+    const int rootIndex = rootComboIndexForType(frame.rootType);
+    if (rootIndex < 0)
+        return;
+
+    if (frame.sliceRoot)
+    {
+        m_pinned = true;
+        m_pinnedOffset = frame.baseOffset;
+        m_openAsPinnedBase = true;
+    }
+    else
+    {
+        m_pinned = false;
+        m_openAsPinnedBase = false;
+    }
+    updatePinAction();
+
+    {
+        const QSignalBlocker blocker(m_rootCombo);
+        m_rootCombo->setCurrentIndex(rootIndex);
+    }
+
+    if (frame.hasReturnRow)
+    {
+        restoreSelection(frame.returnRowName, frame.returnRowOffset);
+        if (frame.returnRowLength > 0 && frame.returnRowOffset < m_hv->size())
+        {
+            const uint64_t requestedEnd = frame.returnRowOffset > UINT64_MAX - frame.returnRowLength
+                ? UINT64_MAX
+                : frame.returnRowOffset + frame.returnRowLength;
+            const size_w start = static_cast<size_w>(frame.returnRowOffset);
+            const size_w end = static_cast<size_w>(qMin<uint64_t>(requestedEnd, m_hv->size()));
+            if (end > start)
+                setHexViewSelectionFromStructure(start, end);
+        }
+    }
+    else if (frame.byteLength > 0 && frame.baseOffset < m_hv->size())
+    {
+        const uint64_t requestedEnd = frame.baseOffset > UINT64_MAX - frame.byteLength
+            ? UINT64_MAX
+            : frame.baseOffset + frame.byteLength;
+        const size_w start = static_cast<size_w>(frame.baseOffset);
+        const size_w end = static_cast<size_w>(qMin<uint64_t>(requestedEnd, m_hv->size()));
+        if (end > start)
+            setHexViewSelectionFromStructure(start, end);
+    }
+
+    updateSourceStackWidget();
+    rebuildRows();
+    showGridPage();
+}
+
+void StructureViewPanel::exitSourceStack()
+{
+    if (m_sourceStack.isEmpty() || !m_hv || !m_rootCombo)
+    {
+        clearSourceStack();
+        return;
+    }
+
+    SourceFrame rootFrame = m_sourceStack.first();
+    const int rootIndex = rootComboIndexForType(rootFrame.rootType);
+    if (rootIndex < 0)
+    {
+        clearSourceStack();
+        return;
+    }
+
+    m_pinned = false;
+    m_openAsPinnedBase = false;
+    updatePinAction();
+
+    {
+        const QSignalBlocker blocker(m_rootCombo);
+        m_rootCombo->setCurrentIndex(rootIndex);
+    }
+
+    if (rootFrame.hasReturnRow)
+    {
+        restoreSelection(rootFrame.returnRowName, rootFrame.returnRowOffset);
+        if (rootFrame.returnRowLength > 0 && rootFrame.returnRowOffset < m_hv->size())
+        {
+            const uint64_t requestedEnd = rootFrame.returnRowOffset > UINT64_MAX - rootFrame.returnRowLength
+                ? UINT64_MAX
+                : rootFrame.returnRowOffset + rootFrame.returnRowLength;
+            const size_w start = static_cast<size_w>(rootFrame.returnRowOffset);
+            const size_w end = static_cast<size_w>(qMin<uint64_t>(requestedEnd, m_hv->size()));
+            if (end > start)
+                setHexViewSelectionFromStructure(start, end);
+        }
+    }
+
+    clearSourceStack();
+    rebuildRows();
+    showGridPage();
+}
+
+void StructureViewPanel::clearSourceStack()
+{
+    m_sourceStack.clear();
+    m_activeSourceFrame = -1;
+    updateSourceStackWidget();
+}
+
 void StructureViewPanel::applyPendingRestore()
 {
     if (!m_hasPendingRestore || !m_tree || !m_model)
@@ -3726,6 +4263,9 @@ void StructureViewPanel::refreshForCurrentFileAssociation()
 {
     if (!m_definitions || !m_rootCombo || !m_model)
         return;
+
+    m_openAsPinnedBase = false;
+    clearSourceStack();
 
     m_definitions->ensureLoaded();
     const QList<ExportedStructureType> exportedTypes = sortedExportedTypes(m_definitions->exportedTypes());

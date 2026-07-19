@@ -21,6 +21,7 @@ class QPlainTextEdit;
 class QStackedWidget;
 class QToolButton;
 class QTreeView;
+class QVBoxLayout;
 class MenuComboBox;
 class SourceViewButton;
 class StructureContentFrame;
@@ -108,6 +109,16 @@ private:
     void setUseHexadecimalOffsets(bool enabled);
     void setUseRelativeOffsets(bool enabled);
     void updateHexViewSelection(const QModelIndex &current);
+    StructureRow *openAsRowForIndex(const QModelIndex &index) const;
+    TypeDecl *resolvedOpenAsRootType(const StructureRow *row) const;
+    void openIndexAsStructure(const QModelIndex &index);
+    uint64_t currentRootBaseOffset(TypeDecl *rootType) const;
+    void ensureSourceStackRootFrame(TypeDecl *rootType);
+    void updateSourceStackWidget();
+    void setSourceStackActiveHighlightVisible(bool visible);
+    void navigateToSourceFrame(int index);
+    void exitSourceStack();
+    void clearSourceStack();
     void applyPendingRestore();
     QModelIndex findIndexByIdentity(const QModelIndex &parent, const QString &name, uint64_t offset) const;
     void clearHexViewOverlay();
@@ -141,6 +152,9 @@ private:
     QPlainTextEdit             *m_logView = nullptr;
     QLabel                     *m_loadErrorView = nullptr;
     QLabel                     *m_statusLabel = nullptr;
+    QWidget                    *m_sourceStackWidget = nullptr;
+    QVBoxLayout                *m_sourceStackLayout = nullptr;
+    QToolButton                *m_sourceStackCloseButton = nullptr;
     SourceViewButton           *m_sourceSaveButton = nullptr;
     SourceViewButton           *m_sourceHelpButton = nullptr;
     QString                     m_currentSourceFilePath;
@@ -155,12 +169,29 @@ private:
     bool                        m_preserveRootComboSelectionOnce = false;
     bool                        m_updatingHexViewFromStructure = false;
     bool                        m_rebuildingRows = false;
+    bool                        m_openAsPinnedBase = false;
     uint64_t                    m_renderGeneration = 0;
     std::shared_ptr<StructureRenderEngine> m_deferredSemanticEngine;
     uint64_t                    m_pinnedOffset = 0;
     QString                     m_pendingRestoreName;
     uint64_t                    m_pendingRestoreOffset = 0;
     bool                        m_hasPendingRestore = false;
+
+    struct SourceFrame
+    {
+        TypeDecl *rootType = nullptr;
+        QString rootDisplayName;
+        QString sourceName;
+        uint64_t baseOffset = 0;
+        uint64_t byteLength = 0;
+        QString returnRowName;
+        uint64_t returnRowOffset = 0;
+        uint64_t returnRowLength = 0;
+        bool hasReturnRow = false;
+        bool sliceRoot = false;
+    };
+    QList<SourceFrame>          m_sourceStack;
+    int                         m_activeSourceFrame = -1;
 };
 
 class StructureViewPanelHost : public SidePanelHostBase

@@ -7044,8 +7044,10 @@ void StructureRenderEngine::applyOpenAsTag(StructureRow *target, TypeDecl *typeD
     if (!openAsTagArgs(expr, &typeExpr, &offsetSpace, &offsetExpr, &extentExpr, &nameExpr))
         return;
 
-    TypeDecl *rootType = findTypeDecl(typeExpr->str);
-    if (!rootType)
+    const QString rootTypeName = QString::fromLocal8Bit(typeExpr->str);
+    const bool autoDetectRoot = rootTypeName.compare(QStringLiteral("auto"), Qt::CaseInsensitive) == 0;
+    TypeDecl *rootType = autoDetectRoot ? nullptr : findTypeDecl(typeExpr->str);
+    if (!rootType && !autoDetectRoot)
         return;
 
     uint64_t absoluteOffset = 0;
@@ -7080,13 +7082,13 @@ void StructureRenderEngine::applyOpenAsTag(StructureRow *target, TypeDecl *typeD
 
     QString name;
     if (nameExpr)
-        evaluateString(EvalContext{ scope, scope->type, scope->absoluteOffset }, nameExpr, &name);
+        name = semanticExpressionText(scope, scope->type, nameExpr, scope->absoluteOffset);
     if (name.trimmed().isEmpty())
-        name = QString::fromLocal8Bit(typeExpr->str);
+        name = rootTypeName;
 
     target->hasOpenAsTarget = true;
     target->openAsRootType = rootType;
-    target->openAsRootTypeName = QString::fromLocal8Bit(typeExpr->str);
+    target->openAsRootTypeName = rootTypeName;
     target->openAsName = name.trimmed();
     target->openAsOffset = absoluteOffset;
     target->openAsByteLength = byteLength;

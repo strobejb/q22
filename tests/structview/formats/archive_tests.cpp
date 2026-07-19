@@ -45,6 +45,12 @@ void StructViewArchiveTests::builderRendersTarEntries()
     QCOMPARE(entries->children.size(), size_t(2));
     QCOMPARE(entries->children[0]->name, QStringLiteral("[0]hello.txt"));
     QCOMPARE(entries->children[1]->name, QStringLiteral("[1]"));
+    QVERIFY(entries->children[0]->hasOpenAsTarget);
+    QVERIFY(!entries->children[0]->openAsRootType);
+    QCOMPARE(entries->children[0]->openAsRootTypeName, QStringLiteral("auto"));
+    QCOMPARE(entries->children[0]->openAsName, QStringLiteral("hello.txt"));
+    QCOMPARE(entries->children[0]->openAsOffset, uint64_t(512));
+    QCOMPARE(entries->children[0]->openAsByteLength, uint64_t(5));
 
     StructureRow *header = findChildNamed(entries->children[0].get(), QStringLiteral("TAR_HEADER header"));
     QVERIFY2(header, qPrintable(childNames(entries->children[0].get())));
