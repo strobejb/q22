@@ -9,6 +9,7 @@ private slots:
     void builderPlacesDirectDynamicStructsUnderOwningRows();
     void builderRendersDynamicArraysAtReferencedOffsets();
     void builderStopsDynamicAndInlineArraysAtTerminators();
+    void builderStopsDynamicArraysWhenElementsAreUnreadable();
     void builderRunsSemanticViewsOnceForDynamicArrayTables();
 };
 
@@ -247,6 +248,33 @@ void StructViewDynamicPlacementTests::builderStopsDynamicAndInlineArraysAtTermin
     QVERIFY(descs);
     QCOMPARE(descs->children.size(), size_t(1));
     QCOMPARE(descs->children[0]->children[0]->value, QStringLiteral("7"));
+}
+
+void StructViewDynamicPlacementTests::builderStopsDynamicArraysWhenElementsAreUnreadable()
+{
+    // Scenario: the user manually selects a format that does not match the
+    // file. Offset/count fields can then describe a huge dynamic table outside
+    // the readable data. Expected: the dynamic array stops before rendering any
+    // element instead of walking the bogus count. Regression guard: selecting
+    // ISO for a TAR file used this path via directory-entry dynamic arrays.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef struct _Item { [count_as(1)] byte value; } Item;\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  [dynamic_array(name(Items), type(Item), offset(tableOffset), count(itemCount))] dword tableOffset;\n"
+                        "  dword itemCount;\n"
+                        "} root;\n"));
+
+    QByteArray bytes(8, '\0');
+    writeLe32(&bytes, 0, 0x1000);
+    writeLe32(&bytes, 4, 1000000);
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(2));
+    QVERIFY(!findDescendantNamed(rows[0].get(), QStringLiteral("Item Items[]")));
 }
 
 void StructViewDynamicPlacementTests::builderRunsSemanticViewsOnceForDynamicArrayTables()

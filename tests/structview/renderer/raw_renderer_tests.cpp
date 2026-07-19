@@ -6,6 +6,7 @@ class StructViewRawRendererTests : public QObject
 
 private slots:
     void builderFormatsScalarsAndEndian();
+    void builderRejectsTruncatedScalars();
     void builderFormatsLeb128ScalarsAndAdvancesByEncodedLength();
     void builderUsesLeb128ValuesInExpressions();
     void builderRendersBitflagsAsExpandableRows();
@@ -41,6 +42,7 @@ private slots:
     void builderBuildsNestedStructRowsAndOffsets();
     void builderSupportsArraysOffsetsEnumsAndSwitchCases();
     void builderExposesEnumChoicesAndEntrypoints();
+    void builderRejectsOverflowingCodeAndOpenAsTargets();
     void builderExposesOpenAsTargets();
     void builderEvaluatesUnionSwitchSelectorsFromTypedLayout();
     void builderEvaluatesFieldsAndCorrectedExpressions();
@@ -81,6 +83,28 @@ void StructViewRawRendererTests::builderFormatsScalarsAndEndian()
     QCOMPARE(rows[0]->children[0]->value, QStringLiteral("18"));
     QCOMPARE(rows[0]->children[1]->value, QStringLiteral("1"));
     QCOMPARE(rows[0]->children[2]->value, QStringLiteral("258"));
+}
+
+void StructViewRawRendererTests::builderRejectsTruncatedScalars()
+{
+    // Scenario: a file has the correct root selected but ends in the middle of
+    // a scalar field. Expected: the renderer advances over the declared field
+    // width without fabricating a partial value row. Regression guard:
+    // malformed/truncated files must fail closed instead of showing bogus
+    // values or feeding partial bytes into later expressions.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "[export]\n"
+                        "struct Root { word value; byte after; } root;\n"));
+
+    QByteArray bytes;
+    bytes.append(char(0x34));
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(0));
+    QCOMPARE(rows[0]->byteLength, uint64_t(3));
 }
 
 void StructViewRawRendererTests::builderFormatsLeb128ScalarsAndAdvancesByEncodedLength()
@@ -1355,6 +1379,29 @@ void StructViewRawRendererTests::builderExposesEnumChoicesAndEntrypoints()
     QVERIFY(entry->hasCodeTarget);
     QCOMPARE(entry->codeLogicalOffset, uint64_t(0x10));
     QCOMPARE(entry->codeTargetOffset, uint64_t(0x14));
+}
+
+void StructViewRawRendererTests::builderRejectsOverflowingCodeAndOpenAsTargets()
+{
+    // Scenario: malformed data drives declarative UI targets through negative
+    // or overflowing expressions. Expected: the metadata is omitted rather
+    // than wrapping into a plausible-looking file offset.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef struct _Child { byte magic; } Child;\n"
+                        "[code(\"x86\", offset(-1), extent(4)), open_as(type(Child), offset(-1), extent(4), name(\"bad\"))]\n"
+                        "typedef struct _Entry { byte marker; } Entry;\n"
+                        "[export]\n"
+                        "struct Root { Entry entry; } root;\n"));
+
+    QByteArray bytes(1, '\0');
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+    StructureRow *entry = findChildNamed(rows[0].get(), QStringLiteral("Entry entry"));
+    QVERIFY(entry);
+    QVERIFY(!entry->hasCodeTarget);
+    QVERIFY(!entry->hasOpenAsTarget);
 }
 
 void StructViewRawRendererTests::builderExposesOpenAsTargets()

@@ -744,6 +744,21 @@ StructureRenderEngine::StructureRenderEngine(StrataLibrary *library,
 {
 }
 
+bool StructureRenderEngine::canReadByte(uint64_t offset) const
+{
+    uint8_t byte = 0;
+    return m_reader && m_reader(offset, &byte, 1) == 1;
+}
+
+bool StructureRenderEngine::checkedAdd(uint64_t a, uint64_t b, uint64_t *result) const
+{
+    if (!result || a > std::numeric_limits<uint64_t>::max() - b)
+        return false;
+
+    *result = a + b;
+    return true;
+}
+
 std::vector<std::unique_ptr<StructureRow>> StructureRenderEngine::build(
     SemanticRootPlacement semanticRootPlacement)
 {
@@ -980,9 +995,15 @@ uint64_t StructureRenderEngine::appendTypeDecl(StructureRow *parent, TypeDecl *t
             return 0;
         }
 
+        if (evaluated < 0)
+        {
+            return 0;
+        }
+
         if (offsetSpace.isEmpty())
         {
-            offset = m_baseOffset + evaluated;
+            if (!checkedAdd(m_baseOffset, static_cast<uint64_t>(evaluated), &offset))
+                return 0;
         }
         else if (!mapNamedOffset(offsetSpace, static_cast<uint64_t>(evaluated), &offset))
         {
@@ -1011,15 +1032,33 @@ uint64_t StructureRenderEngine::appendTypeDecl(StructureRow *parent, TypeDecl *t
         AlignmentScope alignment(this, childAlignment);
         length = recurseType(parent, typeDecl->baseType, typeDecl, offset);
         length = declarationExtent(typeDecl, parent, parent ? parent->type : nullptr, offset, length);
-        return offset >= originalOffset ? (offset - originalOffset) + length : length;
+        if (offset >= originalOffset)
+        {
+            uint64_t adjusted = 0;
+            return checkedAdd(offset - originalOffset, length, &adjusted) ? adjusted : 0;
+        }
+        return length;
     }
 
     AlignmentScope alignment(this, typeDecl->compoundType ? childAlignment : m_structAlignment);
     for (Type *type : typeDecl->declList)
-        length += recurseType(parent, type, typeDecl, offset + length);
+    {
+        uint64_t childOffset = 0;
+        if (!checkedAdd(offset, length, &childOffset))
+            return 0;
+
+        uint64_t childLength = recurseType(parent, type, typeDecl, childOffset);
+        if (!checkedAdd(length, childLength, &length))
+            return 0;
+    }
 
     length = declarationExtent(typeDecl, parent, parent ? parent->type : nullptr, offset, length);
-    return offset >= originalOffset ? (offset - originalOffset) + length : length;
+    if (offset >= originalOffset)
+    {
+        uint64_t adjusted = 0;
+        return checkedAdd(offset - originalOffset, length, &adjusted) ? adjusted : 0;
+    }
+    return length;
 }
 
 uint64_t StructureRenderEngine::appendIdentifierRow(StructureRow *parent,
@@ -1173,9 +1212,13 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
         {
             if (extentLimit > 0 && length >= extentLimit)
                 break;
+            uint64_t elementOffset = 0;
+            if (!checkedAdd(offset, length, &elementOffset)
+                || !canReadByte(elementOffset))
+                break;
 
             const bool renderElement = renderedElements < kMaxArrayElements;
-            auto row = makeRow(parent, type->link, elementTypeDecl ? elementTypeDecl : typeDecl, offset + length);
+            auto row = makeRow(parent, type->link, elementTypeDecl ? elementTypeDecl : typeDecl, elementOffset);
             const QString indexLabel = QStringLiteral("[%1]").arg(logicalIndex);
             row->nameTypePrefix = indexLabel;
             if (renderElement)
@@ -1193,7 +1236,7 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
                 }
             }
 
-            const uint64_t elementLength = formatType(row.get(), type->link, typeDecl, offset + length);
+            const uint64_t elementLength = formatType(row.get(), type->link, typeDecl, elementOffset);
             row->byteLength = elementLength;
             // Array elements are formatted directly from their base type, so
             // appendIdentifierRow() does not get a chance to apply tags
@@ -1203,20 +1246,20 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
             collectNamedOffsetMaps(row.get());
             if (renderElement && row->value.isEmpty())
             {
-                const QString stringValue = stringArrayValue(row.get(), type->link, typeDecl, offset + length);
+                const QString stringValue = stringArrayValue(row.get(), type->link, typeDecl, elementOffset);
                 if (!stringValue.isNull())
                     row->value = stringValue;
             }
             const uint64_t terminatorLength = terminatorMatchLength(row.get(),
                                                                      type->link,
                                                                      terminatorExpr,
-                                                                     offset + length,
+                                                                     elementOffset,
                                                                      elementLength);
             const bool hideTerminator = terminatorLength > 0
                 && terminatorShouldBeHidden(typeDecl, type->link, terminatorExpr, terminatorModeExpr);
             if (renderElement && !nameEnum && nameExpr)
             {
-                const QString fieldName = rowNameFragment(fieldNameValue(row.get(), type->link, nameExpr, offset + length));
+                const QString fieldName = rowNameFragment(fieldNameValue(row.get(), type->link, nameExpr, elementOffset));
                 if (!fieldName.isEmpty())
                 {
                     row->nameIdentifier = arrayAliasPrefix() + fieldName;
@@ -1264,7 +1307,8 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
             if (extentLimit > 0 && consumedLength > extentLimit - length)
                 break;
 
-            length += consumedLength;
+            if (!checkedAdd(length, consumedLength, &length))
+                break;
             logicalIndex += std::max<uint64_t>(row->arrayCountContribution, 1);
             ++renderedElements;
             if (terminatorLength > 0)
@@ -1313,7 +1357,14 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
         collectNamedOffsetMaps(parent);
         uint64_t length = 0;
         for (TypeDecl *childDecl : type->sptr->typeDeclList)
-            length += appendTypeDecl(parent, childDecl, offset + length);
+        {
+            uint64_t childOffset = 0;
+            if (!checkedAdd(offset, length, &childOffset))
+                break;
+            uint64_t childLength = appendTypeDecl(parent, childDecl, childOffset);
+            if (!checkedAdd(length, childLength, &length))
+                break;
+        }
         m_activeStructures.pop_back();
         return length;
     }
@@ -1809,7 +1860,14 @@ bool StructureRenderEngine::evaluate(const EvalContext &context, ExprNode *expr,
         if (!expr->left || !evaluate(context, expr->left, &relOffset))
             return false;
 
-        return readInteger(base + static_cast<uint64_t>(relOffset), 1, result, false);
+        if (relOffset < 0)
+            return false;
+
+        uint64_t absoluteOffset = 0;
+        if (!checkedAdd(base, static_cast<uint64_t>(relOffset), &absoluteOffset))
+            return false;
+
+        return readInteger(absoluteOffset, 1, result, false);
     }
     case EXPR_VALUEAT:
         return evaluateValueAt(context, expr, result);
@@ -1830,13 +1888,16 @@ bool StructureRenderEngine::evaluateValueAt(const EvalContext &context, ExprNode
     INUMTYPE logicalOffset = 0;
     if (!evaluate(context, expr->right, &logicalOffset))
         return false;
+    if (logicalOffset < 0)
+        return false;
 
     uint64_t absoluteOffset = 0;
     if (expr->tok == TOK_ROOTVALUEAT)
     {
         if (expr->left)
             return false;
-        absoluteOffset = m_baseOffset + static_cast<uint64_t>(logicalOffset);
+        if (!checkedAdd(m_baseOffset, static_cast<uint64_t>(logicalOffset), &absoluteOffset))
+            return false;
     }
     else if (expr->left)
     {
@@ -1852,7 +1913,8 @@ bool StructureRenderEngine::evaluateValueAt(const EvalContext &context, ExprNode
     else
     {
         const uint64_t base = context.row ? context.row->absoluteOffset : context.offset;
-        absoluteOffset = base + static_cast<uint64_t>(logicalOffset);
+        if (!checkedAdd(base, static_cast<uint64_t>(logicalOffset), &absoluteOffset))
+            return false;
     }
 
     const TYPE scalarType = scalarTypeName(expr->cond->str);
@@ -2179,11 +2241,12 @@ bool StructureRenderEngine::evaluateStringFunction(const EvalContext &context, E
             return false;
 
         const uint64_t cappedLength = std::min<uint64_t>(static_cast<uint64_t>(maxLen), kMaxStringLookupBytes);
-        if (m_baseOffset > std::numeric_limits<uint64_t>::max() - fileOffset)
+        uint64_t absoluteOffset = 0;
+        if (!checkedAdd(m_baseOffset, fileOffset, &absoluteOffset))
             return false;
 
         QByteArray bytes(static_cast<int>(cappedLength), Qt::Uninitialized);
-        const size_t got = m_reader ? m_reader(m_baseOffset + fileOffset,
+        const size_t got = m_reader ? m_reader(absoluteOffset,
                                                reinterpret_cast<uint8_t *>(bytes.data()),
                                                static_cast<size_t>(bytes.size()))
                                     : 0;
@@ -2215,11 +2278,12 @@ bool StructureRenderEngine::evaluateStringFunction(const EvalContext &context, E
         }
 
         const uint64_t cappedLength = std::min<uint64_t>(static_cast<uint64_t>(maxLen), kMaxStringLookupBytes);
-        if (m_baseOffset > std::numeric_limits<uint64_t>::max() - static_cast<uint64_t>(logicalOffset))
+        uint64_t absoluteOffset = 0;
+        if (!checkedAdd(m_baseOffset, static_cast<uint64_t>(logicalOffset), &absoluteOffset))
             return false;
 
         QByteArray bytes(static_cast<int>(cappedLength), Qt::Uninitialized);
-        const size_t got = m_reader ? m_reader(m_baseOffset + static_cast<uint64_t>(logicalOffset),
+        const size_t got = m_reader ? m_reader(absoluteOffset,
                                                reinterpret_cast<uint8_t *>(bytes.data()),
                                                static_cast<size_t>(bytes.size()))
                                     : 0;
@@ -2250,13 +2314,16 @@ bool StructureRenderEngine::evaluateStringFunction(const EvalContext &context, E
         if (args.size() == 3 && (!evaluate(context, args[2], &maxLen) || maxLen <= 0))
             return false;
 
-        const uint64_t fileOffset = static_cast<uint64_t>(baseOffset) + static_cast<uint64_t>(deltaOffset);
+        uint64_t fileOffset = 0;
+        if (!checkedAdd(static_cast<uint64_t>(baseOffset), static_cast<uint64_t>(deltaOffset), &fileOffset))
+            return false;
         const uint64_t cappedLength = std::min<uint64_t>(static_cast<uint64_t>(maxLen), kMaxStringLookupBytes);
-        if (m_baseOffset > std::numeric_limits<uint64_t>::max() - fileOffset)
+        uint64_t absoluteOffset = 0;
+        if (!checkedAdd(m_baseOffset, fileOffset, &absoluteOffset))
             return false;
 
         QByteArray bytes(static_cast<int>(cappedLength), Qt::Uninitialized);
-        const size_t got = m_reader ? m_reader(m_baseOffset + fileOffset,
+        const size_t got = m_reader ? m_reader(absoluteOffset,
                                                reinterpret_cast<uint8_t *>(bytes.data()),
                                                static_cast<size_t>(bytes.size()))
                                     : 0;
@@ -2340,9 +2407,12 @@ bool StructureRenderEngine::evaluateFindFunction(const EvalContext &context, Exp
         return false;
 
     const uint64_t base = context.row ? context.row->absoluteOffset : context.offset;
-    uint64_t end = context.row && context.row->byteLength > 0
-        ? context.row->absoluteOffset + context.row->byteLength
-        : readableEnd(base);
+    uint64_t end = readableEnd(base);
+    if (context.row && context.row->byteLength > 0)
+    {
+        if (!checkedAdd(context.row->absoluteOffset, context.row->byteLength, &end))
+            return false;
+    }
     if (end < base)
         return false;
 
@@ -2361,8 +2431,8 @@ bool StructureRenderEngine::evaluateFindFunction(const EvalContext &context, Exp
         {
             if (reverse)
                 start = end - limit;
-            else
-                end = base + limit;
+            else if (!checkedAdd(base, limit, &end))
+                return false;
         }
     }
 
@@ -2745,10 +2815,20 @@ bool StructureRenderEngine::resolveDirectField(Type *scopeType, const char *name
                 && positionExpr
                 && evaluate(base, positionExpr, &evaluated, scopeOffset))
             {
+                if (evaluated < 0)
+                {
+                    continue;
+                }
+
                 if (offsetSpace.isEmpty())
-                    declOffset = m_baseOffset + evaluated;
+                {
+                    if (!checkedAdd(m_baseOffset, static_cast<uint64_t>(evaluated), &declOffset))
+                        continue;
+                }
                 else
+                {
                     mapNamedOffset(offsetSpace, static_cast<uint64_t>(evaluated), &declOffset);
+                }
             }
         }
 
@@ -3393,7 +3473,7 @@ bool StructureRenderEngine::readInteger(uint64_t offset, uint64_t length, INUMTY
     uint8_t data[sizeof(INUMTYPE)] = {};
     const size_t requested = static_cast<size_t>(std::max<uint64_t>(1, std::min<uint64_t>(length, sizeof(data))));
     const size_t got = m_reader ? m_reader(offset, data, requested) : 0;
-    if (got == 0)
+    if (got != requested)
         return false;
 
     *result = unsignedValue(data, got, bigEndian);
@@ -3490,12 +3570,14 @@ void StructureRenderEngine::collectDynamicContainer(StructureRow *row)
         INUMTYPE fileOffset = 0;
         if (!evaluate(row, logicalStartExpr, &logicalStart, row->absoluteOffset)
             || !evaluate(row, logicalSizeExpr, &logicalSize, row->absoluteOffset)
-            || !evaluate(row, fileOffsetExpr, &fileOffset, row->absoluteOffset))
+            || !evaluate(row, fileOffsetExpr, &fileOffset, row->absoluteOffset)
+            || logicalStart < 0
+            || fileOffset < 0)
         {
             continue;
         }
 
-        if (logicalSize == 0)
+        if (logicalSize <= 0)
             continue;
 
         container.fileOffset = uint64_t(fileOffset);
@@ -3536,14 +3618,19 @@ void StructureRenderEngine::collectNamedOffsetMaps(StructureRow *row)
         if (baseExpr)
         {
             INUMTYPE base = 0;
-            if (!evaluate(row, baseExpr, &base, row->absoluteOffset))
+            uint64_t mappedBase = 0;
+            if (!evaluate(row, baseExpr, &base, row->absoluteOffset)
+                || base < 0
+                || !checkedAdd(m_baseOffset, static_cast<uint64_t>(base), &mappedBase))
+            {
                 continue;
+            }
 
             m_namedOffsetMaps.push_back(NamedOffsetMap{
                 name,
                 0,
                 0,
-                m_baseOffset + static_cast<uint64_t>(base),
+                mappedBase,
                 false
             });
             continue;
@@ -3555,7 +3642,15 @@ void StructureRenderEngine::collectNamedOffsetMaps(StructureRow *row)
         if (!evaluate(row, logicalStartExpr, &logicalStart, row->absoluteOffset)
             || !evaluate(row, logicalSizeExpr, &logicalSize, row->absoluteOffset)
             || !evaluate(row, fileOffsetExpr, &fileOffset, row->absoluteOffset)
+            || logicalStart < 0
             || logicalSize <= 0)
+        {
+            continue;
+        }
+
+        uint64_t mappedFileOffset = 0;
+        if (fileOffset < 0
+            || !checkedAdd(m_baseOffset, static_cast<uint64_t>(fileOffset), &mappedFileOffset))
         {
             continue;
         }
@@ -3564,7 +3659,7 @@ void StructureRenderEngine::collectNamedOffsetMaps(StructureRow *row)
             name,
             static_cast<uint64_t>(logicalStart),
             static_cast<uint64_t>(logicalSize),
-            m_baseOffset + static_cast<uint64_t>(fileOffset),
+            mappedFileOffset,
             true
         });
     }
@@ -3778,7 +3873,11 @@ void StructureRenderEngine::appendDynamicRows(StructureRow *parent)
             continue;
 
         Type *renderType = container.typeDecl->declList.empty() ? container.typeDecl->baseType : container.typeDecl->declList[0];
-        auto row = makeRow(parent, renderType, container.typeDecl, m_baseOffset + container.fileOffset);
+        uint64_t absoluteOffset = 0;
+        if (!checkedAdd(m_baseOffset, container.fileOffset, &absoluteOffset))
+            continue;
+
+        auto row = makeRow(parent, renderType, container.typeDecl, absoluteOffset);
         applyDeclarationName(row.get(), renderType);
         if (!container.alias.isEmpty())
         {
@@ -3822,7 +3921,11 @@ void StructureRenderEngine::appendDynamicRows(StructureRow *parent)
         if (!parentRow || !request.typeDecl || !request.renderType)
             continue;
 
-        auto row = makeRow(parentRow, request.renderType, request.typeDecl, m_baseOffset + fileOffset);
+        uint64_t absoluteOffset = 0;
+        if (!checkedAdd(m_baseOffset, fileOffset, &absoluteOffset))
+            continue;
+
+        auto row = makeRow(parentRow, request.renderType, request.typeDecl, absoluteOffset);
         applyDeclarationName(row.get(), request.renderType);
         if (!request.label.isEmpty())
             row->setNameParts(QString(), request.label, QString());
@@ -3833,10 +3936,10 @@ void StructureRenderEngine::appendDynamicRows(StructureRow *parent)
                                 QString::fromLatin1(StructureBranchIcons::kBlueStructureOpen),
                                 QString::fromLatin1(StructureBranchIcons::kGrayStructure));
         }
-        const bool bigEndian = declarationBigEndian(request.typeDecl, row.get(), request.renderType, m_baseOffset + fileOffset);
+        const bool bigEndian = declarationBigEndian(request.typeDecl, row.get(), request.renderType, absoluteOffset);
         EndianScope endian(this, bigEndian);
         row->bigEndian = m_bigEndian;
-        row->byteLength = formatType(row.get(), request.renderType, request.typeDecl, m_baseOffset + fileOffset);
+        row->byteLength = formatType(row.get(), request.renderType, request.typeDecl, absoluteOffset);
         if (row->value.isEmpty() && !row->children.empty())
             row->value = QStringLiteral("{...}");
         appendPresentedRow(parentRow, std::move(row));
@@ -3869,7 +3972,11 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
         if (!request.containerLabel.isEmpty())
             parentRow = dynamicRootGroup(request.containerLabel);
 
-        auto arrayRow = makeRow(parentRow, request.renderType, request.typeDecl, m_baseOffset + fileOffset);
+        uint64_t arrayOffset = 0;
+        if (!checkedAdd(m_baseOffset, fileOffset, &arrayOffset))
+            continue;
+
+        auto arrayRow = makeRow(parentRow, request.renderType, request.typeDecl, arrayOffset);
         const QString elementTypeName = typeName(request.renderType);
         // Name the array container row. generatedName is set only when a separate
         // label is present (e.g. "CHAR DllName[]") so applyDisplayOptions can
@@ -3941,8 +4048,17 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
         while (logicalIndex < request.maxCount
                && (renderedElements < kMaxArrayElements || continuePastDisplayCap))
         {
+            if (fileOffset > std::numeric_limits<uint64_t>::max() - length)
+                break;
+            const uint64_t relativeElementOffset = fileOffset + length;
+            uint64_t elementOffset = 0;
+            if (!checkedAdd(m_baseOffset, relativeElementOffset, &elementOffset))
+                break;
+            if (!canReadByte(elementOffset))
+                break;
+
             const bool renderElement = renderedElements < kMaxArrayElements;
-            auto elementRow = makeRow(arrayRow.get(), request.renderType, request.typeDecl, m_baseOffset + fileOffset + length);
+            auto elementRow = makeRow(arrayRow.get(), request.renderType, request.typeDecl, elementOffset);
             if (renderElement)
             {
                 const QString indexLabel = QStringLiteral("[%1]").arg(logicalIndex);
@@ -3952,7 +4068,7 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
             elementRow->kind = StructureRowKind::Dynamic;
             elementRow->suppressSemanticViews = true;
 
-            const uint64_t elementLength = formatType(elementRow.get(), request.renderType, request.typeDecl, m_baseOffset + fileOffset + length);
+            const uint64_t elementLength = formatType(elementRow.get(), request.renderType, request.typeDecl, elementOffset);
             elementRow->byteLength = elementLength;
             collectNamedOffsetMaps(elementRow.get());
 
@@ -3995,14 +4111,24 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
             const uint64_t terminatorLength = terminatorMatchLength(elementRow.get(),
                                                                      request.renderType,
                                                                      request.stopExpr,
-                                                                     m_baseOffset + fileOffset + length,
+                                                                     elementOffset,
                                                                      elementLength);
             const bool hideTerminator = terminatorLength > 0
                 && terminatorShouldBeHidden(request.typeDecl,
                                             request.renderType,
                                             request.stopExpr,
                                             request.terminatorModeExpr);
-            length += terminatorLength > 0 ? terminatorLength : elementLength;
+            const uint64_t consumedLength = terminatorLength > 0 ? terminatorLength : elementLength;
+            // Dynamic arrays are often driven by offsets/counts read from the
+            // file. If the user manually applies a mismatched format, those
+            // values can point past EOF or describe zero-sized elements. Stop
+            // on non-progress exactly like inline arrays do, instead of
+            // iterating a bogus count without advancing.
+            if (consumedLength == 0)
+                break;
+
+            if (!checkedAdd(length, consumedLength, &length))
+                break;
             logicalIndex += std::max<uint64_t>(elementRow->arrayCountContribution, 1);
             ++renderedElements;
             if (terminatorLength > 0)
@@ -4101,7 +4227,8 @@ void StructureRenderEngine::collectSemanticEmitRequests(StructureRow *row)
             if (logicalOffsetExpr)
             {
                 if (!offsetTagArgs(logicalOffsetExpr, &offsetSpace, &offsetValueExpr)
-                    || !evaluate(row, offsetValueExpr, &logicalOffset, row->absoluteOffset))
+                    || !evaluate(row, offsetValueExpr, &logicalOffset, row->absoluteOffset)
+                    || logicalOffset < 0)
                 {
                     continue;
                 }
@@ -4309,6 +4436,7 @@ void StructureRenderEngine::collectSemanticEmitRequests(StructureRow *row)
         if (!evaluate(row, offsetValueExpr, &logicalOffset, row->absoluteOffset)
             || !evaluate(row, countExpr, &count, row->absoluteOffset)
             || (conditionExpr && (!evaluate(row, conditionExpr, &condition, row->absoluteOffset) || condition == 0))
+            || logicalOffset < 0
             || count <= 0)
         {
             continue;
@@ -4327,6 +4455,8 @@ void StructureRenderEngine::collectSemanticEmitRequests(StructureRow *row)
             && evaluate(row, mapLogicalSizeExpr, &mapLogicalSize, row->absoluteOffset)
             && evaluate(row, mapFileOffsetExpr, &mapFileOffset, row->absoluteOffset)
             && !mapSpace.isEmpty()
+            && mapLogicalStart >= 0
+            && mapFileOffset >= 0
             && mapLogicalSize > 0;
 
         uint64_t fileOffset = uint64_t(logicalOffset);
@@ -4506,7 +4636,8 @@ void StructureRenderEngine::appendSemanticRowRequests()
         row->name = rowNameFragment(name);
         row->nameIdentifier = row->name;
         row->value = QStringLiteral("{...}");
-        row->absoluteOffset = m_baseOffset + fileOffset;
+        if (!checkedAdd(m_baseOffset, fileOffset, &row->absoluteOffset))
+            return;
         row->relativeOffset = fileOffset;
         row->offset = formatOffset(row->absoluteOffset);
         row->generatedOffset = true;
@@ -4812,7 +4943,8 @@ void StructureRenderEngine::appendSemanticNodeRequests()
                 row->type = elementSchema->baseType;
                 row->typeDecl = elementSchema;
             }
-            row->absoluteOffset = m_baseOffset + fileOffset;
+            if (!checkedAdd(m_baseOffset, fileOffset, &row->absoluteOffset))
+                return;
             row->relativeOffset = fileOffset;
             row->offset = formatOffset(row->absoluteOffset);
             row->generatedOffset = true;
@@ -4892,7 +5024,8 @@ void StructureRenderEngine::appendSemanticNodeRequests()
             INUMTYPE extent = 0;
             if (evaluate(request.owner, request.extentExpr, &extent, request.owner->absoluteOffset) && extent > 0)
                 node->byteLength = static_cast<uint64_t>(extent);
-            node->absoluteOffset = m_baseOffset + fileOffset;
+            if (!checkedAdd(m_baseOffset, fileOffset, &node->absoluteOffset))
+                return;
             node->relativeOffset = fileOffset;
             node->offset = formatOffset(node->absoluteOffset);
             node->generatedOffset = true;
@@ -4962,7 +5095,11 @@ void StructureRenderEngine::appendSemanticEmitRows(StructureRow *root)
         if (!parentRow || !request.owner || !request.renderType || !request.typeDecl)
             return;
 
-        auto arrayRow = makeRow(parentRow, request.renderType, request.typeDecl, m_baseOffset + fileOffset);
+        uint64_t arrayOffset = 0;
+        if (!checkedAdd(m_baseOffset, fileOffset, &arrayOffset))
+            return;
+
+        auto arrayRow = makeRow(parentRow, request.renderType, request.typeDecl, arrayOffset);
         arrayRow->kind = StructureRowKind::Semantic;
         arrayRow->suppressSemanticViews = true;
         arrayRow->value = QStringLiteral("{...}");
@@ -5002,8 +5139,16 @@ void StructureRenderEngine::appendSemanticEmitRows(StructureRow *root)
         uint64_t renderedElements = 0;
         while (logicalIndex < request.maxCount && renderedElements < kMaxArrayElements)
         {
-            auto row = makeRow(elementParent, request.renderType, request.typeDecl,
-                               m_baseOffset + fileOffset + length);
+            if (fileOffset > std::numeric_limits<uint64_t>::max() - length)
+                break;
+            const uint64_t relativeElementOffset = fileOffset + length;
+            uint64_t elementOffset = 0;
+            if (!checkedAdd(m_baseOffset, relativeElementOffset, &elementOffset))
+                break;
+            if (!canReadByte(elementOffset))
+                break;
+
+            auto row = makeRow(elementParent, request.renderType, request.typeDecl, elementOffset);
             row->kind = StructureRowKind::Semantic;
             row->suppressSemanticViews = true;
             applySemanticBranchIcons(row.get(),
@@ -5018,26 +5163,31 @@ void StructureRenderEngine::appendSemanticEmitRows(StructureRow *root)
             const bool bigEndian = declarationBigEndian(request.typeDecl,
                                                         row.get(),
                                                         request.renderType,
-                                                        m_baseOffset + fileOffset + length);
+                                                        elementOffset);
             EndianScope endian(this, bigEndian);
             row->bigEndian = m_bigEndian;
             const uint64_t elementLength = formatType(row.get(),
                                                       request.renderType,
                                                       request.typeDecl,
-                                                      m_baseOffset + fileOffset + length);
+                                                      elementOffset);
             row->byteLength = elementLength;
 
             const uint64_t terminatorLength = terminatorMatchLength(row.get(),
                                                                      request.renderType,
                                                                      request.stopExpr,
-                                                                     m_baseOffset + fileOffset + length,
+                                                                     elementOffset,
                                                                      elementLength);
             const bool hideTerminator = terminatorLength > 0
                 && terminatorShouldBeHidden(request.typeDecl,
                                             request.renderType,
                                             request.stopExpr,
                                             request.terminatorModeExpr);
-            length += terminatorLength > 0 ? terminatorLength : elementLength;
+            const uint64_t consumedLength = terminatorLength > 0 ? terminatorLength : elementLength;
+            if (consumedLength == 0)
+                break;
+
+            if (!checkedAdd(length, consumedLength, &length))
+                break;
             logicalIndex += std::max<uint64_t>(row->arrayCountContribution, 1);
             ++renderedElements;
             if (terminatorLength > 0)
@@ -6229,10 +6379,15 @@ StructureRenderEngine::DynamicContainer *StructureRenderEngine::mapLogicalOffset
     {
         for (const OffsetMap &map : container.maps)
         {
-            if (logicalOffset < map.logicalStart || logicalOffset >= map.logicalStart + map.logicalSize)
+            uint64_t logicalEnd = 0;
+            if (!checkedAdd(map.logicalStart, map.logicalSize, &logicalEnd))
+                logicalEnd = std::numeric_limits<uint64_t>::max();
+
+            if (logicalOffset < map.logicalStart || logicalOffset >= logicalEnd)
                 continue;
 
-            *fileOffset = map.fileOffset + (logicalOffset - map.logicalStart);
+            if (!checkedAdd(map.fileOffset, logicalOffset - map.logicalStart, fileOffset))
+                return nullptr;
             return &container;
         }
     }
@@ -6253,16 +6408,22 @@ bool StructureRenderEngine::mapNamedOffset(const QString &name, uint64_t logical
 
         if (!it->rangeMapped)
         {
-            *fileOffset = it->fileOffset + logicalOffset;
+            if (!checkedAdd(it->fileOffset, logicalOffset, fileOffset))
+                return false;
             if (mappedLength)
                 *mappedLength = std::numeric_limits<uint64_t>::max();
             return true;
         }
 
-        if (logicalOffset < it->logicalStart || logicalOffset >= it->logicalStart + it->logicalSize)
+        uint64_t logicalEnd = 0;
+        if (!checkedAdd(it->logicalStart, it->logicalSize, &logicalEnd))
+            logicalEnd = std::numeric_limits<uint64_t>::max();
+
+        if (logicalOffset < it->logicalStart || logicalOffset >= logicalEnd)
             continue;
 
-        *fileOffset = it->fileOffset + (logicalOffset - it->logicalStart);
+        if (!checkedAdd(it->fileOffset, logicalOffset - it->logicalStart, fileOffset))
+            return false;
         if (mappedLength)
             *mappedLength = it->logicalSize - (logicalOffset - it->logicalStart);
         return true;
@@ -6306,10 +6467,19 @@ StructureRow *StructureRenderEngine::semanticDestinationForPath(const QStringLis
                 continue;
 
             const bool containsSource = offsetSpace.isEmpty()
-                ? (*fileOffset >= container.fileOffset
-                   && *fileOffset < container.fileOffset + container.logicalSize)
+                ? ([this, &container, fileOffset]() {
+                       uint64_t end = 0;
+                       if (!checkedAdd(container.fileOffset, container.logicalSize, &end))
+                           end = std::numeric_limits<uint64_t>::max();
+                       return *fileOffset >= container.fileOffset && *fileOffset < end;
+                   })()
                 : (logicalOffset >= container.logicalStart
-                   && logicalOffset < container.logicalStart + container.logicalSize);
+                   && [this, &container, logicalOffset]() {
+                       uint64_t end = 0;
+                       if (!checkedAdd(container.logicalStart, container.logicalSize, &end))
+                           end = std::numeric_limits<uint64_t>::max();
+                       return logicalOffset < end;
+                   }());
             if (!containsSource)
                 continue;
 
@@ -6320,7 +6490,10 @@ StructureRow *StructureRenderEngine::semanticDestinationForPath(const QStringLis
         if (bestContainer)
         {
             if (!offsetSpace.isEmpty())
-                *fileOffset = bestContainer->fileOffset + (logicalOffset - bestContainer->logicalStart);
+                if (!checkedAdd(bestContainer->fileOffset,
+                                logicalOffset - bestContainer->logicalStart,
+                                fileOffset))
+                    return nullptr;
 
             StructureRow *parent = bestContainer->row;
             QStringList currentPath = bestContainer->destinationPath;
@@ -6454,9 +6627,14 @@ void StructureRenderEngine::resolveEntryPointRows(StructureRow *row)
     {
         uint64_t mappedOffset = 0;
         if (mapLogicalOffset(row->codeLogicalOffset, &mappedOffset))
-            row->codeTargetOffset = m_baseOffset + mappedOffset;
-        else
-            row->codeTargetOffset = m_baseOffset + row->codeLogicalOffset;
+        {
+            if (!checkedAdd(m_baseOffset, mappedOffset, &row->codeTargetOffset))
+                row->hasCodeTarget = false;
+        }
+        else if (!checkedAdd(m_baseOffset, row->codeLogicalOffset, &row->codeTargetOffset))
+        {
+            row->hasCodeTarget = false;
+        }
     }
 
     for (auto &child : row->children)
@@ -6770,7 +6948,8 @@ void StructureRenderEngine::applyEntryPointTag(StructureRow *row, TypeDecl *type
 
     row->hasCodeTarget = true;
     row->codeLogicalOffset = static_cast<uint64_t>(row->scalarRawValue);
-    row->codeTargetOffset = m_baseOffset + row->codeLogicalOffset;
+    if (!checkedAdd(m_baseOffset, row->codeLogicalOffset, &row->codeTargetOffset))
+        row->hasCodeTarget = false;
 }
 
 bool StructureRenderEngine::codeTagArgs(ExprNode *expr, QString *architecture, ExprNode **architectureField,
@@ -6920,9 +7099,12 @@ void StructureRenderEngine::applyCodeTag(StructureRow *target, TypeDecl *typeDec
             else
             {
                 INUMTYPE logicalOffset = 0;
-                if (!evaluate(scope, offsetExpr, &logicalOffset, scope->absoluteOffset))
+                if (!evaluate(scope, offsetExpr, &logicalOffset, scope->absoluteOffset)
+                    || logicalOffset < 0
+                    || !checkedAdd(m_baseOffset, static_cast<uint64_t>(logicalOffset), &absoluteOffset))
+                {
                     return;
-                absoluteOffset = m_baseOffset + static_cast<uint64_t>(logicalOffset);
+                }
             }
         }
         }
@@ -6932,7 +7114,7 @@ void StructureRenderEngine::applyCodeTag(StructureRow *target, TypeDecl *typeDec
     if (extentExpr)
     {
         INUMTYPE extent = 0;
-        if (evaluate(scope, extentExpr, &extent, scope->absoluteOffset))
+        if (evaluate(scope, extentExpr, &extent, scope->absoluteOffset) && extent > 0)
             length = static_cast<uint64_t>(extent);
         else if (codeRow)
             length = codeRow->byteLength;
@@ -7083,7 +7265,8 @@ void StructureRenderEngine::applyOpenAsTag(StructureRow *target, TypeDecl *typeD
         INUMTYPE logicalOffset = 0;
         if (!evaluate(scope, offsetExpr, &logicalOffset, scope->absoluteOffset) || logicalOffset < 0)
             return;
-        absoluteOffset = m_baseOffset + static_cast<uint64_t>(logicalOffset);
+        if (!checkedAdd(m_baseOffset, static_cast<uint64_t>(logicalOffset), &absoluteOffset))
+            return;
     }
 
     INUMTYPE extent = 0;
@@ -7449,6 +7632,7 @@ QString StructureRenderEngine::dynamicArrayNameString(StructureRow *elementRow, 
     INUMTYPE count = 0;
     if (!evaluate(elementRow, offsetValueExpr, &logicalOffset, elementRow->absoluteOffset)
         || !evaluate(elementRow, countExpr, &count, elementRow->absoluteOffset)
+        || logicalOffset < 0
         || count <= 0)
         return {};
 
@@ -7469,7 +7653,11 @@ QString StructureRenderEngine::dynamicArrayNameString(StructureRow *elementRow, 
     // lookup may read — names are short, so a generous fixed cap is enough.
     const uint64_t boundedCount = std::min<uint64_t>(uint64_t(count), 260);
     QByteArray bytes(static_cast<int>(boundedCount * unitSize), Qt::Uninitialized);
-    const size_t got = m_reader ? m_reader(m_baseOffset + fileOffset,
+    uint64_t absoluteOffset = 0;
+    if (!checkedAdd(m_baseOffset, fileOffset, &absoluteOffset))
+        return {};
+
+    const size_t got = m_reader ? m_reader(absoluteOffset,
                                            reinterpret_cast<uint8_t *>(bytes.data()),
                                            static_cast<size_t>(bytes.size()))
                                 : 0;

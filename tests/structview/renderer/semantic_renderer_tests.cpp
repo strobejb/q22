@@ -12,6 +12,7 @@ private slots:
     void builderRejectsUnterminatedCstrSemanticNames();
     void builderEmitsIntoMappedSemanticContainers();
     void builderElidesImplicitScalarArrayEmitRow();
+    void builderStopsSemanticEmitRowsWhenElementsAreUnreadable();
     void builderAddressesPositionalSemanticCollections();
     void builderUsesPositionalCollectionsForParallelTables();
     void definitionManagerFlagsUnknownSemanticDestinations();
@@ -378,6 +379,37 @@ void StructViewSemanticRendererTests::builderElidesImplicitScalarArrayEmitRow()
     QCOMPARE(bytesGroup->children[0]->name, QStringLiteral("[0]"));
     QCOMPARE(bytesGroup->children[0]->value, QStringLiteral("170"));
     QVERIFY(!findChildNamed(bytesGroup, QStringLiteral("PayloadByte")));
+}
+
+void StructViewSemanticRendererTests::builderStopsSemanticEmitRowsWhenElementsAreUnreadable()
+{
+    // Scenario: a file matches the selected root, but later fields claim a
+    // semantic payload lives outside readable data with a huge count. Expected:
+    // the semantic array contributes no children and the renderer returns
+    // promptly. Regression guard: semantic overlays need the same malformed
+    // data protections as raw and dynamic arrays.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef byte PayloadByte;\n"
+                        "typedef struct _Entry {"
+                        "  dword offset;"
+                        "  dword size;"
+                        "  [emit(dest(Bytes), type(PayloadByte), offset(offset), count(size))] byte marker;"
+                        "} Entry;\n"
+                        "[semantic] typedef struct _RootView { PayloadByte Bytes[]; } RootView;\n"
+                        "[export, semantic(RootView)] typedef struct _Root { Entry entry; } Root;\n"));
+
+    QByteArray bytes(9, '\0');
+    writeLe32(&bytes, 0, 0x100000);
+    writeLe32(&bytes, 4, 1000000);
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    StructureRow *semantic = findSemanticRootChildNamed(rows, QStringLiteral("Semantic"));
+    QVERIFY(semantic);
+    StructureRow *bytesGroup = findChildNamed(semantic, QStringLiteral("Bytes"));
+    QVERIFY(bytesGroup);
+    QCOMPARE(bytesGroup->children.size(), size_t(0));
 }
 
 void StructViewSemanticRendererTests::builderAddressesPositionalSemanticCollections()

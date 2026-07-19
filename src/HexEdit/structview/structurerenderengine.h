@@ -53,6 +53,8 @@ private:
     uint64_t sizeOf(Type *type, uint64_t offset);
     uint64_t staticSizeOfName(const char *name);
     uint64_t staticSizeOfType(Type *type);
+    bool canReadByte(uint64_t offset) const;
+    bool checkedAdd(uint64_t a, uint64_t b, uint64_t *result) const;
 
     struct EvalContext;
     struct EndianScope;
