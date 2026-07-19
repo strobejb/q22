@@ -404,6 +404,7 @@ ExprNode * Parser::UnaryExpression(void)
 	case TOK_CONCAT:
 	case TOK_EXTENTOF:
 	case TOK_FIELDAT:
+	case TOK_INDEXOF:
 	case TOK_FINDFIRST:
 	case TOK_FINDLAST:
 	case TOK_FOURCC:
@@ -900,6 +901,15 @@ size_t Flatten(TCHAR *buf, size_t len, ExprNode *expr)
 	RecurseFlatten(sbuf, expr);
 	return sbuf.length();
 }
+
+#if defined(_WIN32) && defined(UNICODE)
+size_t Flatten(char *buf, size_t len, ExprNode *expr)
+{
+	stringprint sbuf(buf, len);
+	RecurseFlatten(sbuf, expr);
+	return sbuf.length();
+}
+#endif
 
 //
 //	Evaluate (flatten) the specified expression and

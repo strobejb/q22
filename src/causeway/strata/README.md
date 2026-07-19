@@ -22,7 +22,7 @@ View online: [Strata Language Reference](https://github.com/strobejb/q22/blob/ma
 | Unions | [`select`](#discriminated-unions) · [`case`](#discriminated-unions) |
 | Dynamic/semantic views | [`semantic`](#semantic-and-emit) · [`emit`](#semantic-and-emit) · [`emit_node`](#semantic-and-emit) · [`emit_row`](#semantic-and-emit) · [`append`](#positional-semantic-collection-addressing) · [`item`](#positional-semantic-collection-addressing) · [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) |
 | Export | [`export`](#export-metadata) · [`category`](#export-metadata) · [`version`](#export-metadata) · [`assoc`](#export-metadata) · [`magic`](#export-metadata) |
-| Expressions | [`sizeof`](#expressions) · [`file_size`](#expressions) · [`extent_of`](#expressions) · [`array_index`](#expressions) · [`element_value`](#expressions) · [`current_offset`](#expressions) · [`str`](#expressions) · [`cstr`](#expressions) · [`concat`](#expressions) · [`fmt`](#expressions) · [`octal`](#expressions) · [`find_first`](#byte-pattern-search) · [`find_last`](#byte-pattern-search) · [`select_offset`](#select_offset) · [`value_at`](#value_at) |
+| Expressions | [`sizeof`](#expressions) · [`file_size`](#expressions) · [`extent_of`](#expressions) · [`array_index`](#expressions) · [`element_value`](#expressions) · [`current_offset`](#expressions) · [`str`](#expressions) · [`cstr`](#expressions) · [`concat`](#expressions) · [`fmt`](#expressions) · [`octal`](#expressions) · [`find_first`](#byte-pattern-search) · [`find_last`](#byte-pattern-search) · [`index_of`](#value_at) · [`select_offset`](#select_offset) · [`value_at`](#value_at) |
 
 ---
 
@@ -1077,7 +1077,7 @@ dosHeader.e_lfanew
 | String lookup | `cstr(offset)`, `cstr("space", offset)`, `cstr_at(offset, maxLen)`, `cstr_from(base, offset[, maxLen])` |
 | Byte sequence literal | `{ 0x50, 0x4b }` |
 | Byte search | `find_first({ ... })` · `find_last({ ... })` |
-| Raw read | `select_offset(byteOffset)`, `value_at(offset, Type)`, `root::value_at(offset, Type)`, `field_at(array, index, field)` |
+| Raw read | `select_offset(byteOffset)`, `value_at(offset, Type)`, `root::value_at(offset, Type)`, `field_at(array, index, field)`, `index_of(array, keyField, keyValue)` |
 
 ```c
 count(Header.Count * sizeof(DWORD))
@@ -1228,7 +1228,9 @@ structure base; `root_value_at(offset, Type)` remains as a compatibility alias.
 This is intended for small one-off probes in expressions, not for rendering
 nested structures. `field_at(array, index, field)` reads a field from an
 already rendered array element, which is useful for parallel tables and linked
-indexes.
+indexes. `index_of(array, keyField, keyValue)` searches an already rendered
+array for the first element whose scalar `keyField` equals `keyValue`, returning
+that zero-based index for use with `field_at(...)`.
 
 Supported V1 types are `byte`, `char`, `word`, `dword`, `qword`, and
 `wchar_t`; multi-byte reads use the current endian context.
@@ -1242,6 +1244,11 @@ IMAGE_THUNK_DATA64 thunk;
 
 [name(cstr_from(field_at(sectionHeaders32, sh_link, sh_offset), st_name))]
 Elf32_Sym symbol;
+
+[offset(field_at(tableDirectory,
+                 index_of(tableDirectory, tag, fourcc("name")),
+                 offset))]
+SFNT_NAME_TABLE name;
 ```
 
 ---
@@ -1274,9 +1281,10 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 | Arrays/unions | `case`, `count`, `count_as`, `default`, `max_count`, `select`, `size_is`, `switch_is`, `terminated_by`, `terminator` |
 | Dynamic/semantic tags | `dynamic_array`, `dynamic_container`, `dynamic_struct`, `emit`, `emit_node`, `emit_row`, `offset_map`, `semantic` |
 | Dynamic/semantic argument wrappers | `append`, `attr`, `container`, `dest`, `field`, `item`, `key`, `label`, `map`, `mapper`, `type` |
+| Compatibility/native hooks | `native_view` |
 | Export/detection tags | `assoc`, `category`, `export`, `magic`, `version` |
 | Top-level/reusable declarations | `bitfield`, `field`, `include`, `match`, `tagset`, `tags` |
-| Expression helpers | `array_index`, `concat`, `cstr`, `cstr_at`, `cstr_from`, `current_offset`, `element_value`, `extent_of`, `field_at`, `file_size`, `find_first`, `find_last`, `fmt`, `fourcc`, `octal`, `root_value_at`, `select_offset`, `sizeof`, `str`, `value_at` |
+| Expression helpers | `array_index`, `concat`, `cstr`, `cstr_at`, `cstr_from`, `current_offset`, `element_value`, `extent_of`, `field_at`, `file_size`, `find_first`, `find_last`, `fmt`, `fourcc`, `index_of`, `octal`, `root_value_at`, `select_offset`, `sizeof`, `str`, `value_at` |
 | Reserved/unsupported | `description`, `display`, `ignore`, `length_is`, `style` |
 
 ---

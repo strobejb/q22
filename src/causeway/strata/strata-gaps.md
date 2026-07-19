@@ -34,17 +34,19 @@ Remaining work:
 ### Keyed lookup and cross-table correlation
 
 Definitions can address rendered array elements by numeric position with
-`field_at(...)`, and semantic collections can merge rows by key. They cannot yet
-search a physical array for an element whose field matches a value, then reuse
-that element's fields in a later expression.
+`field_at(...)`, find the first scalar-keyed element with `index_of(...)`, and
+merge semantic collections by key. They still cannot perform compound-key,
+string-key, predicate, range, or cached physical lookups.
 
-This affects SFNT table lookup by FourCC, Java constant-pool resolution, MP4
-sample-table joins, CAB file/folder correlation, and Mach-O symbol/string-table
-metadata.
+This affects Java constant-pool resolution, richer MP4 sample-table joins, CAB
+file/folder correlation, and Mach-O symbol/string-table metadata. Simple SFNT
+and MP4-style scalar table lookups are now expressible with
+`field_at(array, index_of(array, keyField, keyValue), resultField)`.
 
-Potential direction: bounded array lookup helpers and reusable keyed physical
-collections. Complicated or expensive joins should remain semantic views rather
-than turning raw layout evaluation into a general query engine.
+Potential direction: string/compound predicate lookup helpers and reusable
+keyed physical collections. Complicated or expensive joins should remain
+semantic views rather than turning raw layout evaluation into a general query
+engine.
 
 ### Nested source and transformed-stream views
 

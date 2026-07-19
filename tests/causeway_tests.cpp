@@ -91,6 +91,19 @@ static ExprNode *findTagWrapExpr(ExprNode *expr, TOKEN tok)
 	return findTagWrapExpr(expr->cond, tok);
 }
 
+static ExprNode *findTokenExpr(ExprNode *expr, TOKEN tok)
+{
+	if(!expr)
+		return nullptr;
+	if(expr->tok == tok)
+		return expr;
+	if(ExprNode *found = findTokenExpr(expr->left, tok))
+		return found;
+	if(ExprNode *found = findTokenExpr(expr->right, tok))
+		return found;
+	return findTokenExpr(expr->cond, tok);
+}
+
 static void collectCommaArgs(ExprNode *expr, std::vector<ExprNode *> *args)
 {
 	if(!expr || !args)
@@ -1196,6 +1209,7 @@ void CausewayTests::namedOffsetMapsAndValueAtParse()
 						"  [offset(\"rva\", targetRva)] dword mappedValue;\n"
 						"  [optional(value_at(\"rva\", probeRva, word) == 0x1234)] byte mappedProbe;\n"
 						"  [optional(value_at(2, word) == 0x4433)] byte localProbe;\n"
+						"  [optional(field_at(sections, index_of(sections, va, targetRva & 0xfffff000), raw) == 0x40)] byte keyedProbe;\n"
 						"} root;\n"));
 
 	TypeDecl *root = parser.GetStrataLibrary()->globalTypeDeclList[1];
@@ -1211,6 +1225,12 @@ void CausewayTests::namedOffsetMapsAndValueAtParse()
 	ExprNode *optionalExpr = nullptr;
 	QVERIFY(FindTag(mappedProbe->tagList, TOK_OPTIONAL, &optionalExpr));
 	QVERIFY(optionalExpr);
+
+	TypeDecl *keyedProbe = root->baseType->sptr->typeDeclList[9];
+	optionalExpr = nullptr;
+	QVERIFY(FindTag(keyedProbe->tagList, TOK_OPTIONAL, &optionalExpr));
+	QVERIFY(optionalExpr);
+	QVERIFY(findTokenExpr(optionalExpr, TOK_INDEXOF));
 }
 
 void CausewayTests::scopePrefixesParse()

@@ -96,6 +96,7 @@
     <item>field</item>
     <item>field_at</item>
     <item>format</item>
+    <item>index_of</item>
     <item>item</item>
     <item>key</item>
     <item>length_is</item>

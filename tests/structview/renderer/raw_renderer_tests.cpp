@@ -32,6 +32,7 @@ private slots:
     void builderUsesSizeIsForUnsizedArrays();
     void builderUsesMaxCountAndTerminatorExpressions();
     void builderUsesNamedOffsetMapsAndValueAt();
+    void builderUsesIndexOfForKeyedArrayLookup();
     void builderUsesScopePrefixesForRootAndParent();
     void builderUsesCountAsForLogicalArraySlots();
     void builderEvaluatesTernaryExpressions();
@@ -1036,6 +1037,55 @@ void StructViewRawRendererTests::builderUsesNamedOffsetMapsAndValueAt()
     QCOMPARE(values->absoluteOffset, uint64_t(0x80));
     QCOMPARE(values->children.size(), size_t(1));
     QCOMPARE(values->children[0]->children[0]->value, QStringLiteral("2864434397"));
+}
+
+void StructViewRawRendererTests::builderUsesIndexOfForKeyedArrayLookup()
+{
+    // Scenario: a directory table names records by scalar keys, and later rows
+    // need multiple fields from the matching record.
+    // Expected: index_of(...) returns the first matching rendered element index,
+    // then field_at(...) reads the requested fields. Missing matches fail the
+    // containing optional expression without rendering misleading rows.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef struct _Directory { dword tag; dword offset; dword size; } Directory;\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  [count(3)] Directory tables[];\n"
+                        "  [offset(field_at(tables, index_of(tables, tag, fourcc(\"name\")), offset)),\n"
+                        "   count(field_at(tables, index_of(tables, tag, fourcc(\"name\")), size))]\n"
+                        "  byte namePayload[];\n"
+                        "  [optional(index_of(tables, tag, fourcc(\"miss\")) >= 0)] byte missingPayload;\n"
+                        "} root;\n"));
+
+    QByteArray bytes(0x60, '\0');
+    writeLe32(&bytes, 0, 0x11111111);
+    writeLe32(&bytes, 4, 0x30);
+    writeLe32(&bytes, 8, 1);
+    writeLe32(&bytes, 12, 0x656d616e); // "name"
+    writeLe32(&bytes, 16, 0x40);
+    writeLe32(&bytes, 20, 3);
+    writeLe32(&bytes, 24, 0x656d616e); // duplicate "name"; first match should win
+    writeLe32(&bytes, 28, 0x50);
+    writeLe32(&bytes, 32, 2);
+    bytes[0x40] = 0xaa;
+    bytes[0x41] = 0xbb;
+    bytes[0x42] = 0xcc;
+    bytes[0x50] = 0xdd;
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+
+    StructureRow *payload = findChildNamed(rows[0].get(), QStringLiteral("byte namePayload[]"));
+    QVERIFY2(payload, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(payload->absoluteOffset, uint64_t(0x40));
+    QCOMPARE(payload->byteLength, uint64_t(3));
+    QCOMPARE(payload->children.size(), size_t(3));
+    QCOMPARE(payload->children[0]->value, QStringLiteral("170"));
+    QCOMPARE(payload->children[1]->value, QStringLiteral("187"));
+    QCOMPARE(payload->children[2]->value, QStringLiteral("204"));
+    QVERIFY2(!findChildNamed(rows[0].get(), QStringLiteral("byte missingPayload")), qPrintable(childNames(rows[0].get())));
 }
 
 void StructViewRawRendererTests::builderUsesScopePrefixesForRootAndParent()

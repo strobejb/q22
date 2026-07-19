@@ -115,6 +115,9 @@ ExprNode * CopyExpr(ExprNode *expr);
 // Display (flatten) expression to specified stream
 size_t Flatten(FILE *fp, ExprNode *expr);
 size_t Flatten(TCHAR *buf, size_t len, ExprNode *expr);
+#if defined(_WIN32) && defined(UNICODE)
+size_t Flatten(char *buf, size_t len, ExprNode *expr);
+#endif
 
 // Evaluate (flatten) to a constant integer. Returns 0 if not contant.
 INUMTYPE Evaluate(ExprNode *expr);

@@ -2296,6 +2296,37 @@ bool StructureRenderEngine::evaluateFunction(const EvalContext &context, ExprNod
 
         return readInteger(fieldRow->absoluteOffset, fieldRow->byteLength, result, fieldRow->bigEndian);
     }
+    case TOK_INDEXOF:
+    {
+        std::vector<ExprNode *> args;
+        collectExpressionArgs(expr->left, &args);
+        if (args.size() != 3 || !args[1] || args[1]->type != EXPR_IDENTIFIER || !args[1]->str)
+            return false;
+
+        StructureRow *arrayRow = findFieldRow(context.row, args[0]);
+        INUMTYPE keyValue = 0;
+        if (!arrayRow || !evaluate(context, args[2], &keyValue))
+            return false;
+
+        for (size_t i = 0; i < arrayRow->children.size(); ++i)
+        {
+            StructureRow *fieldRow = findFieldRow(arrayRow->children[i].get(), args[1]);
+            if (!fieldRow)
+                continue;
+
+            INUMTYPE fieldValue = 0;
+            const bool read = fieldRow->valueKind == StructureRowValueKind::ScalarInteger
+                ? (fieldValue = static_cast<INUMTYPE>(fieldRow->scalarRawValue), true)
+                : readInteger(fieldRow->absoluteOffset, fieldRow->byteLength, &fieldValue, fieldRow->bigEndian);
+            if (read && fieldValue == keyValue)
+            {
+                *result = static_cast<INUMTYPE>(i);
+                return true;
+            }
+        }
+
+        return false;
+    }
     case TOK_FINDFIRST:
     case TOK_FINDLAST:
         return evaluateFindFunction(context, expr, result);
@@ -3166,7 +3197,7 @@ void collectFieldReferenceRoots(ExprNode *expr, std::vector<ExprNode *> *roots)
         collectFieldReferenceRoots(expr->right, roots);
         return;
     case EXPR_FUNCTION:
-        if (expr->tok == TOK_FIELDAT)
+        if (expr->tok == TOK_FIELDAT || expr->tok == TOK_INDEXOF)
             return;
         collectFieldReferenceRoots(expr->left, roots);
         collectFieldReferenceRoots(expr->right, roots);
@@ -7580,13 +7611,9 @@ QString StructureRenderEngine::diagnosticExpressionText(ExprNode *expr) const
     if (!expr)
         return QString();
 
-    std::array<TCHAR, 1024> buffer = {};
+    std::array<char, 1024> buffer = {};
     Flatten(buffer.data(), buffer.size(), expr);
-#if defined(_WIN32) && defined(UNICODE)
-    return QString::fromWCharArray(buffer.data()).trimmed();
-#else
     return QString::fromLocal8Bit(buffer.data()).trimmed();
-#endif
 }
 
 void StructureRenderEngine::addDiagnostic(StructureRow *target,
