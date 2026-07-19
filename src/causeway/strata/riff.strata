@@ -20,15 +20,6 @@ typedef struct _RIFF_RAW_CHUNK_PAYLOAD
     byte data[];
 } RIFF_RAW_CHUNK_PAYLOAD, *PRIFF_RAW_CHUNK_PAYLOAD;
 
-typedef struct _RIFF_LIST_PAYLOAD
-{
-    [format("fourcc")]
-    dword listType;
-
-    [count(size - 4)]
-    byte data[];
-} RIFF_LIST_PAYLOAD, *PRIFF_LIST_PAYLOAD;
-
 typedef struct _RIFF_WAVE_FORMAT_CHUNK
 {
     [enum(RIFF_WAVE_AUDIO_FORMAT)]
@@ -91,7 +82,18 @@ typedef struct _RIFF_CHUNK
     union
     {
         [case(fourcc("LIST"))]
-        RIFF_LIST_PAYLOAD list;
+        struct _RIFF_LIST_PAYLOAD
+        {
+            [format("fourcc")]
+            dword listType;
+
+            [
+                max_count((size > 4 ? size - 4 : 0) / 8),
+                extent(size > 4 ? size - 4 : 0),
+                name(chunkId)
+            ]
+            struct _RIFF_CHUNK chunks[];
+        } list;
 
         [case(fourcc("fmt "))]
         RIFF_WAVE_FORMAT_CHUNK waveFormat;

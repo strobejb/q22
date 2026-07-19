@@ -82,6 +82,52 @@ typedef struct _MP4_BOX
         [case(fourcc("udta"))]
         struct _MP4_CONTAINER_BOX userData;
 
+        [case(fourcc("moof"))]
+        struct _MP4_CONTAINER_BOX movieFragment;
+
+        [case(fourcc("traf"))]
+        struct _MP4_CONTAINER_BOX trackFragment;
+
+        [case(fourcc("mvex"))]
+        struct _MP4_CONTAINER_BOX movieExtends;
+
+        [case(fourcc("mfra"))]
+        struct _MP4_CONTAINER_BOX movieFragmentRandomAccess;
+
+        [case(fourcc("ilst"))]
+        struct _MP4_CONTAINER_BOX itemList;
+
+        [case(fourcc("iprp"))]
+        struct _MP4_CONTAINER_BOX itemProperties;
+
+        [case(fourcc("ipco"))]
+        struct _MP4_CONTAINER_BOX itemPropertyContainer;
+
+        [case(fourcc("tref"))]
+        struct _MP4_CONTAINER_BOX trackReference;
+
+        [case(fourcc("sinf"))]
+        struct _MP4_CONTAINER_BOX protectionSchemeInformation;
+
+        [case(fourcc("schi"))]
+        struct _MP4_CONTAINER_BOX schemeInformation;
+
+        [case(fourcc("meta"))]
+        struct _MP4_FULL_CONTAINER_BOX
+        {
+            dword versionAndFlags;
+
+            [
+                max_count((boxSize == 1 ? (largeSize >= 20 ? largeSize - 20 : 0) : (boxSize >= 12 ? boxSize - 12 : 0)) / 8),
+                extent(boxSize == 1 ? (largeSize >= 20 ? largeSize - 20 : 0) : (boxSize >= 12 ? boxSize - 12 : 0)),
+                name(type)
+            ]
+            struct _MP4_BOX children[];
+        } metadata;
+
+        [case(fourcc("iref"))]
+        struct _MP4_FULL_CONTAINER_BOX itemReferences;
+
         [default]
         MP4_RAW_BOX_PAYLOAD raw;
     };

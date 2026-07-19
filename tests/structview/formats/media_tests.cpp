@@ -6,7 +6,9 @@ class StructViewMediaTests : public QObject
 
 private slots:
     void builderRendersMp4Boxes();
+    void builderRendersFragmentedAndMetadataMp4Containers();
     void builderRendersRiffWaveAndWebpChunks();
+    void builderRendersNestedRiffLists();
 };
 
 void StructViewMediaTests::builderRendersMp4Boxes()
@@ -108,6 +110,71 @@ void StructViewMediaTests::builderRendersMp4Boxes()
     QCOMPARE(data->value, QStringLiteral("{ 1, 2, 3, 4 }"));
 }
 
+void StructViewMediaTests::builderRendersFragmentedAndMetadataMp4Containers()
+{
+    // Scenario: fragmented MP4 and metadata boxes add more recursive box
+    // streams; meta/iref are full boxes with version+flags before children.
+    // Expected: ordinary and full-box containers both locate their child box
+    // arrays at the correct physical offsets.
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("mp4.strata")), "mp4.strata failed to parse");
+    TypeDecl *mp4Root = exportedNamed(&library, QStringLiteral("MP4"));
+    QVERIFY(mp4Root);
+
+    QByteArray mp4(44, '\0');
+    writeBe32(&mp4, 0, 24);
+    mp4.replace(4, 4, "moof");
+    writeBe32(&mp4, 8, 16);
+    mp4.replace(12, 4, "traf");
+    writeBe32(&mp4, 16, 8);
+    mp4.replace(20, 4, "mfhd");
+
+    writeBe32(&mp4, 24, 20);
+    mp4.replace(28, 4, "meta");
+    writeBe32(&mp4, 32, 0);
+    writeBe32(&mp4, 36, 8);
+    mp4.replace(40, 4, "free");
+
+    auto rows = buildRows(&library, mp4Root, mp4);
+    QCOMPARE(rows.size(), size_t(1));
+    StructureRow *boxes = findChildNamed(rows[0].get(), QStringLiteral("MP4_BOX boxes[]"));
+    QVERIFY2(boxes, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(boxes->children.size(), size_t(2));
+    QCOMPARE(boxes->children[0]->name, QStringLiteral("[0]moof"));
+    QCOMPARE(boxes->children[1]->name, QStringLiteral("[1]meta"));
+    QCOMPARE(boxes->children[1]->absoluteOffset, uint64_t(24));
+
+    StructureRow *fragment = findDescendantNamed(boxes->children[0].get(),
+                                                  QStringLiteral("struct _MP4_CONTAINER_BOX movieFragment"));
+    QVERIFY2(fragment, qPrintable(childNames(boxes->children[0].get())));
+    StructureRow *fragmentChildren = findChildNamed(fragment, QStringLiteral("struct _MP4_BOX children[]"));
+    QVERIFY2(fragmentChildren, qPrintable(childNames(fragment)));
+    QCOMPARE(fragmentChildren->children.size(), size_t(1));
+    QCOMPARE(fragmentChildren->children[0]->name, QStringLiteral("[0]traf"));
+    QCOMPARE(fragmentChildren->children[0]->absoluteOffset, uint64_t(8));
+
+    StructureRow *trackFragment = findDescendantNamed(fragmentChildren->children[0].get(),
+                                                       QStringLiteral("struct _MP4_CONTAINER_BOX trackFragment"));
+    QVERIFY2(trackFragment, qPrintable(childNames(fragmentChildren->children[0].get())));
+    StructureRow *trackChildren = findChildNamed(trackFragment, QStringLiteral("struct _MP4_BOX children[]"));
+    QVERIFY2(trackChildren, qPrintable(childNames(trackFragment)));
+    QCOMPARE(trackChildren->children.size(), size_t(1));
+    QCOMPARE(trackChildren->children[0]->name, QStringLiteral("[0]mfhd"));
+    QCOMPARE(trackChildren->children[0]->absoluteOffset, uint64_t(16));
+
+    StructureRow *metadata = findDescendantNamed(boxes->children[1].get(),
+                                                  QStringLiteral("struct _MP4_FULL_CONTAINER_BOX metadata"));
+    QVERIFY2(metadata, qPrintable(childNames(boxes->children[1].get())));
+    StructureRow *versionAndFlags = findChildNamed(metadata, QStringLiteral("dword versionAndFlags"));
+    QVERIFY2(versionAndFlags, qPrintable(childNames(metadata)));
+    QCOMPARE(versionAndFlags->absoluteOffset, uint64_t(32));
+    StructureRow *metadataChildren = findChildNamed(metadata, QStringLiteral("struct _MP4_BOX children[]"));
+    QVERIFY2(metadataChildren, qPrintable(childNames(metadata)));
+    QCOMPARE(metadataChildren->children.size(), size_t(1));
+    QCOMPARE(metadataChildren->children[0]->name, QStringLiteral("[0]free"));
+    QCOMPARE(metadataChildren->children[0]->absoluteOffset, uint64_t(36));
+}
+
 void StructViewMediaTests::builderRendersRiffWaveAndWebpChunks()
 {
     // Scenario: RIFF-family files share a chunk stream but use their form type
@@ -206,6 +273,57 @@ void StructViewMediaTests::builderRendersRiffWaveAndWebpChunks()
     StructureRow *vp8Data = findChildNamed(vp8Raw, QStringLiteral("byte data[]"));
     QVERIFY2(vp8Data, qPrintable(childNames(vp8Raw)));
     QCOMPARE(vp8Data->value, QStringLiteral("{ 157, 1, 42, 0 }"));
+}
+
+void StructViewMediaTests::builderRendersNestedRiffLists()
+{
+    // Scenario: AVI and other RIFF profiles use LIST chunks whose payload is
+    // another complete RIFF chunk stream.
+    // Expected: the list type remains a physical field, child chunks render
+    // recursively inside the LIST extent, and the following outer chunk keeps
+    // its padded physical offset.
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("riff.strata")), "riff.strata failed to parse");
+    TypeDecl *riffRoot = exportedNamed(&library, QStringLiteral("RIFF"));
+    QVERIFY(riffRoot);
+
+    QByteArray riff(46, '\0');
+    riff.replace(0, 4, "RIFF");
+    writeLe32(&riff, 4, 38);
+    riff.replace(8, 4, "AVI ");
+    riff.replace(12, 4, "LIST");
+    writeLe32(&riff, 16, 16);
+    riff.replace(20, 4, "hdrl");
+    riff.replace(24, 4, "avih");
+    writeLe32(&riff, 28, 4);
+    riff.replace(32, 4, QByteArray::fromHex("01020304"));
+    riff.replace(36, 4, "JUNK");
+    writeLe32(&riff, 40, 1);
+    riff[44] = char(0xaa);
+
+    auto rows = buildRows(&library, riffRoot, riff);
+    QCOMPARE(rows.size(), size_t(1));
+    StructureRow *chunks = findChildNamed(rows[0].get(), QStringLiteral("RIFF_CHUNK chunks[]"));
+    QVERIFY2(chunks, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(chunks->children.size(), size_t(2));
+    QCOMPARE(chunks->children[0]->name, QStringLiteral("[0]LIST"));
+    QCOMPARE(chunks->children[1]->name, QStringLiteral("[1]JUNK"));
+    QCOMPARE(chunks->children[1]->absoluteOffset, uint64_t(36));
+
+    StructureRow *list = findDescendantNamed(chunks->children[0].get(),
+                                              QStringLiteral("struct _RIFF_LIST_PAYLOAD list"));
+    QVERIFY2(list, qPrintable(childNames(chunks->children[0].get())));
+    StructureRow *listType = findChildNamed(list, QStringLiteral("dword listType"));
+    QVERIFY2(listType, qPrintable(childNames(list)));
+    QCOMPARE(listType->value, QStringLiteral("\"hdrl\""));
+
+    StructureRow *listChunks = findChildNamed(list, QStringLiteral("struct _RIFF_CHUNK chunks[]"));
+    QVERIFY2(listChunks, qPrintable(childNames(list)));
+    QCOMPARE(listChunks->byteLength, uint64_t(12));
+    QCOMPARE(listChunks->children.size(), size_t(1));
+    QCOMPARE(listChunks->children[0]->name, QStringLiteral("[0]avih"));
+    QCOMPARE(listChunks->children[0]->absoluteOffset, uint64_t(24));
+    QCOMPARE(listChunks->children[0]->byteLength, uint64_t(12));
 }
 
 REGISTER_STRUCTVIEW_TEST(StructViewMediaTests)
