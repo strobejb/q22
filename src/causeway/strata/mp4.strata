@@ -50,6 +50,38 @@ typedef struct _MP4_BOX
         [case(fourcc("mdat"))]
         MP4_MEDIA_DATA_BOX mediaData;
 
+        [case(fourcc("moov"))]
+        struct _MP4_CONTAINER_BOX
+        {
+            [
+                max_count((boxSize == 1 ? (largeSize >= 16 ? largeSize - 16 : 0) : (boxSize >= 8 ? boxSize - 8 : 0)) / 8),
+                extent(boxSize == 1 ? (largeSize >= 16 ? largeSize - 16 : 0) : (boxSize >= 8 ? boxSize - 8 : 0)),
+                name(type)
+            ]
+            struct _MP4_BOX children[];
+        } movie;
+
+        [case(fourcc("trak"))]
+        struct _MP4_CONTAINER_BOX track;
+
+        [case(fourcc("mdia"))]
+        struct _MP4_CONTAINER_BOX media;
+
+        [case(fourcc("minf"))]
+        struct _MP4_CONTAINER_BOX mediaInformation;
+
+        [case(fourcc("stbl"))]
+        struct _MP4_CONTAINER_BOX sampleTable;
+
+        [case(fourcc("edts"))]
+        struct _MP4_CONTAINER_BOX edit;
+
+        [case(fourcc("dinf"))]
+        struct _MP4_CONTAINER_BOX dataInformation;
+
+        [case(fourcc("udta"))]
+        struct _MP4_CONTAINER_BOX userData;
+
         [default]
         MP4_RAW_BOX_PAYLOAD raw;
     };

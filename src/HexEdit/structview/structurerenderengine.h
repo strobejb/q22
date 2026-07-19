@@ -429,6 +429,7 @@ private:
     std::vector<SemanticEntity> m_semanticEntities;
     std::vector<RowPtr> m_semanticSourceRows;
     std::vector<RowPtr> m_truncatedSemanticRows;
+    std::vector<Structure *> m_activeStructures;
 };
 
 #endif // STRUCTVIEW_STRUCTURERENDERENGINE_H

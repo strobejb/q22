@@ -75,6 +75,17 @@ void StructViewMediaTests::builderRendersMp4Boxes()
     QCOMPARE(boxes->children[1]->name, QStringLiteral("[1]moov"));
     QCOMPARE(boxes->children[2]->name, QStringLiteral("[2]mdat"));
 
+    StructureRow *movie = findDescendantNamed(boxes->children[1].get(),
+                                               QStringLiteral("struct _MP4_CONTAINER_BOX movie"));
+    QVERIFY2(movie, qPrintable(childNames(boxes->children[1].get())));
+    StructureRow *movieChildren = findChildNamed(movie, QStringLiteral("struct _MP4_BOX children[]"));
+    QVERIFY2(movieChildren, qPrintable(childNames(movie)));
+    QCOMPARE(movieChildren->byteLength, uint64_t(108));
+    QCOMPARE(movieChildren->children.size(), size_t(1));
+    QCOMPARE(movieChildren->children[0]->name, QStringLiteral("[0]mvhd"));
+    QCOMPARE(movieChildren->children[0]->absoluteOffset, uint64_t(32));
+    QCOMPARE(movieChildren->children[0]->byteLength, uint64_t(108));
+
     StructureRow *fileType = findDescendantNamed(boxes->children[0].get(), QStringLiteral("MP4_FILE_TYPE_BOX fileType"));
     QVERIFY2(fileType, qPrintable(childNames(boxes->children[0].get())));
     StructureRow *majorBrand = findChildNamed(fileType, QStringLiteral("char majorBrand[]"));

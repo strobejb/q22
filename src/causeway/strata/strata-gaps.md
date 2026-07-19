@@ -128,20 +128,19 @@ support, or a dedicated semantic parser.
 Potential direction: decompressed subfile views and reusable transformed-font
 semantic support.
 
-## ISO BMFF / MP4 recursive boxes and sample semantics
+## ISO BMFF / MP4 sample semantics
 
-ISO Base Media files are recursive box trees: `moov` contains `trak`, `trak`
-contains `mdia`, and so on. Pure Strata can render box headers, FourCC labels,
-bounded payloads, and a limited number of explicit container levels, but it does
-not have a reusable recursive "box contains boxes until this extent is exhausted"
-construct.
+ISO Base Media recursive box trees can now be represented directly by an
+extent-bounded self-referential array. The shipped MP4 definition uses this for
+the common `moov`/`trak`/`mdia`/`minf`/`stbl` container hierarchy while keeping
+each child list inside its owning box payload.
 
 Useful reverse-engineering views also need to join sample tables (`stco`/`co64`,
 `stsc`, `stsz`, `stts`, `ctts`, `stss`) into derived media extents and timelines.
 That is semantic data synthesized from several boxes rather than a physical
 layout field.
 
-Potential direction: recursive type support or a box-list helper, FourCC-aware
+Potential direction: broader typed box coverage, FourCC-aware
 selection/display, and semantic sample-table summaries.
 
 ## RIFF profile dispatch and recursive chunk lists
@@ -153,15 +152,16 @@ but it cannot yet express profile-scoped dispatch such as "`fmt `" only for WAVE
 or `strf` differently for AVI stream kinds.
 
 RIFF `LIST` chunks can also contain nested chunks whose interpretation depends
-on the list FourCC. Modeling this cleanly wants reusable recursive chunk-list
-support or a "render chunks until this extent is exhausted" helper.
+on the list FourCC. Extent-bounded recursive arrays now cover the physical
+chunk nesting; the remaining definition work is profile-aware interpretation
+of those nested chunks.
 
 File detection has a related limitation: Structure View metadata can list
 several `magic(...)` signatures, but they are alternatives rather than a compound
 predicate. A precise WebP detector wants `RIFF` at offset 0 and `WEBP` at offset
 8, not either signature independently.
 
-Potential direction: profile-aware union dispatch, recursive bounded arrays, and
+Potential direction: profile-aware union dispatch, nested LIST definitions, and
 compound `magic` predicates.
 
 ## TAR/GZip archive semantics

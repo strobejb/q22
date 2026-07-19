@@ -262,6 +262,26 @@ This models up to 1024 NUL-terminated strings, each capped at 256 characters,
 inside a byte extent of `StringsSize`. The `extent(...)` bounds the whole field
 and stops the outer array when the table bytes have been consumed.
 
+An extent-bounded array may recursively contain its enclosing structure. This
+models chunk and box formats whose container payload is another sequence of the
+same record type. The recursive edge must be an array with both `extent(...)`
+and a fixed bound, `count(...)`, or `max_count(...)`; direct embedded recursion
+is rejected. Use the structure tag name inside its own typedef because the
+typedef alias is installed only after the declaration closes:
+
+```c
+typedef struct _BOX {
+    dword payloadSize;
+
+    [max_count(payloadSize / 8), extent(payloadSize)]
+    struct _BOX children[];
+} BOX;
+```
+
+The renderer stops if a child makes no byte progress and limits recursive type
+expansion to protect malformed inputs. `extent(...)` remains authoritative for
+where the field following the recursive array begins.
+
 `count_as(expr)` is for formats whose array count is a logical slot count, not
 exactly the number of serialized elements. The rendered element still advances
 by its actual byte length, but the array loop counter advances by `expr`.

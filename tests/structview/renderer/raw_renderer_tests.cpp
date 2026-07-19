@@ -14,6 +14,7 @@ private slots:
     void builderFormatsGenericDisplayTags();
     void builderAppliesTreePresentationTags();
     void builderRendersRaggedStringTables();
+    void builderSupportsExtentBoundedRecursiveArrays();
     void builderFormatsScalarArraysAsPreviewLists();
     void builderPopulatesCommentsFromTypeDeclarations();
     void builderUsesPackedLayoutByDefault();
@@ -362,6 +363,68 @@ void StructViewRawRendererTests::builderRendersRaggedStringTables()
     QCOMPARE(strings->children[1]->name, QStringLiteral("[1]"));
     QCOMPARE(strings->children[1]->value, QStringLiteral("\"bar\""));
     QCOMPARE(strings->children[1]->byteLength, uint64_t(4));
+}
+
+void StructViewRawRendererTests::builderSupportsExtentBoundedRecursiveArrays()
+{
+    // Scenario: a container contains more instances of its own type inside a
+    // byte-counted payload, as in MP4 boxes and RIFF LIST chunks.
+    // Expected: only an array with both a count cap and an extent may introduce
+    // the cycle; rendering advances by each variable-sized child and preserves
+    // the enclosing extent for the following field.
+    StrataLibrary rejectedLibrary;
+    Parser rejectedParser(&rejectedLibrary);
+    QVERIFY(!parseBuffer(rejectedParser,
+                         "typedef struct _BAD { struct _BAD child; } BAD;\n"));
+
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef struct _NODE {\n"
+                        "  byte payloadSize;\n"
+                        "  [max_count(payloadSize), extent(payloadSize)] struct _NODE children[];\n"
+                        "} NODE;\n"
+                        "[export] typedef struct _ROOT { NODE node; byte tail; } ROOT;\n"));
+
+    TypeDecl *rootType = exportedNamed(&library, QStringLiteral("ROOT"));
+    QVERIFY(rootType);
+    auto rows = buildRows(&library, rootType, QByteArray::fromHex("03010000AA"));
+    QCOMPARE(rows.size(), size_t(1));
+
+    StructureRow *node = findChildNamed(rows[0].get(), QStringLiteral("NODE node"));
+    QVERIFY2(node, qPrintable(childNames(rows[0].get())));
+    StructureRow *children = findChildNamed(node, QStringLiteral("struct _NODE children[]"));
+    QVERIFY2(children, qPrintable(childNames(node)));
+    QCOMPARE(children->byteLength, uint64_t(3));
+    QCOMPARE(children->children.size(), size_t(2));
+    QCOMPARE(children->children[0]->absoluteOffset, uint64_t(1));
+    QCOMPARE(children->children[0]->byteLength, uint64_t(2));
+    QCOMPARE(children->children[1]->absoluteOffset, uint64_t(3));
+    QCOMPARE(children->children[1]->byteLength, uint64_t(1));
+
+    StructureRow *grandchildren = findChildNamed(children->children[0].get(),
+                                                  QStringLiteral("struct _NODE children[]"));
+    QVERIFY2(grandchildren, qPrintable(childNames(children->children[0].get())));
+    QCOMPARE(grandchildren->children.size(), size_t(1));
+    QCOMPARE(grandchildren->children[0]->absoluteOffset, uint64_t(2));
+
+    StructureRow *tail = findChildNamed(rows[0].get(), QStringLiteral("byte tail"));
+    QVERIFY(tail);
+    QCOMPARE(tail->absoluteOffset, uint64_t(4));
+    QCOMPARE(tail->value, QStringLiteral("170"));
+
+    // A malicious chain deeper than the renderer's recursion ceiling must
+    // still consume its declared extents and leave the trailing field aligned.
+    QByteArray deep;
+    for (int remaining = 69; remaining >= 0; --remaining)
+        deep.append(char(remaining));
+    deep.append(char(0x55));
+    auto deepRows = buildRows(&library, rootType, deep);
+    QCOMPARE(deepRows.size(), size_t(1));
+    StructureRow *deepTail = findChildNamed(deepRows[0].get(), QStringLiteral("byte tail"));
+    QVERIFY(deepTail);
+    QCOMPARE(deepTail->absoluteOffset, uint64_t(70));
+    QCOMPARE(deepTail->value, QStringLiteral("85"));
 }
 
 void StructViewRawRendererTests::builderFormatsScalarArraysAsPreviewLists()

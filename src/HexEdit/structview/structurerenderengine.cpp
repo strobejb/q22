@@ -20,6 +20,7 @@
 namespace
 {
 static constexpr uint64_t kMaxArrayElements = 100;
+static constexpr size_t kMaxRecursiveTypeDepth = 64;
 static constexpr qsizetype kMaxArrayPreviewElements = 8;
 static constexpr bool kPrefixArrayAliasesWithDash = false;
 // Dynamic rows expose raw layout navigation, so leave their semantic-style
@@ -296,9 +297,9 @@ bool tagListContains(Tag *tagList, TOKEN token)
     return false;
 }
 
-bool typeContainsTag(Type *type, TOKEN token, int depth = 0)
+bool typeContainsTag(Type *type, TOKEN token, std::vector<Structure *> *visited)
 {
-    if (!type || depth > 64)
+    if (!type || !visited)
         return false;
 
     if (type->parent && tagListContains(type->parent->tagList, token))
@@ -313,6 +314,10 @@ bool typeContainsTag(Type *type, TOKEN token, int depth = 0)
         if (!base || (base->ty != typeSTRUCT && base->ty != typeUNION) || !base->sptr)
             continue;
 
+        if (std::find(visited->begin(), visited->end(), base->sptr) != visited->end())
+            continue;
+        visited->push_back(base->sptr);
+
         if (tagListContains(base->sptr->tagList, token))
             return true;
 
@@ -322,15 +327,21 @@ bool typeContainsTag(Type *type, TOKEN token, int depth = 0)
                 continue;
             if (tagListContains(decl->tagList, token))
                 return true;
-            if (typeContainsTag(decl->baseType, token, depth + 1))
+            if (typeContainsTag(decl->baseType, token, visited))
                 return true;
             for (Type *declType : decl->declList)
-                if (typeContainsTag(declType, token, depth + 1))
+                if (typeContainsTag(declType, token, visited))
                     return true;
         }
     }
 
     return false;
+}
+
+bool typeContainsTag(Type *type, TOKEN token)
+{
+    std::vector<Structure *> visited;
+    return typeContainsTag(type, token, &visited);
 }
 
 QString arrayAliasPrefix()
@@ -1224,7 +1235,17 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
                 }
             }
 
-            length += terminatorLength > 0 ? terminatorLength : elementLength;
+            const uint64_t consumedLength = terminatorLength > 0 ? terminatorLength : elementLength;
+            // Empty recursive/container elements cannot advance toward the
+            // extent boundary. Stop rather than manufacturing duplicate rows.
+            if (consumedLength == 0)
+                break;
+            // extent(...) is the enclosing field boundary, not merely a hint
+            // about where the following field should be placed.
+            if (extentLimit > 0 && consumedLength > extentLimit - length)
+                break;
+
+            length += consumedLength;
             logicalIndex += std::max<uint64_t>(row->arrayCountContribution, 1);
             ++renderedElements;
             if (terminatorLength > 0)
@@ -1254,10 +1275,20 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
         if (!type->sptr)
             return 0;
 
+        const bool recursiveReentry = std::find(m_activeStructures.begin(),
+                                                m_activeStructures.end(),
+                                                type->sptr) != m_activeStructures.end();
+        // A valid recursive container normally only reaches a handful of
+        // levels. Cap hostile definitions/data before they exhaust the stack.
+        if (recursiveReentry && m_activeStructures.size() >= kMaxRecursiveTypeDepth)
+            return 0;
+        m_activeStructures.push_back(type->sptr);
+
         collectNamedOffsetMaps(parent);
         uint64_t length = 0;
         for (TypeDecl *childDecl : type->sptr->typeDeclList)
             length += appendTypeDecl(parent, childDecl, offset + length);
+        m_activeStructures.pop_back();
         return length;
     }
 
@@ -1276,6 +1307,13 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
             && evaluateString(EvalContext{ parent, type, offset }, switchExpr, &switchString);
         if (hasSwitchTag && !hasSwitch && !hasStringSwitch)
             return 0;
+
+        const bool recursiveReentry = std::find(m_activeStructures.begin(),
+                                                m_activeStructures.end(),
+                                                type->sptr) != m_activeStructures.end();
+        if (recursiveReentry && m_activeStructures.size() >= kMaxRecursiveTypeDepth)
+            return 0;
+        m_activeStructures.push_back(type->sptr);
 
         uint64_t length = 0;
         bool matchedCase = false;
@@ -1336,6 +1374,7 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
             }
         }
 
+        m_activeStructures.pop_back();
         return length;
     }
 

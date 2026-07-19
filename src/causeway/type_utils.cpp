@@ -209,24 +209,60 @@ TOKEN TypeToToken(TYPE ty)
 	}
 }
 
-bool CheckRecursion(Structure *parent, TypeDecl *child)
+static bool IsBoundedArrayDecl(TypeDecl *decl)
+{
+	// Recursive physical containment is safe only when the declaration both
+	// limits how many children can be attempted and gives the enclosing byte
+	// extent that remains authoritative for subsequent layout.
+	if(!decl || !FindTag(decl->tagList, TOK_EXTENT, 0))
+		return false;
+
+	const bool hasTaggedCount = FindTag(decl->tagList, TOK_COUNT, 0)
+		|| FindTag(decl->tagList, TOK_MAXCOUNT, 0);
+	if(decl->declList.empty())
+		return false;
+
+	for(Type *type : decl->declList)
+	{
+		Type *array = FindType(type, typeARRAY);
+		if(!array || (!array->elements && !hasTaggedCount))
+			return false;
+	}
+
+	return true;
+}
+
+static bool CheckRecursion(Structure *parent, TypeDecl *child, vector<Structure *> &visited)
 {
 	Type *cbt = BaseNode(child->baseType);
 
 	if(cbt->ty == typeSTRUCT || cbt->ty == typeUNION)
 	{
 		if(cbt->sptr == parent)
-			return false;
+			return IsBoundedArrayDecl(child);
+
+		for(Structure *structure : visited)
+			if(structure == cbt->sptr)
+				return true;
+		// Definitions may already contain a permitted bounded cycle. Avoid
+		// repeatedly walking that cycle while validating an unrelated member.
+		visited.push_back(cbt->sptr);
 
 		for(size_t i = 0; i < cbt->sptr->typeDeclList.size(); i++)
 		{
 			// check the children as well
-			if(!CheckRecursion(parent, cbt->sptr->typeDeclList[i]))
+			if(!CheckRecursion(parent, cbt->sptr->typeDeclList[i], visited))
 				return false;
 		}
 	}
 
 	return true;
+}
+
+bool CheckRecursion(Structure *parent, TypeDecl *child)
+{
+	vector<Structure *> visited;
+	return CheckRecursion(parent, child, visited);
 }
 
 unsigned SizeOf(TypeDecl *td);
