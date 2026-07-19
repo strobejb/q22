@@ -333,6 +333,39 @@ void StructureTreeModel::replaceTopLevelRowsAfterFirst(std::vector<std::unique_p
     endInsertRows();
 }
 
+void StructureTreeModel::replaceSemanticChildrenOfFirstRoot(std::vector<std::unique_ptr<StructureRow>> rows)
+{
+    if (!m_root || m_root->children.empty())
+        return;
+
+    StructureRow *rawRoot = m_root->children.front().get();
+    const QModelIndex rawRootIndex = index(0, NameColumn);
+    for (int row = static_cast<int>(rawRoot->children.size()) - 1; row >= 0; --row)
+    {
+        const StructureRow *child = rawRoot->children[row].get();
+        if (!child || child->kind != StructureRowKind::Semantic)
+            continue;
+
+        beginRemoveRows(rawRootIndex, row, row);
+        rawRoot->children.erase(rawRoot->children.begin() + row);
+        endRemoveRows();
+    }
+
+    if (rows.empty())
+        return;
+
+    const int first = static_cast<int>(rawRoot->children.size());
+    const int last = first + static_cast<int>(rows.size()) - 1;
+    beginInsertRows(rawRootIndex, first, last);
+    for (auto &row : rows)
+    {
+        row->parent = rawRoot;
+        applyDisplayOptionsToRow(row.get(), m_displayOptions, QModelIndex());
+        rawRoot->children.push_back(std::move(row));
+    }
+    endInsertRows();
+}
+
 void StructureTreeModel::setRowsForTests(std::vector<std::unique_ptr<StructureRow>> rows)
 {
     setRows(std::move(rows));

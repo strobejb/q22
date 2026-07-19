@@ -74,8 +74,8 @@ void StructViewPeTests::builderNamesPeDynamicSectionsFromStandardDefinition()
     QVERIFY(idata->branchIconPath.isEmpty());
     QVERIFY(!idata->name.startsWith(QStringLiteral("SECTION - ")));
 
-    StructureRow *peImage = findTopLevelNamed(rows, QStringLiteral("PE Image"));
-    QVERIFY2(peImage, "PE Image top-level row not found");
+    StructureRow *peImage = findSemanticRootChildNamed(rows, QStringLiteral("PE Image"));
+    QVERIFY2(peImage, "PE Image semantic child row not found");
     QVERIFY(!findChildNamed(peImage, QStringLiteral("Sections")));
     QCOMPARE(peImage->children.size(), size_t(2));
     QCOMPARE(peImage->children[0]->name, QStringLiteral("SECTION .text"));
@@ -163,7 +163,7 @@ void StructViewPeTests::builderPeSemanticModeCppSkipsDeclarativeRows()
     QVERIFY(peRow);
 
     QVERIFY(findChildNamed(peRow, QStringLiteral("SECTION .text")));
-    QVERIFY(!findTopLevelNamed(rows, QStringLiteral("PE Image")));
+    QVERIFY(!findSemanticRootChildNamed(rows, QStringLiteral("PE Image")));
 }
 
 void StructViewPeTests::builderNamesPeImportDescriptorsFromStandardDefinition()
@@ -288,8 +288,8 @@ void StructViewPeTests::builderEmitsPeImportDllsFromStandardDefinition()
     StructureRow *peRow = findTopLevelNamed(rows, QStringLiteral("PE"));
     QVERIFY(peRow);
 
-    StructureRow *peImage = findTopLevelNamed(rows, QStringLiteral("PE Image"));
-    QVERIFY2(peImage, "PE Image top-level row not found");
+    StructureRow *peImage = findSemanticRootChildNamed(rows, QStringLiteral("PE Image"));
+    QVERIFY2(peImage, "PE Image semantic child row not found");
     StructureRow *idata = findChildNamed(peImage, QStringLiteral("SECTION .idata"));
     QVERIFY2(idata, qPrintable(childNames(peImage)));
 
@@ -385,7 +385,7 @@ void StructViewPeTests::builderEmitsPeBaseRelocationsFromStandardDefinition()
     QVERIFY(entries->children[0]->typeDecl);
     QVERIFY(FindTag(entries->children[0]->typeDecl->tagList, TOK_EMITNODE, nullptr));
 
-    StructureRow *peImage = findTopLevelNamed(rows, QStringLiteral("PE Image"));
+    StructureRow *peImage = findSemanticRootChildNamed(rows, QStringLiteral("PE Image"));
     QVERIFY(peImage);
     StructureRow *relocSection = findChildNamed(peImage, QStringLiteral("SECTION .reloc"));
     QVERIFY2(relocSection, qPrintable(childNames(peImage)));
@@ -442,7 +442,7 @@ void StructViewPeTests::builderEmitsPeDebugDirectoriesFromStandardDefinition()
     QVERIFY2(debugDirectories, qPrintable(childNames(rawSection)));
     QCOMPARE(debugDirectories->children.size(), size_t(1));
 
-    StructureRow *peImage = findTopLevelNamed(rows, QStringLiteral("PE Image"));
+    StructureRow *peImage = findSemanticRootChildNamed(rows, QStringLiteral("PE Image"));
     QVERIFY(peImage);
     StructureRow *semanticSection = findChildNamed(peImage, QStringLiteral("SECTION .rdata"));
     QVERIFY2(semanticSection, qPrintable(childNames(peImage)));
@@ -498,7 +498,7 @@ void StructViewPeTests::builderEmitsPeTlsDirectoryFromStandardDefinition()
     QVERIFY2(findDescendantNamed(rawSection, QStringLiteral("IMAGE_TLS_DIRECTORY32")),
              qPrintable(childNames(rawSection)));
 
-    StructureRow *peImage = findTopLevelNamed(rows, QStringLiteral("PE Image"));
+    StructureRow *peImage = findSemanticRootChildNamed(rows, QStringLiteral("PE Image"));
     QVERIFY(peImage);
     StructureRow *semanticSection = findChildNamed(peImage, QStringLiteral("SECTION .rdata"));
     QVERIFY2(semanticSection, qPrintable(childNames(peImage)));
@@ -554,7 +554,7 @@ void StructViewPeTests::builderEmitsPeLoadConfigFromStandardDefinition()
     QVERIFY2(findDescendantNamed(rawSection, QStringLiteral("IMAGE_LOAD_CONFIG_DIRECTORY64")),
              qPrintable(childNames(rawSection)));
 
-    StructureRow *peImage = findTopLevelNamed(rows, QStringLiteral("PE Image"));
+    StructureRow *peImage = findSemanticRootChildNamed(rows, QStringLiteral("PE Image"));
     QVERIFY(peImage);
     StructureRow *semanticSection = findChildNamed(peImage, QStringLiteral("SECTION .rdata"));
     QVERIFY2(semanticSection, qPrintable(childNames(peImage)));
@@ -613,7 +613,7 @@ void StructViewPeTests::builderEmitsPeExceptionDirectoryFromStandardDefinition()
     QVERIFY2(runtimeFunctions, qPrintable(childNames(rawSection)));
     QCOMPARE(runtimeFunctions->children.size(), size_t(2));
 
-    StructureRow *peImage = findTopLevelNamed(rows, QStringLiteral("PE Image"));
+    StructureRow *peImage = findSemanticRootChildNamed(rows, QStringLiteral("PE Image"));
     QVERIFY(peImage);
     StructureRow *semanticSection = findChildNamed(peImage, QStringLiteral("SECTION .pdata"));
     QVERIFY2(semanticSection, qPrintable(childNames(peImage)));

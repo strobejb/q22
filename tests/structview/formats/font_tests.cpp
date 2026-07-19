@@ -62,8 +62,8 @@ void StructViewFontTests::builderRendersSfntTableDirectory()
     QCOMPARE(findChildNamed(tables->children[0].get(), QStringLiteral("dword offset"))->value, QStringLiteral("44"));
     QCOMPARE(findChildNamed(tables->children[1].get(), QStringLiteral("dword length"))->value, QStringLiteral("6"));
 
-    StructureRow *semantic = findTopLevelNamed(rows, QStringLiteral("SFNT Summary"));
-    QVERIFY2(semantic, "SFNT Summary top-level row not found");
+    StructureRow *semantic = findSemanticRootChildNamed(rows, QStringLiteral("SFNT Summary"));
+    QVERIFY2(semantic, "SFNT Summary semantic child row not found");
     StructureRow *fontTables = findChildNamed(semantic, QStringLiteral("FontTables"));
     QVERIFY2(fontTables, qPrintable(childNames(semantic)));
     QCOMPARE(fontTables->children.size(), size_t(2));
@@ -136,8 +136,8 @@ void StructViewFontTests::builderRendersWoffDirectoryAndPayloads()
     QVERIFY2(tableOffset, qPrintable(childNames(tables->children[0].get())));
     QVERIFY(tableOffset->children.empty());
 
-    StructureRow *semantic = findTopLevelNamed(rows, QStringLiteral("WOFF Summary"));
-    QVERIFY2(semantic, "WOFF Summary top-level row not found");
+    StructureRow *semantic = findSemanticRootChildNamed(rows, QStringLiteral("WOFF Summary"));
+    QVERIFY2(semantic, "WOFF Summary semantic child row not found");
     StructureRow *fontTables = findChildNamed(semantic, QStringLiteral("FontTables"));
     QVERIFY2(fontTables, qPrintable(childNames(semantic)));
     QCOMPARE(fontTables->children.size(), size_t(1));

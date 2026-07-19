@@ -171,8 +171,8 @@ void StructViewImageTests::builderRendersIcoDirectoryAndImagePayload()
     QVERIFY2(imageOffset, qPrintable(childNames(entry)));
     QVERIFY(imageOffset->children.empty());
 
-    StructureRow *semantic = findTopLevelNamed(rows, QStringLiteral("ICO Summary"));
-    QVERIFY2(semantic, "ICO Summary top-level row not found");
+    StructureRow *semantic = findSemanticRootChildNamed(rows, QStringLiteral("ICO Summary"));
+    QVERIFY2(semantic, "ICO Summary semantic child row not found");
     StructureRow *images = findChildNamed(semantic, QStringLiteral("Images"));
     QVERIFY2(images, qPrintable(childNames(semantic)));
     QCOMPARE(images->children.size(), size_t(1));

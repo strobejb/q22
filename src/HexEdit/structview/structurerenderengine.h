@@ -11,13 +11,20 @@
 class StructureRenderEngine : public std::enable_shared_from_this<StructureRenderEngine>
 {
 public:
+    enum class SemanticRootPlacement
+    {
+        ChildOfRawRoot,
+        TopLevelSibling,
+    };
+
     StructureRenderEngine(StrataLibrary *library,
                           TypeDecl *rootType,
                           uint64_t baseOffset,
                           const StructureValueBuilder::ByteReader &reader,
                           const StructureDisplayOptions &options);
 
-    std::vector<std::unique_ptr<StructureRow>> build();
+    std::vector<std::unique_ptr<StructureRow>> build(
+        SemanticRootPlacement semanticRootPlacement = SemanticRootPlacement::ChildOfRawRoot);
     std::vector<std::unique_ptr<StructureRow>> buildRaw();
     std::vector<std::unique_ptr<StructureRow>> buildSemanticOverlay(StructureRow *rawRoot);
     bool hasSemanticOverlay() const;

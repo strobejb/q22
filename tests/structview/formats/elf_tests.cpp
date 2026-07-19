@@ -84,8 +84,8 @@ void StructViewElfTests::builderRendersElfImportsAndExportsSummary()
     auto rows = buildRows(&library, root, bytes);
     QVERIFY(findTopLevelNamed(rows, QStringLiteral("ELF")));
 
-    StructureRow *elfImage = findTopLevelNamed(rows, QStringLiteral("ELF Image"));
-    QVERIFY2(elfImage, "ELF Image top-level row not found");
+    StructureRow *elfImage = findSemanticRootChildNamed(rows, QStringLiteral("ELF Image"));
+    QVERIFY2(elfImage, "ELF Image semantic child row not found");
 
     StructureRow *dynsym = findChildNamed(elfImage, QStringLiteral("SECTION .dynsym"));
     QVERIFY2(dynsym, qPrintable(childNames(elfImage)));
@@ -225,8 +225,8 @@ void StructViewElfTests::builderRendersElfDependenciesAndRelocationsSummary()
     auto rows = buildRows(&library, root, bytes);
     QVERIFY(findTopLevelNamed(rows, QStringLiteral("ELF")));
 
-    StructureRow *elfImage = findTopLevelNamed(rows, QStringLiteral("ELF Image"));
-    QVERIFY2(elfImage, "ELF Image top-level row not found");
+    StructureRow *elfImage = findSemanticRootChildNamed(rows, QStringLiteral("ELF Image"));
+    QVERIFY2(elfImage, "ELF Image semantic child row not found");
 
     StructureRow *textSection = findChildNamed(elfImage, QStringLiteral("SECTION .text"));
     QVERIFY(textSection);
@@ -287,7 +287,7 @@ void StructViewElfTests::builderRendersElf32AndElf64Tables()
     TypeDecl *root32 = exportedNamed(&library32, QStringLiteral("ELF"));
     QVERIFY(root32);
     auto rows32 = buildRows(&library32, root32, elf32);
-    QCOMPARE(rows32.size(), size_t(2));
+    QCOMPARE(rows32.size(), size_t(1));
     QStringList childNames32;
     for (const auto &child : rows32[0]->children)
         childNames32.push_back(child->name);
@@ -304,7 +304,7 @@ void StructViewElfTests::builderRendersElf32AndElf64Tables()
     QVERIFY2(sections32, childNames32Message.constData());
     QCOMPARE(sections32->children.size(), size_t(2));
     QCOMPARE(header32->children[4]->value, QStringLiteral("305419896"));
-    StructureRow *elfImage32 = findTopLevelNamed(rows32, QStringLiteral("ELF Image"));
+    StructureRow *elfImage32 = findSemanticRootChildNamed(rows32, QStringLiteral("ELF Image"));
     QVERIFY(elfImage32);
     QVERIFY2(findChildNamed(elfImage32, QStringLiteral("SEGMENT 0")), qPrintable(childNames(elfImage32)));
 
@@ -332,7 +332,7 @@ void StructViewElfTests::builderRendersElf32AndElf64Tables()
     TypeDecl *root32be = exportedNamed(&library32be, QStringLiteral("ELF"));
     QVERIFY(root32be);
     auto rows32be = buildRows(&library32be, root32be, elf32be);
-    QCOMPARE(rows32be.size(), size_t(2));
+    QCOMPARE(rows32be.size(), size_t(1));
     StructureRow *header32be = findChildNamed(rows32be[0].get(), QStringLiteral("Elf32_Ehdr header32"));
     QVERIFY(header32be);
     QCOMPARE(header32be->children[4]->value, QStringLiteral("16909060"));
@@ -366,7 +366,7 @@ void StructViewElfTests::builderRendersElf32AndElf64Tables()
     TypeDecl *root64 = exportedNamed(&library64, QStringLiteral("ELF"));
     QVERIFY(root64);
     auto rows64 = buildRows(&library64, root64, elf64);
-    QCOMPARE(rows64.size(), size_t(2));
+    QCOMPARE(rows64.size(), size_t(1));
     QVERIFY(findChildNamed(rows64[0].get(), QStringLiteral("Elf64_Ehdr header64")));
     StructureRow *programs64 = findChildNamed(rows64[0].get(), QStringLiteral("Elf64_Phdr programHeaders64[]"));
     QVERIFY(programs64);
@@ -375,7 +375,7 @@ void StructViewElfTests::builderRendersElf32AndElf64Tables()
     QVERIFY(sections64);
     QCOMPARE(sections64->children.size(), size_t(1));
 
-    StructureRow *elfImage64 = findTopLevelNamed(rows64, QStringLiteral("ELF Image"));
+    StructureRow *elfImage64 = findSemanticRootChildNamed(rows64, QStringLiteral("ELF Image"));
     QVERIFY(elfImage64);
     StructureRow *segment = findChildNamed(elfImage64, QStringLiteral("SEGMENT 0"));
     QVERIFY2(segment, qPrintable(childNames(elfImage64)));
@@ -486,8 +486,8 @@ void StructViewElfTests::builderAddsElfSectionAndSymbolSemanticRows()
     QVERIFY(elfRow);
     QVERIFY(findChildNamed(elfRow, QStringLiteral("Elf32_Shdr sectionHeaders32[]")));
 
-    StructureRow *elfImage = findTopLevelNamed(rows, QStringLiteral("ELF Image"));
-    QVERIFY2(elfImage, "ELF Image top-level row not found");
+    StructureRow *elfImage = findSemanticRootChildNamed(rows, QStringLiteral("ELF Image"));
+    QVERIFY2(elfImage, "ELF Image semantic child row not found");
     StructureRow *text = findChildNamed(elfImage, QStringLiteral("SECTION .text"));
     QVERIFY2(text, qPrintable(childNames(elfImage)));
     QCOMPARE(text->offset, QStringLiteral("00000200"));
@@ -511,7 +511,7 @@ void StructViewElfTests::builderAddsElfSectionAndSymbolSemanticRows()
         ScopedEnvironmentVariable mode("Q22_ELF_SEMANTIC_VIEW", "cpp");
         auto cppRows = buildRows(&library, root, bytes);
         QCOMPARE(cppRows.size(), size_t(1));
-        QVERIFY(!findTopLevelNamed(cppRows, QStringLiteral("ELF Image")));
+        QVERIFY(!findSemanticRootChildNamed(cppRows, QStringLiteral("ELF Image")));
 
         StructureRow *cppText = findChildNamed(cppRows[0].get(), QStringLiteral("SECTION .text"));
         QVERIFY(cppText);

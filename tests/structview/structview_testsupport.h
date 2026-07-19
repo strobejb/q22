@@ -235,6 +235,15 @@ inline StructureRow *findTopLevelNamed(const std::vector<std::unique_ptr<Structu
     return nullptr;
 }
 
+inline StructureRow *findSemanticRootChildNamed(const std::vector<std::unique_ptr<StructureRow>> &rows,
+                                                const QString &name)
+{
+    if (rows.empty())
+        return nullptr;
+
+    return findChildNamed(rows.front().get(), name);
+}
+
 inline StructureRow *findDescendantNamed(StructureRow *parent, const QString &name)
 {
     if (!parent)

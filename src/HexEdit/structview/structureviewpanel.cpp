@@ -2839,7 +2839,8 @@ void StructureViewPanel::rebuildRows()
         loadingRow->branchIconPath = QStringLiteral(":/icons/actions/circle-repeat.svg");
         loadingRow->branchOpenIconPath = loadingRow->branchIconPath;
         loadingRow->branchEmptyIconPath = loadingRow->branchIconPath;
-        rows.push_back(std::move(loadingRow));
+        loadingRow->parent = rows.front().get();
+        rows.front()->children.push_back(std::move(loadingRow));
     }
     const size_t rowCount = profile ? structureRowCount(rows) : 0;
     if (profile)
@@ -2899,7 +2900,7 @@ void StructureViewPanel::rebuildRows()
 
         m_rebuildingRows = true;
         std::vector<std::unique_ptr<StructureRow>> semanticRows = engine->buildSemanticOverlay(rawRoot);
-        m_model->replaceTopLevelRowsAfterFirst(std::move(semanticRows));
+        m_model->replaceSemanticChildrenOfFirstRoot(std::move(semanticRows));
         m_rebuildingRows = false;
         m_deferredSemanticEngine.reset();
         applyPendingRestore();

@@ -145,8 +145,11 @@ public:
     void setStrataLibrary(StrataLibrary *library);
     void setTypeDecls(const QList<TypeDecl *> &typeDecls);
     void setRows(std::vector<std::unique_ptr<StructureRow>> rows);
-    // Replaces semantic top-level siblings while retaining the already-visible
-    // raw root and its expansion state.
+    // Replaces semantic children under the first raw root while retaining the
+    // already-visible raw root and its expansion state.
+    void replaceSemanticChildrenOfFirstRoot(std::vector<std::unique_ptr<StructureRow>> rows);
+    // Legacy helper for tests/older callers that still treat semantic rows as
+    // top-level siblings.
     void replaceTopLevelRowsAfterFirst(std::vector<std::unique_ptr<StructureRow>> rows);
     void setRowsForTests(std::vector<std::unique_ptr<StructureRow>> rows);
     void applyDisplayOptions(const StructureDisplayOptions &options);

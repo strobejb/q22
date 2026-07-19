@@ -741,7 +741,8 @@ StructureRenderEngine::StructureRenderEngine(StrataLibrary *library,
 {
 }
 
-std::vector<std::unique_ptr<StructureRow>> StructureRenderEngine::build()
+std::vector<std::unique_ptr<StructureRow>> StructureRenderEngine::build(
+    SemanticRootPlacement semanticRootPlacement)
 {
     std::vector<RowPtr> rows = buildRaw();
     if (rows.empty())
@@ -749,7 +750,17 @@ std::vector<std::unique_ptr<StructureRow>> StructureRenderEngine::build()
 
     std::vector<RowPtr> semanticRoots = buildSemanticOverlay(rows.front().get());
     for (RowPtr &semanticRoot : semanticRoots)
-        rows.push_back(std::move(semanticRoot));
+    {
+        if (semanticRootPlacement == SemanticRootPlacement::ChildOfRawRoot)
+        {
+            semanticRoot->parent = rows.front().get();
+            rows.front()->children.push_back(std::move(semanticRoot));
+        }
+        else
+        {
+            rows.push_back(std::move(semanticRoot));
+        }
+    }
     return rows;
 }
 

@@ -60,7 +60,7 @@ void StructViewSemanticRendererTests::builderEmitsSemanticRowsUnderAttachedSchem
     QCOMPARE(entries->children.size(), size_t(2));
     QVERIFY(!findChildNamed(entries->children[0].get(), QStringLiteral("17")));
 
-    StructureRow *semantic = findTopLevelNamed(rows, QStringLiteral("Semantic"));
+    StructureRow *semantic = findSemanticRootChildNamed(rows, QStringLiteral("Semantic"));
     QVERIFY(semantic);
     StructureRow *payloads = findChildNamed(semantic, QStringLiteral("Payloads"));
     QVERIFY(payloads);
@@ -152,7 +152,7 @@ void StructViewSemanticRendererTests::builderEmitsSemanticRowsThroughNamedOffset
     auto rows = buildRows(&library, firstExported(&library), bytes);
     QVERIFY(findTopLevelNamed(rows, QStringLiteral("Root")));
 
-    StructureRow *semantic = findTopLevelNamed(rows, QStringLiteral("Semantic"));
+    StructureRow *semantic = findSemanticRootChildNamed(rows, QStringLiteral("Semantic"));
     QVERIFY(semantic);
     StructureRow *strings = findChildNamed(semantic, QStringLiteral("Strings"));
     QVERIFY(strings);
@@ -197,7 +197,7 @@ void StructViewSemanticRendererTests::builderEmitsAndMergesSemanticNodes()
     auto rows = buildRows(&library, firstExported(&library), bytes);
     QVERIFY(findTopLevelNamed(rows, QStringLiteral("Root")));
 
-    StructureRow *semantic = findTopLevelNamed(rows, QStringLiteral("Semantic"));
+    StructureRow *semantic = findSemanticRootChildNamed(rows, QStringLiteral("Semantic"));
     QVERIFY(semantic);
     StructureRow *items = findChildNamed(semantic, QStringLiteral("Items"));
     QVERIFY(items);
@@ -246,7 +246,7 @@ void StructViewSemanticRendererTests::builderRejectsUnterminatedCstrSemanticName
     auto rows = buildRows(&library, firstExported(&library), bytes);
     QVERIFY(findTopLevelNamed(rows, QStringLiteral("Root")));
 
-    StructureRow *semantic = findTopLevelNamed(rows, QStringLiteral("Semantic"));
+    StructureRow *semantic = findSemanticRootChildNamed(rows, QStringLiteral("Semantic"));
     QVERIFY(semantic);
     StructureRow *strings = findChildNamed(semantic, QStringLiteral("Strings"));
     QVERIFY(strings);
@@ -296,8 +296,8 @@ void StructViewSemanticRendererTests::builderEmitsIntoMappedSemanticContainers()
     auto rows = buildRows(&library, firstExported(&library), bytes);
     QVERIFY(findTopLevelNamed(rows, QStringLiteral("struct Root root")));
 
-    StructureRow *image = findTopLevelNamed(rows, QStringLiteral("Image"));
-    QVERIFY2(image, "Image top-level row not found");
+    StructureRow *image = findSemanticRootChildNamed(rows, QStringLiteral("Image"));
+    QVERIFY2(image, "Image semantic child row not found");
     QVERIFY(!findChildNamed(image, QStringLiteral("Sections")));
     QCOMPARE(image->children.size(), size_t(2));
     QCOMPARE(image->children[0]->name, QStringLiteral(".text"));
@@ -358,7 +358,7 @@ void StructViewSemanticRendererTests::builderElidesImplicitScalarArrayEmitRow()
     bytes[0x12] = char(0xcc);
 
     auto rows = buildRows(&library, firstExported(&library), bytes);
-    StructureRow *semantic = findTopLevelNamed(rows, QStringLiteral("Semantic"));
+    StructureRow *semantic = findSemanticRootChildNamed(rows, QStringLiteral("Semantic"));
     QVERIFY(semantic);
     StructureRow *bytesGroup = findChildNamed(semantic, QStringLiteral("Bytes"));
     QVERIFY(bytesGroup);
@@ -414,7 +414,7 @@ void StructViewSemanticRendererTests::builderAddressesPositionalSemanticCollecti
     bytes.append(char(1)); bytes.append(char(30));
 
     auto rows = buildRows(&library, firstExported(&library), bytes);
-    StructureRow *semantic = findTopLevelNamed(rows, QStringLiteral("Semantic"));
+    StructureRow *semantic = findSemanticRootChildNamed(rows, QStringLiteral("Semantic"));
     QVERIFY(semantic);
     StructureRow *items = findChildNamed(semantic, QStringLiteral("Items"));
     QVERIFY(items);
@@ -466,7 +466,7 @@ void StructViewSemanticRendererTests::builderUsesPositionalCollectionsForParalle
     bytes.append(char(9)); bytes.append(char(5));
 
     auto rows = buildRows(&library, firstExported(&library), bytes);
-    StructureRow *semantic = findTopLevelNamed(rows, QStringLiteral("Semantic"));
+    StructureRow *semantic = findSemanticRootChildNamed(rows, QStringLiteral("Semantic"));
     QVERIFY(semantic);
     StructureRow *records = findChildNamed(semantic, QStringLiteral("Records"));
     QVERIFY(records);

@@ -144,7 +144,7 @@ void StructViewDexWasmTests::builderRendersDexHeaderAndTables()
     QCOMPARE(findChildNamed(mapItems->children[1].get(), QStringLiteral("word type"))->value,
              QStringLiteral("DEX_TYPE_STRING_ID_ITEM"));
 
-    StructureRow *summary = findTopLevelNamed(rows, QStringLiteral("DEX Summary"));
+    StructureRow *summary = findSemanticRootChildNamed(rows, QStringLiteral("DEX Summary"));
     QVERIFY(summary);
     StructureRow *decodedStrings = findChildNamed(summary, QStringLiteral("Decoded Strings"));
     QVERIFY(decodedStrings);
@@ -237,7 +237,7 @@ void StructViewDexWasmTests::builderAddsDexSemanticSummaryPastArrayRenderCap()
     QVERIFY(stringIds->children.size() < kStringCount);
     QVERIFY(!findDescendantNamed(stringIds, QStringLiteral("String[120] NormalName")));
 
-    StructureRow *summary = findTopLevelNamed(rows, QStringLiteral("DEX Summary"));
+    StructureRow *summary = findSemanticRootChildNamed(rows, QStringLiteral("DEX Summary"));
     QVERIFY(summary);
     StructureRow *decodedStrings = findChildNamed(summary, QStringLiteral("Decoded Strings"));
     QVERIFY(decodedStrings);
@@ -485,8 +485,8 @@ void StructViewDexWasmTests::builderRendersWasmHeaderAndSections()
     QVERIFY2(passiveData, qPrintable(childNames(dataSegments->children[0].get())));
     QCOMPARE(findChildNamed(passiveData, QStringLiteral("byte bytes[]"))->value, QStringLiteral("{ 97, 98, 99 }"));
 
-    StructureRow *summary = findTopLevelNamed(rows, QStringLiteral("WASM Summary"));
-    QVERIFY2(summary, "WASM Summary top-level row not found");
+    StructureRow *summary = findSemanticRootChildNamed(rows, QStringLiteral("WASM Summary"));
+    QVERIFY2(summary, "WASM Summary semantic child row not found");
 
     StructureRow *summarySections = findChildNamed(summary, QStringLiteral("Sections"));
     QVERIFY2(summarySections, qPrintable(childNames(summary)));
@@ -589,7 +589,7 @@ void StructViewDexWasmTests::builderKeepsWasmCodeTargetsPastRawArrayCap()
         wasm.append(QByteArray::fromHex("0300010b"));
 
     auto rows = buildRows(&library, wasmRoot, wasm);
-    StructureRow *summary = findTopLevelNamed(rows, QStringLiteral("WASM Summary"));
+    StructureRow *summary = findSemanticRootChildNamed(rows, QStringLiteral("WASM Summary"));
     QVERIFY(summary);
     StructureRow *functions = findChildNamed(summary, QStringLiteral("Functions"));
     QVERIFY(functions);
@@ -623,7 +623,7 @@ void StructViewDexWasmTests::builderRendersWasmStartTagsAndElements()
     QVERIFY(findChildNamed(sections->children[1].get(), QStringLiteral("WASM_ELEMENT_SECTION element")));
     QVERIFY(findChildNamed(sections->children[2].get(), QStringLiteral("WASM_TAG_SECTION tag")));
 
-    StructureRow *summary = findTopLevelNamed(rows, QStringLiteral("WASM Summary"));
+    StructureRow *summary = findSemanticRootChildNamed(rows, QStringLiteral("WASM Summary"));
     QVERIFY(summary);
     StructureRow *start = findChildNamed(summary, QStringLiteral("Start"));
     QVERIFY(start);
