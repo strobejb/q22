@@ -13,6 +13,7 @@ private slots:
     void fixingABrokenDefinitionFileRestoresItsTypes();
     void partiallyParsedFileDoesNotExposeStaleExportedType();
     void exportedTypesUseExplicitExportTagsOnly();
+    void exportedTypesIgnoreExportsFromIncludedFiles();
     void exportedTypesExposeAssocExtensions();
     void exportedTypesExposeMagicSignatures();
     void exportedTypesExposeDescriptions();
@@ -252,6 +253,35 @@ void StructViewDefinitionManagerTests::exportedTypesUseExplicitExportTagsOnly()
     const QList<ExportedStructureType> exported = manager.exportedTypes();
     QCOMPARE(exported.size(), 1);
     QVERIFY(exported[0].typeDecl != nullptr);
+}
+
+void StructViewDefinitionManagerTests::exportedTypesIgnoreExportsFromIncludedFiles()
+{
+    // Scenario: a reusable definition file is root-capable when opened directly,
+    // but another root includes it only for its shared structures.
+    // Expected: the Structure View root selector exposes the including file's
+    // export only; the included file's [export] tag is suppressed for this parse.
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+
+    const QString userDir = temp.filePath(QStringLiteral("user-strata"));
+    QVERIFY(QDir().mkpath(userDir));
+    writeTextFile(QDir(userDir).filePath(QStringLiteral("z_child.strata")),
+                  "[export(\"Child Root\")]\n"
+                  "typedef struct _ChildRoot { byte child; } ChildRoot;\n");
+    writeTextFile(QDir(userDir).filePath(QStringLiteral("a_parent.strata")),
+                  "include \"z_child.strata\";\n"
+                  "[export(\"Parent Root\")]\n"
+                  "struct ParentRoot { ChildRoot child; } parent;\n");
+
+    StructureDefinitionManager manager;
+    manager.setBuiltinStructDirsForTests({});
+    manager.setUserStrataDirForTests(userDir);
+
+    QVERIFY2(manager.reload(), qPrintable(manager.lastError()));
+    const QList<ExportedStructureType> exported = manager.exportedTypes();
+    QCOMPARE(exported.size(), 1);
+    QCOMPARE(exported[0].description, QStringLiteral("Parent Root"));
 }
 
 void StructViewDefinitionManagerTests::exportedTypesExposeAssocExtensions()

@@ -166,7 +166,7 @@ struct TOKEN_LOOKUP
 // file-descriptor
 struct FILE_DESC
 {
-	FILE_DESC(const char *path, const char *name) : buf(0), len(0), pos(0), curLine(1), wspStart(0), wspEnd(0)
+	FILE_DESC(const char *path, const char *name) : buf(0), len(0), pos(0), curLine(1), included(false), wspStart(0), wspEnd(0)
 	{
 		origPath[0] = '\0';
 		filePath[0] = '\0';
@@ -183,6 +183,7 @@ struct FILE_DESC
 	char		origPath[_MAX_PATH];	// actual path
 
 	size_t		curLine;
+	bool		included;
 
 	char	*	buf;
 	size_t		len;
@@ -296,7 +297,7 @@ public:
 	void newline();
 	bool InitBuffer(const char *buffer, size_t len);
 	bool InitFile(const char *filename);
-	bool FileIncluded(const char *filename);
+	bool FileIncluded(const char *filename, FILE_DESC **existing = 0);
 	void FileRef(FILEREF *fileRef);
 	FILE_DESC *CurrentFile() const;
 	int CurrentChar() const;

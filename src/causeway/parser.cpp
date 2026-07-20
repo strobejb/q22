@@ -665,8 +665,13 @@ Statement * Parser::ParseInclude()
 	// terminating semi-colon
 	if(t == ';')
 	{
+		FILE_DESC *includedFile = 0;
 		// initialize the lexical-analyser with this new file
-		if(lexer.FileIncluded(fileName) == false)
+		if(lexer.FileIncluded(fileName, &includedFile))
+		{
+			(void)includedFile;
+		}
+		else
 		{
 			Parser p(this);
 			p.SetErrorStream(fperr);
@@ -1242,6 +1247,16 @@ void Parser::ExportStructs()
 		}
 	}
 
+	if(parent || (lexer.CurrentFile() && lexer.CurrentFile()->included))
+	{
+		// Included files contribute declarations, tagsets, enums and metadata to the
+		// shared library, but they are not independent root formats for this parse.
+		// Keep any [export] tags intact for source fidelity; suppress only the
+		// effective export flag used by root discovery and legacy IsExportedStruct.
+		SuppressExportsForFile(lexer.CurrentFile());
+		return;
+	}
+
 	if(foundExport)
 	{
 		// clear the export flag on all structs
@@ -1269,6 +1284,23 @@ void Parser::ExportStructs()
 					typeDecl->baseType->sptr->exported = true;
 				}
 			}
+		}
+	}
+}
+
+void Parser::SuppressExportsForFile(FILE_DESC *fileDesc)
+{
+	if(!fileDesc)
+		return;
+
+	for(size_t i = 0; i < typeLibrary->globalTypeDeclList.size(); i++)
+	{
+		TypeDecl *typeDecl = typeLibrary->globalTypeDeclList[i];
+
+		if(typeDecl->baseType->ty == typeSTRUCT && typeDecl->fileRef.fileDesc == fileDesc)
+		{
+			typeDecl->exported = false;
+			typeDecl->baseType->sptr->exported = false;
 		}
 	}
 }

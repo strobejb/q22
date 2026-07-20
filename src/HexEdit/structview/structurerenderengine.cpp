@@ -3494,6 +3494,7 @@ QStringList StructureRenderEngine::validateStaticFieldReferences(StrataLibrary *
                 if (FindTag(typeDecl->tagList, tagTok, &tagExpr) && tagExpr)
                 {
                     if (tagTok == TOK_OFFSET
+                        && typeDecl->exported
                         && FindTag(typeDecl->tagList, TOK_EXPORT, nullptr)
                         && !scratch.rootOffsetExpressionIsConstantFoldable(tagExpr))
                     {

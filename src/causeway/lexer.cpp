@@ -335,9 +335,11 @@ bool Lexer::InitBuffer(const char *buffer, size_t len)
 	return true;
 }
 
-bool Lexer::FileIncluded(const char *filename)
+bool Lexer::FileIncluded(const char *filename, FILE_DESC **existing)
 {
 	char fullpath[_MAX_PATH];
+	if(existing)
+		*existing = 0;
 
 	// get the full path to the specified file.
 	if(getfullname(curFile->filePath, filename, fullpath, _MAX_PATH, &includePaths) == false)
@@ -353,6 +355,8 @@ bool Lexer::FileIncluded(const char *filename)
 
 		if(_strcmpi(fd->filePath, fullpath) == 0)
 		{
+			if(existing)
+				*existing = fd;
 			// do nothing!
 			return true;
 		}
@@ -396,6 +400,7 @@ bool Lexer::InitFile(const char *filename)
 		fclose(fp);
 		return false;
 	}
+	curFile->included = parentLexer != 0;
 
 	curFile->buf = (char *)malloc((size_t)filesize + 1);
 	if(curFile->buf == 0)

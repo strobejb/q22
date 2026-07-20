@@ -14,6 +14,7 @@ private slots:
 	void sharedStrataLibraryPoolsTypesAcrossParsers();
 	void includeParserUsesTheSameStrataLibrary();
 	void includeParserSearchesLibraryPathsAfterLocalDirectory();
+	void includeChildExportTagsAreNotEffectiveRootExports();
 	void fileRefsRemainValidForSharedLibraryAfterParserDies();
 	void cleanupBelongsToTheStrataLibrary();
 	void tagsetsParseAndExpand();
@@ -208,6 +209,53 @@ void CausewayTests::includeParserSearchesLibraryPathsAfterLocalDirectory()
 	QCOMPARE(library.globalTypeDeclList.size(), size_t(2));
 	QCOMPARE(QString::fromLocal8Bit(library.globalFileHistory[1]->filePath),
 	         QFileInfo(includeFile).canonicalFilePath());
+}
+
+void CausewayTests::includeChildExportTagsAreNotEffectiveRootExports()
+{
+	// Scenario: a reusable Strata definition can also be opened directly as a
+	// root format, so it carries an [export] tag, but another file includes it
+	// purely for its helper types.
+	// Expected: the include contributes the child declarations and preserves the
+	// child [export] tag for source fidelity, but suppresses its effective export
+	// flag so the parent parse exposes only the parent's root.
+	// Regression guard: including a root-capable definition must not add confusing
+	// extra helper roots to Structure View's format selector.
+	QTemporaryDir dir;
+	QVERIFY(dir.isValid());
+
+	QFile includeFile(dir.filePath("child.strata"));
+	QVERIFY(includeFile.open(QIODevice::WriteOnly | QIODevice::Text));
+	QVERIFY(includeFile.write("[export]\ntypedef struct _ChildRoot { byte child; } ChildRoot;\n") > 0);
+	includeFile.close();
+
+	QFile mainFile(dir.filePath("main.strata"));
+	QVERIFY(mainFile.open(QIODevice::WriteOnly | QIODevice::Text));
+	QVERIFY(mainFile.write("include \"child.strata\";\n[export]\nstruct ParentRoot { ChildRoot child; } parent;\n") > 0);
+	mainFile.close();
+
+	StrataLibrary library;
+	Parser parser(&library);
+	QVERIFY2(parser.Ooof(qPrintable(mainFile.fileName())), parser.LastErrStr());
+	QCOMPARE(library.globalTypeDeclList.size(), size_t(2));
+
+	TypeDecl *child = library.globalTypeDeclList[0];
+	TypeDecl *parent = library.globalTypeDeclList[1];
+	QVERIFY(FindTag(child->tagList, TOK_EXPORT, nullptr));
+	QVERIFY(!child->exported);
+	QVERIFY(child->baseType && child->baseType->sptr);
+	QVERIFY(!child->baseType->sptr->exported);
+
+	QVERIFY(FindTag(parent->tagList, TOK_EXPORT, nullptr));
+	QVERIFY(parent->exported);
+	QVERIFY(parent->baseType && parent->baseType->sptr);
+	QVERIFY(parent->baseType->sptr->exported);
+
+	StrataLibrary directLibrary;
+	Parser directParser(&directLibrary);
+	QVERIFY2(directParser.Ooof(qPrintable(includeFile.fileName())), directParser.LastErrStr());
+	QCOMPARE(directLibrary.globalTypeDeclList.size(), size_t(1));
+	QVERIFY(directLibrary.globalTypeDeclList[0]->exported);
 }
 
 void CausewayTests::fileRefsRemainValidForSharedLibraryAfterParserDies()
@@ -1358,7 +1406,8 @@ void CausewayTests::standardTypelibFilesParse()
 		QStringLiteral("dtb.strata"),
 		QStringLiteral("elf.strata"),
 		QStringLiteral("pe.strata"),
-		QStringLiteral("sfnttables.strata"),
+		QStringLiteral("sfnt.strata"),
+		QStringLiteral("woff.strata"),
 		QStringLiteral("zip.strata"),
 	};
 

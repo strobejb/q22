@@ -208,6 +208,25 @@ QStringList existingDefinitionFilesInDir(const QString &dirPath, bool includeLeg
     return files;
 }
 
+bool fileAlreadyLoadedAsInclude(StrataLibrary *library, const QString &filePath)
+{
+    if (!library)
+        return false;
+
+    const QString canonical = QDir::toNativeSeparators(QFileInfo(filePath).canonicalFilePath());
+    const QString absolute = QDir::toNativeSeparators(QFileInfo(filePath).absoluteFilePath());
+    for (FILE_DESC *fileDesc : library->globalFileHistory)
+    {
+        if (!fileDesc || !fileDesc->included)
+            continue;
+        const QString loadedPath = QDir::toNativeSeparators(QString::fromLocal8Bit(fileDesc->filePath));
+        if (loadedPath == canonical || loadedPath == absolute)
+            return true;
+    }
+
+    return false;
+}
+
 void appendDuplicateDefinitionFileLog(const QStringList &files,
                                       const QString &userDirPath,
                                       const QList<ExportedStructureType> &activeExports,
@@ -305,10 +324,12 @@ QList<ExportedStructureType> StructureDefinitionManager::resolvedExportedTypes(Q
 
     for (TypeDecl *decl : m_library->globalTypeDeclList)
     {
-        if (!decl || !FindTag(decl->tagList, TOK_EXPORT, nullptr))
+        if (!decl || !decl->exported || !FindTag(decl->tagList, TOK_EXPORT, nullptr))
             continue;
 
         FILE_DESC *fileDesc = decl->fileRef.fileDesc;
+        if (fileDesc && fileDesc->included)
+            continue;
         if (fileDesc && failedFilePaths.contains(QString::fromLocal8Bit(fileDesc->filePath)))
             continue;
 
@@ -563,6 +584,9 @@ bool StructureDefinitionManager::parseFiles(const QStringList &files,
     bool allOk = true;
     for (const QString &file : files)
     {
+        if (fileAlreadyLoadedAsInclude(library, file))
+            continue;
+
         Parser parser(library);
         parser.SetErrorStream(nullptr);
         const QStringList includeDirs = QStringList{ userStrataDir() } + builtinStructDirs();

@@ -38,6 +38,11 @@ Standard C-style line and block-level comments are supported:
 Additional Strata files can also be included with the `include` keyword; this pulls
 in another `.strata` file, making all its type and enum definitions available in the current file.
 Paths are relative to the including file. Circular includes are detected and ignored.
+If an included file contains an `[export]` root, that export is ignored for the
+including parse: the declarations are available as helper types, but the
+included file does not add an extra root format to Structure View's format
+selector through that include edge. Opening that same file directly still honors
+its `[export]` tag.
 
 ```c
 include "basetypes.strata";

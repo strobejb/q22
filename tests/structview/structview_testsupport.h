@@ -106,7 +106,7 @@ inline TypeDecl *firstExported(StrataLibrary *library)
         return nullptr;
 
     for (TypeDecl *decl : library->globalTypeDeclList)
-        if (decl && FindTag(decl->tagList, TOK_EXPORT, nullptr))
+        if (decl && decl->exported && FindTag(decl->tagList, TOK_EXPORT, nullptr))
             return decl;
 
     return nullptr;
@@ -133,7 +133,7 @@ inline TypeDecl *exportedNamed(StrataLibrary *library, const QString &name)
         return nullptr;
 
     for (TypeDecl *decl : library->globalTypeDeclList)
-        if (decl && FindTag(decl->tagList, TOK_EXPORT, nullptr) && exportedName(decl) == name)
+        if (decl && decl->exported && FindTag(decl->tagList, TOK_EXPORT, nullptr) && exportedName(decl) == name)
             return decl;
 
     return nullptr;

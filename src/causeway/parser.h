@@ -108,6 +108,7 @@ private:
 	TagSet   * ParseTagSet(FILEREF fileRef);
 	Bitfield * ParseBitfield(FILEREF fileRef);
 	void		ExportStructs();
+	void		SuppressExportsForFile(FILE_DESC *fileDesc);
 	void		Cleanup();
 	void		InstallTypeAliases();
     TypeDecl *	LookupTypeDecl(const char *name);

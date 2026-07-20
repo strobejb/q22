@@ -4,7 +4,7 @@
 //
 
 include "basetypes.strata";
-include "sfnttables.strata";
+include "sfnt.strata";
 
 enum WOFF_SFNT_FLAVOR
 {
