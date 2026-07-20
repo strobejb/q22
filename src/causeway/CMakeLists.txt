@@ -40,6 +40,7 @@ set(CAUSEWAY_LEGACY_STANDARD_FILES
 )
 
 add_custom_target(causewayData ALL
+    COMMAND ${CMAKE_COMMAND} -E remove_directory "${CAUSEWAY_DATA_BINARY_DIR}"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CAUSEWAY_DATA_BINARY_DIR}"
     COMMAND ${CMAKE_COMMAND} -E rm -f ${CAUSEWAY_LEGACY_STANDARD_FILES}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different

@@ -7,6 +7,7 @@ class StructViewDefinitionManagerTests : public QObject
 private slots:
     void managerCreatesUserStrataDirectory();
     void managerDiscoversBuiltinAndUserDefinitionFiles();
+    void shippedRuntimeDefinitionsLoadWithoutFailures();
     void reloadSwapsInParsedStrataLibrary();
     void managerReportsChangedDefinitionsWithoutAutoReload();
     void brokenDefinitionFileIsReportedWithoutDroppingValidOnes();
@@ -69,6 +70,26 @@ void StructViewDefinitionManagerTests::managerDiscoversBuiltinAndUserDefinitionF
 
     QVERIFY2(manager.reload(), qPrintable(manager.lastError()));
     QCOMPARE(manager.definitionFiles().size(), 4);
+}
+
+void StructViewDefinitionManagerTests::shippedRuntimeDefinitionsLoadWithoutFailures()
+{
+    // Scenario: the app loads the generated runtime Strata directory.
+    // Expected: every discovered shipped definition parses cleanly when there
+    // are no user overrides.
+    // Regression guard: removed/renamed .strata files must not linger in the
+    // build output and be discovered only by the real Structure View manager.
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+
+    const QString userDir = temp.filePath(QStringLiteral("user-strata"));
+
+    StructureDefinitionManager manager;
+    manager.setBuiltinStructDirsForTests({ QStringLiteral(CAUSEWAY_TEST_DATA_DIR) });
+    manager.setUserStrataDirForTests(userDir);
+
+    QVERIFY2(manager.reload(), qPrintable(manager.lastError()));
+    QVERIFY2(manager.failedFiles().isEmpty(), qPrintable(manager.loadLog()));
 }
 
 void StructViewDefinitionManagerTests::reloadSwapsInParsedStrataLibrary()
