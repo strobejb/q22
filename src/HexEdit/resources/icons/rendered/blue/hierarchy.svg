@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"
+ fill="none" shape-rendering="geometricPrecision" role="img">
+<title>Nested solid top left edge soft</title>
+<defs>
+  <linearGradient id="topStrongRef" x1="0%" y1="0%" x2="100%" y2="100%">
+    <stop offset="0%" stop-color="#7EB6E8"/>
+    <stop offset="55%" stop-color="#347FBE"/>
+    <stop offset="100%" stop-color="#0A409F"/>
+  </linearGradient>
+  <linearGradient id="topLeftBright" x1="0%" y1="82%" x2="100%" y2="18%">
+    <stop offset="0%" stop-color="#CDE8FF"/>
+    <stop offset="28%" stop-color="#91C7EF"/>
+    <stop offset="62%" stop-color="#4B91D0"/>
+    <stop offset="100%" stop-color="#0A409F"/>
+  </linearGradient>
+  <linearGradient id="topLeftBrightDarker" x1="0%" y1="82%" x2="100%" y2="18%">
+    <stop offset="0%" stop-color="#9FD0FA"/>
+    <stop offset="34%" stop-color="#62A4DD"/>
+    <stop offset="70%" stop-color="#347FBE"/>
+    <stop offset="100%" stop-color="#0A409F"/>
+  </linearGradient>
+  <linearGradient id="layerLeftBright" x1="0%" y1="80%" x2="100%" y2="18%">
+    <stop offset="0%" stop-color="#91C7EF"/>
+    <stop offset="42%" stop-color="#5C9FD7"/>
+    <stop offset="72%" stop-color="#347FBE"/>
+    <stop offset="100%" stop-color="#0A409F"/>
+  </linearGradient>
+  <linearGradient id="layerDark" x1="0%" y1="80%" x2="100%" y2="20%">
+    <stop offset="0%" stop-color="#5C9FD7"/>
+    <stop offset="45%" stop-color="#2C67B8"/>
+    <stop offset="76%" stop-color="#0A409F"/>
+    <stop offset="100%" stop-color="#002B7D"/>
+  </linearGradient>
+</defs>
+<svg x="2" y="4.5" width="60" height="55" viewBox="3.02 11.1 129.2 115.62" preserveAspectRatio="xMidYMid meet">
+  <g transform="translate(0.000000,138.000000) scale(0.100000,-0.100000)">
+<path d="M355 1138 c-160 -71 -298 -137 -307 -145 -18 -17 -24 -59 -10 -80 6 -9 193 -103 206 -103 3 0 39 -16 83 -36 225 -103 326 -144 354 -144 16 0 87 27 159 60 72 33 133 60 135 60 2 0 39 16 82 36 43 20 114 52 158 71 100 43 105 47 105 92 0 46 1 45 -290 174 -118 52 -240 107 -270 121 -30 14 -68 25 -85 25 -16 0 -160 -59 -320 -131z" fill="url(#topLeftBrightDarker)" opacity="1.0" stroke="#002B7D" stroke-width="9" stroke-opacity="0.32" stroke-linejoin="round"/>
+<path d="M47 732 c-22 -24 -22 -65 1 -85 9 -8 46 -29 82 -45 36 -16 85 -38 110 -49 103 -47 394 -175 416 -183 24 -10 66 6 264 97 56 26 210 93 264 116 16 7 52 23 80 37 47 23 51 28 54 65 4 44 -14 65 -57 65 -14 0 -147 -54 -296 -121 -205 -91 -277 -119 -300 -116 -25 4 -134 50 -315 134 -133 62 -237 103 -260 103 -15 0 -34 -8 -43 -18z" fill="url(#layerLeftBright)" opacity="1.0" stroke="#002B7D" stroke-width="9" stroke-opacity="0.28" stroke-linejoin="round"/>
+<path d="M47 472 c-22 -24 -21 -65 1 -86 11 -9 129 -65 263 -125 134 -59 266 -118 293 -131 63 -28 96 -24 211 30 50 23 116 53 147 66 32 13 84 36 115 51 32 14 90 40 129 57 105 46 117 56 116 96 0 20 -8 40 -18 47 -36 26 -50 22 -374 -122 -58 -26 -137 -62 -177 -80 l-72 -34 -133 58 c-73 32 -200 88 -283 125 -159 70 -192 77 -218 48z" fill="url(#layerDark)" opacity="1.0" stroke="#002B7D" stroke-width="9" stroke-opacity="0.26" stroke-linejoin="round"/>
+
+<path d="M82 930 C245 855 462 756 675 661" fill="none" stroke="#CDE8FF" stroke-width="16" stroke-opacity=".32" stroke-linecap="round"/>
+<path d="M76 672 C240 596 465 492 675 397" fill="none" stroke="#CDE8FF" stroke-width="15" stroke-opacity=".26" stroke-linecap="round"/>
+<path d="M76 412 C242 336 472 234 682 140" fill="none" stroke="#CDE8FF" stroke-width="14" stroke-opacity=".20" stroke-linecap="round"/>
+
+</g>
+</svg>
+</svg>
