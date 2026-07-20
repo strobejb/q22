@@ -540,9 +540,10 @@ dword AddressOfEntryPoint;
 
 `nested(...)` describes a bounded byte range inside the current source.
 `offset(...)` and `extent(...)` select the source bytes. `type(auto)` asks q22
-to detect the nested format from those bytes; `type(RootType)` forces a
-specific Strata root. `open_as(...)` remains accepted as a compatibility alias
-and matches the UI action wording.
+to detect the nested format from those bytes; when no exported root matches, the
+bytes still open as a raw nested source in HexView. `type(RootType)` forces a
+specific Strata root and requires that root to exist. `open_as(...)` remains
+accepted as a compatibility alias and matches the UI action wording.
 
 `transform(...)` is optional. Without it, the nested source is a physical slice
 of the current file. With `transform("gzip")`, `transform("zlib")`, or

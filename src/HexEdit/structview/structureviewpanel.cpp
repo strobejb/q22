@@ -3274,21 +3274,30 @@ void StructureViewPanel::showOptionsContextMenu(int column, const QPoint &global
             startActionGroup();
             TypeDecl *resolvedRootType = resolvedOpenAsRootType(openAsRow);
             QString resolvedRootName = displayNameForTypeDecl(resolvedRootType);
-            if (resolvedRootName.isEmpty())
-                resolvedRootName = openAsRow->openAsRootTypeName;
             const bool autoDetect = openAsRow->openAsRootTypeName.compare(QStringLiteral("auto"), Qt::CaseInsensitive) == 0;
-            const bool transformedAutoDetect = autoDetect && !openAsRow->openAsTransform.isEmpty();
+            if (resolvedRootName.isEmpty() && !autoDetect)
+                resolvedRootName = openAsRow->openAsRootTypeName;
             QString label;
             if (openAsRow->openAsName.isEmpty())
-                label = autoDetect ? tr("Open as detected format") : tr("Open as %1").arg(resolvedRootName);
+            {
+                label = autoDetect
+                    ? tr("Open as nested data")
+                    : tr("Open as %1").arg(resolvedRootName);
+            }
+            else if (autoDetect && resolvedRootName.isEmpty())
+            {
+                label = tr("Open \"%1\"").arg(openAsRow->openAsName);
+            }
             else
+            {
                 label = autoDetect
                     ? tr("Open \"%1\" as %2").arg(openAsRow->openAsName, resolvedRootName)
                     : tr("Open \"%1\" as %2").arg(openAsRow->openAsName, resolvedRootName);
+            }
             if (!openAsRow->openAsTransform.isEmpty())
                 label = tr("%1 via %2").arg(label, openAsRow->openAsTransform);
             const bool canOpen = m_hv
-                && ((resolvedRootType && rootComboIndexForType(resolvedRootType) >= 0) || transformedAutoDetect)
+                && (autoDetect || (resolvedRootType && rootComboIndexForType(resolvedRootType) >= 0))
                 && openAsRow->openAsByteLength > 0
                 && openAsRow->openAsOffset < m_hv->size();
             if (!canOpen)
@@ -3972,10 +3981,6 @@ TypeDecl *StructureViewPanel::resolvedOpenAsRootType(const StructureRow *row) co
         return nullptr;
 
     const QList<ExportedStructureType> exportedTypes = sortedExportedTypes(m_definitions->exportedTypes());
-    const int associatedIndex = associatedRootTypeIndexForFileName(exportedTypes, row->openAsName);
-    if (associatedIndex >= 0)
-        return exportedTypes[associatedIndex].typeDecl;
-
     for (const ExportedStructureType &exported : exportedTypes)
     {
         for (const StructureMagicSignature &signature : exported.magicSignatures)
@@ -3984,6 +3989,10 @@ TypeDecl *StructureViewPanel::resolvedOpenAsRootType(const StructureRow *row) co
                 return exported.typeDecl;
         }
     }
+
+    const int associatedIndex = associatedRootTypeIndexForFileName(exportedTypes, row->openAsName);
+    if (associatedIndex >= 0)
+        return exportedTypes[associatedIndex].typeDecl;
 
     return nullptr;
 }
@@ -3999,10 +4008,6 @@ TypeDecl *StructureViewPanel::resolvedOpenAsRootType(const StructureRow *row, se
         return nullptr;
 
     const QList<ExportedStructureType> exportedTypes = sortedExportedTypes(m_definitions->exportedTypes());
-    const int associatedIndex = associatedRootTypeIndexForFileName(exportedTypes, row->openAsName);
-    if (associatedIndex >= 0)
-        return exportedTypes[associatedIndex].typeDecl;
-
     for (const ExportedStructureType &exported : exportedTypes)
     {
         for (const StructureMagicSignature &signature : exported.magicSignatures)
@@ -4011,6 +4016,10 @@ TypeDecl *StructureViewPanel::resolvedOpenAsRootType(const StructureRow *row, se
                 return exported.typeDecl;
         }
     }
+
+    const int associatedIndex = associatedRootTypeIndexForFileName(exportedTypes, row->openAsName);
+    if (associatedIndex >= 0)
+        return exportedTypes[associatedIndex].typeDecl;
 
     return nullptr;
 }
@@ -4179,11 +4188,15 @@ void StructureViewPanel::openIndexAsStructure(const QModelIndex &index)
                                            &childByteLength,
                                            &errorMessage))
         {
-            QMessageBox::warning(this,
-                                 tr("Cannot open transformed structure slice"),
-                                 errorMessage.isEmpty()
-                                     ? tr("The %1 transform failed.").arg(row->openAsTransform)
-                                     : errorMessage);
+            QMessageBox msg(QMessageBox::Warning,
+                            tr("Cannot open transformed structure slice"),
+                            errorMessage.isEmpty()
+                                ? tr("The %1 transform failed.").arg(row->openAsTransform)
+                                : errorMessage,
+                            QMessageBox::Ok,
+                            this);
+            styleMessageBox(&msg);
+            msg.exec();
             return;
         }
     }
@@ -4193,28 +4206,42 @@ void StructureViewPanel::openIndexAsStructure(const QModelIndex &index)
                                     &childByteLength,
                                     &errorMessage))
     {
-        QMessageBox::warning(this,
-                             tr("Cannot open structure slice"),
-                             errorMessage.isEmpty()
-                                 ? tr("Could not create a nested source for \"%1\".")
-                                       .arg(row->openAsName.isEmpty() ? row->openAsRootTypeName : row->openAsName)
-                                 : errorMessage);
+        QMessageBox msg(QMessageBox::Warning,
+                        tr("Cannot open structure slice"),
+                        errorMessage.isEmpty()
+                            ? tr("Could not create a nested source for \"%1\".")
+                                  .arg(row->openAsName.isEmpty() ? row->openAsRootTypeName : row->openAsName)
+                            : errorMessage,
+                        QMessageBox::Ok,
+                        this);
+        styleMessageBox(&msg);
+        msg.exec();
         return;
     }
 
     TypeDecl *rootType = resolvedOpenAsRootType(row, childSource.get(), 0, childByteLength);
     const int rootIndex = rootComboIndexForType(rootType);
-    if (rootIndex < 0)
+    const bool autoDetect = row->openAsRootTypeName.compare(QStringLiteral("auto"), Qt::CaseInsensitive) == 0;
+    if (rootIndex < 0 && !autoDetect)
     {
         if (!transformedTempPath.isEmpty())
         {
             childSource.reset();
             QFile::remove(transformedTempPath);
         }
-        QMessageBox::information(this,
-                                 tr("Cannot open structure slice"),
-                                 tr("No exported root structure matches \"%1\".")
-                                     .arg(row->openAsName.isEmpty() ? row->openAsRootTypeName : row->openAsName));
+        const QString label = row->openAsName.isEmpty()
+            ? row->openAsRootTypeName
+            : row->openAsName;
+        const QString message = row->openAsRootTypeName.compare(QStringLiteral("auto"), Qt::CaseInsensitive) == 0
+            ? tr("No exported root structure matches the nested data for \"%1\".").arg(label)
+            : tr("No exported root structure matches \"%1\".").arg(label);
+        QMessageBox msg(QMessageBox::Information,
+                        tr("Cannot open structure slice"),
+                        message,
+                        QMessageBox::Ok,
+                        this);
+        styleMessageBox(&msg);
+        msg.exec();
         return;
     }
 
@@ -4236,7 +4263,7 @@ void StructureViewPanel::openIndexAsStructure(const QModelIndex &index)
 
     SourceFrame childFrame;
     childFrame.rootType = rootType;
-    childFrame.rootDisplayName = displayNameForTypeDecl(rootType);
+    childFrame.rootDisplayName = rootType ? displayNameForTypeDecl(rootType) : tr("Raw data");
     childFrame.sourceName = row->openAsName.isEmpty() ? childFrame.rootDisplayName : row->openAsName;
     childFrame.baseOffset = 0;
     childFrame.byteLength = childByteLength;
@@ -4458,7 +4485,7 @@ void StructureViewPanel::navigateToSourceFrame(int index)
     m_activeSourceFrame = index;
 
     const int rootIndex = rootComboIndexForType(frame.rootType);
-    if (rootIndex < 0)
+    if (rootIndex < 0 && frame.rootType)
         return;
 
     if (frame.sliceRoot)
