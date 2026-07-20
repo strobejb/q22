@@ -17,7 +17,7 @@ View online: [Strata Language Reference](https://github.com/strobejb/q22/blob/ma
 | Types | [`struct`](#structs) · [`union`](#unions) · [`enum`](#enums) · [`typedef`](#type-declarations) |
 | Reusable tags | [`tagset`](#tagsets) · [`tags`](#tagsets) |
 | Presentation | [`enum(Name)`](#display) · [`bitflag(Name)`](#display) · [`bitfield(Name)`](#display) · [`format("...")`](#display) · [`name`](#display) · [`string`](#display) · [`tree("...")`](#tree-presentation) · [`warn`](#display) · [`assert`](#display) |
-| Layout | [`offset`](#layout) · [`align`](#layout) · [`pad_to`](#layout) · [`endian`](#byte-order) · [`entrypoint`](#layout) · [`code`](#layout) · [`nested`](#layout) / [`open_as`](#layout) · [`extent`](#layout) · [`optional`](#layout) |
+| Layout | [`offset`](#layout) · [`align`](#layout) · [`pad_to`](#layout) · [`endian`](#byte-order) · [`entrypoint`](#layout) · [`code`](#layout) · [`nested`](#layout) / [`open_as`](#layout) · [`transform`](#layout) · [`extent`](#layout) · [`optional`](#layout) |
 | Arrays | [`count`](#arrays) · [`max_count`](#arrays) · [`count_as`](#arrays) · [`terminated_by`](#arrays) · [`terminator`](#arrays) · [`element`](#array-element-tags) |
 | Unions | [`select`](#discriminated-unions) · [`case`](#discriminated-unions) |
 | Dynamic/semantic views | [`semantic`](#semantic-and-emit) · [`emit`](#semantic-and-emit) · [`emit_node`](#semantic-and-emit) · [`emit_row`](#semantic-and-emit) · [`append`](#positional-semantic-collection-addressing) · [`item`](#positional-semantic-collection-addressing) · [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) |
@@ -491,7 +491,7 @@ Layout tags affect the alignment and positioning of fields:
 | `optional(cond)` | Skip this field when `cond` is false |
 | `entrypoint` | Mark this scalar field's own value as a code entry point address for disassembly |
 | `code("arch" \| architecture(field)[, offset(expr), extent(expr)])` | Mark a byte range as code for the disassembler. `architecture(field)` obtains the Capstone id from the matching enum member's `[architecture("...")]` metadata. |
-| `nested(type(RootType \| auto), offset(expr), extent(expr)[, name(expr)])` | Mark the row as a navigable physical slice that can be opened as another Strata root; `open_as(...)` is a compatibility alias |
+| `nested(type(RootType \| auto), offset(expr), extent(expr)[, transform("gzip"\|"zlib"\|"deflate")][, name(expr)])` | Mark the row as a navigable physical or transformed slice that can be opened as another Strata root; `open_as(...)` is a compatibility alias |
 
 ```c
 [offset(dosHeader.e_lfanew)]
@@ -517,6 +517,13 @@ typedef struct _FAT_ARCH {
     dword align;
 } FAT_ARCH;
 
+[nested(type(auto),
+        offset(extent_of(header)),
+        extent(file_size() - extent_of(header) - sizeof(GZIP_TRAILER)),
+        transform("gzip"),
+        name(header.originalName))]
+byte compressedData[];
+
 // PE/ELF-style mapped entry point: resolve a scalar logical address through
 // a named offset map, and take the architecture from the machine enum.
 [entrypoint,
@@ -525,13 +532,25 @@ typedef struct _FAT_ARCH {
 dword AddressOfEntryPoint;
 ```
 
-`nested(...)` describes a bounded byte range inside the current source. The
-first implementation is physical only: `offset(...)` and `extent(...)` select
-bytes from the current source. `type(auto)` asks q22 to detect the nested format
-from those bytes; `type(RootType)` forces a specific Strata root. `open_as(...)`
-remains accepted as a compatibility alias and matches the UI action wording.
-Compressed or decoded child sources, such as `tar.gz`, require a later transform
-layer.
+`nested(...)` describes a bounded byte range inside the current source.
+`offset(...)` and `extent(...)` select the source bytes. `type(auto)` asks q22
+to detect the nested format from those bytes; `type(RootType)` forces a
+specific Strata root. `open_as(...)` remains accepted as a compatibility alias
+and matches the UI action wording.
+
+`transform(...)` is optional. Without it, the nested source is a physical slice
+of the current file. With `transform("gzip")`, `transform("zlib")`, or
+`transform("deflate")`, the selected bytes are decompressed on demand into a
+temporary, read-only sequence-backed source and the nested root is applied to
+that transformed source. The parent row still consumes only the physical
+compressed bytes; transforms do not affect layout, offsets, extents, or the
+following field position. Transformed-source offsets shown in the child view are
+decoded-stream offsets, not physical offsets in the parent file.
+
+Unlike most presentation/dynamic tags, `nested(...)` may be placed directly on
+an array declaration when the array container itself is the byte slice to open.
+Use `element(nested(...))` only when every array element independently defines a
+child source.
 
 ### Byte order
 
@@ -1354,6 +1373,7 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 | Arrays/unions | `case`, `count`, `count_as`, `default`, `element`, `max_count`, `select`, `size_is`, `switch_is`, `terminated_by`, `terminator` |
 | Dynamic/semantic tags | `dynamic_array`, `dynamic_container`, `dynamic_struct`, `emit`, `emit_node`, `emit_row`, `offset_map`, `semantic` |
 | Dynamic/semantic argument wrappers | `append`, `attr`, `container`, `dest`, `field`, `item`, `key`, `label`, `map`, `mapper`, `type` |
+| Nested/code argument wrappers | `architecture`, `transform` |
 | Compatibility/native hooks | `native_view` |
 | Export/detection tags | `assoc`, `category`, `export`, `magic`, `version` |
 | Top-level/reusable declarations | `bitfield`, `field`, `include`, `match`, `tagset`, `tags` |

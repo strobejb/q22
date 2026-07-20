@@ -28,6 +28,7 @@ class StructureContentFrame;
 class StructureDefinitionManager;
 class StructureTreeModel;
 class StructureRenderEngine;
+class sequence;
 struct ExportedStructureType;
 struct StructureMagicSignature;
 struct StructureRow;
@@ -111,7 +112,13 @@ private:
     void updateHexViewSelection(const QModelIndex &current);
     StructureRow *openAsRowForIndex(const QModelIndex &index) const;
     TypeDecl *resolvedOpenAsRootType(const StructureRow *row) const;
+    TypeDecl *resolvedOpenAsRootType(const StructureRow *row, sequence *source, uint64_t byteLength) const;
     void openIndexAsStructure(const QModelIndex &index);
+    bool createTransformedOpenAsSource(const StructureRow *row,
+                                       QString *tempPath,
+                                       std::shared_ptr<sequence> *source,
+                                       uint64_t *byteLength,
+                                       QString *errorMessage) const;
     uint64_t currentRootBaseOffset(TypeDecl *rootType) const;
     void ensureSourceStackRootFrame(TypeDecl *rootType);
     void updateSourceStackWidget();
@@ -119,6 +126,7 @@ private:
     void navigateToSourceFrame(int index);
     void exitSourceStack();
     void clearSourceStack();
+    void removeSourceFrameAt(int index);
     void applyPendingRestore();
     QModelIndex findIndexByIdentity(const QModelIndex &parent, const QString &name, uint64_t offset) const;
     void clearHexViewOverlay();
@@ -189,6 +197,9 @@ private:
         uint64_t returnRowLength = 0;
         bool hasReturnRow = false;
         bool sliceRoot = false;
+        QString transform;
+        QString tempFilePath;
+        std::shared_ptr<sequence> transformedSource;
     };
     QList<SourceFrame>          m_sourceStack;
     int                         m_activeSourceFrame = -1;

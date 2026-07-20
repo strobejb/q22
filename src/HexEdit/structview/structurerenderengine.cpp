@@ -7850,7 +7850,8 @@ bool StructureRenderEngine::openAsTagArgs(ExprNode *expr,
                                           QString *offsetSpace,
                                           ExprNode **offset,
                                           ExprNode **extent,
-                                          ExprNode **name) const
+                                          ExprNode **name,
+                                          QString *transform) const
 {
     std::vector<ExprNode *> args;
     appendCommaArgs(expr, &args);
@@ -7860,6 +7861,7 @@ bool StructureRenderEngine::openAsTagArgs(ExprNode *expr,
     ExprNode *offsetExpr = nullptr;
     ExprNode *extentExpr = nullptr;
     ExprNode *nameExpr = nullptr;
+    QString transformName;
 
     for (ExprNode *arg : args)
     {
@@ -7879,6 +7881,17 @@ bool StructureRenderEngine::openAsTagArgs(ExprNode *expr,
         case TOK_NAME:
             nameExpr = inner;
             break;
+        case TOK_TRANSFORM:
+            if (!inner || inner->type != EXPR_STRINGBUF || !inner->str)
+                return false;
+            transformName = QString::fromLocal8Bit(inner->str).trimmed().toLower();
+            if (transformName != QStringLiteral("gzip")
+                && transformName != QStringLiteral("zlib")
+                && transformName != QStringLiteral("deflate"))
+            {
+                return false;
+            }
+            break;
         default:
             return false;
         }
@@ -7897,6 +7910,8 @@ bool StructureRenderEngine::openAsTagArgs(ExprNode *expr,
         *extent = extentExpr;
     if (name)
         *name = nameExpr;
+    if (transform)
+        *transform = transformName;
     return true;
 }
 
@@ -7925,7 +7940,8 @@ void StructureRenderEngine::applyOpenAsTag(StructureRow *target, TypeDecl *typeD
     ExprNode *offsetExpr = nullptr;
     ExprNode *extentExpr = nullptr;
     ExprNode *nameExpr = nullptr;
-    if (!openAsTagArgs(expr, &typeExpr, &offsetSpace, &offsetExpr, &extentExpr, &nameExpr))
+    QString transform;
+    if (!openAsTagArgs(expr, &typeExpr, &offsetSpace, &offsetExpr, &extentExpr, &nameExpr, &transform))
         return;
 
     const QString rootTypeName = QString::fromLocal8Bit(typeExpr->str);
@@ -7975,8 +7991,15 @@ void StructureRenderEngine::applyOpenAsTag(StructureRow *target, TypeDecl *typeD
     target->openAsRootType = rootType;
     target->openAsRootTypeName = rootTypeName;
     target->openAsName = name.trimmed();
+    target->openAsTransform = transform;
     target->openAsOffset = absoluteOffset;
     target->openAsByteLength = byteLength;
+    if (!transform.isEmpty())
+    {
+        target->branchIconPath = QStringLiteral(":/icons/actions/nested.svg");
+        target->branchOpenIconPath = target->branchIconPath;
+        target->branchEmptyIconPath = target->branchIconPath;
+    }
 }
 
 void StructureRenderEngine::linkWasmFunctionCodeTargets(StructureRow *root)

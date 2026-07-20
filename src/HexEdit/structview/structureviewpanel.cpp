@@ -56,6 +56,7 @@
 #include <QTextFrame>
 #include <QTextStream>
 #include <QTextTable>
+#include <QTemporaryFile>
 #include <QTimer>
 #include <QTreeView>
 #include <QToolButton>
@@ -69,6 +70,10 @@
 #include <memory>
 #include <utility>
 
+#ifdef HEXEDIT_HAVE_ZLIB
+#include <zlib.h>
+#endif
+
 namespace
 {
 
@@ -78,6 +83,9 @@ enum class InitialStructureExpansion
     FirstLevel,
     All,
 };
+
+constexpr uint64_t kMaxTransformedSourceBytes = 256ull * 1024ull * 1024ull;
+constexpr uint64_t kMaxTransformExpansionRatio = 100;
 
 static constexpr InitialStructureExpansion kInitialStructureExpansion =
     InitialStructureExpansion::FirstLevel;
@@ -1932,6 +1940,169 @@ bool magicSignatureMatchesSlice(HexView *hv, uint64_t baseOffset, uint64_t byteL
     return bytesRead == static_cast<size_t>(fileBytes.size()) && fileBytes == signature.bytes;
 }
 
+size_t readSequenceData(sequence *source, uint64_t offset, uint8_t *buffer, size_t length)
+{
+    if (!source || offset > static_cast<uint64_t>(source->size()))
+        return 0;
+
+    const uint64_t available = static_cast<uint64_t>(source->size()) - offset;
+    const size_t requested = static_cast<size_t>(qMin<uint64_t>(static_cast<uint64_t>(length), available));
+    if (requested == 0)
+        return 0;
+
+    return source->render(static_cast<size_w>(offset), reinterpret_cast<seqchar *>(buffer), requested);
+}
+
+bool magicSignatureMatchesSequence(sequence *source, uint64_t byteLength, const StructureMagicSignature &signature)
+{
+    if (!source || signature.bytes.isEmpty() || signature.offset > byteLength)
+        return false;
+
+    const uint64_t remaining = byteLength - signature.offset;
+    if (remaining < static_cast<uint64_t>(signature.bytes.size()))
+        return false;
+
+    QByteArray fileBytes(signature.bytes.size(), Qt::Uninitialized);
+    const size_t bytesRead = readSequenceData(source,
+                                              signature.offset,
+                                              reinterpret_cast<uint8_t *>(fileBytes.data()),
+                                              static_cast<size_t>(fileBytes.size()));
+    return bytesRead == static_cast<size_t>(fileBytes.size()) && fileBytes == signature.bytes;
+}
+
+int zlibWindowBitsForTransform(const QString &transform)
+{
+#ifdef HEXEDIT_HAVE_ZLIB
+    if (transform == QStringLiteral("gzip"))
+        return MAX_WBITS + 16;
+    if (transform == QStringLiteral("zlib"))
+        return MAX_WBITS;
+    if (transform == QStringLiteral("deflate"))
+        return -MAX_WBITS;
+#else
+    Q_UNUSED(transform);
+#endif
+    return 0;
+}
+
+bool inflateHexViewRangeToFile(HexView *hv,
+                               uint64_t sourceOffset,
+                               uint64_t sourceLength,
+                               const QString &transform,
+                               QFile *dest,
+                               uint64_t *outputLength,
+                               QString *errorMessage)
+{
+#ifndef HEXEDIT_HAVE_ZLIB
+    Q_UNUSED(hv);
+    Q_UNUSED(sourceOffset);
+    Q_UNUSED(sourceLength);
+    Q_UNUSED(dest);
+    Q_UNUSED(outputLength);
+    if (errorMessage)
+        *errorMessage = QObject::tr("Transform \"%1\" is unavailable because this build was compiled without zlib support.")
+            .arg(transform);
+    return false;
+#else
+    if (!hv || !dest || !dest->isOpen())
+        return false;
+
+    if (sourceLength == 0)
+    {
+        if (errorMessage)
+            *errorMessage = QObject::tr("The compressed byte range is empty.");
+        return false;
+    }
+
+    const int windowBits = zlibWindowBitsForTransform(transform);
+    if (windowBits == 0)
+    {
+        if (errorMessage)
+            *errorMessage = QObject::tr("Unsupported transform \"%1\".").arg(transform);
+        return false;
+    }
+
+    const uint64_t maxByRatio = sourceLength > UINT64_MAX / kMaxTransformExpansionRatio
+        ? UINT64_MAX
+        : sourceLength * kMaxTransformExpansionRatio;
+    const uint64_t outputLimit = qMin(kMaxTransformedSourceBytes, maxByRatio);
+
+    z_stream stream = {};
+    int zrc = inflateInit2(&stream, windowBits);
+    if (zrc != Z_OK)
+    {
+        if (errorMessage)
+            *errorMessage = QObject::tr("Could not initialise %1 decompressor.").arg(transform);
+        return false;
+    }
+
+    QByteArray input(64 * 1024, Qt::Uninitialized);
+    QByteArray output(64 * 1024, Qt::Uninitialized);
+    uint64_t consumed = 0;
+    uint64_t produced = 0;
+    bool ok = false;
+
+    while (consumed < sourceLength)
+    {
+        const size_t chunk = static_cast<size_t>(qMin<uint64_t>(static_cast<uint64_t>(input.size()),
+                                                               sourceLength - consumed));
+        const size_t bytesRead = hv->getData(static_cast<size_w>(sourceOffset + consumed),
+                                             reinterpret_cast<uint8_t *>(input.data()),
+                                             chunk);
+        if (bytesRead == 0)
+            break;
+
+        consumed += bytesRead;
+        stream.next_in = reinterpret_cast<Bytef *>(input.data());
+        stream.avail_in = static_cast<uInt>(bytesRead);
+
+        while (stream.avail_in > 0)
+        {
+            stream.next_out = reinterpret_cast<Bytef *>(output.data());
+            stream.avail_out = static_cast<uInt>(output.size());
+
+            zrc = inflate(&stream, Z_NO_FLUSH);
+            if (zrc != Z_OK && zrc != Z_STREAM_END)
+                goto done;
+
+            const qsizetype have = output.size() - static_cast<qsizetype>(stream.avail_out);
+            if (have > 0)
+            {
+                const uint64_t have64 = static_cast<uint64_t>(have);
+                if (have64 > outputLimit || produced > outputLimit - have64)
+                {
+                    if (errorMessage)
+                        *errorMessage = QObject::tr("Transformed output exceeds the %1 MiB safety limit.")
+                            .arg(kMaxTransformedSourceBytes / 1024 / 1024);
+                    goto done;
+                }
+                if (dest->write(output.constData(), have) != have)
+                {
+                    if (errorMessage)
+                        *errorMessage = QObject::tr("Could not write transformed data to a temporary file.");
+                    goto done;
+                }
+                produced += have64;
+            }
+
+            if (zrc == Z_STREAM_END)
+            {
+                ok = true;
+                goto done;
+            }
+        }
+    }
+
+done:
+    inflateEnd(&stream);
+    if (!ok && errorMessage && errorMessage->isEmpty())
+        *errorMessage = QObject::tr("Could not decompress %1 data.").arg(transform);
+    if (ok && outputLength)
+        *outputLength = produced;
+    return ok;
+#endif
+}
+
 QString normalizedAssocExtension(QString ext)
 {
     ext = ext.trimmed().toLower();
@@ -2797,10 +2968,18 @@ void StructureViewPanel::rebuildRows()
     bool hasSourceExtent = false;
     uint64_t sourceExtentBase = baseOffset;
     uint64_t sourceExtentLength = 0;
+    std::shared_ptr<sequence> transformedSource;
     if (m_activeSourceFrame >= 0 && m_activeSourceFrame < m_sourceStack.size())
     {
         const SourceFrame &frame = m_sourceStack[m_activeSourceFrame];
-        if (frame.sliceRoot && frame.rootType == rootType && frame.baseOffset == baseOffset)
+        if (frame.transformedSource && frame.rootType == rootType)
+        {
+            transformedSource = frame.transformedSource;
+            hasSourceExtent = true;
+            sourceExtentBase = 0;
+            sourceExtentLength = frame.byteLength;
+        }
+        else if (frame.sliceRoot && frame.rootType == rootType && frame.baseOffset == baseOffset)
         {
             hasSourceExtent = true;
             sourceExtentBase = frame.baseOffset;
@@ -2811,7 +2990,18 @@ void StructureViewPanel::rebuildRows()
         m_definitions->library(),
         rootType,
         baseOffset,
-        [this, hasSourceExtent, sourceExtentBase, sourceExtentLength](uint64_t offset, uint8_t *buffer, size_t length) -> size_t {
+        [this, hasSourceExtent, sourceExtentBase, sourceExtentLength, transformedSource](uint64_t offset, uint8_t *buffer, size_t length) -> size_t {
+            if (transformedSource)
+            {
+                if (offset < sourceExtentBase)
+                    return 0;
+                const uint64_t relativeOffset = offset - sourceExtentBase;
+                if (relativeOffset >= sourceExtentLength)
+                    return 0;
+                length = static_cast<size_t>(qMin<uint64_t>(static_cast<uint64_t>(length),
+                                                            sourceExtentLength - relativeOffset));
+                return readSequenceData(transformedSource.get(), relativeOffset, buffer, length);
+            }
             if (!m_hv)
                 return 0;
             if (hasSourceExtent)
@@ -3056,6 +3246,7 @@ void StructureViewPanel::showOptionsContextMenu(int column, const QPoint &global
             if (resolvedRootName.isEmpty())
                 resolvedRootName = openAsRow->openAsRootTypeName;
             const bool autoDetect = openAsRow->openAsRootTypeName.compare(QStringLiteral("auto"), Qt::CaseInsensitive) == 0;
+            const bool transformedAutoDetect = autoDetect && !openAsRow->openAsTransform.isEmpty();
             QString label;
             if (openAsRow->openAsName.isEmpty())
                 label = autoDetect ? tr("Open as detected format") : tr("Open as %1").arg(resolvedRootName);
@@ -3063,9 +3254,10 @@ void StructureViewPanel::showOptionsContextMenu(int column, const QPoint &global
                 label = autoDetect
                     ? tr("Open \"%1\" as %2").arg(openAsRow->openAsName, resolvedRootName)
                     : tr("Open \"%1\" as %2").arg(openAsRow->openAsName, resolvedRootName);
+            if (!openAsRow->openAsTransform.isEmpty())
+                label = tr("%1 via %2").arg(label, openAsRow->openAsTransform);
             const bool canOpen = m_hv
-                && resolvedRootType
-                && rootComboIndexForType(resolvedRootType) >= 0
+                && ((resolvedRootType && rootComboIndexForType(resolvedRootType) >= 0) || transformedAutoDetect)
                 && openAsRow->openAsByteLength > 0
                 && openAsRow->openAsOffset < m_hv->size();
             if (!canOpen)
@@ -3765,16 +3957,127 @@ TypeDecl *StructureViewPanel::resolvedOpenAsRootType(const StructureRow *row) co
     return nullptr;
 }
 
+TypeDecl *StructureViewPanel::resolvedOpenAsRootType(const StructureRow *row, sequence *source, uint64_t byteLength) const
+{
+    if (!row || !source || !m_definitions)
+        return nullptr;
+    if (row->openAsRootType)
+        return row->openAsRootType;
+    if (row->openAsRootTypeName.compare(QStringLiteral("auto"), Qt::CaseInsensitive) != 0)
+        return nullptr;
+
+    const QList<ExportedStructureType> exportedTypes = sortedExportedTypes(m_definitions->exportedTypes());
+    const int associatedIndex = associatedRootTypeIndexForFileName(exportedTypes, row->openAsName);
+    if (associatedIndex >= 0)
+        return exportedTypes[associatedIndex].typeDecl;
+
+    for (const ExportedStructureType &exported : exportedTypes)
+    {
+        for (const StructureMagicSignature &signature : exported.magicSignatures)
+        {
+            if (magicSignatureMatchesSequence(source, byteLength, signature))
+                return exported.typeDecl;
+        }
+    }
+
+    return nullptr;
+}
+
+bool StructureViewPanel::createTransformedOpenAsSource(const StructureRow *row,
+                                                       QString *tempPath,
+                                                       std::shared_ptr<sequence> *source,
+                                                       uint64_t *byteLength,
+                                                       QString *errorMessage) const
+{
+    if (!row || !m_hv || row->openAsTransform.isEmpty())
+        return false;
+
+    QTemporaryFile temp(QDir::tempPath() + QStringLiteral("/q22-nested-XXXXXX.bin"));
+    temp.setAutoRemove(false);
+    if (!temp.open())
+    {
+        if (errorMessage)
+            *errorMessage = tr("Could not create a temporary file for transformed data.");
+        return false;
+    }
+
+    uint64_t transformedLength = 0;
+    QString transformError;
+    if (!inflateHexViewRangeToFile(m_hv,
+                                   row->openAsOffset,
+                                   row->openAsByteLength,
+                                   row->openAsTransform,
+                                   &temp,
+                                   &transformedLength,
+                                   &transformError))
+    {
+        const QString path = temp.fileName();
+        temp.close();
+        QFile::remove(path);
+        if (errorMessage)
+            *errorMessage = transformError;
+        return false;
+    }
+
+    const QString path = temp.fileName();
+    temp.close();
+
+    auto seq = std::make_shared<sequence>();
+    if (!seq->open(path.toStdString(), true, true))
+    {
+        QFile::remove(path);
+        if (errorMessage)
+            *errorMessage = tr("Could not open transformed data through the sequence reader.");
+        return false;
+    }
+
+    if (tempPath)
+        *tempPath = path;
+    if (source)
+        *source = std::move(seq);
+    if (byteLength)
+        *byteLength = transformedLength;
+    return true;
+}
+
 void StructureViewPanel::openIndexAsStructure(const QModelIndex &index)
 {
     StructureRow *row = openAsRowForIndex(index);
     if (!row || !m_hv || !m_rootCombo)
         return;
 
-    TypeDecl *rootType = resolvedOpenAsRootType(row);
+    QString transformedTempPath;
+    std::shared_ptr<sequence> transformedSource;
+    uint64_t transformedByteLength = 0;
+    if (!row->openAsTransform.isEmpty())
+    {
+        QString errorMessage;
+        if (!createTransformedOpenAsSource(row,
+                                           &transformedTempPath,
+                                           &transformedSource,
+                                           &transformedByteLength,
+                                           &errorMessage))
+        {
+            QMessageBox::warning(this,
+                                 tr("Cannot open transformed structure slice"),
+                                 errorMessage.isEmpty()
+                                     ? tr("The %1 transform failed.").arg(row->openAsTransform)
+                                     : errorMessage);
+            return;
+        }
+    }
+
+    TypeDecl *rootType = transformedSource
+        ? resolvedOpenAsRootType(row, transformedSource.get(), transformedByteLength)
+        : resolvedOpenAsRootType(row);
     const int rootIndex = rootComboIndexForType(rootType);
     if (rootIndex < 0)
     {
+        if (!transformedTempPath.isEmpty())
+        {
+            transformedSource.reset();
+            QFile::remove(transformedTempPath);
+        }
         QMessageBox::information(this,
                                  tr("Cannot open structure slice"),
                                  tr("No exported root structure matches \"%1\".")
@@ -3798,7 +4101,7 @@ void StructureViewPanel::openIndexAsStructure(const QModelIndex &index)
     if (m_activeSourceFrame >= 0 && m_activeSourceFrame < m_sourceStack.size() - 1)
     {
         while (m_sourceStack.size() > m_activeSourceFrame + 1)
-            m_sourceStack.removeLast();
+            removeSourceFrameAt(m_sourceStack.size() - 1);
     }
     if (m_activeSourceFrame >= 0 && m_activeSourceFrame < m_sourceStack.size())
     {
@@ -3813,14 +4116,17 @@ void StructureViewPanel::openIndexAsStructure(const QModelIndex &index)
     childFrame.rootType = rootType;
     childFrame.rootDisplayName = displayNameForTypeDecl(rootType);
     childFrame.sourceName = row->openAsName.isEmpty() ? childFrame.rootDisplayName : row->openAsName;
-    childFrame.baseOffset = row->openAsOffset;
-    childFrame.byteLength = end - start;
+    childFrame.baseOffset = transformedSource ? 0 : row->openAsOffset;
+    childFrame.byteLength = transformedSource ? transformedByteLength : static_cast<uint64_t>(end - start);
     childFrame.sliceRoot = true;
+    childFrame.transform = row->openAsTransform;
+    childFrame.tempFilePath = transformedTempPath;
+    childFrame.transformedSource = transformedSource;
     m_sourceStack.push_back(childFrame);
     m_activeSourceFrame = m_sourceStack.size() - 1;
 
     m_pinned = true;
-    m_pinnedOffset = row->openAsOffset;
+    m_pinnedOffset = childFrame.baseOffset;
     m_openAsPinnedBase = true;
     updatePinAction();
 
@@ -3903,10 +4209,13 @@ void StructureViewPanel::updateSourceStackWidget()
         const SourceFrame &frame = m_sourceStack[i];
         const QString marker = i == 0 ? QString() : QStringLiteral("└─ ");
         const QString source = frame.sourceName.isEmpty() ? frame.rootDisplayName : frame.sourceName;
+        const QString sourceLabel = frame.transform.isEmpty()
+            ? source
+            : tr("%1 [%2]").arg(source, frame.transform);
         const QString text = QStringLiteral("%1%2  %3")
             .arg(marker,
                  frame.rootDisplayName.isEmpty() ? tr("Structure") : frame.rootDisplayName,
-                 source);
+                 sourceLabel);
 
         auto *button = new QPushButton(m_sourceStackWidget);
         button->setObjectName(QStringLiteral("structureSourceStackRow"));
@@ -3946,7 +4255,7 @@ void StructureViewPanel::updateSourceStackWidget()
         }
 
         button->setToolTip(tr("%1\nOffset: 0x%2\nLength: %3 bytes")
-                               .arg(source,
+                               .arg(sourceLabel,
                                     formatStructureSourceOffset(frame.baseOffset),
                                     QString::number(frame.byteLength)));
         button->installEventFilter(this);
@@ -4004,7 +4313,11 @@ void StructureViewPanel::navigateToSourceFrame(int index)
         m_rootCombo->setCurrentIndex(rootIndex);
     }
 
-    if (frame.hasReturnRow)
+    if (frame.transformedSource)
+    {
+        clearHexViewOverlay();
+    }
+    else if (frame.hasReturnRow)
     {
         restoreSelection(frame.returnRowName, frame.returnRowOffset);
         if (frame.returnRowLength > 0 && frame.returnRowOffset < m_hv->size())
@@ -4081,9 +4394,22 @@ void StructureViewPanel::exitSourceStack()
 
 void StructureViewPanel::clearSourceStack()
 {
-    m_sourceStack.clear();
+    while (!m_sourceStack.isEmpty())
+        removeSourceFrameAt(m_sourceStack.size() - 1);
     m_activeSourceFrame = -1;
     updateSourceStackWidget();
+}
+
+void StructureViewPanel::removeSourceFrameAt(int index)
+{
+    if (index < 0 || index >= m_sourceStack.size())
+        return;
+
+    QString tempFilePath = m_sourceStack[index].tempFilePath;
+    m_sourceStack[index].transformedSource.reset();
+    m_sourceStack.removeAt(index);
+    if (!tempFilePath.isEmpty())
+        QFile::remove(tempFilePath);
 }
 
 void StructureViewPanel::applyPendingRestore()

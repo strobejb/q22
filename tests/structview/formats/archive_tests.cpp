@@ -164,6 +164,11 @@ void StructViewArchiveTests::builderRendersGzipHeaderAndTrailer()
     StructureRow *compressedData = findChildNamed(rows[0].get(), QStringLiteral("byte compressedData[]"));
     QVERIFY2(compressedData, qPrintable(childNames(rows[0].get())));
     QCOMPARE(compressedData->value, QStringLiteral("{ 1, 2, 3, 4 }"));
+    QVERIFY(compressedData->hasOpenAsTarget);
+    QCOMPARE(compressedData->openAsRootTypeName, QStringLiteral("auto"));
+    QCOMPARE(compressedData->openAsTransform, QStringLiteral("gzip"));
+    QCOMPARE(compressedData->openAsOffset, uint64_t(28));
+    QCOMPARE(compressedData->openAsByteLength, uint64_t(4));
 
     StructureRow *trailer = findChildNamed(rows[0].get(), QStringLiteral("GZIP_TRAILER trailer"));
     QVERIFY2(trailer, qPrintable(childNames(rows[0].get())));

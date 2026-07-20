@@ -127,6 +127,7 @@
     <item>terminated_by</item>
     <item>terminator</item>
     <item>tree</item>
+    <item>transform</item>
     <item>type</item>
     <item>value_at</item>
     <item>version</item>

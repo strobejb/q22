@@ -232,6 +232,10 @@ set_target_properties(hexedit PROPERTIES
     AUTOUIC_SEARCH_PATHS "${HEXEDIT_SOURCE_DIR};${HEXEDIT_SOURCE_DIR}/bookmarks"
 )
 target_link_libraries(hexedit PRIVATE Qt${QT_VERSION_MAJOR}::Widgets HexView causeway capstone)
+if(TARGET ZLIB::ZLIB)
+    target_link_libraries(hexedit PRIVATE ZLIB::ZLIB)
+    target_compile_definitions(hexedit PRIVATE HEXEDIT_HAVE_ZLIB)
+endif()
 if(NOT WIN32 AND TARGET Qt${QT_VERSION_MAJOR}::DBus)
     target_link_libraries(hexedit PRIVATE Qt${QT_VERSION_MAJOR}::DBus)
     target_compile_definitions(hexedit PRIVATE HEXEDIT_HAVE_DBUS)

@@ -55,15 +55,18 @@ the UI can navigate nested sources. `open_as(...)` remains accepted as the
 compatibility/action spelling. This covers direct physical slices such as TAR
 entries and nested TAR/TAR/WASM cases.
 
-There is still no reusable way to render a decompressed or otherwise transformed
-stream with an existing Strata definition.
+`transform("gzip")`, `transform("zlib")`, and `transform("deflate")` can now be
+used inside `nested(...)`/`open_as(...)`. The selected source bytes are
+decompressed on demand into a temporary, read-only sequence-backed source; the
+nested root is then applied to that transformed source. This covers the first
+`.tar.gz` style workflow.
 
-This blocks embedded ICO PNGs, WOFF table inflation, `.tar.gz` nesting, CAB
-folder decompression, fat Mach-O slices, and filesystem views inside disk-image
-partitions.
+Remaining transform gaps include embedded ICO PNG payload navigation, WOFF table
+inflation polish, CAB folder decompression, WOFF2 Brotli, LZX/LZ4/Zstd-style
+codecs, fat Mach-O slice UX, and filesystem views inside disk-image partitions.
 
-Potential direction: pair `nested(...)` with explicit transform providers for
-zlib/DEFLATE, Brotli, LZX, and other codecs. Transformed rows must retain a
+Potential direction: add transform providers for Brotli, LZX, LZ4, Zstd, and
+format-specific decode/reconstruction steps. Transformed rows must retain a
 clear relationship to their source bytes without pretending that decompressed
 offsets are physical file offsets.
 

@@ -338,7 +338,8 @@ private:
                      QString *offsetSpace, ExprNode **offset, ExprNode **extent) const;
     void applyCodeTag(StructureRow *target, TypeDecl *typeDecl, StructureRow *scope);
     bool openAsTagArgs(ExprNode *expr, ExprNode **typeName, QString *offsetSpace,
-                       ExprNode **offset, ExprNode **extent, ExprNode **name) const;
+                       ExprNode **offset, ExprNode **extent, ExprNode **name,
+                       QString *transform = nullptr) const;
     void applyOpenAsTag(StructureRow *target, TypeDecl *typeDecl, StructureRow *scope);
     void linkWasmFunctionCodeTargets(StructureRow *root);
     void linkWasmSemanticFunctionCodeTargets(StructureRow *root);

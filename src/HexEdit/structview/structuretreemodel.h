@@ -102,6 +102,7 @@ struct StructureRow
     TypeDecl *openAsRootType = nullptr;
     QString openAsRootTypeName;
     QString openAsName;
+    QString openAsTransform;
     uint64_t openAsOffset = 0;
     uint64_t openAsByteLength = 0;
     uint64_t absoluteOffset = 0;

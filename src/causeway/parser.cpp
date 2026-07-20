@@ -325,7 +325,7 @@ static TOKEN kCodeTagValueWrappers[] = {
 };
 
 static TOKEN kOpenAsTagValueWrappers[] = {
-	TOK_TYPE, TOK_OFFSET, TOK_EXTENT, TOK_NAME, TOK_NULL
+	TOK_TYPE, TOK_OFFSET, TOK_EXTENT, TOK_NAME, TOK_TRANSFORM, TOK_NULL
 };
 
 static TOKEN kFormatTagValueWrappers[] = {

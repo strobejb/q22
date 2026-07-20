@@ -1692,7 +1692,7 @@ void StructViewRawRendererTests::builderExposesOpenAsTargets()
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
                         "typedef struct _Child { byte magic; } Child;\n"
-                        "[nested(type(Child), offset(dataOffset), extent(dataSize), name(fmt(\"slice {0}\", dataOffset)))]\n"
+                        "[nested(type(Child), offset(dataOffset), extent(dataSize), transform(\"gzip\"), name(fmt(\"slice {0}\", dataOffset)))]\n"
                         "typedef struct _Entry {\n"
                         "  dword dataOffset;\n"
                         "  dword dataSize;\n"
@@ -1721,6 +1721,7 @@ void StructViewRawRendererTests::builderExposesOpenAsTargets()
     QVERIFY(first->openAsRootType);
     QCOMPARE(first->openAsRootTypeName, QStringLiteral("Child"));
     QCOMPARE(first->openAsName, QStringLiteral("slice 32"));
+    QCOMPARE(first->openAsTransform, QStringLiteral("gzip"));
     QCOMPARE(first->openAsOffset, uint64_t(0x20));
     QCOMPARE(first->openAsByteLength, uint64_t(4));
 

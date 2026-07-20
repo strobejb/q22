@@ -118,7 +118,6 @@ static bool IsElementOnlyArrayTag(TOKEN tok)
 	case TOK_TREE:
 	case TOK_CODE:
 	case TOK_OFFSETMAP:
-	case TOK_OPENAS:
 	case TOK_VIEW:
 	case TOK_WARN:
 	case TOK_ASSERT:

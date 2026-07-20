@@ -1021,7 +1021,7 @@ void CausewayTests::openAsTagsParse()
 						"  dword dataOffset;\n"
 						"  dword dataSize;\n"
 						"} EntryOpenAs;\n"
-						"[nested(type(Child), offset(dataOffset), extent(dataSize), name(fmt(\"nested {0}\", dataOffset)))]\n"
+						"[nested(type(Child), offset(dataOffset), extent(dataSize), transform(\"gzip\"), name(fmt(\"nested {0}\", dataOffset)))]\n"
 						"typedef struct _EntryNested {\n"
 						"  dword dataOffset;\n"
 						"  dword dataSize;\n"
@@ -1043,6 +1043,10 @@ void CausewayTests::openAsTagsParse()
 		QVERIFY(findTagWrapExpr(openAs, TOK_EXTENT));
 		QVERIFY(findTagWrapExpr(openAs, TOK_NAME));
 	}
+
+	ExprNode *nested = nullptr;
+	QVERIFY(FindTag(entries[1]->tagList, TOK_OPENAS, &nested));
+	QVERIFY(findTagWrapExpr(nested, TOK_TRANSFORM));
 }
 
 void CausewayTests::extentTagsAndScalarSizeofParse()
