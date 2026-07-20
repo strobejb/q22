@@ -39,10 +39,10 @@ bool copyFileIfMissing(const QString &from, const QString &to)
     return QFile::copy(from, to);
 }
 
-void copyDirEntriesIfMissing(const QString &fromDir, const QString &toDir)
+void copyDirEntriesIfTargetMissing(const QString &fromDir, const QString &toDir)
 {
     QDir source(fromDir);
-    if (!source.exists())
+    if (!source.exists() || QFileInfo::exists(toDir))
         return;
 
     QDir().mkpath(toDir);
@@ -51,7 +51,7 @@ void copyDirEntriesIfMissing(const QString &fromDir, const QString &toDir)
     {
         const QString target = QDir(toDir).filePath(entry.fileName());
         if (entry.isDir())
-            copyDirEntriesIfMissing(entry.absoluteFilePath(), target);
+            copyDirEntriesIfTargetMissing(entry.absoluteFilePath(), target);
         else
             copyFileIfMissing(entry.absoluteFilePath(), target);
     }
@@ -73,22 +73,32 @@ QString AppSettings::settingsFilePath()
 
 void AppSettings::migrateLegacyConfig()
 {
+    {
+        QSettings settings(settingsFilePath(), QSettings::IniFormat);
+        if (settings.value(QStringLiteral("migration/legacyConfigComplete"), false).toBool())
+            return;
+    }
+
     const QString oldSettings = legacySettingsFilePath();
     const QString oldRoot = QFileInfo(oldSettings).absolutePath();
     const QString newRoot = appConfigDir();
     if (QFileInfo(oldRoot).absoluteFilePath() != QFileInfo(newRoot).absoluteFilePath())
     {
         copyFileIfMissing(oldSettings, settingsFilePath());
-        copyDirEntriesIfMissing(QDir(oldRoot).filePath(QStringLiteral("palettes")),
-                                QDir(newRoot).filePath(QStringLiteral("palettes")));
-        copyDirEntriesIfMissing(QDir(oldRoot).filePath(QStringLiteral("structs")),
-                                QDir(newRoot).filePath(QStringLiteral("strata")));
+        copyDirEntriesIfTargetMissing(QDir(oldRoot).filePath(QStringLiteral("palettes")),
+                                      QDir(newRoot).filePath(QStringLiteral("palettes")));
+        copyDirEntriesIfTargetMissing(QDir(oldRoot).filePath(QStringLiteral("structs")),
+                                      QDir(newRoot).filePath(QStringLiteral("strata")));
     }
 
-    copyDirEntriesIfMissing(QDir(newRoot).filePath(QStringLiteral("structs")),
-                            QDir(newRoot).filePath(QStringLiteral("strata")));
+    copyDirEntriesIfTargetMissing(QDir(newRoot).filePath(QStringLiteral("structs")),
+                                  QDir(newRoot).filePath(QStringLiteral("strata")));
     copyFileIfMissing(QDir(oldRoot).filePath(QStringLiteral("bookmarks.json")),
                       QDir(newRoot).filePath(QStringLiteral("bookmarks.json")));
     copyFileIfMissing(QDir(oldRoot).filePath(QStringLiteral("bookmarks.ini")),
                       QDir(newRoot).filePath(QStringLiteral("bookmarks.ini")));
+
+    QSettings settings(settingsFilePath(), QSettings::IniFormat);
+    settings.setValue(QStringLiteral("migration/legacyConfigComplete"), true);
+    settings.sync();
 }

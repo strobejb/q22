@@ -10,6 +10,7 @@ private slots:
     void builderRendersGzipHeaderAndTrailer();
     void builderRendersCabinetHeaderFilesAndData();
     void builderRendersZipCentralDirectoryFromEocd();
+    void builderRendersLargeZipCentralDirectoryWithoutNameLookupBlowup();
 };
 
 void StructViewArchiveTests::builderRendersTarEntries()
@@ -447,9 +448,8 @@ void StructViewArchiveTests::builderRendersZipCentralDirectoryFromEocd()
     QCOMPARE(storedRows.size(), size_t(1));
     StructureRow *storedLocals = findChildNamed(storedRows[0].get(), QStringLiteral("ZIP_LOCAL_FILE_HEADER localFileHeaders[]"));
     QVERIFY(storedLocals);
-    QCOMPARE(storedLocals->children.size(), size_t(2));
+    QCOMPARE(storedLocals->children.size(), size_t(1));
     QVERIFY(storedLocals->children[0]->name.contains(QStringLiteral("large.bin")));
-    QVERIFY(storedLocals->children[1]->name.contains(QStringLiteral("next.bin")));
     StructureRow *storedPayload = findChildNamed(storedLocals->children[0].get(), QStringLiteral("byte CompressedData[]"));
     QVERIFY2(storedPayload, qPrintable(childNames(storedLocals->children[0].get())));
     QVERIFY(storedPayload->hasOpenAsTarget);
@@ -467,6 +467,99 @@ void StructViewArchiveTests::builderRendersZipCentralDirectoryFromEocd()
     QCOMPARE(storedCentral->children[0]->openAsTransform, QString());
     QCOMPARE(storedCentral->children[0]->openAsOffset, uint64_t(largeOffset + 30 + 9));
     QCOMPARE(storedCentral->children[0]->openAsByteLength, uint64_t(5000));
+}
+
+void StructViewArchiveTests::builderRendersLargeZipCentralDirectoryWithoutNameLookupBlowup()
+{
+    // Scenario: APK/JAR-style ZIP files can contain thousands of central
+    // directory entries.
+    // Expected: per-entry FileName naming and nested target metadata remain
+    // responsive enough to render the capped preview instead of spending
+    // startup time in repeated field-name scans.
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("zip.strata")), "zip.strata failed to parse");
+    TypeDecl *zipRoot = exportedNamed(&library, QStringLiteral("ZIP"));
+    QVERIFY(zipRoot);
+
+    QByteArray zip;
+    auto appendLe16 = [&zip](quint16 value) {
+        zip.append(char(value & 0xff));
+        zip.append(char((value >> 8) & 0xff));
+    };
+    auto appendLe32 = [&zip](quint32 value) {
+        zip.append(char(value & 0xff));
+        zip.append(char((value >> 8) & 0xff));
+        zip.append(char((value >> 16) & 0xff));
+        zip.append(char((value >> 24) & 0xff));
+    };
+    QVector<quint32> localOffsets;
+    QVector<QByteArray> names;
+    constexpr int kEntryCount = 2048;
+    localOffsets.reserve(kEntryCount);
+    names.reserve(kEntryCount);
+
+    for (int i = 0; i < kEntryCount; ++i)
+    {
+        const QByteArray name = QByteArray("classes/entry-") + QByteArray::number(i) + QByteArray(".bin");
+        names.push_back(name);
+        localOffsets.push_back(static_cast<quint32>(zip.size()));
+        appendLe32(0x04034b50);
+        appendLe16(20);
+        appendLe16(0);
+        appendLe16(0);
+        appendLe16(0);
+        appendLe16(0);
+        appendLe32(0);
+        appendLe32(1);
+        appendLe32(1);
+        appendLe16(static_cast<quint16>(name.size()));
+        appendLe16(0);
+        zip.append(name);
+        zip.append(char(i & 0xff));
+    }
+
+    const quint32 centralOffset = static_cast<quint32>(zip.size());
+    for (int i = 0; i < kEntryCount; ++i)
+    {
+        const QByteArray &name = names[i];
+        appendLe32(0x02014b50);
+        appendLe16(20);
+        appendLe16(20);
+        appendLe16(0);
+        appendLe16(0);
+        appendLe16(0);
+        appendLe16(0);
+        appendLe32(0);
+        appendLe32(1);
+        appendLe32(1);
+        appendLe16(static_cast<quint16>(name.size()));
+        appendLe16(0);
+        appendLe16(0);
+        appendLe16(0);
+        appendLe16(0);
+        appendLe32(0);
+        appendLe32(localOffsets[i]);
+        zip.append(name);
+    }
+    const quint32 centralSize = static_cast<quint32>(zip.size()) - centralOffset;
+    appendLe32(0x06054b50);
+    appendLe16(0);
+    appendLe16(0);
+    appendLe16(kEntryCount);
+    appendLe16(kEntryCount);
+    appendLe32(centralSize);
+    appendLe32(centralOffset);
+    appendLe16(0);
+
+    auto rows = buildRows(&library, zipRoot, zip);
+    QCOMPARE(rows.size(), size_t(1));
+    StructureRow *central = findChildNamed(rows[0].get(), QStringLiteral("ZIP_CENTRAL_DIRECTORY_FILE_HEADER centralDirectory[]"));
+    QVERIFY2(central, qPrintable(childNames(rows[0].get())));
+    QVERIFY(!central->children.empty());
+    QVERIFY(central->children[0]->hasOpenAsTarget);
+    QCOMPARE(central->children[0]->openAsName, QString::fromLatin1(names[0]));
+    QCOMPARE(central->children[0]->openAsTransform, QString());
+    QCOMPARE(central->children[0]->openAsByteLength, uint64_t(1));
 }
 
 REGISTER_STRUCTVIEW_TEST(StructViewArchiveTests)

@@ -224,7 +224,7 @@ typedef struct _ZIP_END_OF_CENTRAL_DIRECTORY_RECORD
 typedef struct _ZIP_LOCAL_FILE_SEQUENCE
 {
     [
-        max_count(4096),
+        max_count(1),
         terminated_by(Signature != ZIP_LOCAL_FILE_HEADER_SIGNATURE),
         terminator("hidden"),
         element(name(FileName))
@@ -235,15 +235,13 @@ typedef struct _ZIP_LOCAL_FILE_SEQUENCE
 typedef struct _ZIP_CENTRAL_DIRECTORY_SEQUENCE
 {
     [
-        max_count(4096),
-        terminated_by(Signature != ZIP_CENTRAL_DIRECTORY_SIGNATURE),
-        terminator("hidden"),
+        count(4096),
         element(name(FileName),
                 nested(type(auto),
                        offset(RelativeOffsetOfLocalHeader
                               + 30
-                              + root_value_at(RelativeOffsetOfLocalHeader + 26, word)
-                              + root_value_at(RelativeOffsetOfLocalHeader + 28, word)),
+                              + root::value_at(RelativeOffsetOfLocalHeader + 26, word)
+                              + root::value_at(RelativeOffsetOfLocalHeader + 28, word)),
                        extent(CompressedSize),
                        transform(algorithm(CompressionMethod)),
                        optional(CompressedSize > 0 && (GeneralPurposeBitFlag & ZIP_FLAG_ENCRYPTED) == 0),
@@ -265,7 +263,7 @@ typedef struct _ZIP
 {
     [
         offset(0),
-        max_count(4096),
+        max_count(1),
         terminated_by(Signature != ZIP_LOCAL_FILE_HEADER_SIGNATURE),
         terminator("hidden"),
         element(name(FileName))
@@ -277,15 +275,13 @@ typedef struct _ZIP
 
     [
         offset(eocd.OffsetOfStartOfCentralDirectory),
-        max_count(eocd.TotalEntries),
-        terminated_by(Signature != ZIP_CENTRAL_DIRECTORY_SIGNATURE),
-        terminator("hidden"),
+        count(eocd.TotalEntries),
         element(name(FileName),
                 nested(type(auto),
                        offset(RelativeOffsetOfLocalHeader
                               + 30
-                              + root_value_at(RelativeOffsetOfLocalHeader + 26, word)
-                              + root_value_at(RelativeOffsetOfLocalHeader + 28, word)),
+                              + root::value_at(RelativeOffsetOfLocalHeader + 26, word)
+                              + root::value_at(RelativeOffsetOfLocalHeader + 28, word)),
                        extent(CompressedSize),
                        transform(algorithm(CompressionMethod)),
                        optional(CompressedSize > 0 && (GeneralPurposeBitFlag & ZIP_FLAG_ENCRYPTED) == 0),

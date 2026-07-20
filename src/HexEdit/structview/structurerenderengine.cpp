@@ -2031,6 +2031,11 @@ bool StructureRenderEngine::evaluate(const EvalContext &context, ExprNode *expr,
         EvalContext scoped;
         if (!resolveScopeContext(context, expr, &scoped))
             return false;
+        if (expr->right && expr->right->type == EXPR_VALUEAT)
+        {
+            const uint64_t readBase = scoped.row ? scoped.row->absoluteOffset : scoped.offset;
+            return evaluateValueAt(context, expr->right, result, &readBase);
+        }
         return evaluate(scoped, expr->right, result);
     }
     case EXPR_IDENTIFIER:
@@ -2188,7 +2193,8 @@ bool StructureRenderEngine::evaluate(const EvalContext &context, ExprNode *expr,
     }
 }
 
-bool StructureRenderEngine::evaluateValueAt(const EvalContext &context, ExprNode *expr, INUMTYPE *result)
+bool StructureRenderEngine::evaluateValueAt(const EvalContext &context, ExprNode *expr, INUMTYPE *result,
+                                            const uint64_t *readBaseOverride)
 {
     if (!expr || expr->type != EXPR_VALUEAT || !expr->right || !expr->cond || !expr->cond->str || !result)
         return false;
@@ -2220,7 +2226,9 @@ bool StructureRenderEngine::evaluateValueAt(const EvalContext &context, ExprNode
     }
     else
     {
-        const uint64_t base = context.row ? context.row->absoluteOffset : context.offset;
+        const uint64_t base = readBaseOverride ? *readBaseOverride
+            : context.row ? context.row->absoluteOffset
+                          : context.offset;
         if (!checkedAdd(base, static_cast<uint64_t>(logicalOffset), &absoluteOffset))
             return false;
     }
@@ -3093,6 +3101,10 @@ StructureRow *StructureRenderEngine::findDirectField(StructureRow *scope, const 
     if (!scope || !name)
         return nullptr;
 
+    const QString fieldName = QString::fromLocal8Bit(name);
+    const QString suffix = QStringLiteral(" ") + fieldName;
+    const QString arraySuffix = suffix + QStringLiteral("[]");
+
     for (StructureRow *cursor = scope; cursor; cursor = cursor->parent)
     {
         for (const auto &child : cursor->children)
@@ -3100,10 +3112,9 @@ StructureRow *StructureRenderEngine::findDirectField(StructureRow *scope, const 
             Type *type = child->type;
             if (type && type->ty == typeIDENTIFIER && type->sym && std::strcmp(type->sym->name, name) == 0)
                 return child.get();
-            const QString fieldName = QString::fromLocal8Bit(name);
             if (child->name == fieldName
-                || child->name.endsWith(QStringLiteral(" ") + fieldName)
-                || child->name.endsWith(QStringLiteral(" ") + fieldName + QStringLiteral("[]")))
+                || child->name.endsWith(suffix)
+                || child->name.endsWith(arraySuffix))
             {
                 return child.get();
             }

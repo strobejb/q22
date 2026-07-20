@@ -33,6 +33,7 @@ private slots:
     void builderUsesSizeIsForUnsizedArrays();
     void builderUsesMaxCountAndTerminatorExpressions();
     void builderUsesNamedOffsetMapsAndValueAt();
+    void builderUsesScopedValueAtWithCallerOffsetExpression();
     void builderUsesIndexOfForKeyedArrayLookup();
     void builderUsesScopePrefixesForRootAndParent();
     void builderUsesBaseOfForTableRelativeDynamicRows();
@@ -1071,6 +1072,43 @@ void StructViewRawRendererTests::builderUsesNamedOffsetMapsAndValueAt()
     QCOMPARE(values->absoluteOffset, uint64_t(0x80));
     QCOMPARE(values->children.size(), size_t(1));
     QCOMPARE(values->children[0]->children[0]->value, QStringLiteral("2864434397"));
+}
+
+void StructViewRawRendererTests::builderUsesScopedValueAtWithCallerOffsetExpression()
+{
+    // Scenario: scope-qualified value_at reads from the scoped base, but the
+    // offset expression belongs to the row that asked for the read.
+    // Expected: root::value_at(payloadOffset, word) can be used from an array
+    // element to read root-relative bytes at an offset stored on that element.
+    // Regression guard: ZIP central-directory entries use this to locate local
+    // header filename/extra lengths while the offset lives on the current entry.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef struct _Entry {\n"
+                        "  dword payloadOffset;\n"
+                        "  [optional(root::value_at(payloadOffset, word) == 0x1234)] byte marker;\n"
+                        "} Entry;\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  [count(1)] Entry entries[];\n"
+                        "} root;\n"));
+
+    QByteArray bytes(0x30, '\0');
+    writeLe32(&bytes, 0, 0x20);
+    bytes[4] = char(0xaa);
+    writeLe16(&bytes, 0x20, 0x1234);
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+
+    StructureRow *entries = findChildNamed(rows[0].get(), QStringLiteral("Entry entries[]"));
+    QVERIFY2(entries, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(entries->children.size(), size_t(1));
+    StructureRow *marker = findChildNamed(entries->children[0].get(), QStringLiteral("byte marker"));
+    QVERIFY2(marker, qPrintable(childNames(entries->children[0].get())));
+    QCOMPARE(marker->absoluteOffset, uint64_t(4));
+    QCOMPARE(marker->value, QStringLiteral("170"));
 }
 
 void StructViewRawRendererTests::builderUsesIndexOfForKeyedArrayLookup()

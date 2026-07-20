@@ -612,6 +612,46 @@ for how that still resolves.
 | `terminator("hidden")`, `terminator("shown")` | Override whether a matching terminator element is displayed; string-like arrays hide terminators by default, other arrays show them by default |
 | `element(tags...)` | Apply presentation, dynamic, semantic, or navigation tags to each array element instead of the array container |
 
+### Performance guidance for large formats
+
+Large files stay responsive when the definition matches how a user would browse
+the format. Archives, packages, disk images, and font containers often contain a
+directory or table of contents. That table is usually the best place to put
+friendly names, child-file navigation, semantic summaries, and other rich
+display tags.
+
+Prefer these patterns:
+
+- When the file contains a directory/table of contents, define that as the main
+  browsable list. For ZIP, this is the central directory: it has the entry count,
+  file names, compression method, compressed size, and local-header offset.
+- Avoid describing the same set of entries twice with full detail. If an earlier
+  physical record stream is useful for byte-level context, show a small raw
+  sample there and put names, `nested(...)`, semantic emits, and diagnostics on
+  the directory/table entries.
+- Prefer exact `count(...)` values from the file's own header or directory. When
+  the format only has "read until this marker/value" data, always combine
+  `terminated_by(...)` with a sensible `max_count(...)`, `extent(...)`, or both.
+- Use `extent(...)` for large payload byte ranges so layout can advance without
+  rendering the whole payload as child rows.
+- Make `nested(...)` lazy and guarded. Use `optional(...)` for encrypted,
+  unsupported, empty, or otherwise unavailable child sources, and dispatch
+  compression with `transform(algorithm(field))` when an enum already identifies
+  the method.
+- Prefer a semantic view for polished summaries and navigation, then use raw
+  rows only where physical layout matters.
+
+When a definition feels slow, start by enabling renderer profiling:
+
+```sh
+QEXED_STRUCTURE_PROFILE=1 q22
+```
+
+If needed, set `QEXED_STRUCTURE_PROFILE_LOG` to write the profile output to a
+specific file. Look for repeated evaluation of names, nested targets,
+diagnostics, dynamic rows, "read until" arrays, or duplicate rich views of the
+same entries.
+
 ---
 
 ## Semantic and referenced-data views

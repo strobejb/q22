@@ -239,7 +239,8 @@ private:
     bool evaluate(StructureRow *scope, ExprNode *expr, INUMTYPE *result, uint64_t scopeOffset);
     bool evaluate(Type *scopeType, ExprNode *expr, INUMTYPE *result, uint64_t scopeOffset);
     bool evaluateFunction(const EvalContext &context, ExprNode *expr, INUMTYPE *result);
-    bool evaluateValueAt(const EvalContext &context, ExprNode *expr, INUMTYPE *result);
+    bool evaluateValueAt(const EvalContext &context, ExprNode *expr, INUMTYPE *result,
+                         const uint64_t *readBaseOverride = nullptr);
     bool evaluateFindFunction(const EvalContext &context, ExprNode *expr, INUMTYPE *result);
     bool evaluateString(const EvalContext &context, ExprNode *expr, QString *result);
     bool evaluateStringFunction(const EvalContext &context, ExprNode *expr, QString *result);
