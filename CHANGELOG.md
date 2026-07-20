@@ -1,5 +1,29 @@
 # Changelog
 
+## 3.2.0 - 2026-07-20
+
+### Added
+
+* Added broad Structure View support for archives, nested files, compressed streams, fonts, media containers, images, disk images, and WebAssembly modules.
+* Added nested-source navigation so embedded files and file slices can be opened directly from Structure View.
+* Added transformed nested-source support for gzip, zlib, and deflate-backed data.
+* Added declarative Strata semantic views for richer high-level summaries without native renderer code.
+* Added Strata language support for reusable bitfields, row diagnostics, richer formatting, compound `sizeof(...)`, explicit array-element behavior, table-relative offsets, and keyed scalar lookups.
+
+### Changed
+
+* Improved Structure View navigation with nested-source breadcrumbs and clearer context-menu actions.
+* Improved Strata authoring documentation, keyword coverage, and guidance for large or archive-like formats.
+* Improved archive and container handling for ZIP/JAR/APK-style files, TAR/GZip files, ISO images, ICO/CUR images, and WOFF fonts.
+* Improved executable-code integration for PE, ELF, and WebAssembly Structure View rows.
+
+### Fixed
+
+* Fixed several Structure View robustness issues with malformed files, unsupported nested data, transformed streams, and invalid format selections.
+* Fixed major Structure View performance problems in large ZIP/archive views.
+* Fixed project/build portability issues around generated CMake configurations and Windows builds.
+* Fixed UI consistency issues in nested-source prompts, Structure View context menus, and breadcrumb styling.
+
 ## 3.1.0 - 2026-07-13
 
 ### Added
