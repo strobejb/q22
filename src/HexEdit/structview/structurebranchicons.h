@@ -17,8 +17,8 @@ static constexpr const char kBlueEntityArray[] = ":/icons/rendered/blue/entity-a
 static constexpr const char kGrayEntityArray[] = ":/icons/rendered/gray/entity-array.svg";
 static constexpr const char kBlueElementArray[] = ":/icons/rendered/blue/element-array.svg";
 static constexpr const char kGrayElementArray[] = ":/icons/rendered/gray/element-array.svg";
-static constexpr const char kBlueNested[] = ":/icons/rendered/blue/nested.svg";
-static constexpr const char kGrayNested[] = ":/icons/rendered/gray/nested.svg";
+static constexpr const char kBlueNested[] = ":/icons/rendered/blue/hierarchy.svg";
+static constexpr const char kGrayNested[] = ":/icons/actions/hierarchy4.svg";
 }
 
 #endif // STRUCTVIEW_STRUCTUREBRANCHICONS_H

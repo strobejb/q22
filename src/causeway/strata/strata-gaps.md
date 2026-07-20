@@ -61,9 +61,9 @@ decompressed on demand into a temporary, read-only sequence-backed source; the
 nested root is then applied to that transformed source. This covers the first
 `.tar.gz` style workflow.
 
-Remaining transform gaps include embedded ICO PNG payload navigation, WOFF table
-inflation polish, CAB folder decompression, WOFF2 Brotli, LZX/LZ4/Zstd-style
-codecs, fat Mach-O slice UX, and filesystem views inside disk-image partitions.
+Remaining transform gaps include typed WOFF table inflation polish, CAB folder
+decompression, WOFF2 Brotli, LZX/LZ4/Zstd-style codecs, fat Mach-O slice UX, and
+filesystem views inside disk-image partitions.
 
 Potential direction: add transform providers for Brotli, LZX, LZ4, Zstd, and
 format-specific decode/reconstruction steps. Transformed rows must retain a
@@ -178,9 +178,10 @@ arithmetic may warrant a range-to-offset helper or a semantic image summary.
 
 ### ICO/CUR embedded image dispatch
 
-Directory entries and bounded image payloads are covered. Dispatching a target
-payload as PNG or headerless DIB based on bytes at that dynamic target still
-needs a subfile view or dynamic target-type selection.
+Directory entries and bounded image payloads are covered. Payloads are navigable
+as nested sources; embedded PNG images auto-detect and headerless DIB payloads
+open as raw nested data for now. A polished DIB view still needs either a DIB
+root or target-type selection for headerless bitmap payloads.
 
 ### GIF images
 
@@ -192,8 +193,9 @@ frames require LZW transformation and image/frame semantics.
 
 WOFF 1.0 headers, table directories, and compressed byte ranges are covered.
 Uncompressed WOFF 1.0 table entries reuse the shared SFNT typed table decoders.
-Inflating compressed WOFF tables and then reusing those same definitions still
-needs transformed-stream views.
+Compressed WOFF 1.0 tables are navigable through `transform("zlib")`, but the
+inflated table payload normally has no file-level magic, so it opens as raw
+nested data unless a future typed transformed-payload path is added.
 
 WOFF2 additionally needs `UIntBase128` and `255UInt16` scalar decoding plus
 Brotli and transformed-font reconstruction, or a dedicated semantic parser.

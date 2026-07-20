@@ -11,6 +11,13 @@ enum ICO_RESOURCE_TYPE
     ICO_TYPE_CURSOR = 2
 };
 
+[
+    nested(type(auto),
+           offset(imageOffset),
+           extent(bytesInResource),
+           optional(imageOffset != 0 && bytesInResource != 0),
+           name(fmt("image {0}", array_index())))
+]
 typedef struct _ICO_DIRECTORY_ENTRY
 {
     byte width;
