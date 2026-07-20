@@ -590,6 +590,13 @@ approaches can be combined in one definition: use dynamic rows for byte-backed
 referenced objects when their physical placement matters, and semantic rows for
 the polished view users should normally navigate.
 
+Important layout rule: `dynamic_struct(...)`, `dynamic_array(...)`, and
+`dynamic_container(...)` do **not** change the byte layout, byte length, or
+rendered extent of the struct/union/array element they are attached to. They add
+referenced child rows or attachment buckets in Structure View only. The owning
+record still consumes exactly the bytes described by its ordinary fields plus
+layout tags such as `count(...)`, `extent(...)`, `align(...)`, and `pad_to(...)`.
+
 | Tag | Effect |
 |-----|--------|
 | `semantic(ViewType)` + `emit(...)` | Attach a declarative semantic tree schema and emit byte-backed rows into it |
@@ -597,7 +604,7 @@ the polished view users should normally navigate.
 | `append(...)` / `item(...)` | Allocate or address `emit_node(...)` rows by position |
 | `dynamic_struct(...)` | Render a single referenced struct at a computed offset in the raw tree |
 | `dynamic_array(...)` | Render a referenced variable-length array at a computed offset in the raw tree |
-| `dynamic_container(type(Type))` | Niche feature: create a layout container per array element for mapped dynamic rows to attach into |
+| `dynamic_container(type(Type))` | Niche feature: create an attachment container per array element for mapped dynamic rows to attach into |
 | `offset_map(va, size, raw)` | Declare anonymous virtual-address ranges for `mapper(offset_map)` dynamic rows |
 | `offset_map("space", base)` / `offset_map("space", logical, size, raw)` | Define a named offset space for `offset("space", expr)` and `value_at("space", expr, Type)` |
 
@@ -839,9 +846,15 @@ merging, and attributes.
 
 ### `dynamic_struct`
 
-Renders a single referenced struct at a computed offset in the raw tree. Prefer
-a semantic view when the goal is a summary or navigation layer; use
+Renders a single referenced struct at a computed offset in the raw tree.
+`dynamic_struct` is valid only on a struct/union declaration, or inside
+`element(...)` for an array whose element type is a struct/union. Put it on the
+record that conceptually owns the referenced data, not on a scalar offset field.
+The offset expression can still reference scalar fields in that record. Prefer a
+semantic view when the goal is a summary or navigation layer; use
 `dynamic_struct` when the row should represent real bytes elsewhere in the file.
+It is non-layout metadata: the generated referenced row is a child in Structure
+View and does not add to the owning record's consumed byte length or extent.
 Arguments must be wrapped by role:
 
 ```c
@@ -873,9 +886,14 @@ dynamic_struct(case(IMAGE_DIRECTORY_ENTRY_EXPORT),
 For direct file offsets, omit `mapper(...)` or spell it explicitly:
 
 ```c
-dynamic_struct(name(LocalFileHeader),
-               type(ZIP_LOCAL_FILE_HEADER),
-               offset(RelativeOffsetOfLocalHeader))
+[
+  dynamic_struct(name(LocalFileHeader),
+                 type(ZIP_LOCAL_FILE_HEADER),
+                 offset(RelativeOffsetOfLocalHeader))
+]
+typedef struct _ZIP_CENTRAL_DIRECTORY_FILE_HEADER {
+    dword RelativeOffsetOfLocalHeader;
+} ZIP_CENTRAL_DIRECTORY_FILE_HEADER;
 ```
 
 Use `container(Name)` to place generated dynamic rows under a named root-level
@@ -892,8 +910,10 @@ dynamic_struct(container(RelatedData),
 
 Renders a referenced variable-length array at a computed offset in the raw tree.
 Prefer a semantic view when the goal is a derived UX summary; use
-`dynamic_array` when the row should expose real referenced bytes. Arguments must
-be wrapped by role:
+`dynamic_array` when the row should expose real referenced bytes. It is
+non-layout metadata: the generated referenced array is a child in Structure View
+and does not add to the owning record's consumed byte length or extent.
+Arguments must be wrapped by role:
 
 ```c
 dynamic_array(type(ElemType), offset(expr), count(expr) | max_count(expr)
@@ -967,10 +987,12 @@ typedef struct _IMAGE_IMPORT_DESCRIPTOR { ... } IMAGE_IMPORT_DESCRIPTOR;
 
 ### `dynamic_container`
 
-Applied to an array field. Creates one opaque layout container per element;
+Applied to an array field. Creates one opaque attachment container per element;
 other `dynamic_array` / `dynamic_struct` declarations resolve their offsets
 against these containers. This is a niche feature for mapped raw placement, such
-as PE sections: it is not the default way to build a user-facing summary.
+as PE sections: it is not the default way to build a user-facing summary. It is
+non-layout metadata: the container rows do not add to, cap, or otherwise change
+the array element's consumed byte length or extent.
 Semantic views and dynamic containers can coexist when both are useful.
 
 ```c

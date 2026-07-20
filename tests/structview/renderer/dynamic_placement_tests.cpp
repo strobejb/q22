@@ -110,20 +110,21 @@ void StructViewDynamicPlacementTests::builderPlacesDynamicStructsUnderNamedDynam
 
 void StructViewDynamicPlacementTests::builderPlacesDirectDynamicStructsUnderOwningRows()
 {
-    // Scenario: a non-PE format stores an absolute file offset in an ordinary
-    // row and wants the pointed-to structure displayed as related data.
+    // Scenario: a non-PE format stores an absolute file offset in a record and
+    // wants the pointed-to structure displayed as related data.
     // Expected: the default direct mapper uses that file offset and attaches
-    // the dynamic row under the declaration carrying dynamic_struct(...).
+    // the dynamic row under the compound declaration carrying dynamic_struct(...).
     // Regression guard: dynamic_struct must not require array selectors or
     // PE-style offset_map containers.
     StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
                         "typedef struct _Payload { byte value; } Payload;\n"
+                        "[dynamic_struct(name(RelatedPayload), type(Payload), offset(payloadOffset))]\n"
+                        "typedef struct _Entry { dword payloadOffset; dword padding; } Entry;\n"
                         "[export]\n"
                         "struct Root {\n"
-                        "  [dynamic_struct(name(RelatedPayload), type(Payload), offset(payloadOffset))] dword payloadOffset;\n"
-                        "  dword padding;\n"
+                        "  Entry entry;\n"
                         "} root;\n"));
 
     QByteArray bytes(16, '\0');
@@ -133,11 +134,12 @@ void StructViewDynamicPlacementTests::builderPlacesDirectDynamicStructsUnderOwni
     auto rows = buildRows(&library, firstExported(&library), bytes);
     QCOMPARE(rows.size(), size_t(1));
 
-    StructureRow *offsetRow = findChildNamed(rows[0].get(), QStringLiteral("dword payloadOffset"));
-    QVERIFY(offsetRow);
-    QCOMPARE(offsetRow->children.size(), size_t(1));
+    StructureRow *entry = findChildNamed(rows[0].get(), QStringLiteral("Entry entry"));
+    QVERIFY(entry);
+    QCOMPARE(entry->children.size(), size_t(3));
 
-    StructureRow *payload = offsetRow->children[0].get();
+    StructureRow *payload = findChildNamed(entry, QStringLiteral("RelatedPayload"));
+    QVERIFY(payload);
     QCOMPARE(payload->name, QStringLiteral("RelatedPayload"));
     QCOMPARE(payload->offset, QStringLiteral("0000000C"));
     QCOMPARE(static_cast<int>(payload->kind), static_cast<int>(StructureRowKind::Dynamic));

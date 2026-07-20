@@ -13,41 +13,40 @@ enum WOFF_SFNT_FLAVOR
     WOFF_SFNT_OPENTYPE_CFF = 0x4f54544f
 };
 
+[
+    dynamic_struct(name("Decoded head"),
+                   type(SFNT_HEAD_TABLE),
+                   offset(offset),
+                   optional(tag == fourcc("head") && compLength == origLength && origLength >= sizeof(SFNT_HEAD_TABLE))),
+    dynamic_struct(name("Decoded hhea"),
+                   type(SFNT_HHEA_TABLE),
+                   offset(offset),
+                   optional(tag == fourcc("hhea") && compLength == origLength && origLength >= sizeof(SFNT_HHEA_TABLE))),
+    dynamic_struct(name("Decoded maxp"),
+                   type(SFNT_MAXP_TABLE),
+                   offset(offset),
+                   optional(tag == fourcc("maxp") && compLength == origLength && origLength >= 6)),
+    dynamic_struct(name("Decoded name"),
+                   type(SFNT_NAME_TABLE),
+                   offset(offset),
+                   optional(tag == fourcc("name") && compLength == origLength && origLength >= 6)),
+    dynamic_struct(name("Decoded cmap"),
+                   type(SFNT_CMAP_TABLE),
+                   offset(offset),
+                   optional(tag == fourcc("cmap") && compLength == origLength && origLength >= 4)),
+    emit(dest(FontTables),
+         label(tag),
+         type(BYTE),
+         offset(offset),
+         count(compLength),
+         optional(compLength != 0))
+]
 typedef struct _WOFF_TABLE_DIRECTORY_ENTRY
 {
     [format("fourcc")]
     dword tag;
 
-    [
-        dynamic_struct(name("Decoded head"),
-                       type(SFNT_HEAD_TABLE),
-                       offset(offset),
-                       optional(tag == fourcc("head") && compLength == origLength && origLength >= sizeof(SFNT_HEAD_TABLE))),
-        dynamic_struct(name("Decoded hhea"),
-                       type(SFNT_HHEA_TABLE),
-                       offset(offset),
-                       optional(tag == fourcc("hhea") && compLength == origLength && origLength >= sizeof(SFNT_HHEA_TABLE))),
-        dynamic_struct(name("Decoded maxp"),
-                       type(SFNT_MAXP_TABLE),
-                       offset(offset),
-                       optional(tag == fourcc("maxp") && compLength == origLength && origLength >= 6)),
-        dynamic_struct(name("Decoded name"),
-                       type(SFNT_NAME_TABLE),
-                       offset(offset),
-                       optional(tag == fourcc("name") && compLength == origLength && origLength >= 6)),
-        dynamic_struct(name("Decoded cmap"),
-                       type(SFNT_CMAP_TABLE),
-                       offset(offset),
-                       optional(tag == fourcc("cmap") && compLength == origLength && origLength >= 4)),
-        emit(dest(FontTables),
-             label(tag),
-             type(BYTE),
-             offset(offset),
-             count(compLength),
-             optional(compLength != 0))
-    ]
     dword offset;
-
     dword compLength;
     dword origLength;
     dword origChecksum;

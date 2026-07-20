@@ -364,6 +364,7 @@ private:
                             ExprNode **fileOffset) const;
     bool offsetTagArgs(ExprNode *expr, QString *space, ExprNode **offsetExpr) const;
     TypeDecl *findTypeDecl(const char *name) const;
+    TypeDecl *referencedTypeDecl(Type *type) const;
     Type *typeInDecl(TypeDecl *decl, const char *name) const;
     TypeDecl *attachedSemanticSchema(TypeDecl *rootType) const;
     TypeDecl *semanticDestinationDecl(TypeDecl *schemaDecl, const QStringList &path) const;

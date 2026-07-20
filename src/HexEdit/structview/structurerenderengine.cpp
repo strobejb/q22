@@ -1309,7 +1309,11 @@ uint64_t StructureRenderEngine::appendIdentifierRow(StructureRow *parent,
                                                     TypeDecl *typeDecl,
                                                     uint64_t offset)
 {
-    auto row = makeRow(parent, type, typeDecl, offset);
+    TypeDecl *referencedDecl = referencedTypeDecl(type);
+    Tag *referencedTags = referencedDecl && tagListContains(referencedDecl->tagList, TOK_DYNAMICSTRUCT)
+        ? referencedDecl->tagList
+        : nullptr;
+    auto row = makeRow(parent, type, typeDecl, offset, referencedTags);
     applyDeclarationName(row.get(), type);
     if (row->name.isEmpty() && type && type->sym)
         row->name = QString::fromLocal8Bit(type->sym->name);
@@ -6413,6 +6417,18 @@ TypeDecl *StructureRenderEngine::findTypeDecl(const char *name) const
         {
             return decl;
         }
+    }
+
+    return nullptr;
+}
+
+TypeDecl *StructureRenderEngine::referencedTypeDecl(Type *type) const
+{
+    for (Type *cursor = type; cursor; cursor = cursor->link)
+    {
+        if ((cursor->ty == typeTYPEDEF || cursor->ty == typeIDENTIFIER) && cursor->sym)
+            if (TypeDecl *decl = findTypeDecl(cursor->sym->name))
+                return decl;
     }
 
     return nullptr;

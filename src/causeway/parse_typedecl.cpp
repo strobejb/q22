@@ -43,6 +43,70 @@ static bool HasArray(Type *type)
 	return false;
 }
 
+static Type *ArrayElementType(Type *type)
+{
+	for(Type *cursor = type; cursor; cursor = cursor->link)
+	{
+		if(cursor->ty == typeARRAY)
+			return cursor->link;
+	}
+
+	return 0;
+}
+
+static bool TagListContains(Tag *tagList, TOKEN tok)
+{
+	for(Tag *tag = tagList; tag; tag = tag->link)
+		if(tag->tok == tok)
+			return true;
+	return false;
+}
+
+static bool ElementTagsContain(Tag *tagList, TOKEN tok)
+{
+	for(Tag *tag = tagList; tag; tag = tag->link)
+		if(tag->tok == TOK_ELEMENT && TagListContains(tag->elementTags, tok))
+			return true;
+	return false;
+}
+
+static bool TypeIsCompound(Parser *parser, Type *type)
+{
+	for(Type *cursor = type; cursor; cursor = cursor->link)
+	{
+		Type *base = BaseNode(cursor);
+		if(base && (base->ty == typeSTRUCT || base->ty == typeUNION))
+			return true;
+
+		if(!base || (base->ty != typeTYPEDEF && base->ty != typeIDENTIFIER) || !base->sym)
+			continue;
+
+		TypeDecl *decl = 0;
+		StrataLibrary *library = parser ? parser->GetStrataLibrary() : 0;
+		if(library)
+		{
+			for(size_t i = 0; i < library->globalTypeDeclList.size(); ++i)
+			{
+				TypeDecl *candidate = library->globalTypeDeclList[i];
+				for(Type *declType : candidate ? candidate->declList : TypeList())
+				{
+					if(declType && declType->sym && strcmp(declType->sym->name, base->sym->name) == 0)
+					{
+						decl = candidate;
+						break;
+					}
+				}
+				if(decl)
+					break;
+			}
+		}
+		if(decl && TypeIsCompound(parser, decl->baseType))
+			return true;
+	}
+
+	return false;
+}
+
 static bool IsElementOnlyArrayTag(TOKEN tok)
 {
 	switch(tok)
@@ -882,6 +946,19 @@ TypeDecl * Parser::ParseTypeDecl(Tag *tagList, SymbolTable &symTable, bool neste
 				delete type;
 				return 0;
 			}
+
+			if(ElementTagsContain(typeDecl->tagList, TOK_DYNAMICSTRUCT) && !TypeIsCompound(this, ArrayElementType(type)))
+			{
+				Error(ERROR_DYNAMIC_STRUCT_REQUIRES_COMPOUND);
+				delete type;
+				return 0;
+			}
+		}
+		else if(TagListContains(typeDecl->tagList, TOK_DYNAMICSTRUCT) && !TypeIsCompound(this, type))
+		{
+			Error(ERROR_DYNAMIC_STRUCT_REQUIRES_COMPOUND);
+			delete type;
+			return 0;
 		}
 
 		// Change typeIDENTIFIER to typeTYPEDEF when appropriate

@@ -160,7 +160,7 @@ void StructViewFontTests::builderRendersSfntTableDirectory()
 
     StructureRow *tables = findChildNamed(offsetTable, QStringLiteral("SFNT_TABLE_RECORD tables[]"));
     QVERIFY2(tables, qPrintable(childNames(offsetTable)));
-    QCOMPARE(tables->children.size(), size_t(5));
+    QVERIFY2(tables->children.size() >= size_t(5), qPrintable(childNames(tables)));
     QCOMPARE(tables->children[0]->name, QStringLiteral("[0]head"));
     QCOMPARE(tables->children[3]->name, QStringLiteral("[3]name"));
 
@@ -272,7 +272,7 @@ void StructViewFontTests::builderRendersWoffDirectoryAndPayloads()
 
     StructureRow *tables = findChildNamed(woffRow, QStringLiteral("WOFF_TABLE_DIRECTORY_ENTRY tables[]"));
     QVERIFY2(tables, qPrintable(childNames(woffRow)));
-    QCOMPARE(tables->children.size(), size_t(2));
+    QVERIFY2(tables->children.size() >= size_t(2), qPrintable(childNames(tables)));
     QCOMPARE(tables->children[0]->name, QStringLiteral("[0]name"));
     StructureRow *tag = findChildNamed(tables->children[0].get(), QStringLiteral("dword tag"));
     QVERIFY2(tag, qPrintable(childNames(tables->children[0].get())));

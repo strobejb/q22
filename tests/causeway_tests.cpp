@@ -1246,6 +1246,22 @@ void CausewayTests::arrayElementTagsRequireExplicitElementWrapper()
 						 "  [count(2), name(id)] Entry entries[];\n"
 						 "} root;\n"));
 	QCOMPARE(directArrayTag.LastErr(), ERROR_ARRAY_ELEMENT_TAG_REQUIRES_ELEMENT);
+
+	Parser scalarDynamicStruct;
+	QVERIFY(!parseBuffer(scalarDynamicStruct,
+						 "typedef struct _Payload { byte value; } Payload;\n"
+						 "struct Root {\n"
+						 "  [dynamic_struct(name(Payload), type(Payload), offset(0))] dword offset;\n"
+						 "} root;\n"));
+	QCOMPARE(scalarDynamicStruct.LastErr(), ERROR_DYNAMIC_STRUCT_REQUIRES_COMPOUND);
+
+	Parser scalarArrayElementDynamicStruct;
+	QVERIFY(!parseBuffer(scalarArrayElementDynamicStruct,
+						 "typedef struct _Payload { byte value; } Payload;\n"
+						 "struct Root {\n"
+						 "  [count(2), element(dynamic_struct(name(Payload), type(Payload), offset(0)))] dword offsets[];\n"
+						 "} root;\n"));
+	QCOMPARE(scalarArrayElementDynamicStruct.LastErr(), ERROR_DYNAMIC_STRUCT_REQUIRES_COMPOUND);
 }
 
 void CausewayTests::maxCountAndByteSequenceTerminatorsParse()
