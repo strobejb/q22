@@ -49,6 +49,7 @@ inline int runStructViewRegisteredTests(int argc, char **argv)
     QCoreApplication app(argc, argv);
 
     std::optional<QByteArray> selectedSuite;
+    std::optional<QByteArray> selectedFunction;
     std::vector<char *> testArgv;
     testArgv.reserve(static_cast<size_t>(argc));
     testArgv.push_back(argv[0]);
@@ -71,8 +72,20 @@ inline int runStructViewRegisteredTests(int argc, char **argv)
             continue;
         }
 
+        if (arg == "--function") {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "--function requires a test function name\n");
+                return 1;
+            }
+            selectedFunction = QByteArray(argv[++i]);
+            continue;
+        }
+
         testArgv.push_back(argv[i]);
     }
+
+    if (selectedFunction)
+        testArgv.push_back(selectedFunction->data());
 
     int status = 0;
     bool ranSuite = false;
@@ -82,7 +95,13 @@ inline int runStructViewRegisteredTests(int argc, char **argv)
             continue;
 
         ranSuite = true;
-        fprintf(stdout, "Running Structure View suite: %s\n", registration.name ? registration.name : "<unnamed>");
+        if (selectedFunction)
+            fprintf(stdout,
+                    "Running Structure View test: %s::%s\n",
+                    registration.name ? registration.name : "<unnamed>",
+                    selectedFunction->constData());
+        else
+            fprintf(stdout, "Running Structure View suite: %s\n", registration.name ? registration.name : "<unnamed>");
         fflush(stdout);
         std::unique_ptr<QObject> test = registration.create();
         status |= QTest::qExec(test.get(), testArgc, testArgv.data());

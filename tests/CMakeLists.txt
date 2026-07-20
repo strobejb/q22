@@ -180,7 +180,6 @@ set(STRUCTVIEW_TEST_SUITES
     StructViewMediaTests
     StructViewPeTests
     StructViewRootFormatTests
-    StructViewDefinitionManagerTests
     StructViewTreeModelTests
     StructViewDynamicPlacementTests
     StructViewRawRendererTests
@@ -192,6 +191,37 @@ foreach(_structview_suite IN LISTS STRUCTVIEW_TEST_SUITES)
         COMMAND structview_tests --suite "${_structview_suite}"
     )
     set_tests_properties("structview_tests.${_structview_suite}" PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${QT_RUNTIME_BIN_DIR}"
+    )
+endforeach()
+
+set(STRUCTVIEW_DEFINITION_MANAGER_TEST_FUNCTIONS
+    managerCreatesUserStrataDirectory
+    managerDiscoversBuiltinAndUserDefinitionFiles
+    reloadSwapsInParsedStrataLibrary
+    managerReportsChangedDefinitionsWithoutAutoReload
+    brokenDefinitionFileIsReportedWithoutDroppingValidOnes
+    fixingABrokenDefinitionFileRestoresItsTypes
+    partiallyParsedFileDoesNotExposeStaleExportedType
+    exportedTypesUseExplicitExportTagsOnly
+    exportedTypesIgnoreExportsFromIncludedFiles
+    exportedTypesExposeAssocExtensions
+    exportedTypesExposeMagicSignatures
+    exportedTypesExposeDescriptions
+    exportedTypesExposeCategories
+    exportedTypesResolveDuplicateVersionsAndLogDecision
+    userDefinitionOverridesBuiltinWithSameBaseName
+    brokenUserDefinitionOverrideBlocksBuiltinFallback
+)
+
+foreach(_structview_function IN LISTS STRUCTVIEW_DEFINITION_MANAGER_TEST_FUNCTIONS)
+    add_test(NAME "structview_tests.StructViewDefinitionManagerTests.${_structview_function}"
+        COMMAND structview_tests
+            --suite StructViewDefinitionManagerTests
+            --function "${_structview_function}"
+    )
+    set_tests_properties("structview_tests.StructViewDefinitionManagerTests.${_structview_function}" PROPERTIES
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:${QT_RUNTIME_BIN_DIR}"
     )
