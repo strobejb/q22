@@ -16,9 +16,11 @@
 #include <QtTest/QtTest>
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <vector>
 
 struct StructViewTestRegistration
@@ -46,11 +48,51 @@ inline int runStructViewRegisteredTests(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
 
-    int status = 0;
-    for (const StructViewTestRegistration &registration : structViewTestRegistry()) {
-        std::unique_ptr<QObject> test = registration.create();
-        status |= QTest::qExec(test.get(), argc, argv);
+    std::optional<QByteArray> selectedSuite;
+    std::vector<char *> testArgv;
+    testArgv.reserve(static_cast<size_t>(argc));
+    testArgv.push_back(argv[0]);
+
+    for (int i = 1; i < argc; ++i) {
+        const QByteArray arg(argv[i]);
+        if (arg == "--list-suites") {
+            for (const StructViewTestRegistration &registration : structViewTestRegistry())
+                fprintf(stdout, "%s\n", registration.name ? registration.name : "<unnamed>");
+            fflush(stdout);
+            return 0;
+        }
+
+        if (arg == "--suite") {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "--suite requires a suite name\n");
+                return 1;
+            }
+            selectedSuite = QByteArray(argv[++i]);
+            continue;
+        }
+
+        testArgv.push_back(argv[i]);
     }
+
+    int status = 0;
+    bool ranSuite = false;
+    const int testArgc = static_cast<int>(testArgv.size());
+    for (const StructViewTestRegistration &registration : structViewTestRegistry()) {
+        if (selectedSuite && *selectedSuite != registration.name)
+            continue;
+
+        ranSuite = true;
+        fprintf(stdout, "Running Structure View suite: %s\n", registration.name ? registration.name : "<unnamed>");
+        fflush(stdout);
+        std::unique_ptr<QObject> test = registration.create();
+        status |= QTest::qExec(test.get(), testArgc, testArgv.data());
+    }
+
+    if (selectedSuite && !ranSuite) {
+        fprintf(stderr, "Unknown Structure View suite: %s\n", selectedSuite->constData());
+        return 1;
+    }
+
     return status;
 }
 

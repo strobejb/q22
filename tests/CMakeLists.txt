@@ -167,11 +167,35 @@ if(TARGET causewayData)
     add_dependencies(structview_tests causewayData)
 endif()
 
-add_test(NAME structview_tests COMMAND structview_tests)
-set_tests_properties(structview_tests PROPERTIES
-    ENVIRONMENT_MODIFICATION
-        "PATH=path_list_prepend:${QT_RUNTIME_BIN_DIR}"
+set(STRUCTVIEW_TEST_SUITES
+    StructViewArchiveTests
+    StructViewDexWasmTests
+    StructViewDiskImageTests
+    StructViewDtbTests
+    StructViewElfTests
+    StructViewFontTests
+    StructViewImageTests
+    StructViewJavaClassTests
+    StructViewMachOTests
+    StructViewMediaTests
+    StructViewPeTests
+    StructViewRootFormatTests
+    StructViewDefinitionManagerTests
+    StructViewTreeModelTests
+    StructViewDynamicPlacementTests
+    StructViewRawRendererTests
+    StructViewSemanticRendererTests
 )
+
+foreach(_structview_suite IN LISTS STRUCTVIEW_TEST_SUITES)
+    add_test(NAME "structview_tests.${_structview_suite}"
+        COMMAND structview_tests --suite "${_structview_suite}"
+    )
+    set_tests_properties("structview_tests.${_structview_suite}" PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${QT_RUNTIME_BIN_DIR}"
+    )
+endforeach()
 
 add_executable(stringscan_tests
     stringscan_tests.cpp
