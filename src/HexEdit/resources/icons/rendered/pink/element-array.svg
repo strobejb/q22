@@ -19,7 +19,8 @@
       <stop offset="100%" stop-color="#6DA9DB"/>
     </linearGradient>
   </defs>
-  <title>Pink Element array icon</title>
+  <g id="scaled-element-heavy-b" transform="translate(5.120 5.120) scale(0.8400)">
+  <title>Pink element array icon</title>
   <desc id="desc">A simple pink gradient diamond tile representing a discrete property.</desc>
   
   <g opacity="1.0">
@@ -35,15 +36,17 @@
     <path d="M32 16.0L50 29.5" stroke="#FFFFFF" stroke-opacity=".15" stroke-width=".60" stroke-linecap="round"/>
   </g>
 
+  </g><!--scaled-element-heavy-b-->
 
-  <g id="array-brackets" fill="none" stroke="#681244" stroke-width="3.35"
+  <g id="array-brackets-heavy-b" fill="none" stroke="#681244" stroke-width="4.6"
      stroke-linecap="round" stroke-linejoin="round" opacity="1">
-    <path d="M12 9H6V55H12"/>
-    <path d="M52 9H58V55H52"/>
+    <path d="M13.6 7.8H7.6V56.2H13.6"/>
+    <path d="M50.4 7.8H56.4V56.2H50.4"/>
   </g>
-  <g id="array-bracket-highlights" fill="none" stroke="#FFFFFF" stroke-width=".75"
-     stroke-linecap="round" stroke-linejoin="round" opacity=".34">
-    <path d="M12 9H6V55H12"/>
-    <path d="M52 9H58V55H52"/>
+  <g id="array-bracket-highlights-heavy-b" fill="none" stroke="#FFFFFF" stroke-width=".75"
+     stroke-linecap="round" stroke-linejoin="round" opacity=".25">
+    <path d="M13.6 7.8H7.6V56.2H13.6"/>
+    <path d="M50.4 7.8H56.4V56.2H50.4"/>
   </g>
+
 </svg>
