@@ -1356,6 +1356,7 @@ void CausewayTests::standardTypelibFilesParse()
 		QStringLiteral("dtb.strata"),
 		QStringLiteral("elf.strata"),
 		QStringLiteral("pe.strata"),
+		QStringLiteral("sfnttables.strata"),
 		QStringLiteral("zip.strata"),
 	};
 

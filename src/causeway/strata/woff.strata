@@ -4,6 +4,7 @@
 //
 
 include "basetypes.strata";
+include "sfnttables.strata";
 
 enum WOFF_SFNT_FLAVOR
 {
@@ -18,6 +19,26 @@ typedef struct _WOFF_TABLE_DIRECTORY_ENTRY
     dword tag;
 
     [
+        dynamic_struct(name("Decoded head"),
+                       type(SFNT_HEAD_TABLE),
+                       offset(offset),
+                       optional(tag == fourcc("head") && compLength == origLength && origLength >= 54)),
+        dynamic_struct(name("Decoded hhea"),
+                       type(SFNT_HHEA_TABLE),
+                       offset(offset),
+                       optional(tag == fourcc("hhea") && compLength == origLength && origLength >= 36)),
+        dynamic_struct(name("Decoded maxp"),
+                       type(SFNT_MAXP_TABLE),
+                       offset(offset),
+                       optional(tag == fourcc("maxp") && compLength == origLength && origLength >= 6)),
+        dynamic_struct(name("Decoded name"),
+                       type(SFNT_NAME_TABLE),
+                       offset(offset),
+                       optional(tag == fourcc("name") && compLength == origLength && origLength >= 6)),
+        dynamic_struct(name("Decoded cmap"),
+                       type(SFNT_CMAP_TABLE),
+                       offset(offset),
+                       optional(tag == fourcc("cmap") && compLength == origLength && origLength >= 4)),
         emit(dest(FontTables),
              label(tag),
              type(BYTE),

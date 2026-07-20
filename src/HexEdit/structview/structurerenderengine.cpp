@@ -4198,6 +4198,7 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
         if (!request.containerLabel.isEmpty())
             parentRow = dynamicRootGroup(request.containerLabel);
 
+        EndianScope requestEndian(this, request.owner ? request.owner->bigEndian : m_bigEndian);
         uint64_t arrayOffset = 0;
         if (!checkedAdd(m_baseOffset, fileOffset, &arrayOffset))
             continue;
@@ -4369,6 +4370,13 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
         }
 
         arrayRow->byteLength = length;
+        const QString stringValue = dynamicArrayStringValue(request.renderType,
+                                                            request.typeDecl,
+                                                            arrayOffset,
+                                                            length,
+                                                            arrayRow->bigEndian);
+        if (!stringValue.isNull())
+            arrayRow->value = stringValue;
         if (!arrayRow->children.empty())
             appendPresentedRow(parentRow, std::move(arrayRow));
     }
@@ -7985,6 +7993,53 @@ QString StructureRenderEngine::stringArrayValue(StructureRow *scope, Type *type,
     }
 
     return quoteString(decodeNulTerminatedText(bytes, elementType->ty == typeWCHAR));
+}
+
+QString StructureRenderEngine::dynamicArrayStringValue(Type *elementType,
+                                                       TypeDecl *typeDecl,
+                                                       uint64_t offset,
+                                                       uint64_t byteLength,
+                                                       bool bigEndian)
+{
+    Type *base = BaseNode(elementType);
+    if (!base || byteLength == 0)
+        return QString();
+
+    const StrataFormat format = formatTag(typeDecl);
+    const bool explicitString = FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_STRING, nullptr)
+        || format == StrataFormat::String;
+    const bool explicitUtf16 = format == StrataFormat::Utf16
+        || format == StrataFormat::Utf16Le
+        || format == StrataFormat::Utf16Be;
+
+    if (base->ty != typeCHAR
+        && base->ty != typeWCHAR
+        && !(explicitString && base->ty == typeBYTE)
+        && !(explicitUtf16 && base->ty == typeBYTE))
+    {
+        return QString();
+    }
+
+    const uint64_t cappedLength = std::min<uint64_t>(byteLength, kMaxStringLookupBytes);
+    QByteArray bytes(static_cast<int>(cappedLength), Qt::Uninitialized);
+    const size_t got = m_reader ? m_reader(offset,
+                                           reinterpret_cast<uint8_t *>(bytes.data()),
+                                           static_cast<size_t>(bytes.size()))
+                                : 0;
+    if (got == 0)
+        return QString();
+    bytes.truncate(static_cast<int>(got));
+
+    if (explicitUtf16)
+    {
+        const bool wideBigEndian = format == StrataFormat::Utf16Be
+            || (format == StrataFormat::Utf16 && bigEndian);
+        EndianScope endian(this, wideBigEndian);
+        return quoteString(decodeNulTerminatedText(bytes, true));
+    }
+
+    EndianScope endian(this, bigEndian);
+    return quoteString(decodeNulTerminatedText(bytes, base->ty == typeWCHAR));
 }
 
 QString StructureRenderEngine::fieldStringValue(StructureRow *row)

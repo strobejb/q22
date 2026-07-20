@@ -412,6 +412,11 @@ private:
     void applyEntryPointTag(StructureRow *row, TypeDecl *typeDecl);
     void applyDeclarationName(StructureRow *row, Type *type) const;
     QString stringArrayValue(StructureRow *scope, Type *type, TypeDecl *typeDecl, uint64_t offset);
+    QString dynamicArrayStringValue(Type *elementType,
+                                    TypeDecl *typeDecl,
+                                    uint64_t offset,
+                                    uint64_t byteLength,
+                                    bool bigEndian);
     QString scalarArrayValue(StructureRow *scope, Type *type) const;
     uint64_t terminatorMatchLength(StructureRow *row,
                                    Type *elementType,

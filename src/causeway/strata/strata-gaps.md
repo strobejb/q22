@@ -142,11 +142,15 @@ still be appropriate for control-flow and stack interpretation.
 
 ### SFNT/OpenType tables
 
-The shipped definition renders the table directory and bounded table payloads.
-Typed `name`, `cmap`, `head`, and related tables need lookup-by-tag over directory
-records, followed by table-specific semantic interpretation. This primarily
-depends on keyed physical lookup; compressed WOFF variants also depend on
-transformed-stream views.
+The shipped definition renders the table directory, bounded table payloads, and
+typed shallow decodes for common `head`, `hhea`, `maxp`, `name`, and `cmap`
+tables. `name` records expose referenced Windows/Unicode strings as UTF-16BE
+dynamic arrays, so basic font names are readable without native code.
+
+Remaining work is deeper table-specific interpretation: `cmap` format 4/12/14
+subtables, `loca`/`glyf` correlation, CFF/CFF2 payloads, variation tables, and
+a polished semantic font summary that chooses preferred names rather than
+showing every name record.
 
 ### PNG chunks
 
@@ -184,7 +188,9 @@ frames require LZW transformation and image/frame semantics.
 ### WOFF and WOFF2
 
 WOFF 1.0 headers, table directories, and compressed byte ranges are covered.
-Inflating tables and reusing SFNT definitions needs transformed-stream views.
+Uncompressed WOFF 1.0 table entries reuse the shared SFNT typed table decoders.
+Inflating compressed WOFF tables and then reusing those same definitions still
+needs transformed-stream views.
 
 WOFF2 additionally needs `UIntBase128` and `255UInt16` scalar decoding plus
 Brotli and transformed-font reconstruction, or a dedicated semantic parser.
