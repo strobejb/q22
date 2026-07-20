@@ -26,6 +26,7 @@ class QFileSystemWatcher;
 class QMenu;
 class QTimer;
 class StatusBar;
+class SourceBreadcrumbBar;
 class TitleBar;
 class QWidget;
 
@@ -70,6 +71,7 @@ private:
     void refreshSidePanel();
     void resetSidePanel();
     void applyMenuMode(bool useCustomTitleBar);
+    void setNestedSourceBreadcrumbEnabled(bool enabled);
 #ifdef Q_OS_WIN
     void updateWinChromeColors();
 #else
@@ -91,6 +93,7 @@ private:
     DisassemblerPanelHost *m_disasmPanelHost = nullptr;
     StructureViewPanelHost *m_structurePanelHost = nullptr;
     CodeDiscoveryEngine   *m_codeDiscoveryEngine = nullptr;
+    SourceBreadcrumbBar *m_sourceBreadcrumbBar = nullptr;
     PreferencesDialog *m_prefsDialog    = nullptr;
     bool            m_useCustomTitleBar = true;
     bool            m_inResizeZone      = false;

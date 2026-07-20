@@ -118,7 +118,6 @@ static bool IsElementOnlyArrayTag(TOKEN tok)
 	case TOK_TREE:
 	case TOK_CODE:
 	case TOK_OFFSETMAP:
-	case TOK_OPENAS:
 	case TOK_VIEW:
 	case TOK_WARN:
 	case TOK_ASSERT:
@@ -505,7 +504,7 @@ Type * Parser::ParseEnumBody(Symbol *sym)
 		ExprNode *expr = 0;
 		EnumField *field;
 		Tag *tagList = 0;
-		TOKEN allowed[] = { TOK_ARCHITECTURE, TOK_NULL };
+		TOKEN allowed[] = { TOK_ALGORITHM, TOK_ARCHITECTURE, TOK_NULL };
 		if (!ParseTags(&tagList, allowed))
 			return 0;
 

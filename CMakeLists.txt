@@ -78,6 +78,7 @@ endif()
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
 find_package(Qt${QT_VERSION_MAJOR} OPTIONAL_COMPONENTS DBus)
+find_package(ZLIB QUIET)
 
 set(Q22_CONFIGURED_QT_DIR "${Qt${QT_VERSION_MAJOR}_DIR}" CACHE INTERNAL
     "Qt package directory used for this build tree")

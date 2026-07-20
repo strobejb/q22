@@ -1691,9 +1691,11 @@ void StructViewRawRendererTests::builderExposesOpenAsTargets()
     StrataLibrary library;
     Parser parser(&library);
     QVERIFY(parseBuffer(parser,
+                        "enum Compression { [algorithm(\"store\")] Store = 0, [algorithm(\"gzip\")] Gzip = 1 };\n"
                         "typedef struct _Child { byte magic; } Child;\n"
-                        "[nested(type(Child), offset(dataOffset), extent(dataSize), name(fmt(\"slice {0}\", dataOffset)))]\n"
+                        "[nested(type(Child), offset(dataOffset), extent(dataSize), transform(algorithm(method)), name(fmt(\"slice {0}\", dataOffset)))]\n"
                         "typedef struct _Entry {\n"
+                        "  [enum(Compression)] byte method;\n"
                         "  dword dataOffset;\n"
                         "  dword dataSize;\n"
                         "} Entry;\n"
@@ -1705,10 +1707,12 @@ void StructViewRawRendererTests::builderExposesOpenAsTargets()
 
     QByteArray bytes(0x40, '\0');
     bytes[0] = char(2);
-    writeLe32(&bytes, 1, 0x20);
-    writeLe32(&bytes, 5, 0x04);
-    writeLe32(&bytes, 9, 0x30);
-    writeLe32(&bytes, 13, 0x08);
+    bytes[1] = char(1);
+    writeLe32(&bytes, 2, 0x20);
+    writeLe32(&bytes, 6, 0x04);
+    bytes[10] = char(0);
+    writeLe32(&bytes, 11, 0x30);
+    writeLe32(&bytes, 15, 0x08);
     auto rows = buildRows(&library, firstExported(&library), bytes);
     QCOMPARE(rows.size(), size_t(1));
     QCOMPARE(rows[0]->children.size(), size_t(2));
@@ -1721,12 +1725,14 @@ void StructViewRawRendererTests::builderExposesOpenAsTargets()
     QVERIFY(first->openAsRootType);
     QCOMPARE(first->openAsRootTypeName, QStringLiteral("Child"));
     QCOMPARE(first->openAsName, QStringLiteral("slice 32"));
+    QCOMPARE(first->openAsTransform, QStringLiteral("gzip"));
     QCOMPARE(first->openAsOffset, uint64_t(0x20));
     QCOMPARE(first->openAsByteLength, uint64_t(4));
 
     StructureRow *second = entries->children[1].get();
     QVERIFY(second->hasOpenAsTarget);
     QCOMPARE(second->openAsName, QStringLiteral("slice 48"));
+    QCOMPARE(second->openAsTransform, QString());
     QCOMPARE(second->openAsOffset, uint64_t(0x30));
     QCOMPARE(second->openAsByteLength, uint64_t(8));
 }

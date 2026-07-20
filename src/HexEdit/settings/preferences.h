@@ -43,6 +43,7 @@ signals:
     void menuHighlightChanged(bool on);
     void statusbarAlignmentChanged(bool toolsRight, bool infoRight);
     void paletteSelected(const PaletteInfo &info);
+    void nestedSourceBreadcrumbChanged(bool on);
     // Emitted when a bookmark HVS_ flag changes; use setStyle(mask, styles).
     void bookmarkStyleChanged(uint mask, uint styles);
 
@@ -80,6 +81,7 @@ private:
     SettingsToggle *m_menuHighlight     = nullptr;
     SettingsToggle *m_statusbarToolsRight = nullptr;
     SettingsToggle *m_statusbarInfoRight  = nullptr;
+    SettingsToggle *m_nestedSourceBreadcrumb = nullptr;
     SettingsToggle *m_bmAutoExpand      = nullptr;
     SettingsToggle *m_bmNested          = nullptr;
     SettingsToggle *m_bmSelHighlights   = nullptr;

@@ -90,6 +90,8 @@ void    setPrefBookmarkSelectionHighlights(bool on);
 
 bool    prefSectionHeaderDoubleClick();    // true = double-click section header triggers expand/scroll-to-top
 void    setPrefSectionHeaderDoubleClick(bool on);
+bool    prefNestedSourceBreadcrumb();      // true = show nested source navigation above HexView
+void    setPrefNestedSourceBreadcrumb(bool on);
 
 QStringList sidePanelSectionOrder();
 void        setSidePanelSectionOrder(const QStringList &order);

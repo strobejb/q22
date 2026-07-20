@@ -7,6 +7,7 @@ include "basetypes.strata";
 
 enum GZIP_COMPRESSION_METHOD
 {
+    [algorithm("deflate")]
     GZIP_COMPRESSION_DEFLATE = 8
 };
 
@@ -104,7 +105,14 @@ typedef struct _GZIP
 {
     GZIP_HEADER header;
 
-    [count(file_size() - extent_of(header) - sizeof(GZIP_TRAILER))]
+    [
+        count(file_size() - extent_of(header) - sizeof(GZIP_TRAILER)),
+        nested(type(auto),
+               offset(extent_of(header)),
+               extent(file_size() - extent_of(header) - sizeof(GZIP_TRAILER)),
+               transform(algorithm(header.compressionMethod)),
+               name(header.originalName))
+    ]
     byte compressedData[];
 
     [offset(file_size() - sizeof(GZIP_TRAILER))]

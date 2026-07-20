@@ -42,6 +42,7 @@
 #endif
 
 DEFINE_KEYWORD          ( TOK_ALIGN,            "align" )
+DEFINE_KEYWORD          ( TOK_ALGORITHM,        "algorithm" )
 DEFINE_KEYWORD          ( TOK_ARCHITECTURE,     "architecture" )
 DEFINE_KEYWORD          ( TOK_APPEND,           "append" )
 DEFINE_KEYWORD          ( TOK_ASSERT,           "assert" )
@@ -123,6 +124,7 @@ DEFINE_KEYWORD          ( TOK_TAGSET,           "tagset" )
 DEFINE_KEYWORD          ( TOK_TERMINATEDBY,     "terminated_by" )
 DEFINE_KEYWORD          ( TOK_TERMINATOR,       "terminator" )
 DEFINE_KEYWORD          ( TOK_TREE,             "tree" )
+DEFINE_KEYWORD          ( TOK_TRANSFORM,        "transform" )
 DEFINE_KEYWORD          ( TOK_TYPE,             "type" )
 DEFINE_RESERVED_KEYWORD ( TOK_TYPEDEF,          "typedef" )
 DEFINE_RESERVED_KEYWORD ( TOK_UNION,			"union" )

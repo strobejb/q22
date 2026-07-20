@@ -23,6 +23,7 @@ HexView::HexView(QWidget *parent)
 
     // Piece-table buffer
     m_pDataSeq = new sequence();
+    m_primaryDataSeq = m_pDataSeq;
     m_pDataSeq->init();
 
     // Colour slots start invalid. realiseColour() is the only source of truth
@@ -95,7 +96,8 @@ HexView::HexView(QWidget *parent)
 
 HexView::~HexView()
 {
-    delete m_pDataSeq;
+    m_pDataSeq = m_primaryDataSeq;
+    delete m_primaryDataSeq;
     delete m_lastSnapshot;
     delete m_dragSnapshot;
 }
@@ -214,6 +216,7 @@ bool HexView::eventFilter(QObject *obj, QEvent *ev)
 
 bool HexView::initBuf(const uint8_t *buf, size_t len, bool copy, bool readonly)
 {
+    clearViewSource();
     m_pDataSeq->clear();
     bool ok = m_pDataSeq->init(buf, len, copy);
     if (ok) {
@@ -231,6 +234,7 @@ bool HexView::initBuf(const uint8_t *buf, size_t len, bool copy, bool readonly)
 
 bool HexView::openFile(const QString &path, uint /*flags*/)
 {
+    clearViewSource();
     m_pDataSeq->clear();
     bool ok = m_pDataSeq->open(path.toStdString());
     if (ok) {
@@ -249,13 +253,68 @@ bool HexView::openFile(const QString &path, uint /*flags*/)
     return ok;
 }
 
+bool HexView::setViewSource(std::shared_ptr<sequence> source)
+{
+    if (!source)
+        return false;
+
+    closeNoteEditor(true);
+    if (!m_usingViewSource)
+        m_savedEditModeForViewSource = m_nEditMode;
+
+    m_usingViewSource = true;
+    m_viewSource = std::move(source);
+    m_pDataSeq = m_viewSource.get();
+    m_nCursorOffset   = 0;
+    m_nSelectionStart = 0;
+    m_nSelectionEnd   = 0;
+    m_structureViewOverlayRanges.clear();
+    m_nVScrollPos     = 0;
+    m_nHScrollPos     = 0;
+    m_nEditMode       = HVMODE_READONLY;
+    recalcLayout();
+    repositionCaret();
+    viewport()->update();
+    emit editModeChanged(m_nEditMode);
+    emit lengthChanged(m_pDataSeq->size());
+    emit cursorChanged(m_nCursorOffset);
+    return true;
+}
+
+void HexView::clearViewSource()
+{
+    if (!m_usingViewSource)
+        return;
+
+    closeNoteEditor(true);
+    m_pDataSeq = m_primaryDataSeq;
+    m_viewSource.reset();
+    m_usingViewSource = false;
+    m_nCursorOffset   = 0;
+    m_nSelectionStart = 0;
+    m_nSelectionEnd   = 0;
+    m_structureViewOverlayRanges.clear();
+    m_nVScrollPos     = 0;
+    m_nHScrollPos     = 0;
+    m_nEditMode       = m_savedEditModeForViewSource;
+    recalcLayout();
+    repositionCaret();
+    viewport()->update();
+    emit editModeChanged(m_nEditMode);
+    emit lengthChanged(m_pDataSeq ? m_pDataSeq->size() : 0);
+    emit cursorChanged(m_nCursorOffset);
+}
+
 bool HexView::saveFile(const QString &path, uint /*flags*/)
 {
+    if (m_usingViewSource)
+        return false;
     return m_pDataSeq->save(path.toStdString());
 }
 
 bool HexView::clearFile()
 {
+    clearViewSource();
     bool ok = m_pDataSeq->clear();
     if (ok) {
         m_filePath.clear();

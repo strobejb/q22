@@ -630,6 +630,9 @@ ExprNode *Parser::TagWrappedArg(TOKEN wrappers[])
 	static TOKEN kDestTagValueWrappers[] = {
 		TOK_APPEND, TOK_ITEM, TOK_KEY, TOK_NAME, TOK_NULL
 	};
+	static TOKEN kTransformTagValueWrappers[] = {
+		TOK_ALGORITHM, TOK_NULL
+	};
 
 	for(int i = 0; wrappers[i] != TOK_NULL; i++)
 	{
@@ -645,6 +648,8 @@ ExprNode *Parser::TagWrappedArg(TOKEN wrappers[])
 		ExprNode *inner = 0;
 		if(wrapTok == TOK_DEST)
 			inner = TagArgList(kDestTagValueWrappers);
+		else if(wrapTok == TOK_TRANSFORM)
+			inner = TagWrappedArg(kTransformTagValueWrappers);
 		else if(wrapTok == TOK_OFFSET || wrapTok == TOK_MAP || wrapTok == TOK_KEY || wrapTok == TOK_ITEM || wrapTok == TOK_ATTR || wrapTok == TOK_FIELD)
 			inner = CommaExpression(TOK_NULL);
 		else

@@ -325,6 +325,11 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     m_statusbarInfoRight = new SettingsToggle(tr("Right align status info"), this);
     m_statusbarInfoRight->setChecked(AppSettings::prefStatusbarInfoRight());
 
+    // ── Structure View toggles ───────────────────────────────────────────────
+    m_nestedSourceBreadcrumb = new SettingsToggle(tr("Hex view breadcrumb"), this);
+    m_nestedSourceBreadcrumb->setToolTip(tr("Show nested source navigation above the hex view instead of inside Structure View"));
+    m_nestedSourceBreadcrumb->setChecked(AppSettings::prefNestedSourceBreadcrumb());
+
     // ── Bookmark behaviour toggles ────────────────────────────────────────────
     m_bmAutoExpand = new SettingsToggle(tr("Expand automatically"), this);
     m_bmAutoExpand->setToolTip(tr("Automatically expand bookmarks when space allows or when navigating to them"));
@@ -411,6 +416,11 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
         emit bookmarkStyleChanged(HVS_BOOKMARK_SELECTION_HIGHLIGHTS,
                                   on ? HVS_BOOKMARK_SELECTION_HIGHLIGHTS : 0);
     });
+    connect(m_nestedSourceBreadcrumb, &SettingsToggle::toggled,
+            this, [this](bool on) {
+        AppSettings::setPrefNestedSourceBreadcrumb(on);
+        emit nestedSourceBreadcrumbChanged(on);
+    });
 
     // ── Cards ─────────────────────────────────────────────────────────────────
     auto *fontGroup   = new SettingsCard(
@@ -424,6 +434,9 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
         SettingsCard::Style::Spaced, this);
     auto *statusbarGroup = new SettingsCard(
         {m_statusbarToolsRight, m_statusbarInfoRight},
+        SettingsCard::Style::Spaced, this);
+    auto *structureGroup = new SettingsCard(
+        {m_nestedSourceBreadcrumb},
         SettingsCard::Style::Spaced, this);
     auto *bmGroup = new SettingsCard(
         {m_bmAutoExpand, m_bmNested, m_bmSelHighlights},
@@ -511,6 +524,10 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     vlay->addWidget(makeSectionLabel(tr("Statusbar")));
     vlay->addSpacing(kHeaderBottomGap);
     vlay->addWidget(statusbarGroup);
+    vlay->addSpacing(kGroupTopGap);
+    vlay->addWidget(makeSectionLabel(tr("Structure View")));
+    vlay->addSpacing(kHeaderBottomGap);
+    vlay->addWidget(structureGroup);
     vlay->addSpacing(kGroupTopGap);
     vlay->addWidget(makeSectionLabel(tr("Bookmarks")));
     vlay->addSpacing(kHeaderBottomGap);

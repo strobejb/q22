@@ -338,7 +338,9 @@ private:
                      QString *offsetSpace, ExprNode **offset, ExprNode **extent) const;
     void applyCodeTag(StructureRow *target, TypeDecl *typeDecl, StructureRow *scope);
     bool openAsTagArgs(ExprNode *expr, ExprNode **typeName, QString *offsetSpace,
-                       ExprNode **offset, ExprNode **extent, ExprNode **name) const;
+                       ExprNode **offset, ExprNode **extent, ExprNode **name,
+                       QString *transform = nullptr, ExprNode **transformAlgorithmField = nullptr,
+                       ExprNode **condition = nullptr) const;
     void applyOpenAsTag(StructureRow *target, TypeDecl *typeDecl, StructureRow *scope);
     void linkWasmFunctionCodeTargets(StructureRow *root);
     void linkWasmSemanticFunctionCodeTargets(StructureRow *root);
@@ -414,6 +416,8 @@ private:
     Enum *tagValueEnum(StructureRow *row, TypeDecl *typeDecl, TOKEN tagTok) const;
     Enum *enumForName(const char *name) const;
     Enum *tagEnum(StructureRow *row, TypeDecl *typeDecl) const;
+    EnumField *enumFieldForRowValue(StructureRow *row, Enum *eptr) const;
+    QString enumValueStringMetadata(StructureRow *scope, ExprNode *fieldExpr, TOKEN tagTok);
     QString enumNameForValue(Enum *eptr, INUMTYPE value) const;
     QStringList enumChoiceLabels(Enum *eptr) const;
     void applyBitflagTag(StructureRow *row, Type *type, TypeDecl *typeDecl, uint64_t rawValue, uint64_t byteLength);
