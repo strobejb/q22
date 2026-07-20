@@ -32,6 +32,56 @@ static bool HasUnsizedArray(Type *type)
 	return false;
 }
 
+static bool HasArray(Type *type)
+{
+	for(Type *cursor = type; cursor; cursor = cursor->link)
+	{
+		if(cursor->ty == typeARRAY)
+			return true;
+	}
+
+	return false;
+}
+
+static bool IsElementOnlyArrayTag(TOKEN tok)
+{
+	switch(tok)
+	{
+	case TOK_NAME:
+	case TOK_ENUM:
+	case TOK_BITFLAG:
+	case TOK_BITFIELD:
+	case TOK_TREE:
+	case TOK_CODE:
+	case TOK_OFFSETMAP:
+	case TOK_OPENAS:
+	case TOK_VIEW:
+	case TOK_WARN:
+	case TOK_ASSERT:
+	case TOK_DYNAMICARRAY:
+	case TOK_DYNAMICCONTAINER:
+	case TOK_DYNAMICSTRUCT:
+	case TOK_EMIT:
+	case TOK_EMITNODE:
+	case TOK_EMITROW:
+	case TOK_ENTRYPOINT:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static Tag *FindElementOnlyArrayTag(Tag *tagList)
+{
+	for(Tag *tag = tagList; tag; tag = tag->link)
+	{
+		if(IsElementOnlyArrayTag(tag->tok))
+			return tag;
+	}
+
+	return 0;
+}
+
 Symbol *InstallSymbol(SymbolTable &table, const char *name)
 {
 	Symbol *sym = new Symbol;
@@ -485,7 +535,7 @@ Type * Parser::ParseStructBody(Symbol *sym, TYPE ty, TypeDecl *ownerDecl)
 			TOK_DISPLAY, TOK_FORMAT,
 			TOK_ENDIAN,	TOK_SELECT, TOK_CASE, TOK_NAME, TOK_PADTO, TOK_DEFAULT,
 			TOK_ENUM, TOK_ENTRYPOINT, TOK_EXTENT, TOK_OPTIONAL, TOK_CODE, TOK_MAGIC, TOK_OFFSETMAP, TOK_OPENAS, TOK_VERSION, TOK_WARN, TOK_ASSERT,
-			TOK_DYNAMICARRAY, TOK_DYNAMICCONTAINER, TOK_DYNAMICSTRUCT, TOK_EMIT, TOK_EMITNODE, TOK_EMITROW, TOK_TERMINATEDBY, TOK_TERMINATOR, TOK_VIEW, TOK_TAGS, TOK_TREE,
+			TOK_DYNAMICARRAY, TOK_DYNAMICCONTAINER, TOK_DYNAMICSTRUCT, TOK_EMIT, TOK_EMITNODE, TOK_EMITROW, TOK_ELEMENT, TOK_TERMINATEDBY, TOK_TERMINATOR, TOK_VIEW, TOK_TAGS, TOK_TREE,
 			TOK_SEMANTIC,
 			TOK_NULL 
 
@@ -814,6 +864,24 @@ TypeDecl * Parser::ParseTypeDecl(Tag *tagList, SymbolTable &symTable, bool neste
 			Error(ERROR_UNSIZED_ARRAY_REQUIRES_SIZEIS);
 			delete type;
 			return 0;
+		}
+
+		const bool hasArray = HasArray(type);
+		if(FindTag(typeDecl->tagList, TOK_ELEMENT, 0) && !hasArray)
+		{
+			Error(ERROR_ELEMENT_TAG_REQUIRES_ARRAY);
+			delete type;
+			return 0;
+		}
+
+		if(hasArray)
+		{
+			if(Tag *elementOnlyTag = FindElementOnlyArrayTag(typeDecl->tagList))
+			{
+				Error(ERROR_ARRAY_ELEMENT_TAG_REQUIRES_ELEMENT, inenglish(elementOnlyTag->tok));
+				delete type;
+				return 0;
+			}
 		}
 
 		// Change typeIDENTIFIER to typeTYPEDEF when appropriate

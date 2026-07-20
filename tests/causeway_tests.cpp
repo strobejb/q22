@@ -43,6 +43,7 @@ private slots:
 	void legacyCountAndSelectAliasesUseCanonicalTokens();
 	void lengthIsIsReserved();
 	void unsizedArraysRequireCount();
+	void arrayElementTagsRequireExplicitElementWrapper();
 	void maxCountAndByteSequenceTerminatorsParse();
 	void namedOffsetMapsAndValueAtParse();
 	void scopePrefixesParse();
@@ -319,9 +320,9 @@ void CausewayTests::tagsetsParseAndExpand()
 						"typedef struct _Import { dword value; } ImportDesc;\n"
 						"tagset DIRECTORY_TAGS\n"
 						"[\n"
-						"  name(Dir),\n"
-						"  dynamic_struct(case(ExportEntry), type(ExportDesc), offset(VirtualAddress), mapper(offset_map), optional(Size != 0)),\n"
-						"  dynamic_struct(case(ImportEntry), type(ImportDesc), offset(VirtualAddress), mapper(offset_map), optional(Size != 0))\n"
+						"  element(name(Dir),\n"
+						"          dynamic_struct(case(ExportEntry), type(ExportDesc), offset(VirtualAddress), mapper(offset_map), optional(Size != 0)),\n"
+						"          dynamic_struct(case(ImportEntry), type(ImportDesc), offset(VirtualAddress), mapper(offset_map), optional(Size != 0)))\n"
 						"];\n"
 						"[export]\n"
 						"struct Root {\n"
@@ -342,8 +343,10 @@ void CausewayTests::tagsetsParseAndExpand()
 	QCOMPARE(root->baseType->sptr->typeDeclList.size(), size_t(1));
 
 	Tag *expanded = root->baseType->sptr->typeDeclList[0]->tagList;
-	QVERIFY(FindTag(expanded, TOK_NAME, nullptr));
-	QCOMPARE(countTags(expanded, TOK_DYNAMICSTRUCT), 2);
+	Tag *expandedElement = FindTag(expanded, TOK_ELEMENT, nullptr);
+	QVERIFY(expandedElement);
+	QVERIFY(FindTag(expandedElement->elementTags, TOK_NAME, nullptr));
+	QCOMPARE(countTags(expandedElement->elementTags, TOK_DYNAMICSTRUCT), 2);
 	QVERIFY(!FindTag(expanded, TOK_TAGS, nullptr));
 }
 
@@ -525,8 +528,8 @@ void CausewayTests::dynamicPlacementTagsParse()
 						"typedef struct _Import { dword value; } ImportDesc;\n"
 						"[export]\n"
 						"struct Root {\n"
-						"  [dynamic_struct(case(ImportEntry), type(ImportDesc), offset(VirtualAddress), mapper(offset_map), optional(Size != 0)), dynamic_array(case(ImportEntry), type(ImportDesc), offset(VirtualAddress), count(Size / sizeof(ImportDesc)), mapper(offset_map), terminated_by(value == 0), terminator(\"hidden\"))] DataDir dirs[2];\n"
-						"  [dynamic_container(type(SectionBucket)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section sections[2];\n"
+						"  [element(dynamic_struct(case(ImportEntry), type(ImportDesc), offset(VirtualAddress), mapper(offset_map), optional(Size != 0)), dynamic_array(case(ImportEntry), type(ImportDesc), offset(VirtualAddress), count(Size / sizeof(ImportDesc)), mapper(offset_map), terminated_by(value == 0), terminator(\"hidden\")))] DataDir dirs[2];\n"
+						"  [element(dynamic_container(type(SectionBucket)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData))] Section sections[2];\n"
 						"  [size_is(16), terminated_by(0)] char name[];\n"
 						"} root;\n"));
 
@@ -544,10 +547,14 @@ void CausewayTests::dynamicPlacementTagsParse()
 	QVERIFY(root->baseType);
 	QVERIFY(root->baseType->sptr);
 	QCOMPARE(root->baseType->sptr->typeDeclList.size(), size_t(3));
-	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[0]->tagList, TOK_DYNAMICSTRUCT, nullptr));
-	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[0]->tagList, TOK_DYNAMICARRAY, nullptr));
-	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[1]->tagList, TOK_DYNAMICCONTAINER, nullptr));
-	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[1]->tagList, TOK_OFFSETMAP, nullptr));
+	Tag *dirElement = FindTag(root->baseType->sptr->typeDeclList[0]->tagList, TOK_ELEMENT, nullptr);
+	QVERIFY(dirElement);
+	QVERIFY(FindTag(dirElement->elementTags, TOK_DYNAMICSTRUCT, nullptr));
+	QVERIFY(FindTag(dirElement->elementTags, TOK_DYNAMICARRAY, nullptr));
+	Tag *sectionElement = FindTag(root->baseType->sptr->typeDeclList[1]->tagList, TOK_ELEMENT, nullptr);
+	QVERIFY(sectionElement);
+	QVERIFY(FindTag(sectionElement->elementTags, TOK_DYNAMICCONTAINER, nullptr));
+	QVERIFY(FindTag(sectionElement->elementTags, TOK_OFFSETMAP, nullptr));
 	QVERIFY(FindTag(root->baseType->sptr->typeDeclList[2]->tagList, TOK_TERMINATEDBY, nullptr));
 }
 
@@ -563,7 +570,7 @@ void CausewayTests::semanticSchemaAndEmitTagsParse()
 						"[semantic(\"Root Data\")]\n"
 						"typedef struct _ROOT_VIEW {\n"
 						"  PayloadByte Payloads[];\n"
-						"  [name(concat(\"item \", Key))]\n"
+						"  [element(name(concat(\"item \", Key)))]\n"
 						"  struct { byte Key; char Label[]; } Items[];\n"
 						"} ROOT_VIEW;\n"
 						"[export, semantic(ROOT_VIEW)]\n"
@@ -583,12 +590,14 @@ void CausewayTests::semanticSchemaAndEmitTagsParse()
 	QCOMPARE(schema->baseType->sptr->typeDeclList.size(), size_t(2));
 	TypeDecl *items = schema->baseType->sptr->typeDeclList[1];
 	QVERIFY(items);
-	QVERIFY(FindTag(items->tagList, TOK_NAME, nullptr));
+	Tag *itemsElement = FindTag(items->tagList, TOK_ELEMENT, nullptr);
+	QVERIFY(itemsElement);
+	QVERIFY(FindTag(itemsElement->elementTags, TOK_NAME, nullptr));
 	QVERIFY(!items->declList.empty());
-	Type *itemsElement = BaseNode(items->declList[0]);
-	QVERIFY(itemsElement && itemsElement->ty == typeSTRUCT && itemsElement->sptr);
-	QVERIFY(itemsElement->sptr->semanticSchema);
-	QCOMPARE(itemsElement->sptr->typeDeclList.size(), size_t(2));
+	Type *itemsElementType = BaseNode(items->declList[0]);
+	QVERIFY(itemsElementType && itemsElementType->ty == typeSTRUCT && itemsElementType->sptr);
+	QVERIFY(itemsElementType->sptr->semanticSchema);
+	QCOMPARE(itemsElementType->sptr->typeDeclList.size(), size_t(2));
 
 	TypeDecl *root = parser.GetStrataLibrary()->globalTypeDeclList[2];
 	ExprNode *semanticExpr = nullptr;
@@ -1211,6 +1220,34 @@ void CausewayTests::unsizedArraysRequireCount()
 						"} root;\n"));
 }
 
+void CausewayTests::arrayElementTagsRequireExplicitElementWrapper()
+{
+	// Scenario: element presentation/behavior tags on arrays are explicit.
+	// Expected: element(...) is accepted on arrays, rejected on scalars, and
+	// direct element-behavior tags on arrays get a precise authoring error.
+	Parser valid;
+	QVERIFY(parseBuffer(valid,
+						"typedef struct _Entry { byte id; } Entry;\n"
+						"struct Root {\n"
+						"  [count(2), element(name(id))] Entry entries[];\n"
+						"} root;\n"));
+
+	Parser scalar;
+	QVERIFY(!parseBuffer(scalar,
+						 "struct Root {\n"
+						 "  [element(name(value))] byte value;\n"
+						 "} root;\n"));
+	QCOMPARE(scalar.LastErr(), ERROR_ELEMENT_TAG_REQUIRES_ARRAY);
+
+	Parser directArrayTag;
+	QVERIFY(!parseBuffer(directArrayTag,
+						 "typedef struct _Entry { byte id; } Entry;\n"
+						 "struct Root {\n"
+						 "  [count(2), name(id)] Entry entries[];\n"
+						 "} root;\n"));
+	QCOMPARE(directArrayTag.LastErr(), ERROR_ARRAY_ELEMENT_TAG_REQUIRES_ELEMENT);
+}
+
 void CausewayTests::maxCountAndByteSequenceTerminatorsParse()
 {
 	// Scenario: terminated arrays can use a named maximum count and a byte
@@ -1254,7 +1291,7 @@ void CausewayTests::namedOffsetMapsAndValueAtParse()
 						"  dword nameOffset;\n"
 						"  dword targetRva;\n"
 						"  dword probeRva;\n"
-						"  [offset_map(\"rva\", va, size, raw), offset_map(va, size, raw), count(1)] Section sections[];\n"
+						"  [count(1), element(offset_map(\"rva\", va, size, raw), offset_map(va, size, raw))] Section sections[];\n"
 						"  [offset(\"strings\", nameOffset), string, max_count(16), terminated_by(0)] char name[];\n"
 						"  [offset(\"rva\", targetRva)] dword mappedValue;\n"
 						"  [optional(value_at(\"rva\", probeRva, word) == 0x1234)] byte mappedProbe;\n"
@@ -1266,7 +1303,9 @@ void CausewayTests::namedOffsetMapsAndValueAtParse()
 	QVERIFY(FindTag(root->tagList, TOK_OFFSETMAP, nullptr));
 
 	TypeDecl *sections = root->baseType->sptr->typeDeclList[4];
-	QVERIFY(FindTag(sections->tagList, TOK_OFFSETMAP, nullptr));
+	Tag *sectionsElement = FindTag(sections->tagList, TOK_ELEMENT, nullptr);
+	QVERIFY(sectionsElement);
+	QVERIFY(FindTag(sectionsElement->elementTags, TOK_OFFSETMAP, nullptr));
 
 	TypeDecl *name = root->baseType->sptr->typeDeclList[5];
 	QVERIFY(FindTag(name->tagList, TOK_OFFSET, nullptr));

@@ -131,6 +131,62 @@ QString tagString(Tag *tags, TOKEN token)
     return QString::fromLocal8Bit(expr->str).toLower();
 }
 
+Tag *elementTagList(Tag *tags)
+{
+    Tag *elementTag = FindTag(tags, TOK_ELEMENT, nullptr);
+    return elementTag ? elementTag->elementTags : nullptr;
+}
+
+bool declarationHasArray(TypeDecl *decl)
+{
+    if (!decl)
+        return false;
+
+    Type *type = decl->declList.empty() ? decl->baseType : decl->declList[0];
+    for (Type *cursor = type; cursor; cursor = cursor->link)
+        if (cursor->ty == typeARRAY)
+            return true;
+
+    return false;
+}
+
+Tag *declarationPresentationTags(TypeDecl *decl)
+{
+    if (!decl)
+        return nullptr;
+
+    return declarationHasArray(decl) ? elementTagList(decl->tagList) : decl->tagList;
+}
+
+Tag *effectiveTag(StructureRow *row, TypeDecl *typeDecl, TOKEN token, ExprNode **expr = nullptr)
+{
+    if (row)
+    {
+        if (Tag *tag = FindTag(row->tagListOverride, token, expr))
+            return tag;
+    }
+    return FindTag(typeDecl ? typeDecl->tagList : nullptr, token, expr);
+}
+
+template <typename Func>
+void forEachEffectiveTag(StructureRow *row, TypeDecl *typeDecl, Func fn)
+{
+    for (Tag *tag = row ? row->tagListOverride : nullptr; tag; tag = tag->link)
+        fn(tag);
+    for (Tag *tag = typeDecl ? typeDecl->tagList : nullptr; tag; tag = tag->link)
+        fn(tag);
+}
+
+std::vector<Tag *> effectiveTags(StructureRow *row, TypeDecl *typeDecl)
+{
+    std::vector<Tag *> result;
+    forEachEffectiveTag(row, typeDecl, [&result](Tag *tag) {
+        if (tag && tag->tok != TOK_ELEMENT)
+            result.push_back(tag);
+    });
+    return result;
+}
+
 StrataFormat strataFormatFromName(const QString &value)
 {
     if (value.isEmpty())
@@ -186,12 +242,11 @@ TimestampFormat timestampFormatFromName(const QString &value)
     return TimestampFormat::None;
 }
 
-FormatTagInfo formatTagInfo(TypeDecl *typeDecl)
+FormatTagInfo formatTagInfoFromExpr(ExprNode *expr)
 {
     FormatTagInfo info;
 
-    ExprNode *expr = nullptr;
-    if (!FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_FORMAT, &expr) || !expr)
+    if (!expr)
         return info;
 
     std::vector<ExprNode *> args;
@@ -230,9 +285,16 @@ FormatTagInfo formatTagInfo(TypeDecl *typeDecl)
     return info;
 }
 
+FormatTagInfo formatTagInfo(Tag *tags)
+{
+    ExprNode *expr = nullptr;
+    FindTag(tags, TOK_FORMAT, &expr);
+    return formatTagInfoFromExpr(expr);
+}
+
 StrataFormat formatTag(TypeDecl *typeDecl)
 {
-    return formatTagInfo(typeDecl).format;
+    return formatTagInfo(typeDecl ? typeDecl->tagList : nullptr).format;
 }
 
 TerminatorVisibility terminatorVisibilityExpr(ExprNode *expr)
@@ -372,9 +434,9 @@ QString formatUuidBytes(const QByteArray &bytes, bool guidByteOrder)
     return text;
 }
 
-StructureRowTreeMode treeTag(TypeDecl *typeDecl)
+StructureRowTreeMode treeTag(Tag *tags)
 {
-    const QString value = tagString(typeDecl ? typeDecl->tagList : nullptr, TOK_TREE);
+    const QString value = tagString(tags, TOK_TREE);
     if (value == QLatin1String("hidden"))
         return StructureRowTreeMode::Hidden;
     if (value == QLatin1String("collapsed"))
@@ -1129,11 +1191,13 @@ QString StructureRenderEngine::semanticRootLabelForDisplay() const
 StructureRenderEngine::RowPtr StructureRenderEngine::makeRow(StructureRow *parent,
                                                              Type *type,
                                                              TypeDecl *typeDecl,
-                                                             uint64_t offset) const
+                                                             uint64_t offset,
+                                                             Tag *tagListOverride) const
 {
     auto row = std::make_unique<StructureRow>(parent);
     row->type = type;
     row->typeDecl = typeDecl;
+    row->tagListOverride = tagListOverride;
     row->bigEndian = m_bigEndian;
     row->sourceRef = typeDecl && typeDecl->tagRef.fileDesc ? typeDecl->tagRef
         : (typeDecl ? typeDecl->fileRef : FILEREF());
@@ -1331,46 +1395,17 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
                                                    dimension);
         ExprNode *terminatorModeExpr = nullptr;
         FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_TERMINATOR, &terminatorModeExpr);
-        Enum *nameEnum = nullptr;
-        ExprNode *nameExpr = nullptr;
-        if (FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_NAME, &nameExpr) && m_library && nameExpr && nameExpr->str)
-        {
-            if (Symbol *sym = LookupSymbol(m_library->globalTagSymbolList, nameExpr->str))
-                if (sym->type && sym->type->ty == typeENUM)
-                    nameEnum = sym->type->eptr;
-        }
-
+        Tag *explicitElementTags = elementTagList(typeDecl ? typeDecl->tagList : nullptr);
         TypeDecl *elementTypeDecl = nullptr;
-        bool elementTypeEmitsSemanticRows = false;
         for (Type *cursor = type->link; cursor; cursor = cursor->link)
         {
             if ((cursor->ty == typeTYPEDEF || cursor->ty == typeIDENTIFIER) && cursor->sym)
             {
-                TypeDecl *candidate = findTypeDecl(cursor->sym->name);
-                for (Tag *tag = candidate ? candidate->tagList : nullptr; tag; tag = tag->link)
-                {
-                    if (tag->tok == TOK_EMIT
-                        || tag->tok == TOK_EMITNODE
-                        || tag->tok == TOK_EMITROW)
-                    {
-                        elementTypeEmitsSemanticRows = true;
-                    }
-                    if (tag->tok == TOK_DYNAMICARRAY
-                        || tag->tok == TOK_DYNAMICCONTAINER
-                        || tag->tok == TOK_OFFSETMAP
-                        || tag->tok == TOK_OPENAS
-                        || tag->tok == TOK_EMIT
-                        || tag->tok == TOK_EMITNODE
-                        || tag->tok == TOK_EMITROW)
-                    {
-                        elementTypeDecl = candidate;
-                        break;
-                    }
-                }
-                if (elementTypeDecl)
-                    break;
+                elementTypeDecl = findTypeDecl(cursor->sym->name);
+                break;
             }
         }
+        TypeDecl *elementRowDecl = elementTypeDecl ? elementTypeDecl : typeDecl;
 
         const bool continuePastDisplayCap =
             count <= INUMTYPE(kMaxArrayElements + 16)
@@ -1385,7 +1420,15 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
             || typeContainsTag(type->link, TOK_EMIT)
             || typeContainsTag(type->link, TOK_EMITNODE)
             || typeContainsTag(type->link, TOK_EMITROW)
-            || elementTypeEmitsSemanticRows;
+            || tagListContains(elementRowDecl ? elementRowDecl->tagList : nullptr, TOK_EMIT)
+            || tagListContains(elementRowDecl ? elementRowDecl->tagList : nullptr, TOK_EMITNODE)
+            || tagListContains(elementRowDecl ? elementRowDecl->tagList : nullptr, TOK_EMITROW)
+            || tagListContains(explicitElementTags, TOK_EMIT)
+            || tagListContains(explicitElementTags, TOK_EMITNODE)
+            || tagListContains(explicitElementTags, TOK_EMITROW);
+
+        Enum *nameEnum = nullptr;
+        ExprNode *nameExpr = nullptr;
 
         while (logicalIndex < static_cast<uint64_t>(count)
                && (renderedElements < kMaxArrayElements || continuePastDisplayCap))
@@ -1398,7 +1441,7 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
                 break;
 
             const bool renderElement = renderedElements < kMaxArrayElements;
-            auto row = makeRow(parent, type->link, elementTypeDecl ? elementTypeDecl : typeDecl, elementOffset);
+            auto row = makeRow(parent, type->link, elementRowDecl, elementOffset, explicitElementTags);
             const QString indexLabel = QStringLiteral("[%1]").arg(logicalIndex);
             row->nameTypePrefix = indexLabel;
             if (renderElement)
@@ -1406,6 +1449,14 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
                 row->name = indexLabel;
             }
             row->suppressSemanticViews = true;
+            nameExpr = nullptr;
+            nameEnum = nullptr;
+            if (effectiveTag(row.get(), row->typeDecl, TOK_NAME, &nameExpr) && m_library && nameExpr && nameExpr->str)
+            {
+                if (Symbol *sym = LookupSymbol(m_library->globalTagSymbolList, nameExpr->str))
+                    if (sym->type && sym->type->ty == typeENUM)
+                        nameEnum = sym->type->eptr;
+            }
             if (renderElement)
             {
                 const QString enumLabel = enumNameForValue(nameEnum, static_cast<INUMTYPE>(logicalIndex));
@@ -1416,7 +1467,7 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
                 }
             }
 
-            const uint64_t elementLength = formatType(row.get(), type->link, typeDecl, elementOffset);
+            const uint64_t elementLength = formatType(row.get(), type->link, row->typeDecl, elementOffset);
             row->byteLength = elementLength;
             // Array elements are formatted directly from their base type, so
             // appendIdentifierRow() does not get a chance to apply tags
@@ -1448,36 +1499,6 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
                 }
             }
 
-            if (renderElement && elementTypeDecl)
-            {
-                const size_t requestsBefore = m_dynamicArrayRequests.size();
-                collectDynamicArrayRequests(row.get());
-                if (m_dynamicArrayRequests.size() > requestsBefore)
-                {
-                    std::vector<DynamicArrayRequest> subRequests;
-                    for (size_t requestIndex = requestsBefore; requestIndex < m_dynamicArrayRequests.size();)
-                    {
-                        if (!m_dynamicArrayRequests[requestIndex].containerLabel.isEmpty())
-                        {
-                            ++requestIndex;
-                            continue;
-                        }
-
-                        subRequests.push_back(m_dynamicArrayRequests[requestIndex]);
-                        m_dynamicArrayRequests.erase(m_dynamicArrayRequests.begin() + static_cast<ptrdiff_t>(requestIndex));
-                    }
-
-                    if (!subRequests.empty())
-                    {
-                        StructureRow *rowPtr = row.get();
-                        auto self = shared_from_this();
-                        row->lazyChildLoader = [self, rowPtr, reqs = std::move(subRequests)]() {
-                            return self->buildSubArraysForElement(rowPtr, reqs);
-                        };
-                    }
-                }
-            }
-
             const uint64_t consumedLength = terminatorLength > 0 ? terminatorLength : elementLength;
             // Empty recursive/container elements cannot advance toward the
             // extent boundary. Stop rather than manufacturing duplicate rows.
@@ -1502,9 +1523,9 @@ uint64_t StructureRenderEngine::recurseType(StructureRow *parent,
             if (renderElement)
                 appendPresentedRow(parent, std::move(row));
             else if (row->typeDecl
-                     && (tagListContains(row->typeDecl->tagList, TOK_EMIT)
-                         || tagListContains(row->typeDecl->tagList, TOK_EMITNODE)
-                         || tagListContains(row->typeDecl->tagList, TOK_EMITROW)))
+                     && (effectiveTag(row.get(), row->typeDecl, TOK_EMIT, nullptr)
+                         || effectiveTag(row.get(), row->typeDecl, TOK_EMITNODE, nullptr)
+                         || effectiveTag(row.get(), row->typeDecl, TOK_EMITROW, nullptr)))
             {
                 // Raw arrays are capped for responsiveness, but their
                 // omitted tagged entries still contribute to semantic views.
@@ -1724,7 +1745,7 @@ uint64_t StructureRenderEngine::formatScalar(StructureRow *row, Type *type, Type
         return length;
     }
 
-    Enum *displayEnum = tagEnum(typeDecl);
+    Enum *displayEnum = tagEnum(row, typeDecl);
     if (!displayEnum && base->ty == typeENUM)
         displayEnum = base->eptr;
 
@@ -3837,7 +3858,7 @@ void StructureRenderEngine::collectDynamicRows(StructureRow *row)
 
 void StructureRenderEngine::collectDynamicContainer(StructureRow *row)
 {
-    if (!row || !row->typeDecl || !FindTag(row->typeDecl->tagList, TOK_DYNAMICCONTAINER, nullptr))
+    if (!row || !row->typeDecl || !effectiveTag(row, row->typeDecl, TOK_DYNAMICCONTAINER, nullptr))
         return;
 
     INUMTYPE arrayIndex = 0;
@@ -3845,7 +3866,7 @@ void StructureRenderEngine::collectDynamicContainer(StructureRow *row)
         return;
 
     ExprNode *containerExpr = nullptr;
-    FindTag(row->typeDecl->tagList, TOK_DYNAMICCONTAINER, &containerExpr);
+    effectiveTag(row, row->typeDecl, TOK_DYNAMICCONTAINER, &containerExpr);
     ExprNode *typeNameExpr = nullptr;
     if (!dynamicContainerArgs(containerExpr, &typeNameExpr)
         || !typeNameExpr || typeNameExpr->type != EXPR_IDENTIFIER || !typeNameExpr->str)
@@ -3861,7 +3882,7 @@ void StructureRenderEngine::collectDynamicContainer(StructureRow *row)
     container.typeDecl = containerType;
     container.alias = dynamicContainerAlias(row);
 
-    for (Tag *tag = row->typeDecl->tagList; tag; tag = tag->link)
+    for (Tag *tag : effectiveTags(row, row->typeDecl))
     {
         if (tag->tok != TOK_OFFSETMAP)
             continue;
@@ -3901,7 +3922,7 @@ void StructureRenderEngine::collectNamedOffsetMaps(StructureRow *row)
     if (!row || !row->typeDecl)
         return;
 
-    for (Tag *tag = row->typeDecl->tagList; tag; tag = tag->link)
+    for (Tag *tag : effectiveTags(row, row->typeDecl))
     {
         if (tag->tok != TOK_OFFSETMAP)
             continue;
@@ -3980,7 +4001,7 @@ void StructureRenderEngine::collectDynamicRequests(StructureRow *row)
     INUMTYPE arrayIndex = 0;
     const bool rowIsArrayElement = arrayIndexFromRow(row, &arrayIndex);
 
-    for (Tag *tag = row->typeDecl->tagList; tag; tag = tag->link)
+    for (Tag *tag : effectiveTags(row, row->typeDecl))
     {
         if (tag->tok != TOK_DYNAMICSTRUCT)
             continue;
@@ -4053,7 +4074,7 @@ void StructureRenderEngine::collectDynamicArrayRequests(StructureRow *row)
     INUMTYPE probeArrayIndex = 0;
     const bool rowIsArrayElement = arrayIndexFromRow(row, &probeArrayIndex);
 
-    for (Tag *tag = row->typeDecl->tagList; tag; tag = tag->link)
+    for (Tag *tag : effectiveTags(row, row->typeDecl))
     {
         if (tag->tok != TOK_DYNAMICARRAY)
             continue;
@@ -4500,7 +4521,7 @@ void StructureRenderEngine::collectSemanticEmitRequests(StructureRow *row)
     if (!schemaDecl)
         return;
 
-    for (Tag *tag = row->typeDecl->tagList; tag; tag = tag->link)
+    for (Tag *tag : effectiveTags(row, row->typeDecl))
     {
         if (tag->tok == TOK_EMITROW)
         {
@@ -5241,7 +5262,9 @@ void StructureRenderEngine::appendSemanticNodeRequests()
             name = request.destinationPath.isEmpty() ? QStringLiteral("Semantic Node") : request.destinationPath.last();
         name = rowNameFragment(name);
 
+        TypeDecl *destinationDecl = semanticDestinationDecl(attachedSemanticSchema(m_rootType), request.destinationPath);
         TypeDecl *elementSchema = semanticDestinationElementSchema(attachedSemanticSchema(m_rootType), request.destinationPath);
+        Tag *schemaPresentationTags = declarationPresentationTags(destinationDecl);
 
         if (!node && request.address == SemanticNodeAddress::Item)
             return;
@@ -5270,7 +5293,6 @@ void StructureRenderEngine::appendSemanticNodeRequests()
                 if (evaluate(request.owner, request.extentExpr, &extent, request.owner->absoluteOffset) && extent > 0)
                     row->byteLength = static_cast<uint64_t>(extent);
             }
-            TypeDecl *destinationDecl = semanticDestinationDecl(attachedSemanticSchema(m_rootType), request.destinationPath);
             applySemanticBranchIcons(row.get(),
                                      request.destinationPath,
                                      false,
@@ -5364,7 +5386,9 @@ void StructureRenderEngine::appendSemanticNodeRequests()
         if (elementSchema && !hasExplicitName)
         {
             ExprNode *schemaNameExpr = nullptr;
-            if (FindTag(elementSchema->tagList, TOK_NAME, &schemaNameExpr) && schemaNameExpr)
+            if (FindTag(schemaPresentationTags ? schemaPresentationTags : elementSchema->tagList,
+                        TOK_NAME,
+                        &schemaNameExpr) && schemaNameExpr)
             {
                 const QString schemaName = semanticExpressionText(node,
                                                                   elementSchema->baseType,
@@ -5599,7 +5623,7 @@ StructureRow *StructureRenderEngine::semanticChildGroup(StructureRow *parent, co
         return nullptr;
 
     TypeDecl *schemaField = semanticDestinationDecl(attachedSemanticSchema(m_rootType), path);
-    const StructureRowTreeMode treeMode = treeTag(schemaField);
+    const StructureRowTreeMode treeMode = treeTag(declarationPresentationTags(schemaField));
     if (treeMode == StructureRowTreeMode::Flatten)
         return parent;
     if (treeMode == StructureRowTreeMode::Hidden)
@@ -7069,10 +7093,10 @@ bool StructureRenderEngine::declarationBigEndian(TypeDecl *typeDecl,
     return ok ? value != 0 : m_bigEndian;
 }
 
-Bitfield *StructureRenderEngine::tagValueBitfield(TypeDecl *typeDecl) const
+Bitfield *StructureRenderEngine::tagValueBitfield(StructureRow *row, TypeDecl *typeDecl) const
 {
     ExprNode *expr = nullptr;
-    if (!m_library || !FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_BITFIELD, &expr) || !expr || !expr->str)
+    if (!m_library || !effectiveTag(row, typeDecl, TOK_BITFIELD, &expr) || !expr || !expr->str)
         return nullptr;
 
     for (Bitfield *bitfield : m_library->globalBitfieldList)
@@ -7101,18 +7125,18 @@ Enum *StructureRenderEngine::enumForName(const char *name) const
     return nullptr;
 }
 
-Enum *StructureRenderEngine::tagValueEnum(TypeDecl *typeDecl, TOKEN tagTok) const
+Enum *StructureRenderEngine::tagValueEnum(StructureRow *row, TypeDecl *typeDecl, TOKEN tagTok) const
 {
     ExprNode *expr = nullptr;
-    if (!m_library || !FindTag(typeDecl ? typeDecl->tagList : nullptr, tagTok, &expr) || !expr || !expr->str)
+    if (!m_library || !effectiveTag(row, typeDecl, tagTok, &expr) || !expr || !expr->str)
         return nullptr;
 
     return enumForName(expr->str);
 }
 
-Enum *StructureRenderEngine::tagEnum(TypeDecl *typeDecl) const
+Enum *StructureRenderEngine::tagEnum(StructureRow *row, TypeDecl *typeDecl) const
 {
-    return tagValueEnum(typeDecl, TOK_ENUM);
+    return tagValueEnum(row, typeDecl, TOK_ENUM);
 }
 
 QString StructureRenderEngine::enumNameForValue(Enum *eptr, INUMTYPE value) const
@@ -7151,7 +7175,7 @@ void StructureRenderEngine::applyBitflagTag(StructureRow *row,
     if (!row)
         return;
 
-    Enum *flags = tagValueEnum(typeDecl, TOK_BITFLAG);
+    Enum *flags = tagValueEnum(row, typeDecl, TOK_BITFLAG);
     if (!flags)
         return;
 
@@ -7238,7 +7262,7 @@ void StructureRenderEngine::applyBitfieldTag(StructureRow *row,
     if (!row)
         return;
 
-    Bitfield *bitfield = tagValueBitfield(typeDecl);
+    Bitfield *bitfield = tagValueBitfield(row, typeDecl);
     if (!bitfield)
         return;
 
@@ -7313,7 +7337,9 @@ void StructureRenderEngine::applyBitfieldTag(StructureRow *row,
 
 bool StructureRenderEngine::applyFormatTag(StructureRow *row, TypeDecl *typeDecl, uint64_t byteLength)
 {
-    const FormatTagInfo formatInfo = formatTagInfo(typeDecl);
+    ExprNode *formatExpr = nullptr;
+    effectiveTag(row, typeDecl, TOK_FORMAT, &formatExpr);
+    const FormatTagInfo formatInfo = formatTagInfoFromExpr(formatExpr);
     const StrataFormat format = formatInfo.format;
     if (!row)
         return false;
@@ -7402,7 +7428,7 @@ void StructureRenderEngine::applyTreeTag(StructureRow *row, TypeDecl *typeDecl) 
 {
     if (!row)
         return;
-    row->treeMode = treeTag(typeDecl);
+    row->treeMode = treeTag(row->tagListOverride ? row->tagListOverride : (typeDecl ? typeDecl->tagList : nullptr));
 }
 
 void StructureRenderEngine::appendPresentedRow(StructureRow *parent, RowPtr row) const
@@ -7432,7 +7458,7 @@ void StructureRenderEngine::appendPresentedRow(StructureRow *parent, RowPtr row)
 
 void StructureRenderEngine::applyEntryPointTag(StructureRow *row, TypeDecl *typeDecl)
 {
-    if (!row || !FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_ENTRYPOINT, nullptr))
+    if (!row || !effectiveTag(row, typeDecl, TOK_ENTRYPOINT, nullptr))
         return;
 
     if (row->valueKind != StructureRowValueKind::ScalarInteger)
@@ -7509,7 +7535,7 @@ void StructureRenderEngine::applyCodeTag(StructureRow *target, TypeDecl *typeDec
     if (!target || !scope)
         return;
 
-    if (!FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_CODE, &expr))
+    if (!effectiveTag(target, typeDecl, TOK_CODE, &expr))
     {
         for (Type *type = scope->type; type; type = type->link)
         {
@@ -7536,7 +7562,7 @@ void StructureRenderEngine::applyCodeTag(StructureRow *target, TypeDecl *typeDec
         StructureRow *architectureRow = findFieldRow(scope, architectureField);
         if (!architectureRow && scope->parent)
             architectureRow = findFieldRow(scope->parent, architectureField);
-        Enum *architectureEnum = architectureRow ? tagEnum(architectureRow->typeDecl) : nullptr;
+        Enum *architectureEnum = architectureRow ? tagEnum(architectureRow, architectureRow->typeDecl) : nullptr;
         EnumField *architectureValue = nullptr;
         if (architectureEnum && architectureRow)
             for (EnumField *field : architectureEnum->fieldList)
@@ -7731,7 +7757,7 @@ void StructureRenderEngine::applyDiagnosticTags(StructureRow *target, TypeDecl *
 
     const auto apply = [&](TOKEN token) {
         ExprNode *expr = nullptr;
-        if (!FindTag(typeDecl ? typeDecl->tagList : nullptr, token, &expr) || !expr)
+        if (!effectiveTag(target, typeDecl, token, &expr) || !expr)
             return;
 
         ExprNode *condition = nullptr;
@@ -7826,7 +7852,7 @@ void StructureRenderEngine::applyOpenAsTag(StructureRow *target, TypeDecl *typeD
     if (!target || !scope)
         return;
 
-    if (!FindTag(typeDecl ? typeDecl->tagList : nullptr, TOK_OPENAS, &expr))
+    if (!effectiveTag(target, typeDecl, TOK_OPENAS, &expr))
     {
         for (Type *type = scope->type; type; type = type->link)
         {
@@ -8142,8 +8168,10 @@ QString StructureRenderEngine::fieldStringValue(StructureRow *row)
         return {};
 
     Type *elementType = BaseNode(arrayType->link);
-    const StrataFormat format = formatTag(row->typeDecl);
-    const bool explicitString = FindTag(row->typeDecl ? row->typeDecl->tagList : nullptr, TOK_STRING, nullptr)
+    ExprNode *formatExpr = nullptr;
+    effectiveTag(row, row->typeDecl, TOK_FORMAT, &formatExpr);
+    const StrataFormat format = formatTagInfoFromExpr(formatExpr).format;
+    const bool explicitString = effectiveTag(row, row->typeDecl, TOK_STRING, nullptr)
         || format == StrataFormat::String;
     const bool explicitUtf16 = format == StrataFormat::Utf16
         || format == StrataFormat::Utf16Le
@@ -8499,7 +8527,7 @@ QString StructureRenderEngine::dynamicContainerAlias(StructureRow *row)
         return alias;
 
     ExprNode *nameExpr = nullptr;
-    if (FindTag(row->typeDecl ? row->typeDecl->tagList : nullptr, TOK_NAME, &nameExpr))
+    if (effectiveTag(row, row->typeDecl, TOK_NAME, &nameExpr))
     {
         if (StructureRow *fieldRow = findFieldRow(row, nameExpr))
         {

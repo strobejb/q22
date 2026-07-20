@@ -18,7 +18,7 @@ View online: [Strata Language Reference](https://github.com/strobejb/q22/blob/ma
 | Reusable tags | [`tagset`](#tagsets) · [`tags`](#tagsets) |
 | Presentation | [`enum(Name)`](#display) · [`bitflag(Name)`](#display) · [`bitfield(Name)`](#display) · [`format("...")`](#display) · [`name`](#display) · [`string`](#display) · [`tree("...")`](#tree-presentation) · [`warn`](#display) · [`assert`](#display) |
 | Layout | [`offset`](#layout) · [`align`](#layout) · [`pad_to`](#layout) · [`endian`](#byte-order) · [`entrypoint`](#layout) · [`code`](#layout) · [`nested`](#layout) / [`open_as`](#layout) · [`extent`](#layout) · [`optional`](#layout) |
-| Arrays | [`count`](#arrays) · [`max_count`](#arrays) · [`count_as`](#arrays) · [`terminated_by`](#arrays) · [`terminator`](#arrays) |
+| Arrays | [`count`](#arrays) · [`max_count`](#arrays) · [`count_as`](#arrays) · [`terminated_by`](#arrays) · [`terminator`](#arrays) · [`element`](#array-element-tags) |
 | Unions | [`select`](#discriminated-unions) · [`case`](#discriminated-unions) |
 | Dynamic/semantic views | [`semantic`](#semantic-and-emit) · [`emit`](#semantic-and-emit) · [`emit_node`](#semantic-and-emit) · [`emit_row`](#semantic-and-emit) · [`append`](#positional-semantic-collection-addressing) · [`item`](#positional-semantic-collection-addressing) · [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) |
 | Export | [`export`](#export-metadata) · [`category`](#export-metadata) · [`version`](#export-metadata) · [`assoc`](#export-metadata) · [`magic`](#export-metadata) |
@@ -254,6 +254,24 @@ Variable-sized arrays can be defined with an empty `[]` with the array bounds sp
 [max_count(4096), terminated_by(0)] char  Name[];
 ```
 
+### Array element tags
+
+Array layout tags stay on the array declaration: `count(...)`, `max_count(...)`,
+`extent(...)`, `terminated_by(...)`, and `terminator(...)`. Tags that describe
+each rendered element are wrapped in `element(...)`.
+
+```c
+[count(sectionCount), element(name(Name), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData))]
+SECTION_HEADER sections[];
+```
+
+This is deliberately explicit. `name(...)`, `enum(...)`, `bitflag(...)`,
+`bitfield(...)`, `format(...)`, `tree(...)`, `code(...)`, `nested(...)`,
+`open_as(...)`, `offset_map(...)`, diagnostics, dynamic tags, and semantic emit
+tags on an array declaration must be placed inside `element(...)`. If they are
+written directly on the array, the parser reports an authoring error instead of
+silently applying them to the wrong row.
+
 Nested flexible arrays are supported for byte/string-table patterns where the
 outer array is a sequence of variable-width inner arrays rather than a C-style
 rectangular matrix. Comma-separated `count(...)` and `terminated_by(...)`
@@ -333,18 +351,20 @@ to a field with the `tags(Name)` keyword. The tags are expanded inline as if wri
 // define a set of reusable tags
 tagset PE_DATA_DIRECTORY_TAGS
 [
-    name(IMAGE_DIRECTORY),
-    dynamic_struct(case(IMAGE_DIRECTORY_ENTRY_EXPORT),
-                   type(IMAGE_EXPORT_DIRECTORY),
-                   offset(VirtualAddress),
-                   mapper(offset_map),
-                   optional(Size != 0)),
-    dynamic_array(case(IMAGE_DIRECTORY_ENTRY_IMPORT),
-                  type(IMAGE_IMPORT_DESCRIPTOR),
-                  offset(VirtualAddress),
-                  count(Size / sizeof(IMAGE_IMPORT_DESCRIPTOR)),
-                  mapper(offset_map),
-                  terminated_by(OriginalFirstThunk == 0 && FirstThunk == 0))
+    element(
+        name(IMAGE_DIRECTORY),
+        dynamic_struct(case(IMAGE_DIRECTORY_ENTRY_EXPORT),
+                       type(IMAGE_EXPORT_DIRECTORY),
+                       offset(VirtualAddress),
+                       mapper(offset_map),
+                       optional(Size != 0)),
+        dynamic_array(case(IMAGE_DIRECTORY_ENTRY_IMPORT),
+                      type(IMAGE_IMPORT_DESCRIPTOR),
+                      offset(VirtualAddress),
+                      count(Size / sizeof(IMAGE_IMPORT_DESCRIPTOR)),
+                      mapper(offset_map),
+                      terminated_by(OriginalFirstThunk == 0 && FirstThunk == 0))
+    )
 ];
 
 // apply the tags to a declaration
@@ -552,6 +572,7 @@ for how that still resolves.
 | `count_as(expr)` | Make a rendered array element consume `expr` logical count slots instead of one |
 | `terminated_by(val[, val...])` | Stop reading when an element equals `val`, when an expression over the rendered element is true, or when a byte sequence such as `{ 0, 0, 1 }` is found; use `_` to skip a nested-array dimension |
 | `terminator("hidden")`, `terminator("shown")` | Override whether a matching terminator element is displayed; string-like arrays hide terminators by default, other arrays show them by default |
+| `element(tags...)` | Apply presentation, dynamic, semantic, or navigation tags to each array element instead of the array container |
 
 ---
 
@@ -670,7 +691,7 @@ fields from raw source expressions.
 ```c
 [semantic("WASM Summary")]
 typedef struct _WASM_SUMMARY {
-    [name(concat(Module, ".", Name))]
+    [element(name(concat(Module, ".", Name)))]
     struct {
         CHAR Module[];
         CHAR Name[];
@@ -696,7 +717,7 @@ emit_node(dest(Imports, key(module.bytes, name.bytes)),
   row is keyed first and the symbol row is keyed beneath it.
 - `field(Name, expr)` sets a field declared by the destination element schema;
   unknown field names are diagnosed by definition validation
-- schema `name(...)` on the destination element type sets the default visible
+- schema `element(name(...))` on a destination array sets the default visible
   row name using populated semantic fields
 - `name(expr)` on `emit_node(...)` sets or overrides the visible row name. Later
   `emit_node(...)` tags only
@@ -786,7 +807,7 @@ typedef struct _PE_SECTION_VIEW {
 
 [semantic("PE Image")]
 typedef struct _PE_VIEW {
-    [tree("flatten")]
+    [element(tree("flatten"))]
     PE_SECTION_VIEW Sections[];
 } PE_VIEW;
 
@@ -1291,7 +1312,7 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 | Presentation tags | `assert`, `bitfield`, `bitflag`, `enum`, `format`, `name`, `string`, `tree`, `warn` |
 | Presentation argument wrappers | `width` |
 | Layout tags | `align`, `architecture`, `code`, `endian`, `entrypoint`, `extent`, `nested`, `offset`, `open_as`, `optional`, `pad_to` |
-| Arrays/unions | `case`, `count`, `count_as`, `default`, `max_count`, `select`, `size_is`, `switch_is`, `terminated_by`, `terminator` |
+| Arrays/unions | `case`, `count`, `count_as`, `default`, `element`, `max_count`, `select`, `size_is`, `switch_is`, `terminated_by`, `terminator` |
 | Dynamic/semantic tags | `dynamic_array`, `dynamic_container`, `dynamic_struct`, `emit`, `emit_node`, `emit_row`, `offset_map`, `semantic` |
 | Dynamic/semantic argument wrappers | `append`, `attr`, `container`, `dest`, `field`, `item`, `key`, `label`, `map`, `mapper`, `type` |
 | Compatibility/native hooks | `native_view` |
@@ -1318,7 +1339,8 @@ Recommended workflow:
 6. Use `extent(...)` when a rendered field is capped or conditionally short, but
    its parent still needs to advance by the full byte length.
 7. Add display tags (`enum`, `bitflag`, `bitfield`, `format`, `name`) after the
-   raw layout is correct.
+   raw layout is correct. On arrays, put per-element display/behavior inside
+   `element(...)`.
 8. Add a declarative semantic view as the primary next layer when the format
    needs a clearer user-facing tree: summaries, imports, exports, functions,
    archive entries, or cross-table presentation.

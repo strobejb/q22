@@ -82,7 +82,7 @@ typedef struct _TAR
         max_count(4096),
         extent(file_size()),
         terminated_by(header.name[0] == 0),
-        name(header.name)
+        element(name(header.name))
     ]
     TAR_ENTRY entries[];
 } TAR;

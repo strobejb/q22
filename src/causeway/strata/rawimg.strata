@@ -74,7 +74,7 @@ typedef struct _RAWIMG_MASTER_BOOT_RECORD
     dword diskSignature;
     word reserved;
 
-    [count(4), name(partitionType)]
+    [count(4), element(name(partitionType))]
     RAWIMG_PARTITION_ENTRY partitions[];
 
     [enum(RAWIMG_BOOT_SIGNATURE)]

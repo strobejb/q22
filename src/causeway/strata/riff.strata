@@ -133,7 +133,7 @@ typedef struct _RIFF_CHUNK
             [
                 max_count((size > sizeof(RIFF_LIST_PAYLOAD_PREFIX) ? size - sizeof(RIFF_LIST_PAYLOAD_PREFIX) : 0) / sizeof(RIFF_CHUNK_HEADER)),
                 extent(size > sizeof(RIFF_LIST_PAYLOAD_PREFIX) ? size - sizeof(RIFF_LIST_PAYLOAD_PREFIX) : 0),
-                name(chunkId)
+                element(name(chunkId))
             ]
             struct _RIFF_CHUNK chunks[];
         } list;
@@ -178,7 +178,7 @@ typedef struct _WAVE
     [format("fourcc")]
     dword formType;
 
-    [count(4096), extent(fileSize >= sizeof(RIFF_FORM_TYPE_PREFIX) ? fileSize - sizeof(RIFF_FORM_TYPE_PREFIX) : 0), name(chunkId)]
+    [count(4096), extent(fileSize >= sizeof(RIFF_FORM_TYPE_PREFIX) ? fileSize - sizeof(RIFF_FORM_TYPE_PREFIX) : 0), element(name(chunkId))]
     RIFF_CHUNK chunks[];
 } WAVE;
 
@@ -201,7 +201,7 @@ typedef struct _WEBP
     [format("fourcc")]
     dword formType;
 
-    [count(4096), extent(fileSize >= sizeof(RIFF_FORM_TYPE_PREFIX) ? fileSize - sizeof(RIFF_FORM_TYPE_PREFIX) : 0), name(chunkId)]
+    [count(4096), extent(fileSize >= sizeof(RIFF_FORM_TYPE_PREFIX) ? fileSize - sizeof(RIFF_FORM_TYPE_PREFIX) : 0), element(name(chunkId))]
     RIFF_CHUNK chunks[];
 } WEBP;
 
@@ -225,6 +225,6 @@ typedef struct _RIFF
     [format("fourcc")]
     dword formType;
 
-    [count(4096), extent(fileSize >= sizeof(RIFF_FORM_TYPE_PREFIX) ? fileSize - sizeof(RIFF_FORM_TYPE_PREFIX) : 0), name(chunkId)]
+    [count(4096), extent(fileSize >= sizeof(RIFF_FORM_TYPE_PREFIX) ? fileSize - sizeof(RIFF_FORM_TYPE_PREFIX) : 0), element(name(chunkId))]
     RIFF_CHUNK chunks[];
 } RIFF;

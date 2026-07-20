@@ -33,8 +33,8 @@ void StructViewDynamicPlacementTests::builderPlacesDynamicStructsUnderNamedDynam
                         "typedef struct _ExportDir { dword flags; } ExportDir;\n"
                         "[export]\n"
                         "struct Root {\n"
-                        "  [dynamic_struct(case(Export), type(ExportDir), offset(VirtualAddress), mapper(offset_map), optional(Size != 0)), dynamic_struct(case(Import), type(ImportDesc), offset(VirtualAddress), mapper(offset_map), optional(Size != 0))] DataDir dirs[2];\n"
-                        "  [name(Name)] Section sections[2];\n"
+                        "  [element(dynamic_struct(case(Export), type(ExportDir), offset(VirtualAddress), mapper(offset_map), optional(Size != 0)), dynamic_struct(case(Import), type(ImportDesc), offset(VirtualAddress), mapper(offset_map), optional(Size != 0)))] DataDir dirs[2];\n"
+                        "  [element(name(Name))] Section sections[2];\n"
                         "} root;\n"));
 
     QByteArray bytes(0x90, '\0');
@@ -167,7 +167,7 @@ void StructViewDynamicPlacementTests::builderRendersDynamicArraysAtReferencedOff
                         "[export]\n"
                         "struct Root {\n"
                         "  [dynamic_array(name(Entries), type(Entry), offset(AddressOfEntries), count(NumberOfEntries), mapper(offset_map))] Directory dir;\n"
-                        "  [dynamic_container(type(SECTION)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section section[1];\n"
+                        "  [element(dynamic_container(type(SECTION)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData))] Section section[1];\n"
                         "} root;\n"));
 
     QByteArray bytes(0x80, '\0');
@@ -215,7 +215,7 @@ void StructViewDynamicPlacementTests::builderStopsDynamicAndInlineArraysAtTermin
                         "  [size_is(8), terminated_by(0)] char title[];\n"
                         "  byte afterTitle;\n"
                         "  [dynamic_array(name(Descs), type(Desc), offset(tableRva), count(4), mapper(offset_map), terminated_by(Value == 0), terminator(\"hidden\"))] dword tableRva;\n"
-                        "  [dynamic_container(type(SECTION)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section section[1];\n"
+                        "  [element(dynamic_container(type(SECTION)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData))] Section section[1];\n"
                         "} root;\n"));
 
     QByteArray bytes(0x90, '\0');
@@ -303,7 +303,7 @@ void StructViewDynamicPlacementTests::builderRunsSemanticViewsOnceForDynamicArra
                         "[export]\n"
                         "struct Root {\n"
                         "  [dynamic_array(name(Entries), type(Viewed), offset(tableRva), count(4), mapper(offset_map), terminated_by(Value == 0), terminator(\"hidden\"))] dword tableRva;\n"
-                        "  [dynamic_container(type(SECTION)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section section[1];\n"
+                        "  [element(dynamic_container(type(SECTION)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData))] Section section[1];\n"
                         "} root;\n"));
 
     QByteArray bytes(0x90, '\0');

@@ -86,6 +86,7 @@ struct StructureRow
     std::vector<StructureRowDiagnostic> diagnostics;
     Type *type = nullptr;
     TypeDecl *typeDecl = nullptr;
+    Tag *tagListOverride = nullptr;
     FILEREF sourceRef;
     QString sourcePath;
     int sourceLine = 0;

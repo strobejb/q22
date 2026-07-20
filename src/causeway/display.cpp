@@ -178,6 +178,23 @@ size_t DisplayTags(FILE *fp, Tag *tagList)
 				}
 				len += fprintf(fp, ")");
 			}
+			else if(tag->tok == TOK_ELEMENT)
+			{
+				len += fprintf(fp, "(");
+				for(Tag *elementTag = tag->elementTags; elementTag; elementTag = elementTag->link)
+				{
+					len += fprintf(fp, "%s", Parser::inenglish(elementTag->tok));
+					if(elementTag->expr)
+					{
+						len += fprintf(fp, "(");
+						len += Flatten(fp, elementTag->expr);
+						len += fprintf(fp, ")");
+					}
+					if(elementTag->link)
+						len += fprintf(fp, ", ");
+				}
+				len += fprintf(fp, ")");
+			}
 			else if(tag->expr)
 			{
 				len += fprintf(fp, "(");

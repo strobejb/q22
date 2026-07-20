@@ -22,6 +22,7 @@ description: Write, review, and debug q22 Strata `.strata`/legacy `.struct` bina
 - Do not use `bitflag(...)` for packed fields whose values overlap, such as PE section alignment bits. Leave those raw or add a purpose-built renderer later.
 - Leave architecture-specific fields raw unless the definition can switch safely on architecture. ELF `e_flags` is intentionally raw because architectures assign different meanings to the same bits.
 - When a variable array may exceed the display cap, pair `count(...)` with `extent(...)` so parent layout advances by the true byte length.
+- On arrays, keep layout bounds on the array declaration and put per-element behavior inside `element(...)`: `[count(n), element(name(id), dynamic_array(...), emit_node(...))] Entry entries[];`. Direct `name(...)`, dynamic, semantic emit, diagnostic, navigation, or display tags on an array declaration are authoring errors.
 - For sentinel-bounded arrays, prefer `max_count(...)` plus `terminated_by(...)` over using `count(...)` as an artificial cap. `terminated_by(...)` may be a scalar value, a byte sequence such as `{ 0, 0, 1 }`, or an expression over the rendered element's fields. String-like arrays hide terminators by default; struct/scalar arrays show them unless `terminator("hidden")` is specified.
 - For ZIP-like formats, show both local records and index/trailer records when both exist; use top-level offset sorting in the renderer when physical order matters.
 - For endian-sensitive formats, put `endian(...)` high enough for nested fields to inherit it.
@@ -55,6 +56,13 @@ ZIP_END_OF_CENTRAL_DIRECTORY_RECORD eocd;
 
 [offset(eocd.OffsetOfStartOfCentralDirectory), count(eocd.TotalEntries)]
 ZIP_CENTRAL_DIRECTORY_FILE_HEADER centralDirectory[];
+```
+
+Named array elements:
+
+```c
+[count(sectionCount), element(name(Name))]
+SECTION_HEADER sections[];
 ```
 
 ## Validation

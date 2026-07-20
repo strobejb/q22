@@ -31,29 +31,31 @@ enum IMAGE_DIRECTORY
 
 tagset PE_DATA_DIRECTORY_TAGS
 [
-  name(IMAGE_DIRECTORY),
-  dynamic_struct(case(IMAGE_DIRECTORY_ENTRY_EXPORT), type(IMAGE_EXPORT_DIRECTORY), offset(VirtualAddress), mapper(offset_map), optional(Size != 0)),
-  dynamic_array(case(IMAGE_DIRECTORY_ENTRY_IMPORT), type(IMAGE_IMPORT_DESCRIPTOR), offset(VirtualAddress), max_count(Size / sizeof(IMAGE_IMPORT_DESCRIPTOR)),
-                mapper(offset_map),
-                terminated_by(OriginalFirstThunk == 0 && TimeDateStamp == 0 && ForwarderChain == 0 && Name == 0 && FirstThunk == 0),
-                terminator("hidden")),
-  dynamic_array(case(IMAGE_DIRECTORY_ENTRY_BASERELOC), type(IMAGE_BASE_RELOCATION), offset(VirtualAddress),
-                max_count(Size / (sizeof(dword) + sizeof(dword))),
-                mapper(offset_map)),
-  dynamic_array(case(IMAGE_DIRECTORY_ENTRY_DEBUG), type(IMAGE_DEBUG_DIRECTORY), offset(VirtualAddress),
-                count(Size / sizeof(IMAGE_DEBUG_DIRECTORY)),
-                mapper(offset_map)),
-  dynamic_struct(case(IMAGE_DIRECTORY_ENTRY_TLS), type(IMAGE_TLS_DIRECTORY32), offset(VirtualAddress),
-                 mapper(offset_map), optional(ntHeaders.OptionalHeader32.Magic == 0x10b)),
-  dynamic_struct(case(IMAGE_DIRECTORY_ENTRY_TLS), type(IMAGE_TLS_DIRECTORY64), offset(VirtualAddress),
-                 mapper(offset_map), optional(ntHeaders.OptionalHeader64.Magic == 0x20b)),
-  dynamic_struct(case(IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG), type(IMAGE_LOAD_CONFIG_DIRECTORY32), offset(VirtualAddress),
-                 mapper(offset_map), optional(ntHeaders.OptionalHeader32.Magic == 0x10b)),
-  dynamic_struct(case(IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG), type(IMAGE_LOAD_CONFIG_DIRECTORY64), offset(VirtualAddress),
-                 mapper(offset_map), optional(ntHeaders.OptionalHeader64.Magic == 0x20b)),
-  dynamic_array(case(IMAGE_DIRECTORY_ENTRY_EXCEPTION), type(IMAGE_RUNTIME_FUNCTION_ENTRY), offset(VirtualAddress),
-                max_count(Size / sizeof(IMAGE_RUNTIME_FUNCTION_ENTRY)), mapper(offset_map),
-                optional(ntHeaders.OptionalHeader64.Magic == 0x20b))
+  element(
+    name(IMAGE_DIRECTORY),
+    dynamic_struct(case(IMAGE_DIRECTORY_ENTRY_EXPORT), type(IMAGE_EXPORT_DIRECTORY), offset(VirtualAddress), mapper(offset_map), optional(Size != 0)),
+    dynamic_array(case(IMAGE_DIRECTORY_ENTRY_IMPORT), type(IMAGE_IMPORT_DESCRIPTOR), offset(VirtualAddress), max_count(Size / sizeof(IMAGE_IMPORT_DESCRIPTOR)),
+                  mapper(offset_map),
+                  terminated_by(OriginalFirstThunk == 0 && TimeDateStamp == 0 && ForwarderChain == 0 && Name == 0 && FirstThunk == 0),
+                  terminator("hidden")),
+    dynamic_array(case(IMAGE_DIRECTORY_ENTRY_BASERELOC), type(IMAGE_BASE_RELOCATION), offset(VirtualAddress),
+                  max_count(Size / (sizeof(dword) + sizeof(dword))),
+                  mapper(offset_map)),
+    dynamic_array(case(IMAGE_DIRECTORY_ENTRY_DEBUG), type(IMAGE_DEBUG_DIRECTORY), offset(VirtualAddress),
+                  count(Size / sizeof(IMAGE_DEBUG_DIRECTORY)),
+                  mapper(offset_map)),
+    dynamic_struct(case(IMAGE_DIRECTORY_ENTRY_TLS), type(IMAGE_TLS_DIRECTORY32), offset(VirtualAddress),
+                   mapper(offset_map), optional(ntHeaders.OptionalHeader32.Magic == 0x10b)),
+    dynamic_struct(case(IMAGE_DIRECTORY_ENTRY_TLS), type(IMAGE_TLS_DIRECTORY64), offset(VirtualAddress),
+                   mapper(offset_map), optional(ntHeaders.OptionalHeader64.Magic == 0x20b)),
+    dynamic_struct(case(IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG), type(IMAGE_LOAD_CONFIG_DIRECTORY32), offset(VirtualAddress),
+                   mapper(offset_map), optional(ntHeaders.OptionalHeader32.Magic == 0x10b)),
+    dynamic_struct(case(IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG), type(IMAGE_LOAD_CONFIG_DIRECTORY64), offset(VirtualAddress),
+                   mapper(offset_map), optional(ntHeaders.OptionalHeader64.Magic == 0x20b)),
+    dynamic_array(case(IMAGE_DIRECTORY_ENTRY_EXCEPTION), type(IMAGE_RUNTIME_FUNCTION_ENTRY), offset(VirtualAddress),
+                  max_count(Size / sizeof(IMAGE_RUNTIME_FUNCTION_ENTRY)), mapper(offset_map),
+                  optional(ntHeaders.OptionalHeader64.Magic == 0x20b))
+  )
 ];
 
 
@@ -733,7 +735,7 @@ typedef struct _SECTION
 [semantic("PE Image")]
 typedef struct _PE_VIEW
 {
-    [tree("flatten")]
+    [element(tree("flatten"))]
     struct
     {
         struct
@@ -762,7 +764,7 @@ typedef struct _PE_VIEW
 
         struct
         {
-            [tree("flatten")]
+            [element(tree("flatten"))]
             struct
             {
             } Functions[];
@@ -789,8 +791,8 @@ typedef struct _PE
   IMAGE_NT_HEADERS ntHeaders;
 
   [
-    name(Name),
-    count(ntHeaders.FileHeader.NumberOfSections)
+    count(ntHeaders.FileHeader.NumberOfSections),
+    element(name(Name))
   ]
   IMAGE_SECTION_HEADER sectionHeader[];
 

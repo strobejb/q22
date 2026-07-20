@@ -546,7 +546,7 @@ typedef struct _Elf64_Sym
 [semantic("ELF Image")]
 typedef struct _ELF_VIEW
 {
-    [tree("flatten"), name(concat("SECTION ", Name))]
+    [element(tree("flatten"), name(concat("SECTION ", Name)))]
     struct
     {
         e16 Index;
@@ -555,13 +555,13 @@ typedef struct _ELF_VIEW
         e64 Offset;
         e64 Size;
 
-        [name(Name)]
+        [element(name(Name))]
         struct
         {
             CHAR Name[];
         } Dependencies[];
 
-        [name(fmt("{0}", Offset))]
+        [element(name(fmt("{0}", Offset)))]
         struct
         {
             e64_addr Offset;
@@ -570,7 +570,7 @@ typedef struct _ELF_VIEW
             e64 Addend;
         } Relocations[];
 
-        [name(concat("SYMBOL ", Name))]
+        [element(name(concat("SYMBOL ", Name)))]
         struct
         {
             CHAR Name[];
@@ -578,7 +578,7 @@ typedef struct _ELF_VIEW
             e64 Size;
         } Symbols[];
 
-        [name(Name)]
+        [element(name(Name))]
         struct
         {
             CHAR Name[];
@@ -586,7 +586,7 @@ typedef struct _ELF_VIEW
             e64 Size;
         } Imports[];
 
-        [name(Name)]
+        [element(name(Name))]
         struct
         {
             CHAR Name[];
@@ -595,7 +595,7 @@ typedef struct _ELF_VIEW
         } Exports[];
     } Sections[];
 
-    [tree("flatten"), name(fmt("SEGMENT {0}", Index))]
+    [element(tree("flatten"), name(fmt("SEGMENT {0}", Index)))]
     struct
     {
         e16 Index;
@@ -639,28 +639,28 @@ typedef struct _ELF
     [
         offset(select_offset(EI_CLASS) == ELFCLASS32 ? root::value_at(28, dword) : 0),
         count(select_offset(EI_CLASS) == ELFCLASS32 ? root::value_at(44, word) : 0),
-        name(p_type)
+        element(name(p_type))
     ]
     Elf32_Phdr programHeaders32[];
 
     [
         offset(select_offset(EI_CLASS) == ELFCLASS64 ? root::value_at(32, qword) : 0),
         count(select_offset(EI_CLASS) == ELFCLASS64 ? root::value_at(56, word) : 0),
-        name(p_type)
+        element(name(p_type))
     ]
     Elf64_Phdr programHeaders64[];
 
     [
         offset(select_offset(EI_CLASS) == ELFCLASS32 ? root::value_at(32, dword) : 0),
         count(select_offset(EI_CLASS) == ELFCLASS32 ? root::value_at(48, word) : 0),
-        name(sh_type)
+        element(name(sh_type))
     ]
     Elf32_Shdr sectionHeaders32[];
 
     [
         offset(select_offset(EI_CLASS) == ELFCLASS64 ? root::value_at(40, qword) : 0),
         count(select_offset(EI_CLASS) == ELFCLASS64 ? root::value_at(60, word) : 0),
-        name(sh_type)
+        element(name(sh_type))
     ]
     Elf64_Shdr sectionHeaders64[];
 

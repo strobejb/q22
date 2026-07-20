@@ -712,8 +712,8 @@ void StructViewPeTests::builderPeSemanticModeDeclarativeSkipsCppViews()
                         "typedef struct _ImportDesc { dword OriginalFirstThunk; dword TimeDateStamp; dword ForwarderChain; dword Name; dword FirstThunk; } ImportDesc;\n"
                         "[export]\n"
                         "struct Root {\n"
-                        "  [dynamic_struct(case(Import), type(ImportDesc), offset(VirtualAddress), mapper(offset_map), optional(Size != 0))] DataDir dirs[1];\n"
-                        "  [name(Name), dynamic_container(type(SECTION)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section sections[1];\n"
+                        "  [element(dynamic_struct(case(Import), type(ImportDesc), offset(VirtualAddress), mapper(offset_map), optional(Size != 0)))] DataDir dirs[1];\n"
+                        "  [element(name(Name), dynamic_container(type(SECTION)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData))] Section sections[1];\n"
                         "} root;\n"));
 
     QByteArray bytes(0x140, '\0');
@@ -758,8 +758,8 @@ void StructViewPeTests::builderKeepsRawDynamicRowsWhenSemanticImportDataIsTrunca
                         "typedef struct _ImportDesc { dword OriginalFirstThunk; dword TimeDateStamp; dword ForwarderChain; dword Name; dword FirstThunk; } ImportDesc;\n"
                         "[export]\n"
                         "struct Root {\n"
-                        "  [dynamic_struct(case(Import), type(ImportDesc), offset(VirtualAddress), mapper(offset_map), optional(Size != 0))] DataDir dirs[1];\n"
-                        "  [name(Name), dynamic_container(type(SECTION)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section sections[1];\n"
+                        "  [element(dynamic_struct(case(Import), type(ImportDesc), offset(VirtualAddress), mapper(offset_map), optional(Size != 0)))] DataDir dirs[1];\n"
+                        "  [element(name(Name), dynamic_container(type(SECTION)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData))] Section sections[1];\n"
                         "} root;\n"));
 
     QByteArray bytes(0xa0, '\0');
@@ -927,8 +927,8 @@ void StructViewPeTests::builderRunsSemanticViewsAfterDynamicPlacement()
                         "typedef struct _ImportDesc { dword OriginalFirstThunk; dword TimeDateStamp; dword ForwarderChain; dword Name; dword FirstThunk; } ImportDesc;\n"
                         "[export]\n"
                         "struct Root {\n"
-                        "  [dynamic_struct(case(Import), type(ImportDesc), offset(VirtualAddress), mapper(offset_map), optional(Size != 0))] DataDir dirs[1];\n"
-                        "  [name(Name), dynamic_container(type(SECTION)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData)] Section sections[1];\n"
+                        "  [element(dynamic_struct(case(Import), type(ImportDesc), offset(VirtualAddress), mapper(offset_map), optional(Size != 0)))] DataDir dirs[1];\n"
+                        "  [element(name(Name), dynamic_container(type(SECTION)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData))] Section sections[1];\n"
                         "} root;\n"));
 
     QByteArray bytes(0x140, '\0');

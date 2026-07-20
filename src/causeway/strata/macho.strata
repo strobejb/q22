@@ -349,7 +349,7 @@ typedef struct _MACHO
     [
         count(magic == MACHO_MAGIC_64 ? header64.commandCount : header32.commandCount),
         extent(magic == MACHO_MAGIC_64 ? header64.commandsSize : header32.commandsSize),
-        name(cmd)
+        element(name(cmd))
     ]
     MACHO_LOAD_COMMAND loadCommands[];
 } MACHO;

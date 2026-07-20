@@ -148,7 +148,7 @@ typedef struct _CAB
     [
         offset(header.filesOffset),
         count(header.fileCount),
-        name(fileName)
+        element(name(fileName))
     ]
     CAB_CFFILE files[];
 } CAB;

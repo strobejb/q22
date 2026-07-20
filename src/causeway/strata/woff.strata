@@ -100,6 +100,6 @@ typedef struct _WOFF
 {
     WOFF_HEADER header;
 
-    [count(header.numTables), name(tag)]
+    [count(header.numTables), element(name(tag))]
     WOFF_TABLE_DIRECTORY_ENTRY tables[];
 } WOFF;

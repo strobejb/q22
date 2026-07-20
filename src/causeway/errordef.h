@@ -46,6 +46,8 @@ DEFINE_ERR( ERROR_UNSIZED_ARRAY_REQUIRES_SIZEIS, "Unsized array declaration requ
 DEFINE_ERR( ERROR_UNKNOWN_TAGSET,		"Unknown tagset '%s'")
 DEFINE_ERR( ERROR_TAGSET_REDEFINITION,	"Redefinition of tagset '%s'")
 DEFINE_ERR( ERROR_TAGS_NOT_ALLOWED_IN_TAGSET, "tags(...) cannot be used inside a tagset")
+DEFINE_ERR( ERROR_ELEMENT_TAG_REQUIRES_ARRAY, "element(...) can only be used on array declarations")
+DEFINE_ERR( ERROR_ARRAY_ELEMENT_TAG_REQUIRES_ELEMENT, "Tag '%s' on array declaration must be wrapped in element(...)")
 DEFINE_ERR( ERROR_UNKNOWN_BITFIELD,		"Unknown bitfield '%s'")
 DEFINE_ERR( ERROR_BITFIELD_REDEFINITION, "Redefinition of bitfield '%s'")
 DEFINE_ERR( ERROR_BITFIELD_ENTRY_SYNTAX, "bitfield entries expect match(mask)[ = value] or field(name, mask[, enum(...)])")

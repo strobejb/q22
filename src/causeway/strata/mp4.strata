@@ -91,7 +91,7 @@ typedef struct _MP4_BOX
             [
                 max_count(((boxSize == 1 ? (largeSize >= sizeof(MP4_LARGE_BOX_HEADER) ? largeSize - sizeof(MP4_LARGE_BOX_HEADER) : 0) : (boxSize >= sizeof(MP4_BOX_HEADER) ? boxSize - sizeof(MP4_BOX_HEADER) : 0)) - (type == fourcc("uuid") ? sizeof(MP4_UUID_BOX_EXTENSION) : 0)) / sizeof(MP4_BOX_HEADER)),
                 extent((boxSize == 1 ? (largeSize >= sizeof(MP4_LARGE_BOX_HEADER) ? largeSize - sizeof(MP4_LARGE_BOX_HEADER) : 0) : (boxSize >= sizeof(MP4_BOX_HEADER) ? boxSize - sizeof(MP4_BOX_HEADER) : 0)) - (type == fourcc("uuid") ? sizeof(MP4_UUID_BOX_EXTENSION) : 0)),
-                name(type)
+                element(name(type))
             ]
             struct _MP4_BOX children[];
         } movie;
@@ -156,7 +156,7 @@ typedef struct _MP4_BOX
             [
                 max_count((boxSize == 1 ? (largeSize >= sizeof(MP4_LARGE_BOX_HEADER) + sizeof(MP4_FULL_BOX_PREFIX) ? largeSize - sizeof(MP4_LARGE_BOX_HEADER) - sizeof(MP4_FULL_BOX_PREFIX) : 0) : (boxSize >= sizeof(MP4_BOX_HEADER) + sizeof(MP4_FULL_BOX_PREFIX) ? boxSize - sizeof(MP4_BOX_HEADER) - sizeof(MP4_FULL_BOX_PREFIX) : 0)) / sizeof(MP4_BOX_HEADER)),
                 extent(boxSize == 1 ? (largeSize >= sizeof(MP4_LARGE_BOX_HEADER) + sizeof(MP4_FULL_BOX_PREFIX) ? largeSize - sizeof(MP4_LARGE_BOX_HEADER) - sizeof(MP4_FULL_BOX_PREFIX) : 0) : (boxSize >= sizeof(MP4_BOX_HEADER) + sizeof(MP4_FULL_BOX_PREFIX) ? boxSize - sizeof(MP4_BOX_HEADER) - sizeof(MP4_FULL_BOX_PREFIX) : 0)),
-                name(type)
+                element(name(type))
             ]
             struct _MP4_BOX children[];
         } metadata;
@@ -180,6 +180,6 @@ typedef struct _MP4_BOX
 ]
 typedef struct _MP4
 {
-    [count(4096), extent(file_size()), name(type)]
+    [count(4096), extent(file_size()), element(name(type))]
     MP4_BOX boxes[];
 } MP4;

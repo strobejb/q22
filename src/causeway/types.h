@@ -152,19 +152,21 @@ struct Symbol
 
 struct Tag
 {
-	Tag(TOKEN t, Tag *l = 0, ExprNode *e = 0) : tok(t), link(l), expr(e)
+	Tag(TOKEN t, Tag *l = 0, ExprNode *e = 0, Tag *element = 0) : tok(t), link(l), expr(e), elementTags(element)
 	{
 	}
 
 	~Tag()
 	{
 		delete expr;
+		delete elementTags;
 		delete link;
 	}
 
 	TOKEN			tok;
 	Tag			*	link;
 	ExprNode	*	expr;
+	Tag			*	elementTags;
 	vector<uint8_t>	byteSequence;
 };
 

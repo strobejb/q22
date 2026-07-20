@@ -209,7 +209,7 @@ typedef struct _PNG
     [
         count(4096),
         extent(file_size() - sizeof(PNG_SIGNATURE)),
-        name(type)
+        element(name(type))
     ]
     PNG_CHUNK chunks[];
 } PNG;

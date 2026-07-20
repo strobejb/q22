@@ -175,17 +175,19 @@ typedef struct _SFNT_NAME_TABLE
 
     [
         count(count),
-        name(nameID),
-        dynamic_array(name(TextUtf16Be),
-                      type(SFNT_UTF16BE_BYTE),
-                      offset(current_offset() - 6 - array_index() * sizeof(SFNT_NAME_RECORD) + storageOffset + stringOffset),
-                      count(length),
-                      optional((platformID == SFNT_PLATFORM_UNICODE || platformID == SFNT_PLATFORM_WINDOWS) && length != 0)),
-        dynamic_array(name(TextBytes),
-                      type(SFNT_STRING_BYTE),
-                      offset(current_offset() - 6 - array_index() * sizeof(SFNT_NAME_RECORD) + storageOffset + stringOffset),
-                      count(length),
-                      optional(platformID != SFNT_PLATFORM_UNICODE && platformID != SFNT_PLATFORM_WINDOWS && length != 0))
+        element(
+            name(nameID),
+            dynamic_array(name(TextUtf16Be),
+                          type(SFNT_UTF16BE_BYTE),
+                          offset(current_offset() - 6 - array_index() * sizeof(SFNT_NAME_RECORD) + storageOffset + stringOffset),
+                          count(length),
+                          optional((platformID == SFNT_PLATFORM_UNICODE || platformID == SFNT_PLATFORM_WINDOWS) && length != 0)),
+            dynamic_array(name(TextBytes),
+                          type(SFNT_STRING_BYTE),
+                          offset(current_offset() - 6 - array_index() * sizeof(SFNT_NAME_RECORD) + storageOffset + stringOffset),
+                          count(length),
+                          optional(platformID != SFNT_PLATFORM_UNICODE && platformID != SFNT_PLATFORM_WINDOWS && length != 0))
+        )
     ]
     SFNT_NAME_RECORD records[];
 
@@ -284,7 +286,7 @@ typedef struct _SFNT_OFFSET_TABLE
     word entrySelector;
     word rangeShift;
 
-    [count(numTables), name(tag)]
+    [count(numTables), element(name(tag))]
     SFNT_TABLE_RECORD tables[];
 } SFNT_OFFSET_TABLE, *PSFNT_OFFSET_TABLE;
 

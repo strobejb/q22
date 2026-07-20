@@ -110,7 +110,10 @@ static Tag *CloneTagList(Tag *tag, Tag *tail = 0)
 	if(!tag)
 		return tail;
 
-	Tag *copy = new Tag(tag->tok, CloneTagList(tag->link, tail), CopyExpr(tag->expr));
+	Tag *copy = new Tag(tag->tok,
+	                    CloneTagList(tag->link, tail),
+	                    CopyExpr(tag->expr),
+	                    CloneTagList(tag->elementTags));
 	copy->byteSequence = tag->byteSequence;
 	return copy;
 }
@@ -244,6 +247,16 @@ static TOKEN kBitfieldFieldValueWrappers[] = {
 	TOK_ENUM, TOK_NULL
 };
 
+static TOKEN kElementTags[] = {
+	TOK_NAME, TOK_ENUM, TOK_BITFLAG, TOK_BITFIELD, TOK_FORMAT, TOK_TREE,
+	TOK_CODE, TOK_OFFSETMAP, TOK_OPENAS, TOK_VIEW, TOK_WARN, TOK_ASSERT,
+	TOK_DYNAMICARRAY, TOK_DYNAMICCONTAINER, TOK_DYNAMICSTRUCT,
+	TOK_EMIT, TOK_EMITNODE, TOK_EMITROW,
+	TOK_ENDIAN,
+	TOK_TAGS,
+	TOK_NULL
+};
+
 static void collectExpressionArgs(ExprNode *expr, vector<ExprNode *> *args)
 {
 	if(!expr || !args)
@@ -281,7 +294,12 @@ static char *bitfieldDisplayNameFromExpr(ExprNode *expr)
 	return 0;
 }
 
-bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
+bool Parser::ParseTags(Tag **tagList,
+                       TOKEN allowed[],
+                       bool allowTagSetUse,
+                       TOKEN openToken,
+                       TOKEN closeToken,
+                       bool optional)
 {
 	Tag *	tag = 0;
 	bool	foundtag = false;
@@ -289,15 +307,25 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 	TOKEN	tmp;
 	ExprNode *expr;
 
-	if(t != '[')
+	if(openToken != TOK_NULL && t != openToken)
 	{
 		*tagList = 0;
-		return true;
+		if(optional)
+			return true;
+		Expected(openToken);
+		return false;
 	}
 
-	Advance();
+	if(openToken != TOK_NULL)
+		Advance();
 
-	while(t != ']')
+	if(t == closeToken)
+	{
+		*tagList = 0;
+		return Expected(closeToken);
+	}
+
+	while(t != closeToken)
 	{
 		if(t == TOK_LENGTHIS)
 		{
@@ -379,6 +407,21 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 				tag = new Tag(tmp, tag);
 			}
 			break;
+
+		case TOK_ELEMENT:
+		{
+			tmp = t;
+			Advance();
+			if(!Expected('('))
+				return false;
+
+			Tag *elementTags = 0;
+			if(!ParseTags(&elementTags, kElementTags, true, TOK_NULL, TOKEN(')'), false))
+				return false;
+
+			tag = new Tag(tmp, tag, 0, elementTags);
+			break;
+		}
 
 		case TOK_TAGS:
 		{
@@ -607,14 +650,14 @@ bool Parser::ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse)
 			continue;
 		}
 		// anything else is an error
-		else if(t != ']')
+		else if(t != closeToken)
 		{
 			Expected(',');
 			return false;
 		}
 	}
 
-	if(!Expected(']'))
+	if(!Expected(closeToken))
 		return false;
 
 	*tagList = tag;
@@ -734,7 +777,7 @@ TagSet * Parser::ParseTagSet(FILEREF fileRef)
 		TOK_DISPLAY,
 		TOK_ENDIAN, TOK_SELECT, TOK_CASE, TOK_NAME, TOK_PADTO, TOK_DEFAULT,
 		TOK_ENUM, TOK_ENTRYPOINT, TOK_EXTENT, TOK_OPTIONAL, TOK_EXPORT, TOK_ASSOC, TOK_CATEGORY, TOK_CODE, TOK_MAGIC, TOK_OFFSETMAP, TOK_OPENAS, TOK_VERSION, TOK_WARN, TOK_ASSERT,
-		TOK_DYNAMICARRAY, TOK_DYNAMICCONTAINER, TOK_DYNAMICSTRUCT, TOK_EMIT, TOK_EMITNODE, TOK_EMITROW, TOK_TERMINATEDBY, TOK_TERMINATOR, TOK_VIEW, TOK_FORMAT, TOK_TREE,
+		TOK_DYNAMICARRAY, TOK_DYNAMICCONTAINER, TOK_DYNAMICSTRUCT, TOK_EMIT, TOK_EMITNODE, TOK_EMITROW, TOK_ELEMENT, TOK_TERMINATEDBY, TOK_TERMINATOR, TOK_VIEW, TOK_FORMAT, TOK_TREE,
 		TOK_SEMANTIC,
 		TOK_NULL
 	};
@@ -1117,7 +1160,7 @@ int Parser::Parse()
 			TOK_DISPLAY,
 			TOK_ENDIAN,	TOK_SELECT, TOK_CASE, TOK_NAME, TOK_PADTO, TOK_DEFAULT,
 			TOK_ENUM, TOK_ENTRYPOINT, TOK_EXTENT, TOK_OPTIONAL, TOK_EXPORT, TOK_ASSOC, TOK_CATEGORY, TOK_CODE, TOK_MAGIC, TOK_OFFSETMAP, TOK_OPENAS, TOK_VERSION, TOK_WARN, TOK_ASSERT,
-			TOK_DYNAMICARRAY, TOK_DYNAMICCONTAINER, TOK_DYNAMICSTRUCT, TOK_EMIT, TOK_EMITNODE, TOK_EMITROW, TOK_TERMINATEDBY, TOK_TERMINATOR, TOK_VIEW, TOK_TAGS, TOK_FORMAT, TOK_TREE,
+			TOK_DYNAMICARRAY, TOK_DYNAMICCONTAINER, TOK_DYNAMICSTRUCT, TOK_EMIT, TOK_EMITNODE, TOK_EMITROW, TOK_ELEMENT, TOK_TERMINATEDBY, TOK_TERMINATOR, TOK_VIEW, TOK_TAGS, TOK_FORMAT, TOK_TREE,
 			TOK_SEMANTIC,
 			TOK_NULL 
 

@@ -269,7 +269,7 @@ typedef struct _ISO_IMAGE
         max_count(64),
         terminated_by(type == ISO_VOLUME_TERMINATOR),
         extent(file_size() - (16 * 2048)),
-        name(type)
+        element(name(type))
     ]
     ISO_VOLUME_DESCRIPTOR volumeDescriptors[];
 } ISO_IMAGE;

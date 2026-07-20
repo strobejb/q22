@@ -1016,7 +1016,7 @@ void StructViewRawRendererTests::builderUsesNamedOffsetMapsAndValueAt()
                         "  dword nameOffset;\n"
                         "  dword targetRva;\n"
                         "  dword probeRva;\n"
-                        "  [offset_map(\"rva\", va, size, raw), count(1)] Section sections[];\n"
+                        "  [count(1), element(offset_map(\"rva\", va, size, raw))] Section sections[];\n"
                         "  [offset(\"strings\", nameOffset), string, max_count(16), terminated_by(0)] char name[];\n"
                         "  [offset(\"rva\", targetRva)] dword mappedValue;\n"
                         "  [optional(value_at(\"rva\", probeRva, word) == 0x1234), offset(28)] byte mappedProbe;\n"
@@ -1426,7 +1426,7 @@ void StructViewRawRendererTests::builderUsesNameFieldForStructArrayElements()
     QVERIFY(parseBuffer(parser,
                         "typedef struct _Section { char Name[8]; dword size; } Section;\n"
                         "[export]\n"
-                        "struct Root { [name(Name)] Section sections[2]; } root;\n"));
+                        "struct Root { [element(name(Name))] Section sections[2]; } root;\n"));
 
     const QByteArray bytes = QByteArray(".text\0\0\0", 8)
                              + QByteArray::fromHex("10000000")

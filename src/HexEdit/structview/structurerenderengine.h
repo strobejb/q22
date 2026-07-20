@@ -50,7 +50,7 @@ private:
         StaticFixed,
     };
 
-    RowPtr makeRow(StructureRow *parent, Type *type, TypeDecl *typeDecl, uint64_t offset) const;
+    RowPtr makeRow(StructureRow *parent, Type *type, TypeDecl *typeDecl, uint64_t offset, Tag *tagListOverride = nullptr) const;
     uint64_t appendTypeDecl(StructureRow *parent, TypeDecl *typeDecl, uint64_t offset);
     uint64_t appendIdentifierRow(StructureRow *parent, Type *type, TypeDecl *typeDecl, uint64_t offset);
     uint64_t recurseType(StructureRow *parent, Type *type, TypeDecl *typeDecl, uint64_t offset);
@@ -408,10 +408,10 @@ private:
                                         Type *scopeType,
                                         uint64_t scopeOffset);
     bool declarationBigEndian(TypeDecl *typeDecl, StructureRow *scope, Type *scopeType, uint64_t scopeOffset);
-    Bitfield *tagValueBitfield(TypeDecl *typeDecl) const;
-    Enum *tagValueEnum(TypeDecl *typeDecl, TOKEN tagTok) const;
+    Bitfield *tagValueBitfield(StructureRow *row, TypeDecl *typeDecl) const;
+    Enum *tagValueEnum(StructureRow *row, TypeDecl *typeDecl, TOKEN tagTok) const;
     Enum *enumForName(const char *name) const;
-    Enum *tagEnum(TypeDecl *typeDecl) const;
+    Enum *tagEnum(StructureRow *row, TypeDecl *typeDecl) const;
     QString enumNameForValue(Enum *eptr, INUMTYPE value) const;
     QStringList enumChoiceLabels(Enum *eptr) const;
     void applyBitflagTag(StructureRow *row, Type *type, TypeDecl *typeDecl, uint64_t rawValue, uint64_t byteLength);

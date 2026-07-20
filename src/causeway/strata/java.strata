@@ -199,7 +199,7 @@ typedef struct _JAVA_CLASS
     word majorVersion;
     word constantPoolCount;
 
-    [count(constantPoolCount - 1), name(tag)]
+    [count(constantPoolCount - 1), element(name(tag))]
     JAVA_CP_INFO constantPool[];
 
     [bitflag(JAVA_ACCESS_FLAGS)]

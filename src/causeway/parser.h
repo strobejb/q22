@@ -102,7 +102,12 @@ private:
 	Parser(Parser *p);
 
 	// parser
-	bool		ParseTags(Tag **tagList, TOKEN allowed[], bool allowTagSetUse = true);
+	bool		ParseTags(Tag **tagList,
+		                  TOKEN allowed[],
+		                  bool allowTagSetUse = true,
+		                  TOKEN openToken = TOKEN('['),
+		                  TOKEN closeToken = TOKEN(']'),
+		                  bool optional = true);
 	bool		ParseByteSequence(vector<uint8_t> *bytes);
 	Statement * ParseInclude();
 	TagSet   * ParseTagSet(FILEREF fileRef);

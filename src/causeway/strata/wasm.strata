@@ -124,7 +124,7 @@ typedef struct _WASM_NAME_MAP
 {
     uleb128 count;
 
-    [count(count), name(name.bytes)]
+    [count(count), element(name(name.bytes))]
     WASM_NAME_ASSOC names[];
 } WASM_NAME_MAP, *PWASM_NAME_MAP;
 
@@ -132,7 +132,7 @@ typedef struct _WASM_FUNCTION_NAME_MAP
 {
     uleb128 count;
 
-    [count(count), name(name.bytes)]
+    [count(count), element(name(name.bytes))]
     WASM_FUNCTION_NAME_ASSOC names[];
 } WASM_FUNCTION_NAME_MAP, *PWASM_FUNCTION_NAME_MAP;
 
@@ -140,7 +140,7 @@ typedef struct _WASM_TYPE_NAME_MAP
 {
     uleb128 count;
 
-    [count(count), name(name.bytes)]
+    [count(count), element(name(name.bytes))]
     WASM_TYPE_NAME_ASSOC names[];
 } WASM_TYPE_NAME_MAP, *PWASM_TYPE_NAME_MAP;
 
@@ -195,7 +195,7 @@ typedef struct _WASM_RESULT_TYPE
 {
     uleb128 count;
 
-    [enum(WASM_VALUE_TYPE), count(count)]
+    [count(count), element(enum(WASM_VALUE_TYPE))]
     byte types[];
 } WASM_RESULT_TYPE, *PWASM_RESULT_TYPE;
 
@@ -322,7 +322,7 @@ typedef struct _WASM_IMPORT_SECTION
 {
     uleb128 count;
 
-    [count(count), name(name.bytes)]
+    [count(count), element(name(name.bytes))]
     WASM_IMPORT imports[];
 } WASM_IMPORT_SECTION, *PWASM_IMPORT_SECTION;
 
@@ -410,7 +410,7 @@ typedef struct _WASM_EXPORT_SECTION
 {
     uleb128 count;
 
-    [count(count), name(name.bytes)]
+    [count(count), element(name(name.bytes))]
     WASM_EXPORT exports[];
 } WASM_EXPORT_SECTION, *PWASM_EXPORT_SECTION;
 
@@ -750,14 +750,14 @@ typedef struct _WASM_SECTION
 [semantic("WASM Summary")]
 typedef struct _WASM_SUMMARY
 {
-    [name(Id)]
+    [element(name(Id))]
     struct
     {
         BYTE Id;
         uleb128 Size;
     } Sections[];
 
-    [name(fmt("type {0}", Index))]
+    [element(name(fmt("type {0}", Index)))]
     struct
     {
         uleb128 Index;
@@ -767,7 +767,7 @@ typedef struct _WASM_SUMMARY
         uleb128 Results;
     } Types[];
 
-    [name(concat(Module, ".", Name))]
+    [element(name(concat(Module, ".", Name)))]
     struct
     {
         CHAR Module[];
@@ -776,7 +776,7 @@ typedef struct _WASM_SUMMARY
         uleb128 TypeIndex;
     } Imports[];
 
-    [name(Name)]
+    [element(name(Name))]
     struct
     {
         CHAR Name[];
@@ -784,7 +784,7 @@ typedef struct _WASM_SUMMARY
         uleb128 Index;
     } Exports[];
 
-    [name(Name)]
+    [element(name(Name))]
     struct
     {
         CHAR Module[];
@@ -794,13 +794,13 @@ typedef struct _WASM_SUMMARY
         uleb128 CodeSize;
     } Functions[];
 
-    [name("start")]
+    [element(name("start"))]
     struct
     {
         uleb128 FunctionIndex;
     } Start[];
 
-    [name(fmt("memory {0}", Index))]
+    [element(name(fmt("memory {0}", Index)))]
     struct
     {
         uleb128 Index;
@@ -809,7 +809,7 @@ typedef struct _WASM_SUMMARY
         uleb128 Max;
     } Memories[];
 
-    [name(fmt("table {0}", Index))]
+    [element(name(fmt("table {0}", Index)))]
     struct
     {
         uleb128 Index;
@@ -819,7 +819,7 @@ typedef struct _WASM_SUMMARY
         uleb128 Max;
     } Tables[];
 
-    [name(fmt("global {0}", Index))]
+    [element(name(fmt("global {0}", Index)))]
     struct
     {
         uleb128 Index;
@@ -827,14 +827,14 @@ typedef struct _WASM_SUMMARY
         BYTE Mutability;
     } Globals[];
 
-    [name(fmt("data {0}", Index))]
+    [element(name(fmt("data {0}", Index)))]
     struct
     {
         uleb128 Index;
         uleb128 Mode;
     } Data[];
 
-    [name(fmt("tag {0}", Index))]
+    [element(name(fmt("tag {0}", Index)))]
     struct
     {
         uleb128 Index;
@@ -842,7 +842,7 @@ typedef struct _WASM_SUMMARY
         uleb128 TypeIndex;
     } Tags[];
 
-    [name(fmt("element {0}", Index))]
+    [element(name(fmt("element {0}", Index)))]
     struct
     {
         uleb128 Index;
@@ -866,7 +866,7 @@ typedef struct _WASM
     [
         count(4096),
         extent(file_size() - sizeof(WASM_HEADER)),
-        name(id)
+        element(name(id))
     ]
     WASM_SECTION sections[];
 } WASM;

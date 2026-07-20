@@ -88,6 +88,7 @@
     <item>emit</item>
     <item>emit_node</item>
     <item>emit_row</item>
+    <item>element</item>
     <item>endian</item>
     <item>entrypoint</item>
     <item>extent</item>

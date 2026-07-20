@@ -196,7 +196,7 @@ void StructViewSemanticRendererTests::builderEmitsAndMergesSemanticNodes()
                         "  [emit_node(dest(Items, key(key)), field(Label, fmt(\"entry {0}\", key)))] byte marker2;"
                         "} Entry;\n"
                         "[semantic] typedef struct _RootView {\n"
-                        "  [name(concat(\"item \", Key))]\n"
+                        "  [element(name(concat(\"item \", Key)))]\n"
                         "  struct { byte Key; byte Size; char Label[]; } Items[];\n"
                         "} RootView;\n"
                         "[export, semantic(RootView)] typedef struct _Root { Entry entry; } Root;\n"));
@@ -280,7 +280,7 @@ void StructViewSemanticRendererTests::builderEmitsIntoMappedSemanticContainers()
                         "enum DirKind { ExportDir = 0, ImportDir = 1 };\n"
                         "typedef struct _ImportDesc { dword thunk; } ImportDesc;\n"
                         "[semantic] typedef struct _SectionView { ImportDesc Imports[]; PayloadByte Bytes[]; } SectionView;\n"
-                        "[semantic(\"Image\")] typedef struct _RootView { [tree(\"flatten\")] SectionView Sections[]; } RootView;\n"
+                        "[semantic(\"Image\")] typedef struct _RootView { [element(tree(\"flatten\"))] SectionView Sections[]; } RootView;\n"
                         "typedef struct _Dir { dword va; dword size; } Dir;\n"
                         "[offset_map(va, size, raw),\n"
                         " emit_row(dest(Sections, key(Name), name(Name)), offset(raw), map(\"rva\", va, size, raw)),\n"
@@ -288,7 +288,7 @@ void StructViewSemanticRendererTests::builderEmitsIntoMappedSemanticContainers()
                         "typedef struct _Section { char Name[8]; dword va; dword size; dword raw; } Section;\n"
                         "[export, semantic(RootView)]\n"
                         "struct Root {\n"
-                        "  [name(DirKind), emit(case(ImportDir), dest(Sections.Imports), label(\"Import Descriptors\"), type(ImportDesc), offset(\"rva\", va), max_count(size / sizeof(ImportDesc)), terminated_by(thunk == 0), terminator(\"hidden\"))] Dir dirs[2];\n"
+                        "  [element(name(DirKind), emit(case(ImportDir), dest(Sections.Imports), label(\"Import Descriptors\"), type(ImportDesc), offset(\"rva\", va), max_count(size / sizeof(ImportDesc)), terminated_by(thunk == 0), terminator(\"hidden\")))] Dir dirs[2];\n"
                         "  [count(2)] Section sections[];\n"
                         "} root;\n"));
 
@@ -438,7 +438,7 @@ void StructViewSemanticRendererTests::builderAddressesPositionalSemanticCollecti
                         " emit_node(dest(Items, append(\"right\")), optional(kind == 2), field(Id, id), field(Source, \"right\"))"
                         "] typedef struct _Seed { byte kind; byte id; } Seed;\n"
                         "[semantic] typedef struct _View {"
-                        " [name(fmt(\"item {0}\", Id))] struct {"
+                        " [element(name(fmt(\"item {0}\", Id)))] struct {"
                         "  byte Id; char Source[]; byte Absolute; byte Relative; byte Other;"
                         " } Items[];"
                         "} View;\n"
@@ -499,7 +499,7 @@ void StructViewSemanticRendererTests::builderUsesPositionalCollectionsForParalle
                         "[emit_node(dest(Records, append(\"records\")), field(Id, id), field(Size, size))]"
                         " typedef struct _Record { byte id; byte size; } Record;\n"
                         "[semantic] typedef struct _View {"
-                        " [name(Name)] struct { byte Id; byte Size; char Name[]; } Records[];"
+                        " [element(name(Name))] struct { byte Id; byte Size; char Name[]; } Records[];"
                         "} View;\n"
                         "[export, semantic(View)] typedef struct _Root { NameEntry names[2]; Record records[2]; } Root;\n"));
 
