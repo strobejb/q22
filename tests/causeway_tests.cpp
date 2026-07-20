@@ -989,18 +989,20 @@ void CausewayTests::extentTagsAndScalarSizeofParse()
 {
 	// Scenario: a binary format has a declaration whose file span is stored in
 	// the data rather than implied by the selected Strata branch, and expressions
-	// occasionally need small static scalar sizes.
-	// Expected: extent(expr) is preserved as a normal tag, while sizeof(name) is
-	// accepted only for a single scalar type name or scalar typedef alias.
+	// occasionally need static type sizes.
+	// Expected: extent(expr) is preserved as a normal tag, while sizeof(name)
+	// accepts scalar, typedef, struct-tag and union-tag type names.
 	// Regression guard: PE section headers should not need hand-written
 	// signature/header byte arithmetic once the optional header has an extent.
 	Parser parser;
 	QVERIFY(parseBuffer(parser,
 						"typedef dword DWORD;\n"
+						"struct Header { byte magic[4]; dword length; };\n"
+						"union Cell { byte b; dword d; };\n"
 						"[export]\n"
 						"struct Root {\n"
 						"  byte count;\n"
-						"  [optional(count != 0), extent(count + sizeof(byte) + sizeof(DWORD))]\n"
+						"  [optional(count != 0), extent(count + sizeof(byte) + sizeof(DWORD) + sizeof(Header) + sizeof(struct Header) + sizeof(union Cell))]\n"
 						"  union { byte tiny; };\n"
 						"} root;\n"));
 

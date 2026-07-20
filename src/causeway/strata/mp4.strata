@@ -11,6 +11,35 @@ bitfield MP4_VERSION_AND_FLAGS_FIELDS
     field("Flags", 0x00ffffff);
 };
 
+typedef struct _MP4_BOX_HEADER
+{
+    dword boxSize;
+    dword type;
+} MP4_BOX_HEADER, *PMP4_BOX_HEADER;
+
+typedef struct _MP4_LARGE_BOX_HEADER
+{
+    dword boxSize;
+    dword type;
+    qword largeSize;
+} MP4_LARGE_BOX_HEADER, *PMP4_LARGE_BOX_HEADER;
+
+typedef struct _MP4_UUID_BOX_EXTENSION
+{
+    byte userType[16];
+} MP4_UUID_BOX_EXTENSION, *PMP4_UUID_BOX_EXTENSION;
+
+typedef struct _MP4_FILE_TYPE_BOX_PREFIX
+{
+    char majorBrand[4];
+    dword minorVersion;
+} MP4_FILE_TYPE_BOX_PREFIX, *PMP4_FILE_TYPE_BOX_PREFIX;
+
+typedef struct _MP4_FULL_BOX_PREFIX
+{
+    dword versionAndFlags;
+} MP4_FULL_BOX_PREFIX, *PMP4_FULL_BOX_PREFIX;
+
 typedef struct _MP4_FILE_TYPE_BOX
 {
     [string, count(4)]
@@ -18,19 +47,19 @@ typedef struct _MP4_FILE_TYPE_BOX
 
     dword minorVersion;
 
-    [string, count(((boxSize == 1 ? largeSize : boxSize) - 16) / 4, 4)]
+    [string, count(boxSize == 1 ? (largeSize >= sizeof(MP4_LARGE_BOX_HEADER) + sizeof(MP4_FILE_TYPE_BOX_PREFIX) ? (largeSize - sizeof(MP4_LARGE_BOX_HEADER) - sizeof(MP4_FILE_TYPE_BOX_PREFIX)) / sizeof(dword) : 0) : (boxSize >= sizeof(MP4_BOX_HEADER) + sizeof(MP4_FILE_TYPE_BOX_PREFIX) ? (boxSize - sizeof(MP4_BOX_HEADER) - sizeof(MP4_FILE_TYPE_BOX_PREFIX)) / sizeof(dword) : 0), 4)]
     char compatibleBrands[][];
 } MP4_FILE_TYPE_BOX, *PMP4_FILE_TYPE_BOX;
 
 typedef struct _MP4_MEDIA_DATA_BOX
 {
-    [count(boxSize == 1 ? largeSize - 16 : boxSize - 8)]
+    [count(boxSize == 1 ? (largeSize >= sizeof(MP4_LARGE_BOX_HEADER) + (type == fourcc("uuid") ? sizeof(MP4_UUID_BOX_EXTENSION) : 0) ? largeSize - sizeof(MP4_LARGE_BOX_HEADER) - (type == fourcc("uuid") ? sizeof(MP4_UUID_BOX_EXTENSION) : 0) : 0) : (boxSize >= sizeof(MP4_BOX_HEADER) + (type == fourcc("uuid") ? sizeof(MP4_UUID_BOX_EXTENSION) : 0) ? boxSize - sizeof(MP4_BOX_HEADER) - (type == fourcc("uuid") ? sizeof(MP4_UUID_BOX_EXTENSION) : 0) : 0))]
     byte data[];
 } MP4_MEDIA_DATA_BOX, *PMP4_MEDIA_DATA_BOX;
 
 typedef struct _MP4_RAW_BOX_PAYLOAD
 {
-    [count(boxSize == 1 ? largeSize - 16 : boxSize - 8)]
+    [count(boxSize == 1 ? (largeSize >= sizeof(MP4_LARGE_BOX_HEADER) + (type == fourcc("uuid") ? sizeof(MP4_UUID_BOX_EXTENSION) : 0) ? largeSize - sizeof(MP4_LARGE_BOX_HEADER) - (type == fourcc("uuid") ? sizeof(MP4_UUID_BOX_EXTENSION) : 0) : 0) : (boxSize >= sizeof(MP4_BOX_HEADER) + (type == fourcc("uuid") ? sizeof(MP4_UUID_BOX_EXTENSION) : 0) ? boxSize - sizeof(MP4_BOX_HEADER) - (type == fourcc("uuid") ? sizeof(MP4_UUID_BOX_EXTENSION) : 0) : 0))]
     byte data[];
 } MP4_RAW_BOX_PAYLOAD, *PMP4_RAW_BOX_PAYLOAD;
 
@@ -47,7 +76,7 @@ typedef struct _MP4_BOX
     [optional(type == fourcc("uuid")), format("uuid")]
     byte userType[16];
 
-    [select(type), extent(boxSize == 1 ? largeSize - 16 : boxSize - 8)]
+    [select(type), extent(boxSize == 1 ? (largeSize >= sizeof(MP4_LARGE_BOX_HEADER) + (type == fourcc("uuid") ? sizeof(MP4_UUID_BOX_EXTENSION) : 0) ? largeSize - sizeof(MP4_LARGE_BOX_HEADER) - (type == fourcc("uuid") ? sizeof(MP4_UUID_BOX_EXTENSION) : 0) : 0) : (boxSize >= sizeof(MP4_BOX_HEADER) + (type == fourcc("uuid") ? sizeof(MP4_UUID_BOX_EXTENSION) : 0) ? boxSize - sizeof(MP4_BOX_HEADER) - (type == fourcc("uuid") ? sizeof(MP4_UUID_BOX_EXTENSION) : 0) : 0))]
     union
     {
         [case(fourcc("ftyp"))]
@@ -60,8 +89,8 @@ typedef struct _MP4_BOX
         struct _MP4_CONTAINER_BOX
         {
             [
-                max_count((boxSize == 1 ? (largeSize >= 16 ? largeSize - 16 : 0) : (boxSize >= 8 ? boxSize - 8 : 0)) / 8),
-                extent(boxSize == 1 ? (largeSize >= 16 ? largeSize - 16 : 0) : (boxSize >= 8 ? boxSize - 8 : 0)),
+                max_count(((boxSize == 1 ? (largeSize >= sizeof(MP4_LARGE_BOX_HEADER) ? largeSize - sizeof(MP4_LARGE_BOX_HEADER) : 0) : (boxSize >= sizeof(MP4_BOX_HEADER) ? boxSize - sizeof(MP4_BOX_HEADER) : 0)) - (type == fourcc("uuid") ? sizeof(MP4_UUID_BOX_EXTENSION) : 0)) / sizeof(MP4_BOX_HEADER)),
+                extent((boxSize == 1 ? (largeSize >= sizeof(MP4_LARGE_BOX_HEADER) ? largeSize - sizeof(MP4_LARGE_BOX_HEADER) : 0) : (boxSize >= sizeof(MP4_BOX_HEADER) ? boxSize - sizeof(MP4_BOX_HEADER) : 0)) - (type == fourcc("uuid") ? sizeof(MP4_UUID_BOX_EXTENSION) : 0)),
                 name(type)
             ]
             struct _MP4_BOX children[];
@@ -125,8 +154,8 @@ typedef struct _MP4_BOX
             dword versionAndFlags;
 
             [
-                max_count((boxSize == 1 ? (largeSize >= 20 ? largeSize - 20 : 0) : (boxSize >= 12 ? boxSize - 12 : 0)) / 8),
-                extent(boxSize == 1 ? (largeSize >= 20 ? largeSize - 20 : 0) : (boxSize >= 12 ? boxSize - 12 : 0)),
+                max_count((boxSize == 1 ? (largeSize >= sizeof(MP4_LARGE_BOX_HEADER) + sizeof(MP4_FULL_BOX_PREFIX) ? largeSize - sizeof(MP4_LARGE_BOX_HEADER) - sizeof(MP4_FULL_BOX_PREFIX) : 0) : (boxSize >= sizeof(MP4_BOX_HEADER) + sizeof(MP4_FULL_BOX_PREFIX) ? boxSize - sizeof(MP4_BOX_HEADER) - sizeof(MP4_FULL_BOX_PREFIX) : 0)) / sizeof(MP4_BOX_HEADER)),
+                extent(boxSize == 1 ? (largeSize >= sizeof(MP4_LARGE_BOX_HEADER) + sizeof(MP4_FULL_BOX_PREFIX) ? largeSize - sizeof(MP4_LARGE_BOX_HEADER) - sizeof(MP4_FULL_BOX_PREFIX) : 0) : (boxSize >= sizeof(MP4_BOX_HEADER) + sizeof(MP4_FULL_BOX_PREFIX) ? boxSize - sizeof(MP4_BOX_HEADER) - sizeof(MP4_FULL_BOX_PREFIX) : 0)),
                 name(type)
             ]
             struct _MP4_BOX children[];

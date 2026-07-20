@@ -134,33 +134,21 @@ typedef struct _ISO_DIRECTORY_ITEM
 
 typedef struct _ISO_BOOT_RECORD_PAYLOAD
 {
-    [string, count(32), extent(32)]
-    char bootSystemIdentifier[];
-
-    [string, count(32), extent(32)]
-    char bootIdentifier[];
-
-    [count(1977), extent(1977)]
-    byte bootSystemUse[];
-} ISO_BOOT_RECORD_PAYLOAD, *PISO_BOOT_RECORD_PAYLOAD;
+    char bootSystemIdentifier[32];
+    char bootIdentifier[32];
+    byte bootSystemUse[1977];} ISO_BOOT_RECORD_PAYLOAD, *PISO_BOOT_RECORD_PAYLOAD;
 
 typedef struct _ISO_PRIMARY_VOLUME_DESCRIPTOR_PAYLOAD
 {
     byte unused1;
 
-    [string, count(32), extent(32)]
-    char systemIdentifier[];
-
-    [string, count(32), extent(32)]
-    char volumeIdentifier[];
-
-    [count(8), extent(8)]
-    byte unused2[];
+    char systemIdentifier[32];
+    char volumeIdentifier[32];
+    byte unused2[8];
 
     ISO_U32_BOTH volumeSpaceSize;
 
-    [count(32), extent(32)]
-    byte escapeSequencesOrUnused3[];
+    byte escapeSequencesOrUnused3[32];
 
     ISO_U16_BOTH volumeSetSize;
     ISO_U16_BOTH volumeSequenceNumber;
@@ -206,62 +194,34 @@ typedef struct _ISO_PRIMARY_VOLUME_DESCRIPTOR_PAYLOAD
     ]
     ISO_DIRECTORY_RECORD rootDirectoryRecord;
 
-    [string, count(128), extent(128)]
-    char volumeSetIdentifier[];
-
-    [string, count(128), extent(128)]
-    char publisherIdentifier[];
-
-    [string, count(128), extent(128)]
-    char dataPreparerIdentifier[];
-
-    [string, count(128), extent(128)]
-    char applicationIdentifier[];
-
-    [string, count(37), extent(37)]
-    char copyrightFileIdentifier[];
-
-    [string, count(37), extent(37)]
-    char abstractFileIdentifier[];
-
-    [string, count(37), extent(37)]
-    char bibliographicFileIdentifier[];
-
-    [string, count(17), extent(17)]
-    char volumeCreationDateTime[];
-
-    [string, count(17), extent(17)]
-    char volumeModificationDateTime[];
-
-    [string, count(17), extent(17)]
-    char volumeExpirationDateTime[];
-
-    [string, count(17), extent(17)]
-    char volumeEffectiveDateTime[];
-
+    char volumeSetIdentifier[128];
+    char publisherIdentifier[128];
+    char dataPreparerIdentifier[128];
+    char applicationIdentifier[128];
+    char copyrightFileIdentifier[37];
+    char abstractFileIdentifier[37];
+    char bibliographicFileIdentifier[37];
+    char volumeCreationDateTime[17];
+    char volumeModificationDateTime[17];
+    char volumeExpirationDateTime[17];
+    char volumeEffectiveDateTime[17];
     byte fileStructureVersion;
     byte reserved1;
+    byte applicationUse[512];
+    byte reserved2[653];
 
-    [count(512), extent(512)]
-    byte applicationUse[];
-
-    [count(653), extent(653)]
-    byte reserved2[];
 } ISO_PRIMARY_VOLUME_DESCRIPTOR_PAYLOAD, *PISO_PRIMARY_VOLUME_DESCRIPTOR_PAYLOAD;
 
 typedef struct _ISO_VOLUME_PARTITION_PAYLOAD
 {
-    [string, count(32), extent(32)]
-    char systemIdentifier[];
+    char systemIdentifier[32];
 
-    [string, count(32), extent(32)]
-    char partitionIdentifier[];
+    char partitionIdentifier[32];
 
     ISO_U32_BOTH partitionLocation;
     ISO_U32_BOTH partitionSize;
 
-    [count(1961), extent(1961)]
-    byte systemUse[];
+    byte systemUse[1961];
 } ISO_VOLUME_PARTITION_PAYLOAD, *PISO_VOLUME_PARTITION_PAYLOAD;
 
 typedef struct _ISO_VOLUME_DESCRIPTOR
@@ -269,8 +229,7 @@ typedef struct _ISO_VOLUME_DESCRIPTOR
     [enum(ISO_VOLUME_DESCRIPTOR_TYPE)]
     byte type;
 
-    [string, count(5), extent(5)]
-    char standardIdentifier[];
+    char standardIdentifier[5];
 
     byte version;
 
@@ -289,8 +248,8 @@ typedef struct _ISO_VOLUME_DESCRIPTOR
         [case(ISO_VOLUME_PARTITION)]
         ISO_VOLUME_PARTITION_PAYLOAD partition;
 
-        [default, count(2041), extent(2041)]
-        byte rawPayload[];
+        [default]
+        byte rawPayload[2041];
     };
 } ISO_VOLUME_DESCRIPTOR, *PISO_VOLUME_DESCRIPTOR;
 

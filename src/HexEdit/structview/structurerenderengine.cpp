@@ -1803,6 +1803,11 @@ uint64_t StructureRenderEngine::formatScalar(StructureRow *row, Type *type, Type
 
 uint64_t StructureRenderEngine::sizeOf(Type *type, uint64_t offset)
 {
+    return sizeOf(type, offset, TypeSizeMode::RenderCapped);
+}
+
+uint64_t StructureRenderEngine::sizeOf(Type *type, uint64_t offset, TypeSizeMode mode)
+{
     if (!type)
         return 0;
 
@@ -1812,16 +1817,63 @@ uint64_t StructureRenderEngine::sizeOf(Type *type, uint64_t offset)
     {
         INUMTYPE count = 0;
         if (!evaluate(type, type->elements, &count, offset))
+        {
+            ExprNode *countExpr = dimensionTagArg(type->parent ? type->parent->tagList : nullptr,
+                                                  TOK_COUNT,
+                                                  arrayDimensionIndex(type->parent, type));
+            if (!countExpr)
+            {
+                countExpr = dimensionTagArg(type->parent ? type->parent->tagList : nullptr,
+                                            TOK_MAXCOUNT,
+                                            arrayDimensionIndex(type->parent, type));
+            }
+            if (!countExpr || !evaluate(EvalContext{ nullptr, nullptr, offset }, countExpr, &count))
+                return 0;
+        }
+        if (count < 0)
             return 0;
-        return sizeOf(type->link, offset) * std::min<uint64_t>(count, kMaxArrayElements);
+
+        const uint64_t elementSize = sizeOf(type->link, offset, mode);
+        if (elementSize == 0)
+            return 0;
+
+        const uint64_t elementCount = mode == TypeSizeMode::RenderCapped
+            ? std::min<uint64_t>(static_cast<uint64_t>(count), kMaxArrayElements)
+            : static_cast<uint64_t>(count);
+        if (elementCount != 0 && elementSize > std::numeric_limits<uint64_t>::max() / elementCount)
+            return 0;
+        return elementSize * elementCount;
     }
     case typeSTRUCT:
     {
         uint64_t size = 0;
         if (type->sptr)
+        {
             for (TypeDecl *decl : type->sptr->typeDeclList)
+            {
+                ExprNode *optionalExpr = nullptr;
+                if (mode == TypeSizeMode::StaticFixed
+                    && FindTag(decl ? decl->tagList : nullptr, TOK_OPTIONAL, &optionalExpr)
+                    && optionalExpr)
+                {
+                    INUMTYPE include = 0;
+                    if (!evaluate(EvalContext{ nullptr, nullptr, offset + size }, optionalExpr, &include))
+                        return 0;
+                    if (!include)
+                        continue;
+                }
+
                 for (Type *child : decl->declList)
-                    size += sizeOf(child, offset + size);
+                {
+                    const uint64_t childSize = sizeOf(child, offset + size, mode);
+                    if (childSize == 0 && mode == TypeSizeMode::StaticFixed)
+                        return 0;
+                    if (childSize > std::numeric_limits<uint64_t>::max() - size)
+                        return 0;
+                    size += childSize;
+                }
+            }
+        }
         return size;
     }
     case typeUNION:
@@ -1830,19 +1882,26 @@ uint64_t StructureRenderEngine::sizeOf(Type *type, uint64_t offset)
         if (type->sptr)
             for (TypeDecl *decl : type->sptr->typeDeclList)
                 for (Type *child : decl->declList)
-                    size = std::max(size, sizeOf(child, offset));
+                {
+                    const uint64_t childSize = sizeOf(child, offset, mode);
+                    if (childSize == 0 && mode == TypeSizeMode::StaticFixed)
+                        return 0;
+                    size = std::max(size, childSize);
+                }
         return size;
     }
     default:
         if (const uint64_t scalar = scalarSize(type->ty))
             return scalar;
+        if (mode == TypeSizeMode::StaticFixed && isScalar(type->ty))
+            return 0;
         if (isScalar(type->ty))
         {
             uint64_t value = 0;
             uint64_t byteLength = 0;
             return decodeScalarValue(type, offset, &value, &byteLength) ? byteLength : 0;
         }
-        return sizeOf(type->link, offset);
+        return sizeOf(type->link, offset, mode);
     }
 }
 
@@ -2024,7 +2083,7 @@ bool StructureRenderEngine::evaluate(const EvalContext &context, ExprNode *expr,
         if (!expr->left || expr->left->type != EXPR_IDENTIFIER || !expr->left->str)
             return false;
 
-        const uint64_t size = staticSizeOfName(expr->left->str);
+        const uint64_t size = sizeOfName(expr->left->str, context.offset, TypeSizeMode::RuntimeExact);
         if (size == 0)
             return false;
 
@@ -2799,7 +2858,7 @@ bool StructureRenderEngine::findPattern(uint64_t startOffset,
     return false;
 }
 
-uint64_t StructureRenderEngine::staticSizeOfName(const char *name)
+uint64_t StructureRenderEngine::sizeOfName(const char *name, uint64_t offset, TypeSizeMode mode)
 {
     if (!name)
         return 0;
@@ -2829,9 +2888,44 @@ uint64_t StructureRenderEngine::staticSizeOfName(const char *name)
     if (!m_library)
         return 0;
 
-    if (Symbol *sym = LookupSymbol(m_library->globalIdentifierList, const_cast<char *>(name)))
-        if (const uint64_t size = staticSizeOfType(sym->type))
-            return size;
+    TYPE requiredTagType = typeNULL;
+    const char *lookupName = name;
+    if (std::strncmp(name, "struct ", 7) == 0)
+    {
+        requiredTagType = typeSTRUCT;
+        lookupName = name + 7;
+    }
+    else if (std::strncmp(name, "union ", 6) == 0)
+    {
+        requiredTagType = typeUNION;
+        lookupName = name + 6;
+    }
+
+    if (requiredTagType == typeNULL)
+    {
+        if (Symbol *sym = LookupSymbol(m_library->globalIdentifierList, const_cast<char *>(lookupName)))
+            if (const uint64_t size = sizeOf(sym->type, offset, mode))
+                return size;
+    }
+
+    for (Symbol *sym : m_library->globalTagSymbolList)
+    {
+        if (!sym || !sym->type || !sym->name[0])
+            continue;
+        Type *base = BaseNode(sym->type);
+        if (!base || (base->ty != typeSTRUCT && base->ty != typeUNION))
+            continue;
+        if (requiredTagType != typeNULL && base->ty != requiredTagType)
+            continue;
+        if (std::strcmp(sym->name, lookupName) == 0)
+        {
+            if (const uint64_t size = sizeOf(base, offset, mode))
+                return size;
+        }
+    }
+
+    if (requiredTagType != typeNULL)
+        return 0;
 
     for (TypeDecl *decl : m_library->globalTypeDeclList)
     {
@@ -2841,50 +2935,31 @@ uint64_t StructureRenderEngine::staticSizeOfName(const char *name)
         for (Type *type : decl->declList)
         {
             if ((type->ty == typeTYPEDEF || type->ty == typeIDENTIFIER) && type->sym
-                && std::strcmp(type->sym->name, name) == 0)
+                && std::strcmp(type->sym->name, lookupName) == 0)
             {
-                return staticSizeOfType(type);
+                return sizeOf(type, offset, mode);
             }
         }
 
         Type *base = BaseNode(decl->baseType);
         if (base && (base->ty == typeSTRUCT || base->ty == typeUNION) && base->sptr
-            && base->sptr->symbol && std::strcmp(base->sptr->symbol->name, name) == 0)
+            && base->sptr->symbol && std::strcmp(base->sptr->symbol->name, lookupName) == 0)
         {
-            return sizeOf(base, m_baseOffset);
+            return sizeOf(base, offset, mode);
         }
     }
 
     return 0;
 }
 
+uint64_t StructureRenderEngine::staticSizeOfName(const char *name)
+{
+    return sizeOfName(name, m_baseOffset, TypeSizeMode::StaticFixed);
+}
+
 uint64_t StructureRenderEngine::staticSizeOfType(Type *type)
 {
-    if (!type)
-        return 0;
-
-    for (Type *cursor = type; cursor; cursor = cursor->link)
-    {
-        switch (cursor->ty)
-        {
-        case typeTYPEDEF:
-        case typeCONST:
-        case typeSIGNED:
-        case typeUNSIGNED:
-            continue;
-
-        case typeSTRUCT:
-        case typeUNION:
-        case typeARRAY:
-        case typeIDENTIFIER:
-            return sizeOf(cursor, m_baseOffset);
-
-        default:
-            return scalarSize(cursor->ty);
-        }
-    }
-
-    return 0;
+    return sizeOf(type, m_baseOffset, TypeSizeMode::StaticFixed);
 }
 
 StructureRow *StructureRenderEngine::findFieldRow(StructureRow *scope, ExprNode *expr)
@@ -3220,75 +3295,6 @@ void collectFieldReferenceRoots(ExprNode *expr, std::vector<ExprNode *> *roots)
     }
 }
 
-bool rootOffsetExpressionIsConstantFoldable(ExprNode *expr)
-{
-    if (!expr)
-        return false;
-
-    switch (expr->type)
-    {
-    case EXPR_NUMBER:
-        return true;
-    case EXPR_UNARY:
-        return rootOffsetExpressionIsConstantFoldable(expr->left);
-    case EXPR_BINARY:
-        return rootOffsetExpressionIsConstantFoldable(expr->left)
-            && rootOffsetExpressionIsConstantFoldable(expr->right);
-    case EXPR_TERTIARY:
-        return rootOffsetExpressionIsConstantFoldable(expr->cond)
-            && rootOffsetExpressionIsConstantFoldable(expr->left)
-            && rootOffsetExpressionIsConstantFoldable(expr->right);
-    default:
-        return false;
-    }
-}
-
-QString rootOffsetUnsupportedExpressionName(ExprNode *expr)
-{
-    if (!expr)
-        return QStringLiteral("empty expression");
-
-    switch (expr->type)
-    {
-    case EXPR_IDENTIFIER:
-        return expr->str
-            ? QStringLiteral("field reference '%1'").arg(QString::fromLocal8Bit(expr->str))
-            : QStringLiteral("field reference");
-    case EXPR_FIELD:
-    case EXPR_ARRAY:
-        return QStringLiteral("field reference");
-    case EXPR_SIZEOF:
-        return QStringLiteral("sizeof(...)");
-    case EXPR_RAWOFFSET:
-        return QStringLiteral("select_offset(...)");
-    case EXPR_VALUEAT:
-        return QStringLiteral("value_at(...)");
-    case EXPR_FUNCTION:
-        return QStringLiteral("%1(...)").arg(QString::fromLocal8Bit(Parser::inenglish(expr->tok)));
-    case EXPR_STRINGBUF:
-        return QStringLiteral("string literal");
-    case EXPR_BYTESEQ:
-        return QStringLiteral("byte sequence");
-    case EXPR_TAGWRAP:
-        return QStringLiteral("tag-wrapped expression");
-    case EXPR_UNARY:
-        return rootOffsetUnsupportedExpressionName(expr->left);
-    case EXPR_BINARY:
-    case EXPR_COMMA:
-        if (!rootOffsetExpressionIsConstantFoldable(expr->left))
-            return rootOffsetUnsupportedExpressionName(expr->left);
-        return rootOffsetUnsupportedExpressionName(expr->right);
-    case EXPR_TERTIARY:
-        if (!rootOffsetExpressionIsConstantFoldable(expr->cond))
-            return rootOffsetUnsupportedExpressionName(expr->cond);
-        if (!rootOffsetExpressionIsConstantFoldable(expr->left))
-            return rootOffsetUnsupportedExpressionName(expr->left);
-        return rootOffsetUnsupportedExpressionName(expr->right);
-    default:
-        return QStringLiteral("runtime expression");
-    }
-}
-
 } // namespace
 
 namespace
@@ -3369,6 +3375,80 @@ void StructureRenderEngine::validateStructTags(Type *structType, QStringList *er
     }
 }
 
+bool StructureRenderEngine::rootOffsetExpressionIsConstantFoldable(ExprNode *expr)
+{
+    if (!expr)
+        return false;
+
+    switch (expr->type)
+    {
+    case EXPR_NUMBER:
+        return true;
+    case EXPR_SIZEOF:
+        return expr->left
+            && expr->left->type == EXPR_IDENTIFIER
+            && expr->left->str
+            && staticSizeOfName(expr->left->str) != 0;
+    case EXPR_UNARY:
+        return rootOffsetExpressionIsConstantFoldable(expr->left);
+    case EXPR_BINARY:
+        return rootOffsetExpressionIsConstantFoldable(expr->left)
+            && rootOffsetExpressionIsConstantFoldable(expr->right);
+    case EXPR_TERTIARY:
+        return rootOffsetExpressionIsConstantFoldable(expr->cond)
+            && rootOffsetExpressionIsConstantFoldable(expr->left)
+            && rootOffsetExpressionIsConstantFoldable(expr->right);
+    default:
+        return false;
+    }
+}
+
+QString StructureRenderEngine::rootOffsetUnsupportedExpressionName(ExprNode *expr)
+{
+    if (!expr)
+        return QStringLiteral("empty expression");
+
+    switch (expr->type)
+    {
+    case EXPR_IDENTIFIER:
+        return expr->str
+            ? QStringLiteral("field reference '%1'").arg(QString::fromLocal8Bit(expr->str))
+            : QStringLiteral("field reference");
+    case EXPR_FIELD:
+    case EXPR_ARRAY:
+        return QStringLiteral("field reference");
+    case EXPR_SIZEOF:
+        return QStringLiteral("sizeof(...)");
+    case EXPR_RAWOFFSET:
+        return QStringLiteral("select_offset(...)");
+    case EXPR_VALUEAT:
+        return QStringLiteral("value_at(...)");
+    case EXPR_FUNCTION:
+        return QStringLiteral("%1(...)").arg(QString::fromLocal8Bit(Parser::inenglish(expr->tok)));
+    case EXPR_STRINGBUF:
+        return QStringLiteral("string literal");
+    case EXPR_BYTESEQ:
+        return QStringLiteral("byte sequence");
+    case EXPR_TAGWRAP:
+        return QStringLiteral("tag-wrapped expression");
+    case EXPR_UNARY:
+        return rootOffsetUnsupportedExpressionName(expr->left);
+    case EXPR_BINARY:
+    case EXPR_COMMA:
+        if (!rootOffsetExpressionIsConstantFoldable(expr->left))
+            return rootOffsetUnsupportedExpressionName(expr->left);
+        return rootOffsetUnsupportedExpressionName(expr->right);
+    case EXPR_TERTIARY:
+        if (!rootOffsetExpressionIsConstantFoldable(expr->cond))
+            return rootOffsetUnsupportedExpressionName(expr->cond);
+        if (!rootOffsetExpressionIsConstantFoldable(expr->left))
+            return rootOffsetUnsupportedExpressionName(expr->left);
+        return rootOffsetUnsupportedExpressionName(expr->right);
+    default:
+        return QStringLiteral("runtime expression");
+    }
+}
+
 QStringList StructureRenderEngine::validateStaticFieldReferences(StrataLibrary *library)
 {
     QStringList errors;
@@ -3415,13 +3495,13 @@ QStringList StructureRenderEngine::validateStaticFieldReferences(StrataLibrary *
                 {
                     if (tagTok == TOK_OFFSET
                         && FindTag(typeDecl->tagList, TOK_EXPORT, nullptr)
-                        && !rootOffsetExpressionIsConstantFoldable(tagExpr))
+                        && !scratch.rootOffsetExpressionIsConstantFoldable(tagExpr))
                     {
                         errors.push_back(tagLocationPrefix(typeDecl)
                                          + QStringLiteral("root offset(...) uses %1, but root offsets are "
                                                           "evaluated before a live render context exists; "
                                                           "use constant arithmetic only")
-                                               .arg(rootOffsetUnsupportedExpressionName(tagExpr)));
+                                               .arg(scratch.rootOffsetUnsupportedExpressionName(tagExpr)));
                     }
                     scratch.validateFieldTagExpressions(typeDecl->baseType, tagExpr, typeDecl, tagTok, &errors);
                 }

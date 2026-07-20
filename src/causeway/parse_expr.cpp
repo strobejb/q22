@@ -17,6 +17,8 @@
 #include <string.h>
 #include <stdio.h>
 
+#include <string>
+
 #include "parser.h"
 #include "stringprint.h"
 
@@ -265,9 +267,29 @@ ExprNode * Parser::UnaryExpression(void)
 		}
 
 		case TOK_IDENTIFIER:
-			p = PrimaryExpression();
-			p = PostfixExpression(p);
+			p = new ExprNode(EXPR_IDENTIFIER, t);
+            p->str = strdup(t.str);
+			Advance();
 			break;
+
+		case TOK_STRUCT:
+		case TOK_UNION:
+		{
+			TOKEN tagKind = t;
+			Advance();
+			if(t.kind != TOK_IDENTIFIER)
+			{
+				Error(ERROR_SIZEOF_SCALAR_ONLY);
+				p = new ExprNode(EXPR_NULL, TOK_NULL);
+				break;
+			}
+
+			const std::string qualified = std::string(inenglish(tagKind)) + " " + t.str;
+			p = new ExprNode(EXPR_IDENTIFIER, tagKind);
+			p->str = strdup(qualified.c_str());
+			Advance();
+			break;
+		}
 
 		default:
 			Error(ERROR_SIZEOF_SCALAR_ONLY);
@@ -280,6 +302,17 @@ ExprNode * Parser::UnaryExpression(void)
 			Error(ERROR_SIZEOF_SCALAR_ONLY);
 			delete p;
 			p = new ExprNode(EXPR_NULL, TOK_NULL);
+		}
+
+		if(p && p->type == EXPR_IDENTIFIER && t.kind != ')')
+		{
+			Error(ERROR_SIZEOF_SCALAR_ONLY);
+			delete p;
+			while(t.kind != ')' && t.kind != TOK_NULL)
+				Advance();
+			if(t.kind == ')')
+				Advance();
+			return new ExprNode(EXPR_NULL, TOK_NULL);
 		}
 
 		if(!Expected(')'))

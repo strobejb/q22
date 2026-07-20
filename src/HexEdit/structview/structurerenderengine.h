@@ -43,6 +43,12 @@ public:
 
 private:
     using RowPtr = std::unique_ptr<StructureRow>;
+    enum class TypeSizeMode
+    {
+        RenderCapped,
+        RuntimeExact,
+        StaticFixed,
+    };
 
     RowPtr makeRow(StructureRow *parent, Type *type, TypeDecl *typeDecl, uint64_t offset) const;
     uint64_t appendTypeDecl(StructureRow *parent, TypeDecl *typeDecl, uint64_t offset);
@@ -51,8 +57,12 @@ private:
     uint64_t formatType(StructureRow *row, Type *type, TypeDecl *typeDecl, uint64_t offset);
     uint64_t formatScalar(StructureRow *row, Type *type, TypeDecl *typeDecl, uint64_t offset);
     uint64_t sizeOf(Type *type, uint64_t offset);
+    uint64_t sizeOf(Type *type, uint64_t offset, TypeSizeMode mode);
+    uint64_t sizeOfName(const char *name, uint64_t offset, TypeSizeMode mode);
     uint64_t staticSizeOfName(const char *name);
     uint64_t staticSizeOfType(Type *type);
+    bool rootOffsetExpressionIsConstantFoldable(ExprNode *expr);
+    QString rootOffsetUnsupportedExpressionName(ExprNode *expr);
     bool canReadByte(uint64_t offset) const;
     bool checkedAdd(uint64_t a, uint64_t b, uint64_t *result) const;
 

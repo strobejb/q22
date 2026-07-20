@@ -20,6 +20,38 @@ typedef struct _RIFF_RAW_CHUNK_PAYLOAD
     byte data[];
 } RIFF_RAW_CHUNK_PAYLOAD, *PRIFF_RAW_CHUNK_PAYLOAD;
 
+typedef struct _RIFF_FILE_HEADER_PREFIX
+{
+    dword signature;
+    dword fileSize;
+} RIFF_FILE_HEADER_PREFIX, *PRIFF_FILE_HEADER_PREFIX;
+
+typedef struct _RIFF_FORM_TYPE_PREFIX
+{
+    dword formType;
+} RIFF_FORM_TYPE_PREFIX, *PRIFF_FORM_TYPE_PREFIX;
+
+typedef struct _RIFF_CHUNK_HEADER
+{
+    dword chunkId;
+    dword size;
+} RIFF_CHUNK_HEADER, *PRIFF_CHUNK_HEADER;
+
+typedef struct _RIFF_LIST_PAYLOAD_PREFIX
+{
+    dword listType;
+} RIFF_LIST_PAYLOAD_PREFIX, *PRIFF_LIST_PAYLOAD_PREFIX;
+
+typedef struct _RIFF_WAVE_FORMAT_BASE
+{
+    word audioFormat;
+    word channels;
+    dword samplesPerSecond;
+    dword averageBytesPerSecond;
+    word blockAlign;
+    word bitsPerSample;
+} RIFF_WAVE_FORMAT_BASE, *PRIFF_WAVE_FORMAT_BASE;
+
 typedef struct _RIFF_WAVE_FORMAT_CHUNK
 {
     [enum(RIFF_WAVE_AUDIO_FORMAT)]
@@ -31,7 +63,7 @@ typedef struct _RIFF_WAVE_FORMAT_CHUNK
     word blockAlign;
     word bitsPerSample;
 
-    [count(size > 16 ? size - 16 : 0)]
+    [count(size > sizeof(RIFF_WAVE_FORMAT_BASE) ? size - sizeof(RIFF_WAVE_FORMAT_BASE) : 0)]
     byte extra[];
 } RIFF_WAVE_FORMAT_CHUNK, *PRIFF_WAVE_FORMAT_CHUNK;
 
@@ -39,7 +71,7 @@ typedef struct _RIFF_WAVE_FACT_CHUNK
 {
     dword sampleLength;
 
-    [count(size > 4 ? size - 4 : 0)]
+    [count(size > sizeof(dword) ? size - sizeof(dword) : 0)]
     byte extra[];
 } RIFF_WAVE_FACT_CHUNK, *PRIFF_WAVE_FACT_CHUNK;
 
@@ -57,6 +89,17 @@ typedef struct _WEBP_ANIM_CHUNK
     word loopCount;
 } WEBP_ANIM_CHUNK, *PWEBP_ANIM_CHUNK;
 
+typedef struct _WEBP_ANMF_CHUNK_PREFIX
+{
+    byte frameX[3];
+    byte frameY[3];
+    byte frameWidthMinusOne[3];
+    byte frameHeightMinusOne[3];
+    word durationMillisecondsLow;
+    byte durationMillisecondsHigh;
+    byte flags;
+} WEBP_ANMF_CHUNK_PREFIX, *PWEBP_ANMF_CHUNK_PREFIX;
+
 typedef struct _WEBP_ANMF_CHUNK
 {
     byte frameX[3];
@@ -67,7 +110,7 @@ typedef struct _WEBP_ANMF_CHUNK
     byte durationMillisecondsHigh;
     byte flags;
 
-    [count(size > 16 ? size - 16 : 0)]
+    [count(size > sizeof(WEBP_ANMF_CHUNK_PREFIX) ? size - sizeof(WEBP_ANMF_CHUNK_PREFIX) : 0)]
     byte frameData[];
 } WEBP_ANMF_CHUNK, *PWEBP_ANMF_CHUNK;
 
@@ -88,8 +131,8 @@ typedef struct _RIFF_CHUNK
             dword listType;
 
             [
-                max_count((size > 4 ? size - 4 : 0) / 8),
-                extent(size > 4 ? size - 4 : 0),
+                max_count((size > sizeof(RIFF_LIST_PAYLOAD_PREFIX) ? size - sizeof(RIFF_LIST_PAYLOAD_PREFIX) : 0) / sizeof(RIFF_CHUNK_HEADER)),
+                extent(size > sizeof(RIFF_LIST_PAYLOAD_PREFIX) ? size - sizeof(RIFF_LIST_PAYLOAD_PREFIX) : 0),
                 name(chunkId)
             ]
             struct _RIFF_CHUNK chunks[];
@@ -129,13 +172,13 @@ typedef struct _WAVE
     [format("fourcc")]
     dword signature;
 
-    [warn(element_value() + 8 > file_size(), "RIFF declared file size exceeds actual file size")]
+    [warn(element_value() + sizeof(RIFF_FILE_HEADER_PREFIX) > file_size(), "RIFF declared file size exceeds actual file size")]
     dword fileSize;
 
     [format("fourcc")]
     dword formType;
 
-    [count(4096), extent(fileSize - 4), name(chunkId)]
+    [count(4096), extent(fileSize >= sizeof(RIFF_FORM_TYPE_PREFIX) ? fileSize - sizeof(RIFF_FORM_TYPE_PREFIX) : 0), name(chunkId)]
     RIFF_CHUNK chunks[];
 } WAVE;
 
@@ -158,7 +201,7 @@ typedef struct _WEBP
     [format("fourcc")]
     dword formType;
 
-    [count(4096), extent(fileSize - 4), name(chunkId)]
+    [count(4096), extent(fileSize >= sizeof(RIFF_FORM_TYPE_PREFIX) ? fileSize - sizeof(RIFF_FORM_TYPE_PREFIX) : 0), name(chunkId)]
     RIFF_CHUNK chunks[];
 } WEBP;
 
@@ -182,6 +225,6 @@ typedef struct _RIFF
     [format("fourcc")]
     dword formType;
 
-    [count(4096), extent(fileSize - 4), name(chunkId)]
+    [count(4096), extent(fileSize >= sizeof(RIFF_FORM_TYPE_PREFIX) ? fileSize - sizeof(RIFF_FORM_TYPE_PREFIX) : 0), name(chunkId)]
     RIFF_CHUNK chunks[];
 } RIFF;

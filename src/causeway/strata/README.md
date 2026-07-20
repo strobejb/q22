@@ -1087,6 +1087,14 @@ terminated_by(kind == 0 && size == 0)
 terminated_by({ 0x00, 0x00, 0x01 })
 ```
 
+`sizeof(Type)` accepts primitive names, typedef names, bare struct/union tag
+names, and explicit `struct Tag` / `union Tag` names. Fixed compound types use
+their real byte size, including fixed arrays larger than Structure View's array
+preview cap. In exported root `offset(...)` tags, `sizeof(...)` is accepted only
+when the referenced type has a fixed/static size; structures with data-dependent
+tails such as `[count(length)] byte payload[]` are rejected because root offsets
+are evaluated before a live file context exists.
+
 `cstr(offset)` reads a NUL-terminated 8-bit string at `offset` relative to the
 root structure base, capped at 4096 bytes. `cstr("space", offset)` first
 resolves `offset` through a named `offset_map` space. A third argument may

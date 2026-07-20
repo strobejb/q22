@@ -27,6 +27,7 @@ private slots:
     void builderLetsOffsetOverrideAlignment();
     void builderKeepsUnionMembersAtAlignedBase();
     void builderUsesExtentToAdvancePastRenderedUnionSize();
+    void builderUsesCompoundSizeofWithoutPreviewCaps();
     void builderPadsDeclarationsToAlignmentBoundaries();
     void builderSkipsAbsentOptionalDeclarations();
     void builderUsesSizeIsForUnsizedArrays();
@@ -815,6 +816,38 @@ void StructViewRawRendererTests::builderUsesExtentToAdvancePastRenderedUnionSize
     QCOMPARE(rows[0]->children[2]->name, QStringLiteral("byte after"));
     QCOMPARE(rows[0]->children[2]->absoluteOffset, uint64_t(9));
     QCOMPARE(rows[0]->children[2]->value, QStringLiteral("11"));
+}
+
+void StructViewRawRendererTests::builderUsesCompoundSizeofWithoutPreviewCaps()
+{
+    // Scenario: sizeof(Type) is used as layout arithmetic for a fixed compound
+    // type whose array member is larger than the UI preview cap.
+    // Expected: sizeof reports the real type size, not the capped display row
+    // length, so the following field lands after all bytes in the compound type.
+    // Regression guard: display capping and type-size arithmetic must remain
+    // separate code paths.
+    Parser parser;
+    QVERIFY(parseBuffer(parser,
+                        "typedef struct _BigHeader { byte bytes[128]; dword marker; } BigHeader;\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  [extent(sizeof(BigHeader))]\n"
+                        "  union { byte tiny; } header;\n"
+                        "  byte after;\n"
+                        "} root;\n"));
+
+    QByteArray bytes(133, '\0');
+    bytes[132] = char(0x5a);
+    auto rows = buildRows(parser.GetStrataLibrary(),
+                          firstExported(parser.GetStrataLibrary()),
+                          bytes);
+
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->children.size(), size_t(2));
+    QCOMPARE(rows[0]->children[0]->absoluteOffset, uint64_t(0));
+    QCOMPARE(rows[0]->children[1]->name, QStringLiteral("byte after"));
+    QCOMPARE(rows[0]->children[1]->absoluteOffset, uint64_t(132));
+    QCOMPARE(rows[0]->children[1]->value, QStringLiteral("90"));
 }
 
 void StructViewRawRendererTests::builderPadsDeclarationsToAlignmentBoundaries()
@@ -2198,13 +2231,22 @@ void StructViewRawRendererTests::definitionManagerFlagsRuntimeExpressionsInRootO
     QVERIFY2(fileSizeErrors.first().contains(QStringLiteral("file_size(...)")), qPrintable(fileSizeErrors.first()));
     QVERIFY2(fileSizeErrors.first().contains(QStringLiteral("constant arithmetic")), qPrintable(fileSizeErrors.first()));
 
-    StrataLibrary sizeofLibrary;
-    Parser sizeofParser(&sizeofLibrary);
-    QVERIFY(parseBuffer(sizeofParser,
-                        "struct Header { byte value; };\n"
+    StrataLibrary fixedSizeofLibrary;
+    Parser fixedSizeofParser(&fixedSizeofLibrary);
+    QVERIFY(parseBuffer(fixedSizeofParser,
+                        "struct Header { byte magic[4]; dword length; };\n"
+                        "union Slot { byte b; dword d; };\n"
+                        "[export, offset(sizeof(Header) + sizeof(struct Header) + sizeof(union Slot))]\n"
+                        "struct Root { byte value; } root;\n"));
+    QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&fixedSizeofLibrary).isEmpty());
+
+    StrataLibrary dynamicSizeofLibrary;
+    Parser dynamicSizeofParser(&dynamicSizeofLibrary);
+    QVERIFY(parseBuffer(dynamicSizeofParser,
+                        "struct Header { byte length; [count(length)] byte payload[]; };\n"
                         "[export, offset(sizeof(Header))]\n"
                         "struct Root { byte value; } root;\n"));
-    const QStringList sizeofErrors = StructureRenderEngine::validateStaticFieldReferences(&sizeofLibrary);
+    const QStringList sizeofErrors = StructureRenderEngine::validateStaticFieldReferences(&dynamicSizeofLibrary);
     QCOMPARE(sizeofErrors.size(), 1);
     QVERIFY2(sizeofErrors.first().contains(QStringLiteral("sizeof(...)")), qPrintable(sizeofErrors.first()));
 }

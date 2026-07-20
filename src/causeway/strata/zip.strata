@@ -109,6 +109,18 @@ typedef struct _ZIP64_DATA_DESCRIPTOR
     qword UncompressedSize;
 } ZIP64_DATA_DESCRIPTOR, *PZIP64_DATA_DESCRIPTOR;
 
+typedef struct _ZIP64_END_OF_CENTRAL_DIRECTORY_FIXED_BODY
+{
+    word VersionMadeBy;
+    word VersionNeededToExtract;
+    dword NumberOfThisDisk;
+    dword NumberOfDiskWithStartOfCentralDirectory;
+    qword TotalEntriesOnThisDisk;
+    qword TotalEntries;
+    qword SizeOfCentralDirectory;
+    qword OffsetOfStartOfCentralDirectory;
+} ZIP64_END_OF_CENTRAL_DIRECTORY_FIXED_BODY, *PZIP64_END_OF_CENTRAL_DIRECTORY_FIXED_BODY;
+
 [
     name("ZIP Central Directory File Header")
 ]
@@ -159,7 +171,7 @@ typedef struct _ZIP64_END_OF_CENTRAL_DIRECTORY_RECORD
     qword SizeOfCentralDirectory;
     qword OffsetOfStartOfCentralDirectory;
 
-    [count(SizeOfZip64EndOfCentralDirectoryRecord - 44)]
+    [count(SizeOfZip64EndOfCentralDirectoryRecord >= sizeof(ZIP64_END_OF_CENTRAL_DIRECTORY_FIXED_BODY) ? SizeOfZip64EndOfCentralDirectoryRecord - sizeof(ZIP64_END_OF_CENTRAL_DIRECTORY_FIXED_BODY) : 0)]
     byte ExtensibleDataSector[];
 } ZIP64_END_OF_CENTRAL_DIRECTORY_RECORD, *PZIP64_END_OF_CENTRAL_DIRECTORY_RECORD;
 

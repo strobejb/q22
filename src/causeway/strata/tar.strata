@@ -21,53 +21,38 @@ enum TAR_TYPEFLAG
 
 typedef struct _TAR_HEADER
 {
-    [string, count(100), extent(100)]
-    char name[];
+    char name[100];
 
-    [string, count(8), extent(8)]
-    char mode[];
+    char mode[8];
 
-    [string, count(8), extent(8)]
-    char uid[];
+    char uid[8];
 
-    [string, count(8), extent(8)]
-    char gid[];
+    char gid[8];
 
-    [string, count(12), extent(12)]
-    char size[];
+    char size[12];
 
-    [string, count(12), extent(12)]
-    char mtime[];
+    char mtime[12];
 
-    [string, count(8), extent(8)]
-    char checksum[];
+    char checksum[8];
 
     [enum(TAR_TYPEFLAG)]
     char typeflag;
 
-    [string, count(100), extent(100)]
-    char linkname[];
+    char linkname[100];
 
-    [string, count(6), extent(6)]
-    char magic[];
+    char magic[6];
 
-    [string, count(2), extent(2)]
-    char version[];
+    char version[2];
 
-    [string, count(32), extent(32)]
-    char uname[];
+    char uname[32];
 
-    [string, count(32), extent(32)]
-    char gname[];
+    char gname[32];
 
-    [string, count(8), extent(8)]
-    char devmajor[];
+    char devmajor[8];
 
-    [string, count(8), extent(8)]
-    char devminor[];
+    char devminor[8];
 
-    [string, count(155), extent(155)]
-    char prefix[];
+    char prefix[155];
 
     byte padding[12];
 } TAR_HEADER, *PTAR_HEADER;

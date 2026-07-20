@@ -49,7 +49,7 @@ DEFINE_ERR( ERROR_TAGS_NOT_ALLOWED_IN_TAGSET, "tags(...) cannot be used inside a
 DEFINE_ERR( ERROR_UNKNOWN_BITFIELD,		"Unknown bitfield '%s'")
 DEFINE_ERR( ERROR_BITFIELD_REDEFINITION, "Redefinition of bitfield '%s'")
 DEFINE_ERR( ERROR_BITFIELD_ENTRY_SYNTAX, "bitfield entries expect match(mask)[ = value] or field(name, mask[, enum(...)])")
-DEFINE_ERR( ERROR_SIZEOF_SCALAR_ONLY,   "sizeof(...) only supports scalar type names")
+DEFINE_ERR( ERROR_SIZEOF_SCALAR_ONLY,   "sizeof(...) expects a type name")
 DEFINE_ERR( ERROR_MAGIC_SYNTAX,        "magic(...) expects { bytes... } followed by an optional integer byte offset")
 DEFINE_ERR( ERROR_UNKNOWN_SEMANTIC_SCHEMA, "Unknown semantic schema '%s'")
 DEFINE_ERR( ERROR_FILENOTFOUND,			"Failed to open '%s'")
