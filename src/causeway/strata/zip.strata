@@ -94,7 +94,18 @@ typedef struct _ZIP_LOCAL_FILE_HEADER
     // case this count may be zero or a placeholder, so a local-header stream
     // cannot reliably skip to the next file without searching for the central
     // directory or parsing the compressed payload.
-    [count(CompressedSize), extent(CompressedSize)]
+    [
+        count(CompressedSize),
+        extent(CompressedSize),
+        nested(type(auto),
+               offset(current_offset()),
+               extent(CompressedSize),
+               transform(algorithm(CompressionMethod)),
+               optional(CompressedSize > 0
+                        && (GeneralPurposeBitFlag & ZIP_FLAG_ENCRYPTED) == 0
+                        && (GeneralPurposeBitFlag & ZIP_FLAG_DATA_DESCRIPTOR) == 0),
+               name(FileName))
+    ]
     byte CompressedData[];
 } ZIP_LOCAL_FILE_HEADER, *PZIP_LOCAL_FILE_HEADER;
 
@@ -227,7 +238,16 @@ typedef struct _ZIP_CENTRAL_DIRECTORY_SEQUENCE
         max_count(4096),
         terminated_by(Signature != ZIP_CENTRAL_DIRECTORY_SIGNATURE),
         terminator("hidden"),
-        element(name(FileName))
+        element(name(FileName),
+                nested(type(auto),
+                       offset(RelativeOffsetOfLocalHeader
+                              + 30
+                              + root_value_at(RelativeOffsetOfLocalHeader + 26, word)
+                              + root_value_at(RelativeOffsetOfLocalHeader + 28, word)),
+                       extent(CompressedSize),
+                       transform(algorithm(CompressionMethod)),
+                       optional(CompressedSize > 0 && (GeneralPurposeBitFlag & ZIP_FLAG_ENCRYPTED) == 0),
+                       name(FileName)))
     ]
     ZIP_CENTRAL_DIRECTORY_FILE_HEADER centralDirectory[];
 } ZIP_CENTRAL_DIRECTORY_SEQUENCE, *PZIP_CENTRAL_DIRECTORY_SEQUENCE;
@@ -260,7 +280,16 @@ typedef struct _ZIP
         max_count(eocd.TotalEntries),
         terminated_by(Signature != ZIP_CENTRAL_DIRECTORY_SIGNATURE),
         terminator("hidden"),
-        element(name(FileName))
+        element(name(FileName),
+                nested(type(auto),
+                       offset(RelativeOffsetOfLocalHeader
+                              + 30
+                              + root_value_at(RelativeOffsetOfLocalHeader + 26, word)
+                              + root_value_at(RelativeOffsetOfLocalHeader + 28, word)),
+                       extent(CompressedSize),
+                       transform(algorithm(CompressionMethod)),
+                       optional(CompressedSize > 0 && (GeneralPurposeBitFlag & ZIP_FLAG_ENCRYPTED) == 0),
+                       name(FileName)))
     ]
     ZIP_CENTRAL_DIRECTORY_FILE_HEADER centralDirectory[];
 } ZIP;

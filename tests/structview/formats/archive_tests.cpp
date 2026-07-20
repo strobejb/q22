@@ -358,6 +358,17 @@ void StructViewArchiveTests::builderRendersZipCentralDirectoryFromEocd()
     QCOMPARE(central->children.size(), size_t(2));
     QVERIFY(central->children[0]->name.contains(QStringLiteral("a.txt")));
     QVERIFY(central->children[1]->name.contains(QStringLiteral("b.txt")));
+    QVERIFY(central->children[0]->hasOpenAsTarget);
+    QCOMPARE(central->children[0]->openAsRootTypeName, QStringLiteral("auto"));
+    QCOMPARE(central->children[0]->openAsName, QStringLiteral("a.txt"));
+    QCOMPARE(central->children[0]->openAsTransform, QStringLiteral("deflate"));
+    QCOMPARE(central->children[0]->openAsOffset, uint64_t(firstOffset + 30 + 5));
+    QCOMPARE(central->children[0]->openAsByteLength, uint64_t(5));
+    QVERIFY(central->children[1]->hasOpenAsTarget);
+    QCOMPARE(central->children[1]->openAsName, QStringLiteral("b.txt"));
+    QCOMPARE(central->children[1]->openAsTransform, QStringLiteral("deflate"));
+    QCOMPARE(central->children[1]->openAsOffset, uint64_t(secondOffset + 30 + 5));
+    QCOMPARE(central->children[1]->openAsByteLength, uint64_t(5));
 
     StructureDisplayOptions sortedOptions;
     sortedOptions.sortTopLevelRowsByOffset = true;
@@ -439,6 +450,23 @@ void StructViewArchiveTests::builderRendersZipCentralDirectoryFromEocd()
     QCOMPARE(storedLocals->children.size(), size_t(2));
     QVERIFY(storedLocals->children[0]->name.contains(QStringLiteral("large.bin")));
     QVERIFY(storedLocals->children[1]->name.contains(QStringLiteral("next.bin")));
+    StructureRow *storedPayload = findChildNamed(storedLocals->children[0].get(), QStringLiteral("byte CompressedData[]"));
+    QVERIFY2(storedPayload, qPrintable(childNames(storedLocals->children[0].get())));
+    QVERIFY(storedPayload->hasOpenAsTarget);
+    QCOMPARE(storedPayload->openAsRootTypeName, QStringLiteral("auto"));
+    QCOMPARE(storedPayload->openAsName, QStringLiteral("large.bin"));
+    QCOMPARE(storedPayload->openAsTransform, QString());
+    QCOMPARE(storedPayload->openAsOffset, uint64_t(largeOffset + 30 + 9));
+    QCOMPARE(storedPayload->openAsByteLength, uint64_t(5000));
+
+    StructureRow *storedCentral = findChildNamed(storedRows[0].get(), QStringLiteral("ZIP_CENTRAL_DIRECTORY_FILE_HEADER centralDirectory[]"));
+    QVERIFY(storedCentral);
+    QCOMPARE(storedCentral->children.size(), size_t(2));
+    QVERIFY(storedCentral->children[0]->hasOpenAsTarget);
+    QCOMPARE(storedCentral->children[0]->openAsName, QStringLiteral("large.bin"));
+    QCOMPARE(storedCentral->children[0]->openAsTransform, QString());
+    QCOMPARE(storedCentral->children[0]->openAsOffset, uint64_t(largeOffset + 30 + 9));
+    QCOMPARE(storedCentral->children[0]->openAsByteLength, uint64_t(5000));
 }
 
 REGISTER_STRUCTVIEW_TEST(StructViewArchiveTests)

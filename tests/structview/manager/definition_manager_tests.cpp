@@ -21,6 +21,7 @@ private slots:
     void exportedTypesExposeCategories();
     void exportedTypesResolveDuplicateVersionsAndLogDecision();
     void userDefinitionOverridesBuiltinWithSameBaseName();
+    void nonExportingUserDefinitionOverrideReportsSuppressedBuiltin();
     void brokenUserDefinitionOverrideBlocksBuiltinFallback();
 };
 
@@ -503,6 +504,48 @@ void StructViewDefinitionManagerTests::userDefinitionOverridesBuiltinWithSameBas
     QCOMPARE(exported[0].version, 2);
     QVERIFY(exported[0].userDefinition);
     QCOMPARE(QDir::fromNativeSeparators(exported[0].filePath), QDir::fromNativeSeparators(userPath));
+}
+
+void StructViewDefinitionManagerTests::nonExportingUserDefinitionOverrideReportsSuppressedBuiltin()
+{
+    // Scenario: a stale same-basename user snippet parses successfully but does
+    // not export a root format.
+    // Expected: the built-in remains suppressed to avoid type-name collisions,
+    // but the load log makes the shadowing visible.
+    // Regression guard: an old ~/.config/.../zip.struct must not make ZIP appear
+    // mysteriously deleted from Structure View without diagnostics.
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+
+    const QString builtinDir = temp.filePath(QStringLiteral("strata"));
+    const QString userDir = temp.filePath(QStringLiteral("user-strata"));
+    QVERIFY(QDir().mkpath(builtinDir));
+    QVERIFY(QDir().mkpath(userDir));
+
+    const QString builtinPath = QDir(builtinDir).filePath(QStringLiteral("zip.strata"));
+    const QString userPath = QDir(userDir).filePath(QStringLiteral("zip.struct"));
+    writeTextFile(builtinPath,
+                  "[export(\"ZIP Archive\"), version(1), assoc(\".zip\")]\n"
+                  "struct BuiltinZipRoot { byte builtin; } builtinZip;\n");
+    writeTextFile(userPath,
+                  "typedef struct LOCAL_FILE_HEADER { char Signature[4]; word Version; word Flags; } LOCAL_FILE_HEADER;\n");
+
+    StructureDefinitionManager manager;
+    manager.setBuiltinStructDirsForTests({ builtinDir });
+    manager.setUserStrataDirForTests(userDir);
+
+    QVERIFY2(manager.reload(), qPrintable(manager.lastError()));
+    QVERIFY(!manager.definitionFiles().contains(builtinPath));
+    QVERIFY(manager.definitionFiles().contains(userPath));
+    QVERIFY(manager.exportedTypes().isEmpty());
+
+    const QString log = manager.loadLog();
+    QVERIFY(log.contains(QStringLiteral("Definition file zip: user and built-in copies are both present")));
+    QVERIFY(log.contains(QStringLiteral("built-in(ignored):")));
+    QVERIFY(log.contains(QDir::toNativeSeparators(builtinPath)));
+    QVERIFY(log.contains(QStringLiteral("user(loaded):")));
+    QVERIFY(log.contains(QDir::toNativeSeparators(userPath)));
+    QVERIFY(log.contains(QStringLiteral("Exported type(s): 0")));
 }
 
 void StructViewDefinitionManagerTests::brokenUserDefinitionOverrideBlocksBuiltinFallback()

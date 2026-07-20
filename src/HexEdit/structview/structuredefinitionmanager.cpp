@@ -227,7 +227,8 @@ bool fileAlreadyLoadedAsInclude(StrataLibrary *library, const QString &filePath)
     return false;
 }
 
-void appendDuplicateDefinitionFileLog(const QStringList &files,
+void appendDuplicateDefinitionFileLog(const QStringList &selectedFiles,
+                                      const QStringList &builtinDirs,
                                       const QString &userDirPath,
                                       const QList<ExportedStructureType> &activeExports,
                                       QStringList *log)
@@ -239,12 +240,27 @@ void appendDuplicateDefinitionFileLog(const QStringList &files,
     QMap<QString, QStringList> builtinsByName;
     QMap<QString, QStringList> usersByName;
     QSet<QString> pickedPaths;
+    QSet<QString> selectedPaths;
 
     for (const ExportedStructureType &type : activeExports)
         if (!type.filePath.isEmpty())
             pickedPaths.insert(QDir::toNativeSeparators(QFileInfo(type.filePath).absoluteFilePath()));
 
-    for (const QString &file : files)
+    for (const QString &file : selectedFiles)
+        selectedPaths.insert(QDir::toNativeSeparators(QFileInfo(file).absoluteFilePath()));
+
+    QStringList candidateFiles;
+    for (const QString &dir : builtinDirs)
+    {
+        for (const QString &file : existingDefinitionFilesInDir(dir, false))
+            if (!candidateFiles.contains(file))
+                candidateFiles.push_back(file);
+    }
+    for (const QString &file : existingDefinitionFilesInDir(userDirPath, true))
+        if (!candidateFiles.contains(file))
+            candidateFiles.push_back(file);
+
+    for (const QString &file : candidateFiles)
     {
         const QFileInfo info(file);
         const QString name = info.completeBaseName();
@@ -264,12 +280,16 @@ void appendDuplicateDefinitionFileLog(const QStringList &files,
         log->push_back(QObject::tr("Definition file %1: user and built-in copies are both present").arg(name));
         for (const QString &path : builtinsByName.value(name))
         {
-            const QString prefix = pickedPaths.contains(path) ? QObject::tr("picked") : QObject::tr("ignored");
+            const QString prefix = pickedPaths.contains(path) ? QObject::tr("picked")
+                : selectedPaths.contains(path) ? QObject::tr("loaded")
+                                               : QObject::tr("ignored");
             log->push_back(QObject::tr("  built-in(%1): %2").arg(prefix, path));
         }
         for (const QString &path : it.value())
         {
-            const QString prefix = pickedPaths.contains(path) ? QObject::tr("picked") : QObject::tr("ignored");
+            const QString prefix = pickedPaths.contains(path) ? QObject::tr("picked")
+                : selectedPaths.contains(path) ? QObject::tr("loaded")
+                                               : QObject::tr("ignored");
             log->push_back(QObject::tr("  user(%1): %2").arg(prefix, path));
         }
     }
@@ -536,7 +556,7 @@ bool StructureDefinitionManager::reload()
 
     QStringList exportResolutionLog;
     const QList<ExportedStructureType> activeExports = resolvedExportedTypes(&exportResolutionLog);
-    appendDuplicateDefinitionFileLog(files, userStrataDir(), activeExports, &m_loadLog);
+    appendDuplicateDefinitionFileLog(files, builtinStructDirs(), userStrataDir(), activeExports, &m_loadLog);
     for (const QString &message : exportResolutionLog)
         m_loadLog.push_back(message);
 
