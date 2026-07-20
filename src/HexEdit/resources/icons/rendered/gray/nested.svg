@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"
+ fill="none" shape-rendering="geometricPrecision" role="img">
+<title>Mid-gray nested icon</title>
+<defs>
+  <linearGradient id="inner" gradientUnits="userSpaceOnUse" x1="18" y1="18" x2="46" y2="42">
+    <stop offset="0%" stop-color="#969696"/>
+    <stop offset="70%" stop-color="#747474"/>
+    <stop offset="100%" stop-color="#555555"/>
+  </linearGradient>
+  <linearGradient id="left" gradientUnits="userSpaceOnUse" x1="5" y1="12" x2="38" y2="60">
+    <stop offset="0%" stop-color="#D1D1D1"/>
+    <stop offset="58%" stop-color="#B4B4B4"/>
+    <stop offset="100%" stop-color="#969696"/>
+  </linearGradient>
+  <linearGradient id="right" gradientUnits="userSpaceOnUse" x1="28" y1="18" x2="60" y2="60">
+    <stop offset="0%" stop-color="#989898"/>
+    <stop offset="54%" stop-color="#747474"/>
+    <stop offset="100%" stop-color="#555555"/>
+  </linearGradient>
+  <linearGradient id="flap" gradientUnits="userSpaceOnUse" x1="7" y1="8" x2="58" y2="58">
+    <stop offset="0%" stop-color="#FFFFFF"/>
+    <stop offset="42%" stop-color="#E4E4E4"/>
+    <stop offset="100%" stop-color="#B4B4B4"/>
+  </linearGradient>
+  <linearGradient id="flap2" gradientUnits="userSpaceOnUse" x1="9" y1="18" x2="55" y2="60">
+    <stop offset="0%" stop-color="#E4E4E4"/>
+    <stop offset="60%" stop-color="#D1D1D1"/>
+    <stop offset="100%" stop-color="#B4B4B4"/>
+  </linearGradient>
+</defs>
+  <polygon points="32,16 16,28 9,24 25,12" fill="url(#flap)" stroke="#555555" stroke-opacity=".62" stroke-width="1.15" stroke-linejoin="round"/>
+  <polygon points="32,16 48,28 55,24 39,12" fill="url(#flap)" opacity=".92" stroke="#555555" stroke-opacity=".62" stroke-width="1.15" stroke-linejoin="round"/>
+  <polygon points="16,28 32,40 32,52 16,40" fill="url(#left)"/>
+  <polygon points="32,40 48,28 48,40 32,52" fill="url(#right)"/>
+  <polygon points="32,16 48,28 32,40 16,28" fill="url(#inner)"/>
+  <polygon points="32,19 44,28 32,37 20,28" fill="#555555" opacity=".34"/>
+  <path d="M16 28L32 40L48 28" stroke="#555555" stroke-opacity=".42" stroke-width=".9" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M16 28L16 40L32 52L48 40L48 28" stroke="#555555" stroke-opacity=".22" stroke-width=".75" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <polygon points="16,28 32,40 27,47 10,35" fill="url(#flap2)" opacity=".95" stroke="#555555" stroke-opacity=".62" stroke-width="1.15" stroke-linejoin="round"/>
+  <polygon points="32,40 48,28 54,35 37,47" fill="url(#flap2)" opacity=".88" stroke="#555555" stroke-opacity=".62" stroke-width="1.15" stroke-linejoin="round"/>
+</svg>
