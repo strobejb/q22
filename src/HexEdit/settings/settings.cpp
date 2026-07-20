@@ -422,6 +422,18 @@ void AppSettings::setPrefSectionHeaderDoubleClick(bool on)
     s.setValue("sidepanel/headerDoubleClick", on);
 }
 
+bool AppSettings::prefNestedSourceBreadcrumb()
+{
+    OPEN_SETTINGS;
+    return s.value("structureView/nestedSourceBreadcrumb", false).toBool();
+}
+
+void AppSettings::setPrefNestedSourceBreadcrumb(bool on)
+{
+    OPEN_SETTINGS;
+    s.setValue("structureView/nestedSourceBreadcrumb", on);
+}
+
 QStringList AppSettings::sidePanelSectionOrder()
 {
     OPEN_SETTINGS;

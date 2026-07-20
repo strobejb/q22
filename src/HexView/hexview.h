@@ -11,6 +11,7 @@
 #include <QVector>
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <QAbstractScrollArea>
 #include "sequence.h"
 #include "hexviewbookmark.h"
@@ -239,6 +240,9 @@ public:
 
     bool   initBuf(const uint8_t *buf, size_t len, bool copy, bool readonly);
     bool   openFile(const QString &path, uint flags = HVOF_DEFAULT);
+    bool   setViewSource(std::shared_ptr<sequence> source);
+    void   clearViewSource();
+    bool   isUsingViewSource() const { return m_usingViewSource; }
     bool   saveFile(const QString &path, uint flags = HVOF_DEFAULT);
     bool   clearFile();
 
@@ -569,7 +573,11 @@ private:
     // ── State ─────────────────────────────────────────────────────────────────
     QMenu      *m_contextMenu   = nullptr;  // nullptr → use built-in menu
     sequence    *m_pDataSeq     = nullptr;
+    sequence    *m_primaryDataSeq = nullptr;
+    std::shared_ptr<sequence> m_viewSource;
     QString      m_filePath;
+    bool         m_usingViewSource = false;
+    uint         m_savedEditModeForViewSource = HVMODE_OVERWRITE;
 
     bool     m_structureEntryPointValid  = false;
     uint64_t m_structureEntryPoint       = 0;

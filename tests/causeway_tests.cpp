@@ -1015,14 +1015,16 @@ void CausewayTests::openAsTagsParse()
 	// added without positional ambiguity.
 	Parser parser;
 	QVERIFY(parseBuffer(parser,
+						"enum Compression { [algorithm(\"store\")] Store = 0, [algorithm(\"deflate\")] Deflate = 8 };\n"
 						"typedef struct _Child { byte magic; } Child;\n"
 						"[open_as(type(Child), offset(dataOffset), extent(dataSize), name(fmt(\"slice {0}\", dataOffset)))]\n"
 						"typedef struct _EntryOpenAs {\n"
 						"  dword dataOffset;\n"
 						"  dword dataSize;\n"
 						"} EntryOpenAs;\n"
-						"[nested(type(Child), offset(dataOffset), extent(dataSize), transform(\"gzip\"), name(fmt(\"nested {0}\", dataOffset)))]\n"
+						"[nested(type(Child), offset(dataOffset), extent(dataSize), transform(algorithm(method)), optional(dataSize != 0), name(fmt(\"nested {0}\", dataOffset)))]\n"
 						"typedef struct _EntryNested {\n"
+						"  [enum(Compression)] byte method;\n"
 						"  dword dataOffset;\n"
 						"  dword dataSize;\n"
 						"} EntryNested;\n"));
@@ -1047,6 +1049,8 @@ void CausewayTests::openAsTagsParse()
 	ExprNode *nested = nullptr;
 	QVERIFY(FindTag(entries[1]->tagList, TOK_OPENAS, &nested));
 	QVERIFY(findTagWrapExpr(nested, TOK_TRANSFORM));
+	QVERIFY(findTagWrapExpr(nested, TOK_ALGORITHM));
+	QVERIFY(findTagWrapExpr(nested, TOK_OPTIONAL));
 }
 
 void CausewayTests::extentTagsAndScalarSizeofParse()

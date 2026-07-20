@@ -8,6 +8,7 @@
 #include <QList>
 #include <QModelIndex>
 #include <QPoint>
+#include <QStringList>
 #include <QWidget>
 
 #include <memory>
@@ -60,6 +61,7 @@ signals:
     void openDisassemblerRequested(uint64_t offset, uint64_t length,
                                    const QString &architecture, const QString &name);
     void selectionIdentityChanged(const QString &name, uint64_t offset);
+    void sourceStackChanged(const QStringList &labels, const QStringList &details, int activeIndex);
 
 public slots:
     void refresh();
@@ -68,6 +70,9 @@ public slots:
     // (it's destroyed/rebuilt on close, like the other side panels), so e.g.
     // switching to the disassembler and back doesn't drop the selected row.
     void restoreSelection(const QString &name, uint64_t offset);
+    void navigateToSourceFrame(int index);
+    void exitSourceStack();
+    void setExternalSourceNavigation(bool enabled);
 
 protected:
     void showEvent(QShowEvent *event) override;
@@ -112,19 +117,23 @@ private:
     void updateHexViewSelection(const QModelIndex &current);
     StructureRow *openAsRowForIndex(const QModelIndex &index) const;
     TypeDecl *resolvedOpenAsRootType(const StructureRow *row) const;
-    TypeDecl *resolvedOpenAsRootType(const StructureRow *row, sequence *source, uint64_t byteLength) const;
+    TypeDecl *resolvedOpenAsRootType(const StructureRow *row, sequence *source,
+                                     uint64_t baseOffset, uint64_t byteLength) const;
     void openIndexAsStructure(const QModelIndex &index);
     bool createTransformedOpenAsSource(const StructureRow *row,
                                        QString *tempPath,
                                        std::shared_ptr<sequence> *source,
                                        uint64_t *byteLength,
                                        QString *errorMessage) const;
+    bool createRawOpenAsSource(const StructureRow *row,
+                               QString *tempPath,
+                               std::shared_ptr<sequence> *source,
+                               uint64_t *byteLength,
+                               QString *errorMessage) const;
     uint64_t currentRootBaseOffset(TypeDecl *rootType) const;
     void ensureSourceStackRootFrame(TypeDecl *rootType);
     void updateSourceStackWidget();
     void setSourceStackActiveHighlightVisible(bool visible);
-    void navigateToSourceFrame(int index);
-    void exitSourceStack();
     void clearSourceStack();
     void removeSourceFrameAt(int index);
     void applyPendingRestore();
@@ -177,7 +186,9 @@ private:
     bool                        m_preserveRootComboSelectionOnce = false;
     bool                        m_updatingHexViewFromStructure = false;
     bool                        m_rebuildingRows = false;
+    bool                        m_updatingSourceFrame = false;
     bool                        m_openAsPinnedBase = false;
+    bool                        m_externalSourceNavigation = false;
     uint64_t                    m_renderGeneration = 0;
     std::shared_ptr<StructureRenderEngine> m_deferredSemanticEngine;
     uint64_t                    m_pinnedOffset = 0;
@@ -214,6 +225,12 @@ public:
 signals:
     void openDisassemblerRequested(uint64_t offset, uint64_t length,
                                    const QString &architecture, const QString &name);
+    void sourceStackChanged(const QStringList &labels, const QStringList &details, int activeIndex);
+
+public slots:
+    void navigateToSourceFrame(int index);
+    void exitSourceStack();
+    void setExternalSourceNavigation(bool enabled);
 
 protected:
     QWidget *createPanelWidget() override;
@@ -224,6 +241,7 @@ private:
     QString  m_pendingSelectionName;
     uint64_t m_pendingSelectionOffset = 0;
     bool     m_hasPendingSelection = false;
+    bool     m_externalSourceNavigation = false;
 };
 
 #endif // STRUCTVIEW_STRUCTUREVIEWPANEL_H

@@ -20,6 +20,7 @@
 #include "panels/dockpanelhost.h"
 #include "panels/findpanel.h"
 #include "panels/gotopanel.h"
+#include "panels/sourcebreadcrumbbar.h"
 #include "combos/menucombobox.h"
 #include "combos/datatypecombobox.h"
 #include "palette/palettes.h"
@@ -471,6 +472,8 @@ void MainWindow::createPreferencesDialog()
             this, [this](uint mask, uint styles) {
         m_hv->setStyle(mask, styles);
     });
+    connect(m_prefsDialog, &PreferencesDialog::nestedSourceBreadcrumbChanged,
+            this, &MainWindow::setNestedSourceBreadcrumbEnabled);
 }
 
 // ─── MainWindow ───────────────────────────────────────────────────────────────
@@ -666,12 +669,28 @@ MainWindow::MainWindow(QWidget *parent)
     fileChanged->setObjectName(QStringLiteral("fileChangedBanner"));
     fileChanged->setMessage(tr("File has changed on disk"));
     hexColumnLay->addWidget(fileChanged);
+    m_sourceBreadcrumbBar = new SourceBreadcrumbBar(hexColumn);
+    hexColumnLay->addWidget(m_sourceBreadcrumbBar);
     hexColumnLay->addWidget(m_hv, 1);
     contentLay->addWidget(hexColumn, 1);
 
     m_sidePanelHost      = new SidePanelHost(m_hv, contentRow);
     m_disasmPanelHost    = new DisassemblerPanelHost(m_hv, contentRow);
     m_structurePanelHost = new StructureViewPanelHost(m_hv, contentRow);
+    if (m_sourceBreadcrumbBar)
+    {
+        m_sourceBreadcrumbBar->setNavigateCallback([this](int index) {
+            if (m_structurePanelHost)
+                m_structurePanelHost->navigateToSourceFrame(index);
+        });
+        m_sourceBreadcrumbBar->setExitCallback([this]() {
+            if (m_structurePanelHost)
+                m_structurePanelHost->exitSourceStack();
+        });
+        connect(m_structurePanelHost, &StructureViewPanelHost::sourceStackChanged,
+                m_sourceBreadcrumbBar, &SourceBreadcrumbBar::setStack);
+    }
+    setNestedSourceBreadcrumbEnabled(AppSettings::prefNestedSourceBreadcrumb());
 
     auto *panelSlot = new SidePanelSlot(contentRow);
     panelSlot->addHost(m_sidePanelHost);
@@ -1659,6 +1678,14 @@ void MainWindow::resetSidePanel()
 {
     if (m_sidePanelHost)
         m_sidePanelHost->resetPanelForCurrentDocument();
+}
+
+void MainWindow::setNestedSourceBreadcrumbEnabled(bool enabled)
+{
+    if (m_sourceBreadcrumbBar)
+        m_sourceBreadcrumbBar->setBreadcrumbEnabled(enabled);
+    if (m_structurePanelHost)
+        m_structurePanelHost->setExternalSourceNavigation(enabled);
 }
 
 void MainWindow::updateRecentMenu() {

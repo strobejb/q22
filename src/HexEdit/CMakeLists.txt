@@ -71,6 +71,8 @@ set(PROJECT_SOURCES
         panels/gotopanel.ui
         panels/findpanel.cpp
         panels/findpanel.h
+        panels/sourcebreadcrumbbar.cpp
+        panels/sourcebreadcrumbbar.h
         panels/findpattern.cpp
         panels/findpattern.h
         panels/findpanel.ui

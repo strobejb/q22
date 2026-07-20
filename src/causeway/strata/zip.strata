@@ -17,6 +17,7 @@ enum ZIP_SIGNATURE
 
 enum ZIP_COMPRESSION_METHOD
 {
+    [algorithm("store")]
     ZIP_COMPRESSION_STORE      = 0,
     ZIP_COMPRESSION_SHRINK     = 1,
     ZIP_COMPRESSION_REDUCE_1   = 2,
@@ -24,12 +25,18 @@ enum ZIP_COMPRESSION_METHOD
     ZIP_COMPRESSION_REDUCE_3   = 4,
     ZIP_COMPRESSION_REDUCE_4   = 5,
     ZIP_COMPRESSION_IMPLODE    = 6,
+    [algorithm("deflate")]
     ZIP_COMPRESSION_DEFLATE    = 8,
+    [algorithm("deflate64")]
     ZIP_COMPRESSION_DEFLATE64  = 9,
+    [algorithm("bzip2")]
     ZIP_COMPRESSION_BZIP2      = 12,
+    [algorithm("lzma")]
     ZIP_COMPRESSION_LZMA       = 14,
+    [algorithm("zstd")]
     ZIP_COMPRESSION_ZSTD       = 93,
     ZIP_COMPRESSION_MP3        = 94,
+    [algorithm("xz")]
     ZIP_COMPRESSION_XZ         = 95,
     ZIP_COMPRESSION_JPEG       = 96,
     ZIP_COMPRESSION_WAVPACK    = 97,

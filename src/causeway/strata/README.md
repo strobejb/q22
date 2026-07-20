@@ -491,7 +491,7 @@ Layout tags affect the alignment and positioning of fields:
 | `optional(cond)` | Skip this field when `cond` is false |
 | `entrypoint` | Mark this scalar field's own value as a code entry point address for disassembly |
 | `code("arch" \| architecture(field)[, offset(expr), extent(expr)])` | Mark a byte range as code for the disassembler. `architecture(field)` obtains the Capstone id from the matching enum member's `[architecture("...")]` metadata. |
-| `nested(type(RootType \| auto), offset(expr), extent(expr)[, transform("gzip"\|"zlib"\|"deflate")][, name(expr)])` | Mark the row as a navigable physical or transformed slice that can be opened as another Strata root; `open_as(...)` is a compatibility alias |
+| `nested(type(RootType \| auto), offset(expr), extent(expr)[, transform("gzip"\|"zlib"\|"deflate"\|algorithm(field))][, optional(cond)][, name(expr)])` | Mark the row as a navigable physical or transformed slice that can be opened as another Strata root; `open_as(...)` is a compatibility alias |
 
 ```c
 [offset(dosHeader.e_lfanew)]
@@ -507,6 +507,12 @@ byte Data[];
 [code("wasm")]
 byte instructions[];
 
+enum GZIP_COMPRESSION_METHOD
+{
+    [algorithm("deflate")]
+    GZIP_COMPRESSION_DEFLATE = 8
+};
+
 [nested(type(MACHO), offset(offset), extent(size),
          name(fmt("Mach-O slice {0}", cputype)))]
 typedef struct _FAT_ARCH {
@@ -520,7 +526,7 @@ typedef struct _FAT_ARCH {
 [nested(type(auto),
         offset(extent_of(header)),
         extent(file_size() - extent_of(header) - sizeof(GZIP_TRAILER)),
-        transform("gzip"),
+        transform(algorithm(header.compressionMethod)),
         name(header.originalName))]
 byte compressedData[];
 
@@ -542,10 +548,23 @@ and matches the UI action wording.
 of the current file. With `transform("gzip")`, `transform("zlib")`, or
 `transform("deflate")`, the selected bytes are decompressed on demand into a
 temporary, read-only sequence-backed source and the nested root is applied to
-that transformed source. The parent row still consumes only the physical
-compressed bytes; transforms do not affect layout, offsets, extents, or the
-following field position. Transformed-source offsets shown in the child view are
-decoded-stream offsets, not physical offsets in the parent file.
+that transformed source. Use `transform("gzip")` when the selected range is a
+complete GZip member including its header and trailer. Use `transform("deflate")`
+for the raw compressed payload inside an already-parsed GZip member. The parent
+row still consumes only the physical compressed bytes; transforms do not affect
+layout, offsets, extents, or the following field position. Transformed-source
+offsets shown in the child view are decoded-stream offsets, not physical offsets
+in the parent file.
+
+For compression-dispatched formats, prefer enum-value metadata plus
+`transform(algorithm(field))`. The renderer evaluates `field`, finds the matching
+enum member, reads its `[algorithm("...")]` tag, and uses that as the transform
+backend. `algorithm("store")` and `algorithm("none")` mean the nested source is
+not compressed and should open as a raw physical slice. Unsupported or missing
+algorithms suppress the nested target for now.
+
+Use `optional(...)` inside `nested(...)` when the child source only exists for
+some independent discriminator condition, such as a ZIP encrypted-entry flag.
 
 Unlike most presentation/dynamic tags, `nested(...)` may be placed directly on
 an array declaration when the array container itself is the byte slice to open.
@@ -1369,7 +1388,7 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 | Primitive types | `byte`, `word`, `dword`, `qword`, `char`, `wchar_t`, `float`, `double`, `uleb128`, `sleb128` |
 | Presentation tags | `assert`, `bitfield`, `bitflag`, `enum`, `format`, `name`, `string`, `tree`, `warn` |
 | Presentation argument wrappers | `width` |
-| Layout tags | `align`, `architecture`, `code`, `endian`, `entrypoint`, `extent`, `nested`, `offset`, `open_as`, `optional`, `pad_to` |
+| Layout tags | `algorithm`, `align`, `architecture`, `code`, `endian`, `entrypoint`, `extent`, `nested`, `offset`, `open_as`, `optional`, `pad_to`, `transform` |
 | Arrays/unions | `case`, `count`, `count_as`, `default`, `element`, `max_count`, `select`, `size_is`, `switch_is`, `terminated_by`, `terminator` |
 | Dynamic/semantic tags | `dynamic_array`, `dynamic_container`, `dynamic_struct`, `emit`, `emit_node`, `emit_row`, `offset_map`, `semantic` |
 | Dynamic/semantic argument wrappers | `append`, `attr`, `container`, `dest`, `field`, `item`, `key`, `label`, `map`, `mapper`, `type` |

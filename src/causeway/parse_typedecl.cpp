@@ -504,7 +504,7 @@ Type * Parser::ParseEnumBody(Symbol *sym)
 		ExprNode *expr = 0;
 		EnumField *field;
 		Tag *tagList = 0;
-		TOKEN allowed[] = { TOK_ARCHITECTURE, TOK_NULL };
+		TOKEN allowed[] = { TOK_ALGORITHM, TOK_ARCHITECTURE, TOK_NULL };
 		if (!ParseTags(&tagList, allowed))
 			return 0;
 

@@ -82,6 +82,35 @@ struct FormatTagInfo
     ExprNode *widthExpr = nullptr;
 };
 
+bool normalizeOpenAsTransformName(QString transformName, QString *normalized)
+{
+    transformName = transformName.trimmed().toLower();
+    if (transformName.isEmpty())
+    {
+        if (normalized)
+            normalized->clear();
+        return true;
+    }
+
+    if (transformName == QStringLiteral("store") || transformName == QStringLiteral("none"))
+    {
+        if (normalized)
+            normalized->clear();
+        return true;
+    }
+
+    if (transformName == QStringLiteral("gzip")
+        || transformName == QStringLiteral("zlib")
+        || transformName == QStringLiteral("deflate"))
+    {
+        if (normalized)
+            *normalized = transformName;
+        return true;
+    }
+
+    return false;
+}
+
 void appendCommaArgs(ExprNode *expr, std::vector<ExprNode *> *args);
 TOKEN unwrapTagArg(ExprNode *arg, ExprNode **inner);
 
@@ -7193,6 +7222,52 @@ Enum *StructureRenderEngine::tagEnum(StructureRow *row, TypeDecl *typeDecl) cons
     return tagValueEnum(row, typeDecl, TOK_ENUM);
 }
 
+EnumField *StructureRenderEngine::enumFieldForRowValue(StructureRow *row, Enum *eptr) const
+{
+    if (!row)
+        return nullptr;
+
+    if (eptr)
+    {
+        for (EnumField *field : eptr->fieldList)
+            if (field && field->val == row->scalarRawValue)
+                return field;
+    }
+
+    // Scalar rows can be produced from a typedef-expanded declaration, where
+    // the original [enum(...)] field declaration is not retained on the row.
+    // The rendered enum label still resolves to the enum-value symbol, which
+    // owns the same metadata.
+    if (m_library && !row->value.isEmpty())
+    {
+        const QByteArray enumName = row->value.toLocal8Bit();
+        if (Symbol *symbol = LookupSymbol(m_library->globalIdentifierList, enumName.constData()))
+            if (symbol->type && symbol->type->ty == typeENUMVALUE)
+                return symbol->type->evptr;
+    }
+
+    return nullptr;
+}
+
+QString StructureRenderEngine::enumValueStringMetadata(StructureRow *scope, ExprNode *fieldExpr, TOKEN tagTok)
+{
+    StructureRow *fieldRow = findFieldRow(scope, fieldExpr);
+    if (!fieldRow && scope && scope->parent)
+        fieldRow = findFieldRow(scope->parent, fieldExpr);
+    if (!fieldRow)
+        return {};
+
+    EnumField *enumValue = enumFieldForRowValue(fieldRow, tagEnum(fieldRow, fieldRow->typeDecl));
+    ExprNode *metadataExpr = nullptr;
+    if (!enumValue || !FindTag(enumValue->tagList, tagTok, &metadataExpr)
+        || !metadataExpr || metadataExpr->type != EXPR_STRINGBUF || !metadataExpr->str)
+    {
+        return {};
+    }
+
+    return QString::fromLocal8Bit(metadataExpr->str).trimmed().toLower();
+}
+
 QString StructureRenderEngine::enumNameForValue(Enum *eptr, INUMTYPE value) const
 {
     if (!eptr)
@@ -7851,7 +7926,9 @@ bool StructureRenderEngine::openAsTagArgs(ExprNode *expr,
                                           ExprNode **offset,
                                           ExprNode **extent,
                                           ExprNode **name,
-                                          QString *transform) const
+                                          QString *transform,
+                                          ExprNode **transformAlgorithmField,
+                                          ExprNode **condition) const
 {
     std::vector<ExprNode *> args;
     appendCommaArgs(expr, &args);
@@ -7861,6 +7938,8 @@ bool StructureRenderEngine::openAsTagArgs(ExprNode *expr,
     ExprNode *offsetExpr = nullptr;
     ExprNode *extentExpr = nullptr;
     ExprNode *nameExpr = nullptr;
+    ExprNode *conditionExpr = nullptr;
+    ExprNode *algorithmFieldExpr = nullptr;
     QString transformName;
 
     for (ExprNode *arg : args)
@@ -7881,17 +7960,23 @@ bool StructureRenderEngine::openAsTagArgs(ExprNode *expr,
         case TOK_NAME:
             nameExpr = inner;
             break;
-        case TOK_TRANSFORM:
-            if (!inner || inner->type != EXPR_STRINGBUF || !inner->str)
-                return false;
-            transformName = QString::fromLocal8Bit(inner->str).trimmed().toLower();
-            if (transformName != QStringLiteral("gzip")
-                && transformName != QStringLiteral("zlib")
-                && transformName != QStringLiteral("deflate"))
-            {
-                return false;
-            }
+        case TOK_OPTIONAL:
+            conditionExpr = inner;
             break;
+        case TOK_TRANSFORM:
+            {
+                ExprNode *algorithmInner = nullptr;
+                if (unwrapTagArg(inner, &algorithmInner) == TOK_ALGORITHM)
+                {
+                    algorithmFieldExpr = algorithmInner;
+                    break;
+                }
+                if (!inner || inner->type != EXPR_STRINGBUF || !inner->str)
+                    return false;
+                if (!normalizeOpenAsTransformName(QString::fromLocal8Bit(inner->str), &transformName))
+                    return false;
+                break;
+            }
         default:
             return false;
         }
@@ -7912,6 +7997,10 @@ bool StructureRenderEngine::openAsTagArgs(ExprNode *expr,
         *name = nameExpr;
     if (transform)
         *transform = transformName;
+    if (transformAlgorithmField)
+        *transformAlgorithmField = algorithmFieldExpr;
+    if (condition)
+        *condition = conditionExpr;
     return true;
 }
 
@@ -7940,9 +8029,29 @@ void StructureRenderEngine::applyOpenAsTag(StructureRow *target, TypeDecl *typeD
     ExprNode *offsetExpr = nullptr;
     ExprNode *extentExpr = nullptr;
     ExprNode *nameExpr = nullptr;
+    ExprNode *transformAlgorithmField = nullptr;
+    ExprNode *conditionExpr = nullptr;
     QString transform;
-    if (!openAsTagArgs(expr, &typeExpr, &offsetSpace, &offsetExpr, &extentExpr, &nameExpr, &transform))
+    if (!openAsTagArgs(expr, &typeExpr, &offsetSpace, &offsetExpr, &extentExpr, &nameExpr, &transform,
+                       &transformAlgorithmField, &conditionExpr))
         return;
+
+    if (conditionExpr)
+    {
+        INUMTYPE includeTarget = 0;
+        if (!evaluate(scope, conditionExpr, &includeTarget, scope->absoluteOffset) || includeTarget == 0)
+            return;
+    }
+
+    if (!typeExpr || !typeExpr->str)
+        return;
+
+    if (transformAlgorithmField)
+    {
+        const QString algorithmName = enumValueStringMetadata(scope, transformAlgorithmField, TOK_ALGORITHM);
+        if (algorithmName.isEmpty() || !normalizeOpenAsTransformName(algorithmName, &transform))
+            return;
+    }
 
     const QString rootTypeName = QString::fromLocal8Bit(typeExpr->str);
     const bool autoDetectRoot = rootTypeName.compare(QStringLiteral("auto"), Qt::CaseInsensitive) == 0;
@@ -7996,9 +8105,9 @@ void StructureRenderEngine::applyOpenAsTag(StructureRow *target, TypeDecl *typeD
     target->openAsByteLength = byteLength;
     if (!transform.isEmpty())
     {
-        target->branchIconPath = QStringLiteral(":/icons/actions/nested.svg");
+        target->branchIconPath = QString::fromLatin1(StructureBranchIcons::kBlueNested);
         target->branchOpenIconPath = target->branchIconPath;
-        target->branchEmptyIconPath = target->branchIconPath;
+        target->branchEmptyIconPath = QString::fromLatin1(StructureBranchIcons::kGrayNested);
     }
 }
 

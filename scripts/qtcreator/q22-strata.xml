@@ -65,6 +65,7 @@
 
 <list name="tagKeywords">
     <item>align</item>
+    <item>algorithm</item>
     <item>append</item>
     <item>assert</item>
     <item>assoc</item>
