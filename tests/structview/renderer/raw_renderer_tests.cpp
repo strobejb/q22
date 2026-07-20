@@ -35,6 +35,7 @@ private slots:
     void builderUsesNamedOffsetMapsAndValueAt();
     void builderUsesIndexOfForKeyedArrayLookup();
     void builderUsesScopePrefixesForRootAndParent();
+    void builderUsesBaseOfForTableRelativeDynamicRows();
     void builderUsesCountAsForLogicalArraySlots();
     void builderEvaluatesTernaryExpressions();
     void builderUsesCommonUnionPrefixForSizeIs();
@@ -1152,6 +1153,58 @@ void StructViewRawRendererTests::builderUsesScopePrefixesForRootAndParent()
     QVERIFY2(inner, qPrintable(childNames(rows[0].get())));
     QVERIFY2(findChildNamed(inner, QStringLiteral("byte parentHit")), qPrintable(childNames(inner)));
     QVERIFY2(findChildNamed(inner, QStringLiteral("byte rootHit")), qPrintable(childNames(inner)));
+}
+
+void StructViewRawRendererTests::builderUsesBaseOfForTableRelativeDynamicRows()
+{
+    // Scenario: a table contains records whose string offsets are relative to a
+    // storage area at the end of that same table. The record row sits underneath
+    // the array container, so the expression climbs to the table with
+    // parent::parent and asks for that row's base offset directly.
+    // Expected: dynamic rows are rendered at table base + storageOffset +
+    // record.stringOffset, without reconstructing the table base from
+    // current_offset() or array_index().
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef byte TextByte;\n"
+                        "typedef struct _NameRecord { word length; word stringOffset; } NameRecord;\n"
+                        "typedef struct _Table {\n"
+                        "  word count;\n"
+                        "  word storageOffset;\n"
+                        "  [count(count), element(dynamic_array(name(Text), type(TextByte), offset(base_of(parent::parent) + parent::parent::storageOffset + stringOffset), count(length)))] NameRecord records[];\n"
+                        "} Table;\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  byte prefix;\n"
+                        "  Table table;\n"
+                        "} root;\n"));
+
+    QByteArray bytes(16, '\0');
+    bytes[1] = 0x01; // count
+    bytes[3] = 0x08; // storageOffset from table base; table starts at root-relative offset 1
+    bytes[5] = 0x03; // record length
+    bytes[7] = 0x02; // record stringOffset; target is 1 + 8 + 2 == 11
+    bytes[11] = 'a';
+    bytes[12] = 'b';
+    bytes[13] = 'c';
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+
+    StructureRow *table = findChildNamed(rows[0].get(), QStringLiteral("Table table"));
+    QVERIFY2(table, qPrintable(childNames(rows[0].get())));
+    StructureRow *records = findChildNamed(table, QStringLiteral("NameRecord records[]"));
+    QVERIFY2(records, qPrintable(childNames(table)));
+    QCOMPARE(records->children.size(), size_t(1));
+
+    StructureRow *text = findChildNamed(records->children[0].get(), QStringLiteral("TextByte Text[]"));
+    QVERIFY2(text, qPrintable(childNames(records->children[0].get())));
+    QCOMPARE(text->absoluteOffset, uint64_t(11));
+    QCOMPARE(text->children.size(), size_t(3));
+    QCOMPARE(text->children[0]->value, QStringLiteral("97"));
+    QCOMPARE(text->children[1]->value, QStringLiteral("98"));
+    QCOMPARE(text->children[2]->value, QStringLiteral("99"));
 }
 
 void StructViewRawRendererTests::builderUsesCountAsForLogicalArraySlots()

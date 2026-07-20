@@ -2282,6 +2282,21 @@ bool StructureRenderEngine::evaluateFunction(const EvalContext &context, ExprNod
 
     switch (expr->tok)
     {
+    case TOK_BASEOF:
+    {
+        std::vector<ExprNode *> args;
+        collectExpressionArgs(expr->left, &args);
+        if (args.size() != 1 || !context.row)
+            return false;
+
+        StructureRow *row = resolveBaseOfScopeRow(context.row, args[0]);
+
+        if (!row || row->absoluteOffset < m_baseOffset)
+            return false;
+
+        *result = static_cast<INUMTYPE>(row->absoluteOffset - m_baseOffset);
+        return true;
+    }
     case TOK_EXTENTOF:
     {
         std::vector<ExprNode *> args;
@@ -2698,6 +2713,29 @@ StructureRow *StructureRenderEngine::resolveScopeRow(StructureRow *scope, ExprNo
 
     if (std::strcmp(expr->str, "parent") == 0)
         return scope ? scope->parent : nullptr;
+
+    return nullptr;
+}
+
+StructureRow *StructureRenderEngine::resolveBaseOfScopeRow(StructureRow *scope, ExprNode *expr) const
+{
+    if (!expr)
+        return nullptr;
+
+    if (expr->type == EXPR_IDENTIFIER && expr->str)
+    {
+        if (std::strcmp(expr->str, "this") == 0)
+            return scope;
+        return resolveScopeRow(scope, expr);
+    }
+
+    if (expr->type == EXPR_SCOPE && expr->left && expr->right)
+    {
+        StructureRow *left = resolveBaseOfScopeRow(scope, expr->left);
+        if (!left)
+            return nullptr;
+        return resolveBaseOfScopeRow(left, expr->right);
+    }
 
     return nullptr;
 }

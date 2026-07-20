@@ -179,12 +179,12 @@ typedef struct _SFNT_NAME_TABLE
             name(nameID),
             dynamic_array(name(TextUtf16Be),
                           type(SFNT_UTF16BE_BYTE),
-                          offset(current_offset() - 6 - array_index() * sizeof(SFNT_NAME_RECORD) + storageOffset + stringOffset),
+                          offset(base_of(parent::parent) + parent::parent::storageOffset + stringOffset),
                           count(length),
                           optional((platformID == SFNT_PLATFORM_UNICODE || platformID == SFNT_PLATFORM_WINDOWS) && length != 0)),
             dynamic_array(name(TextBytes),
                           type(SFNT_STRING_BYTE),
-                          offset(current_offset() - 6 - array_index() * sizeof(SFNT_NAME_RECORD) + storageOffset + stringOffset),
+                          offset(base_of(parent::parent) + parent::parent::storageOffset + stringOffset),
                           count(length),
                           optional(platformID != SFNT_PLATFORM_UNICODE && platformID != SFNT_PLATFORM_WINDOWS && length != 0))
         )

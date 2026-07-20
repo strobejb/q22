@@ -250,6 +250,7 @@ private:
     void addDiagnostic(StructureRow *target, StructureRowDiagnosticSeverity severity, const QString &message);
     bool resolveScopeContext(const EvalContext &context, ExprNode *expr, EvalContext *scoped) const;
     StructureRow *resolveScopeRow(StructureRow *scope, ExprNode *expr) const;
+    StructureRow *resolveBaseOfScopeRow(StructureRow *scope, ExprNode *expr) const;
     QString fieldStringValue(StructureRow *row);
     uint64_t readableEnd(uint64_t startOffset) const;
     bool findPattern(uint64_t startOffset,

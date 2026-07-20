@@ -22,7 +22,7 @@ View online: [Strata Language Reference](https://github.com/strobejb/q22/blob/ma
 | Unions | [`select`](#discriminated-unions) · [`case`](#discriminated-unions) |
 | Dynamic/semantic views | [`semantic`](#semantic-and-emit) · [`emit`](#semantic-and-emit) · [`emit_node`](#semantic-and-emit) · [`emit_row`](#semantic-and-emit) · [`append`](#positional-semantic-collection-addressing) · [`item`](#positional-semantic-collection-addressing) · [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) |
 | Export | [`export`](#export-metadata) · [`category`](#export-metadata) · [`version`](#export-metadata) · [`assoc`](#export-metadata) · [`magic`](#export-metadata) |
-| Expressions | [`sizeof`](#expressions) · [`file_size`](#expressions) · [`extent_of`](#expressions) · [`array_index`](#expressions) · [`element_value`](#expressions) · [`current_offset`](#expressions) · [`str`](#expressions) · [`cstr`](#expressions) · [`concat`](#expressions) · [`fmt`](#expressions) · [`octal`](#expressions) · [`find_first`](#byte-pattern-search) · [`find_last`](#byte-pattern-search) · [`index_of`](#value_at) · [`select_offset`](#select_offset) · [`value_at`](#value_at) |
+| Expressions | [`sizeof`](#expressions) · [`file_size`](#expressions) · [`extent_of`](#expressions) · [`base_of`](#expressions) · [`array_index`](#expressions) · [`element_value`](#expressions) · [`current_offset`](#expressions) · [`str`](#expressions) · [`cstr`](#expressions) · [`concat`](#expressions) · [`fmt`](#expressions) · [`octal`](#expressions) · [`find_first`](#byte-pattern-search) · [`find_last`](#byte-pattern-search) · [`index_of`](#value_at) · [`select_offset`](#select_offset) · [`value_at`](#value_at) |
 
 ---
 
@@ -1115,6 +1115,7 @@ dosHeader.e_lfanew
 | Size | `sizeof(Type)` |
 | Runtime extent | `extent_of(field)` |
 | File size | `file_size()` |
+| Scope base | `base_of(this)`, `base_of(parent)`, `base_of(root)` |
 | Array context | `array_index()` |
 | Current scalar | `element_value()` |
 | Current offset | `current_offset()` |
@@ -1171,6 +1172,22 @@ Record records[];
 `extent_of(field)` returns the actual rendered byte length of an already-parsed
 field. This is useful with variable-width scalars such as `uleb128` and flexible
 arrays when a following payload length is relative to the current record:
+
+`base_of(scope)` returns the start offset of an already-rendered scope, relative
+to the current Strata root/source. This is the same coordinate system used by
+`current_offset()` and unqualified `offset(expr)`. Supported scopes are `this`,
+`parent`, `root`, and chained parent scopes such as `parent::parent`.
+
+```c
+[count(count),
+ element(dynamic_array(name(Text),
+                       type(byte),
+                       offset(base_of(parent::parent)
+                              + parent::parent::storageOffset
+                              + stringOffset),
+                       count(length)))]
+NameRecord records[];
+```
 
 `array_index()` returns the current rendered array element's zero-based index.
 `element_value()` returns the current scalar row's numeric value. They are useful
@@ -1340,7 +1357,7 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 | Compatibility/native hooks | `native_view` |
 | Export/detection tags | `assoc`, `category`, `export`, `magic`, `version` |
 | Top-level/reusable declarations | `bitfield`, `field`, `include`, `match`, `tagset`, `tags` |
-| Expression helpers | `array_index`, `concat`, `cstr`, `cstr_at`, `cstr_from`, `current_offset`, `element_value`, `extent_of`, `field_at`, `file_size`, `find_first`, `find_last`, `fmt`, `fourcc`, `index_of`, `octal`, `root_value_at`, `select_offset`, `sizeof`, `str`, `value_at` |
+| Expression helpers | `array_index`, `base_of`, `concat`, `cstr`, `cstr_at`, `cstr_from`, `current_offset`, `element_value`, `extent_of`, `field_at`, `file_size`, `find_first`, `find_last`, `fmt`, `fourcc`, `index_of`, `octal`, `root_value_at`, `select_offset`, `sizeof`, `str`, `value_at` |
 | Reserved/unsupported | `description`, `display`, `ignore`, `length_is`, `style` |
 
 ---

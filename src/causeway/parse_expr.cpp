@@ -435,6 +435,7 @@ ExprNode * Parser::UnaryExpression(void)
 	case TOK_CSTRAT:
 	case TOK_CSTRFROM:
 	case TOK_CONCAT:
+	case TOK_BASEOF:
 	case TOK_EXTENTOF:
 	case TOK_FIELDAT:
 	case TOK_INDEXOF:

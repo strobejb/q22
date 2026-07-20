@@ -47,6 +47,7 @@ private slots:
 	void maxCountAndByteSequenceTerminatorsParse();
 	void namedOffsetMapsAndValueAtParse();
 	void scopePrefixesParse();
+	void baseOfExpressionsParse();
 	void multiDimensionalFlexibleArraysParse();
 	void elfRootIsExportedAndAssociated();
 	void standardTypelibFilesParse();
@@ -1368,6 +1369,21 @@ void CausewayTests::scopePrefixesParse()
 	QCOMPARE(parentExpr->right->type, EXPR_IDENTIFIER);
 	QCOMPARE(QString::fromLocal8Bit(parentExpr->right->str), QStringLiteral("innerValue"));
 	delete parentExpr;
+}
+
+void CausewayTests::baseOfExpressionsParse()
+{
+	// Scenario: table-relative offset arithmetic needs the start offset of an
+	// existing render scope without reconstructing it from current_offset().
+	// Expected: base_of(...) parses as a normal expression helper and accepts
+	// scope arguments, including chained parent scopes.
+	Parser parser;
+	parser.Init("base_of(parent::parent) + parent::parent::storageOffset + stringOffset",
+	            strlen("base_of(parent::parent) + parent::parent::storageOffset + stringOffset"));
+	ExprNode *expr = parser.ParseExpression();
+	QVERIFY(expr);
+	QVERIFY(findTokenExpr(expr, TOK_BASEOF));
+	delete expr;
 }
 
 void CausewayTests::multiDimensionalFlexibleArraysParse()

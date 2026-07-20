@@ -31,6 +31,7 @@
     <item>ignore</item>
     <item>bitfield</item>
     <item>array_index</item>
+    <item>base_of</item>
     <item>include</item>
     <item>select_offset</item>
     <item>element_value</item>
