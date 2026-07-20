@@ -318,7 +318,7 @@ QList<ExportedStructureType> StructureDefinitionManager::resolvedExportedTypes(Q
     // stale/partial type alongside its own "failed to load" entry.
     QSet<QString> failedFilePaths;
     for (const FailedStructureFile &failure : m_failedFiles)
-        failedFilePaths.insert(QDir::toNativeSeparators(failure.filePath));
+        failedFilePaths.insert(QDir::fromNativeSeparators(QFileInfo(failure.filePath).absoluteFilePath()));
 
     const QString userDir = QFileInfo(userStrataDir()).absoluteFilePath();
 
@@ -330,8 +330,11 @@ QList<ExportedStructureType> StructureDefinitionManager::resolvedExportedTypes(Q
         FILE_DESC *fileDesc = decl->fileRef.fileDesc;
         if (fileDesc && fileDesc->included)
             continue;
-        if (fileDesc && failedFilePaths.contains(QString::fromLocal8Bit(fileDesc->filePath)))
+        if (fileDesc
+            && failedFilePaths.contains(QDir::fromNativeSeparators(QFileInfo(QString::fromLocal8Bit(fileDesc->filePath)).absoluteFilePath())))
+        {
             continue;
+        }
 
         ExportedStructureType type;
         type.typeDecl = decl;

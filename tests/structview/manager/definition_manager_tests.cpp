@@ -481,7 +481,7 @@ void StructViewDefinitionManagerTests::userDefinitionOverridesBuiltinWithSameBas
     QCOMPARE(exported[0].description, QStringLiteral("Java Class"));
     QCOMPARE(exported[0].version, 2);
     QVERIFY(exported[0].userDefinition);
-    QCOMPARE(exported[0].filePath, userPath);
+    QCOMPARE(QDir::fromNativeSeparators(exported[0].filePath), QDir::fromNativeSeparators(userPath));
 }
 
 void StructViewDefinitionManagerTests::brokenUserDefinitionOverrideBlocksBuiltinFallback()

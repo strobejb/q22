@@ -725,6 +725,8 @@ void CausewayTests::unknownSemanticSchemaReferencesFail()
 						 "[export, semantic(MissingView)]\n"
 						 "typedef struct _Root { byte marker; } Root;\n"));
 	QCOMPARE(parser.LastErr(), ERROR_UNKNOWN_SEMANTIC_SCHEMA);
+	QCOMPARE(parser.GetStrataLibrary()->globalTypeDeclList.size(), size_t(0));
+	QCOMPARE(parser.GetStrataLibrary()->globalTagSymbolList.size(), size_t(0));
 }
 
 void CausewayTests::viewTagsParse()

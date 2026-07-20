@@ -14,6 +14,65 @@
 TypeDecl * ParseTypeDecl(Tag *tagList, SymbolTable &table, bool nested = false, bool allowMultiDecl = true, bool allowUnsizedArray = false);
 const char *inenglish(TYPE ty);
 
+namespace
+{
+void removeGlobalTagSymbol(StrataLibrary *library, Symbol *symbol)
+{
+	if(!library || !symbol)
+		return;
+
+	for(auto it = library->globalTagSymbolList.begin(); it != library->globalTagSymbolList.end(); ++it)
+	{
+		if(*it == symbol)
+		{
+			library->globalTagSymbolList.erase(it);
+			return;
+		}
+	}
+}
+
+void discardUnpublishedTypeDecl(StrataLibrary *library, TypeDecl *typeDecl)
+{
+	if(!typeDecl)
+		return;
+
+	Type *base = BaseNode(typeDecl->baseType);
+	if(base)
+	{
+		if((base->ty == typeSTRUCT || base->ty == typeUNION) && base->sptr)
+		{
+			Symbol *symbol = base->sptr->symbol;
+			removeGlobalTagSymbol(library, symbol);
+			if(symbol && symbol->type == base)
+				symbol->type = 0;
+			delete base->sptr;
+			base->sptr = 0;
+		}
+		else if(base->ty == typeENUM && base->eptr)
+		{
+			Symbol *symbol = base->eptr->symbol;
+			removeGlobalTagSymbol(library, symbol);
+			if(symbol && symbol->type == base)
+				symbol->type = 0;
+			delete base->eptr;
+			base->eptr = 0;
+		}
+	}
+
+	delete typeDecl;
+}
+
+template <typename T>
+bool vectorContainsPointer(const vector<T *> &items, T *needle)
+{
+	for(T *item : items)
+		if(item == needle)
+			return true;
+	return false;
+}
+
+}
+
 StrataLibrary::StrataLibrary()
 {
 	aliasesInstalled = false;
@@ -41,20 +100,50 @@ void StrataLibrary::Cleanup()
 	// sptr/eptr are not freed by Type::~Type(), so this is the only place they
 	// are released. Must run before globalTypeDeclList is deleted because the
 	// Type nodes (and their sym pointers back to these Symbols) are still live.
+	//
+	// Named compound symbols can be referenced by copied Type chains. Nested
+	// compound declarations add another trap: deleting a parent Structure deletes
+	// nested TypeDecls, and those TypeDecls may own Type objects still referenced
+	// by globalTagSymbolList. Therefore this must be two-phase:
+	//  1. Read every currently-live symbol Type and collect unique payloads.
+	//  2. Detach all tag symbols from those Type objects.
+	//  3. Delete the collected payloads without reading globalTagSymbolList again.
+	vector<Structure *> structuresToDelete;
+	vector<Enum *> enumsToDelete;
 	for(i = globalTagSymbolList.size(); i > 0; i--)
 	{
 		Symbol *s = globalTagSymbolList[i - 1];
+		if(!s || !s->type)
+			continue;
 
-		if(s->type)
+		switch(s->type->ty)
 		{
-			if(s->type->ty == typeENUM)
-				delete s->type->eptr;   // Enum* owned here
-			else
-				delete s->type->sptr;   // Structure* owned here
+		case typeENUM:
+			if(s->type->eptr && !vectorContainsPointer(enumsToDelete, s->type->eptr))
+				enumsToDelete.push_back(s->type->eptr);
+			s->type->eptr = 0;
+			break;
+
+		case typeSTRUCT:
+		case typeUNION:
+			if(s->type->sptr && !vectorContainsPointer(structuresToDelete, s->type->sptr))
+				structuresToDelete.push_back(s->type->sptr);
+			s->type->sptr = 0;
+			break;
+
+		default:
+			break;
 		}
+
+		s->type = 0;
 
 		// Symbol wrapper not deleted — referenced from Type::sym nodes in TypeDecls
 	}
+
+	for(Structure *structure : structuresToDelete)
+		delete structure;   // Structure* owned here
+	for(Enum *enumPtr : enumsToDelete)
+		delete enumPtr;     // Enum* owned here
 
 	// TypeDecl destructor frees the Type chain (but not sptr/eptr — done above).
 	for(i = 0; i < globalTypeDeclList.size(); i++)
@@ -1245,7 +1334,7 @@ int Parser::Parse()
 					|| (schemaMarker && schemaMarker->type != EXPR_STRINGBUF))
 				{
 					Error(ERROR_UNKNOWN_SEMANTIC_SCHEMA, semanticExpr->str ? semanticExpr->str : "<invalid>");
-					delete typeDecl;
+					discardUnpublishedTypeDecl(typeLibrary, typeDecl);
 					return 0;
 				}
 			}
