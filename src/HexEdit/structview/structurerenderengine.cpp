@@ -942,6 +942,31 @@ ExprNode *unwrapSingleCommaArg(ExprNode *expr)
         return expr->left;
     return expr;
 }
+
+enum class ParsedDynamicLoadingArg
+{
+    Lazy,
+    Eager
+};
+
+bool parseDynamicLoadingArg(ExprNode *expr, ParsedDynamicLoadingArg *loading)
+{
+    if (!expr || !expr->str || !loading)
+        return false;
+
+    if (std::strcmp(expr->str, "lazy") == 0)
+    {
+        *loading = ParsedDynamicLoadingArg::Lazy;
+        return true;
+    }
+    if (std::strcmp(expr->str, "eager") == 0)
+    {
+        *loading = ParsedDynamicLoadingArg::Eager;
+        return true;
+    }
+
+    return false;
+}
 }
 
 struct StructureRenderEngine::ResolvedField
@@ -4095,7 +4120,8 @@ void StructureRenderEngine::collectDynamicRequests(StructureRow *row)
         ExprNode *logicalOffsetExpr = nullptr;
         ExprNode *conditionExpr = nullptr;
         DynamicMapper mapper = DynamicMapper::Direct;
-        if (!dynamicTagArgs(tag->expr, &selectorExpr, &labelExpr, &containerExpr, &typeNameExpr, &logicalOffsetExpr, &conditionExpr, &mapper))
+        DynamicLoading loading = DynamicLoading::Default;
+        if (!dynamicTagArgs(tag->expr, &selectorExpr, &labelExpr, &containerExpr, &typeNameExpr, &logicalOffsetExpr, &conditionExpr, &mapper, &loading))
             continue;
 
         INUMTYPE selector = 0;
@@ -4142,7 +4168,7 @@ void StructureRenderEngine::collectDynamicRequests(StructureRow *row)
         if (containerExpr && containerExpr->str)
             containerLabel = QString::fromLocal8Bit(containerExpr->str);
 
-        m_dynamicRequests.push_back(DynamicRequest{ row, targetType, renderType, label, containerLabel, uint64_t(logicalOffset), mapper });
+        m_dynamicRequests.push_back(DynamicRequest{ row, targetType, renderType, label, containerLabel, uint64_t(logicalOffset), mapper, loading });
     }
 }
 
@@ -4171,6 +4197,7 @@ void StructureRenderEngine::collectDynamicArrayRequests(StructureRow *row)
         ExprNode *conditionExpr = nullptr;
         ExprNode *openAsExpr = nullptr;
         DynamicMapper mapper = DynamicMapper::Direct;
+        DynamicLoading loading = DynamicLoading::Default;
         bool isCaseSelector = false;
         if (!dynamicArrayArgs(tag->expr,
                               &selectorOrLabelExpr,
@@ -4184,7 +4211,8 @@ void StructureRenderEngine::collectDynamicArrayRequests(StructureRow *row)
                               &mapper,
                               nullptr,
                               &isCaseSelector,
-                              &openAsExpr))
+                              &openAsExpr,
+                              &loading))
             continue;
 
         // dynamic_array mirrors dynamic_struct for directory arrays: when the
@@ -4267,6 +4295,7 @@ void StructureRenderEngine::collectDynamicArrayRequests(StructureRow *row)
             conditionExpr,
             openAsExpr,
             mapper,
+            loading,
             attachToMappedContainer
         });
     }
@@ -4424,170 +4453,19 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
         if (request.openAsExpr)
             applyOpenAsExpression(arrayRow.get(), request.owner, request.openAsExpr);
 
-        // Check once whether the element type declares sub-arrays.  Primitive
-        // element types (DWORD, WORD, CHAR, thunk unions, …) never do, so we
-        // avoid calling collectDynamicArrayRequests for every element of the
-        // large export/import raw-data arrays. While we're scanning anyway,
-        // also look for a dynamic_array tag whose label argument was written
-        // as name(...) (e.g. dynamic_array(name(DllName), type(CHAR), ...)):
-        // that explicitly marks itself as the per-element name source for
-        // whichever array contains elements of this type.
-        bool elementTypeHasSubArrays = false;
-        ExprNode *nameSourceTagExpr = nullptr;
-        const auto scanElementTagsForDynamicArrays = [&](Tag *tags) {
-            for (Tag *tag = tags; tag; tag = tag->link)
-            {
-                if (tag->tok != TOK_DYNAMICARRAY)
-                    continue;
-                elementTypeHasSubArrays = true;
-
-                if (!nameSourceTagExpr)
-                {
-                    bool isNameSource = false;
-                    ExprNode *nameSourceTypeNameExpr = nullptr;
-                    if (dynamicArrayArgs(tag->expr, nullptr, nullptr, &nameSourceTypeNameExpr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &isNameSource)
-                        && isNameSource)
-                    {
-                        Type *nameSourceType = nameSourceTypeNameExpr && nameSourceTypeNameExpr->str
-                            ? typeInDecl(findTypeDecl(nameSourceTypeNameExpr->str), nameSourceTypeNameExpr->str)
-                            : nullptr;
-                        Type *nameSourceBase = BaseNode(nameSourceType);
-                        if (nameSourceBase && (nameSourceBase->ty == typeCHAR || nameSourceBase->ty == typeWCHAR))
-                            nameSourceTagExpr = tag->expr;
-                    }
-                }
-            }
-        };
-        scanElementTagsForDynamicArrays(request.typeDecl ? request.typeDecl->tagList : nullptr);
-        scanElementTagsForDynamicArrays(request.typeDecl ? elementTagList(request.typeDecl->tagList) : nullptr);
-        if (!elementTypeHasSubArrays && typeContainsTag(request.renderType, TOK_DYNAMICARRAY))
-            elementTypeHasSubArrays = true;
-
-        uint64_t length = 0;
-        uint64_t logicalIndex = 0;
-        uint64_t renderedElements = 0;
-        const bool continuePastDisplayCap = typeContainsTag(request.renderType, TOK_COUNTAS);
-        while (logicalIndex < request.maxCount
-               && (renderedElements < kMaxArrayElements || continuePastDisplayCap))
+        const bool lazy = request.loading == DynamicLoading::Lazy && !request.openAsExpr;
+        if (lazy)
         {
-            if (fileOffset > std::numeric_limits<uint64_t>::max() - length)
-                break;
-            const uint64_t relativeElementOffset = fileOffset + length;
-            uint64_t elementOffset = 0;
-            if (!checkedAdd(m_baseOffset, relativeElementOffset, &elementOffset))
-                break;
-            if (!canReadByte(elementOffset))
-                break;
-
-            const bool renderElement = renderedElements < kMaxArrayElements;
-            auto elementRow = makeRow(arrayRow.get(), request.renderType, request.typeDecl, elementOffset);
-            if (renderElement)
-            {
-                const QString indexLabel = QStringLiteral("[%1]").arg(logicalIndex);
-                elementRow->name = indexLabel;
-                elementRow->nameTypePrefix = indexLabel;
-            }
-            elementRow->kind = StructureRowKind::Dynamic;
-            elementRow->suppressSemanticViews = true;
-
-            const uint64_t elementLength = formatType(elementRow.get(), request.renderType, request.typeDecl, elementOffset);
-            elementRow->byteLength = elementLength;
-            applyOpenAsTag(elementRow.get(), elementRow->typeDecl, elementRow.get());
-            applyDiagnosticTags(elementRow.get(), elementRow->typeDecl, elementRow.get());
-            collectNamedOffsetMaps(elementRow.get());
-
-            ExprNode *elementNameExpr = nullptr;
-            if (renderElement && effectiveTag(elementRow.get(), elementRow->typeDecl, TOK_NAME, &elementNameExpr) && elementNameExpr)
-            {
-                const QString fieldName = rowNameFragment(fieldNameValue(elementRow.get(),
-                                                                         request.renderType,
-                                                                         elementNameExpr,
-                                                                         elementOffset));
-                if (!fieldName.isEmpty())
-                {
-                    elementRow->nameIdentifier = arrayAliasPrefix() + fieldName;
-                    elementRow->name += elementRow->nameIdentifier;
-                }
-            }
-
-            if (renderElement && elementRow->nameIdentifier.isEmpty() && nameSourceTagExpr)
-            {
-                const QString fieldName = dynamicArrayNameString(elementRow.get(), nameSourceTagExpr);
-                if (!fieldName.isEmpty())
-                {
-                    elementRow->nameIdentifier = arrayAliasPrefix() + fieldName;
-                    elementRow->name += elementRow->nameIdentifier;
-                }
-            }
-
-            // For compound element types, collect the sub-array requests that
-            // reference this element's fields (e.g. DllName RVA, thunk RVAs) while
-            // the element's children are live, then defer the actual array building
-            // to a lazy loader so the initial tree open stays fast.
-            if (renderElement && elementTypeHasSubArrays)
-            {
-                const size_t requestsBefore = m_dynamicArrayRequests.size();
-                collectDynamicArrayRequests(elementRow.get());
-
-                if (m_dynamicArrayRequests.size() > requestsBefore)
-                {
-                    std::vector<DynamicArrayRequest> subRequests(
-                        m_dynamicArrayRequests.begin() + static_cast<ptrdiff_t>(requestsBefore),
-                        m_dynamicArrayRequests.end());
-                    m_dynamicArrayRequests.erase(
-                        m_dynamicArrayRequests.begin() + static_cast<ptrdiff_t>(requestsBefore),
-                        m_dynamicArrayRequests.end());
-
-                    StructureRow *elemPtr = elementRow.get();
-                    auto self = shared_from_this();
-                    elementRow->lazyChildLoader = [self, elemPtr, reqs = std::move(subRequests)]() {
-                        return self->buildSubArraysForElement(elemPtr, reqs);
-                    };
-                }
-            }
-
-            const uint64_t terminatorLength = terminatorMatchLength(elementRow.get(),
-                                                                     request.renderType,
-                                                                     request.stopExpr,
-                                                                     elementOffset,
-                                                                     elementLength);
-            const bool hideTerminator = terminatorLength > 0
-                && terminatorShouldBeHidden(request.typeDecl,
-                                            request.renderType,
-                                            request.stopExpr,
-                                            request.terminatorModeExpr);
-            const uint64_t consumedLength = terminatorLength > 0 ? terminatorLength : elementLength;
-            // Dynamic arrays are often driven by offsets/counts read from the
-            // file. If the user manually applies a mismatched format, those
-            // values can point past EOF or describe zero-sized elements. Stop
-            // on non-progress exactly like inline arrays do, instead of
-            // iterating a bogus count without advancing.
-            if (consumedLength == 0)
-                break;
-
-            if (!checkedAdd(length, consumedLength, &length))
-                break;
-            logicalIndex += std::max<uint64_t>(elementRow->arrayCountContribution, 1);
-            ++renderedElements;
-            if (terminatorLength > 0)
-            {
-                if (renderElement && !hideTerminator)
-                    appendPresentedRow(arrayRow.get(), std::move(elementRow));
-                break;
-            }
-
-            if (renderElement)
-                appendPresentedRow(arrayRow.get(), std::move(elementRow));
+            StructureRow *arrayPtr = arrayRow.get();
+            auto self = shared_from_this();
+            arrayRow->lazyChildLoader = [self, arrayPtr, request, fileOffset, arrayOffset]() mutable {
+                return self->buildLazyDynamicArrayRows(arrayPtr, request, fileOffset, arrayOffset);
+            };
+            appendPresentedRow(parentRow, std::move(arrayRow));
+            continue;
         }
 
-        arrayRow->byteLength = length;
-        const QString stringValue = dynamicArrayStringValue(request.renderType,
-                                                            request.typeDecl,
-                                                            arrayOffset,
-                                                            length,
-                                                            arrayRow->bigEndian);
-        if (!stringValue.isNull())
-            arrayRow->value = stringValue;
+        populateDynamicArrayRow(arrayRow.get(), request, fileOffset, arrayOffset);
         if (!arrayRow->children.empty())
             appendPresentedRow(parentRow, std::move(arrayRow));
     }
@@ -4595,6 +4473,209 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
     const size_t childCount = row->children.size();
     for (size_t childIndex = 0; childIndex < childCount; ++childIndex)
         appendDynamicArrayRows(row->children[childIndex].get());
+}
+
+uint64_t StructureRenderEngine::populateDynamicArrayRow(StructureRow *arrayRow,
+                                                        const DynamicArrayRequest &request,
+                                                        uint64_t fileOffset,
+                                                        uint64_t arrayOffset)
+{
+    if (!arrayRow)
+        return 0;
+
+    // Check once whether the element type declares sub-arrays. Primitive
+    // element types (DWORD, WORD, CHAR, thunk unions, …) never do, so we avoid
+    // calling collectDynamicArrayRequests for every element of large raw-data
+    // arrays. While scanning, also identify a dynamic_array(name(...)) tag used
+    // as a per-element string name source.
+    bool elementTypeHasSubArrays = false;
+    ExprNode *nameSourceTagExpr = nullptr;
+    const auto scanElementTagsForDynamicArrays = [&](Tag *tags) {
+        for (Tag *tag = tags; tag; tag = tag->link)
+        {
+            if (tag->tok != TOK_DYNAMICARRAY)
+                continue;
+            elementTypeHasSubArrays = true;
+
+            if (!nameSourceTagExpr)
+            {
+                bool isNameSource = false;
+                ExprNode *nameSourceTypeNameExpr = nullptr;
+                if (dynamicArrayArgs(tag->expr,
+                                     nullptr,
+                                     nullptr,
+                                     &nameSourceTypeNameExpr,
+                                     nullptr,
+                                     nullptr,
+                                     nullptr,
+                                     nullptr,
+                                     nullptr,
+                                     nullptr,
+                                     &isNameSource)
+                    && isNameSource)
+                {
+                    Type *nameSourceType = nameSourceTypeNameExpr && nameSourceTypeNameExpr->str
+                        ? typeInDecl(findTypeDecl(nameSourceTypeNameExpr->str), nameSourceTypeNameExpr->str)
+                        : nullptr;
+                    Type *nameSourceBase = BaseNode(nameSourceType);
+                    if (nameSourceBase && (nameSourceBase->ty == typeCHAR || nameSourceBase->ty == typeWCHAR))
+                        nameSourceTagExpr = tag->expr;
+                }
+            }
+        }
+    };
+    scanElementTagsForDynamicArrays(request.typeDecl ? request.typeDecl->tagList : nullptr);
+    scanElementTagsForDynamicArrays(request.typeDecl ? elementTagList(request.typeDecl->tagList) : nullptr);
+    if (!elementTypeHasSubArrays && typeContainsTag(request.renderType, TOK_DYNAMICARRAY))
+        elementTypeHasSubArrays = true;
+
+    uint64_t length = 0;
+    uint64_t logicalIndex = 0;
+    uint64_t renderedElements = 0;
+    const bool continuePastDisplayCap = typeContainsTag(request.renderType, TOK_COUNTAS);
+    while (logicalIndex < request.maxCount
+           && (renderedElements < kMaxArrayElements || continuePastDisplayCap))
+    {
+        if (fileOffset > std::numeric_limits<uint64_t>::max() - length)
+            break;
+        const uint64_t relativeElementOffset = fileOffset + length;
+        uint64_t elementOffset = 0;
+        if (!checkedAdd(m_baseOffset, relativeElementOffset, &elementOffset))
+            break;
+        if (!canReadByte(elementOffset))
+            break;
+
+        const bool renderElement = renderedElements < kMaxArrayElements;
+        auto elementRow = makeRow(arrayRow, request.renderType, request.typeDecl, elementOffset);
+        if (renderElement)
+        {
+            const QString indexLabel = QStringLiteral("[%1]").arg(logicalIndex);
+            elementRow->name = indexLabel;
+            elementRow->nameTypePrefix = indexLabel;
+        }
+        elementRow->kind = StructureRowKind::Dynamic;
+        elementRow->suppressSemanticViews = true;
+
+        const uint64_t elementLength = formatType(elementRow.get(), request.renderType, request.typeDecl, elementOffset);
+        elementRow->byteLength = elementLength;
+        applyOpenAsTag(elementRow.get(), elementRow->typeDecl, elementRow.get());
+        applyDiagnosticTags(elementRow.get(), elementRow->typeDecl, elementRow.get());
+        collectNamedOffsetMaps(elementRow.get());
+
+        ExprNode *elementNameExpr = nullptr;
+        if (renderElement && effectiveTag(elementRow.get(), elementRow->typeDecl, TOK_NAME, &elementNameExpr) && elementNameExpr)
+        {
+            const QString fieldName = rowNameFragment(fieldNameValue(elementRow.get(),
+                                                                     request.renderType,
+                                                                     elementNameExpr,
+                                                                     elementOffset));
+            if (!fieldName.isEmpty())
+            {
+                elementRow->nameIdentifier = arrayAliasPrefix() + fieldName;
+                elementRow->name += elementRow->nameIdentifier;
+            }
+        }
+
+        if (renderElement && elementRow->nameIdentifier.isEmpty() && nameSourceTagExpr)
+        {
+            const QString fieldName = dynamicArrayNameString(elementRow.get(), nameSourceTagExpr);
+            if (!fieldName.isEmpty())
+            {
+                elementRow->nameIdentifier = arrayAliasPrefix() + fieldName;
+                elementRow->name += elementRow->nameIdentifier;
+            }
+        }
+
+        // For compound element types, collect sub-array requests that reference
+        // this element's fields while the element's children are live, then
+        // defer building those sub-arrays until the element is expanded.
+        if (renderElement && elementTypeHasSubArrays)
+        {
+            const size_t requestsBefore = m_dynamicArrayRequests.size();
+            collectDynamicArrayRequests(elementRow.get());
+
+            if (m_dynamicArrayRequests.size() > requestsBefore)
+            {
+                std::vector<DynamicArrayRequest> subRequests(
+                    m_dynamicArrayRequests.begin() + static_cast<ptrdiff_t>(requestsBefore),
+                    m_dynamicArrayRequests.end());
+                m_dynamicArrayRequests.erase(
+                    m_dynamicArrayRequests.begin() + static_cast<ptrdiff_t>(requestsBefore),
+                    m_dynamicArrayRequests.end());
+
+                StructureRow *elemPtr = elementRow.get();
+                auto self = shared_from_this();
+                elementRow->lazyChildLoader = [self, elemPtr, reqs = std::move(subRequests)]() {
+                    return self->buildSubArraysForElement(elemPtr, reqs);
+                };
+            }
+        }
+
+        const uint64_t terminatorLength = terminatorMatchLength(elementRow.get(),
+                                                                 request.renderType,
+                                                                 request.stopExpr,
+                                                                 elementOffset,
+                                                                 elementLength);
+        const bool hideTerminator = terminatorLength > 0
+            && terminatorShouldBeHidden(request.typeDecl,
+                                        request.renderType,
+                                        request.stopExpr,
+                                        request.terminatorModeExpr);
+        const uint64_t consumedLength = terminatorLength > 0 ? terminatorLength : elementLength;
+        // Dynamic arrays are often driven by offsets/counts read from the file.
+        // If a malformed file points outside EOF or describes zero-sized
+        // elements, stop on non-progress instead of iterating a bogus count.
+        if (consumedLength == 0)
+            break;
+
+        if (!checkedAdd(length, consumedLength, &length))
+            break;
+        logicalIndex += std::max<uint64_t>(elementRow->arrayCountContribution, 1);
+        ++renderedElements;
+        if (terminatorLength > 0)
+        {
+            if (renderElement && !hideTerminator)
+                appendPresentedRow(arrayRow, std::move(elementRow));
+            break;
+        }
+
+        if (renderElement)
+            appendPresentedRow(arrayRow, std::move(elementRow));
+    }
+
+    arrayRow->byteLength = length;
+    const QString stringValue = dynamicArrayStringValue(request.renderType,
+                                                        request.typeDecl,
+                                                        arrayOffset,
+                                                        length,
+                                                        arrayRow->bigEndian);
+    if (!stringValue.isNull())
+        arrayRow->value = stringValue;
+
+    return length;
+}
+
+std::vector<StructureRenderEngine::RowPtr> StructureRenderEngine::buildLazyDynamicArrayRows(
+    StructureRow *arrayRow,
+    DynamicArrayRequest request,
+    uint64_t fileOffset,
+    uint64_t arrayOffset)
+{
+    const size_t childrenBefore = arrayRow ? arrayRow->children.size() : 0;
+    populateDynamicArrayRow(arrayRow, request, fileOffset, arrayOffset);
+
+    const size_t childrenAfter = arrayRow ? arrayRow->children.size() : 0;
+    std::vector<RowPtr> result;
+    result.reserve(childrenAfter - childrenBefore);
+    for (size_t i = childrenBefore; i < childrenAfter; ++i)
+        result.push_back(std::move(arrayRow->children[i]));
+    if (arrayRow)
+    {
+        arrayRow->children.erase(
+            arrayRow->children.begin() + static_cast<ptrdiff_t>(childrenBefore),
+            arrayRow->children.end());
+    }
+    return result;
 }
 
 std::vector<StructureRenderEngine::RowPtr> StructureRenderEngine::buildSubArraysForElement(
@@ -5810,7 +5891,8 @@ bool StructureRenderEngine::dynamicTagArgs(ExprNode *expr,
                                            ExprNode **typeName,
                                            ExprNode **logicalOffset,
                                            ExprNode **condition,
-                                           DynamicMapper *mapper) const
+                                           DynamicMapper *mapper,
+                                           DynamicLoading *loading) const
 {
     std::vector<ExprNode *> args;
     appendCommaArgs(expr, &args);
@@ -5822,6 +5904,7 @@ bool StructureRenderEngine::dynamicTagArgs(ExprNode *expr,
     ExprNode *offsetExpr = nullptr;
     ExprNode *conditionExpr = nullptr;
     DynamicMapper mapperValue = DynamicMapper::Direct;
+    DynamicLoading loadingValue = DynamicLoading::Default;
 
     for (ExprNode *arg : args)
     {
@@ -5847,6 +5930,14 @@ bool StructureRenderEngine::dynamicTagArgs(ExprNode *expr,
         case TOK_OPTIONAL:
             conditionExpr = inner;
             break;
+        case TOK_LOADING:
+        {
+            ParsedDynamicLoadingArg parsedLoading = ParsedDynamicLoadingArg::Eager;
+            if (!parseDynamicLoadingArg(inner, &parsedLoading))
+                return false;
+            loadingValue = parsedLoading == ParsedDynamicLoadingArg::Lazy ? DynamicLoading::Lazy : DynamicLoading::Eager;
+            break;
+        }
         case TOK_MAPPER:
             if (!inner || !inner->str)
                 return false;
@@ -5879,6 +5970,8 @@ bool StructureRenderEngine::dynamicTagArgs(ExprNode *expr,
         *condition = conditionExpr;
     if (mapper)
         *mapper = mapperValue;
+    if (loading)
+        *loading = loadingValue;
     return true;
 }
 
@@ -5894,7 +5987,8 @@ bool StructureRenderEngine::dynamicArrayArgs(ExprNode *expr,
                                              DynamicMapper *mapper,
                                              bool *isNameSource,
                                              bool *isCaseSelector,
-                                             ExprNode **openAs) const
+                                             ExprNode **openAs,
+                                             DynamicLoading *loading) const
 {
     std::vector<ExprNode *> args;
     appendCommaArgs(expr, &args);
@@ -5909,6 +6003,7 @@ bool StructureRenderEngine::dynamicArrayArgs(ExprNode *expr,
     ExprNode *conditionExpr = nullptr;
     ExprNode *openAsExpr = nullptr;
     DynamicMapper mapperValue = DynamicMapper::Direct;
+    DynamicLoading loadingValue = DynamicLoading::Default;
     bool nameSource = false;
     bool caseSelector = false;
 
@@ -5951,6 +6046,14 @@ bool StructureRenderEngine::dynamicArrayArgs(ExprNode *expr,
         case TOK_OPENAS:
             openAsExpr = inner;
             break;
+        case TOK_LOADING:
+        {
+            ParsedDynamicLoadingArg parsedLoading = ParsedDynamicLoadingArg::Eager;
+            if (!parseDynamicLoadingArg(inner, &parsedLoading))
+                return false;
+            loadingValue = parsedLoading == ParsedDynamicLoadingArg::Lazy ? DynamicLoading::Lazy : DynamicLoading::Eager;
+            break;
+        }
         case TOK_MAPPER:
             if (!inner || !inner->str)
                 return false;
@@ -5993,22 +6096,48 @@ bool StructureRenderEngine::dynamicArrayArgs(ExprNode *expr,
         *mapper = mapperValue;
     if (openAs)
         *openAs = openAsExpr;
+    if (loading)
+        *loading = loadingValue;
     return true;
 }
 
-bool StructureRenderEngine::dynamicContainerArgs(ExprNode *expr, ExprNode **typeName) const
+bool StructureRenderEngine::dynamicContainerArgs(ExprNode *expr, ExprNode **typeName, DynamicLoading *loading) const
 {
     std::vector<ExprNode *> args;
     appendCommaArgs(expr, &args);
-    if (args.size() != 1)
+    if (args.empty())
         return false;
 
-    ExprNode *inner = nullptr;
-    if (unwrapTagArg(args[0], &inner) != TOK_TYPE)
+    ExprNode *typeExpr = nullptr;
+    DynamicLoading loadingValue = DynamicLoading::Default;
+    for (ExprNode *arg : args)
+    {
+        ExprNode *inner = nullptr;
+        switch (unwrapTagArg(arg, &inner))
+        {
+        case TOK_TYPE:
+            typeExpr = inner;
+            break;
+        case TOK_LOADING:
+        {
+            ParsedDynamicLoadingArg parsedLoading = ParsedDynamicLoadingArg::Eager;
+            if (!parseDynamicLoadingArg(inner, &parsedLoading))
+                return false;
+            loadingValue = parsedLoading == ParsedDynamicLoadingArg::Lazy ? DynamicLoading::Lazy : DynamicLoading::Eager;
+            break;
+        }
+        default:
+            return false;
+        }
+    }
+
+    if (!typeExpr)
         return false;
 
     if (typeName)
-        *typeName = inner;
+        *typeName = typeExpr;
+    if (loading)
+        *loading = loadingValue;
     return true;
 }
 

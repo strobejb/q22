@@ -8,6 +8,7 @@ private slots:
     void builderPlacesDynamicStructsUnderNamedDynamicContainers();
     void builderPlacesDirectDynamicStructsUnderOwningRows();
     void builderRendersDynamicArraysAtReferencedOffsets();
+    void builderDefersDynamicArraysWithLazyLoading();
     void builderStopsDynamicAndInlineArraysAtTerminators();
     void builderStopsDynamicArraysWhenElementsAreUnreadable();
     void builderRunsSemanticViewsOnceForDynamicArrayTables();
@@ -194,6 +195,43 @@ void StructViewDynamicPlacementTests::builderRendersDynamicArraysAtReferencedOff
     QCOMPARE(entries->children[0]->name, QStringLiteral("[0]"));
     QCOMPARE(entries->children[0]->value, QStringLiteral("286331153"));
     QCOMPARE(entries->children[1]->value, QStringLiteral("572662306"));
+}
+
+void StructViewDynamicPlacementTests::builderDefersDynamicArraysWithLazyLoading()
+{
+    // Scenario: a referenced table is marked loading(lazy).
+    // Expected: Structure View creates the dynamic array row immediately but
+    // does not materialize its child elements until the row is expanded.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "typedef struct _Item { dword value; } Item;\n"
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  [dynamic_array(name(Items), type(Item), offset(tableOffset), count(itemCount), loading(lazy))] dword tableOffset;\n"
+                        "  dword itemCount;\n"
+                        "} root;\n"));
+
+    QByteArray bytes(24, '\0');
+    writeLe32(&bytes, 0, 8);
+    writeLe32(&bytes, 4, 2);
+    writeLe32(&bytes, 8, 0x11111111);
+    writeLe32(&bytes, 12, 0x22222222);
+
+    auto rows = buildRows(&library, firstExported(&library), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+    StructureRow *tableOffset = findChildNamed(rows[0].get(), QStringLiteral("dword tableOffset"));
+    QVERIFY(tableOffset);
+    StructureRow *items = findChildNamed(tableOffset, QStringLiteral("Item Items[]"));
+    QVERIFY(items);
+    QVERIFY(items->children.empty());
+    QVERIFY(items->lazyChildLoader);
+
+    StructureLazyChildLoader loader = std::move(items->lazyChildLoader);
+    auto children = loader();
+    QCOMPARE(children.size(), size_t(2));
+    QCOMPARE(children[0]->children[0]->value, QStringLiteral("286331153"));
+    QCOMPARE(children[1]->children[0]->value, QStringLiteral("572662306"));
 }
 
 void StructViewDynamicPlacementTests::builderStopsDynamicAndInlineArraysAtTerminators()

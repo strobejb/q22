@@ -101,6 +101,13 @@ private:
         OffsetMap
     };
 
+    enum class DynamicLoading
+    {
+        Default,
+        Eager,
+        Lazy
+    };
+
     struct DynamicRequest
     {
         StructureRow *owner = nullptr;
@@ -110,6 +117,7 @@ private:
         QString containerLabel;
         uint64_t logicalOffset = 0;
         DynamicMapper mapper = DynamicMapper::Direct;
+        DynamicLoading loading = DynamicLoading::Default;
     };
 
     // Referenced PE/ELF-style tables are not inline C fields: a row contains an
@@ -130,6 +138,7 @@ private:
         ExprNode *conditionExpr = nullptr;
         ExprNode *openAsExpr = nullptr;
         DynamicMapper mapper = DynamicMapper::Direct;
+        DynamicLoading loading = DynamicLoading::Default;
         bool attachToMappedContainer = false;
     };
 
@@ -280,6 +289,10 @@ private:
     void collectDynamicArrayRequests(StructureRow *row);
     void appendDynamicRows(StructureRow *parent);
     void appendDynamicArrayRows(StructureRow *row);
+    uint64_t populateDynamicArrayRow(StructureRow *arrayRow,
+                                     const DynamicArrayRequest &request,
+                                     uint64_t fileOffset,
+                                     uint64_t arrayOffset);
     void collectSemanticEmitRequests(StructureRow *row);
     void appendSemanticRowRequests();
     void appendSemanticNodeRequests();
@@ -290,6 +303,10 @@ private:
     QString semanticRootLabel() const;
     std::vector<RowPtr> buildSubArraysForElement(StructureRow *elementRow,
                                                  std::vector<DynamicArrayRequest> subRequests);
+    std::vector<RowPtr> buildLazyDynamicArrayRows(StructureRow *arrayRow,
+                                                  DynamicArrayRequest request,
+                                                  uint64_t fileOffset,
+                                                  uint64_t arrayOffset);
     bool dynamicTagArgs(ExprNode *expr,
                         ExprNode **selector,
                         ExprNode **label,
@@ -297,7 +314,8 @@ private:
                         ExprNode **typeName,
                         ExprNode **logicalOffset,
                         ExprNode **condition,
-                        DynamicMapper *mapper) const;
+                        DynamicMapper *mapper,
+                        DynamicLoading *loading = nullptr) const;
     bool dynamicArrayArgs(ExprNode *expr,
                           ExprNode **selectorOrLabel,
                           ExprNode **container,
@@ -310,8 +328,9 @@ private:
                           DynamicMapper *mapper,
                           bool *isNameSource,
                           bool *isCaseSelector = nullptr,
-                          ExprNode **openAs = nullptr) const;
-    bool dynamicContainerArgs(ExprNode *expr, ExprNode **typeName) const;
+                          ExprNode **openAs = nullptr,
+                          DynamicLoading *loading = nullptr) const;
+    bool dynamicContainerArgs(ExprNode *expr, ExprNode **typeName, DynamicLoading *loading = nullptr) const;
     bool emitArgs(ExprNode *expr,
                   ExprNode **destination,
                   ExprNode **selector,

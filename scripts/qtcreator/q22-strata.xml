@@ -108,6 +108,7 @@
     <item>match</item>
     <item>max_count</item>
     <item>label</item>
+    <item>loading</item>
     <item>mapper</item>
     <item>name</item>
     <item>native_view</item>

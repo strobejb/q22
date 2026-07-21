@@ -529,7 +529,7 @@ void CausewayTests::dynamicPlacementTagsParse()
 						"typedef struct _Import { dword value; } ImportDesc;\n"
 						"[export]\n"
 						"struct Root {\n"
-						"  [element(dynamic_struct(case(ImportEntry), type(ImportDesc), offset(VirtualAddress), mapper(offset_map), optional(Size != 0)), dynamic_array(case(ImportEntry), type(ImportDesc), offset(VirtualAddress), count(Size / sizeof(ImportDesc)), mapper(offset_map), terminated_by(value == 0), terminator(\"hidden\")))] DataDir dirs[2];\n"
+						"  [element(dynamic_struct(case(ImportEntry), type(ImportDesc), offset(VirtualAddress), mapper(offset_map), optional(Size != 0), loading(eager)), dynamic_array(case(ImportEntry), type(ImportDesc), offset(VirtualAddress), count(Size / sizeof(ImportDesc)), mapper(offset_map), terminated_by(value == 0), terminator(\"hidden\"), loading(lazy)))] DataDir dirs[2];\n"
 						"  [element(dynamic_container(type(SectionBucket)), offset_map(VirtualAddress, SizeOfRawData, PointerToRawData))] Section sections[2];\n"
 						"  [size_is(16), terminated_by(0)] char name[];\n"
 						"} root;\n"));
@@ -550,8 +550,12 @@ void CausewayTests::dynamicPlacementTagsParse()
 	QCOMPARE(root->baseType->sptr->typeDeclList.size(), size_t(3));
 	Tag *dirElement = FindTag(root->baseType->sptr->typeDeclList[0]->tagList, TOK_ELEMENT, nullptr);
 	QVERIFY(dirElement);
-	QVERIFY(FindTag(dirElement->elementTags, TOK_DYNAMICSTRUCT, nullptr));
-	QVERIFY(FindTag(dirElement->elementTags, TOK_DYNAMICARRAY, nullptr));
+	ExprNode *dynamicStructExpr = nullptr;
+	ExprNode *dynamicArrayExpr = nullptr;
+	QVERIFY(FindTag(dirElement->elementTags, TOK_DYNAMICSTRUCT, &dynamicStructExpr));
+	QVERIFY(FindTag(dirElement->elementTags, TOK_DYNAMICARRAY, &dynamicArrayExpr));
+	QVERIFY(findTagWrapExpr(dynamicStructExpr, TOK_LOADING));
+	QVERIFY(findTagWrapExpr(dynamicArrayExpr, TOK_LOADING));
 	Tag *sectionElement = FindTag(root->baseType->sptr->typeDeclList[1]->tagList, TOK_ELEMENT, nullptr);
 	QVERIFY(sectionElement);
 	QVERIFY(FindTag(sectionElement->elementTags, TOK_DYNAMICCONTAINER, nullptr));

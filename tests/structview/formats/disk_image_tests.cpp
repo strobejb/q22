@@ -219,6 +219,21 @@ void StructViewDiskImageTests::builderRendersIsoVolumeDescriptors()
                                                      QStringLiteral("ISO_DIRECTORY_ITEM DirectoryEntries[]"));
     QVERIFY2(directoryEntries, qPrintable(childNames(rootDirectoryRecord)));
     QCOMPARE(directoryEntries->offset, QStringLiteral("00009000"));
+    QVERIFY(directoryEntries->lazyChildLoader);
+    QVERIFY(directoryEntries->children.empty());
+
+    StructureRow *summary = findSemanticRootChildNamed(rows, QStringLiteral("ISO Summary"));
+    QVERIFY2(summary, "ISO Summary semantic child row not found");
+    StructureRow *volumes = findChildNamed(summary, QStringLiteral("Volumes"));
+    QVERIFY2(volumes, qPrintable(childNames(summary)));
+    StructureRow *volume = findChildNamed(volumes, QStringLiteral("TEST_ISO"));
+    QVERIFY2(volume, qPrintable(childNames(volumes)));
+    QCOMPARE(findChildNamed(volume, QStringLiteral("SystemIdentifier"))->value, QStringLiteral("LINUX"));
+    QCOMPARE(findChildNamed(volume, QStringLiteral("VolumeIdentifier"))->value, QStringLiteral("TEST_ISO"));
+    QCOMPARE(findChildNamed(volume, QStringLiteral("LogicalBlockSize"))->value, QStringLiteral("2048"));
+    QCOMPARE(findChildNamed(volume, QStringLiteral("VolumeSpaceSize"))->value, QStringLiteral("20"));
+    QCOMPARE(findChildNamed(volume, QStringLiteral("RootExtent"))->value, QStringLiteral("18"));
+    QCOMPARE(findChildNamed(volume, QStringLiteral("RootSize"))->value, QStringLiteral("2048"));
 }
 
 void StructViewDiskImageTests::builderRendersIsoDirectoryTreesAcrossSectorPadding()
@@ -307,6 +322,9 @@ void StructViewDiskImageTests::builderRendersIsoDirectoryTreesAcrossSectorPaddin
     StructureRow *rootEntries = findChildNamed(rootRecord,
                                                QStringLiteral("ISO_DIRECTORY_ITEM DirectoryEntries[]"));
     QVERIFY2(rootEntries, qPrintable(childNames(rootRecord)));
+    QVERIFY(rootEntries->lazyChildLoader);
+    QVERIFY(rootEntries->children.empty());
+    loadLazyChildren(rootEntries);
     QCOMPARE(rootEntries->byteLength, uint64_t(2 * sectorSize));
     QCOMPARE(rootEntries->children.size(), size_t(5));
     QCOMPARE(rootEntries->children[0]->absoluteOffset, uint64_t(rootSector * sectorSize));
@@ -339,6 +357,9 @@ void StructViewDiskImageTests::builderRendersIsoDirectoryTreesAcrossSectorPaddin
     StructureRow *childEntries = findChildNamed(rootEntries->children[3].get(),
                                                 QStringLiteral("ISO_DIRECTORY_ITEM DirectoryEntries[]"));
     QVERIFY2(childEntries, qPrintable(childNames(rootEntries->children[3].get())));
+    QVERIFY(childEntries->lazyChildLoader);
+    QVERIFY(childEntries->children.empty());
+    loadLazyChildren(childEntries);
     QCOMPARE(childEntries->byteLength, uint64_t(sectorSize));
     QCOMPARE(childEntries->children.size(), size_t(4));
 
@@ -373,6 +394,10 @@ void StructViewDiskImageTests::builderRendersIsoDirectoryTreesAcrossSectorPaddin
     QVERIFY(childEntries->children[1]->branchIconPath.isEmpty());
     QCOMPARE(nestedFileData->openAsOffset, uint64_t(23 * sectorSize));
     QCOMPARE(nestedFileData->openAsByteLength, uint64_t(1));
+
+    StructureRow *summary = findSemanticRootChildNamed(rows, QStringLiteral("ISO Summary"));
+    QVERIFY2(summary, "ISO Summary semantic child row not found");
+    QVERIFY2(findChildNamed(summary, QStringLiteral("Volumes")), qPrintable(childNames(summary)));
 }
 
 REGISTER_STRUCTVIEW_TEST(StructViewDiskImageTests)

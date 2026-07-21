@@ -709,6 +709,12 @@ layout tags such as `count(...)`, `extent(...)`, `align(...)`, and `pad_to(...)`
 | `offset_map(va, size, raw)` | Declare anonymous virtual-address ranges for `mapper(offset_map)` dynamic rows |
 | `offset_map("space", base)` / `offset_map("space", logical, size, raw)` | Define a named offset space for `offset("space", expr)` and `value_at("space", expr, Type)` |
 
+Dynamic rows can opt into deferred child construction with `loading(lazy)`, or
+force immediate construction with `loading(eager)`. Lazy loading creates the
+dynamic row immediately but materializes its children only when the user expands
+that row. Use this for archive/file-system directory trees and other referenced
+collections that can grow large.
+
 ### `semantic` and `emit`
 
 `[semantic]` marks a struct as a semantic-only tree schema. It is not rendered as
@@ -963,6 +969,7 @@ dynamic_struct(type(Type), offset(expr)
                [, name(label) | case(selector)]
                [, container(label)]
                [, mapper(direct | offset_map)]
+               [, loading(lazy | eager)]
                [, optional(condition)])
 ```
 
@@ -974,6 +981,7 @@ dynamic_struct(type(Type), offset(expr)
 - `container(label)` — place the generated dynamic struct under a named root-level group
 - `mapper(direct)` — interpret `offset(expr)` as a direct file offset; this is the default
 - `mapper(offset_map)` — map `offset(expr)` through anonymous `offset_map(...)` containers before rendering; use this when the generated row should attach to a mapped dynamic container such as a PE section
+- `loading(lazy|eager)` — request deferred or immediate child construction; currently parsed for `dynamic_struct` but dynamic structs still render eagerly
 - `optional(condition)` — skip when false
 
 ```c
@@ -1024,6 +1032,7 @@ dynamic_array(type(ElemType), offset(expr), count(expr) | max_count(expr)
               [, terminated_by(stop_condition)]
               [, terminator("hidden" | "shown")]
               [, nested(...)]
+              [, loading(lazy | eager)]
               [, optional(condition)])
 ```
 
@@ -1040,6 +1049,7 @@ dynamic_array(type(ElemType), offset(expr), count(expr) | max_count(expr)
 - `terminated_by(stop_condition)` — stop early when this per-element expression is true
 - `terminator("hidden"|"shown")` — optional visibility override for the matching terminator element; by default `[string]`/`format("string")` arrays and zero-terminated `char` arrays hide it, while struct/scalar arrays show it
 - `nested(...)` — mark the generated dynamic array row as the navigable source; use this for referenced payload children so the owning metadata row stays expandable
+- `loading(lazy|eager)` — `lazy` creates the array row immediately and decodes child elements only when expanded; `eager` decodes child elements during the initial render
 - `optional(condition)` — render only when true
 
 ```c
@@ -1059,6 +1069,13 @@ dynamic_array(case(IMAGE_DIRECTORY_ENTRY_IMPORT),
               mapper(offset_map),
               terminated_by(OriginalFirstThunk == 0 && FirstThunk == 0),
               terminator("hidden"))
+
+// Lazy directory/file-system form:
+dynamic_array(name(DirectoryEntries),
+              type(ISO_DIRECTORY_ITEM),
+              offset(record.extentLocation.le * 2048),
+              max_count(record.dataLength.le),
+              loading(lazy))
 
 // With condition — only when the PE is 32-bit:
 dynamic_array(name(ImportLookup32),
@@ -1099,9 +1116,13 @@ the array element's consumed byte length or extent.
 Semantic views and dynamic containers can coexist when both are useful.
 
 ```c
-[dynamic_container(type(SECTION)), ...]
+[dynamic_container(type(SECTION), loading(eager)), ...]
 IMAGE_SECTION_HEADER sectionHeader[];
 ```
+
+`loading(...)` is accepted for consistency with the other dynamic tags, but
+dynamic containers currently render eagerly because they are lightweight
+attachment buckets rather than decoded child collections.
 
 ### `offset_map`
 
@@ -1456,7 +1477,7 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 | Layout tags | `algorithm`, `align`, `architecture`, `code`, `endian`, `entrypoint`, `extent`, `nested`, `offset`, `open_as`, `optional`, `pad_to`, `transform` |
 | Arrays/unions | `case`, `count`, `count_as`, `default`, `element`, `max_count`, `select`, `size_is`, `switch_is`, `terminated_by`, `terminator` |
 | Dynamic/semantic tags | `dynamic_array`, `dynamic_container`, `dynamic_struct`, `emit`, `emit_node`, `emit_row`, `offset_map`, `semantic` |
-| Dynamic/semantic argument wrappers | `append`, `attr`, `container`, `dest`, `field`, `item`, `key`, `label`, `map`, `mapper`, `type` |
+| Dynamic/semantic argument wrappers | `append`, `attr`, `container`, `dest`, `field`, `item`, `key`, `label`, `loading`, `map`, `mapper`, `type` |
 | Nested/code argument wrappers | `architecture`, `transform` |
 | Compatibility/native hooks | `native_view` |
 | Export/detection tags | `assoc`, `category`, `export`, `magic`, `version` |

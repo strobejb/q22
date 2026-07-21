@@ -51,6 +51,24 @@ typedef struct _ISO_RECORDING_DATE_TIME
     byte gmtOffset;
 } ISO_RECORDING_DATE_TIME, *PISO_RECORDING_DATE_TIME;
 
+[semantic]
+typedef struct _ISO_SEMANTIC_VOLUME
+{
+    CHAR SystemIdentifier[];
+    CHAR VolumeIdentifier[];
+    DWORD LogicalBlockSize;
+    DWORD VolumeSpaceSize;
+    DWORD RootExtent;
+    DWORD RootSize;
+} ISO_SEMANTIC_VOLUME, *PISO_SEMANTIC_VOLUME;
+
+[semantic("ISO Summary")]
+typedef struct _ISO_VIEW
+{
+    [element(name(VolumeIdentifier))]
+    ISO_SEMANTIC_VOLUME Volumes[];
+} ISO_VIEW;
+
 typedef struct _ISO_DIRECTORY_RECORD
 {
     byte length;
@@ -97,6 +115,7 @@ typedef struct _ISO_DIRECTORY_RECORD
         type(ISO_DIRECTORY_ITEM),
         offset(record.extentLocation.le * 2048),
         max_count(record.dataLength.le),
+        loading(lazy),
         optional(
             select_offset(0) != 0
             && (record.fileFlags & ISO_FILE_FLAG_DIRECTORY) != 0
@@ -193,6 +212,7 @@ typedef struct _ISO_PRIMARY_VOLUME_DESCRIPTOR_PAYLOAD
             type(ISO_DIRECTORY_ITEM),
             offset(extentLocation.le * 2048),
             max_count(dataLength.le),
+            loading(lazy),
             optional(dataLength.le != 0)
         )
     ]
@@ -243,10 +263,30 @@ typedef struct _ISO_VOLUME_DESCRIPTOR
         [case(ISO_VOLUME_BOOT_RECORD)]
         ISO_BOOT_RECORD_PAYLOAD bootRecord;
 
-        [case(ISO_VOLUME_PRIMARY)]
+        [
+            case(ISO_VOLUME_PRIMARY),
+            emit_node(dest(Volumes, key("primary")),
+                      offset(current_offset()),
+                      field(SystemIdentifier, primary.systemIdentifier),
+                      field(VolumeIdentifier, primary.volumeIdentifier),
+                      field(LogicalBlockSize, primary.logicalBlockSize.le),
+                      field(VolumeSpaceSize, primary.volumeSpaceSize.le),
+                      field(RootExtent, primary.rootDirectoryRecord.extentLocation.le),
+                      field(RootSize, primary.rootDirectoryRecord.dataLength.le))
+        ]
         ISO_PRIMARY_VOLUME_DESCRIPTOR_PAYLOAD primary;
 
-        [case(ISO_VOLUME_SUPPLEMENTARY)]
+        [
+            case(ISO_VOLUME_SUPPLEMENTARY),
+            emit_node(dest(Volumes, key("supplementary")),
+                      offset(current_offset()),
+                      field(SystemIdentifier, supplementary.systemIdentifier),
+                      field(VolumeIdentifier, supplementary.volumeIdentifier),
+                      field(LogicalBlockSize, supplementary.logicalBlockSize.le),
+                      field(VolumeSpaceSize, supplementary.volumeSpaceSize.le),
+                      field(RootExtent, supplementary.rootDirectoryRecord.extentLocation.le),
+                      field(RootSize, supplementary.rootDirectoryRecord.dataLength.le))
+        ]
         ISO_PRIMARY_VOLUME_DESCRIPTOR_PAYLOAD supplementary;
 
         [case(ISO_VOLUME_PARTITION)]
@@ -264,7 +304,8 @@ typedef struct _ISO_VOLUME_DESCRIPTOR
     assoc(".iso", ".cdr"),
     magic({ 'C', 'D', '0', '0', '1' }, 32769),
     offset(0),
-    endian("little")
+    endian("little"),
+    semantic(ISO_VIEW)
 ]
 typedef struct _ISO_IMAGE
 {
