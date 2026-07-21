@@ -550,9 +550,12 @@ size_t HexView::formatLine(uint8_t *data, size_t length, size_w offset, size_t d
         overlay._selectionWins = true;
         lineHighlights.append(overlay);
     }
-    for (const Bookmark &bm : m_bookmarks)
-        if (bm.offset + bm.length > realLineStart && bm.offset < lineEnd)
-            lineHighlights.append(bm);
+    if (bookmarksVisibleForCurrentSource())
+    {
+        for (const Bookmark &bm : m_bookmarks)
+            if (bm.offset + bm.length > realLineStart && bm.offset < lineEnd)
+                lineHighlights.append(bm);
+    }
     if (checkStyle(HVS_SHOWMODS)) {
         size_t rangeStart = length;  // length == no open range
         for (size_t j = 0; j <= length; j++) {
@@ -872,11 +875,11 @@ void HexView::paintEvent(QPaintEvent *event)
         shift2 = m_nDataShift; // may be 0 (normal case)
     }
 
-    size_t buflen = m_pDataSeq->render(
-                        startFileOff - (size_w)shift2,
-                        bigbuf  + shift,
-                        allocLen - (size_t)shift,
-                        bufinfo + shift);
+    const size_w readOffset = startFileOff - (size_w)shift2;
+    size_t buflen = m_pDataSeq->render(readOffset,
+                                       bigbuf  + shift,
+                                       allocLen - (size_t)shift,
+                                       bufinfo + shift);
     buflen += (size_t)shift;
 
     size_w bufBaseOffset = startFileOff - (size_w)shift2;
@@ -895,7 +898,9 @@ void HexView::paintEvent(QPaintEvent *event)
 
     // ── Draw line by line ─────────────────────────────────────────────────────
     // Compute conflict layout once for all bookmarks before the draw loop.
-    const QVector<BmLayout> bmLayout = computeBookmarkLayout();
+    const QVector<BmLayout> bmLayout = bookmarksVisibleForCurrentSource()
+        ? computeBookmarkLayout()
+        : QVector<BmLayout>();
     for (size_w i = first; i <= last; i++) {
         size_w lineDataOff = (i - first) * (size_w)m_nBytesPerLine;
         size_t len = (lineDataOff < (size_w)buflen)
@@ -919,8 +924,9 @@ void HexView::paintEvent(QPaintEvent *event)
     // line.  Expanded strips can be clamped to the viewport top while their
     // start line has already scrolled away; tying drawing to the line loop makes
     // those otherwise-visible strips vanish.
+    if (bookmarksVisibleForCurrentSource())
     {
-        const size_w fileSize = m_pDataSeq->size();
+        const size_w fileSize = size();
         QVector<int> visibleBms;
         visibleBms.reserve(m_bookmarks.size());
 

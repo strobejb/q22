@@ -58,7 +58,7 @@ public:
 
 	// sequence construction
 	sequence();
-	~sequence();
+	virtual ~sequence();
 
 	long addref()
 	{
@@ -83,9 +83,9 @@ public:
 	size_w		replace_file(const std::string &filename, size_w index, bool linkto);
 	size_w		insert_file(const std::string &filename, size_w index, bool linkto);
 
-	bool		save(const std::string &filename = std::string());
-	bool		clear();
-	bool		isreadonly();
+	virtual bool		save(const std::string &filename = std::string());
+	virtual bool		clear();
+	virtual bool		isreadonly();
 
 	//
 	// initialize from an in-memory buffer
@@ -95,21 +95,21 @@ public:
 	//
 	//	sequence statistics
 	//
-	size_w		size() const;
+	virtual size_w		size() const;
 
 	//
 	// sequence manipulation
 	//
-	bool		insert (size_w index, const seqchar *buf, size_w length);
+	virtual bool		insert (size_w index, const seqchar *buf, size_w length);
 	bool		insert (size_w index, const seqchar  val, size_w count);
 	bool		insert (size_w index, const seqchar  val);
-	bool		replace(size_w index, const seqchar *buf, size_w length, size_w erase_length);
-	bool		replace(size_w index, const seqchar *buf, size_w length);
+	virtual bool		replace(size_w index, const seqchar *buf, size_w length, size_w erase_length);
+	virtual bool		replace(size_w index, const seqchar *buf, size_w length);
 	bool		replace(size_w index, const seqchar  val, size_w count);
 	bool		replace(size_w index, const seqchar  val);
-	bool		erase  (size_w index, size_w len);
+	virtual bool		erase  (size_w index, size_w len);
 	bool		erase  (size_w index);
-	bool		append (const seqchar *buf, size_w len);
+	virtual bool		append (const seqchar *buf, size_w len);
 	bool		append (const seqchar val);
 	void		breakopt();
 
@@ -126,10 +126,10 @@ public:
 	//
 	// undo/redo support
 	//
-	bool		undo();
-	bool		redo();
-	bool		canundo() const;
-	bool		canredo() const;
+	virtual bool		undo();
+	virtual bool		redo();
+	virtual bool		canundo() const;
+	virtual bool		canredo() const;
 	void		group();
 	void		ungroup();
 	void		clear_undo();
@@ -144,7 +144,7 @@ public:
 	//
 	// access and iteration
 	//
-	size_t		render(size_w index, seqchar *buf, size_t len, seqchar_info *infobuf = 0) const;
+	virtual size_t		render(size_w index, seqchar *buf, size_t len, seqchar_info *infobuf = 0) const;
 	seqchar		peek(size_w index) const;
 	bool		poke(size_w index, seqchar val);
 	seqchar&    getlastmodref(size_w *offset = 0);

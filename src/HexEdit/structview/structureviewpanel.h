@@ -93,12 +93,16 @@ private:
     void showRootComboContextMenu(const QPoint &pos);
     void showHeaderContextMenu(int column, const QPoint &globalPos);
     void showOptionsContextMenu(int column, const QPoint &globalPos, bool includeAllColumns, const QModelIndex &rowIndex = QModelIndex());
+    void configureStructureGridColumns(bool restoreSavedState);
+    void saveStructureGridHeaderState() const;
     void focusSubtree(const QModelIndex &index);
     void expandSubtree(const QModelIndex &index);
     void showGridPage();
     void showSourcePage(TypeDecl *typeDecl = nullptr);
     void showLogPage();
     void updateContentFramePage();
+    bool currentSourceFrameHasNoStructure() const;
+    void updateNoStructureView();
     void locateIndexInSource(const QModelIndex &index);
     bool locateLogDiagnosticAt(const QPoint &viewportPos);
     bool logDiagnosticAt(const QPoint &viewportPos, QString *path, int *lineNo) const;
@@ -114,6 +118,7 @@ private:
     void setUseHexadecimalValues(bool enabled);
     void setUseHexadecimalOffsets(bool enabled);
     void setUseRelativeOffsets(bool enabled);
+    void setSeparateTypeColumn(bool enabled);
     void updateHexViewSelection(const QModelIndex &current);
     StructureRow *openAsRowForIndex(const QModelIndex &index) const;
     TypeDecl *resolvedOpenAsRootType(const StructureRow *row) const;
@@ -136,8 +141,12 @@ private:
     void setSourceStackActiveHighlightVisible(bool visible);
     void clearSourceStack();
     void removeSourceFrameAt(int index);
+    void captureActiveSourceFrameTreeState();
+    bool restoreActiveSourceFrameTreeState();
     void applyPendingRestore();
     QModelIndex findIndexByIdentity(const QModelIndex &parent, const QString &name, uint64_t offset) const;
+    QVector<QPair<QString, uint64_t>> treePathForIndex(const QModelIndex &index) const;
+    QModelIndex findIndexByTreePath(const QVector<QPair<QString, uint64_t>> &path) const;
     void clearHexViewOverlay();
     void setHexViewSelectionFromStructure(size_w start, size_w end);
     bool explicitRootOffset(TypeDecl *rootType, uint64_t *offset) const;
@@ -168,6 +177,7 @@ private:
     QPlainTextEdit             *m_sourceView = nullptr;
     QPlainTextEdit             *m_logView = nullptr;
     QLabel                     *m_loadErrorView = nullptr;
+    QLabel                     *m_noStructureView = nullptr;
     QLabel                     *m_statusLabel = nullptr;
     QWidget                    *m_sourceStackWidget = nullptr;
     QVBoxLayout                *m_sourceStackLayout = nullptr;
@@ -182,6 +192,7 @@ private:
     bool                        m_useHexadecimalValues = false;
     bool                        m_useHexadecimalOffsets = true;
     bool                        m_useRelativeOffsets = true;
+    bool                        m_separateTypeColumn = false;
     bool                        m_sortRootComboByDetail = false;
     bool                        m_preserveRootComboSelectionOnce = false;
     bool                        m_updatingHexViewFromStructure = false;
@@ -195,6 +206,11 @@ private:
     QString                     m_pendingRestoreName;
     uint64_t                    m_pendingRestoreOffset = 0;
     bool                        m_hasPendingRestore = false;
+    using TreePath = QVector<QPair<QString, uint64_t>>;
+    QList<TreePath>             m_pendingTreeExpandedPaths;
+    TreePath                    m_pendingTreeSelectedPath;
+    int                         m_pendingTreeScrollValue = 0;
+    bool                        m_hasPendingTreeState = false;
 
     struct SourceFrame
     {
@@ -211,6 +227,10 @@ private:
         QString transform;
         QString tempFilePath;
         std::shared_ptr<sequence> transformedSource;
+        QList<TreePath> expandedTreePaths;
+        TreePath selectedTreePath;
+        int treeScrollValue = 0;
+        bool hasTreeState = false;
     };
     QList<SourceFrame>          m_sourceStack;
     int                         m_activeSourceFrame = -1;

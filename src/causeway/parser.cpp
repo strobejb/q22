@@ -301,10 +301,11 @@ bool Parser::ParseByteSequence(vector<uint8_t> *bytes)
 //   case(x)          -- selector matched against the owning array index
 //   terminated_by(x) -- per-element stop condition
 //   optional(x)      -- whole-tag gating condition
+//   nested(...)      -- open-as metadata for the generated dynamic row
 // Add more here -- TOK_NULL-terminated -- as more wrapped roles are needed.
 static TOKEN kDynamicTagValueWrappers[] = {
 	TOK_NAME, TOK_CASE, TOK_TYPE, TOK_OFFSET, TOK_COUNT,
-	TOK_MAXCOUNT, TOK_MAPPER, TOK_TERMINATEDBY, TOK_TERMINATOR, TOK_OPTIONAL, TOK_CONTAINER, TOK_NULL
+	TOK_MAXCOUNT, TOK_MAPPER, TOK_TERMINATEDBY, TOK_TERMINATOR, TOK_OPTIONAL, TOK_CONTAINER, TOK_OPENAS, TOK_NULL
 };
 
 static TOKEN kEmitTagValueWrappers[] = {

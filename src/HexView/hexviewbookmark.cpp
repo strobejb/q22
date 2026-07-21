@@ -140,7 +140,7 @@ QFont HexView::noteFont() const
 // variable (e.g. m_nNoteMaxW) and call setupScrollbars() after a drag.
 int HexView::noteStripExtraColumns() const
 {
-    if (m_bookmarks.isEmpty() || m_nFontWidth <= 0)
+    if (!bookmarksVisibleForCurrentSource() || m_bookmarks.isEmpty() || m_nFontWidth <= 0)
         return 0;
     // Gap (6 em-widths) + triangle pointer + maximum strip width, rounded up.
     const int extraPx = m_nFontWidth * 6 + kNoteTriW + kNoteMaxW;
@@ -148,6 +148,11 @@ int HexView::noteStripExtraColumns() const
 }
 
 // ── Bookmark management ───────────────────────────────────────────────────────
+
+bool HexView::bookmarksVisibleForCurrentSource() const
+{
+    return !m_usingViewSource;
+}
 
 // Comparison used to keep m_bookmarks sorted at all times.
 // Primary key: offset ascending — bookmarks appear top-to-bottom on screen.
@@ -621,7 +626,7 @@ HitTestRegion HexView::hitTestBookmarkRangeStepper(const NoteStripGeom &geom, in
 
 int HexView::bookmarkAreaCenterX() const
 {
-    if (!m_pDataSeq || m_nBytesPerLine <= 0 || m_nFontWidth <= 0 || m_nFontHeight <= 0)
+    if (!bookmarksVisibleForCurrentSource() || !m_pDataSeq || m_nBytesPerLine <= 0 || m_nFontWidth <= 0 || m_nFontHeight <= 0)
         return -1;
 
     const int viewW = viewport()->width();
@@ -668,6 +673,9 @@ bool HexView::bookmarkRangeIntersectsViewport(size_w offset, size_w length) cons
 
 bool HexView::shouldShowBookmarkAddButton() const
 {
+    if (!bookmarksVisibleForCurrentSource())
+        return false;
+
     const size_w selSize = selectionSize();
     if (selSize == 0 || m_nSelectionMode != SEL_NONE || !bookmarkRangeIntersectsViewport(selectionStart(), selSize))
         return false;
@@ -701,6 +709,9 @@ QRect HexView::bookmarkAreaPopupAnchorRect(int y, int height) const
 
 QRect HexView::bookmarkAreaButtonRect(BookmarkAreaButton button) const
 {
+    if (!bookmarksVisibleForCurrentSource())
+        return QRect();
+
     if (button == BOOKMARK_LIST && m_bookmarks.isEmpty())
         return QRect();
     if (button == BOOKMARK_ADD && !shouldShowBookmarkAddButton())
@@ -757,6 +768,9 @@ void HexView::setBookmarkAreaButtonVisible(BookmarkAreaButton button, bool visib
 
 void HexView::setBookmarkAreaButtonsVisible(bool visible)
 {
+    if (!bookmarksVisibleForCurrentSource())
+        visible = false;
+
     const bool showAdd  = visible && shouldShowBookmarkAddButton();
     bool       showList = visible && !m_bookmarks.isEmpty();
     if (showAdd && showList)

@@ -118,6 +118,7 @@ private slots:
     void layoutKeepsRangeEditActiveInConflictGroup();
     void widgetHighlightUsesRangeEditingBookmarkColour();
     void widgetHitTestUsesRenderedBookmarkGeometry();
+    void widgetViewSliceClampsDataAndHidesParentBookmarks();
 };
 
 void BookmarkTests::rangeDragDeltaStartsAtMouseDownAndAmplifiesHorizontally()
@@ -504,6 +505,46 @@ void BookmarkTests::widgetHitTestUsesRenderedBookmarkGeometry()
 
     QCOMPARE(idx, 0);
     QVERIFY(hit == HVHT_BOOKMARK_OFFSET || hit == HVHT_BOOKMARK || hit == HVHT_BOOKMARK_LENGTH);
+}
+
+void BookmarkTests::widgetViewSliceClampsDataAndHidesParentBookmarks()
+{
+    // Scenario: Structure View opens a raw nested slice from a larger parent
+    // file that already has bookmarks.
+    // Expected: HexView exposes only the slice bytes and suppresses parent-file
+    // bookmark affordances without deleting the stored bookmark list.
+    // Regression guard: raw ISO child files were selected as a small range but
+    // the viewport still scrolled/rendered through the parent ISO data and drew
+    // parent bookmarks.
+    HexView hv;
+    initHexView(hv, 512);
+    hv.setBookmarks({bm(64, 160, 0)});
+    hv.expandBookmark(0);
+    hv.scrollHEnd();
+
+    const HexView::NoteStripGeom geom = noteStripGeomForTest(hv, hv.bookmarks().first());
+    QVERIFY(geom.valid);
+    int idx = -1;
+    const QPoint hitPoint(geom.rect.left() + 5, geom.rect.center().y());
+    QVERIFY(hitTestForTest(hv, hitPoint, &idx) != HVHT_NONE);
+
+    QVERIFY(hv.setViewSlice(100, 8));
+    QCOMPARE(hv.size(), size_w(8));
+    QCOMPARE(hv.bookmarks().size(), 1);
+
+    uint8_t buffer[16] = {};
+    QCOMPARE(hv.getData(0, buffer, sizeof(buffer)), size_t(8));
+    for (int i = 0; i < 8; ++i)
+        QCOMPARE(buffer[i], uint8_t((100 + i) & 0xff));
+    QCOMPARE(hv.getData(8, buffer, sizeof(buffer)), size_t(0));
+
+    idx = -1;
+    const HitTestRegion hiddenHit = hitTestForTest(hv, hitPoint, &idx);
+    QVERIFY(hiddenHit != HVHT_BOOKMARK);
+    QVERIFY(hiddenHit != HVHT_BOOKMARK_OFFSET);
+    QVERIFY(hiddenHit != HVHT_BOOKMARK_LENGTH);
+    QVERIFY(hiddenHit != HVHT_BOOKMARK_COLLAPSED);
+    QCOMPARE(idx, -1);
 }
 
 QTEST_MAIN(BookmarkTests)

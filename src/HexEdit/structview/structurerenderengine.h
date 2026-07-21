@@ -128,6 +128,7 @@ private:
         ExprNode *stopExpr = nullptr;
         ExprNode *terminatorModeExpr = nullptr;
         ExprNode *conditionExpr = nullptr;
+        ExprNode *openAsExpr = nullptr;
         DynamicMapper mapper = DynamicMapper::Direct;
         bool attachToMappedContainer = false;
     };
@@ -308,7 +309,8 @@ private:
                           ExprNode **condition,
                           DynamicMapper *mapper,
                           bool *isNameSource,
-                          bool *isCaseSelector = nullptr) const;
+                          bool *isCaseSelector = nullptr,
+                          ExprNode **openAs = nullptr) const;
     bool dynamicContainerArgs(ExprNode *expr, ExprNode **typeName) const;
     bool emitArgs(ExprNode *expr,
                   ExprNode **destination,
@@ -343,6 +345,7 @@ private:
                        QString *transform = nullptr, ExprNode **transformAlgorithmField = nullptr,
                        ExprNode **condition = nullptr) const;
     void applyOpenAsTag(StructureRow *target, TypeDecl *typeDecl, StructureRow *scope);
+    void applyOpenAsExpression(StructureRow *target, StructureRow *scope, ExprNode *expr);
     void linkWasmFunctionCodeTargets(StructureRow *root);
     void linkWasmSemanticFunctionCodeTargets(StructureRow *root);
     bool emitDestinationArgs(ExprNode *expr,

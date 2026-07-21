@@ -4169,6 +4169,7 @@ void StructureRenderEngine::collectDynamicArrayRequests(StructureRow *row)
         ExprNode *stopExpr = nullptr;
         ExprNode *terminatorModeExpr = nullptr;
         ExprNode *conditionExpr = nullptr;
+        ExprNode *openAsExpr = nullptr;
         DynamicMapper mapper = DynamicMapper::Direct;
         bool isCaseSelector = false;
         if (!dynamicArrayArgs(tag->expr,
@@ -4182,7 +4183,8 @@ void StructureRenderEngine::collectDynamicArrayRequests(StructureRow *row)
                               &conditionExpr,
                               &mapper,
                               nullptr,
-                              &isCaseSelector))
+                              &isCaseSelector,
+                              &openAsExpr))
             continue;
 
         // dynamic_array mirrors dynamic_struct for directory arrays: when the
@@ -4263,6 +4265,7 @@ void StructureRenderEngine::collectDynamicArrayRequests(StructureRow *row)
             stopExpr,
             terminatorModeExpr,
             conditionExpr,
+            openAsExpr,
             mapper,
             attachToMappedContainer
         });
@@ -4418,6 +4421,8 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
                                      QString::fromLatin1(StructureBranchIcons::kBlueEntityArray),
                                      QString::fromLatin1(StructureBranchIcons::kGrayEntityArray));
         }
+        if (request.openAsExpr)
+            applyOpenAsExpression(arrayRow.get(), request.owner, request.openAsExpr);
 
         // Check once whether the element type declares sub-arrays.  Primitive
         // element types (DWORD, WORD, CHAR, thunk unions, …) never do, so we
@@ -4429,28 +4434,34 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
         // whichever array contains elements of this type.
         bool elementTypeHasSubArrays = false;
         ExprNode *nameSourceTagExpr = nullptr;
-        for (Tag *tag = request.typeDecl ? request.typeDecl->tagList : nullptr; tag; tag = tag->link)
-        {
-            if (tag->tok != TOK_DYNAMICARRAY)
-                continue;
-            elementTypeHasSubArrays = true;
-
-            if (!nameSourceTagExpr)
+        const auto scanElementTagsForDynamicArrays = [&](Tag *tags) {
+            for (Tag *tag = tags; tag; tag = tag->link)
             {
-                bool isNameSource = false;
-                ExprNode *nameSourceTypeNameExpr = nullptr;
-                if (dynamicArrayArgs(tag->expr, nullptr, nullptr, &nameSourceTypeNameExpr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &isNameSource)
-                    && isNameSource)
+                if (tag->tok != TOK_DYNAMICARRAY)
+                    continue;
+                elementTypeHasSubArrays = true;
+
+                if (!nameSourceTagExpr)
                 {
-                    Type *nameSourceType = nameSourceTypeNameExpr && nameSourceTypeNameExpr->str
-                        ? typeInDecl(findTypeDecl(nameSourceTypeNameExpr->str), nameSourceTypeNameExpr->str)
-                        : nullptr;
-                    Type *nameSourceBase = BaseNode(nameSourceType);
-                    if (nameSourceBase && (nameSourceBase->ty == typeCHAR || nameSourceBase->ty == typeWCHAR))
-                        nameSourceTagExpr = tag->expr;
+                    bool isNameSource = false;
+                    ExprNode *nameSourceTypeNameExpr = nullptr;
+                    if (dynamicArrayArgs(tag->expr, nullptr, nullptr, &nameSourceTypeNameExpr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &isNameSource)
+                        && isNameSource)
+                    {
+                        Type *nameSourceType = nameSourceTypeNameExpr && nameSourceTypeNameExpr->str
+                            ? typeInDecl(findTypeDecl(nameSourceTypeNameExpr->str), nameSourceTypeNameExpr->str)
+                            : nullptr;
+                        Type *nameSourceBase = BaseNode(nameSourceType);
+                        if (nameSourceBase && (nameSourceBase->ty == typeCHAR || nameSourceBase->ty == typeWCHAR))
+                            nameSourceTagExpr = tag->expr;
+                    }
                 }
             }
-        }
+        };
+        scanElementTagsForDynamicArrays(request.typeDecl ? request.typeDecl->tagList : nullptr);
+        scanElementTagsForDynamicArrays(request.typeDecl ? elementTagList(request.typeDecl->tagList) : nullptr);
+        if (!elementTypeHasSubArrays && typeContainsTag(request.renderType, TOK_DYNAMICARRAY))
+            elementTypeHasSubArrays = true;
 
         uint64_t length = 0;
         uint64_t logicalIndex = 0;
@@ -4481,9 +4492,25 @@ void StructureRenderEngine::appendDynamicArrayRows(StructureRow *row)
 
             const uint64_t elementLength = formatType(elementRow.get(), request.renderType, request.typeDecl, elementOffset);
             elementRow->byteLength = elementLength;
+            applyOpenAsTag(elementRow.get(), elementRow->typeDecl, elementRow.get());
+            applyDiagnosticTags(elementRow.get(), elementRow->typeDecl, elementRow.get());
             collectNamedOffsetMaps(elementRow.get());
 
-            if (renderElement && nameSourceTagExpr)
+            ExprNode *elementNameExpr = nullptr;
+            if (renderElement && effectiveTag(elementRow.get(), elementRow->typeDecl, TOK_NAME, &elementNameExpr) && elementNameExpr)
+            {
+                const QString fieldName = rowNameFragment(fieldNameValue(elementRow.get(),
+                                                                         request.renderType,
+                                                                         elementNameExpr,
+                                                                         elementOffset));
+                if (!fieldName.isEmpty())
+                {
+                    elementRow->nameIdentifier = arrayAliasPrefix() + fieldName;
+                    elementRow->name += elementRow->nameIdentifier;
+                }
+            }
+
+            if (renderElement && elementRow->nameIdentifier.isEmpty() && nameSourceTagExpr)
             {
                 const QString fieldName = dynamicArrayNameString(elementRow.get(), nameSourceTagExpr);
                 if (!fieldName.isEmpty())
@@ -5866,7 +5893,8 @@ bool StructureRenderEngine::dynamicArrayArgs(ExprNode *expr,
                                              ExprNode **condition,
                                              DynamicMapper *mapper,
                                              bool *isNameSource,
-                                             bool *isCaseSelector) const
+                                             bool *isCaseSelector,
+                                             ExprNode **openAs) const
 {
     std::vector<ExprNode *> args;
     appendCommaArgs(expr, &args);
@@ -5879,6 +5907,7 @@ bool StructureRenderEngine::dynamicArrayArgs(ExprNode *expr,
     ExprNode *stopExpr = nullptr;
     ExprNode *terminatorModeExpr = nullptr;
     ExprNode *conditionExpr = nullptr;
+    ExprNode *openAsExpr = nullptr;
     DynamicMapper mapperValue = DynamicMapper::Direct;
     bool nameSource = false;
     bool caseSelector = false;
@@ -5918,6 +5947,9 @@ bool StructureRenderEngine::dynamicArrayArgs(ExprNode *expr,
             break;
         case TOK_OPTIONAL:
             conditionExpr = inner;
+            break;
+        case TOK_OPENAS:
+            openAsExpr = inner;
             break;
         case TOK_MAPPER:
             if (!inner || !inner->str)
@@ -5959,6 +5991,8 @@ bool StructureRenderEngine::dynamicArrayArgs(ExprNode *expr,
         *condition = conditionExpr;
     if (mapper)
         *mapper = mapperValue;
+    if (openAs)
+        *openAs = openAsExpr;
     return true;
 }
 
@@ -8035,6 +8069,14 @@ void StructureRenderEngine::applyOpenAsTag(StructureRow *target, TypeDecl *typeD
             return;
     }
 
+    applyOpenAsExpression(target, scope, expr);
+}
+
+void StructureRenderEngine::applyOpenAsExpression(StructureRow *target, StructureRow *scope, ExprNode *expr)
+{
+    if (!target || !scope || !expr)
+        return;
+
     ExprNode *typeExpr = nullptr;
     QString offsetSpace;
     ExprNode *offsetExpr = nullptr;
@@ -8114,12 +8156,9 @@ void StructureRenderEngine::applyOpenAsTag(StructureRow *target, TypeDecl *typeD
     target->openAsTransform = transform;
     target->openAsOffset = absoluteOffset;
     target->openAsByteLength = byteLength;
-    if (!transform.isEmpty())
-    {
-        target->branchIconPath = QString::fromLatin1(StructureBranchIcons::kBlueNested);
-        target->branchOpenIconPath = target->branchIconPath;
-        target->branchEmptyIconPath = QString::fromLatin1(StructureBranchIcons::kGrayNested);
-    }
+    target->branchIconPath = QString::fromLatin1(StructureBranchIcons::kBlueNested);
+    target->branchOpenIconPath = target->branchIconPath;
+    target->branchEmptyIconPath = QString::fromLatin1(StructureBranchIcons::kGrayNested);
 }
 
 void StructureRenderEngine::linkWasmFunctionCodeTargets(StructureRow *root)

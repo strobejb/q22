@@ -434,6 +434,18 @@ void AppSettings::setPrefNestedSourceBreadcrumb(bool on)
     s.setValue("structureView/nestedSourceBreadcrumb", on);
 }
 
+bool AppSettings::prefStructureViewSeparateTypeColumn()
+{
+    OPEN_SETTINGS;
+    return s.value("structureView/separateTypeColumn", false).toBool();
+}
+
+void AppSettings::setPrefStructureViewSeparateTypeColumn(bool on)
+{
+    OPEN_SETTINGS;
+    s.setValue("structureView/separateTypeColumn", on);
+}
+
 QStringList AppSettings::sidePanelSectionOrder()
 {
     OPEN_SETTINGS;
@@ -484,12 +496,27 @@ void AppSettings::setDisassemblyPanelWidth(int width)
 
 QByteArray AppSettings::structureViewGridHeaderState()
 {
-    OPEN_SETTINGS;
-    return byteArrayFromSetting(s.value("structureView/gridHeaderState"));
+    return structureViewGridHeaderState(false);
 }
 
 void AppSettings::setStructureViewGridHeaderState(const QByteArray &state)
 {
+    setStructureViewGridHeaderState(state, false);
+}
+
+QByteArray AppSettings::structureViewGridHeaderState(bool separateTypeColumn)
+{
     OPEN_SETTINGS;
-    s.setValue("structureView/gridHeaderState", decimalByteList(state));
+    return byteArrayFromSetting(s.value(separateTypeColumn
+        ? "structureView/gridHeaderStateSeparateType"
+        : "structureView/gridHeaderState"));
+}
+
+void AppSettings::setStructureViewGridHeaderState(const QByteArray &state, bool separateTypeColumn)
+{
+    OPEN_SETTINGS;
+    s.setValue(separateTypeColumn
+                   ? "structureView/gridHeaderStateSeparateType"
+                   : "structureView/gridHeaderState",
+               decimalByteList(state));
 }

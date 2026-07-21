@@ -119,7 +119,7 @@ bool HexView::findNext(size_w *result, uint options)
 
     bool   selScope  = (options & HVFF_SCOPE_SELECTION) != 0;
     size_w searchidx = selScope ? selectionStart() : m_nCursorOffset;
-    size_w searchlen = selScope ? selectionSize()  : m_pDataSeq->size();
+    size_w searchlen = selScope ? selectionSize()  : size();
 
     bool   matchCase = (options & HVFF_CASE_INSENSITIVE) == 0;
 
@@ -145,7 +145,7 @@ bool HexView::findNext(size_w *result, uint options)
 
         while (scanIdx < scanEnd) {
             size_w chunk = std::min((size_w)1000, scanEnd - scanIdx);
-            int blen = (int)m_pDataSeq->render(scanIdx, block, (size_t)chunk, nullptr);
+            int blen = (int)getData(scanIdx, block, (size_t)chunk);
             if (blen <= 0) break;
 
             int spos = 0, partial = -1, matchPos;
@@ -176,7 +176,7 @@ bool HexView::findNext(size_w *result, uint options)
     // ── Forward search ────────────────────────────────────────────────────────
     size_w rateBasePos = searchidx;
 
-    while (int len = (int)m_pDataSeq->render(searchidx, block, 1000, nullptr)) {
+    while (int len = (int)getData(searchidx, block, 1000)) {
         int pos     = 0;
         int partial = -1;
 

@@ -33,7 +33,7 @@ void HexView::setupScrollbars()
     ///if (m_nHScrollPos > m_nHScrollMax) m_nHScrollPos = 0;
     //u//pdatePinnedOffset();
 
-    size_w totalLines = numFileLines(m_pDataSeq->size());
+    size_w totalLines = numFileLines(size());
     m_nVScrollMax = totalLines > (size_w)m_nWindowLines
                     ? totalLines - (size_w)m_nWindowLines : 0;
 
@@ -91,7 +91,7 @@ bool HexView::pinToBottomCorner()
         repos = true;
     }
 
-    size_w totalLines = numFileLines(m_pDataSeq ? m_pDataSeq->size() : 0);
+    size_w totalLines = numFileLines(m_pDataSeq ? size() : 0);
     if (totalLines > 0 && m_nVScrollPos + (size_w)m_nWindowLines > totalLines) {
         m_nVScrollPos = totalLines > (size_w)m_nWindowLines
                         ? totalLines - (size_w)m_nWindowLines : 0;
@@ -117,7 +117,7 @@ void HexView::recalcPositions()
     //RECT rect;
     //GetClientRect(m_hWnd, &rect);
 
-    onLengthChanged(m_pDataSeq->size());
+    onLengthChanged(size());
 
     m_nDataShift %= m_nBytesPerLine;
     setGrouping(m_nBytesPerColumn, false);
@@ -162,7 +162,7 @@ void HexView::scroll(int dx, int dy)
 
 bool HexView::scrollTo(size_w offset)
 {
-    if (!m_pDataSeq || offset > m_pDataSeq->size()) return false;
+    if (!m_pDataSeq || offset > size()) return false;
     if (m_nBytesPerLine == 0) return false;
 
     bool fRedraw = false;
@@ -185,7 +185,7 @@ bool HexView::scrollTo(size_w offset)
 
 bool HexView::scrollTop(size_w offset)
 {
-    if (!m_pDataSeq || offset > m_pDataSeq->size()) return false;
+    if (!m_pDataSeq || offset > size()) return false;
 
     pinToOffset(offset);
     m_nVScrollPinned = offset;
@@ -196,7 +196,7 @@ bool HexView::scrollTop(size_w offset)
 
 bool HexView::scrollCenter(size_w offset)
 {
-    if (!m_pDataSeq || offset > m_pDataSeq->size()) return false;
+    if (!m_pDataSeq || offset > size()) return false;
     if (m_nBytesPerLine == 0) return false;
 
     const size_w line = offset / (size_w)m_nBytesPerLine;
@@ -213,12 +213,13 @@ bool HexView::scrollCenter(size_w offset)
 // when the user clicks a strip that is already on screen.
 bool HexView::scrollCenterIfOffScreen(size_w offset, size_w length)
 {
-    if (!m_pDataSeq || offset > m_pDataSeq->size()) return false;
+    if (!m_pDataSeq || offset > size()) return false;
     if (m_nBytesPerLine == 0) return false;
     const size_w row = offset / (size_w)m_nBytesPerLine;
     if (row >= m_nVScrollPos && row < m_nVScrollPos + (size_w)m_nWindowLines)
         return false;   // already visible — don't touch the scroll position
-    const size_w available = m_pDataSeq->size() > offset ? m_pDataSeq->size() - offset : 0;
+    const size_w viewSize = size();
+    const size_w available = viewSize > offset ? viewSize - offset : 0;
     const size_w clampedLength = qMin(length, available);
     if (clampedLength <= 1)
         return scrollCenter(offset);

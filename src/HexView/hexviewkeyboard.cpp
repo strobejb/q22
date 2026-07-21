@@ -274,10 +274,10 @@ void HexView::keyPressEvent(QKeyEvent *event)
             scroll(1, 0);
             return;
         }
-        if (m_nCursorOffset < m_pDataSeq->size()) {
+        if (m_nCursorOffset < size()) {
             m_nCursorOffset++;
-            if (m_nCursorOffset == m_pDataSeq->size() &&
-                m_pDataSeq->size() % (size_w)m_nBytesPerLine == 0)
+            if (m_nCursorOffset == size() &&
+                size() % (size_w)m_nBytesPerLine == 0)
                 m_fCursorAdjustment = true;
             else
                 m_fCursorAdjustment = false;
@@ -302,13 +302,13 @@ void HexView::keyPressEvent(QKeyEvent *event)
         }
         {
             size_w step = std::min((size_w)m_nBytesPerLine,
-                                   m_pDataSeq->size() - m_nCursorOffset);
+                                   size() - m_nCursorOffset);
             m_nCursorOffset += step;
 
-            if (m_nCursorOffset >= m_pDataSeq->size() && !m_fCursorAdjustment) {
+            if (m_nCursorOffset >= size() && !m_fCursorAdjustment) {
                 if (oldoffset % (size_w)m_nBytesPerLine <
-                        m_pDataSeq->size() % (size_w)m_nBytesPerLine ||
-                    m_pDataSeq->size() % (size_w)m_nBytesPerLine == 0)
+                        size() % (size_w)m_nBytesPerLine ||
+                    size() % (size_w)m_nBytesPerLine == 0)
                 {
                     m_nCursorOffset = oldoffset;
                     fForceUpdate = true;
@@ -333,18 +333,18 @@ void HexView::keyPressEvent(QKeyEvent *event)
 
     case Qt::Key_End:
         if (fCtrlDown) {
-            m_nCursorOffset = m_pDataSeq->size();
+            m_nCursorOffset = size();
             if (m_nCursorOffset % (size_w)m_nBytesPerLine == 0)
                 m_fCursorAdjustment = true;
             // scroll to bottom
             {
-                size_w total = numFileLines(m_pDataSeq->size());
+                size_w total = numFileLines(size());
                 if (total > (size_w)m_nWindowLines)
                     scroll(0, (int)(total - (size_w)m_nWindowLines - m_nVScrollPos));
             }
         } else {
             m_nCursorOffset += (size_w)m_nDataShift;
-            size_w adjdocsize = m_pDataSeq->size() + (size_w)m_nDataShift;
+            size_w adjdocsize = size() + (size_w)m_nDataShift;
 
             if (!m_fCursorAdjustment) {
                 if (adjdocsize >= (size_w)m_nBytesPerLine &&
@@ -372,10 +372,10 @@ void HexView::keyPressEvent(QKeyEvent *event)
         break;
 
     case Qt::Key_PageDown:
-        m_nCursorOffset += std::min(m_pDataSeq->size() - m_nCursorOffset,
+        m_nCursorOffset += std::min(size() - m_nCursorOffset,
                                     (size_w)m_nBytesPerLine * (size_w)m_nWindowLines);
-        if (m_nCursorOffset >= m_pDataSeq->size() &&
-            m_pDataSeq->size() % (size_w)m_nBytesPerLine == 0)
+        if (m_nCursorOffset >= size() &&
+            size() % (size_w)m_nBytesPerLine == 0)
             m_fCursorAdjustment = true;
         break;
 

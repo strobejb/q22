@@ -241,6 +241,7 @@ public:
     bool   initBuf(const uint8_t *buf, size_t len, bool copy, bool readonly);
     bool   openFile(const QString &path, uint flags = HVOF_DEFAULT);
     bool   setViewSource(std::shared_ptr<sequence> source);
+    bool   setViewSlice(size_w baseOffset, size_w length);
     void   clearViewSource();
     bool   isUsingViewSource() const { return m_usingViewSource; }
     bool   saveFile(const QString &path, uint flags = HVOF_DEFAULT);
@@ -296,6 +297,7 @@ public:
 
     // Data access
     size_t getData(size_w offset, uint8_t *buf, size_t len);
+    size_t getSourceData(size_w offset, uint8_t *buf, size_t len);
     size_t setData(size_w offset, uint8_t *buf, size_t len);
 
     // Import helpers: write at current cursor and advance, and zero-pad up to an address
@@ -482,6 +484,7 @@ private:
 
     // ── Bookmarks ─────────────────────────────────────────────────────────────
     int           findBookmark(size_w startoff, size_w endoff) const;
+    bool          bookmarksVisibleForCurrentSource() const;
     int           bookmarkAreaCenterX() const;
     int           bookmarkRangeMidpointY(size_w offset, size_w length) const;
     bool          bookmarkRangeIntersectsViewport(size_w offset, size_w length) const;

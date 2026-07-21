@@ -237,15 +237,23 @@ typedef struct _ZIP_CENTRAL_DIRECTORY_SEQUENCE
     [
         count(4096),
         element(name(FileName),
-                nested(type(auto),
-                       offset(RelativeOffsetOfLocalHeader
-                              + 30
-                              + root::value_at(RelativeOffsetOfLocalHeader + 26, word)
-                              + root::value_at(RelativeOffsetOfLocalHeader + 28, word)),
-                       extent(CompressedSize),
-                       transform(algorithm(CompressionMethod)),
-                       optional(CompressedSize > 0 && (GeneralPurposeBitFlag & ZIP_FLAG_ENCRYPTED) == 0),
-                       name(FileName)))
+                dynamic_array(name(CompressedData),
+                              type(BYTE),
+                              offset(RelativeOffsetOfLocalHeader
+                                     + 30
+                                     + root::value_at(RelativeOffsetOfLocalHeader + 26, word)
+                                     + root::value_at(RelativeOffsetOfLocalHeader + 28, word)),
+                              count(CompressedSize),
+                              nested(type(auto),
+                                     offset(RelativeOffsetOfLocalHeader
+                                            + 30
+                                            + root::value_at(RelativeOffsetOfLocalHeader + 26, word)
+                                            + root::value_at(RelativeOffsetOfLocalHeader + 28, word)),
+                                     extent(CompressedSize),
+                                     transform(algorithm(CompressionMethod)),
+                                     optional(CompressedSize > 0 && (GeneralPurposeBitFlag & ZIP_FLAG_ENCRYPTED) == 0),
+                                     name(FileName)),
+                              optional(CompressedSize > 0 && (GeneralPurposeBitFlag & ZIP_FLAG_ENCRYPTED) == 0)))
     ]
     ZIP_CENTRAL_DIRECTORY_FILE_HEADER centralDirectory[];
 } ZIP_CENTRAL_DIRECTORY_SEQUENCE, *PZIP_CENTRAL_DIRECTORY_SEQUENCE;
@@ -277,15 +285,23 @@ typedef struct _ZIP
         offset(eocd.OffsetOfStartOfCentralDirectory),
         count(eocd.TotalEntries),
         element(name(FileName),
-                nested(type(auto),
-                       offset(RelativeOffsetOfLocalHeader
-                              + 30
-                              + root::value_at(RelativeOffsetOfLocalHeader + 26, word)
-                              + root::value_at(RelativeOffsetOfLocalHeader + 28, word)),
-                       extent(CompressedSize),
-                       transform(algorithm(CompressionMethod)),
-                       optional(CompressedSize > 0 && (GeneralPurposeBitFlag & ZIP_FLAG_ENCRYPTED) == 0),
-                       name(FileName)))
+                dynamic_array(name(CompressedData),
+                              type(BYTE),
+                              offset(RelativeOffsetOfLocalHeader
+                                     + 30
+                                     + root::value_at(RelativeOffsetOfLocalHeader + 26, word)
+                                     + root::value_at(RelativeOffsetOfLocalHeader + 28, word)),
+                              count(CompressedSize),
+                              nested(type(auto),
+                                     offset(RelativeOffsetOfLocalHeader
+                                            + 30
+                                            + root::value_at(RelativeOffsetOfLocalHeader + 26, word)
+                                            + root::value_at(RelativeOffsetOfLocalHeader + 28, word)),
+                                     extent(CompressedSize),
+                                     transform(algorithm(CompressionMethod)),
+                                     optional(CompressedSize > 0 && (GeneralPurposeBitFlag & ZIP_FLAG_ENCRYPTED) == 0),
+                                     name(FileName)),
+                              optional(CompressedSize > 0 && (GeneralPurposeBitFlag & ZIP_FLAG_ENCRYPTED) == 0)))
     ]
     ZIP_CENTRAL_DIRECTORY_FILE_HEADER centralDirectory[];
 } ZIP;

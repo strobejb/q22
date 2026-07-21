@@ -147,7 +147,7 @@ size_w HexView::offsetFromPhysCoord(int mx, int my, int *pane,
     if (x < 0) x = 0;
     if (y < 0) y = 0;
 
-    size_w seqsize    = m_pDataSeq ? m_pDataSeq->size() : 0;
+    size_w seqsize    = m_pDataSeq ? size() : 0;
     size_w adjdocsize = seqsize + (size_w)m_nDataShift;
 
     size_w offset = (size_w)(y + (int)m_nVScrollPos) * (size_w)m_nBytesPerLine;
@@ -278,6 +278,7 @@ HitTestRegion HexView::hitTest(int x, int y, int *bookmarkIdx)
     // Compute layout so we know which bookmarks are shown as full strips vs tabs.
     // Among overlapping hit targets return the smallest-span bookmark (drawn on
     // top); ties broken by higher storage index.
+    if (bookmarksVisibleForCurrentSource())
     {
         // Use treatMouseAsReleased=true so the layout matches the last rendered
         // frame (no button was held when that frame was drawn).  Without this,
@@ -349,7 +350,8 @@ HitTestRegion HexView::hitTest(int x, int y, int *bookmarkIdx)
 
     // Empty bookmark area to the right of the ASCII column.  This must run
     // before the main-area fallback because m_nTotalWidth includes note strips.
-    if ((!m_bookmarks.isEmpty() ||
+    if (bookmarksVisibleForCurrentSource() &&
+        (!m_bookmarks.isEmpty() ||
          (selectionSize() > 0 && m_nSelectionMode == SEL_NONE &&
           bookmarkRangeIntersectsViewport(selectionStart(), selectionSize()))) &&
             m_pDataSeq && m_nBytesPerLine > 0 &&
@@ -1038,7 +1040,7 @@ void HexView::contextMenuEvent(QContextMenuEvent *event)
             const int row = m_nFontHeight > 0 ? qMax(0, vp.y() / m_nFontHeight) : 0;
             size_w referenceOffset = (size_w)(m_nVScrollPos + row) * (size_w)qMax(1, m_nBytesPerLine);
             if (m_pDataSeq)
-                referenceOffset = qMin(referenceOffset, m_pDataSeq->size());
+                referenceOffset = qMin(referenceOffset, size());
             emit bookmarkAreaContextRequested(referenceOffset, anchorGlobal);
             return;
         }

@@ -59,16 +59,7 @@ typedef struct _ISO_DIRECTORY_RECORD
     ISO_U32_BOTH dataLength;
     ISO_RECORDING_DATE_TIME recordingDateTime;
 
-    [
-        bitflag(ISO_FILE_FLAGS),
-        dynamic_array(
-            name(FileData),
-            type(BYTE),
-            offset(extentLocation.le * 2048),
-            count(dataLength.le),
-            optional((fileFlags & ISO_FILE_FLAG_DIRECTORY) == 0 && dataLength.le != 0)
-        )
-    ]
+    [bitflag(ISO_FILE_FLAGS)]
     byte fileFlags;
 
     byte fileUnitSize;
@@ -88,6 +79,19 @@ typedef struct _ISO_DIRECTORY_RECORD
 // resume in the next block. count_as() makes a DirectoryEntries dynamic array's
 // logical count track bytes consumed rather than the number of rendered items.
 [
+    name(record.fileIdentifier),
+    dynamic_array(
+        name(FileData),
+        type(BYTE),
+        offset(record.extentLocation.le * 2048),
+        count(record.dataLength.le),
+        nested(type(auto),
+               offset(record.extentLocation.le * 2048),
+               extent(record.dataLength.le),
+               optional((record.fileFlags & ISO_FILE_FLAG_DIRECTORY) == 0 && record.dataLength.le != 0),
+               name(record.fileIdentifier)),
+        optional((record.fileFlags & ISO_FILE_FLAG_DIRECTORY) == 0 && record.dataLength.le != 0)
+    ),
     dynamic_array(
         name(DirectoryEntries),
         type(ISO_DIRECTORY_ITEM),

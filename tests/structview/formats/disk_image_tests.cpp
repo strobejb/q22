@@ -274,7 +274,7 @@ void StructViewDiskImageTests::builderRendersIsoDirectoryTreesAcrossSectorPaddin
 
     writeIsoDirectoryRecord(&iso,
                             secondRootSector * sectorSize,
-                            QByteArrayLiteral("SUB"),
+                            QByteArrayLiteral("BOOT"),
                             childSector,
                             sectorSize,
                             0x02);
@@ -314,6 +314,19 @@ void StructViewDiskImageTests::builderRendersIsoDirectoryTreesAcrossSectorPaddin
     QCOMPARE(rootEntries->children[2]->byteLength,
              uint64_t(secondRootSector * sectorSize - rootOffset));
     QCOMPARE(rootEntries->children[3]->absoluteOffset, uint64_t(secondRootSector * sectorSize));
+    QVERIFY2(rootEntries->children[1]->name.contains(QStringLiteral("ROOT.TXT;1")),
+             qPrintable(rootEntries->children[1]->name));
+    QVERIFY2(rootEntries->children[3]->name.contains(QStringLiteral("BOOT")),
+             qPrintable(rootEntries->children[3]->name));
+    QVERIFY(!rootEntries->children[1]->hasOpenAsTarget);
+    QVERIFY(rootEntries->children[1]->lazyChildLoader);
+    loadLazyChildren(rootEntries->children[1].get());
+    StructureRow *rootFileData = findChildNamed(rootEntries->children[1].get(), QStringLiteral("BYTE FileData[]"));
+    QVERIFY2(rootFileData, qPrintable(childNames(rootEntries->children[1].get())));
+    QVERIFY(rootFileData->hasOpenAsTarget);
+    QVERIFY(!rootFileData->branchIconPath.isEmpty());
+    QVERIFY(!rootEntries->children[3]->hasOpenAsTarget);
+    QVERIFY(rootEntries->children[3]->branchIconPath.isEmpty());
 
     StructureRow *subdirectoryRecord = findDescendantNamed(rootEntries->children[3].get(),
                                                             QStringLiteral("ISO_DIRECTORY_RECORD record"));
@@ -345,6 +358,21 @@ void StructViewDiskImageTests::builderRendersIsoDirectoryTreesAcrossSectorPaddin
     StructureRow *nestedIdentifier = findChildNamed(nestedFile, QStringLiteral("byte fileIdentifier[]"));
     QVERIFY2(nestedIdentifier, qPrintable(childNames(nestedFile)));
     QCOMPARE(nestedIdentifier->value, QStringLiteral("\"NEST.BIN;1\""));
+    QVERIFY2(childEntries->children[2]->name.contains(QStringLiteral("NEST.BIN;1")),
+             qPrintable(childEntries->children[2]->name));
+    QVERIFY(!childEntries->children[2]->hasOpenAsTarget);
+    QVERIFY(childEntries->children[2]->lazyChildLoader);
+    loadLazyChildren(childEntries->children[2].get());
+    StructureRow *nestedFileData = findChildNamed(childEntries->children[2].get(), QStringLiteral("BYTE FileData[]"));
+    QVERIFY2(nestedFileData, qPrintable(childNames(childEntries->children[2].get())));
+    QVERIFY(nestedFileData->hasOpenAsTarget);
+    QVERIFY(!nestedFileData->branchIconPath.isEmpty());
+    QVERIFY(!childEntries->children[0]->hasOpenAsTarget);
+    QVERIFY(childEntries->children[0]->branchIconPath.isEmpty());
+    QVERIFY(!childEntries->children[1]->hasOpenAsTarget);
+    QVERIFY(childEntries->children[1]->branchIconPath.isEmpty());
+    QCOMPARE(nestedFileData->openAsOffset, uint64_t(23 * sectorSize));
+    QCOMPARE(nestedFileData->openAsByteLength, uint64_t(1));
 }
 
 REGISTER_STRUCTVIEW_TEST(StructViewDiskImageTests)

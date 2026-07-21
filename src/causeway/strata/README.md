@@ -567,10 +567,32 @@ algorithms suppress the nested target for now.
 Use `optional(...)` inside `nested(...)` when the child source only exists for
 some independent discriminator condition, such as a ZIP encrypted-entry flag.
 
-Unlike most presentation/dynamic tags, `nested(...)` may be placed directly on
-an array declaration when the array container itself is the byte slice to open.
-Use `element(nested(...))` only when every array element independently defines a
-child source.
+Put `nested(...)` on the row that represents the bytes being opened, not on the
+metadata record that merely describes those bytes. For archives and file-system
+images this usually means the directory entry remains expandable metadata, while
+a real or generated payload child such as `CompressedData[]` or `FileData[]`
+carries the nested target:
+
+```c
+[count(entryCount),
+ element(name(FileName),
+         dynamic_array(name(CompressedData),
+                       type(BYTE),
+                       offset(payloadOffset),
+                       count(CompressedSize),
+                       nested(type(auto),
+                              offset(payloadOffset),
+                              extent(CompressedSize),
+                              transform(algorithm(CompressionMethod)),
+                              name(FileName))))]
+ENTRY entries[];
+```
+
+Unlike most presentation/dynamic tags, `nested(...)` may still be placed
+directly on an array declaration when the array container itself is the byte
+slice to open. Use `element(nested(...))` only when every array element is itself
+the independent child source and the element row has no useful metadata children
+that must remain browseable.
 
 ### Byte order
 
@@ -1001,6 +1023,7 @@ dynamic_array(type(ElemType), offset(expr), count(expr) | max_count(expr)
               [, mapper(direct | offset_map)]
               [, terminated_by(stop_condition)]
               [, terminator("hidden" | "shown")]
+              [, nested(...)]
               [, optional(condition)])
 ```
 
@@ -1016,6 +1039,7 @@ dynamic_array(type(ElemType), offset(expr), count(expr) | max_count(expr)
 - `mapper(offset_map)` — map `offset(expr)` through anonymous `offset_map(...)` containers before rendering; use this when the generated row should attach to a mapped dynamic container such as a PE section
 - `terminated_by(stop_condition)` — stop early when this per-element expression is true
 - `terminator("hidden"|"shown")` — optional visibility override for the matching terminator element; by default `[string]`/`format("string")` arrays and zero-terminated `char` arrays hide it, while struct/scalar arrays show it
+- `nested(...)` — mark the generated dynamic array row as the navigable source; use this for referenced payload children so the owning metadata row stays expandable
 - `optional(condition)` — render only when true
 
 ```c
@@ -1523,4 +1547,6 @@ byte CompressedData[];
 
 For trailer-indexed formats such as ZIP, it is fine to render both the local
 records and the central index/trailer records. They represent different parts of
-the file even if much of the metadata overlaps.
+the file even if much of the metadata overlaps. Put per-entry names on the
+central/index records, but keep `nested(...)` on a payload child row. A directory
+record with useful fields should not become the navigation leaf itself.

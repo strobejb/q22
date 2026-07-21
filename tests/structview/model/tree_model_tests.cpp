@@ -10,6 +10,7 @@ private slots:
     void modelSupportsHierarchyAndEditableCells();
     void modelAppliesTypeDisplayOptionsWithoutResettingRows();
     void modelBuildsExpandableRowsForStructFields();
+    void modelTreatsOpenAsRowsAsNavigationLeaves();
 };
 
 void StructViewTreeModelTests::modelHeadersMatchStructureGridColumns()
@@ -22,6 +23,7 @@ void StructViewTreeModelTests::modelHeadersMatchStructureGridColumns()
 
     QCOMPARE(model.columnCount(), int(StructureTreeModel::ColumnCount));
     QCOMPARE(model.headerData(StructureTreeModel::NameColumn, Qt::Horizontal).toString(), QStringLiteral("Name"));
+    QCOMPARE(model.headerData(StructureTreeModel::TypeColumn, Qt::Horizontal).toString(), QStringLiteral("Type"));
     QCOMPARE(model.headerData(StructureTreeModel::ValueColumn, Qt::Horizontal).toString(), QStringLiteral("Value"));
     QCOMPARE(model.headerData(StructureTreeModel::OffsetColumn, Qt::Horizontal).toString(), QStringLiteral("Offset"));
     QCOMPARE(model.headerData(StructureTreeModel::CommentColumn, Qt::Horizontal).toString(), QStringLiteral("Comment"));
@@ -177,6 +179,11 @@ void StructViewTreeModelTests::modelAppliesTypeDisplayOptionsWithoutResettingRow
     QVERIFY(changedSpy.count() > 0);
     QCOMPARE(model.rowForIndex(fieldIndex), fieldRow);
     QCOMPARE(model.data(fieldIndex).toString(), QStringLiteral("dword entry"));
+    model.setSeparateTypeColumn(true);
+    QCOMPARE(model.data(fieldIndex).toString(), QStringLiteral("entry"));
+    QCOMPARE(model.data(model.index(1, StructureTreeModel::TypeColumn, rootIndex)).toString(), QStringLiteral("dword"));
+    model.setSeparateTypeColumn(false);
+    QCOMPARE(model.data(fieldIndex).toString(), QStringLiteral("dword entry"));
     QCOMPARE(model.data(fieldOffset).toString(), QStringLiteral("20"));
 
     options.hexadecimalOffsets = true;
@@ -188,6 +195,16 @@ void StructViewTreeModelTests::modelAppliesTypeDisplayOptionsWithoutResettingRow
     options.hexadecimalOffsets = false;
     model.applyDisplayOptions(options);
     QCOMPARE(model.data(fieldOffset).toString(), QStringLiteral("+4"));
+
+    auto arrayEntry = std::make_unique<StructureRow>();
+    arrayEntry->setNameParts(QStringLiteral("[0]"), QStringLiteral("BOOT"));
+    std::vector<std::unique_ptr<StructureRow>> arrayRows;
+    arrayRows.push_back(std::move(arrayEntry));
+    StructureTreeModel arrayModel;
+    arrayModel.setRowsForTests(std::move(arrayRows));
+    arrayModel.setSeparateTypeColumn(true);
+    QCOMPARE(arrayModel.data(arrayModel.index(0, StructureTreeModel::NameColumn)).toString(), QStringLiteral("[0] BOOT"));
+    QCOMPARE(arrayModel.data(arrayModel.index(0, StructureTreeModel::TypeColumn)).toString(), QString());
 }
 
 void StructViewTreeModelTests::modelBuildsExpandableRowsForStructFields()
@@ -223,6 +240,56 @@ void StructViewTreeModelTests::modelBuildsExpandableRowsForStructFields()
     QCOMPARE(model.rowCount(rootIndex), 2);
     QCOMPARE(model.data(model.index(0, StructureTreeModel::NameColumn, rootIndex)).toString(),
              QStringLiteral("dword magic"));
+}
+
+void StructViewTreeModelTests::modelTreatsOpenAsRowsAsNavigationLeaves()
+{
+    // Scenario: an archive/directory entry row has both internal metadata
+    // children and a nested/open_as target.
+    // Expected: the tree exposes it as a navigation leaf, not as an expandable
+    // metadata container with a second nested affordance.
+    // Regression guard: ISO file records must not show both a disclosure arrow
+    // and the nested icon in Structure View.
+    auto entry = std::make_unique<StructureRow>();
+    entry->name = QStringLiteral("[0] FILE.BIN");
+    entry->value = QStringLiteral("{...}");
+    entry->hasOpenAsTarget = true;
+    entry->branchIconPath = QStringLiteral(":/icons/actions/hierarchy4.svg");
+    entry->openAsOffset = 0x2000;
+    entry->openAsByteLength = 16;
+
+    auto metadata = std::make_unique<StructureRow>(entry.get());
+    metadata->name = QStringLiteral("byte flags");
+    metadata->value = QStringLiteral("0");
+    entry->children.push_back(std::move(metadata));
+
+    std::vector<std::unique_ptr<StructureRow>> rows;
+    rows.push_back(std::move(entry));
+
+    StructureTreeModel model;
+    model.setRowsForTests(std::move(rows));
+
+    const QModelIndex entryIndex = model.index(0, StructureTreeModel::NameColumn);
+    QVERIFY(entryIndex.isValid());
+    QVERIFY(!model.hasChildren(entryIndex));
+    QVERIFY(!model.canFetchMore(entryIndex));
+    QCOMPARE(model.rowCount(entryIndex), 0);
+    QVERIFY(!model.index(0, StructureTreeModel::NameColumn, entryIndex).isValid());
+    QVERIFY(!model.data(entryIndex, StructureTreeModel::BranchIconPathRole).toString().isEmpty());
+
+    auto iconOnly = std::make_unique<StructureRow>();
+    iconOnly->name = QStringLiteral("icon only");
+    iconOnly->branchIconPath = QStringLiteral(":/icons/actions/hierarchy4.svg");
+
+    std::vector<std::unique_ptr<StructureRow>> iconRows;
+    iconRows.push_back(std::move(iconOnly));
+    model.setRowsForTests(std::move(iconRows));
+
+    const QModelIndex iconIndex = model.index(0, StructureTreeModel::NameColumn);
+    QVERIFY(iconIndex.isValid());
+    QVERIFY(!model.hasChildren(iconIndex));
+    QCOMPARE(model.rowCount(iconIndex), 0);
+    QVERIFY(!model.data(iconIndex, StructureTreeModel::BranchIconPathRole).toString().isEmpty());
 }
 
 REGISTER_STRUCTVIEW_TEST(StructViewTreeModelTests)

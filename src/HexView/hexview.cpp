@@ -14,6 +14,54 @@
 #include <QScrollBar>
 #include <algorithm>
 
+namespace {
+
+class SequenceSlice final : public sequence
+{
+public:
+    SequenceSlice(sequence *source, size_w baseOffset, size_w length)
+        : m_source(source)
+        , m_baseOffset(baseOffset)
+        , m_length(length)
+    {
+    }
+
+    bool isreadonly() override { return true; }
+    bool save(const std::string & = std::string()) override { return false; }
+    bool clear() override { return false; }
+    bool insert(size_w, const seqchar *, size_w) override { return false; }
+    bool replace(size_w, const seqchar *, size_w, size_w) override { return false; }
+    bool replace(size_w, const seqchar *, size_w) override { return false; }
+    bool erase(size_w, size_w) override { return false; }
+    bool append(const seqchar *, size_w) override { return false; }
+    bool undo() override { return false; }
+    bool redo() override { return false; }
+    bool canundo() const override { return false; }
+    bool canredo() const override { return false; }
+
+    size_w size() const override
+    {
+        return m_length;
+    }
+
+    size_t render(size_w index, seqchar *buf, size_t len, seqchar_info *infobuf = nullptr) const override
+    {
+        if (!m_source || !buf || index >= m_length)
+            return 0;
+
+        len = static_cast<size_t>(
+            std::min<size_w>(static_cast<size_w>(len), m_length - index));
+        return m_source->render(m_baseOffset + index, buf, len, infobuf);
+    }
+
+private:
+    sequence *m_source = nullptr;
+    size_w    m_baseOffset = 0;
+    size_w    m_length = 0;
+};
+
+} // namespace
+
 // ── Construction ──────────────────────────────────────────────────────────────
 
 HexView::HexView(QWidget *parent)
@@ -269,6 +317,7 @@ bool HexView::setViewSource(std::shared_ptr<sequence> source)
     m_nSelectionStart = 0;
     m_nSelectionEnd   = 0;
     m_structureViewOverlayRanges.clear();
+    clearBookmarkAreaButtonState();
     m_nVScrollPos     = 0;
     m_nHScrollPos     = 0;
     m_nEditMode       = HVMODE_READONLY;
@@ -276,9 +325,22 @@ bool HexView::setViewSource(std::shared_ptr<sequence> source)
     repositionCaret();
     viewport()->update();
     emit editModeChanged(m_nEditMode);
-    emit lengthChanged(m_pDataSeq->size());
+    emit lengthChanged(size());
     emit cursorChanged(m_nCursorOffset);
     return true;
+}
+
+bool HexView::setViewSlice(size_w baseOffset, size_w length)
+{
+    if (!m_primaryDataSeq || baseOffset > m_primaryDataSeq->size())
+        return false;
+
+    const size_w available = m_primaryDataSeq->size() - baseOffset;
+    length = std::min(length, available);
+    if (length == 0)
+        return false;
+
+    return setViewSource(std::make_shared<SequenceSlice>(m_primaryDataSeq, baseOffset, length));
 }
 
 void HexView::clearViewSource()
@@ -301,7 +363,7 @@ void HexView::clearViewSource()
     repositionCaret();
     viewport()->update();
     emit editModeChanged(m_nEditMode);
-    emit lengthChanged(m_pDataSeq ? m_pDataSeq->size() : 0);
+    emit lengthChanged(size());
     emit cursorChanged(m_nCursorOffset);
 }
 
@@ -631,7 +693,7 @@ void HexView::recalcLayout()
     if (m_nFontHeight > 0)
         m_nWindowLines = (int)std::min(
             (unsigned)(viewport()->height() / m_nFontHeight),
-            (unsigned)numFileLines(m_pDataSeq->size()));
+            (unsigned)numFileLines(size()));
     if (m_nFontWidth > 0)
         m_nWindowColumns = std::min(viewport()->width() / m_nFontWidth, m_nTotalWidth);
     setupScrollbars();
@@ -642,7 +704,7 @@ void HexView::recalcLayout()
     /*RECT rect;
     //GetClientRect(m_hWnd, &rect);
 
-    OnLengthChange(m_pDataSeq->size());
+    OnLengthChange(size());
 
     m_nDataShift %= m_nBytesPerLine;
     SetGrouping(m_nBytesPerColumn);
@@ -669,7 +731,7 @@ void HexView::updateMetrics()
     m_nFontHeight = fm.height();
 
     // Address digits — enough for the current file size
-    size_w sz = m_pDataSeq ? m_pDataSeq->size() : 0;
+    size_w sz = m_pDataSeq ? size() : 0;
     m_nAddressDigits = 8;
     if (sz > 0xFFFFFFFFull) m_nAddressDigits = 16;
 
@@ -698,7 +760,7 @@ void HexView::updateMetrics()
 
     // Update scroll max
     if (m_pDataSeq) {
-        size_w lines = (m_pDataSeq->size() + m_nDataShift + m_nBytesPerLine - 1)
+        size_w lines = (size() + m_nDataShift + m_nBytesPerLine - 1)
                        / m_nBytesPerLine;
         m_nVScrollMax = lines > 0 ? lines - 1 : 0;
     }
@@ -791,13 +853,13 @@ void HexView::resizeEvent(QResizeEvent *event)
             if (m_nVScrollPos > 0)
                 pinToOffset(m_nVScrollPinned);
             m_nHScrollPos = 0;
-            onLengthChanged(m_pDataSeq->size());
+            onLengthChanged(size());
             emit layoutChanged();
             emit lineLengthChanged(m_nBytesPerLine);
         }
     }
 
-    m_nWindowLines   = (int)std::min((unsigned)viewport()->height() / m_nFontHeight, numFileLines(m_pDataSeq->size()));
+    m_nWindowLines   = (int)std::min((unsigned)viewport()->height() / m_nFontHeight, numFileLines(size()));
     m_nWindowColumns = (int)std::min(viewport()->width() / m_nFontWidth, m_nTotalWidth);
 
     if (pinToBottomCorner())
@@ -836,7 +898,7 @@ void HexView::fireChanged(size_w offset, size_w length, uint method)
         viewport()->update();
     }
     if (method == HVMETHOD_INSERT || method == HVMETHOD_DELETE)
-        emit lengthChanged(m_pDataSeq->size());
+        emit lengthChanged(size());
     emit contentChanged(offset, length, method);
 }
 
@@ -897,11 +959,20 @@ size_w HexView::enterData(uint8_t *pSource, size_w nLength,
 
 size_t HexView::getData(size_w offset, uint8_t *buf, size_t len)
 {
+    if (!m_pDataSeq)
+        return 0;
     return m_pDataSeq->render(offset, buf, len);
+}
+
+size_t HexView::getSourceData(size_w offset, uint8_t *buf, size_t len)
+{
+    return m_primaryDataSeq ? m_primaryDataSeq->render(offset, buf, len) : 0;
 }
 
 size_t HexView::setData(size_w offset, uint8_t *buf, size_t len)
 {
+    if (m_usingViewSource)
+        return 0;
     invalidateRange(offset, offset + len);
     return m_pDataSeq->replace(offset, buf, len);
 }
@@ -916,7 +987,7 @@ size_w HexView::writeAtCursor(const uint8_t *buf, size_t len)
 
 void HexView::padToAddress(size_w addr)
 {
-    size_w filesize = m_pDataSeq ? m_pDataSeq->size() : 0;
+    size_w filesize = m_pDataSeq ? size() : 0;
     if (addr > filesize) {
         const size_w  count = addr - filesize;
         const uint8_t zero  = 0;
@@ -963,7 +1034,7 @@ size_t HexView::fillData(uint8_t *buf, size_t buflen, size_w len)
 
 bool HexView::setCurSel(size_w selStart, size_w selEnd, bool preserveCursor)
 {
-    size_w sz = m_pDataSeq ? m_pDataSeq->size() : 0;
+    size_w sz = m_pDataSeq ? size() : 0;
     if (selStart > sz || selEnd > sz) return false;
     if (selStart == m_nSelectionStart && selEnd == m_nSelectionEnd) return false;
 
@@ -982,7 +1053,7 @@ bool HexView::setCurSel(size_w selStart, size_w selEnd, bool preserveCursor)
 
 bool HexView::setCurPos(size_w pos)
 {
-    if (!m_pDataSeq || pos > m_pDataSeq->size()) return false;
+    if (!m_pDataSeq || pos > size()) return false;
     if (m_nCursorOffset != pos) {
         m_nCursorOffset = pos;
         m_nSubItem = 0;
@@ -997,14 +1068,14 @@ bool HexView::setCurPos(size_w pos)
 
 bool HexView::setSelStart(size_w pos)
 {
-    if (!m_pDataSeq || pos > m_pDataSeq->size()) return false;
+    if (!m_pDataSeq || pos > size()) return false;
     m_nSelectionStart = pos;
     return true;
 }
 
 bool HexView::setSelEnd(size_w pos)
 {
-    if (!m_pDataSeq || pos > m_pDataSeq->size()) return false;
+    if (!m_pDataSeq || pos > size()) return false;
     m_nSelectionEnd = pos;
     if (m_nCursorOffset != pos) {
         m_nCursorOffset = pos;
@@ -1016,7 +1087,7 @@ bool HexView::setSelEnd(size_w pos)
 void HexView::selectAll()
 {
     m_nSelectionStart = 0;
-    m_nSelectionEnd   = m_pDataSeq ? m_pDataSeq->size() : 0;
+    m_nSelectionEnd   = m_pDataSeq ? size() : 0;
     m_nCursorOffset   = m_nSelectionEnd;
     if (m_nBytesPerLine > 0 && m_nCursorOffset % m_nBytesPerLine == 0)
         m_fCursorAdjustment = true;

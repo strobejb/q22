@@ -40,6 +40,7 @@
 #include <QPainterPath>
 #include <QPushButton>
 #include <QSaveFile>
+#include <QScrollBar>
 #include <QPlainTextEdit>
 #include <QRegularExpression>
 #include <QSignalBlocker>
@@ -1286,6 +1287,7 @@ private:
         if (!index.isValid()
             || (index.column() != StructureTreeModel::ValueColumn
                 && index.column() != StructureTreeModel::OffsetColumn
+                && index.column() != StructureTreeModel::TypeColumn
                 && index.column() != StructureTreeModel::NameColumn))
             return false;
 
@@ -1955,9 +1957,9 @@ bool magicSignatureMatchesSlice(HexView *hv, uint64_t baseOffset, uint64_t byteL
         return false;
 
     QByteArray fileBytes(signature.bytes.size(), Qt::Uninitialized);
-    const size_t bytesRead = hv->getData(static_cast<size_w>(absoluteOffset),
-                                         reinterpret_cast<uint8_t *>(fileBytes.data()),
-                                         static_cast<size_t>(fileBytes.size()));
+    const size_t bytesRead = hv->getSourceData(static_cast<size_w>(absoluteOffset),
+                                               reinterpret_cast<uint8_t *>(fileBytes.data()),
+                                               static_cast<size_t>(fileBytes.size()));
     return bytesRead == static_cast<size_t>(fileBytes.size()) && fileBytes == signature.bytes;
 }
 
@@ -2073,9 +2075,9 @@ bool inflateHexViewRangeToFile(HexView *hv,
     {
         const size_t chunk = static_cast<size_t>(qMin<uint64_t>(static_cast<uint64_t>(input.size()),
                                                                sourceLength - consumed));
-        const size_t bytesRead = hv->getData(static_cast<size_w>(sourceOffset + consumed),
-                                             reinterpret_cast<uint8_t *>(input.data()),
-                                             chunk);
+        const size_t bytesRead = hv->getSourceData(static_cast<size_w>(sourceOffset + consumed),
+                                                   reinterpret_cast<uint8_t *>(input.data()),
+                                                   chunk);
         if (bytesRead == 0)
             break;
 
@@ -2236,7 +2238,7 @@ bool detectStructureEntryPoint(HexView *hv, uint64_t *fileOffset)
                               rootType,
                               baseOffset,
                               [hv](uint64_t offset, uint8_t *buffer, size_t length) -> size_t {
-                                  return hv->getData(static_cast<size_w>(offset), buffer, length);
+                                  return hv->getSourceData(static_cast<size_w>(offset), buffer, length);
                               });
 
     for (const auto &row : rows)
@@ -2484,6 +2486,8 @@ void StructureViewPanel::buildUi()
 
     m_tree = new StructureGridView(m_viewStack);
     m_tree->setObjectName(QStringLiteral("structureGrid"));
+    m_separateTypeColumn = AppSettings::prefStructureViewSeparateTypeColumn();
+    m_model->setSeparateTypeColumn(m_separateTypeColumn);
     m_tree->setModel(m_model);
     m_tree->setItemDelegate(new StructureGridItemDelegate(m_tree));
     auto *gridHeader = new StructureGridHeader(Qt::Horizontal, m_tree);
@@ -2502,24 +2506,22 @@ void StructureViewPanel::buildUi()
     m_tree->setIndentation(18);
     m_tree->header()->setStretchLastSection(true);
     m_tree->header()->setMinimumSectionSize(48);
-    m_tree->header()->setSectionResizeMode(StructureTreeModel::NameColumn, QHeaderView::Interactive);
-    m_tree->header()->setSectionResizeMode(StructureTreeModel::ValueColumn, QHeaderView::Interactive);
-    m_tree->header()->setSectionResizeMode(StructureTreeModel::OffsetColumn, QHeaderView::Interactive);
-    m_tree->header()->setSectionResizeMode(StructureTreeModel::CommentColumn, QHeaderView::Interactive);
-    m_tree->header()->resizeSection(StructureTreeModel::NameColumn, 190);
-    m_tree->header()->resizeSection(StructureTreeModel::ValueColumn, 90);
-    m_tree->header()->resizeSection(StructureTreeModel::OffsetColumn, 84);
-    m_tree->header()->resizeSection(StructureTreeModel::CommentColumn, 140);
-    const QByteArray savedGridHeaderState = AppSettings::structureViewGridHeaderState();
-    if (!savedGridHeaderState.isEmpty())
-        m_tree->header()->restoreState(savedGridHeaderState);
+    configureStructureGridColumns(true);
     connect(m_tree->header(), &QHeaderView::sectionResized, this, [this]() {
-        AppSettings::setStructureViewGridHeaderState(m_tree->header()->saveState());
+        saveStructureGridHeaderState();
+    });
+    connect(m_tree->header(), &QHeaderView::sectionMoved, this, [this]() {
+        saveStructureGridHeaderState();
     });
     connect(m_tree->selectionModel(), &QItemSelectionModel::currentChanged,
             this, &StructureViewPanel::updateHexViewSelection);
     connect(m_tree, &QWidget::customContextMenuRequested,
             this, &StructureViewPanel::showGridContextMenu);
+    connect(m_tree, &QTreeView::doubleClicked,
+            this, [this](const QModelIndex &index) {
+                if (openAsRowForIndex(index))
+                    openIndexAsStructure(index);
+            });
     updateTreeSelectionPalette();
     {
         constexpr int itemCellInset = 3;
@@ -2677,10 +2679,24 @@ void StructureViewPanel::buildUi()
     connect(m_loadErrorView, &QLabel::linkActivated,
             this, [this](const QString &) { showSourcePage(nullptr); });
 
+    m_noStructureView = new QLabel(m_viewStack);
+    m_noStructureView->setObjectName(QStringLiteral("structureNoStructureView"));
+    m_noStructureView->setAlignment(Qt::AlignCenter);
+    m_noStructureView->setWordWrap(true);
+    m_noStructureView->setTextFormat(Qt::RichText);
+    m_noStructureView->setTextInteractionFlags(Qt::NoTextInteraction);
+    m_noStructureView->setStyleSheet(QStringLiteral(
+        "QLabel#structureNoStructureView {"
+        " background: transparent;"
+        " color: palette(text);"
+        " padding: 24px;"
+        "}"));
+
     m_viewStack->addWidget(m_tree);
     m_viewStack->addWidget(m_sourceView);
     m_viewStack->addWidget(m_logView);
     m_viewStack->addWidget(m_loadErrorView);
+    m_viewStack->addWidget(m_noStructureView);
 
     m_contentFrame->setContentWidget(m_viewStack);
 
@@ -3045,7 +3061,7 @@ void StructureViewPanel::rebuildRows()
                 length = static_cast<size_t>(qMin<uint64_t>(static_cast<uint64_t>(length),
                                                             sourceExtentLength - relativeOffset));
             }
-            return m_hv->getData(static_cast<size_w>(offset), buffer, length);
+            return m_hv->getSourceData(static_cast<size_w>(offset), buffer, length);
         },
         options);
     const bool deferSemanticOverlay = engine->hasSemanticOverlay();
@@ -3088,9 +3104,11 @@ void StructureViewPanel::rebuildRows()
         structureProfileLog(QStringLiteral("[StructureProfile] panel expansion ms=%1")
                                 .arg(phaseTimer.restart()));
     }
+    const bool restoredSourceTreeState = restoreActiveSourceFrameTreeState();
     m_rebuildingRows = false;
     clearHexViewOverlay();
-    applyPendingRestore();
+    if (!restoredSourceTreeState)
+        applyPendingRestore();
 
     if (m_hv)
     {
@@ -3124,7 +3142,9 @@ void StructureViewPanel::rebuildRows()
         m_model->replaceSemanticChildrenOfFirstRoot(std::move(semanticRows));
         m_rebuildingRows = false;
         m_deferredSemanticEngine.reset();
-        applyPendingRestore();
+        const bool restoredSourceTreeState = restoreActiveSourceFrameTreeState();
+        if (!restoredSourceTreeState)
+            applyPendingRestore();
 
         if (m_hv)
         {
@@ -3222,6 +3242,44 @@ void StructureViewPanel::showRootComboContextMenu(const QPoint &pos)
 void StructureViewPanel::showHeaderContextMenu(int column, const QPoint &globalPos)
 {
     showOptionsContextMenu(column, globalPos, false);
+}
+
+void StructureViewPanel::configureStructureGridColumns(bool restoreSavedState)
+{
+    if (!m_tree || !m_tree->header())
+        return;
+
+    QHeaderView *header = m_tree->header();
+    const QSignalBlocker blocker(header);
+
+    header->setSectionResizeMode(StructureTreeModel::NameColumn, QHeaderView::Interactive);
+    header->setSectionResizeMode(StructureTreeModel::TypeColumn, QHeaderView::Interactive);
+    header->setSectionResizeMode(StructureTreeModel::ValueColumn, QHeaderView::Interactive);
+    header->setSectionResizeMode(StructureTreeModel::OffsetColumn, QHeaderView::Interactive);
+    header->setSectionResizeMode(StructureTreeModel::CommentColumn, QHeaderView::Interactive);
+
+    header->resizeSection(StructureTreeModel::NameColumn, m_separateTypeColumn ? 150 : 190);
+    header->resizeSection(StructureTreeModel::TypeColumn, 74);
+    header->resizeSection(StructureTreeModel::ValueColumn, 90);
+    header->resizeSection(StructureTreeModel::OffsetColumn, 84);
+    header->resizeSection(StructureTreeModel::CommentColumn, 140);
+
+    if (restoreSavedState)
+    {
+        const QByteArray savedGridHeaderState = AppSettings::structureViewGridHeaderState(m_separateTypeColumn);
+        if (!savedGridHeaderState.isEmpty())
+            header->restoreState(savedGridHeaderState);
+    }
+
+    header->setSectionHidden(StructureTreeModel::TypeColumn, !m_separateTypeColumn);
+}
+
+void StructureViewPanel::saveStructureGridHeaderState() const
+{
+    if (!m_tree || !m_tree->header())
+        return;
+
+    AppSettings::setStructureViewGridHeaderState(m_tree->header()->saveState(), m_separateTypeColumn);
 }
 
 void StructureViewPanel::showOptionsContextMenu(int column, const QPoint &globalPos, bool includeAllColumns, const QModelIndex &rowIndex)
@@ -3372,7 +3430,14 @@ void StructureViewPanel::showOptionsContextMenu(int column, const QPoint &global
         }
     };
 
-    if (includeAllColumns || column == StructureTreeModel::NameColumn)
+    startDisplayGroup();
+    QAction *separateTypeColumn = menu.addAction(tr("Separate type column"));
+    separateTypeColumn->setCheckable(true);
+    separateTypeColumn->setChecked(m_separateTypeColumn);
+    connect(separateTypeColumn, &QAction::triggered,
+            this, &StructureViewPanel::setSeparateTypeColumn);
+
+    if (includeAllColumns || column == StructureTreeModel::NameColumn || column == StructureTreeModel::TypeColumn)
     {
         startDisplayGroup();
         QAction *definedTypes = menu.addAction(tr("Use defined type names"));
@@ -3510,6 +3575,11 @@ void StructureViewPanel::showGridPage()
             updateLoadErrorView();
             m_viewStack->setCurrentWidget(m_loadErrorView);
         }
+        else if (m_noStructureView && currentSourceFrameHasNoStructure())
+        {
+            updateNoStructureView();
+            m_viewStack->setCurrentWidget(m_noStructureView);
+        }
         else
         {
             m_viewStack->setCurrentWidget(m_tree);
@@ -3520,6 +3590,38 @@ void StructureViewPanel::showGridPage()
         m_contentFrame->setCurrentPage(StructureContentFrame::Page::Struct);
         m_contentFrame->setLogActive(false);
     }
+}
+
+bool StructureViewPanel::currentSourceFrameHasNoStructure() const
+{
+    if (m_activeSourceFrame <= 0 || m_activeSourceFrame >= m_sourceStack.size())
+        return false;
+
+    const SourceFrame &frame = m_sourceStack[m_activeSourceFrame];
+    return frame.sliceRoot && !frame.rootType;
+}
+
+void StructureViewPanel::updateNoStructureView()
+{
+    if (!m_noStructureView)
+        return;
+
+    QString name = tr("Nested data");
+    uint64_t length = 0;
+    if (m_activeSourceFrame >= 0 && m_activeSourceFrame < m_sourceStack.size())
+    {
+        const SourceFrame &frame = m_sourceStack[m_activeSourceFrame];
+        if (!frame.sourceName.isEmpty())
+            name = frame.sourceName;
+        length = frame.byteLength;
+    }
+
+    m_noStructureView->setText(
+        tr("<div align='center'>"
+           "<p>No matching structure definition found for<br><b>%1</b></p>"
+           "<p>%2 bytes shown in Hex View as raw data.</p>"
+           "</div>")
+            .arg(name.toHtmlEscaped(), QString::number(length)));
 }
 
 void StructureViewPanel::showSourcePage(TypeDecl *typeDecl)
@@ -3937,6 +4039,21 @@ void StructureViewPanel::setUseRelativeOffsets(bool enabled)
     applyDisplayOptions();
 }
 
+void StructureViewPanel::setSeparateTypeColumn(bool enabled)
+{
+    if (m_separateTypeColumn == enabled)
+        return;
+
+    saveStructureGridHeaderState();
+    m_separateTypeColumn = enabled;
+    AppSettings::setPrefStructureViewSeparateTypeColumn(enabled);
+    if (m_model)
+        m_model->setSeparateTypeColumn(enabled);
+    configureStructureGridColumns(true);
+    if (m_tree)
+        m_tree->viewport()->update();
+}
+
 void StructureViewPanel::restoreSelection(const QString &name, uint64_t offset)
 {
     m_pendingRestoreName = name;
@@ -3952,21 +4069,7 @@ StructureRow *StructureViewPanel::openAsRowForIndex(const QModelIndex &index) co
         if (candidate->hasOpenAsTarget)
             return candidate;
     }
-
-    if (!row)
-        return nullptr;
-
-    const auto findOpenAsDescendant = [](auto &&self, StructureRow *candidate) -> StructureRow * {
-        if (!candidate)
-            return nullptr;
-        if (candidate->hasOpenAsTarget)
-            return candidate;
-        for (const auto &child : candidate->children)
-            if (StructureRow *found = self(self, child.get()))
-                return found;
-        return nullptr;
-    };
-    return findOpenAsDescendant(findOpenAsDescendant, row);
+    return nullptr;
 }
 
 TypeDecl *StructureViewPanel::resolvedOpenAsRootType(const StructureRow *row) const
@@ -4167,16 +4270,28 @@ void StructureViewPanel::openIndexAsStructure(const QModelIndex &index)
     QString transformedTempPath;
     std::shared_ptr<sequence> childSource;
     uint64_t childByteLength = 0;
-    const uint64_t sourceSize = static_cast<uint64_t>(m_hv->size());
-    if (row->openAsOffset >= sourceSize || row->openAsByteLength == 0)
+    uint64_t sourceBase = 0;
+    uint64_t sourceSize = static_cast<uint64_t>(m_hv->size());
+    if (m_activeSourceFrame >= 0 && m_activeSourceFrame < m_sourceStack.size())
+    {
+        const SourceFrame &frame = m_sourceStack[m_activeSourceFrame];
+        if (frame.sliceRoot && !frame.transformedSource)
+        {
+            sourceBase = frame.baseOffset;
+            sourceSize = frame.byteLength;
+        }
+    }
+    if (row->openAsOffset < sourceBase || row->openAsByteLength == 0)
         return;
 
     const uint64_t requestedEnd = row->openAsOffset > UINT64_MAX - row->openAsByteLength
         ? UINT64_MAX
         : row->openAsOffset + row->openAsByteLength;
-    const size_w start = static_cast<size_w>(row->openAsOffset);
-    const size_w end = static_cast<size_w>(qMin<uint64_t>(requestedEnd, sourceSize));
-    if (end <= start)
+    const uint64_t sourceEnd = sourceBase > UINT64_MAX - sourceSize
+        ? UINT64_MAX
+        : sourceBase + sourceSize;
+    const uint64_t childEnd = qMin<uint64_t>(requestedEnd, sourceEnd);
+    if (childEnd <= row->openAsOffset)
         return;
 
     QString errorMessage;
@@ -4200,26 +4315,14 @@ void StructureViewPanel::openIndexAsStructure(const QModelIndex &index)
             return;
         }
     }
-    else if (!createRawOpenAsSource(row,
-                                    &transformedTempPath,
-                                    &childSource,
-                                    &childByteLength,
-                                    &errorMessage))
+    else
     {
-        QMessageBox msg(QMessageBox::Warning,
-                        tr("Cannot open structure slice"),
-                        errorMessage.isEmpty()
-                            ? tr("Could not create a nested source for \"%1\".")
-                                  .arg(row->openAsName.isEmpty() ? row->openAsRootTypeName : row->openAsName)
-                            : errorMessage,
-                        QMessageBox::Ok,
-                        this);
-        styleMessageBox(&msg);
-        msg.exec();
-        return;
+        childByteLength = childEnd - row->openAsOffset;
     }
 
-    TypeDecl *rootType = resolvedOpenAsRootType(row, childSource.get(), 0, childByteLength);
+    TypeDecl *rootType = childSource
+        ? resolvedOpenAsRootType(row, childSource.get(), 0, childByteLength)
+        : resolvedOpenAsRootType(row);
     const int rootIndex = rootComboIndexForType(rootType);
     const bool autoDetect = row->openAsRootTypeName.compare(QStringLiteral("auto"), Qt::CaseInsensitive) == 0;
     if (rootIndex < 0 && !autoDetect)
@@ -4247,6 +4350,7 @@ void StructureViewPanel::openIndexAsStructure(const QModelIndex &index)
 
     TypeDecl *parentRootType = selectedRootType();
     ensureSourceStackRootFrame(parentRootType);
+    captureActiveSourceFrameTreeState();
     if (m_activeSourceFrame >= 0 && m_activeSourceFrame < m_sourceStack.size() - 1)
     {
         while (m_sourceStack.size() > m_activeSourceFrame + 1)
@@ -4265,7 +4369,7 @@ void StructureViewPanel::openIndexAsStructure(const QModelIndex &index)
     childFrame.rootType = rootType;
     childFrame.rootDisplayName = rootType ? displayNameForTypeDecl(rootType) : tr("Raw data");
     childFrame.sourceName = row->openAsName.isEmpty() ? childFrame.rootDisplayName : row->openAsName;
-    childFrame.baseOffset = 0;
+    childFrame.baseOffset = childSource ? 0 : row->openAsOffset;
     childFrame.byteLength = childByteLength;
     childFrame.sliceRoot = true;
     childFrame.transform = row->openAsTransform;
@@ -4287,7 +4391,11 @@ void StructureViewPanel::openIndexAsStructure(const QModelIndex &index)
     {
         const QSignalBlocker blocker(m_hv);
         const ScopedBoolFlag updating(m_updatingSourceFrame);
-        m_hv->setViewSource(childFrame.transformedSource);
+        if (childFrame.transformedSource)
+            m_hv->setViewSource(childFrame.transformedSource);
+        else
+            m_hv->setViewSlice(static_cast<size_w>(childFrame.baseOffset),
+                               static_cast<size_w>(childFrame.byteLength));
     }
     clearHexViewOverlay();
     updateSourceStackWidget();
@@ -4480,7 +4588,10 @@ void StructureViewPanel::navigateToSourceFrame(int index)
 {
     if (!m_hv || !m_rootCombo || index < 0 || index >= m_sourceStack.size())
         return;
+    if (index == m_activeSourceFrame)
+        return;
 
+    captureActiveSourceFrameTreeState();
     SourceFrame frame = m_sourceStack[index];
     m_activeSourceFrame = index;
 
@@ -4498,6 +4609,13 @@ void StructureViewPanel::navigateToSourceFrame(int index)
             const QSignalBlocker blocker(m_hv);
             const ScopedBoolFlag updating(m_updatingSourceFrame);
             m_hv->setViewSource(frame.transformedSource);
+        }
+        else
+        {
+            const QSignalBlocker blocker(m_hv);
+            const ScopedBoolFlag updating(m_updatingSourceFrame);
+            m_hv->setViewSlice(static_cast<size_w>(frame.baseOffset),
+                               static_cast<size_w>(frame.byteLength));
         }
     }
     else
@@ -4522,26 +4640,34 @@ void StructureViewPanel::navigateToSourceFrame(int index)
     else if (frame.hasReturnRow)
     {
         restoreSelection(frame.returnRowName, frame.returnRowOffset);
-        if (frame.returnRowLength > 0 && frame.returnRowOffset < m_hv->size())
+        const bool rawSlice = frame.sliceRoot && !frame.transformedSource;
+        const uint64_t viewReturnOffset = rawSlice && frame.returnRowOffset >= frame.baseOffset
+            ? frame.returnRowOffset - frame.baseOffset
+            : frame.returnRowOffset;
+        if (frame.returnRowLength > 0 && viewReturnOffset < m_hv->size())
         {
-            const uint64_t requestedEnd = frame.returnRowOffset > UINT64_MAX - frame.returnRowLength
+            const uint64_t requestedEnd = viewReturnOffset > UINT64_MAX - frame.returnRowLength
                 ? UINT64_MAX
-                : frame.returnRowOffset + frame.returnRowLength;
-            const size_w start = static_cast<size_w>(frame.returnRowOffset);
+                : viewReturnOffset + frame.returnRowLength;
+            const size_w start = static_cast<size_w>(viewReturnOffset);
             const size_w end = static_cast<size_w>(qMin<uint64_t>(requestedEnd, m_hv->size()));
             if (end > start)
                 setHexViewSelectionFromStructure(start, end);
         }
     }
-    else if (frame.byteLength > 0 && frame.baseOffset < m_hv->size())
+    else if (frame.byteLength > 0)
     {
-        const uint64_t requestedEnd = frame.baseOffset > UINT64_MAX - frame.byteLength
-            ? UINT64_MAX
-            : frame.baseOffset + frame.byteLength;
-        const size_w start = static_cast<size_w>(frame.baseOffset);
-        const size_w end = static_cast<size_w>(qMin<uint64_t>(requestedEnd, m_hv->size()));
-        if (end > start)
-            setHexViewSelectionFromStructure(start, end);
+        const uint64_t viewBase = frame.sliceRoot && !frame.transformedSource ? 0 : frame.baseOffset;
+        if (viewBase < m_hv->size())
+        {
+            const uint64_t requestedEnd = viewBase > UINT64_MAX - frame.byteLength
+                ? UINT64_MAX
+                : viewBase + frame.byteLength;
+            const size_w start = static_cast<size_w>(viewBase);
+            const size_w end = static_cast<size_w>(qMin<uint64_t>(requestedEnd, m_hv->size()));
+            if (end > start)
+                setHexViewSelectionFromStructure(start, end);
+        }
     }
 
     updateSourceStackWidget();
@@ -4557,6 +4683,7 @@ void StructureViewPanel::exitSourceStack()
         return;
     }
 
+    captureActiveSourceFrameTreeState();
     SourceFrame rootFrame = m_sourceStack.first();
     const int rootIndex = rootComboIndexForType(rootFrame.rootType);
     if (rootIndex < 0)
@@ -4592,6 +4719,14 @@ void StructureViewPanel::exitSourceStack()
             if (end > start)
                 setHexViewSelectionFromStructure(start, end);
         }
+    }
+
+    if (rootFrame.hasTreeState)
+    {
+        m_pendingTreeExpandedPaths = rootFrame.expandedTreePaths;
+        m_pendingTreeSelectedPath = rootFrame.selectedTreePath;
+        m_pendingTreeScrollValue = rootFrame.treeScrollValue;
+        m_hasPendingTreeState = true;
     }
 
     clearSourceStack();
@@ -4663,6 +4798,142 @@ QModelIndex StructureViewPanel::findIndexByIdentity(const QModelIndex &parent, c
             return found;
     }
     return QModelIndex();
+}
+
+QVector<QPair<QString, uint64_t>> StructureViewPanel::treePathForIndex(const QModelIndex &index) const
+{
+    QVector<QPair<QString, uint64_t>> path;
+    if (!m_model || !index.isValid())
+        return path;
+
+    for (QModelIndex current = index.siblingAtColumn(StructureTreeModel::NameColumn);
+         current.isValid();
+         current = m_model->parent(current))
+    {
+        const StructureRow *row = m_model->rowForIndex(current);
+        if (!row)
+            return {};
+        path.prepend(qMakePair(row->name, row->absoluteOffset));
+    }
+    return path;
+}
+
+QModelIndex StructureViewPanel::findIndexByTreePath(const QVector<QPair<QString, uint64_t>> &path) const
+{
+    if (!m_model || path.isEmpty())
+        return {};
+
+    QModelIndex parent;
+    QModelIndex found;
+    for (const auto &identity : path)
+    {
+        found = {};
+        const int childCount = m_model->rowCount(parent);
+        for (int rowIndex = 0; rowIndex < childCount; ++rowIndex)
+        {
+            const QModelIndex candidate = m_model->index(rowIndex, StructureTreeModel::NameColumn, parent);
+            const StructureRow *row = m_model->rowForIndex(candidate);
+            if (row && row->name == identity.first && row->absoluteOffset == identity.second)
+            {
+                found = candidate;
+                break;
+            }
+        }
+        if (!found.isValid())
+            return {};
+        parent = found;
+    }
+    return found;
+}
+
+void StructureViewPanel::captureActiveSourceFrameTreeState()
+{
+    if (m_activeSourceFrame < 0 || m_activeSourceFrame >= m_sourceStack.size() || !m_tree || !m_model || m_rebuildingRows)
+        return;
+
+    SourceFrame &frame = m_sourceStack[m_activeSourceFrame];
+    frame.expandedTreePaths.clear();
+    frame.selectedTreePath.clear();
+    frame.treeScrollValue = m_tree->verticalScrollBar() ? m_tree->verticalScrollBar()->value() : 0;
+
+    std::function<void(const QModelIndex &)> visit = [&](const QModelIndex &parent) {
+        const int childCount = m_model->rowCount(parent);
+        for (int rowIndex = 0; rowIndex < childCount; ++rowIndex)
+        {
+            const QModelIndex index = m_model->index(rowIndex, StructureTreeModel::NameColumn, parent);
+            if (!index.isValid())
+                continue;
+            if (m_tree->isExpanded(index))
+                frame.expandedTreePaths.append(treePathForIndex(index));
+            visit(index);
+        }
+    };
+    visit({});
+
+    const QModelIndex current = m_tree->currentIndex().siblingAtColumn(StructureTreeModel::NameColumn);
+    if (current.isValid())
+        frame.selectedTreePath = treePathForIndex(current);
+    frame.hasTreeState = true;
+}
+
+bool StructureViewPanel::restoreActiveSourceFrameTreeState()
+{
+    if (!m_tree || !m_model)
+        return false;
+
+    QList<TreePath> expandedPaths;
+    TreePath selectedPath;
+    int scrollValue = 0;
+    bool hasState = false;
+
+    if (m_hasPendingTreeState)
+    {
+        expandedPaths = m_pendingTreeExpandedPaths;
+        selectedPath = m_pendingTreeSelectedPath;
+        scrollValue = m_pendingTreeScrollValue;
+        hasState = true;
+        m_pendingTreeExpandedPaths.clear();
+        m_pendingTreeSelectedPath.clear();
+        m_pendingTreeScrollValue = 0;
+        m_hasPendingTreeState = false;
+    }
+    else if (m_activeSourceFrame >= 0 && m_activeSourceFrame < m_sourceStack.size())
+    {
+        const SourceFrame &frame = m_sourceStack[m_activeSourceFrame];
+        if (frame.hasTreeState)
+        {
+            expandedPaths = frame.expandedTreePaths;
+            selectedPath = frame.selectedTreePath;
+            scrollValue = frame.treeScrollValue;
+            hasState = true;
+        }
+    }
+
+    if (!hasState)
+        return false;
+
+    m_tree->collapseAll();
+    for (const TreePath &path : expandedPaths)
+    {
+        const QModelIndex index = findIndexByTreePath(path);
+        if (index.isValid())
+            m_tree->expand(index);
+    }
+
+    const QModelIndex selected = findIndexByTreePath(selectedPath);
+    if (selected.isValid() && m_tree->selectionModel())
+    {
+        for (QModelIndex ancestor = m_model->parent(selected); ancestor.isValid(); ancestor = m_model->parent(ancestor))
+            m_tree->expand(ancestor);
+        m_tree->selectionModel()->setCurrentIndex(
+            selected, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+        m_tree->scrollTo(selected, QAbstractItemView::PositionAtCenter);
+    }
+    if (m_tree->verticalScrollBar())
+        m_tree->verticalScrollBar()->setValue(scrollValue);
+
+    m_hasPendingRestore = false;
+    return true;
 }
 
 void StructureViewPanel::updateHexViewSelection(const QModelIndex &current)

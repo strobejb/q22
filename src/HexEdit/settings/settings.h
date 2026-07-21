@@ -92,6 +92,8 @@ bool    prefSectionHeaderDoubleClick();    // true = double-click section header
 void    setPrefSectionHeaderDoubleClick(bool on);
 bool    prefNestedSourceBreadcrumb();      // true = show nested source navigation above HexView
 void    setPrefNestedSourceBreadcrumb(bool on);
+bool    prefStructureViewSeparateTypeColumn(); // true = show type in its own Structure View column
+void    setPrefStructureViewSeparateTypeColumn(bool on);
 
 QStringList sidePanelSectionOrder();
 void        setSidePanelSectionOrder(const QStringList &order);
@@ -103,6 +105,8 @@ int         disassemblyPanelWidth();       // 0 = use default width
 void        setDisassemblyPanelWidth(int width);
 QByteArray  structureViewGridHeaderState();
 void        setStructureViewGridHeaderState(const QByteArray &state);
+QByteArray  structureViewGridHeaderState(bool separateTypeColumn);
+void        setStructureViewGridHeaderState(const QByteArray &state, bool separateTypeColumn);
 
 } // namespace AppSettings
 

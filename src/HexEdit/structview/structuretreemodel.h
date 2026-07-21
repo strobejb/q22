@@ -123,6 +123,7 @@ public:
     enum Column
     {
         NameColumn,
+        TypeColumn,
         ValueColumn,
         OffsetColumn,
         CommentColumn,
@@ -171,6 +172,8 @@ public:
     void replaceTopLevelRowsAfterFirst(std::vector<std::unique_ptr<StructureRow>> rows);
     void setRowsForTests(std::vector<std::unique_ptr<StructureRow>> rows);
     void applyDisplayOptions(const StructureDisplayOptions &options);
+    void setSeparateTypeColumn(bool separate);
+    bool separateTypeColumn() const;
     StructureRow *rowForIndex(const QModelIndex &index) const;
 
 private:
@@ -188,6 +191,7 @@ private:
 
     std::unique_ptr<StructureRow> m_root;
     StructureDisplayOptions m_displayOptions;
+    bool m_separateTypeColumn = false;
 };
 
 #endif // STRUCTVIEW_STRUCTURETREEMODEL_H

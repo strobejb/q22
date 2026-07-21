@@ -14,6 +14,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QStyleOptionComboBox>
+#include <QStringList>
 #include <QTimer>
 #include <QTreeView>
 
@@ -24,9 +25,31 @@ namespace
 {
 static constexpr bool kAlignStructureNameIdentifiers = true;
 static constexpr bool kEmphasizeAlignedNameIdentifiers = true;
-static constexpr qreal kNameIdentifierColumnWidth = 44.0;
+static constexpr int kScalarTypeIdentifierGapSpaces = 1;
 static constexpr qreal kArrayIndexColumnWidth = 24.0;
 static constexpr QFont::Weight kStructureTypePrefixWeight = QFont::Weight(650);
+
+qreal scalarTypeIdentifierColumnWidth(const QFontMetricsF &metrics)
+{
+    static const QStringList scalarTypeNames = {
+        QStringLiteral("char"),
+        QStringLiteral("wchar_t"),
+        QStringLiteral("byte"),
+        QStringLiteral("word"),
+        QStringLiteral("dword"),
+        QStringLiteral("qword"),
+        QStringLiteral("float"),
+        QStringLiteral("double"),
+        QStringLiteral("uleb128"),
+        QStringLiteral("sleb128"),
+    };
+
+    qreal width = 0.0;
+    for (const QString &typeName : scalarTypeNames)
+        width = std::max(width, metrics.horizontalAdvance(typeName));
+
+    return width + metrics.horizontalAdvance(QString(kScalarTypeIdentifierGapSpaces, QLatin1Char(' ')));
+}
 
 qreal devicePixelSize(const QPainter *painter)
 {
@@ -415,7 +438,9 @@ bool StructureGridItemDelegate::paintAlignedName(QPainter *painter,
 
     const QFontMetricsF prefixMetrics(prefixFont);
     const qreal prefixWidth = prefixMetrics.horizontalAdvance(prefix);
-    const qreal identifierColumnWidth = arrayIndexPrefix ? kArrayIndexColumnWidth : kNameIdentifierColumnWidth;
+    const qreal identifierColumnWidth = arrayIndexPrefix
+        ? kArrayIndexColumnWidth
+        : scalarTypeIdentifierColumnWidth(prefixMetrics);
     const qreal nameX = textRect.left() + std::max(identifierColumnWidth, prefixWidth + spaceWidth);
 
     painter->setFont(prefixFont);

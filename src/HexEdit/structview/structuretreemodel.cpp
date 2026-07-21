@@ -39,6 +39,11 @@ QStringList diagnosticMessages(const StructureRow *row)
             messages.push_back(diagnostic.message);
     return messages;
 }
+
+bool isStructuralNamePrefix(const QString &prefix)
+{
+    return !prefix.isEmpty() && prefix.startsWith(QLatin1Char('['));
+}
 }
 
 StructureRow::StructureRow(StructureRow *parentRow)
@@ -118,7 +123,10 @@ int StructureTreeModel::rowCount(const QModelIndex &parent) const
         return 0;
 
     StructureRow *parentRow = rowForIndex(parent);
-    return parentRow ? parentRow->children.size() : 0;
+    if (!parentRow || parentRow->hasOpenAsTarget)
+        return 0;
+
+    return parentRow->children.size();
 }
 
 int StructureTreeModel::columnCount(const QModelIndex &) const
@@ -134,8 +142,10 @@ bool StructureTreeModel::hasChildren(const QModelIndex &parent) const
     const StructureRow *row = rowForIndex(parent);
     if (!row)
         return false;
+    if (row->hasOpenAsTarget)
+        return false;
 
-    return !row->children.empty() || row->lazyChildLoader || !row->branchIconPath.isEmpty();
+    return !row->children.empty() || row->lazyChildLoader;
 }
 
 QVariant StructureTreeModel::data(const QModelIndex &index, int role) const
@@ -184,7 +194,7 @@ QVariant StructureTreeModel::data(const QModelIndex &index, int role) const
         switch (role)
         {
         case NameTypePrefixRole:
-            return row->nameTypePrefix;
+            return m_separateTypeColumn ? QString() : row->nameTypePrefix;
         case NameIdentifierRole:
             return row->nameIdentifier;
         case NameSuffixRole:
@@ -214,6 +224,8 @@ QVariant StructureTreeModel::headerData(int section, Qt::Orientation orientation
     {
     case NameColumn:
         return tr("Name");
+    case TypeColumn:
+        return tr("Type");
     case ValueColumn:
         return tr("Value");
     case OffsetColumn:
@@ -232,7 +244,7 @@ Qt::ItemFlags StructureTreeModel::flags(const QModelIndex &index) const
 
     const Qt::ItemFlags flags = QAbstractItemModel::flags(index);
     const StructureRow *row = rowForIndex(index);
-    if (index.column() == OffsetColumn)
+    if (index.column() == TypeColumn || index.column() == OffsetColumn)
         return flags;
 
     if (row && row->kind != StructureRowKind::Raw)
@@ -266,7 +278,7 @@ bool StructureTreeModel::canFetchMore(const QModelIndex &parent) const
         return false;
 
     const StructureRow *row = rowForIndex(parent);
-    return row && row->lazyChildLoader && !row->lazyChildrenLoaded;
+    return row && !row->hasOpenAsTarget && row->lazyChildLoader && !row->lazyChildrenLoaded;
 }
 
 void StructureTreeModel::fetchMore(const QModelIndex &parent)
@@ -421,6 +433,23 @@ void StructureTreeModel::applyDisplayOptions(const StructureDisplayOptions &opti
                                  index(row, NameColumn));
 }
 
+void StructureTreeModel::setSeparateTypeColumn(bool separate)
+{
+    if (m_separateTypeColumn == separate)
+        return;
+
+    m_separateTypeColumn = separate;
+    if (rowCount() > 0)
+        emit dataChanged(index(0, NameColumn),
+                         index(rowCount() - 1, TypeColumn),
+                         { Qt::DisplayRole, Qt::EditRole, NameTypePrefixRole });
+}
+
+bool StructureTreeModel::separateTypeColumn() const
+{
+    return m_separateTypeColumn;
+}
+
 StructureRow *StructureTreeModel::rowForIndex(const QModelIndex &index) const
 {
     if (!index.isValid())
@@ -434,7 +463,13 @@ QString StructureTreeModel::cellText(const StructureRow *row, int column) const
     switch (column)
     {
     case NameColumn:
-        return row->name;
+        return m_separateTypeColumn
+                && !row->nameIdentifier.isEmpty()
+                && !isStructuralNamePrefix(row->nameTypePrefix)
+            ? row->nameIdentifier + row->nameSuffix
+            : row->name;
+    case TypeColumn:
+        return isStructuralNamePrefix(row->nameTypePrefix) ? QString() : row->nameTypePrefix;
     case ValueColumn:
         return row->value;
     case OffsetColumn:
@@ -462,6 +497,8 @@ void StructureTreeModel::setCellText(StructureRow *row, int column, const QStrin
         row->branchIconPath.clear();
         row->branchOpenIconPath.clear();
         row->branchEmptyIconPath.clear();
+        break;
+    case TypeColumn:
         break;
     case ValueColumn:
         row->value = text;
@@ -556,12 +593,15 @@ void StructureTreeModel::applyDisplayOptionsToRow(StructureRow *row,
             row->name = formatter.declarationName(row->type);
         }
         if (index.isValid())
-            emit dataChanged(index, index, { Qt::DisplayRole,
-                                             Qt::EditRole,
-                                             NameTypePrefixRole,
-                                             NameIdentifierRole,
-                                             NameSuffixRole,
-                                             EmphasizeNameRole });
+        {
+            const QModelIndex lastChangedIndex = this->index(index.row(), TypeColumn, index.parent());
+            emit dataChanged(index, lastChangedIndex, { Qt::DisplayRole,
+                                                        Qt::EditRole,
+                                                        NameTypePrefixRole,
+                                                        NameIdentifierRole,
+                                                        NameSuffixRole,
+                                                        EmphasizeNameRole });
+        }
     }
 
     if (row->generatedOffset && !row->offset.isEmpty())
