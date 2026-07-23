@@ -297,6 +297,7 @@ private:
     void appendSemanticRowRequests();
     void appendSemanticNodeRequests();
     void appendSemanticEmitRows(StructureRow *root);
+    void appendSemanticDynamicArrayRows();
     StructureRow *semanticRootGroup();
     StructureRow *semanticDestinationGroup(const QStringList &path);
     StructureRow *semanticChildGroup(StructureRow *parent, const QStringList &path);

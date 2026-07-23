@@ -218,8 +218,8 @@ void StructViewFontTests::builderRendersWoffDirectoryAndPayloads()
     // Scenario: WOFF 1.0 is a big-endian wrapper around sfnt table data with a
     // fixed header and table directory.
     // Expected: the standard WOFF definition renders the directory entries by
-    // tag, emits compressed tables under WOFF Summary/FontTables, and still exposes
-    // metadata payloads as dynamic bytes.
+    // tag, keeps payload navigation under each browseable directory entry, and
+    // exposes metadata/private payloads as dynamic bytes.
     StrataLibrary library;
     QVERIFY2(parseStandardDefinition(&library, QStringLiteral("woff.strata")), "woff.strata failed to parse");
     TypeDecl *woffRoot = exportedNamed(&library, QStringLiteral("WOFF"));
@@ -289,28 +289,36 @@ void StructViewFontTests::builderRendersWoffDirectoryAndPayloads()
     QVERIFY2(text, qPrintable(childNames(nameRecords->children[0].get())));
     QCOMPARE(text->value, QStringLiteral("\"Test\""));
 
+    QVERIFY(!tables->children[0]->hasOpenAsTarget);
+    StructureRow *rawTableData = findChildNamed(tables->children[0].get(), QStringLiteral("BYTE TableData[]"));
+    QVERIFY2(rawTableData, qPrintable(childNames(tables->children[0].get())));
+    QVERIFY(rawTableData->hasOpenAsTarget);
+    QCOMPARE(rawTableData->openAsOffset, uint64_t(84));
+    QCOMPARE(rawTableData->openAsByteLength, uint64_t(26));
+    QVERIFY(rawTableData->openAsTransform.isEmpty());
+
     QCOMPARE(tables->children[1]->name, QStringLiteral("[1]head"));
     QVERIFY2(!findDescendantNamed(tables->children[1].get(), QStringLiteral("Decoded head")),
              qPrintable(childNames(tables->children[1].get())));
+    QVERIFY(!tables->children[1]->hasOpenAsTarget);
+    StructureRow *compressedData = findChildNamed(tables->children[1].get(), QStringLiteral("BYTE CompressedData[]"));
+    QVERIFY2(compressedData, qPrintable(childNames(tables->children[1].get())));
+    QVERIFY(compressedData->hasOpenAsTarget);
+    QCOMPARE(compressedData->openAsOffset, uint64_t(112));
+    QCOMPARE(compressedData->openAsByteLength, uint64_t(4));
+    QCOMPARE(compressedData->openAsTransform, QStringLiteral("zlib"));
 
-    StructureRow *semantic = findSemanticRootChildNamed(rows, QStringLiteral("WOFF Summary"));
-    QVERIFY2(semantic, "WOFF Summary semantic child row not found");
-    StructureRow *fontTables = findChildNamed(semantic, QStringLiteral("FontTables"));
-    QVERIFY2(fontTables, qPrintable(childNames(semantic)));
-    QCOMPARE(fontTables->children.size(), size_t(2));
-    StructureRow *tableData = fontTables->children[0].get();
-    QCOMPARE(tableData->name, QStringLiteral("name"));
-    QCOMPARE(tableData->offset, QStringLiteral("00000054"));
-    QCOMPARE(tableData->children.size(), size_t(26));
-    QCOMPARE(fontTables->children[1]->name, QStringLiteral("head"));
-    QCOMPARE(fontTables->children[1]->offset, QStringLiteral("00000070"));
-    QCOMPARE(fontTables->children[1]->children.size(), size_t(4));
+    QVERIFY(!findSemanticRootChildNamed(rows, QStringLiteral("WOFF Summary")));
 
     StructureRow *metaOffset = findChildNamed(header, QStringLiteral("dword metaOffset"));
     QVERIFY2(metaOffset, qPrintable(childNames(header)));
     StructureRow *metadata = findChildNamed(metaOffset, QStringLiteral("BYTE Metadata[]"));
     QVERIFY2(metadata, qPrintable(childNames(metaOffset)));
     QCOMPARE(metadata->offset, QStringLiteral("00000074"));
+    QVERIFY(metadata->hasOpenAsTarget);
+    QCOMPARE(metadata->openAsOffset, uint64_t(116));
+    QCOMPARE(metadata->openAsByteLength, uint64_t(4));
+    QCOMPARE(metadata->openAsTransform, QStringLiteral("zlib"));
     QCOMPARE(metadata->children[0]->value, QStringLiteral("5"));
 }
 

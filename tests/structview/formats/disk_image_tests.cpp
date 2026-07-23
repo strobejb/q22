@@ -234,6 +234,15 @@ void StructViewDiskImageTests::builderRendersIsoVolumeDescriptors()
     QCOMPARE(findChildNamed(volume, QStringLiteral("VolumeSpaceSize"))->value, QStringLiteral("20"));
     QCOMPARE(findChildNamed(volume, QStringLiteral("RootExtent"))->value, QStringLiteral("18"));
     QCOMPARE(findChildNamed(volume, QStringLiteral("RootSize"))->value, QStringLiteral("2048"));
+
+    StructureRow *fileSystem = findChildNamed(summary, QStringLiteral("FileSystem"));
+    QVERIFY2(fileSystem, qPrintable(childNames(summary)));
+    StructureRow *rootDirectory = findChildNamed(fileSystem, QStringLiteral("/"));
+    QVERIFY2(rootDirectory, qPrintable(childNames(fileSystem)));
+    StructureRow *semanticEntries = findChildNamed(rootDirectory, QStringLiteral("ISO_DIRECTORY_ITEM Entries[]"));
+    QVERIFY2(semanticEntries, qPrintable(childNames(rootDirectory)));
+    QVERIFY(semanticEntries->lazyChildLoader);
+    QVERIFY(semanticEntries->children.empty());
 }
 
 void StructViewDiskImageTests::builderRendersIsoDirectoryTreesAcrossSectorPadding()
@@ -398,6 +407,20 @@ void StructViewDiskImageTests::builderRendersIsoDirectoryTreesAcrossSectorPaddin
     StructureRow *summary = findSemanticRootChildNamed(rows, QStringLiteral("ISO Summary"));
     QVERIFY2(summary, "ISO Summary semantic child row not found");
     QVERIFY2(findChildNamed(summary, QStringLiteral("Volumes")), qPrintable(childNames(summary)));
+    StructureRow *fileSystem = findChildNamed(summary, QStringLiteral("FileSystem"));
+    QVERIFY2(fileSystem, qPrintable(childNames(summary)));
+    StructureRow *semanticRoot = findChildNamed(fileSystem, QStringLiteral("/"));
+    QVERIFY2(semanticRoot, qPrintable(childNames(fileSystem)));
+    StructureRow *semanticEntries = findChildNamed(semanticRoot, QStringLiteral("ISO_DIRECTORY_ITEM Entries[]"));
+    QVERIFY2(semanticEntries, qPrintable(childNames(semanticRoot)));
+    QVERIFY(semanticEntries->lazyChildLoader);
+    QVERIFY(semanticEntries->children.empty());
+    loadLazyChildren(semanticEntries);
+    QCOMPARE(semanticEntries->children.size(), size_t(5));
+    QVERIFY2(semanticEntries->children[1]->name.contains(QStringLiteral("ROOT.TXT;1")),
+             qPrintable(semanticEntries->children[1]->name));
+    QVERIFY2(semanticEntries->children[3]->name.contains(QStringLiteral("BOOT")),
+             qPrintable(semanticEntries->children[3]->name));
 }
 
 REGISTER_STRUCTVIEW_TEST(StructViewDiskImageTests)

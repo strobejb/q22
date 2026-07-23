@@ -1186,6 +1186,7 @@ std::vector<std::unique_ptr<StructureRow>> StructureRenderEngine::buildSemanticO
         appendSemanticRowRequests();
         appendSemanticNodeRequests();
         appendSemanticEmitRows(rawRoot);
+        appendSemanticDynamicArrayRows();
         linkWasmSemanticFunctionCodeTargets(rawRoot);
     }
     if (profile)
@@ -2366,7 +2367,16 @@ bool StructureRenderEngine::evaluateFunction(const EvalContext &context, ExprNod
         if (args.size() != 1)
             return false;
 
-        StructureRow *row = findFieldRow(context.row, args[0]);
+        StructureRow *row = nullptr;
+        if (args[0] && args[0]->type == EXPR_IDENTIFIER && args[0]->str
+            && std::strcmp(args[0]->str, "this") == 0)
+        {
+            row = context.row;
+        }
+        else
+        {
+            row = findFieldRow(context.row, args[0]);
+        }
         if (!row)
             return false;
 
@@ -4174,7 +4184,7 @@ void StructureRenderEngine::collectDynamicRequests(StructureRow *row)
 
 void StructureRenderEngine::collectDynamicArrayRequests(StructureRow *row)
 {
-    if (!row || !row->typeDecl)
+    if (!row)
         return;
     if (row->lazyChildLoader)
         return;
@@ -4182,122 +4192,125 @@ void StructureRenderEngine::collectDynamicArrayRequests(StructureRow *row)
     INUMTYPE probeArrayIndex = 0;
     const bool rowIsArrayElement = arrayIndexFromRow(row, &probeArrayIndex);
 
-    for (Tag *tag : effectiveTags(row, row->typeDecl))
+    if (row->typeDecl)
     {
-        if (tag->tok != TOK_DYNAMICARRAY)
-            continue;
-
-        ExprNode *selectorOrLabelExpr = nullptr;
-        ExprNode *containerExpr = nullptr;
-        ExprNode *typeNameExpr = nullptr;
-        ExprNode *logicalOffsetExpr = nullptr;
-        ExprNode *countExpr = nullptr;
-        ExprNode *stopExpr = nullptr;
-        ExprNode *terminatorModeExpr = nullptr;
-        ExprNode *conditionExpr = nullptr;
-        ExprNode *openAsExpr = nullptr;
-        DynamicMapper mapper = DynamicMapper::Direct;
-        DynamicLoading loading = DynamicLoading::Default;
-        bool isCaseSelector = false;
-        if (!dynamicArrayArgs(tag->expr,
-                              &selectorOrLabelExpr,
-                              &containerExpr,
-                              &typeNameExpr,
-                              &logicalOffsetExpr,
-                              &countExpr,
-                              &stopExpr,
-                              &terminatorModeExpr,
-                              &conditionExpr,
-                              &mapper,
-                              nullptr,
-                              &isCaseSelector,
-                              &openAsExpr,
-                              &loading))
-            continue;
-
-        // dynamic_array mirrors dynamic_struct for directory arrays: when the
-        // owner row is itself an array element, the first argument can select
-        // which element emits the referenced table.  On ordinary rows the same
-        // argument is only a display label for the generated array.
-        bool attachToMappedContainer = false;
-        if (isCaseSelector)
+        for (Tag *tag : effectiveTags(row, row->typeDecl))
         {
-            INUMTYPE arrayIndex = 0;
-            INUMTYPE selector = 0;
-            if (!rowIsArrayElement
-                || !arrayIndexFromRow(row, &arrayIndex)
-                || !evaluate(row, selectorOrLabelExpr, &selector, row->absoluteOffset)
-                || selector != arrayIndex)
+            if (tag->tok != TOK_DYNAMICARRAY)
+                continue;
+
+            ExprNode *selectorOrLabelExpr = nullptr;
+            ExprNode *containerExpr = nullptr;
+            ExprNode *typeNameExpr = nullptr;
+            ExprNode *logicalOffsetExpr = nullptr;
+            ExprNode *countExpr = nullptr;
+            ExprNode *stopExpr = nullptr;
+            ExprNode *terminatorModeExpr = nullptr;
+            ExprNode *conditionExpr = nullptr;
+            ExprNode *openAsExpr = nullptr;
+            DynamicMapper mapper = DynamicMapper::Direct;
+            DynamicLoading loading = DynamicLoading::Default;
+            bool isCaseSelector = false;
+            if (!dynamicArrayArgs(tag->expr,
+                                  &selectorOrLabelExpr,
+                                  &containerExpr,
+                                  &typeNameExpr,
+                                  &logicalOffsetExpr,
+                                  &countExpr,
+                                  &stopExpr,
+                                  &terminatorModeExpr,
+                                  &conditionExpr,
+                                  &mapper,
+                                  nullptr,
+                                  &isCaseSelector,
+                                  &openAsExpr,
+                                  &loading))
+                continue;
+
+            // dynamic_array mirrors dynamic_struct for directory arrays: when the
+            // owner row is itself an array element, the first argument can select
+            // which element emits the referenced table.  On ordinary rows the same
+            // argument is only a display label for the generated array.
+            bool attachToMappedContainer = false;
+            if (isCaseSelector)
+            {
+                INUMTYPE arrayIndex = 0;
+                INUMTYPE selector = 0;
+                if (!rowIsArrayElement
+                    || !arrayIndexFromRow(row, &arrayIndex)
+                    || !evaluate(row, selectorOrLabelExpr, &selector, row->absoluteOffset)
+                    || selector != arrayIndex)
+                {
+                    continue;
+                }
+                attachToMappedContainer = mapper == DynamicMapper::OffsetMap;
+            }
+
+            if (!typeNameExpr || typeNameExpr->type != EXPR_IDENTIFIER || !typeNameExpr->str)
+                continue;
+
+            TypeDecl *targetType = findTypeDecl(typeNameExpr->str);
+            Type *renderType = typeInDecl(targetType, typeNameExpr->str);
+            if (!targetType || !renderType)
+                continue;
+
+            INUMTYPE logicalOffset = 0;
+            INUMTYPE count = 0;
+            INUMTYPE condition = 1;
+            QString offsetSpace;
+            ExprNode *offsetValueExpr = logicalOffsetExpr;
+            if (!offsetTagArgs(logicalOffsetExpr, &offsetSpace, &offsetValueExpr))
+                continue;
+
+            if (!evaluate(row, offsetValueExpr, &logicalOffset, row->absoluteOffset)
+                || !evaluate(row, countExpr, &count, row->absoluteOffset)
+                || (conditionExpr && (!evaluate(row, conditionExpr, &condition, row->absoluteOffset) || condition == 0))
+                || count <= 0)
             {
                 continue;
             }
-            attachToMappedContainer = mapper == DynamicMapper::OffsetMap;
-        }
 
-        if (!typeNameExpr || typeNameExpr->type != EXPR_IDENTIFIER || !typeNameExpr->str)
-            continue;
-
-        TypeDecl *targetType = findTypeDecl(typeNameExpr->str);
-        Type *renderType = typeInDecl(targetType, typeNameExpr->str);
-        if (!targetType || !renderType)
-            continue;
-
-        INUMTYPE logicalOffset = 0;
-        INUMTYPE count = 0;
-        INUMTYPE condition = 1;
-        QString offsetSpace;
-        ExprNode *offsetValueExpr = logicalOffsetExpr;
-        if (!offsetTagArgs(logicalOffsetExpr, &offsetSpace, &offsetValueExpr))
-            continue;
-
-        if (!evaluate(row, offsetValueExpr, &logicalOffset, row->absoluteOffset)
-            || !evaluate(row, countExpr, &count, row->absoluteOffset)
-            || (conditionExpr && (!evaluate(row, conditionExpr, &condition, row->absoluteOffset) || condition == 0))
-            || count <= 0)
-        {
-            continue;
-        }
-
-        if (!offsetSpace.isEmpty())
-        {
-            uint64_t fileOffset = 0;
-            if (mapper != DynamicMapper::Direct
-                || !mapNamedOffset(offsetSpace, static_cast<uint64_t>(logicalOffset), &fileOffset))
+            if (!offsetSpace.isEmpty())
             {
-                continue;
+                uint64_t fileOffset = 0;
+                if (mapper != DynamicMapper::Direct
+                    || !mapNamedOffset(offsetSpace, static_cast<uint64_t>(logicalOffset), &fileOffset))
+                {
+                    continue;
+                }
+                logicalOffset = static_cast<INUMTYPE>(fileOffset);
             }
-            logicalOffset = static_cast<INUMTYPE>(fileOffset);
-        }
 
-        QString label;
-        if (selectorOrLabelExpr && selectorOrLabelExpr->str
-            && (selectorOrLabelExpr->type == EXPR_IDENTIFIER || selectorOrLabelExpr->type == EXPR_STRINGBUF))
-        {
-            label = QString::fromLocal8Bit(selectorOrLabelExpr->str);
-        }
-        QString containerLabel;
-        if (containerExpr && containerExpr->str
-            && (containerExpr->type == EXPR_IDENTIFIER || containerExpr->type == EXPR_STRINGBUF))
-        {
-            containerLabel = QString::fromLocal8Bit(containerExpr->str);
-        }
+            QString label;
+            if (selectorOrLabelExpr && selectorOrLabelExpr->str
+                && (selectorOrLabelExpr->type == EXPR_IDENTIFIER || selectorOrLabelExpr->type == EXPR_STRINGBUF))
+            {
+                label = QString::fromLocal8Bit(selectorOrLabelExpr->str);
+            }
+            QString containerLabel;
+            if (containerExpr && containerExpr->str
+                && (containerExpr->type == EXPR_IDENTIFIER || containerExpr->type == EXPR_STRINGBUF))
+            {
+                containerLabel = QString::fromLocal8Bit(containerExpr->str);
+            }
 
-        m_dynamicArrayRequests.push_back(DynamicArrayRequest{
-            row,
-            targetType,
-            renderType,
-            label,
-            containerLabel,
-            uint64_t(logicalOffset),
-            uint64_t(count),
-            stopExpr,
-            terminatorModeExpr,
-            conditionExpr,
-            openAsExpr,
-            mapper,
-            loading,
-            attachToMappedContainer
-        });
+            m_dynamicArrayRequests.push_back(DynamicArrayRequest{
+                row,
+                targetType,
+                renderType,
+                label,
+                containerLabel,
+                uint64_t(logicalOffset),
+                uint64_t(count),
+                stopExpr,
+                terminatorModeExpr,
+                conditionExpr,
+                openAsExpr,
+                mapper,
+                loading,
+                attachToMappedContainer
+            });
+        }
     }
 
     for (const auto &child : row->children)
@@ -5759,6 +5772,36 @@ void StructureRenderEngine::appendSemanticEmitRows(StructureRow *root)
             appendRequest(request);
 }
 
+void StructureRenderEngine::appendSemanticDynamicArrayRows()
+{
+    if (!m_rootRow)
+        return;
+
+    StructureRow *semanticRoot = nullptr;
+    const QString rootLabel = semanticRootLabel();
+    for (const auto &child : m_rootRow->children)
+    {
+        if (child && child->kind == StructureRowKind::Semantic && child->name == rootLabel
+            && child->branchIconPath != QStringLiteral(":/icons/actions/circle-repeat.svg"))
+        {
+            semanticRoot = child.get();
+            break;
+        }
+    }
+    if (!semanticRoot)
+        return;
+
+    const size_t requestsBefore = m_dynamicArrayRequests.size();
+    collectDynamicArrayRequests(semanticRoot);
+    appendDynamicArrayRows(semanticRoot);
+    if (m_dynamicArrayRequests.size() > requestsBefore)
+    {
+        m_dynamicArrayRequests.erase(
+            m_dynamicArrayRequests.begin() + static_cast<ptrdiff_t>(requestsBefore),
+            m_dynamicArrayRequests.end());
+    }
+}
+
 StructureRow *StructureRenderEngine::semanticRootGroup()
 {
     if (!m_rootRow)
@@ -6783,12 +6826,39 @@ TypeDecl *StructureRenderEngine::semanticDestinationElementSchema(TypeDecl *sche
         return nullptr;
 
     Type *type = destinationDecl->declList.empty() ? destinationDecl->baseType : destinationDecl->declList[0];
+    bool isArrayDestination = false;
     for (Type *cursor = type; cursor; cursor = cursor->link)
     {
         if (cursor->ty == typeARRAY)
         {
             type = cursor->link;
+            isArrayDestination = true;
             break;
+        }
+    }
+
+    if (isArrayDestination)
+    {
+        TypeDecl *elementDecl = referencedTypeDecl(type);
+        ExprNode *semanticExpr = nullptr;
+        if (elementDecl && FindTag(elementDecl->tagList, TOK_SEMANTIC, &semanticExpr))
+            return elementDecl;
+
+        Type *base = BaseNode(type);
+        if (base && (base->ty == typeSTRUCT || base->ty == typeUNION)
+            && base->sptr
+            && base->sptr->semanticSchema)
+        {
+            for (TypeDecl *candidate : m_library ? m_library->globalTypeDeclList : TypeDeclList{})
+            {
+                if (!candidate)
+                    continue;
+                if (BaseNode(candidate->baseType) == base
+                    && FindTag(candidate->tagList, TOK_SEMANTIC, &semanticExpr))
+                {
+                    return candidate;
+                }
+            }
         }
     }
 

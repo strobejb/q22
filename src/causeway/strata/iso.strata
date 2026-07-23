@@ -62,11 +62,30 @@ typedef struct _ISO_SEMANTIC_VOLUME
     DWORD RootSize;
 } ISO_SEMANTIC_VOLUME, *PISO_SEMANTIC_VOLUME;
 
+[
+    semantic,
+    name(Name),
+    dynamic_array(
+        name(Entries),
+        type(ISO_DIRECTORY_ITEM),
+        offset(base_of(this)),
+        max_count(extent_of(this)),
+        loading(lazy)
+    )
+]
+typedef struct _ISO_SEMANTIC_DIRECTORY
+{
+    CHAR Name[];
+} ISO_SEMANTIC_DIRECTORY, *PISO_SEMANTIC_DIRECTORY;
+
 [semantic("ISO Summary")]
 typedef struct _ISO_VIEW
 {
     [element(name(VolumeIdentifier))]
     ISO_SEMANTIC_VOLUME Volumes[];
+
+    [element(name(Name))]
+    ISO_SEMANTIC_DIRECTORY FileSystem[];
 } ISO_VIEW;
 
 typedef struct _ISO_DIRECTORY_RECORD
@@ -272,7 +291,12 @@ typedef struct _ISO_VOLUME_DESCRIPTOR
                       field(LogicalBlockSize, primary.logicalBlockSize.le),
                       field(VolumeSpaceSize, primary.volumeSpaceSize.le),
                       field(RootExtent, primary.rootDirectoryRecord.extentLocation.le),
-                      field(RootSize, primary.rootDirectoryRecord.dataLength.le))
+                      field(RootSize, primary.rootDirectoryRecord.dataLength.le)),
+            emit_node(dest(FileSystem, key("root")),
+                      name("/"),
+                      offset(primary.rootDirectoryRecord.extentLocation.le * 2048),
+                      extent(primary.rootDirectoryRecord.dataLength.le),
+                      field(Name, "/"))
         ]
         ISO_PRIMARY_VOLUME_DESCRIPTOR_PAYLOAD primary;
 
@@ -285,7 +309,12 @@ typedef struct _ISO_VOLUME_DESCRIPTOR
                       field(LogicalBlockSize, supplementary.logicalBlockSize.le),
                       field(VolumeSpaceSize, supplementary.volumeSpaceSize.le),
                       field(RootExtent, supplementary.rootDirectoryRecord.extentLocation.le),
-                      field(RootSize, supplementary.rootDirectoryRecord.dataLength.le))
+                      field(RootSize, supplementary.rootDirectoryRecord.dataLength.le)),
+            emit_node(dest(FileSystem, key("supplementary")),
+                      name("Supplementary root"),
+                      offset(supplementary.rootDirectoryRecord.extentLocation.le * 2048),
+                      extent(supplementary.rootDirectoryRecord.dataLength.le),
+                      field(Name, "Supplementary root"))
         ]
         ISO_PRIMARY_VOLUME_DESCRIPTOR_PAYLOAD supplementary;
 
