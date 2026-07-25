@@ -443,6 +443,7 @@ ExprNode * Parser::UnaryExpression(void)
 	case TOK_FINDLAST:
 	case TOK_FOURCC:
 	case TOK_FMT:
+	case TOK_HEX:
 	case TOK_OCTAL:
 	case TOK_STR:
 	{

@@ -1487,6 +1487,7 @@ void CausewayTests::standardTypelibFilesParse()
 
 	const QStringList files = {
 		QStringLiteral("basetypes.strata"),
+		QStringLiteral("cpio.strata"),
 		QStringLiteral("dex.strata"),
 		QStringLiteral("dtb.strata"),
 		QStringLiteral("elf.strata"),

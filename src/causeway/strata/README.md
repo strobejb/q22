@@ -22,7 +22,7 @@ View online: [Strata Language Reference](https://github.com/strobejb/q22/blob/ma
 | Unions | [`select`](#discriminated-unions) · [`case`](#discriminated-unions) |
 | Dynamic/semantic views | [`semantic`](#semantic-and-emit) · [`emit`](#semantic-and-emit) · [`emit_node`](#semantic-and-emit) · [`emit_row`](#semantic-and-emit) · [`append`](#positional-semantic-collection-addressing) · [`item`](#positional-semantic-collection-addressing) · [`dynamic_struct`](#dynamic_struct) · [`dynamic_array`](#dynamic_array) · [`dynamic_container`](#dynamic_container) · [`offset_map`](#offset_map) |
 | Export | [`export`](#export-metadata) · [`category`](#export-metadata) · [`version`](#export-metadata) · [`assoc`](#export-metadata) · [`magic`](#export-metadata) |
-| Expressions | [`sizeof`](#expressions) · [`file_size`](#expressions) · [`extent_of`](#expressions) · [`base_of`](#expressions) · [`array_index`](#expressions) · [`element_value`](#expressions) · [`current_offset`](#expressions) · [`str`](#expressions) · [`cstr`](#expressions) · [`concat`](#expressions) · [`fmt`](#expressions) · [`octal`](#expressions) · [`find_first`](#byte-pattern-search) · [`find_last`](#byte-pattern-search) · [`index_of`](#value_at) · [`select_offset`](#select_offset) · [`value_at`](#value_at) |
+| Expressions | [`sizeof`](#expressions) · [`file_size`](#expressions) · [`extent_of`](#expressions) · [`base_of`](#expressions) · [`array_index`](#expressions) · [`element_value`](#expressions) · [`current_offset`](#expressions) · [`str`](#expressions) · [`cstr`](#expressions) · [`concat`](#expressions) · [`fmt`](#expressions) · [`octal`](#expressions) · [`hex`](#expressions) · [`find_first`](#byte-pattern-search) · [`find_last`](#byte-pattern-search) · [`index_of`](#value_at) · [`select_offset`](#select_offset) · [`value_at`](#value_at) |
 
 ---
 
@@ -1246,6 +1246,7 @@ dosHeader.e_lfanew
 | Parsed string | `str(field)` |
 | String construction | `concat(a, b, ...)`, `fmt("{0}", value)` |
 | Octal text | `octal(text)` |
+| Hex text | `hex(text)` |
 | FourCC literal | `fourcc("abcd")` |
 | String lookup | `cstr(offset)`, `cstr("space", offset)`, `cstr_at(offset, maxLen)`, `cstr_from(base, offset[, maxLen])` |
 | Byte sequence literal | `{ 0x50, 0x4b }` |
@@ -1350,6 +1351,18 @@ stored as NUL/space-padded octal text:
 char size[];
 
 [count(octal(str(size))), pad_to(512)]
+byte data[];
+```
+
+`hex(text)` is the same idea for ASCII hexadecimal fields, including optional
+`0x` prefixes. This is useful for formats such as CPIO `newc` whose header
+fields are fixed-width ASCII hex:
+
+```c
+[string, count(8)]
+char filesize[];
+
+[count(hex(str(filesize)))]
 byte data[];
 ```
 
@@ -1482,7 +1495,7 @@ Qt Creator highlighter in `scripts/qtcreator/q22-strata.xml`.
 | Compatibility/native hooks | `native_view` |
 | Export/detection tags | `assoc`, `category`, `export`, `magic`, `version` |
 | Top-level/reusable declarations | `bitfield`, `field`, `include`, `match`, `tagset`, `tags` |
-| Expression helpers | `array_index`, `base_of`, `concat`, `cstr`, `cstr_at`, `cstr_from`, `current_offset`, `element_value`, `extent_of`, `field_at`, `file_size`, `find_first`, `find_last`, `fmt`, `fourcc`, `index_of`, `octal`, `root_value_at`, `select_offset`, `sizeof`, `str`, `value_at` |
+| Expression helpers | `array_index`, `base_of`, `concat`, `cstr`, `cstr_at`, `cstr_from`, `current_offset`, `element_value`, `extent_of`, `field_at`, `file_size`, `find_first`, `find_last`, `fmt`, `fourcc`, `hex`, `index_of`, `octal`, `root_value_at`, `select_offset`, `sizeof`, `str`, `value_at` |
 | Reserved/unsupported | `description`, `display`, `ignore`, `length_is`, `style` |
 
 ---

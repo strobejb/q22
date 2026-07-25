@@ -21,6 +21,7 @@ description: Write, review, and debug q22 Strata `.strata`/legacy `.struct` bina
 - Use `enum(Name)` for one-of-N values and `bitflag(Name)` for independent masks.
 - Do not use `bitflag(...)` for packed fields whose values overlap, such as PE section alignment bits. Leave those raw or add a purpose-built renderer later.
 - Leave architecture-specific fields raw unless the definition can switch safely on architecture. ELF `e_flags` is intentionally raw because architectures assign different meanings to the same bits.
+- Prefer fixed array declarators for statically sized arrays, especially string-like fields: write `char magic[6];` or `char size[8];`, not `[format("string"), count(6)] char magic[];`. `char[]` fields already render as strings, so add `format("string")` only when a non-char byte array needs string presentation.
 - When a variable array may exceed the display cap, pair `count(...)` with `extent(...)` so parent layout advances by the true byte length.
 - On arrays, keep layout bounds on the array declaration and put per-element behavior inside `element(...)`: `[count(n), element(name(id), dynamic_array(...), emit_node(...))] Entry entries[];`. Direct `name(...)`, dynamic, semantic emit, diagnostic, navigation, or display tags on an array declaration are authoring errors.
 - Use `dynamic_struct(...)` only on struct/union declarations, or inside `element(...)` for arrays of struct/union elements. Do not attach `dynamic_struct(...)` to scalar offset fields; put it on the owning record and reference the scalar field from `offset(...)`.
@@ -45,6 +46,21 @@ Flexible payload with true layout extent:
 ```c
 [count(CompressedSize), extent(CompressedSize)]
 byte CompressedData[];
+```
+
+Fixed-width text/header fields:
+
+```c
+char magic[6];
+char asciiHexSize[8];
+```
+
+Avoid noisy equivalent spellings:
+
+```c
+// Avoid: fixed size belongs in the declarator, and char arrays are string-like.
+[format("string"), count(8)]
+char asciiHexSize[];
 ```
 
 Referenced archive payload exposed as a navigable child while preserving the

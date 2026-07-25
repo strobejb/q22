@@ -55,6 +55,7 @@ private slots:
     void builderEvaluatesFieldsAndCorrectedExpressions();
     void builderEvaluatesFindSearchExpressions();
     void builderEvaluatesOctalStringExpressions();
+    void builderEvaluatesHexStringExpressions();
     void builderSelectsUnionMembersFromStringExpressions();
     void builderSelectsUnionMembersFromFourCcExpressions();
     void builderUsesDynamicEndianExpressions();
@@ -1899,6 +1900,35 @@ void StructViewRawRendererTests::builderEvaluatesOctalStringExpressions()
     QCOMPARE(payload->value, QStringLiteral("{ 17, 34, 51, 68, 85 }"));
 }
 
+void StructViewRawRendererTests::builderEvaluatesHexStringExpressions()
+{
+    // Scenario: formats such as CPIO newc store numeric fields as ASCII hex.
+    // Expected: hex(str(field)) converts a rendered string field into an
+    // integer expression usable by later layout tags.
+    StrataLibrary library;
+    Parser parser(&library);
+    QVERIFY(parseBuffer(parser,
+                        "[export]\n"
+                        "struct Root {\n"
+                        "  [string, count(8)] char size[];\n"
+                        "  [count(hex(str(size)))] byte payload[];\n"
+                        "} root;\n"));
+
+    QByteArray bytes(13, '\0');
+    writeAscii(&bytes, 0, "00000005");
+    bytes[8] = char(0x11);
+    bytes[9] = char(0x22);
+    bytes[10] = char(0x33);
+    bytes[11] = char(0x44);
+    bytes[12] = char(0x55);
+
+    auto rows = buildRows(parser.GetStrataLibrary(), firstExported(parser.GetStrataLibrary()), bytes);
+    QCOMPARE(rows.size(), size_t(1));
+    StructureRow *payload = findChildNamed(rows[0].get(), QStringLiteral("byte payload[]"));
+    QVERIFY2(payload, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(payload->value, QStringLiteral("{ 17, 34, 51, 68, 85 }"));
+}
+
 void StructViewRawRendererTests::builderSelectsUnionMembersFromStringExpressions()
 {
     // Scenario: a nameless union discriminator is a NUL-terminated string found
@@ -2290,6 +2320,10 @@ void StructViewRawRendererTests::definitionManagerFlagsNonStaticFieldReferences(
     StrataLibrary cabLibrary;
     QVERIFY2(parseStandardDefinition(&cabLibrary, QStringLiteral("cab.strata")), "cab.strata failed to parse");
     QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&cabLibrary).isEmpty());
+
+    StrataLibrary cpioLibrary;
+    QVERIFY2(parseStandardDefinition(&cpioLibrary, QStringLiteral("cpio.strata")), "cpio.strata failed to parse");
+    QVERIFY(StructureRenderEngine::validateStaticFieldReferences(&cpioLibrary).isEmpty());
 
     StrataLibrary rawImgLibrary;
     QVERIFY2(parseStandardDefinition(&rawImgLibrary, QStringLiteral("rawimg.strata")), "rawimg.strata failed to parse");

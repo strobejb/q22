@@ -28,6 +28,7 @@
     <item>fmt</item>
     <item>format</item>
     <item>fourcc</item>
+    <item>hex</item>
     <item>ignore</item>
     <item>bitfield</item>
     <item>array_index</item>
@@ -117,6 +118,7 @@
     <item>offset_map</item>
     <item>open_as</item>
     <item>octal</item>
+    <item>hex</item>
     <item>optional</item>
     <item>pad_to</item>
     <item>select</item>

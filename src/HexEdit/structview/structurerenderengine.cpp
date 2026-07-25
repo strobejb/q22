@@ -2336,6 +2336,45 @@ bool parseOctalText(const QString &text, INUMTYPE *result)
     *result = static_cast<INUMTYPE>(value);
     return true;
 }
+
+bool parseHexText(const QString &text, INUMTYPE *result)
+{
+    if (!result)
+        return false;
+
+    uint64_t value = 0;
+    bool sawDigit = false;
+    QString trimmed = text.trimmed();
+    if (trimmed.startsWith(QStringLiteral("0x"), Qt::CaseInsensitive))
+        trimmed = trimmed.mid(2);
+
+    for (const QChar ch : trimmed)
+    {
+        if (ch == QLatin1Char('\0') || ch == QLatin1Char(' '))
+            break;
+
+        uint digit = 0;
+        if (ch >= QLatin1Char('0') && ch <= QLatin1Char('9'))
+            digit = uint(ch.unicode() - QLatin1Char('0').unicode());
+        else if (ch >= QLatin1Char('a') && ch <= QLatin1Char('f'))
+            digit = 10u + uint(ch.unicode() - QLatin1Char('a').unicode());
+        else if (ch >= QLatin1Char('A') && ch <= QLatin1Char('F'))
+            digit = 10u + uint(ch.unicode() - QLatin1Char('A').unicode());
+        else
+            return false;
+
+        sawDigit = true;
+        if (value > (uint64_t(std::numeric_limits<INUMTYPE>::max()) - digit) / 16u)
+            return false;
+        value = (value << 4) | digit;
+    }
+
+    if (!sawDigit)
+        return false;
+
+    *result = static_cast<INUMTYPE>(value);
+    return true;
+}
 } // namespace
 
 bool StructureRenderEngine::evaluateFunction(const EvalContext &context, ExprNode *expr, INUMTYPE *result)
@@ -2511,6 +2550,7 @@ bool StructureRenderEngine::evaluateFunction(const EvalContext &context, ExprNod
         return packFourCcLiteral(args[0]->str, m_bigEndian, result);
     }
     case TOK_OCTAL:
+    case TOK_HEX:
     {
         std::vector<ExprNode *> args;
         collectExpressionArgs(expr->left, &args);
@@ -2521,7 +2561,7 @@ bool StructureRenderEngine::evaluateFunction(const EvalContext &context, ExprNod
         if (!evaluateString(context, args[0], &text))
             return false;
 
-        return parseOctalText(text, result);
+        return expr->tok == TOK_OCTAL ? parseOctalText(text, result) : parseHexText(text, result);
     }
     default:
         return false;

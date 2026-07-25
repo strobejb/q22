@@ -226,6 +226,19 @@ GZip headers, optional strings, compressed bytes, and trailers are covered.
 Inflating DEFLATE and presenting a wrapped format such as TAR needs transformed
 subfile support.
 
+### CPIO / initramfs
+
+CPIO `newc` archives are covered as fixed-width ASCII-hex headers, aligned file
+names, aligned file payloads, hidden `TRAILER!!!` terminators, and nested payload
+byte ranges. This required a reusable `hex(text)` expression helper, matching
+the existing `octal(text)` helper used by TAR.
+
+Remaining gaps are mostly ergonomic: layout expressions are numeric, so
+terminating on a string sentinel currently needs raw `value_at(...)` probes
+rather than a direct `str(name) == "TRAILER!!!"` expression. Older binary and
+portable-ASCII CPIO variants are not modeled yet. Compressed initramfs files are
+handled through wrapper formats such as GZip rather than by CPIO itself.
+
 ### Cabinet archives
 
 CAB headers, folder/file tables, and raw CFDATA blocks are covered. Remaining

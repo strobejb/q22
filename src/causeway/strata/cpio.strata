@@ -1,0 +1,73 @@
+// q22-strata-v1
+//
+//  cpio.strata
+//
+
+include "basetypes.strata";
+
+typedef struct _CPIO_NEWC_HEADER
+{
+    char magic[6];
+    char ino[8];
+    char mode[8];
+    char uid[8];
+    char gid[8];
+    char nlink[8];
+    char mtime[8];
+    char filesize[8];
+    char devmajor[8];
+    char devminor[8];
+    char rdevmajor[8];
+    char rdevminor[8];
+    char namesize[8];
+
+    char check[8];
+} CPIO_NEWC_HEADER, *PCPIO_NEWC_HEADER;
+
+typedef struct _CPIO_NEWC_ENTRY
+{
+    CPIO_NEWC_HEADER header;
+
+    [count(hex(str(header.namesize))), pad_to(4)]
+    char name[];
+
+    [
+        count(hex(str(header.filesize))),
+        extent(hex(str(header.filesize))),
+        pad_to(4),
+        nested(type(auto),
+               offset(current_offset()),
+               extent(hex(str(header.filesize))),
+               optional(hex(str(header.filesize)) != 0),
+               name(name))
+    ]
+    byte data[];
+} CPIO_NEWC_ENTRY, *PCPIO_NEWC_ENTRY;
+
+[
+    export("CPIO Archive (newc)"),
+    version(1),
+    category("storage"),
+    assoc(".cpio", ".initramfs"),
+    magic({ '0', '7', '0', '7', '0', '1' }),
+    magic({ '0', '7', '0', '7', '0', '2' }),
+    offset(0),
+    endian("big")
+]
+typedef struct _CPIO
+{
+    [
+        max_count(16384),
+        extent(file_size()),
+        terminated_by(hex(str(header.filesize)) == 0
+                      && hex(str(header.namesize)) == 11
+                      && value_at(110, dword) == fourcc("TRAI")
+                      && value_at(114, dword) == fourcc("LER!")
+                      && value_at(118, byte) == '!'
+                      && value_at(119, byte) == '!'
+                      && value_at(120, byte) == 0),
+        terminator("hidden"),
+        element(name(name))
+    ]
+    CPIO_NEWC_ENTRY entries[];
+} CPIO;

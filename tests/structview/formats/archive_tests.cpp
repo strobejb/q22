@@ -7,11 +7,47 @@ class StructViewArchiveTests : public QObject
 private slots:
     void builderRendersTarEntries();
     void builderAdvancesTarEntriesByFullPayloadExtent();
+    void builderRendersCpioNewcEntries();
     void builderRendersGzipHeaderAndTrailer();
     void builderRendersCabinetHeaderFilesAndData();
     void builderRendersZipCentralDirectoryFromEocd();
     void builderRendersLargeZipCentralDirectoryWithoutNameLookupBlowup();
 };
+
+namespace
+{
+
+QByteArray cpioHex(quint32 value)
+{
+    return QByteArray::number(value, 16).rightJustified(8, '0').toUpper();
+}
+
+void appendCpioNewcEntry(QByteArray *archive, const QByteArray &name, const QByteArray &data)
+{
+    const QByteArray storedName = name + '\0';
+    archive->append("070701", 6);
+    archive->append(cpioHex(1));                         // ino
+    archive->append(cpioHex(data.isEmpty() ? 0040755 : 0100644)); // mode
+    archive->append(cpioHex(0));                         // uid
+    archive->append(cpioHex(0));                         // gid
+    archive->append(cpioHex(1));                         // nlink
+    archive->append(cpioHex(0));                         // mtime
+    archive->append(cpioHex(quint32(data.size())));      // filesize
+    archive->append(cpioHex(0));                         // devmajor
+    archive->append(cpioHex(0));                         // devminor
+    archive->append(cpioHex(0));                         // rdevmajor
+    archive->append(cpioHex(0));                         // rdevminor
+    archive->append(cpioHex(quint32(storedName.size()))); // namesize
+    archive->append(cpioHex(0));                         // check
+    archive->append(storedName);
+    while (archive->size() % 4 != 0)
+        archive->append(char(0));
+    archive->append(data);
+    while (archive->size() % 4 != 0)
+        archive->append(char(0));
+}
+
+} // namespace
 
 void StructViewArchiveTests::builderRendersTarEntries()
 {
@@ -116,6 +152,61 @@ void StructViewArchiveTests::builderAdvancesTarEntriesByFullPayloadExtent()
     StructureRow *secondHeaderRow = findChildNamed(entries->children[1].get(), QStringLiteral("TAR_HEADER header"));
     QVERIFY2(secondHeaderRow, qPrintable(childNames(entries->children[1].get())));
     QCOMPARE(secondHeaderRow->absoluteOffset, uint64_t(secondHeader));
+}
+
+void StructViewArchiveTests::builderRendersCpioNewcEntries()
+{
+    // Scenario: initramfs-style CPIO newc archives store fixed-width ASCII-hex
+    // header fields followed by 4-byte-aligned names and payloads.
+    // Expected: the standard CPIO definition decodes hex sizes, names entries,
+    // advances across name/data padding, hides the TRAILER!!! terminator, and
+    // exposes file payloads as nested byte ranges.
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("cpio.strata")), "cpio.strata failed to parse");
+    TypeDecl *cpioRoot = exportedNamed(&library, QStringLiteral("CPIO"));
+    QVERIFY(cpioRoot);
+
+    QByteArray cpio;
+    appendCpioNewcEntry(&cpio, QByteArray("init"), QByteArray("#!/bin/sh\n"));
+    appendCpioNewcEntry(&cpio, QByteArray("etc/config"), QByteArray("ok"));
+    appendCpioNewcEntry(&cpio, QByteArray("TRAILER!??"), QByteArray());
+    appendCpioNewcEntry(&cpio, QByteArray("TRAILER!!!"), QByteArray());
+
+    auto rows = buildRows(&library, cpioRoot, cpio);
+    QCOMPARE(rows.size(), size_t(1));
+    QCOMPARE(rows[0]->name, QStringLiteral("CPIO"));
+
+    StructureRow *entries = findChildNamed(rows[0].get(), QStringLiteral("CPIO_NEWC_ENTRY entries[]"));
+    QVERIFY2(entries, qPrintable(childNames(rows[0].get())));
+    QCOMPARE(entries->children.size(), size_t(3));
+    QCOMPARE(entries->children[0]->name, QStringLiteral("[0]init"));
+    QCOMPARE(entries->children[1]->name, QStringLiteral("[1]etc/config"));
+    QCOMPARE(entries->children[2]->name, QStringLiteral("[2]TRAILER!??"));
+
+    StructureRow *firstHeader = findChildNamed(entries->children[0].get(), QStringLiteral("CPIO_NEWC_HEADER header"));
+    QVERIFY2(firstHeader, qPrintable(childNames(entries->children[0].get())));
+    QCOMPARE(findChildNamed(firstHeader, QStringLiteral("char magic[]"))->value, QStringLiteral("\"070701\""));
+    QCOMPARE(findChildNamed(firstHeader, QStringLiteral("char filesize[]"))->value, QStringLiteral("\"0000000A\""));
+
+    StructureRow *firstName = findChildNamed(entries->children[0].get(), QStringLiteral("char name[]"));
+    QVERIFY2(firstName, qPrintable(childNames(entries->children[0].get())));
+    QCOMPARE(firstName->value, QStringLiteral("\"init\""));
+
+    StructureRow *firstData = findChildNamed(entries->children[0].get(), QStringLiteral("byte data[]"));
+    QVERIFY2(firstData, qPrintable(childNames(entries->children[0].get())));
+    QVERIFY(firstData->hasOpenAsTarget);
+    QCOMPARE(firstData->openAsRootTypeName, QStringLiteral("auto"));
+    QCOMPARE(firstData->openAsName, QStringLiteral("init"));
+    QCOMPARE(firstData->openAsByteLength, uint64_t(10));
+    QVERIFY2(firstData->value.startsWith(QStringLiteral("{ 35, 33, 47, 98, 105, 110, 47, 115")),
+             qPrintable(firstData->value));
+
+    StructureRow *secondData = findChildNamed(entries->children[1].get(), QStringLiteral("byte data[]"));
+    QVERIFY2(secondData, qPrintable(childNames(entries->children[1].get())));
+    QVERIFY(secondData->hasOpenAsTarget);
+    QCOMPARE(secondData->openAsName, QStringLiteral("etc/config"));
+    QCOMPARE(secondData->openAsByteLength, uint64_t(2));
+    QCOMPARE(secondData->value, QStringLiteral("{ 111, 107 }"));
 }
 
 void StructViewArchiveTests::builderRendersGzipHeaderAndTrailer()
