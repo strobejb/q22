@@ -1515,6 +1515,8 @@ Recommended workflow:
     physical/virtual range.
 11. Add focused Structure View tests for new rendering behavior.
 
+**tip:** use a [.gitattributes](.gitattributes) file to tell github that your .strata files should be syntax-highlighted.
+
 Prefer pure structures for ordinary file layouts. Reach for
 `dynamic_array(...)` and `dynamic_struct(...)` only for related data that is not
 really an inline C field but still represents real referenced bytes, such as PE
