@@ -29,6 +29,7 @@ Structure View:
 - Automatically choose known formats from file type or magic bytes.
 - Add custom `.strata` definitions using the Strata language; legacy `.struct`
   files are still supported.
+- See [Structures with Strata](https://www.catch22.net/projects/q22/strata) and [Strata Language Reference](src/causeway/strata/README.md)
 
 Disassembly:
 
