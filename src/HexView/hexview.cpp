@@ -54,6 +54,13 @@ public:
         return m_source->render(m_baseOffset + index, buf, len, infobuf);
     }
 
+    void resolveDeviceSource(const sequence *&source, size_w &baseOffset, size_w &length) const override
+    {
+        source = m_source;
+        baseOffset = m_baseOffset;
+        length = m_length;
+    }
+
 private:
     sequence *m_source = nullptr;
     size_w    m_baseOffset = 0;

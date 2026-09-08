@@ -16,6 +16,8 @@ qt_add_library(HexView STATIC
     hexviewfind.cpp
     seqbase.h
     sequence.h
+    sequencedevice.h
+    sequencedevice.cpp
     sequence.cpp
     seqbuf.cpp
 )

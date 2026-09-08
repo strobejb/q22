@@ -31,6 +31,8 @@ enum seqchar_flags : size_t
 	SEQCHAR_MODIFIED = 1u << 0
 };
 
+class SequenceDevice;
+
 //
 //	sequence class!
 //
@@ -158,6 +160,14 @@ public:
 	size_t		origfileid() { return origfile_id; }
 
 private:
+	friend class SequenceDevice;
+
+	virtual void resolveDeviceSource(const sequence *&source, size_w &baseOffset, size_w &length) const
+	{
+		source = this;
+		baseOffset = 0;
+		length = size();
+	}
 
 	std::atomic<long>	refCount;
 
@@ -247,6 +257,7 @@ class sequence::span
 {
 	friend class sequence;
 	friend class span_range;
+	friend class SequenceDevice;
 
 public:
 	// constructor
@@ -465,6 +476,7 @@ private:
 class sequence::buffer_control
 {
 	friend class sequence;
+	friend class SequenceDevice;
 #define MAX_VIEWS 4
 
 	class buffer_view

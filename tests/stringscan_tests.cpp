@@ -1,5 +1,6 @@
 #include "filestats/stringscan.h"
 
+#include <QBuffer>
 #include <QTest>
 
 using namespace stringscan;
@@ -9,7 +10,7 @@ using namespace stringscan;
 // never masks a cap before all expected results are collected.
 struct ScanHit
 {
-    QString    text;
+    QString text;
     qulonglong offset = 0;
     qulonglong length = 0;
 };
@@ -22,15 +23,11 @@ static QVector<ScanHit> runScan(const QByteArray &data, int minLength,
     state.resultLimit = kMaxStringResultBatchLimit;
     state.elapsed.start();
 
-    int pos = 0;
-    while (pos < data.size() && !state.capped)
-    {
-        const QByteArray chunk = data.mid(pos, chunkSize);
-        scanAsciiChunk(state, chunk, minLength, mode, includeWhitespace, nullptr, false);
-        pos += chunk.size();
-    }
-    if (!state.capped)
-        flushAsciiRun(state, minLength, state.offset, mode != StringScanMode::CIdentifiers, nullptr, false);
+    QBuffer source;
+    source.setData(data);
+    if (!source.open(QIODevice::ReadOnly))
+        return {};
+    scanAsciiDevice(source, state, minLength, mode, includeWhitespace, nullptr, false, chunkSize);
 
     QVector<ScanHit> hits;
     hits.reserve(state.results.size());

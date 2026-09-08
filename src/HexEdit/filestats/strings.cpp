@@ -2,48 +2,47 @@
 #include "filestats/stringscan.h"
 
 #include "HexView/hexview.h"
+#include "HexView/sequencedevice.h"
 #include "combos/menucombobox.h"
 #include "filestats/widgets.h"
-#include "settings/settingscard.h"
 #include "settings/settings.h"
+#include "settings/settingscard.h"
 #include "theme.h"
 
-#include <QApplication>
 #include <QAction>
 #include <QActionGroup>
+#include <QApplication>
+#include <QBrush>
+#include <QComboBox>
 #include <QCursor>
+#include <QDir>
+#include <QElapsedTimer>
 #include <QEvent>
+#include <QFile>
 #include <QFontMetrics>
 #include <QGridLayout>
 #include <QHBoxLayout>
-#include <QMenu>
-#include <QPainter>
-#include <QPoint>
-#include <QResizeEvent>
-#include <QScrollBar>
-#include <QSizePolicy>
-#include <QTimer>
-#include <QVBoxLayout>
-#include <QBrush>
-#include <QElapsedTimer>
-#include <QComboBox>
-#include <QDir>
-#include <QFile>
-#include <QFileInfo>
 #include <QHeaderView>
 #include <QLabel>
 #include <QLocale>
-#include <QPushButton>
+#include <QMenu>
 #include <QMetaObject>
+#include <QPainter>
+#include <QPoint>
 #include <QPointer>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QResizeEvent>
+#include <QScrollBar>
+#include <QSizePolicy>
+#include <QTemporaryFile>
+#include <QTextStream>
 #include <QThread>
+#include <QTimer>
 #include <QToolButton>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
-#include <QTemporaryFile>
-#include <QTextStream>
+#include <QVBoxLayout>
 #include <QVariantMap>
 
 #include <atomic>
@@ -53,27 +52,28 @@
 using namespace filestats;
 using namespace stringscan;
 
-namespace {
+namespace
+{
 
 class StringResultItem : public QTreeWidgetItem
 {
-public:
+  public:
     using QTreeWidgetItem::QTreeWidgetItem;
 
     bool operator<(const QTreeWidgetItem &other) const override
     {
         const bool thisTruncation = data(0, kStringFooterRole).toBool();
         const bool otherTruncation = other.data(0, kStringFooterRole).toBool();
-        if (thisTruncation != otherTruncation) {
+        if (thisTruncation != otherTruncation)
+        {
             const bool asc = !treeWidget() ||
-                treeWidget()->header()->sortIndicatorOrder() == Qt::AscendingOrder;
+                             treeWidget()->header()->sortIndicatorOrder() == Qt::AscendingOrder;
             return asc ? !thisTruncation : thisTruncation;
         }
 
         const int column = treeWidget() ? treeWidget()->sortColumn() : 0;
         if (column == 1)
-            return data(0, Qt::UserRole).toULongLong()
-                   < other.data(0, Qt::UserRole).toULongLong();
+            return data(0, Qt::UserRole).toULongLong() < other.data(0, Qt::UserRole).toULongLong();
 
         return QString::localeAwareCompare(text(column), other.text(column)) < 0;
     }
@@ -81,8 +81,9 @@ public:
 
 class StringsHeaderCorner : public QWidget
 {
-public:
-    explicit StringsHeaderCorner(QTreeWidget *tree) : QWidget(tree), m_tree(tree)
+  public:
+    explicit StringsHeaderCorner(QTreeWidget *tree)
+        : QWidget(tree), m_tree(tree)
     {
         setAttribute(Qt::WA_TransparentForMouseEvents, false);
         if (m_tree)
@@ -96,7 +97,7 @@ public:
         updateGeometryFromTree();
     }
 
-protected:
+  protected:
     bool eventFilter(QObject *object, QEvent *event) override
     {
         Q_UNUSED(object)
@@ -120,7 +121,7 @@ protected:
         painter.fillRect(rect(), palette().base());
     }
 
-private:
+  private:
     void updateGeometryFromTree()
     {
         if (!m_tree || !m_tree->header())
@@ -149,17 +150,19 @@ void FilePropertiesPanel::maybeStartStringScan()
         return;
     if (m_stringsState.started)
         return;
-    if (m_stringsState.rescanRequired) {
+    if (m_stringsState.rescanRequired)
+    {
         if (m_stringsOperation)
             m_stringsOperation->showRescan(m_stringsState.rescanMessage.isEmpty()
-                                           ? tr("File contents changed")
-                                           : m_stringsState.rescanMessage);
+                                               ? tr("File contents changed")
+                                               : m_stringsState.rescanMessage);
         requestSectionLayoutRefresh(SectionId::Strings);
         return;
     }
     if (m_stringsState.autoStartConsumed)
         return;
-    if (!shouldAutoStartOperations()) {
+    if (!shouldAutoStartOperations())
+    {
         if (m_stringsOperation && !m_stringsOperation->hasOperation())
             m_stringsOperation->showStart(tr("Begin scan"));
         return;
@@ -186,9 +189,12 @@ QString FilePropertiesPanel::createStringExportTemp()
 
     QTextStream out(&temp);
     const bool prefixHexOffset = m_prefixHexOffsetAction && m_prefixHexOffsetAction->isChecked();
-    if (m_stringsList) {
-        for (int i = 0; i < m_stringsList->topLevelItemCount(); ++i) {
-            if (QTreeWidgetItem *item = m_stringsList->topLevelItem(i)) {
+    if (m_stringsList)
+    {
+        for (int i = 0; i < m_stringsList->topLevelItemCount(); ++i)
+        {
+            if (QTreeWidgetItem *item = m_stringsList->topLevelItem(i))
+            {
                 if (item->data(0, kStringFooterRole).toBool())
                     continue;
                 const qulonglong offset = item->data(0, Qt::UserRole).toULongLong();
@@ -203,7 +209,8 @@ QString FilePropertiesPanel::createStringExportTemp()
 
 void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, bool scanAll)
 {
-    if (!m_hexView || !m_minStringLength) {
+    if (!m_hexView || !m_minStringLength)
+    {
         m_stringsState.started = false;
         m_stringsState.pausedByCollapse = false;
         return;
@@ -215,13 +222,13 @@ void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, b
     const StringScanMode mode = stringScanModeFromIndex(m_stringEncoding ? m_stringEncoding->currentIndex() : 0);
     const bool includeWhitespace = !m_includeWhitespaceAction || m_includeWhitespaceAction->isChecked();
     const bool prefixHexOffset = m_prefixHexOffsetAction && m_prefixHexOffsetAction->isChecked();
-    const QString path = m_hexView->filePath();
     if (!append)
         clearStringExportTemp();
     QString exportTempPath;
     int visibleBaseCount = m_stringsList ? m_stringsList->topLevelItemCount() : 0;
     qulonglong initialResultCount = append ? m_stringResultCount : 0;
-    if (scanAll) {
+    if (scanAll)
+    {
         if (m_stringsExportTempPath.isEmpty())
             m_stringsExportTempPath = createStringExportTemp();
         exportTempPath = m_stringsExportTempPath;
@@ -248,7 +255,25 @@ void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, b
     if (m_stringsOperation)
         m_stringsOperation->showProgress();
     requestSectionLayoutRefresh(SectionId::Strings);
-    const qint64 fileSize = QFileInfo(path).size();
+
+    const sequence *sourceSequence = m_hexView->dataSequence();
+    auto *inputDevice = sourceSequence ? new SequenceDevice(*sourceSequence) : nullptr;
+    if (!inputDevice || !inputDevice->isValid() || !inputDevice->open(QIODevice::ReadOnly))
+    {
+        delete inputDevice;
+        m_stringsState.started = false;
+        m_stringsState.pausedByCollapse = false;
+        if (m_stringsState.cancel)
+            m_stringsState.cancel->store(true);
+        if (m_stringsState.pause)
+            m_stringsState.pause->wake();
+        if (m_stringsOperation)
+            m_stringsOperation->showRetry(tr("Unable to read document"));
+        requestSectionLayoutRefresh(SectionId::Strings);
+        return;
+    }
+
+    const qint64 fileSize = inputDevice->size();
     const int initialProgress = fileSize > 0
                                     ? static_cast<int>((qMin<qint64>(static_cast<qint64>(startOffset), fileSize) * 1000) / fileSize)
                                     : 0;
@@ -256,7 +281,8 @@ void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, b
     setStringsProgressTitle(m_stringsState.progress);
     if (m_stringsStatusRow)
         m_stringsStatusRow->hide();
-    if (!append) {
+    if (!append)
+    {
         if (m_stringsListFrame)
             m_stringsListFrame->clearList();
         else if (m_stringsList)
@@ -265,7 +291,8 @@ void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, b
     // Disable auto-sort for the duration of the scan: setSortingEnabled(true) causes Qt
     // to re-sort the entire list after every item insertion (O(nÂ²) total). We disable it
     // once here and re-enable once in sortStringResults when the scan completes.
-    if (m_stringsList && m_stringsList->isSortingEnabled()) {
+    if (m_stringsList && m_stringsList->isSortingEnabled())
+    {
         m_stringsList->setSortingEnabled(false);
         m_stringsList->header()->setSortIndicatorShown(true);
         m_stringsList->header()->setSectionsClickable(true);
@@ -274,16 +301,18 @@ void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, b
 
     QPointer<FilePropertiesPanel> guard(this);
     auto *thread = QThread::create([guard, generation, minLength, mode, includeWhitespace,
-                                    path, startOffset, scanAll, cancelFlag,
+                                    inputDevice, startOffset, scanAll, cancelFlag,
                                     visibleBaseCount, initialResultCount, exportTempPath,
-                                    prefixHexOffset, pause]() {
+                                    prefixHexOffset, pause]()
+                                   {
+        std::unique_ptr<SequenceDevice> inputOwner(inputDevice);
+        QIODevice &input = *inputOwner;
         QVector<QVariantMap> results;
         bool capped = false;
         qulonglong nextOffset = 0;
         int finalProgress = 1000;
         qulonglong totalResults = initialResultCount;
         bool exportTempComplete = false;
-        QFile file(path);
         QFile exportFile(exportTempPath);
         QTextStream exportStream(&exportFile);
         QTextStream *exportOut = nullptr;
@@ -291,11 +320,11 @@ void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, b
                 && exportFile.open(QIODevice::Append | QIODevice::Text)) {
             exportOut = &exportStream;
         }
-        if (file.open(QIODevice::ReadOnly)) {
+        if (input.isOpen()) {
             StringScanState state;
-            const qint64 total = file.size();
+            const qint64 total = input.size();
             const qint64 seekOffset = qMin<qint64>(static_cast<qint64>(startOffset), total);
-            file.seek(seekOffset);
+            input.seek(seekOffset);
             state.offset = static_cast<qulonglong>(seekOffset);
             state.scanAll = scanAll;
             state.visibleBaseCount = visibleBaseCount;
@@ -305,28 +334,21 @@ void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, b
             state.elapsed.start();
             qint64 scanned = seekOffset;
             int lastProgress = -1;
-            static constexpr qint64 kChunkSize = 1024 * 1024;
 
-            while (!cancelFlag->load() && !file.atEnd() && !state.capped) {
-                if (pause && !pause->waitIfPaused(cancelFlag))
-                    break;
-                const QByteArray chunk = file.read(kChunkSize);
-                if (chunk.isEmpty())
-                    break;
-                scanAsciiChunk(state, chunk, minLength, mode, includeWhitespace, exportOut,
-                               prefixHexOffset);
-                if (state.capped)
-                    scanned = qMin<qint64>(static_cast<qint64>(state.nextOffset), total);
-                else
-                    scanned += chunk.size();
-                if (!state.results.isEmpty()) {
-                    const QVector<QVariantMap> batch = std::move(state.results);
-                    state.results.clear();
-                    QMetaObject::invokeMethod(qApp, [guard, generation, batch]() {
-                        if (guard)
-                            guard->appendStringResults(generation, batch);
-                    }, Qt::QueuedConnection);
-                }
+            StringScanDeviceCallbacks callbacks;
+            callbacks.shouldContinue = [&cancelFlag, &pause]() {
+                if (cancelFlag->load())
+                    return false;
+                return !pause || pause->waitIfPaused(cancelFlag);
+            };
+            callbacks.resultsReady = [guard, generation](QVector<QVariantMap> batch) {
+                QMetaObject::invokeMethod(qApp, [guard, generation, batch = std::move(batch)]() {
+                    if (guard)
+                        guard->appendStringResults(generation, batch);
+                }, Qt::QueuedConnection);
+            };
+            callbacks.progress = [guard, generation, total, &scanned, &lastProgress](qint64 scannedBytes) {
+                scanned = qMin<qint64>(scannedBytes, total);
                 const int progress = total > 0
                                          ? static_cast<int>((scanned * 1000) / total)
                                          : 1000;
@@ -337,13 +359,11 @@ void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, b
                             guard->updateStringProgress(generation, progress);
                     }, Qt::QueuedConnection);
                 }
-            }
-            if (!cancelFlag->load()) {
-                flushAsciiRun(state, minLength, state.offset,
-                              mode != StringScanMode::CIdentifiers, exportOut,
-                              prefixHexOffset);
-                if (!state.results.isEmpty())
-                    results = std::move(state.results);
+            };
+
+            const bool completed = scanAsciiDevice(input, state, minLength, mode, includeWhitespace, exportOut,
+                                                   prefixHexOffset, kDefaultStringScanChunkSize, callbacks);
+            if (completed && !cancelFlag->load()) {
                 capped = state.capped && state.nextOffset < static_cast<qulonglong>(total);
                 nextOffset = state.nextOffset;
                 totalResults = state.totalResultCount;
@@ -371,8 +391,8 @@ void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, b
                 guard->finishStringScan(generation, {}, capped, nextOffset, finalProgress,
                                         totalResults, exportTempPath, exportTempComplete);
             }
-        }, Qt::QueuedConnection);
-    });
+        }, Qt::QueuedConnection); });
+    inputDevice->moveToThread(thread);
     connect(thread, &QThread::finished, thread, &QObject::deleteLater);
     thread->start();
 }
@@ -424,12 +444,14 @@ void FilePropertiesPanel::appendStringResults(int generation, const QVector<QVar
     if (generation != m_stringsState.generation)
         return;
 
-    if (m_stringsList && !results.isEmpty()) {
+    if (m_stringsList && !results.isEmpty())
+    {
         m_stringsList->setUpdatesEnabled(false);
         const QColor offsetColor = subduedTextColor(palette());
         QList<QTreeWidgetItem *> items;
         items.reserve(results.size());
-        for (const QVariantMap &row : results) {
+        for (const QVariantMap &row : results)
+        {
             const qulonglong offset = row.value(QStringLiteral("offset")).toULongLong();
             const qulonglong length = row.value(QStringLiteral("length")).toULongLong();
             auto *item = new StringResultItem;
@@ -485,7 +507,8 @@ int FilePropertiesPanel::visibleStringResultCount() const
         return 0;
 
     int count = 0;
-    for (int i = 0; i < m_stringsList->topLevelItemCount(); ++i) {
+    for (int i = 0; i < m_stringsList->topLevelItemCount(); ++i)
+    {
         QTreeWidgetItem *item = m_stringsList->topLevelItem(i);
         if (item && !item->data(0, kStringFooterRole).toBool())
             ++count;
@@ -503,7 +526,8 @@ void FilePropertiesPanel::finishStringScan(int generation, const QVector<QVarian
         return;
 
     appendStringResults(generation, results);
-    if (m_stringsList) {
+    if (m_stringsList)
+    {
         sortStringResults(m_stringsList->header()->sortIndicatorSection(),
                           m_stringsList->header()->sortIndicatorOrder());
     }
@@ -513,14 +537,17 @@ void FilePropertiesPanel::finishStringScan(int generation, const QVector<QVarian
     m_stringMoreAvailable = capped;
     m_stringNextOffset = nextOffset;
     m_stringResultCount = totalResults;
-    if (!exportTempPath.isEmpty()) {
+    if (!exportTempPath.isEmpty())
+    {
         m_stringsExportTempPath = exportTempPath;
         m_stringsExportTempComplete = exportTempComplete && !capped;
     }
-    if (m_stringsStatusRow && m_stringsStatusLabel && m_stringsProgressLabel) {
+    if (m_stringsStatusRow && m_stringsStatusLabel && m_stringsProgressLabel)
+    {
         const int visibleCount = visibleStringResultCount();
         const qulonglong count = qMax(totalResults, static_cast<qulonglong>(visibleCount));
-        if (capped) {
+        if (capped)
+        {
             m_stringsStatusLabel->setText(tr("Showing first %1 results")
                                               .arg(QLocale().toString(visibleCount)));
             m_stringsProgressLabel->setText(tr("(%1% complete)").arg(m_stringsState.progress / 10));
@@ -532,7 +559,9 @@ void FilePropertiesPanel::finishStringScan(int generation, const QVector<QVarian
             if (m_stringsExportButton)
                 m_stringsExportButton->hide();
             addStringTruncationItem(tr("More results available - use Next or All"));
-        } else {
+        }
+        else
+        {
             m_stringsStatusLabel->setText(tr("Found %1 results")
                                               .arg(QLocale().toString(count)));
             m_stringsProgressLabel->clear();
@@ -560,7 +589,8 @@ void FilePropertiesPanel::buildStringsSection(QWidget *parent, QVBoxLayout *cont
 {
     m_stringsHeader = new SectionHeader(tr("Strings"), parent);
     m_stringsHeader->setClickedCallback(
-        [this]() { setSectionCollapsed(SectionId::Strings, !isSectionCollapsed(SectionId::Strings)); });
+        [this]()
+        { setSectionCollapsed(SectionId::Strings, !isSectionCollapsed(SectionId::Strings)); });
     contentLayout->addWidget(m_stringsHeader);
     m_stringsHeader->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     m_stringsHeaderGap = new QSpacerItem(0, kHeaderControlGap, QSizePolicy::Minimum, QSizePolicy::Fixed);
@@ -582,8 +612,10 @@ void FilePropertiesPanel::buildStringsSection(QWidget *parent, QVBoxLayout *cont
     };
     m_stringsOperation = new SectionOperationStrip(
         parent, startStrings,
-        [this]() { cancelStringScan(); },
-        [this]() { resumeStringScan(); },
+        [this]()
+        { cancelStringScan(); },
+        [this]()
+        { resumeStringScan(); },
         [this, startStrings]()
         {
             if (m_stringsListFrame)
@@ -591,7 +623,7 @@ void FilePropertiesPanel::buildStringsSection(QWidget *parent, QVBoxLayout *cont
             startStrings();
         });
 
-    auto *stringsControlsStack       = new QWidget(m_stringsSectionBody);
+    auto *stringsControlsStack = new QWidget(m_stringsSectionBody);
     auto *stringsControlsStackLayout = new QVBoxLayout(stringsControlsStack);
     stringsControlsStackLayout->setContentsMargins(kSettingsCardShadowInset, 0, kSettingsCardShadowInset, 0);
     stringsControlsStackLayout->setSpacing(0);
@@ -618,8 +650,8 @@ void FilePropertiesPanel::buildStringsSection(QWidget *parent, QVBoxLayout *cont
     m_stringOptionsButton->setIcon(
         recoloredIcon(QStringLiteral("permissions"), palette().buttonText().color(), 16));
     {
-        const bool    dark    = QApplication::palette().window().color().lightness() < 128;
-        const QString hover   = dark ? QStringLiteral("rgba(255,255,255,0.15)") : QStringLiteral("rgba(0,0,0,0.10)");
+        const bool dark = QApplication::palette().window().color().lightness() < 128;
+        const QString hover = dark ? QStringLiteral("rgba(255,255,255,0.15)") : QStringLiteral("rgba(0,0,0,0.10)");
         const QString pressed = dark ? QStringLiteral("rgba(255,255,255,0.25)") : QStringLiteral("rgba(0,0,0,0.18)");
         m_stringOptionsButton->setStyleSheet(QStringLiteral(R"(
             QToolButton {
@@ -631,14 +663,15 @@ void FilePropertiesPanel::buildStringsSection(QWidget *parent, QVBoxLayout *cont
             QToolButton:focus { border: 2px solid palette(highlight); }
             QToolButton:pressed { background: %2; }
             QToolButton::menu-indicator { image: none; width: 0; }
-        )").arg(hover, pressed));
+        )")
+                                                 .arg(hover, pressed));
     }
 
     m_stringEncoding = new MenuComboBox(m_stringsSectionBody);
     m_stringEncoding->addItem(tr("Printable ASCII"), QStringLiteral("[ -~]"));
-    m_stringEncoding->addItem(tr("Alphanumeric"),    QStringLiteral("[A-Za-z0-9]"));
-    m_stringEncoding->addItem(tr("ASCII text"),      QStringLiteral("[\\t -~]"));
-    m_stringEncoding->addItem(tr("C identifiers"),   QStringLiteral("[A-Za-z_][A-Za-z0-9_]*\\0"));
+    m_stringEncoding->addItem(tr("Alphanumeric"), QStringLiteral("[A-Za-z0-9]"));
+    m_stringEncoding->addItem(tr("ASCII text"), QStringLiteral("[\\t -~]"));
+    m_stringEncoding->addItem(tr("C identifiers"), QStringLiteral("[A-Za-z_][A-Za-z0-9_]*\\0"));
     m_stringEncoding->setCurrentIndex(1);
     m_stringEncoding->setFocusPolicy(Qt::StrongFocus);
     m_stringEncoding->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
@@ -652,7 +685,7 @@ void FilePropertiesPanel::buildStringsSection(QWidget *parent, QVBoxLayout *cont
     m_minStringLength->setLabelValueSpacing(4);
     m_minStringLength->setValueBold(true);
 
-    auto *stringsControls       = new QWidget(m_stringsSectionBody);
+    auto *stringsControls = new QWidget(m_stringsSectionBody);
     auto *stringsControlsLayout = new QHBoxLayout(stringsControls);
     stringsControlsLayout->setContentsMargins(0, 0, 0, 0);
     stringsControlsLayout->setSpacing(kContentMargin + 6);
@@ -694,7 +727,7 @@ void FilePropertiesPanel::buildStringsSection(QWidget *parent, QVBoxLayout *cont
     m_stringsList->header()->setSortIndicatorShown(true);
     {
         constexpr int kStringsItemCellInset = 3;
-        const int     stringsItemLeftPad =
+        const int stringsItemLeftPad =
             styledListHeaderItemLeftPadding(m_stringsList->header()->font(), kStringsItemCellInset);
         m_stringsList->header()->setFixedHeight(styledListHeaderHeight(m_stringsList->header()->font()));
         m_stringsList->setStyleSheet(
@@ -713,7 +746,7 @@ void FilePropertiesPanel::buildStringsSection(QWidget *parent, QVBoxLayout *cont
     stringsControlsStackLayout->addWidget(m_stringsListFrame);
 
     // Status bar: label + Next/All/Export buttons
-    m_stringsStatusRow        = new QWidget(m_stringsSectionBody);
+    m_stringsStatusRow = new QWidget(m_stringsSectionBody);
     auto *stringsStatusLayout = new QGridLayout(m_stringsStatusRow);
     stringsStatusLayout->setContentsMargins(6, 6, 6, 2);
     stringsStatusLayout->setHorizontalSpacing(8);
@@ -772,19 +805,19 @@ void FilePropertiesPanel::buildStringsSection(QWidget *parent, QVBoxLayout *cont
     m_stringsExportButton->setIconSize(QSize(12, 12));
 
     {
-        const QColor nextBg       = palette().button().color();
-        const bool   nextDark     = palette().window().color().lightness() < 128;
-        auto         overlayColor = [](const QColor &base, const QColor &overlay, int alpha)
+        const QColor nextBg = palette().button().color();
+        const bool nextDark = palette().window().color().lightness() < 128;
+        auto overlayColor = [](const QColor &base, const QColor &overlay, int alpha)
         {
             const int inv = 255 - alpha;
             return QColor((base.red() * inv + overlay.red() * alpha) / 255,
                           (base.green() * inv + overlay.green() * alpha) / 255,
                           (base.blue() * inv + overlay.blue() * alpha) / 255);
         };
-        const QColor nextHover    = nextDark ? overlayColor(nextBg, QColor(255, 255, 255), 30)
-                                             : overlayColor(nextBg, QColor(0, 0, 0), 22);
-        const QColor nextPressed  = palette().mid().color();
-        const QColor nextBorder   = palette().mid().color();
+        const QColor nextHover = nextDark ? overlayColor(nextBg, QColor(255, 255, 255), 30)
+                                          : overlayColor(nextBg, QColor(0, 0, 0), 22);
+        const QColor nextPressed = palette().mid().color();
+        const QColor nextBorder = palette().mid().color();
         const QString stringsFooterButtonStyle =
             QStringLiteral(R"(
             QPushButton {
@@ -808,20 +841,22 @@ void FilePropertiesPanel::buildStringsSection(QWidget *parent, QVBoxLayout *cont
         m_stringsExportButton->setStyleSheet(stringsFooterButtonStyle);
     }
 
-    stringsStatusLayout->addWidget(m_stringsStatusLabel,   0, 0, Qt::AlignVCenter);
-    stringsStatusLayout->addWidget(m_stringsNextButton,    0, 1, Qt::AlignVCenter);
-    stringsStatusLayout->addWidget(m_stringsAllButton,     0, 2, Qt::AlignVCenter);
-    stringsStatusLayout->addWidget(m_stringsExportButton,  0, 3, Qt::AlignVCenter);
+    stringsStatusLayout->addWidget(m_stringsStatusLabel, 0, 0, Qt::AlignVCenter);
+    stringsStatusLayout->addWidget(m_stringsNextButton, 0, 1, Qt::AlignVCenter);
+    stringsStatusLayout->addWidget(m_stringsAllButton, 0, 2, Qt::AlignVCenter);
+    stringsStatusLayout->addWidget(m_stringsExportButton, 0, 3, Qt::AlignVCenter);
     stringsStatusLayout->addWidget(m_stringsProgressLabel, 1, 0);
     stringsStatusLayout->setColumnStretch(0, 1);
     m_stringsStatusRow->hide();
 
-    auto *stringsResizeWrap   = new QWidget(m_stringsSectionBody);
+    auto *stringsResizeWrap = new QWidget(m_stringsSectionBody);
     auto *stringsResizeLayout = new QVBoxLayout(stringsResizeWrap);
     stringsResizeLayout->setContentsMargins(0, 0, 0, 0);
     stringsResizeLayout->setSpacing(0);
     m_stringsResizeHandle = new VerticalResizeHandle(
-        [this](int dy) { resizeSection(SectionId::Strings, dy); }, stringsResizeWrap);
+        [this](int dy)
+        { resizeSection(SectionId::Strings, dy); },
+        stringsResizeWrap);
     stringsResizeLayout->addWidget(m_stringsResizeHandle);
     stringsResizeLayout->setAlignment(m_stringsResizeHandle, Qt::AlignTop);
     stringsControlsStackLayout->addWidget(stringsResizeWrap);
@@ -839,7 +874,8 @@ void FilePropertiesPanel::buildStringsSection(QWidget *parent, QVBoxLayout *cont
         nullptr,
         m_stringsListFrame,
         kStringsListMinHeight,
-        [this]() { maybeStartStringScan(); },
+        [this]()
+        { maybeStartStringScan(); },
         [this](bool collapsed)
         {
             if (m_stringsState.pause && m_stringsState.started)
@@ -857,24 +893,26 @@ void FilePropertiesPanel::buildStringsSection(QWidget *parent, QVBoxLayout *cont
             if (m_stringsState.started)
                 setStringsProgressTitle(m_stringsState.progress);
         },
-        [this](bool contentsChanged) { if (contentsChanged) markStringsContentsChanged(); },
-        [this]() { resetStringsForCurrentDocument(); },
+        [this](bool contentsChanged)
+        { if (contentsChanged) markStringsContentsChanged(); },
+        [this]()
+        { resetStringsForCurrentDocument(); },
     });
 
     // Signal connections for strings controls
     auto markStringsOptionsChanged = [this]()
     {
-        m_stringsState.started          = false;
+        m_stringsState.started = false;
         m_stringsState.pausedByCollapse = false;
         ++m_stringsState.generation;
         if (m_stringsState.cancel)
             m_stringsState.cancel->store(true);
         if (m_stringsState.pause)
             m_stringsState.pause->wake();
-        m_stringMoreAvailable         = false;
+        m_stringMoreAvailable = false;
         m_stringsState.rescanRequired = true;
-        m_stringsState.rescanMessage  = tr("Options changed");
-        m_stringNextOffset            = 0;
+        m_stringsState.rescanMessage = tr("Options changed");
+        m_stringNextOffset = 0;
         clearStringExportTemp();
         if (m_stringsListFrame)
             m_stringsListFrame->clearList();
@@ -885,13 +923,17 @@ void FilePropertiesPanel::buildStringsSection(QWidget *parent, QVBoxLayout *cont
         requestSectionLayoutRefresh(SectionId::Strings);
     };
     connect(m_minStringLength, &StepSpinBox::valueChanged, this,
-            [markStringsOptionsChanged](int) { markStringsOptionsChanged(); });
+            [markStringsOptionsChanged](int)
+            { markStringsOptionsChanged(); });
     connect(m_stringEncoding, &QComboBox::currentIndexChanged, this,
-            [markStringsOptionsChanged](int) { markStringsOptionsChanged(); });
+            [markStringsOptionsChanged](int)
+            { markStringsOptionsChanged(); });
     connect(m_includeWhitespaceAction, &QAction::toggled, this,
-            [markStringsOptionsChanged](bool) { markStringsOptionsChanged(); });
+            [markStringsOptionsChanged](bool)
+            { markStringsOptionsChanged(); });
     connect(m_prefixHexOffsetAction, &QAction::toggled, this,
-            [markStringsOptionsChanged](bool) { markStringsOptionsChanged(); });
+            [markStringsOptionsChanged](bool)
+            { markStringsOptionsChanged(); });
 
     connect(m_stringOptionsButton, &QToolButton::clicked, this,
             [this, stringsOptionsMenu]()
@@ -901,14 +943,15 @@ void FilePropertiesPanel::buildStringsSection(QWidget *parent, QVBoxLayout *cont
                     stringsOptionsMenu->hide();
                     return;
                 }
-                const QPoint cur            = QCursor::pos();
-                const bool   same           = (m_stringOptionsMenuClosePos == cur);
+                const QPoint cur = QCursor::pos();
+                const bool same = (m_stringOptionsMenuClosePos == cur);
                 m_stringOptionsMenuClosePos = {-1, -1};
                 if (same)
                     return;
                 connect(
                     stringsOptionsMenu, &QMenu::aboutToHide, this,
-                    [this]() { m_stringOptionsMenuClosePos = QCursor::pos(); },
+                    [this]()
+                    { m_stringOptionsMenuClosePos = QCursor::pos(); },
                     Qt::SingleShotConnection);
                 stringsOptionsMenu->popup(smartMenuPos(m_stringOptionsButton, stringsOptionsMenu));
             });

@@ -1,5 +1,8 @@
 #include "filestats/stringscan.h"
 
+#include <algorithm>
+#include <utility>
+
 namespace stringscan
 {
 
@@ -123,7 +126,7 @@ void flushAsciiRun(StringScanState &state, int minLength, qulonglong resumeOffse
                 state.resultLimit = qMin(kMaxStringResultBatchLimit, state.resultLimit * 10);
                 return;
             }
-            state.capped     = true;
+            state.capped = true;
             state.nextOffset = resumeOffset;
         }
     }
@@ -138,9 +141,9 @@ void scanAsciiChunk(StringScanState &state, const QByteArray &chunk, int minLeng
     {
         if (state.capped)
             return;
-        const unsigned char ch       = static_cast<unsigned char>(byte);
-        const bool          accepted = state.runLength == 0 ? acceptsFirstByte(mode, ch, includeWhitespace)
-                                                            : acceptsByte(mode, ch, includeWhitespace);
+        const unsigned char ch = static_cast<unsigned char>(byte);
+        const bool accepted = state.runLength == 0 ? acceptsFirstByte(mode, ch, includeWhitespace)
+                                                   : acceptsByte(mode, ch, includeWhitespace);
         if (accepted)
         {
             if (state.runLength == 0)
@@ -156,6 +159,60 @@ void scanAsciiChunk(StringScanState &state, const QByteArray &chunk, int minLeng
         }
         ++state.offset;
     }
+}
+
+bool scanAsciiDevice(QIODevice &source, StringScanState &state, int minLength, StringScanMode mode,
+                     bool includeWhitespace, QTextStream *exportStream, bool prefixHexOffset,
+                     qint64 chunkSize, const StringScanDeviceCallbacks &callbacks)
+{
+    if (!source.isOpen() || !source.isReadable())
+        return false;
+
+    if (chunkSize <= 0)
+        chunkSize = kDefaultStringScanChunkSize;
+
+    auto shouldContinue = [&callbacks]()
+    {
+        return !callbacks.shouldContinue || callbacks.shouldContinue();
+    };
+    auto drainResults = [&state, &callbacks]()
+    {
+        if (callbacks.resultsReady && !state.results.isEmpty())
+        {
+            QVector<QVariantMap> batch = std::move(state.results);
+            state.results.clear();
+            callbacks.resultsReady(std::move(batch));
+        }
+    };
+
+    while (!source.atEnd() && !state.capped)
+    {
+        if (!shouldContinue())
+            return false;
+
+        const QByteArray chunk = source.read(chunkSize);
+        if (chunk.isEmpty())
+            return source.atEnd();
+
+        scanAsciiChunk(state, chunk, minLength, mode, includeWhitespace, exportStream, prefixHexOffset);
+        drainResults();
+
+        if (callbacks.progress)
+        {
+            const qint64 scanned = state.capped ? static_cast<qint64>(state.nextOffset) : source.pos();
+            callbacks.progress(std::max<qint64>(0, scanned));
+        }
+    }
+
+    if (!shouldContinue())
+        return false;
+
+    if (!state.capped)
+        flushAsciiRun(state, minLength, state.offset, mode != StringScanMode::CIdentifiers, exportStream,
+                      prefixHexOffset);
+    drainResults();
+
+    return true;
 }
 
 } // namespace stringscan

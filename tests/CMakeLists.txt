@@ -2,6 +2,12 @@ find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Test)
 
 add_executable(sequence_tests
     sequence_tests.cpp
+    ../src/HexEdit/filestats/stringscan.cpp
+)
+
+target_include_directories(sequence_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/src/HexEdit
 )
 
 target_link_libraries(sequence_tests PRIVATE

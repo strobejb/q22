@@ -3,18 +3,21 @@
 #include <QByteArray>
 #include <QByteArrayView>
 #include <QElapsedTimer>
+#include <QIODevice>
 #include <QString>
 #include <QTextStream>
 #include <QVariantMap>
 #include <QVector>
+#include <functional>
 
 namespace stringscan
 {
 
-static constexpr int    kInitialStringResultBatchLimit = 1000;
-static constexpr int    kMaxStringResultBatchLimit     = 5000;
-static constexpr qint64 kMinimumStringScanMs           = 10000;
-static constexpr int    kMaxBufferedStringLength       = 4096;
+static constexpr int kInitialStringResultBatchLimit = 1000;
+static constexpr int kMaxStringResultBatchLimit = 5000;
+static constexpr qint64 kMinimumStringScanMs = 10000;
+static constexpr int kMaxBufferedStringLength = 4096;
+static constexpr qint64 kDefaultStringScanChunkSize = 1024 * 1024;
 
 enum class StringScanMode
 {
@@ -29,18 +32,25 @@ StringScanMode stringScanModeFromIndex(int index);
 struct StringScanState
 {
     QVector<QVariantMap> results;
-    QByteArray           run;
-    qulonglong           runStart         = 0;
-    qulonglong           runLength        = 0;
-    qulonglong           offset           = 0;
-    int                  resultCount      = 0;
-    int                  resultLimit      = kInitialStringResultBatchLimit;
-    int                  visibleBaseCount = 0;
-    qulonglong           totalResultCount = 0;
-    bool                 scanAll          = false;
-    bool                 capped           = false;
-    qulonglong           nextOffset       = 0;
-    QElapsedTimer        elapsed;
+    QByteArray run;
+    qulonglong runStart = 0;
+    qulonglong runLength = 0;
+    qulonglong offset = 0;
+    int resultCount = 0;
+    int resultLimit = kInitialStringResultBatchLimit;
+    int visibleBaseCount = 0;
+    qulonglong totalResultCount = 0;
+    bool scanAll = false;
+    bool capped = false;
+    qulonglong nextOffset = 0;
+    QElapsedTimer elapsed;
+};
+
+struct StringScanDeviceCallbacks
+{
+    std::function<bool()> shouldContinue;
+    std::function<void(QVector<QVariantMap>)> resultsReady;
+    std::function<void(qint64)> progress;
 };
 
 QString displayString(QByteArrayView bytes);
@@ -61,5 +71,10 @@ void flushAsciiRun(StringScanState &state, int minLength, qulonglong resumeOffse
 
 void scanAsciiChunk(StringScanState &state, const QByteArray &chunk, int minLength, StringScanMode mode,
                     bool includeWhitespace, QTextStream *exportStream, bool prefixHexOffset);
+
+bool scanAsciiDevice(QIODevice &source, StringScanState &state, int minLength, StringScanMode mode,
+                     bool includeWhitespace, QTextStream *exportStream, bool prefixHexOffset,
+                     qint64 chunkSize = kDefaultStringScanChunkSize,
+                     const StringScanDeviceCallbacks &callbacks = {});
 
 } // namespace stringscan

@@ -1,15 +1,21 @@
+#include "filestats/stringscan.h"
 #include "sequence.h"
+#include "sequencedevice.h"
 
-#include <QtTest/QtTest>
+#include <QTemporaryFile>
 #include <QVector>
+#include <QtTest/QtTest>
 
-namespace {
+using namespace stringscan;
+
+namespace
+{
 
 void init(sequence &seq, const QByteArray &bytes)
 {
     QVERIFY(seq.init(reinterpret_cast<const seqchar *>(bytes.constData()),
-                    static_cast<size_t>(bytes.size()),
-                    true));
+                     static_cast<size_t>(bytes.size()),
+                     true));
 }
 
 QByteArray renderContent(const sequence &seq)
@@ -42,7 +48,7 @@ QVector<size_t> renderFlags(const sequence &seq)
 
     QVector<size_t> flags;
     flags.reserve(info.size());
-    for(const seqchar_info &item : info)
+    for (const seqchar_info &item : info)
         flags.append(item.flags);
     return flags;
 }
@@ -66,6 +72,120 @@ bool replaceBytes(sequence &seq, size_w index, const QByteArray &bytes, size_w e
                        static_cast<size_w>(bytes.size()),
                        eraseLength);
 }
+
+struct ScanHit
+{
+    QString text;
+    qulonglong offset = 0;
+    qulonglong length = 0;
+};
+
+QVector<ScanHit> scanSequence(const sequence &seq, int minLength = 4, int chunkSize = 8)
+{
+    SequenceDevice device(seq);
+    if (!device.isValid() || !device.open(QIODevice::ReadOnly))
+        return {};
+
+    StringScanState state;
+    state.resultLimit = kMaxStringResultBatchLimit;
+    state.elapsed.start();
+    if (!scanAsciiDevice(device, state, minLength, StringScanMode::PrintableAscii, false, nullptr, false,
+                         chunkSize))
+        return {};
+
+    QVector<ScanHit> hits;
+    hits.reserve(state.results.size());
+    for (const QVariantMap &row : state.results)
+    {
+        hits.append({row.value(QStringLiteral("text")).toString(), row.value(QStringLiteral("offset")).toULongLong(),
+                     row.value(QStringLiteral("length")).toULongLong()});
+    }
+    return hits;
+}
+
+class TestSequenceSlice final : public sequence
+{
+  public:
+    TestSequenceSlice(sequence *source, size_w baseOffset, size_w length)
+        : m_source(source), m_baseOffset(baseOffset), m_length(length)
+    {
+    }
+
+    bool isreadonly() override
+    {
+        return true;
+    }
+    bool save(const std::string & = std::string()) override
+    {
+        return false;
+    }
+    bool clear() override
+    {
+        return false;
+    }
+    bool insert(size_w, const seqchar *, size_w) override
+    {
+        return false;
+    }
+    bool replace(size_w, const seqchar *, size_w, size_w) override
+    {
+        return false;
+    }
+    bool replace(size_w, const seqchar *, size_w) override
+    {
+        return false;
+    }
+    bool erase(size_w, size_w) override
+    {
+        return false;
+    }
+    bool append(const seqchar *, size_w) override
+    {
+        return false;
+    }
+    bool undo() override
+    {
+        return false;
+    }
+    bool redo() override
+    {
+        return false;
+    }
+    bool canundo() const override
+    {
+        return false;
+    }
+    bool canredo() const override
+    {
+        return false;
+    }
+
+    size_w size() const override
+    {
+        return m_length;
+    }
+
+    size_t render(size_w index, seqchar *buf, size_t len, seqchar_info *infobuf = nullptr) const override
+    {
+        if (!m_source || !buf || index >= m_length)
+            return 0;
+
+        len = static_cast<size_t>(std::min<size_w>(static_cast<size_w>(len), m_length - index));
+        return m_source->render(m_baseOffset + index, buf, len, infobuf);
+    }
+
+  private:
+    void resolveDeviceSource(const sequence *&source, size_w &baseOffset, size_w &length) const override
+    {
+        source = m_source;
+        baseOffset = m_baseOffset;
+        length = m_length;
+    }
+
+    sequence *m_source = nullptr;
+    size_w m_baseOffset = 0;
+    size_w m_length = 0;
+};
 
 QVector<sequence::span_desc> takeSnapshot(sequence &seq, size_w index, size_w length)
 {
@@ -107,7 +227,7 @@ class SequenceTests : public QObject
 {
     Q_OBJECT
 
-private slots:
+  private slots:
     void insertAtBeginning();
     void insertAtEnd();
     void insertOnSpanBoundary();
@@ -154,6 +274,15 @@ private slots:
 
     void invalidOperationsDoNotModifyContent();
     void renderPastEndReturnsAvailableBytes();
+    void sequenceDeviceReadsMemoryBackedDocument();
+    void stringsScanSeesUnsavedInsertion();
+    void stringsScanSeesUnsavedOverwrite();
+    void stringsScanOmitsDeletedContent();
+    void stringsScanCrossesSequenceSpanBoundaries();
+    void sequenceDeviceSnapshotSurvivesEdits();
+    void sequenceDeviceSeekAcrossSpans();
+    void sequenceDeviceReadsFileBackedSource();
+    void sequenceDeviceReadsViewSlice();
 };
 
 void SequenceTests::insertAtBeginning()
@@ -636,6 +765,128 @@ void SequenceTests::renderPastEndReturnsAvailableBytes()
                         reinterpret_cast<seqchar *>(actual.data()),
                         static_cast<size_t>(actual.size())),
              static_cast<size_t>(0));
+}
+
+void SequenceTests::sequenceDeviceReadsMemoryBackedDocument()
+{
+    sequence seq;
+    init(seq, "memory-backed");
+
+    SequenceDevice device(seq);
+    QVERIFY2(device.isValid(), qPrintable(device.errorString()));
+    QVERIFY(device.open(QIODevice::ReadOnly));
+    QCOMPARE(device.readAll(), QByteArray("memory-backed"));
+}
+
+void SequenceTests::stringsScanSeesUnsavedInsertion()
+{
+    sequence seq;
+    init(seq, QByteArray("\0hello\0", 7));
+    QVERIFY(insertBytes(seq, 3, "WORLD"));
+
+    const auto hits = scanSequence(seq, 4, 3);
+    QCOMPARE(hits.size(), 1);
+    QCOMPARE(hits[0].text, QStringLiteral("heWORLDllo"));
+    QCOMPARE(hits[0].offset, 1ULL);
+    QCOMPARE(hits[0].length, 10ULL);
+}
+
+void SequenceTests::stringsScanSeesUnsavedOverwrite()
+{
+    sequence seq;
+    init(seq, QByteArray("\0abcdef\0", 8));
+    QVERIFY(replaceBytes(seq, 3, "XYZ", 3));
+
+    const auto hits = scanSequence(seq, 4, 4);
+    QCOMPARE(hits.size(), 1);
+    QCOMPARE(hits[0].text, QStringLiteral("abXYZf"));
+    QCOMPARE(hits[0].offset, 1ULL);
+    QCOMPARE(hits[0].length, 6ULL);
+}
+
+void SequenceTests::stringsScanOmitsDeletedContent()
+{
+    sequence seq;
+    init(seq, QByteArray("\0abcDELETEdef\0", 14));
+    QVERIFY(seq.erase(4, 6));
+
+    const auto hits = scanSequence(seq, 4, 5);
+    QCOMPARE(hits.size(), 1);
+    QCOMPARE(hits[0].text, QStringLiteral("abcdef"));
+    QVERIFY(!hits[0].text.contains(QStringLiteral("DELETE")));
+}
+
+void SequenceTests::stringsScanCrossesSequenceSpanBoundaries()
+{
+    sequence seq;
+    init(seq, QByteArray("\0abcd\0", 6));
+    QVERIFY(insertBytes(seq, 3, "EFGH"));
+
+    const auto hits = scanSequence(seq, 4, 2);
+    QCOMPARE(hits.size(), 1);
+    QCOMPARE(hits[0].text, QStringLiteral("abEFGHcd"));
+    QCOMPARE(hits[0].offset, 1ULL);
+}
+
+void SequenceTests::sequenceDeviceSnapshotSurvivesEdits()
+{
+    sequence seq;
+    init(seq, "abcdef");
+    QVERIFY(insertBytes(seq, 3, "XX"));
+
+    SequenceDevice device(seq);
+    QVERIFY2(device.isValid(), qPrintable(device.errorString()));
+    QVERIFY(device.open(QIODevice::ReadOnly));
+
+    QVERIFY(replaceBytes(seq, 3, "YY", 2));
+    QVERIFY(seq.erase(0, 1));
+    expectContent(seq, "bcYYdef");
+
+    QCOMPARE(device.readAll(), QByteArray("abcXXdef"));
+}
+
+void SequenceTests::sequenceDeviceSeekAcrossSpans()
+{
+    sequence seq;
+    init(seq, "abcdef");
+    QVERIFY(insertBytes(seq, 3, "XX"));
+
+    SequenceDevice device(seq);
+    QVERIFY2(device.isValid(), qPrintable(device.errorString()));
+    QVERIFY(device.open(QIODevice::ReadOnly));
+    QVERIFY(device.seek(2));
+    QCOMPARE(device.read(5), QByteArray("cXXde"));
+}
+
+void SequenceTests::sequenceDeviceReadsFileBackedSource()
+{
+    QTemporaryFile temp;
+    QVERIFY(temp.open());
+    const QByteArray contents("\0file-backed-string\0", 20);
+    QCOMPARE(temp.write(contents), static_cast<qint64>(contents.size()));
+    QVERIFY(temp.flush());
+    const QString path = temp.fileName();
+    temp.close();
+
+    sequence seq;
+    QVERIFY(seq.open(path.toStdString(), true, true));
+
+    SequenceDevice device(seq);
+    QVERIFY2(device.isValid(), qPrintable(device.errorString()));
+    QVERIFY(device.open(QIODevice::ReadOnly));
+    QCOMPARE(device.readAll(), contents);
+}
+
+void SequenceTests::sequenceDeviceReadsViewSlice()
+{
+    sequence seq;
+    init(seq, QByteArray("\0prefix\0slice-value\0suffix\0", 28));
+    TestSequenceSlice slice(&seq, 8, 12);
+
+    SequenceDevice device(slice);
+    QVERIFY2(device.isValid(), qPrintable(device.errorString()));
+    QVERIFY(device.open(QIODevice::ReadOnly));
+    QCOMPARE(device.readAll(), QByteArray("slice-value\x00", 12));
 }
 
 QTEST_APPLESS_MAIN(SequenceTests)

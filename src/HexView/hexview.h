@@ -296,6 +296,7 @@ public:
     void   scrollHStart();  // scroll to the far left  (address column visible)
 
     // Data access
+    const sequence *dataSequence() const { return m_pDataSeq; }
     size_t getData(size_w offset, uint8_t *buf, size_t len);
     size_t getSourceData(size_w offset, uint8_t *buf, size_t len);
     size_t setData(size_w offset, uint8_t *buf, size_t len);
