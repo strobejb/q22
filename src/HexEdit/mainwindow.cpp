@@ -481,6 +481,14 @@ void MainWindow::createPreferencesDialog()
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), ui(new Ui::MainWindow) {
     ui->setupUi(this);
+    const QKeySequence ctrlQ(QStringLiteral("Ctrl+Q"));
+    QList<QKeySequence> quitShortcuts{ctrlQ};
+    for (const QKeySequence &shortcut : QKeySequence::keyBindings(QKeySequence::Quit))
+    {
+        if (!shortcut.isEmpty() && !quitShortcuts.contains(shortcut))
+            quitShortcuts.append(shortcut);
+    }
+    ui->actionExit->setShortcuts(quitShortcuts);
     ui->menubar->setAcceptDrops(true);
     ui->menuView->menuAction()->setVisible(false);
 
