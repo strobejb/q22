@@ -1,4 +1,6 @@
 #include "dialogs/exportformat.h"
+#include "sequence.h"
+#include "sequencedevice.h"
 
 #include <QBuffer>
 #include <QByteArray>
@@ -6,38 +8,34 @@
 
 // ── Test helpers ──────────────────────────────────────────────────────────────
 
-// In-memory DataSource backed by a QByteArray.
-struct ByteArraySource : DataSource
+void init(sequence &seq, const QByteArray &bytes)
 {
-    QByteArray data;
-    QString    path;
+    QVERIFY(seq.init(reinterpret_cast<const seqchar *>(bytes.constData()),
+                     static_cast<size_t>(bytes.size()),
+                     true));
+}
 
-    explicit ByteArraySource(QByteArray d, QString p = QStringLiteral("test.bin"))
-        : data(std::move(d)), path(std::move(p))
-    {
-    }
-
-    void getData(size_w offset, uint8_t *buf, size_t len) const override
-    {
-        memcpy(buf, data.constData() + (int)offset, len);
-    }
-
-    QString filePath() const override
-    {
-        return path;
-    }
-};
+bool insertBytes(sequence &seq, size_w index, const QByteArray &bytes)
+{
+    return seq.insert(index,
+                      reinterpret_cast<const seqchar *>(bytes.constData()),
+                      static_cast<size_w>(bytes.size()));
+}
 
 // Run one export format function against `input` bytes, return raw output.
 static QByteArray runExport(bool (*fn)(ExportWriter &, const DataSource &, size_w, size_w, IMPEXP_OPTIONS *),
                             const QByteArray &input, IMPEXP_OPTIONS opts = {})
 {
-    ByteArraySource src(input);
-    QBuffer         buf;
-    buf.open(QIODevice::WriteOnly);
-    ExportWriter writer(&buf);
+    QBuffer source;
+    source.setData(input);
+    source.open(QIODevice::ReadOnly);
+    DataSource src(source, QStringLiteral("test.bin"));
+
+    QBuffer output;
+    output.open(QIODevice::WriteOnly);
+    ExportWriter writer(&output);
     fn(writer, src, 0, (size_w)input.size(), &opts);
-    return buf.data();
+    return output.data();
 }
 
 class ExportFormatTests : public QObject
@@ -69,6 +67,7 @@ class ExportFormatTests : public QObject
     void exportMotorola_singleByte();
     void exportASM_byteMode();
     void exportCPP_byteMode();
+    void exportRaw_readsSequenceDeviceLogicalEdits();
 };
 
 // ── toAscii ───────────────────────────────────────────────────────────────────
@@ -304,6 +303,27 @@ void ExportFormatTests::exportCPP_byteMode()
     QVERIFY(out.contains("0x41, "));
     QVERIFY(out.contains("0x42, "));
     QVERIFY(out.endsWith("};\n"));
+}
+
+void ExportFormatTests::exportRaw_readsSequenceDeviceLogicalEdits()
+{
+    sequence seq;
+    init(seq, "abcDELETEdef");
+    QVERIFY(seq.erase(3, 6));
+    QVERIFY(insertBytes(seq, 3, "XYZ"));
+
+    SequenceDevice sourceDevice(seq);
+    QVERIFY2(sourceDevice.isValid(), qPrintable(sourceDevice.errorString()));
+    QVERIFY(sourceDevice.open(QIODevice::ReadOnly));
+    DataSource src(sourceDevice);
+
+    QBuffer output;
+    QVERIFY(output.open(QIODevice::WriteOnly));
+    ExportWriter writer(&output);
+    IMPEXP_OPTIONS opts;
+
+    QVERIFY(ExportRaw(writer, src, 0, seq.size(), &opts));
+    QCOMPARE(output.data(), QByteArray("abcXYZdef"));
 }
 
 QTEST_APPLESS_MAIN(ExportFormatTests)

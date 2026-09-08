@@ -60,18 +60,22 @@ struct IMPEXP_OPTIONS
 };
 
 // ── DataSource ────────────────────────────────────────────────────────────────
-// Abstract read-only view of the bytes being exported. Implemented by
-// HexViewSource in dlgexport.cpp; test code uses ByteArraySource.
+// Read-only view of the bytes being exported, backed by any seekable QIODevice.
 struct DataSource
 {
-    virtual void getData(size_w offset, uint8_t *buf, size_t len) const = 0;
+    explicit DataSource(QIODevice &device, QString sourceName = {});
 
-    virtual QString filePath() const
+    void getData(size_w offset, uint8_t *buf, size_t len) const;
+    bool hasError() const
     {
-        return {};
+        return m_error;
     }
+    QString filePath() const;
 
-    virtual ~DataSource() = default;
+  private:
+    QIODevice *m_device = nullptr;
+    QString m_sourceName;
+    mutable bool m_error = false;
 };
 
 // ── ExportWriter ──────────────────────────────────────────────────────────────

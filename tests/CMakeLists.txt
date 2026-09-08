@@ -277,6 +277,7 @@ target_include_directories(exportformat_tests PRIVATE
 )
 
 target_link_libraries(exportformat_tests PRIVATE
+    HexView
     Qt${QT_VERSION_MAJOR}::Core
     Qt${QT_VERSION_MAJOR}::Test
 )

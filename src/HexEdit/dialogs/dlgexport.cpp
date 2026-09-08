@@ -9,6 +9,7 @@
 
 #include "dlgexport.h"
 #include "HexView/hexview.h"
+#include "HexView/sequencedevice.h"
 #include "theme.h"
 
 #include <QApplication>
@@ -19,33 +20,6 @@
 // ── Globals ───────────────────────────────────────────────────────────────────
 
 IMPEXP_OPTIONS g_ExportOptions = {FORMAT_HEXDUMP, SEARCHTYPE_BYTE};
-
-// ── HexViewSource ─────────────────────────────────────────────────────────────
-// Adapts HexView to the DataSource interface used by the Export* functions.
-
-namespace
-{
-
-struct HexViewSource : DataSource
-{
-    HexView *hv;
-
-    explicit HexViewSource(HexView *hv) : hv(hv)
-    {
-    }
-
-    void getData(size_w offset, uint8_t *buf, size_t len) const override
-    {
-        hv->getData(offset, buf, len);
-    }
-
-    QString filePath() const override
-    {
-        return hv->filePath();
-    }
-};
-
-} // namespace
 
 // ── Top-level Export ──────────────────────────────────────────────────────────
 
@@ -61,6 +35,12 @@ bool Export(const QString &szFileName, HexView *hv, IMPEXP_OPTIONS *eopt, QWidge
     }
 
     eopt->linelen = hv->getLineLen();
+    const sequence *sourceSequence = hv->dataSequence();
+    if (!sourceSequence)
+        return false;
+    SequenceDevice sourceDevice(*sourceSequence);
+    if (!sourceDevice.isValid() || !sourceDevice.open(QIODevice::ReadOnly))
+        return false;
 
     QIODevice::OpenMode mode =
         (eopt->format == FORMAT_RAWDATA) ? QIODevice::WriteOnly : QIODevice::WriteOnly | QIODevice::Text;
@@ -82,7 +62,7 @@ bool Export(const QString &szFileName, HexView *hv, IMPEXP_OPTIONS *eopt, QWidge
 
     SyncProgressReporter reporter(&dlg);
     ExportWriter         writer(&file, &reporter);
-    HexViewSource        src(hv);
+    DataSource           src(sourceDevice, hv->filePath());
     bool                 success = false;
 
     switch (eopt->format)
@@ -145,6 +125,12 @@ bool CopyAs(HexView *hv, IMPEXP_OPTIONS *eopt, QWidget *parent)
     }
 
     eopt->linelen = hv->getLineLen();
+    const sequence *sourceSequence = hv->dataSequence();
+    if (!sourceSequence)
+        return false;
+    SequenceDevice sourceDevice(*sourceSequence);
+    if (!sourceDevice.isValid() || !sourceDevice.open(QIODevice::ReadOnly))
+        return false;
 
     hv->setCurPos(offset);
     hv->setUpdatesEnabled(false);
@@ -159,7 +145,7 @@ bool CopyAs(HexView *hv, IMPEXP_OPTIONS *eopt, QWidget *parent)
 
     SyncProgressReporter reporter(&dlg);
     ExportWriter         writer(&buf, &reporter);
-    HexViewSource        src(hv);
+    DataSource           src(sourceDevice, hv->filePath());
     bool                 success = false;
 
     switch (eopt->format)
