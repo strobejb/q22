@@ -1,7 +1,9 @@
 #include "filestats/entropy.h"
+#include "HexView/hexview.h"
+#include "HexView/sequencedevice.h"
+#include "filestats/entropyscan.h"
 #include "filestats/sidepanel.h"
 #include "filestats/widgets.h"
-#include "HexView/hexview.h"
 #include "combos/menucombobox.h"
 #include "settings/settingscard.h"
 #include "theme.h"
@@ -15,7 +17,6 @@
 #include <QMenu>
 #include <QSizePolicy>
 #include <QVBoxLayout>
-#include <QFile>
 #include <QLabel>
 #include <QMetaObject>
 #include <QMouseEvent>
@@ -925,343 +926,6 @@ void EntropyView::leaveEvent(QEvent *event)
 }
 
 // -----------------------------------------------------------------------
-// Background calculation
-// -----------------------------------------------------------------------
-
-static QVector<float> calculateEntropy(
-    const QString &path,
-    int windowSize,
-    qulonglong startOffset,
-    qulonglong byteCount,
-    qulonglong &outScopeSize,
-    const std::shared_ptr<std::atomic_bool> &cancelFlag,
-    const std::shared_ptr<filestats::OperationPause> &pause,
-    const std::function<void(int)> &progressCallback)
-{
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly))
-    {
-        outScopeSize = 0;
-        return {};
-    }
-
-    const qulonglong fileTotal = static_cast<qulonglong>(file.size());
-    startOffset = qMin(startOffset, fileTotal);
-    if (byteCount == 0 || startOffset + byteCount > fileTotal)
-        byteCount = fileTotal - startOffset;
-    outScopeSize = byteCount;
-    if (startOffset > 0)
-        file.seek(static_cast<qint64>(startOffset));
-
-    const qint64   scanTotal = static_cast<qint64>(byteCount);
-    qint64         scanned   = 0;
-    int            lastProg  = -1;
-    QVector<float> results;
-    if (scanTotal > 0 && windowSize > 0)
-        results.reserve(static_cast<int>(qMin((scanTotal + windowSize - 1) / windowSize, qint64(1 << 20))));
-
-    while (!cancelFlag->load() && scanned < scanTotal)
-    {
-        if (pause && !pause->waitIfPaused(cancelFlag))
-            return {};
-
-        const qint64     toRead = qMin(qint64(windowSize), scanTotal - scanned);
-        const QByteArray chunk  = file.read(toRead);
-        if (chunk.isEmpty())
-            break;
-
-        int freq[256] = {};
-        for (unsigned char b : chunk)
-            ++freq[b];
-
-        const int n = chunk.size();
-        double entropy = 0.0;
-        for (int f : freq)
-        {
-            if (f > 0)
-            {
-                const double p = double(f) / n;
-                entropy -= p * std::log2(p);
-            }
-        }
-        results.append(static_cast<float>(entropy / 8.0));
-
-        scanned += chunk.size();
-        const int prog = (scanTotal > 0) ? int(1000LL * scanned / scanTotal) : 1000;
-        if (prog != lastProg)
-        {
-            lastProg = prog;
-            progressCallback(prog);
-        }
-    }
-
-    return cancelFlag->load() ? QVector<float>() : results;
-}
-
-static QVector<quint64> calculateBigram(
-    const QString &path,
-    qulonglong startOffset,
-    qulonglong byteCount,
-    int stride,
-    qulonglong &outFileSize,
-    const std::shared_ptr<std::atomic_bool> &cancelFlag,
-    const std::shared_ptr<filestats::OperationPause> &pause,
-    const std::function<void(int)> &progressCallback)
-{
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly))
-    {
-        outFileSize = 0;
-        return {};
-    }
-
-    const qulonglong fileTotal = static_cast<qulonglong>(file.size());
-    outFileSize = fileTotal;
-
-    startOffset = qMin(startOffset, fileTotal);
-    if (byteCount == 0 || startOffset + byteCount > fileTotal)
-        byteCount = fileTotal - startOffset;
-    if (startOffset > 0)
-        file.seek(static_cast<qint64>(startOffset));
-
-    QVector<quint64> counts(256 * 256, 0);
-
-    constexpr int    bufSize   = 65536;
-    qint64           scanned   = 0;
-    int              lastProg  = -1;
-    const qint64     scanTotal = static_cast<qint64>(byteCount);
-    QVector<unsigned char> tail;
-    tail.reserve(stride);
-
-    while (!cancelFlag->load() && scanned < scanTotal)
-    {
-        if (pause && !pause->waitIfPaused(cancelFlag))
-            return {};
-
-        const qint64     toRead = qMin(qint64(bufSize), scanTotal - scanned);
-        const QByteArray chunk  = file.read(toRead);
-        if (chunk.isEmpty())
-            break;
-
-        const auto *data = reinterpret_cast<const unsigned char *>(chunk.constData());
-        const int   n    = chunk.size();
-
-        // Pair tail bytes from previous chunk with the first bytes of this one
-        for (int i = 0; i < int(tail.size()); ++i)
-        {
-            const int j = stride - int(tail.size()) + i;
-            if (j < n)
-                ++counts[tail[i] * 256 + data[j]];
-        }
-
-        // Pairs entirely within this chunk
-        for (int i = 0; i + stride < n; ++i)
-            ++counts[data[i] * 256 + data[i + stride]];
-
-        // Save the last `stride` bytes as the tail for the next chunk
-        const int tailLen = qMin(stride, n);
-        tail.resize(tailLen);
-        for (int i = 0; i < tailLen; ++i)
-            tail[i] = data[n - tailLen + i];
-
-        scanned += n;
-        const int prog = (scanTotal > 0) ? int(1000LL * scanned / scanTotal) : 1000;
-        if (prog != lastProg)
-        {
-            lastProg = prog;
-            progressCallback(prog);
-        }
-    }
-
-    return cancelFlag->load() ? QVector<quint64>() : counts;
-}
-
-static QVector<float> calculateByteClass(
-    const QString &path,
-    int windowSize,
-    qulonglong startOffset,
-    qulonglong byteCount,
-    qulonglong &outScopeSize,
-    const std::shared_ptr<std::atomic_bool> &cancelFlag,
-    const std::shared_ptr<filestats::OperationPause> &pause,
-    const std::function<void(int)> &progressCallback)
-{
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly))
-    {
-        outScopeSize = 0;
-        return {};
-    }
-
-    const qulonglong fileTotal = static_cast<qulonglong>(file.size());
-    startOffset = qMin(startOffset, fileTotal);
-    if (byteCount == 0 || startOffset + byteCount > fileTotal)
-        byteCount = fileTotal - startOffset;
-    outScopeSize = byteCount;
-    if (startOffset > 0)
-        file.seek(static_cast<qint64>(startOffset));
-
-    // Build per-byte scheme lookup tables (256 entries each, computed once).
-    // Layout per window in results: 16 floats — [scheme0_c0..c3, scheme1_c0..c3, scheme2_c0..c3, scheme3_c0..c3]
-    // Scheme 0 — Semantic:    null | whitespace | printable ASCII | control+high
-    // Scheme 1 — ASCII Range: 0x00-0x1F control | 0x20-0x7E printable | 0x7F DEL | 0x80-0xFF high
-    // Scheme 2 — Bit Density: 0-2 bits set | 3-4 bits | 5-6 bits | 7-8 bits
-    // Scheme 3 — Nibble Range: 0x00-0x3F | 0x40-0x7F | 0x80-0xBF | 0xC0-0xFF
-    static const int kNumSchemes = 4;
-    uint8_t lut[kNumSchemes][256];
-    for (int b = 0; b < 256; ++b)
-    {
-        const auto u = static_cast<unsigned char>(b);
-        lut[0][b] = (u == 0x00) ? 0
-                  : (u == 0x09 || u == 0x0A || u == 0x0B || u == 0x0C || u == 0x0D || u == 0x20) ? 1
-                  : (u >= 0x21 && u <= 0x7E) ? 2 : 3;
-        lut[1][b] = (u < 0x20) ? 0 : (u <= 0x7E) ? 1 : (u == 0x7F) ? 2 : 3;
-        int bits = 0; for (int x = u; x; x &= x - 1) ++bits;
-        lut[2][b] = static_cast<uint8_t>(bits <= 2 ? 0 : bits <= 4 ? 1 : bits <= 6 ? 2 : 3);
-        lut[3][b] = (u < 0x40) ? 0 : (u < 0x80) ? 1 : (u < 0xC0) ? 2 : 3;
-    }
-
-    const qint64 scanTotal = static_cast<qint64>(byteCount);
-    qint64 scanned         = 0;
-    int    lastProg        = -1;
-    QVector<float> results;
-    if (scanTotal > 0 && windowSize > 0)
-        results.reserve(16 * static_cast<int>(qMin((scanTotal + windowSize - 1) / windowSize, qint64(1 << 20))));
-
-    while (!cancelFlag->load() && scanned < scanTotal)
-    {
-        if (pause && !pause->waitIfPaused(cancelFlag))
-            return {};
-
-        const qint64     toRead = qMin(qint64(windowSize), scanTotal - scanned);
-        const QByteArray chunk  = file.read(toRead);
-        if (chunk.isEmpty())
-            break;
-
-        int counts[kNumSchemes][4] = {};
-        for (unsigned char b : chunk)
-            for (int s = 0; s < kNumSchemes; ++s)
-                ++counts[s][lut[s][b]];
-
-        const float n = float(chunk.size());
-        for (int s = 0; s < kNumSchemes; ++s)
-            for (int c = 0; c < 4; ++c)
-                results.append(counts[s][c] / n);
-
-        scanned += chunk.size();
-        const int prog = (scanTotal > 0) ? int(1000LL * scanned / scanTotal) : 1000;
-        if (prog != lastProg)
-        {
-            lastProg = prog;
-            progressCallback(prog);
-        }
-    }
-
-    if (cancelFlag->load())
-        return {};
-
-    // 3-tap Gaussian smooth [0.25, 0.5, 0.25] per value along the window axis
-    const int nW = results.size() / 16;
-    if (nW >= 3)
-    {
-        QVector<float> smoothed(results.size());
-        for (int i = 0; i < nW; ++i)
-        {
-            const int prev = qMax(0, i - 1);
-            const int next = qMin(nW - 1, i + 1);
-            for (int v = 0; v < 16; ++v)
-                smoothed[i * 16 + v] = 0.25f * results[prev * 16 + v]
-                                     + 0.50f * results[i    * 16 + v]
-                                     + 0.25f * results[next * 16 + v];
-        }
-        results = std::move(smoothed);
-    }
-
-    return results;
-}
-
-static QVector<quint8> calculateHilbert(
-    const QString &path,
-    qulonglong startOffset,
-    qulonglong byteCount,       // 0 = whole file from startOffset
-    qulonglong &outScopeSize,   // bytes actually scanned
-    int &outSampleCount,
-    int maxSamples,
-    const std::shared_ptr<std::atomic_bool> &cancelFlag,
-    const std::shared_ptr<filestats::OperationPause> &pause,
-    const std::function<void(int)> &progressCallback)
-{
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly))
-    {
-        outScopeSize   = 0;
-        outSampleCount = 0;
-        return {};
-    }
-
-    const qulonglong fileTotal = static_cast<qulonglong>(file.size());
-    startOffset = qMin(startOffset, fileTotal);
-    if (byteCount == 0 || startOffset + byteCount > fileTotal)
-        byteCount = fileTotal - startOffset;
-
-    outScopeSize = byteCount;
-
-    if (byteCount == 0)
-    {
-        outSampleCount = 0;
-        return {};
-    }
-
-    if (startOffset > 0)
-        file.seek(static_cast<qint64>(startOffset));
-
-    const qint64 total        = static_cast<qint64>(byteCount);
-    const int    sampleCount  = static_cast<int>(qMin(qint64(maxSamples), total));
-    outSampleCount            = sampleCount;
-
-    QVector<quint8> result(sampleCount, 0);
-
-    constexpr int bufSize  = 65536;
-    qint64        scanned  = 0;
-    int           lastProg = -1;
-
-    while (!cancelFlag->load() && scanned < total)
-    {
-        if (pause && !pause->waitIfPaused(cancelFlag))
-            return {};
-
-        const qint64     toRead = qMin(qint64(bufSize), total - scanned);
-        const QByteArray chunk  = file.read(toRead);
-        if (chunk.isEmpty())
-            break;
-
-        const auto *data = reinterpret_cast<const unsigned char *>(chunk.constData());
-        const int   n    = chunk.size();
-
-        for (int i = 0; i < n; ++i)
-        {
-            const qint64 pos = scanned + i;
-            const int sampleIdx = (total <= qint64(maxSamples))
-                ? int(pos)
-                : int(double(pos) / double(total) * sampleCount);
-            if (sampleIdx >= sampleCount)
-                continue;
-            result[sampleIdx] = data[i];
-        }
-
-        scanned += n;
-        const int prog = int(1000LL * scanned / total);
-        if (prog != lastProg)
-        {
-            lastProg = prog;
-            progressCallback(prog);
-        }
-    }
-
-    return cancelFlag->load() ? QVector<quint8>() : result;
-}
-
-// -----------------------------------------------------------------------
 // FilePropertiesPanel — entropy methods
 // -----------------------------------------------------------------------
 
@@ -1364,7 +1028,6 @@ void FilePropertiesPanel::startEntropyAnalysis()
     if (m_entropyOperation)  m_entropyOperation->showProgress();
     requestSectionLayoutRefresh(SectionId::Entropy);
 
-    const QString     path              = m_hexView->filePath();
     const int         windowSize        = m_entropyWindowSize;
     const EntropyMode mode              = m_entropyMode;
     const int         stride            = m_bigramStride;
@@ -1381,24 +1044,48 @@ void FilePropertiesPanel::startEntropyAnalysis()
         if (se > ss) { scopeStart = ss; scopeLength = se - ss; }
     }
 
+    const sequence *sourceSequence = m_hexView->dataSequence();
+    auto *inputDevice = sourceSequence ? new SequenceDevice(*sourceSequence) : nullptr;
+    if (!inputDevice || !inputDevice->isValid() || !inputDevice->open(QIODevice::ReadOnly))
+    {
+        delete inputDevice;
+        m_entropyState.started = false;
+        m_entropyState.pausedByCollapse = false;
+        if (m_entropyOperation)
+            m_entropyOperation->showRetry(tr("Unable to read"));
+        resetEntropyTitle();
+        requestSectionLayoutRefresh(SectionId::Entropy);
+        return;
+    }
+
     QPointer<FilePropertiesPanel> guard(this);
 
-    auto *thread = QThread::create([guard, generation, path, windowSize, mode,
+    auto *thread = QThread::create([guard, generation, inputDevice, windowSize, mode,
                                     scopeStart, scopeLength, stride, gridSide,
                                     entropyScopeStart, entropyScopeLen,
                                     cancelFlag, pause]()
     {
+        std::unique_ptr<SequenceDevice> inputOwner(inputDevice);
+        QIODevice &input = *inputOwner;
         auto progressCb = [guard, generation](int prog) {
             QMetaObject::invokeMethod(qApp, [guard, generation, prog]() {
                 if (guard) guard->updateEntropyProgress(generation, prog);
             }, Qt::QueuedConnection);
         };
+        EntropyScanCallbacks callbacks;
+        callbacks.shouldContinue = [cancelFlag, pause]() -> bool
+        {
+            if (cancelFlag->load())
+                return false;
+            return !pause || pause->waitIfPaused(cancelFlag);
+        };
+        callbacks.progress = progressCb;
 
         qulonglong fileSize = 0;
         if (mode == EntropyMode::Bigram)
         {
             const QVector<quint64> counts = calculateBigram(
-                path, scopeStart, scopeLength, stride, fileSize, cancelFlag, pause, progressCb);
+                input, scopeStart, scopeLength, stride, fileSize, callbacks);
             if (cancelFlag->load())
                 return;
             QMetaObject::invokeMethod(qApp, [guard, generation, counts, fileSize]() {
@@ -1408,8 +1095,8 @@ void FilePropertiesPanel::startEntropyAnalysis()
         else if (mode == EntropyMode::ByteClass)
         {
             qulonglong scopeSize = 0;
-            const QVector<float> results = calculateByteClass(path, windowSize,
-                entropyScopeStart, entropyScopeLen, scopeSize, cancelFlag, pause, progressCb);
+            const QVector<float> results = calculateByteClass(input, windowSize,
+                entropyScopeStart, entropyScopeLen, scopeSize, callbacks);
             if (cancelFlag->load())
                 return;
             QMetaObject::invokeMethod(qApp, [guard, generation, results, scopeSize, windowSize, entropyScopeStart]() {
@@ -1420,9 +1107,9 @@ void FilePropertiesPanel::startEntropyAnalysis()
         {
             int        sampleCount = 0;
             qulonglong scopeSize   = 0;
-            const QVector<quint8> bytes = calculateHilbert(path,
+            const QVector<quint8> bytes = calculateHilbert(input,
                 entropyScopeStart, entropyScopeLen, scopeSize, sampleCount,
-                gridSide * gridSide, cancelFlag, pause, progressCb);
+                gridSide * gridSide, callbacks);
             if (cancelFlag->load()) return;
             QMetaObject::invokeMethod(qApp,
                 [guard, generation, bytes, scopeSize, sampleCount, gridSide, entropyScopeStart]() {
@@ -1434,9 +1121,9 @@ void FilePropertiesPanel::startEntropyAnalysis()
         {
             int        sampleCount = 0;
             qulonglong scopeSize   = 0;
-            const QVector<quint8> bytes = calculateHilbert(path,
+            const QVector<quint8> bytes = calculateHilbert(input,
                 entropyScopeStart, entropyScopeLen, scopeSize, sampleCount,
-                gridSide * gridSide, cancelFlag, pause, progressCb);
+                gridSide * gridSide, callbacks);
             if (cancelFlag->load()) return;
             QMetaObject::invokeMethod(qApp,
                 [guard, generation, bytes, scopeSize, sampleCount, entropyScopeStart]() {
@@ -1447,8 +1134,8 @@ void FilePropertiesPanel::startEntropyAnalysis()
         else
         {
             qulonglong scopeSize = 0;
-            const QVector<float> results = calculateEntropy(path, windowSize,
-                entropyScopeStart, entropyScopeLen, scopeSize, cancelFlag, pause, progressCb);
+            const QVector<float> results = calculateEntropy(input, windowSize,
+                entropyScopeStart, entropyScopeLen, scopeSize, callbacks);
             if (cancelFlag->load())
                 return;
             QMetaObject::invokeMethod(qApp, [guard, generation, results, scopeSize, windowSize, entropyScopeStart]() {

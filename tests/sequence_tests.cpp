@@ -1,11 +1,16 @@
+#include "filestats/checksumscan.h"
+#include "filestats/entropyscan.h"
 #include "filestats/stringscan.h"
 #include "sequence.h"
 #include "sequencedevice.h"
 
+#include <QBuffer>
+#include <QCryptographicHash>
 #include <QTemporaryFile>
 #include <QVector>
 #include <QtTest/QtTest>
 
+using namespace filestats;
 using namespace stringscan;
 
 namespace
@@ -102,6 +107,28 @@ QVector<ScanHit> scanSequence(const sequence &seq, int minLength = 4, int chunkS
                      row.value(QStringLiteral("length")).toULongLong()});
     }
     return hits;
+}
+
+QHash<QString, QString> checksumSequence(const sequence &seq, const QStringList &algorithms)
+{
+    SequenceDevice device(seq);
+    if (!device.isValid() || !device.open(QIODevice::ReadOnly))
+        return {};
+    return calculateChecksums(device, algorithms);
+}
+
+QVector<quint8> hilbertSequence(const sequence &seq, qulonglong startOffset, qulonglong byteCount,
+                                qulonglong &scopeSize, int &sampleCount)
+{
+    SequenceDevice device(seq);
+    if (!device.isValid() || !device.open(QIODevice::ReadOnly))
+        return {};
+    return calculateHilbert(device, startOffset, byteCount, scopeSize, sampleCount, 64);
+}
+
+QString md5Hex(const QByteArray &bytes)
+{
+    return QString::fromLatin1(QCryptographicHash::hash(bytes, QCryptographicHash::Md5).toHex());
 }
 
 class TestSequenceSlice final : public sequence
@@ -276,6 +303,11 @@ class SequenceTests : public QObject
     void invalidOperationsDoNotModifyContent();
     void renderPastEndReturnsAvailableBytes();
     void sequenceDeviceReadsMemoryBackedDocument();
+    void checksumScanReadsQBuffer();
+    void checksumScanSeesUnsavedLogicalEdits();
+    void entropyScanReadsQBuffer();
+    void entropyScanSeesUnsavedLogicalEdits();
+    void entropyScanRespectsLogicalScope();
     void stringsScanSeesUnsavedInsertion();
     void stringsScanSeesUnsavedOverwrite();
     void stringsScanOmitsDeletedContent();
@@ -778,6 +810,72 @@ void SequenceTests::sequenceDeviceReadsMemoryBackedDocument()
     QVERIFY2(device.isValid(), qPrintable(device.errorString()));
     QVERIFY(device.open(QIODevice::ReadOnly));
     QCOMPARE(device.readAll(), QByteArray("memory-backed"));
+}
+
+void SequenceTests::checksumScanReadsQBuffer()
+{
+    QBuffer source;
+    source.setData("checksum-buffer");
+    QVERIFY(source.open(QIODevice::ReadOnly));
+
+    const QHash<QString, QString> hashes = calculateChecksums(source, {QStringLiteral("MD5")});
+    QCOMPARE(hashes.value(QStringLiteral("MD5")), md5Hex("checksum-buffer"));
+}
+
+void SequenceTests::checksumScanSeesUnsavedLogicalEdits()
+{
+    sequence seq;
+    init(seq, "abcDELETEdef");
+    QVERIFY(seq.erase(3, 6));
+    QVERIFY(insertBytes(seq, 3, "XYZ"));
+    expectContent(seq, "abcXYZdef");
+
+    const QHash<QString, QString> hashes = checksumSequence(seq, {QStringLiteral("MD5")});
+    QCOMPARE(hashes.value(QStringLiteral("MD5")), md5Hex("abcXYZdef"));
+    QVERIFY(hashes.value(QStringLiteral("MD5")) != md5Hex("abcDELETEdef"));
+}
+
+void SequenceTests::entropyScanReadsQBuffer()
+{
+    QBuffer source;
+    source.setData(QByteArray("\x00\x01\x02\x03", 4));
+    QVERIFY(source.open(QIODevice::ReadOnly));
+
+    qulonglong scopeSize = 0;
+    const QVector<float> entropy = calculateEntropy(source, 4, 0, 0, scopeSize);
+    QCOMPARE(scopeSize, 4ULL);
+    QCOMPARE(entropy.size(), 1);
+    QVERIFY(qAbs(entropy[0] - 0.25f) < 0.0001f);
+}
+
+void SequenceTests::entropyScanSeesUnsavedLogicalEdits()
+{
+    sequence seq;
+    init(seq, "abcdef");
+    QVERIFY(replaceBytes(seq, 2, "XYZ", 3));
+    expectContent(seq, "abXYZf");
+
+    qulonglong scopeSize = 0;
+    int sampleCount = 0;
+    const QVector<quint8> bytes = hilbertSequence(seq, 0, 0, scopeSize, sampleCount);
+    QCOMPARE(scopeSize, 6ULL);
+    QCOMPARE(sampleCount, 6);
+    QCOMPARE(QByteArray(reinterpret_cast<const char *>(bytes.constData()), bytes.size()), QByteArray("abXYZf"));
+}
+
+void SequenceTests::entropyScanRespectsLogicalScope()
+{
+    sequence seq;
+    init(seq, "0123456789");
+    QVERIFY(insertBytes(seq, 4, "AB"));
+    expectContent(seq, "0123AB456789");
+
+    qulonglong scopeSize = 0;
+    int sampleCount = 0;
+    const QVector<quint8> bytes = hilbertSequence(seq, 3, 5, scopeSize, sampleCount);
+    QCOMPARE(scopeSize, 5ULL);
+    QCOMPARE(sampleCount, 5);
+    QCOMPARE(QByteArray(reinterpret_cast<const char *>(bytes.constData()), bytes.size()), QByteArray("3AB45"));
 }
 
 void SequenceTests::stringsScanSeesUnsavedInsertion()

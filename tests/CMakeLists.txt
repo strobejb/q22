@@ -2,6 +2,8 @@ find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Test)
 
 add_executable(sequence_tests
     sequence_tests.cpp
+    ../src/HexEdit/filestats/checksumscan.cpp
+    ../src/HexEdit/filestats/entropyscan.cpp
     ../src/HexEdit/filestats/stringscan.cpp
 )
 

@@ -21,9 +21,13 @@ set(PROJECT_SOURCES
         filestats/banner.cpp
         filestats/banner.h
         filestats/checksum.cpp
+        filestats/checksumscan.cpp
+        filestats/checksumscan.h
         filestats/datainterpreter.cpp
         filestats/entropy.h
         filestats/entropy.cpp
+        filestats/entropyscan.cpp
+        filestats/entropyscan.h
         filestats/properties.cpp
         filestats/resizegrip.cpp
         filestats/resizegrip.h
