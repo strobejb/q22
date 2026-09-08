@@ -221,6 +221,8 @@ void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, b
     const int minLength = m_minStringLength->value();
     const StringScanMode mode = stringScanModeFromIndex(m_stringEncoding ? m_stringEncoding->currentIndex() : 0);
     const bool includeWhitespace = !m_includeWhitespaceAction || m_includeWhitespaceAction->isChecked();
+    const bool includeUnicode = m_includeUnicodeAction && m_includeUnicodeAction->isChecked() &&
+                                mode != StringScanMode::CIdentifiers;
     const bool prefixHexOffset = m_prefixHexOffsetAction && m_prefixHexOffsetAction->isChecked();
     if (!append)
         clearStringExportTemp();
@@ -301,7 +303,7 @@ void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, b
 
     QPointer<FilePropertiesPanel> guard(this);
     auto *thread = QThread::create([guard, generation, minLength, mode, includeWhitespace,
-                                    inputDevice, startOffset, scanAll, cancelFlag,
+                                    includeUnicode, inputDevice, startOffset, scanAll, cancelFlag,
                                     visibleBaseCount, initialResultCount, exportTempPath,
                                     prefixHexOffset, pause]()
                                    {
@@ -361,8 +363,10 @@ void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, b
                 }
             };
 
-            const bool completed = scanAsciiDevice(input, state, minLength, mode, includeWhitespace, exportOut,
-                                                   prefixHexOffset, kDefaultStringScanChunkSize, callbacks);
+            const bool completed =
+                scanDevice(input, state, minLength,
+                           StringScanOptions{mode, includeWhitespace, includeUnicode, prefixHexOffset},
+                           exportOut, kDefaultStringScanChunkSize, callbacks);
             if (completed && !cancelFlag->load()) {
                 capped = state.capped && state.nextOffset < static_cast<qulonglong>(total);
                 nextOffset = state.nextOffset;
@@ -633,6 +637,9 @@ void FilePropertiesPanel::buildStringsSection(QWidget *parent, QVBoxLayout *cont
     m_includeWhitespaceAction = stringsOptionsMenu->addAction(tr("Include whitespace"));
     m_includeWhitespaceAction->setCheckable(true);
     m_includeWhitespaceAction->setChecked(true);
+    m_includeUnicodeAction = stringsOptionsMenu->addAction(tr("Unicode strings"));
+    m_includeUnicodeAction->setCheckable(true);
+    m_includeUnicodeAction->setChecked(true);
     stringsOptionsMenu->addSeparator();
     m_prefixHexOffsetAction = stringsOptionsMenu->addAction(tr("Prefix hex offset"));
     m_prefixHexOffsetAction->setCheckable(true);
@@ -926,9 +933,16 @@ void FilePropertiesPanel::buildStringsSection(QWidget *parent, QVBoxLayout *cont
             [markStringsOptionsChanged](int)
             { markStringsOptionsChanged(); });
     connect(m_stringEncoding, &QComboBox::currentIndexChanged, this,
-            [markStringsOptionsChanged](int)
-            { markStringsOptionsChanged(); });
+            [this, markStringsOptionsChanged](int index)
+            {
+                if (m_includeUnicodeAction)
+                    m_includeUnicodeAction->setEnabled(stringScanModeFromIndex(index) != StringScanMode::CIdentifiers);
+                markStringsOptionsChanged();
+            });
     connect(m_includeWhitespaceAction, &QAction::toggled, this,
+            [markStringsOptionsChanged](bool)
+            { markStringsOptionsChanged(); });
+    connect(m_includeUnicodeAction, &QAction::toggled, this,
             [markStringsOptionsChanged](bool)
             { markStringsOptionsChanged(); });
     connect(m_prefixHexOffsetAction, &QAction::toggled, this,

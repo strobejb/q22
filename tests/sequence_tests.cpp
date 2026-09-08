@@ -80,7 +80,7 @@ struct ScanHit
     qulonglong length = 0;
 };
 
-QVector<ScanHit> scanSequence(const sequence &seq, int minLength = 4, int chunkSize = 8)
+QVector<ScanHit> scanSequence(const sequence &seq, int minLength = 4, int chunkSize = 8, bool includeUnicode = false)
 {
     SequenceDevice device(seq);
     if (!device.isValid() || !device.open(QIODevice::ReadOnly))
@@ -89,8 +89,9 @@ QVector<ScanHit> scanSequence(const sequence &seq, int minLength = 4, int chunkS
     StringScanState state;
     state.resultLimit = kMaxStringResultBatchLimit;
     state.elapsed.start();
-    if (!scanAsciiDevice(device, state, minLength, StringScanMode::PrintableAscii, false, nullptr, false,
-                         chunkSize))
+    if (!scanDevice(device, state, minLength,
+                    StringScanOptions{StringScanMode::PrintableAscii, false, includeUnicode, false}, nullptr,
+                    chunkSize))
         return {};
 
     QVector<ScanHit> hits;
@@ -279,6 +280,7 @@ class SequenceTests : public QObject
     void stringsScanSeesUnsavedOverwrite();
     void stringsScanOmitsDeletedContent();
     void stringsScanCrossesSequenceSpanBoundaries();
+    void stringsScanSeesUtf16MemoryBackedDocument();
     void sequenceDeviceSnapshotSurvivesEdits();
     void sequenceDeviceSeekAcrossSpans();
     void sequenceDeviceReadsFileBackedSource();
@@ -826,6 +828,28 @@ void SequenceTests::stringsScanCrossesSequenceSpanBoundaries()
     QCOMPARE(hits.size(), 1);
     QCOMPARE(hits[0].text, QStringLiteral("abEFGHcd"));
     QCOMPARE(hits[0].offset, 1ULL);
+}
+
+void SequenceTests::stringsScanSeesUtf16MemoryBackedDocument()
+{
+    QByteArray data;
+    const QString text = QStringLiteral("C:\\src\\loxberry-plugin-mqttwestin");
+    for (QChar ch : text)
+    {
+        data.append(static_cast<char>(ch.unicode() & 0xFF));
+        data.append(static_cast<char>((ch.unicode() >> 8) & 0xFF));
+    }
+    data.append('\0');
+    data.append('\0');
+
+    sequence seq;
+    init(seq, data);
+
+    const auto hits = scanSequence(seq, 5, 9, true);
+    QCOMPARE(hits.size(), 1);
+    QCOMPARE(hits[0].text, text);
+    QCOMPARE(hits[0].offset, 0ULL);
+    QCOMPARE(hits[0].length, static_cast<qulonglong>(text.size() * 2));
 }
 
 void SequenceTests::sequenceDeviceSnapshotSurvivesEdits()

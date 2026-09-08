@@ -46,6 +46,14 @@ struct StringScanState
     QElapsedTimer elapsed;
 };
 
+struct StringScanOptions
+{
+    StringScanMode mode = StringScanMode::PrintableAscii;
+    bool includeWhitespace = false;
+    bool includeUnicode = false;
+    bool prefixHexOffset = false;
+};
+
 struct StringScanDeviceCallbacks
 {
     std::function<bool()> shouldContinue;
@@ -76,5 +84,9 @@ bool scanAsciiDevice(QIODevice &source, StringScanState &state, int minLength, S
                      bool includeWhitespace, QTextStream *exportStream, bool prefixHexOffset,
                      qint64 chunkSize = kDefaultStringScanChunkSize,
                      const StringScanDeviceCallbacks &callbacks = {});
+
+bool scanDevice(QIODevice &source, StringScanState &state, int minLength, const StringScanOptions &options,
+                QTextStream *exportStream = nullptr, qint64 chunkSize = kDefaultStringScanChunkSize,
+                const StringScanDeviceCallbacks &callbacks = {});
 
 } // namespace stringscan

@@ -281,6 +281,7 @@ class FilePropertiesPanel : public QDialog
     filestats::SectionOperationStrip *m_stringsOperation        = nullptr;
     QToolButton                      *m_stringOptionsButton     = nullptr;
     QAction                          *m_includeWhitespaceAction = nullptr;
+    QAction                          *m_includeUnicodeAction    = nullptr;
     QAction                          *m_prefixHexOffsetAction   = nullptr;
     StepSpinBox                      *m_minStringLength         = nullptr;
     QComboBox                        *m_stringEncoding          = nullptr;

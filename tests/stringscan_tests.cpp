@@ -13,11 +13,12 @@ struct ScanHit
     QString text;
     qulonglong offset = 0;
     qulonglong length = 0;
+    QString encoding;
 };
 
 static QVector<ScanHit> runScan(const QByteArray &data, int minLength,
                                 StringScanMode mode = StringScanMode::PrintableAscii, bool includeWhitespace = false,
-                                int chunkSize = 8)
+                                int chunkSize = 8, bool includeUnicode = false)
 {
     StringScanState state;
     state.resultLimit = kMaxStringResultBatchLimit;
@@ -27,16 +28,32 @@ static QVector<ScanHit> runScan(const QByteArray &data, int minLength,
     source.setData(data);
     if (!source.open(QIODevice::ReadOnly))
         return {};
-    scanAsciiDevice(source, state, minLength, mode, includeWhitespace, nullptr, false, chunkSize);
+    scanDevice(source, state, minLength, StringScanOptions{mode, includeWhitespace, includeUnicode, false}, nullptr,
+               chunkSize);
 
     QVector<ScanHit> hits;
     hits.reserve(state.results.size());
     for (const QVariantMap &row : state.results)
     {
         hits.append({row.value(QStringLiteral("text")).toString(), row.value(QStringLiteral("offset")).toULongLong(),
-                     row.value(QStringLiteral("length")).toULongLong()});
+                     row.value(QStringLiteral("length")).toULongLong(),
+                     row.value(QStringLiteral("encoding")).toString()});
     }
     return hits;
+}
+
+static QString describeHits(const QVector<ScanHit> &hits)
+{
+    QStringList parts;
+    for (const ScanHit &hit : hits)
+    {
+        parts.append(QStringLiteral("%1:%2:%3:%4")
+                         .arg(hit.encoding)
+                         .arg(hit.offset)
+                         .arg(hit.length)
+                         .arg(hit.text));
+    }
+    return parts.join(QStringLiteral(" | "));
 }
 
 class StringScanTests : public QObject
@@ -52,6 +69,13 @@ class StringScanTests : public QObject
     void alphanumericModeFiltersNonAlpha();
     void cIdentifierModeRequiresNullTerminator();
     void includeWhitespaceToggle();
+    void utf8NonAsciiStringFound();
+    void pureAsciiUtf8DuplicateSuppressed();
+    void utf16LittleEndianStringFound();
+    void utf16BigEndianStringFound();
+    void utf16StringSpansChunkBoundary();
+    void unicodeDisabledSkipsUtf16();
+    void cIdentifierModeIgnoresUnicodeOption();
 };
 
 // A run of 10 'x' bytes split across two 6-byte chunks: [\0xxxxx][xxxxx\0]
@@ -184,6 +208,99 @@ void StringScanTests::includeWhitespaceToggle()
         QCOMPARE(hits.size(), 1);
         QCOMPARE(hits[0].text, QStringLiteral("foo bar"));
     }
+}
+
+void StringScanTests::utf8NonAsciiStringFound()
+{
+    QByteArray data("\0caf", 4);
+    data.append(char(0xC3));
+    data.append(char(0xA9));
+    data.append('\0');
+
+    const auto hits = runScan(data, 4, StringScanMode::PrintableAscii, false, 3, true);
+    QCOMPARE(hits.size(), 1);
+    QCOMPARE(hits[0].text, QStringLiteral("café"));
+    QCOMPARE(hits[0].offset, 1ULL);
+    QCOMPARE(hits[0].length, 5ULL);
+    QCOMPARE(hits[0].encoding, QStringLiteral("UTF-8"));
+}
+
+void StringScanTests::pureAsciiUtf8DuplicateSuppressed()
+{
+    QByteArray data("\0hello\0", 7);
+
+    const auto hits = runScan(data, 4, StringScanMode::PrintableAscii, false, 2, true);
+    QCOMPARE(hits.size(), 1);
+    QCOMPARE(hits[0].text, QStringLiteral("hello"));
+    QCOMPARE(hits[0].encoding, QStringLiteral("ASCII"));
+}
+
+void StringScanTests::utf16LittleEndianStringFound()
+{
+    QByteArray data;
+    const QString text = QStringLiteral("C:\\src\\loxberry-plugin-mqttwestin");
+    for (QChar ch : text)
+    {
+        data.append(static_cast<char>(ch.unicode() & 0xFF));
+        data.append(static_cast<char>((ch.unicode() >> 8) & 0xFF));
+    }
+    data.append('\0');
+    data.append('\0');
+
+    const auto hits = runScan(data, 5, StringScanMode::PrintableAscii, false, 7, true);
+    QVERIFY2(hits.size() == 1, qPrintable(describeHits(hits)));
+    QCOMPARE(hits[0].text, text);
+    QCOMPARE(hits[0].offset, 0ULL);
+    QCOMPARE(hits[0].length, static_cast<qulonglong>(text.size() * 2));
+    QCOMPARE(hits[0].encoding, QStringLiteral("UTF-16LE"));
+}
+
+void StringScanTests::utf16BigEndianStringFound()
+{
+    QByteArray data;
+    const QString text = QStringLiteral("WideBE");
+    for (QChar ch : text)
+    {
+        data.append(static_cast<char>((ch.unicode() >> 8) & 0xFF));
+        data.append(static_cast<char>(ch.unicode() & 0xFF));
+    }
+    data.append('\0');
+    data.append('\0');
+
+    const auto hits = runScan(data, 5, StringScanMode::PrintableAscii, false, 3, true);
+    QVERIFY2(hits.size() == 1, qPrintable(describeHits(hits)));
+    QCOMPARE(hits[0].text, text);
+    QCOMPARE(hits[0].offset, 0ULL);
+    QCOMPARE(hits[0].length, 12ULL);
+    QCOMPARE(hits[0].encoding, QStringLiteral("UTF-16BE"));
+}
+
+void StringScanTests::utf16StringSpansChunkBoundary()
+{
+    QByteArray data("\0A\0B\0C\0D\0\0", 10);
+
+    const auto hits = runScan(data, 4, StringScanMode::PrintableAscii, false, 3, true);
+    QVERIFY2(hits.size() == 1, qPrintable(describeHits(hits)));
+    QCOMPARE(hits[0].text, QStringLiteral("ABCD"));
+    QCOMPARE(hits[0].offset, 0ULL);
+    QCOMPARE(hits[0].length, 8ULL);
+    QCOMPARE(hits[0].encoding, QStringLiteral("UTF-16BE"));
+}
+
+void StringScanTests::unicodeDisabledSkipsUtf16()
+{
+    QByteArray data("h\0e\0l\0l\0o\0\0\0", 12);
+
+    const auto hits = runScan(data, 4, StringScanMode::PrintableAscii, false, 4, false);
+    QCOMPARE(hits.size(), 0);
+}
+
+void StringScanTests::cIdentifierModeIgnoresUnicodeOption()
+{
+    QByteArray data("n\0a\0m\0e\0\0\0", 10);
+
+    const auto hits = runScan(data, 4, StringScanMode::CIdentifiers, false, 2, true);
+    QCOMPARE(hits.size(), 0);
 }
 
 QTEST_APPLESS_MAIN(StringScanTests)
