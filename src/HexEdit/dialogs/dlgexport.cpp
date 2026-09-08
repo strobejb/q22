@@ -35,11 +35,8 @@ bool Export(const QString &szFileName, HexView *hv, IMPEXP_OPTIONS *eopt, QWidge
     }
 
     eopt->linelen = hv->getLineLen();
-    const sequence *sourceSequence = hv->dataSequence();
-    if (!sourceSequence)
-        return false;
-    SequenceDevice sourceDevice(*sourceSequence);
-    if (!sourceDevice.isValid() || !sourceDevice.open(QIODevice::ReadOnly))
+    auto sourceDevice = hv->createReadOnlyDeviceSnapshot();
+    if (!sourceDevice)
         return false;
 
     QIODevice::OpenMode mode =
@@ -62,7 +59,7 @@ bool Export(const QString &szFileName, HexView *hv, IMPEXP_OPTIONS *eopt, QWidge
 
     SyncProgressReporter reporter(&dlg);
     ExportWriter         writer(&file, &reporter);
-    DataSource           src(sourceDevice, hv->filePath());
+    DataSource           src(*sourceDevice, hv->filePath());
     bool                 success = false;
 
     switch (eopt->format)
@@ -125,11 +122,8 @@ bool CopyAs(HexView *hv, IMPEXP_OPTIONS *eopt, QWidget *parent)
     }
 
     eopt->linelen = hv->getLineLen();
-    const sequence *sourceSequence = hv->dataSequence();
-    if (!sourceSequence)
-        return false;
-    SequenceDevice sourceDevice(*sourceSequence);
-    if (!sourceDevice.isValid() || !sourceDevice.open(QIODevice::ReadOnly))
+    auto sourceDevice = hv->createReadOnlyDeviceSnapshot();
+    if (!sourceDevice)
         return false;
 
     hv->setCurPos(offset);
@@ -145,7 +139,7 @@ bool CopyAs(HexView *hv, IMPEXP_OPTIONS *eopt, QWidget *parent)
 
     SyncProgressReporter reporter(&dlg);
     ExportWriter         writer(&buf, &reporter);
-    DataSource           src(sourceDevice, hv->filePath());
+    DataSource           src(*sourceDevice, hv->filePath());
     bool                 success = false;
 
     switch (eopt->format)

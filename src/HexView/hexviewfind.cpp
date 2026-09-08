@@ -157,15 +157,11 @@ void HexView::queryProgressNotify(size_w pos, size_w len, double mbPerSec)
 
 bool HexView::findNext(size_w *result, uint options)
 {
-    const sequence *sourceSequence = dataSequence();
-    if (!sourceSequence)
+    auto source = createReadOnlyDeviceSnapshot();
+    if (!source)
         return false;
 
-    SequenceDevice source(*sourceSequence);
-    if (!source.isValid() || !source.open(QIODevice::ReadOnly))
-        return false;
-
-    return findNext(source, size(), result, options);
+    return findNext(*source, static_cast<size_w>(source->size()), result, options);
 }
 
 bool HexView::findNext(QIODevice &source, size_w sourceSize, size_w *result, uint options)

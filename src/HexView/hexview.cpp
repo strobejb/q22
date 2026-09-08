@@ -1,4 +1,5 @@
 #include "hexview.h"
+#include "sequencedevice.h"
 #include "theme.h"
 
 #include <QAbstractScrollArea>
@@ -19,7 +20,7 @@ namespace {
 class SequenceSlice final : public sequence
 {
 public:
-    SequenceSlice(sequence *source, size_w baseOffset, size_w length)
+    SequenceSlice(const sequence *source, size_w baseOffset, size_w length)
         : m_source(source)
         , m_baseOffset(baseOffset)
         , m_length(length)
@@ -62,7 +63,7 @@ public:
     }
 
 private:
-    sequence *m_source = nullptr;
+    const sequence *m_source = nullptr;
     size_w    m_baseOffset = 0;
     size_w    m_length = 0;
 };
@@ -969,6 +970,25 @@ size_t HexView::getData(size_w offset, uint8_t *buf, size_t len)
     if (!m_pDataSeq)
         return 0;
     return m_pDataSeq->render(offset, buf, len);
+}
+
+std::unique_ptr<SequenceDevice> HexView::createReadOnlyDeviceSnapshot(size_w offset, size_w length) const
+{
+    const sequence *source = dataSequence();
+    if (!source || offset > source->size())
+        return {};
+
+    const size_w available = source->size() - offset;
+    const size_w snapshotLength = length == MAX_SEQUENCE_LENGTH
+                                      ? available
+                                      : std::min(length, available);
+
+    SequenceSlice slice(source, offset, snapshotLength);
+    auto device = std::make_unique<SequenceDevice>(slice);
+    if (!device->isValid() || !device->open(QIODevice::ReadOnly))
+        return {};
+
+    return device;
 }
 
 size_t HexView::getSourceData(size_w offset, uint8_t *buf, size_t len)

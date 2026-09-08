@@ -122,14 +122,13 @@ void FilePropertiesPanel::startChecksumCalculation()
     setChecksumRowsPending();
 
     const QStringList algorithms = selectedChecksumAlgorithms();
-    const sequence *sourceSequence = m_hexView->dataSequence();
-    auto *inputDevice = sourceSequence ? new SequenceDevice(*sourceSequence) : nullptr;
-    if (!inputDevice || !inputDevice->isValid() || !inputDevice->open(QIODevice::ReadOnly))
+    auto inputDeviceOwner = m_hexView->createReadOnlyDeviceSnapshot();
+    if (!inputDeviceOwner)
     {
-        delete inputDevice;
         applyChecksumResults(generation, unavailableChecksums(algorithms, tr("Unable to read")));
         return;
     }
+    auto *inputDevice = inputDeviceOwner.release();
 
     QPointer<FilePropertiesPanel> guard(this);
     auto *thread = QThread::create([guard, generation, inputDevice, algorithms, cancelFlag, pause]() {

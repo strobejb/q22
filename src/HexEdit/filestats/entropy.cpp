@@ -1044,11 +1044,9 @@ void FilePropertiesPanel::startEntropyAnalysis()
         if (se > ss) { scopeStart = ss; scopeLength = se - ss; }
     }
 
-    const sequence *sourceSequence = m_hexView->dataSequence();
-    auto *inputDevice = sourceSequence ? new SequenceDevice(*sourceSequence) : nullptr;
-    if (!inputDevice || !inputDevice->isValid() || !inputDevice->open(QIODevice::ReadOnly))
+    auto inputDeviceOwner = m_hexView->createReadOnlyDeviceSnapshot();
+    if (!inputDeviceOwner)
     {
-        delete inputDevice;
         m_entropyState.started = false;
         m_entropyState.pausedByCollapse = false;
         if (m_entropyOperation)
@@ -1057,6 +1055,7 @@ void FilePropertiesPanel::startEntropyAnalysis()
         requestSectionLayoutRefresh(SectionId::Entropy);
         return;
     }
+    auto *inputDevice = inputDeviceOwner.release();
 
     QPointer<FilePropertiesPanel> guard(this);
 

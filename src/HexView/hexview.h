@@ -194,6 +194,7 @@ class QDragMoveEvent;
 class QDropEvent;
 class QMimeData;
 class QIODevice;
+class SequenceDevice;
 
 // ── HexView widget ────────────────────────────────────────────────────────────
 //class HexView : public QWidget
@@ -298,6 +299,7 @@ public:
 
     // Data access
     const sequence *dataSequence() const { return m_pDataSeq; }
+    std::unique_ptr<SequenceDevice> createReadOnlyDeviceSnapshot(size_w offset = 0, size_w length = MAX_SEQUENCE_LENGTH) const;
     size_t getData(size_w offset, uint8_t *buf, size_t len);
     size_t getSourceData(size_w offset, uint8_t *buf, size_t len);
     size_t setData(size_w offset, uint8_t *buf, size_t len);

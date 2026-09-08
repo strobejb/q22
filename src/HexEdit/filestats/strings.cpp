@@ -258,11 +258,9 @@ void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, b
         m_stringsOperation->showProgress();
     requestSectionLayoutRefresh(SectionId::Strings);
 
-    const sequence *sourceSequence = m_hexView->dataSequence();
-    auto *inputDevice = sourceSequence ? new SequenceDevice(*sourceSequence) : nullptr;
-    if (!inputDevice || !inputDevice->isValid() || !inputDevice->open(QIODevice::ReadOnly))
+    auto inputDeviceOwner = m_hexView->createReadOnlyDeviceSnapshot();
+    if (!inputDeviceOwner)
     {
-        delete inputDevice;
         m_stringsState.started = false;
         m_stringsState.pausedByCollapse = false;
         if (m_stringsState.cancel)
@@ -274,6 +272,7 @@ void FilePropertiesPanel::startStringScan(qulonglong startOffset, bool append, b
         requestSectionLayoutRefresh(SectionId::Strings);
         return;
     }
+    auto *inputDevice = inputDeviceOwner.release();
 
     const qint64 fileSize = inputDevice->size();
     const int initialProgress = fileSize > 0

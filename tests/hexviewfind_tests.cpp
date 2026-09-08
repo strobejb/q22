@@ -1,6 +1,7 @@
 #include <QtTest/QtTest>
 
 #include "hexview.h"
+#include "sequencedevice.h"
 
 #include <QBuffer>
 #include <QMenu>
@@ -55,11 +56,48 @@ class HexViewFindTests : public QObject
     Q_OBJECT
 
   private slots:
+    void snapshotFactoryReadsLogicalRange();
+    void snapshotFactoryClipsRangeAtEof();
+    void snapshotFactoryReadsActiveViewSlice();
     void deviceSearchReadsQBuffer();
     void deviceSearchFindsMatchAcrossChunkBoundary();
     void publicSearchSeesUnsavedInsertion();
     void publicSearchUsesStableSnapshotDuringProgressCallback();
 };
+
+void HexViewFindTests::snapshotFactoryReadsLogicalRange()
+{
+    HexView hv;
+    initHexView(hv, QByteArray("0123456789"));
+
+    auto device = hv.createReadOnlyDeviceSnapshot(3, 4);
+    QVERIFY(device);
+    QCOMPARE(device->size(), static_cast<qint64>(4));
+    QCOMPARE(device->readAll(), QByteArray("3456"));
+}
+
+void HexViewFindTests::snapshotFactoryClipsRangeAtEof()
+{
+    HexView hv;
+    initHexView(hv, QByteArray("0123456789"));
+
+    auto device = hv.createReadOnlyDeviceSnapshot(8, 20);
+    QVERIFY(device);
+    QCOMPARE(device->size(), static_cast<qint64>(2));
+    QCOMPARE(device->readAll(), QByteArray("89"));
+}
+
+void HexViewFindTests::snapshotFactoryReadsActiveViewSlice()
+{
+    HexView hv;
+    initHexView(hv, QByteArray("prefix-slice-suffix"));
+    QVERIFY(hv.setViewSlice(7, 5));
+
+    auto device = hv.createReadOnlyDeviceSnapshot();
+    QVERIFY(device);
+    QCOMPARE(device->size(), static_cast<qint64>(5));
+    QCOMPARE(device->readAll(), QByteArray("slice"));
+}
 
 void HexViewFindTests::deviceSearchReadsQBuffer()
 {

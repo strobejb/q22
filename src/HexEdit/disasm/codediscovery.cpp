@@ -79,17 +79,16 @@ void CodeDiscoveryEngine::scan(HexView *hv)
 
     const uint64_t fileSize = static_cast<uint64_t>(hv->size());
     QPointer<CodeDiscoveryEngine> guard(this);
-    const sequence *sourceSequence = hv->dataSequence();
-    auto *inputDevice = sourceSequence ? new SequenceDevice(*sourceSequence) : nullptr;
-    if (!inputDevice || !inputDevice->isValid() || !inputDevice->open(QIODevice::ReadOnly))
+    auto inputDeviceOwner = hv->createReadOnlyDeviceSnapshot();
+    if (!inputDeviceOwner)
     {
-        delete inputDevice;
         QMetaObject::invokeMethod(qApp, [guard, cancelFlag]() {
             if (guard && !cancelFlag->load())
                 emit guard->finished({});
         }, Qt::QueuedConnection);
         return;
     }
+    auto *inputDevice = inputDeviceOwner.release();
 
     QThread *thread = QThread::create([guard, cancelFlag, inputDevice, fileSize]() {
         std::unique_ptr<SequenceDevice> inputOwner(inputDevice);

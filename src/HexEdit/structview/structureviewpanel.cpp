@@ -1,6 +1,7 @@
 #include "structview/structureviewpanel.h"
 
 #include "HexView/hexview.h"
+#include "HexView/sequencedevice.h"
 #include "combos/menucombobox.h"
 #include "filestats/banner.h"
 #include "filestats/widgets.h"
@@ -4202,19 +4203,38 @@ bool StructureViewPanel::createRawOpenAsSource(const StructureRow *row,
         return false;
     }
 
+    if (row->openAsOffset > MAX_SEQUENCE_LENGTH || row->openAsByteLength > MAX_SEQUENCE_LENGTH)
+    {
+        const QString path = temp.fileName();
+        temp.close();
+        QFile::remove(path);
+        if (errorMessage)
+            *errorMessage = tr("Nested byte range is too large.");
+        return false;
+    }
+
+    auto sourceDevice = m_hv->createReadOnlyDeviceSnapshot(static_cast<size_w>(row->openAsOffset),
+                                                           static_cast<size_w>(row->openAsByteLength));
+    if (!sourceDevice)
+    {
+        const QString path = temp.fileName();
+        temp.close();
+        QFile::remove(path);
+        if (errorMessage)
+            *errorMessage = tr("Could not read nested data.");
+        return false;
+    }
+
     QByteArray buffer(64 * 1024, Qt::Uninitialized);
-    uint64_t remaining = row->openAsByteLength;
-    uint64_t offset = row->openAsOffset;
     uint64_t written = 0;
+    qint64 remaining = sourceDevice->size();
     while (remaining > 0)
     {
-        const size_t chunk = static_cast<size_t>(qMin<uint64_t>(remaining, static_cast<uint64_t>(buffer.size())));
-        const size_t bytesRead = m_hv->getData(static_cast<size_w>(offset),
-                                               reinterpret_cast<uint8_t *>(buffer.data()),
-                                               chunk);
-        if (bytesRead == 0)
+        const qint64 chunk = qMin<qint64>(remaining, buffer.size());
+        const qint64 bytesRead = sourceDevice->read(buffer.data(), chunk);
+        if (bytesRead <= 0)
             break;
-        if (temp.write(buffer.constData(), static_cast<qint64>(bytesRead)) != static_cast<qint64>(bytesRead))
+        if (temp.write(buffer.constData(), bytesRead) != bytesRead)
         {
             const QString path = temp.fileName();
             temp.close();
@@ -4223,9 +4243,8 @@ bool StructureViewPanel::createRawOpenAsSource(const StructureRow *row,
                 *errorMessage = tr("Could not write nested data to a temporary file.");
             return false;
         }
-        offset += bytesRead;
         remaining -= bytesRead;
-        written += bytesRead;
+        written += static_cast<uint64_t>(bytesRead);
         if (bytesRead < chunk)
             break;
     }
