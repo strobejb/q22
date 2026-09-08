@@ -39,10 +39,8 @@ struct PeMetadata
 // Reads up to `len` bytes starting at `offset` into `buf`, returning how many
 // were actually read (short on EOF, same contract as HexView::getData()).
 // Abstracted so the same parsing logic works whether the caller reads via a
-// live HexView (cheap, main-thread-only) or its own independently-opened
-// QFile (background-thread-safe -- HexView::getData() is not safe to call
-// off the GUI thread, since it reads through the live, possibly-mutating
-// edit buffer).
+// live HexView (cheap, main-thread-only) or its own independently-owned
+// QIODevice snapshot, such as SequenceDevice, for background-thread-safe reads.
 using PeByteReader = std::function<size_t(uint64_t offset, uint8_t *buf, size_t len)>;
 
 // Reads section table + (named) exports directly off raw bytes, using the

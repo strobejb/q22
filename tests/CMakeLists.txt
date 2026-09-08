@@ -43,6 +43,22 @@ set_tests_properties(bookmark_tests PROPERTIES
         "PATH=path_list_prepend:${QT_RUNTIME_BIN_DIR};QT_QPA_PLATFORM=set:offscreen"
 )
 
+add_executable(hexviewfind_tests
+    hexviewfind_tests.cpp
+)
+
+target_link_libraries(hexviewfind_tests PRIVATE
+    HexView
+    Qt${QT_VERSION_MAJOR}::Widgets
+    Qt${QT_VERSION_MAJOR}::Test
+)
+
+add_test(NAME hexviewfind_tests COMMAND hexviewfind_tests)
+set_tests_properties(hexviewfind_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION
+        "PATH=path_list_prepend:${QT_RUNTIME_BIN_DIR};QT_QPA_PLATFORM=set:offscreen"
+)
+
 add_executable(findpanel_tests
     findpanel_tests.cpp
     ../src/HexEdit/panels/findpattern.cpp

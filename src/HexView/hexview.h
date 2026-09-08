@@ -193,6 +193,7 @@ class QDragLeaveEvent;
 class QDragMoveEvent;
 class QDropEvent;
 class QMimeData;
+class QIODevice;
 
 // ── HexView widget ────────────────────────────────────────────────────────────
 //class HexView : public QWidget
@@ -471,6 +472,7 @@ private:
     // Find (Boyer-Moore)
     bool   searchCompile(const uint8_t *pat, size_t length);
     int    searchBlock(const uint8_t *block, int start, int length, int *partial, bool matchCase) const;
+    bool   findNext(QIODevice &source, size_w sourceSize, size_w *result, uint options);
     void   queryProgressNotify(size_w pos, size_w len, double mbPerSec);
     int    paintLine(QPainter &painter, size_w nLineNo,
                      uint8_t *data, size_t datalen, seqchar_info *infobuf, size_t datashift,
