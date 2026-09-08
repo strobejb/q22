@@ -64,17 +64,27 @@ set_tests_properties(findpanel_tests PROPERTIES
 
 add_executable(disasm_tests
     disasm_tests.cpp
+    ../src/HexEdit/disasm/codediscovery.cpp
+    ../src/HexEdit/disasm/elfmetadata.cpp
+    ../src/HexEdit/disasm/pemetadata.cpp
+)
+
+target_include_directories(disasm_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/src/HexEdit
 )
 
 target_link_libraries(disasm_tests PRIVATE
+    HexView
     capstone
+    Qt${QT_VERSION_MAJOR}::Widgets
     Qt${QT_VERSION_MAJOR}::Test
 )
 
 add_test(NAME disasm_tests COMMAND disasm_tests)
 set_tests_properties(disasm_tests PROPERTIES
     ENVIRONMENT_MODIFICATION
-        "PATH=path_list_prepend:${QT_RUNTIME_BIN_DIR}"
+        "PATH=path_list_prepend:${QT_RUNTIME_BIN_DIR};QT_QPA_PLATFORM=set:offscreen"
 )
 
 add_executable(causeway_tests

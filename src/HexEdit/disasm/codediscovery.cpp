@@ -1,6 +1,7 @@
 #include "disasm/codediscovery.h"
 
 #include "HexView/hexview.h"
+#include "HexView/sequencedevice.h"
 #include "disasm/branchtarget.h"
 #include "disasm/elfmetadata.h"
 #include "disasm/pemetadata.h"
@@ -8,7 +9,7 @@
 #include <QByteArray>
 #include <QCoreApplication>
 #include <QElapsedTimer>
-#include <QFile>
+#include <QIODevice>
 #include <QPointer>
 #include <QThread>
 
@@ -16,6 +17,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -75,19 +77,31 @@ void CodeDiscoveryEngine::scan(HexView *hv)
     auto cancelFlag = std::make_shared<std::atomic_bool>(false);
     m_cancelFlag = cancelFlag;
 
-    const QString path = hv->filePath();
     const uint64_t fileSize = static_cast<uint64_t>(hv->size());
     QPointer<CodeDiscoveryEngine> guard(this);
+    const sequence *sourceSequence = hv->dataSequence();
+    auto *inputDevice = sourceSequence ? new SequenceDevice(*sourceSequence) : nullptr;
+    if (!inputDevice || !inputDevice->isValid() || !inputDevice->open(QIODevice::ReadOnly))
+    {
+        delete inputDevice;
+        QMetaObject::invokeMethod(qApp, [guard, cancelFlag]() {
+            if (guard && !cancelFlag->load())
+                emit guard->finished({});
+        }, Qt::QueuedConnection);
+        return;
+    }
 
-    QThread *thread = QThread::create([guard, cancelFlag, path, fileSize]() {
-        QFile file(path);
-        if (!file.open(QIODevice::ReadOnly))
-            return;
+    QThread *thread = QThread::create([guard, cancelFlag, inputDevice, fileSize]() {
+        std::unique_ptr<SequenceDevice> inputOwner(inputDevice);
+        QIODevice &input = *inputOwner;
 
-        const PeByteReader reader = [&file](uint64_t offset, uint8_t *buf, size_t len) -> size_t {
-            if (!file.seek(static_cast<qint64>(offset)))
+        const PeByteReader reader = [&input](uint64_t offset, uint8_t *buf, size_t len) -> size_t {
+            if (offset > static_cast<uint64_t>(std::numeric_limits<qint64>::max()) ||
+                len > static_cast<size_t>(std::numeric_limits<qint64>::max()))
                 return 0;
-            const qint64 got = file.read(reinterpret_cast<char *>(buf), static_cast<qint64>(len));
+            if (!input.seek(static_cast<qint64>(offset)))
+                return 0;
+            const qint64 got = input.read(reinterpret_cast<char *>(buf), static_cast<qint64>(len));
             return got > 0 ? static_cast<size_t>(got) : 0;
         };
 

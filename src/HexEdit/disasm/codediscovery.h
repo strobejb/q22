@@ -26,8 +26,8 @@ Q_DECLARE_METATYPE(DiscoveredFunction)
 // Recursive-descent code discovery: seeds a worklist from the PE entry point
 // and export table, then follows every direct call/jmp target reachable from
 // there (mirroring how IDA/Ghidra bootstrap a disassembly). Runs entirely on
-// a background thread reading through its own QFile handle -- HexView's live
-// edit buffer is never touched off the GUI thread. Calling scan() again
+// a background thread reading through a stable logical-document snapshot --
+// HexView's live edit buffer is never touched off the GUI thread. Calling scan() again
 // before a prior run finishes cancels the prior run; any result it was about
 // to deliver is discarded instead.
 class CodeDiscoveryEngine : public QObject
