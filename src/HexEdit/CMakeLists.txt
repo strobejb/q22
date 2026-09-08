@@ -200,6 +200,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         resources/icons/actions/bookmark-star-add.svg
         resources/icons/actions/object-flip-vertical-symbolic.svg resources/icons/actions/view-fullscreen-symbolic.svg
         resources/q22-title.png
+        resources/qube22.png
     )
 # Define target properties for Android with Qt 6 as:
 #    set_property(TARGET hexedit APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
