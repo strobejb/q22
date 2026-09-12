@@ -67,6 +67,8 @@ private:
     void openDisassemblerRange(uint64_t offset, uint64_t length, const QString &name,
                                const QString &architecture = QString());
     void disassembleSelection();
+    void startCodeDiscoveryScanIfNeeded();
+    void scheduleCodeDiscoveryScanIfDisassemblerOpen();
     void openSidePanelSection(FilePropertiesPanel::SectionId section);
     void refreshSidePanel();
     void resetSidePanel();
@@ -103,6 +105,7 @@ private:
     QByteArray      m_lastPattern;
     uint            m_lastFindFlags  = 0;
     bool            m_findRunning     = false;
+    bool            m_codeDiscoveryStartedForCurrentFile = false;
     bool            m_canPaste        = false; // text or hexview data; updated from dataChanged
     bool            m_canPasteSpecial = false; // any clipboard format; updated from dataChanged
     PaletteInfo     m_currentPalette;           // last applied palette; re-used on scheme change

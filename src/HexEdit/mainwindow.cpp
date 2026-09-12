@@ -1204,6 +1204,7 @@ MainWindow::MainWindow(QWidget *parent)
         updateWatchedFile(this, QString());
         resetSidePanel();
         m_hv->notifyStructureEntryPoint(false, 0);
+        m_codeDiscoveryStartedForCurrentFile = false;
         if (m_codeDiscoveryEngine)
             m_codeDiscoveryEngine->scan(nullptr); // cancels any in-flight scan for the old file
         if (m_disasmPanelHost)
@@ -1576,24 +1577,22 @@ bool MainWindow::openFile(const QString &path) {
     updateWatchedFile(this, path);
     resetSidePanel();
 
-    // Independent of whether the structure view panel is open -- that panel
-    // only updates HexView's cached entry point as a side effect of its own
-    // rebuild, so without this, switching files while it's closed leaves the
-    // disassembler's "jump to entry point" pointing at the previous file.
-    uint64_t entryOffset = 0;
-    m_hv->notifyStructureEntryPoint(detectStructureEntryPoint(m_hv, &entryOffset), entryOffset);
+    // Keep open-file cheap. StructureViewPanel will publish declarative code
+    // targets when it is actually opened; DisassemblerPanel reads PE/ELF
+    // entrypoints directly from executable headers, so it no longer needs a
+    // full synchronous Strata render here just to avoid a stale value.
+    m_hv->notifyStructureEntryPoint(false, 0);
 
     // Clear immediately rather than leaving the previous file's functions
-    // visible while the new scan runs; scan() cancels that previous scan
-    // itself, so its (now-stale) result can't land after this clear.
+    // visible. The expensive recursive code-discovery scan is started lazily
+    // when the disassembler panel is open, not for every file opened in the
+    // hex editor.
+    m_codeDiscoveryStartedForCurrentFile = false;
+    if (m_codeDiscoveryEngine)
+        m_codeDiscoveryEngine->scan(nullptr); // cancels any in-flight scan for the old file
     if (m_disasmPanelHost)
         m_disasmPanelHost->setDiscoveredFunctions({});
-    if (m_codeDiscoveryEngine)
-    {
-        if (m_disasmPanelHost)
-            m_disasmPanelHost->setFunctionsScanInProgress(true);
-        m_codeDiscoveryEngine->scan(m_hv);
-    }
+    scheduleCodeDiscoveryScanIfDisassemblerOpen();
     return true;
 }
 
@@ -1615,6 +1614,7 @@ void MainWindow::toggleDisassemblerPanel()
     if (!m_disasmPanelHost->isOpen() && m_structurePanelHost && m_structurePanelHost->isOpen())
         m_structurePanelHost->closePanel();
     m_disasmPanelHost->toggle();
+    scheduleCodeDiscoveryScanIfDisassemblerOpen();
 }
 
 void MainWindow::openDisassemblerAtOffset(uint64_t offset)
@@ -1628,6 +1628,7 @@ void MainWindow::openDisassemblerAtOffset(uint64_t offset)
             m_structurePanelHost->closePanel();
     }
     m_disasmPanelHost->openAtOffset(offset);
+    scheduleCodeDiscoveryScanIfDisassemblerOpen();
 }
 
 void MainWindow::openDisassemblerRange(uint64_t offset, uint64_t length, const QString &name,
@@ -1645,6 +1646,7 @@ void MainWindow::openDisassemblerRange(uint64_t offset, uint64_t length, const Q
     }
 
     m_disasmPanelHost->openRange(offset, length, name, architecture);
+    scheduleCodeDiscoveryScanIfDisassemblerOpen();
 }
 
 void MainWindow::disassembleSelection()
@@ -1658,6 +1660,30 @@ void MainWindow::disassembleSelection()
                              .arg(offset, 0, 16)
                              .toUpper();
     openDisassemblerRange(offset, length, name);
+}
+
+void MainWindow::startCodeDiscoveryScanIfNeeded()
+{
+    if (!m_codeDiscoveryEngine || !m_hv || m_hv->size() == 0 || m_codeDiscoveryStartedForCurrentFile)
+        return;
+
+    m_codeDiscoveryStartedForCurrentFile = true;
+    if (m_disasmPanelHost)
+        m_disasmPanelHost->setFunctionsScanInProgress(true);
+    m_codeDiscoveryEngine->scan(m_hv);
+}
+
+void MainWindow::scheduleCodeDiscoveryScanIfDisassemblerOpen()
+{
+    if (!m_disasmPanelHost || !m_disasmPanelHost->isOpen())
+        return;
+
+    // Let the panel construct and paint before the scanner takes a snapshot
+    // of the current HexView document on the GUI thread.
+    QTimer::singleShot(50, this, [this]() {
+        if (m_disasmPanelHost && m_disasmPanelHost->isOpen())
+            startCodeDiscoveryScanIfNeeded();
+    });
 }
 
 void MainWindow::toggleStructurePanel()
