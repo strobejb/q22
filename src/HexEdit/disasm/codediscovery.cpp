@@ -245,7 +245,8 @@ void CodeDiscoveryEngine::scan(HexView *hv)
 
                 std::vector<Seed> worklist;
                 if (entryFileOffset)
-                    worklist.push_back({resolveThunkTarget(*entryFileOffset), true, FunctionSource::EntryPoint, QString()});
+                    worklist.push_back({resolveThunkTarget(*entryFileOffset), true,
+                                        FunctionSource::EntryPoint, QStringLiteral("entrypoint")});
                 for (const SeedExport &exp : seedExports)
                     worklist.push_back({resolveThunkTarget(exp.fileOffset), true, FunctionSource::Export, exp.name});
 

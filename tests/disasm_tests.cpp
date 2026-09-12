@@ -177,6 +177,7 @@ void DisasmTests::codeDiscoveryReadsInMemoryLogicalDocument()
     QCOMPARE(functions[0].startOffset, uint64_t(0x200));
     QCOMPARE(functions[0].endOffset, uint64_t(0x201));
     QCOMPARE(functions[0].source, FunctionSource::EntryPoint);
+    QCOMPARE(functions[0].name, QStringLiteral("entrypoint"));
 }
 
 void DisasmTests::peMetadataMapsPe32DllEntrypointRva()
@@ -241,6 +242,7 @@ void DisasmTests::codeDiscoveryMapsPe32DllEntryPoint()
     QCOMPARE(functions[0].startOffset, uint64_t(0x36a0b5));
     QCOMPARE(functions[0].endOffset, uint64_t(0x36a0b6));
     QCOMPARE(functions[0].source, FunctionSource::EntryPoint);
+    QCOMPARE(functions[0].name, QStringLiteral("entrypoint"));
 }
 
 void DisasmTests::codeDiscoveryMapsOpenedPe32DllEntryPoint()
@@ -278,6 +280,7 @@ void DisasmTests::codeDiscoveryMapsOpenedPe32DllEntryPoint()
     QCOMPARE(functions[0].startOffset, uint64_t(0x36a0b5));
     QCOMPARE(functions[0].endOffset, uint64_t(0x36a0b6));
     QCOMPARE(functions[0].source, FunctionSource::EntryPoint);
+    QCOMPARE(functions[0].name, QStringLiteral("entrypoint"));
 }
 
 QTEST_MAIN(DisasmTests)

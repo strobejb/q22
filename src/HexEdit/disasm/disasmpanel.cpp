@@ -161,6 +161,20 @@ bool selectArchitecture(QComboBox *combo, const char *id)
     return true;
 }
 
+QString fallbackFunctionName(uint64_t offset)
+{
+    return QStringLiteral("sub_%1").arg(offset, 0, 16).toUpper();
+}
+
+QString discoveredFunctionName(const DiscoveredFunction &fn)
+{
+    if (!fn.name.isEmpty())
+        return demangleSymbolName(fn.name, DemangleStyle::NameOnly);
+    if (fn.source == FunctionSource::EntryPoint)
+        return QStringLiteral("entrypoint");
+    return fallbackFunctionName(fn.startOffset);
+}
+
 
 // ── DisassemblerPanel ─────────────────────────────────────────────────────────
 
@@ -1053,7 +1067,7 @@ void DisassemblerPanel::disassemble()
         }
         else if (containingFn->name.isEmpty())
         {
-            name = QStringLiteral("sub_%1").arg(containingFn->startOffset, 0, 16);
+            name = discoveredFunctionName(*containingFn);
         }
         else
         {
@@ -1186,9 +1200,7 @@ DisassemblerPanel::ScopeInfo DisassemblerPanel::currentScope() const
             scope.valid = true;
             scope.offset = fn.startOffset;
             scope.length = fn.endOffset > fn.startOffset ? fn.endOffset - fn.startOffset : 1;
-            scope.name = fn.name.isEmpty()
-                ? QStringLiteral("sub_%1").arg(fn.startOffset, 0, 16).toUpper()
-                : demangleSymbolName(fn.name, DemangleStyle::NameOnly);
+            scope.name = discoveredFunctionName(fn);
             scope.functionIndex = i;
             scope.renameable = true;
             return scope;
@@ -1200,7 +1212,7 @@ DisassemblerPanel::ScopeInfo DisassemblerPanel::currentScope() const
         scope.valid = true;
         scope.offset = start;
         scope.length = end - start;
-        scope.name = QStringLiteral("sub_%1").arg(start, 0, 16).toUpper();
+        scope.name = fallbackFunctionName(start);
     }
     return scope;
 }
@@ -1241,9 +1253,7 @@ void DisassemblerPanel::renameCurrentScope()
         return;
 
     bool ok = false;
-    const QString currentName = scope.name.isEmpty()
-        ? QStringLiteral("sub_%1").arg(scope.offset, 0, 16).toUpper()
-        : scope.name;
+    const QString currentName = scope.name.isEmpty() ? fallbackFunctionName(scope.offset) : scope.name;
     const QString name = QInputDialog::getText(this, tr("Rename Function"), tr("Name:"),
                                                QLineEdit::Normal, currentName, &ok).trimmed();
     if (!ok || name.isEmpty())
@@ -1575,8 +1585,7 @@ void DisassemblerPanel::rebuildFunctionsList()
     {
         auto *item = new QTreeWidgetItem(m_functionsList);
         item->setText(0, QString::number(fn.startOffset, 16).toUpper().rightJustified(8, QLatin1Char('0')));
-        item->setText(1, fn.name.isEmpty() ? QStringLiteral("sub_%1").arg(fn.startOffset, 0, 16)
-                                            : demangleSymbolName(fn.name, DemangleStyle::NameOnly));
+        item->setText(1, discoveredFunctionName(fn));
         item->setText(2, functionSourceLabel(fn.source));
         item->setData(0, Qt::UserRole, static_cast<qulonglong>(fn.startOffset));
         item->setData(0, Qt::UserRole + 1, static_cast<qulonglong>(fn.endOffset));
@@ -1637,8 +1646,7 @@ void DisassemblerPanel::populateFunctionsCombo()
 
     for (const DiscoveredFunction &fn : m_discoveredFunctions)
     {
-        QString name = fn.name.isEmpty() ? QStringLiteral("sub_%1").arg(fn.startOffset, 0, 16)
-                                          : demangleSymbolName(fn.name, DemangleStyle::NameOnly);
+        QString name = discoveredFunctionName(fn);
         if (name.size() > kMaxNameLength)
             name = name.left(kMaxNameLength) + QStringLiteral("...");
         const QString hex = QStringLiteral("0x%1").arg(QString::number(fn.startOffset, 16).toUpper().rightJustified(8, QLatin1Char('0')));
