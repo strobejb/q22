@@ -1,5 +1,29 @@
 # Changelog
 
+## 3.3.0 - 2026-09-12
+
+### Added
+
+* Added Unicode-aware string scanning, with modes for Latin/Roman text and all-script multilingual text.
+* Added CPIO Structure View support.
+* Added lazy loading for dynamic Strata arrays so large archive and filesystem structures expand on demand.
+* Added QIODevice-backed sequence access for faster and more consistent file, search, export, checksum, entropy, and disassembly workflows.
+* Added copy-path support to the File Information panel.
+
+### Changed
+
+* Improved Structure View usability with a separate type column, clearer entry-point naming, and better nested/semantic row handling.
+* Improved file opening and search/export performance through shared device-backed data access.
+* Improved ISO, WOFF, ZIP, and dynamic-array Strata definitions.
+
+### Fixed
+
+* Fixed Joliet supplementary ISO directory entries so semantic filesystem rows show readable UTF-16BE names.
+* Fixed PE/entry-point detection and disassembly integration issues.
+* Fixed string scanning false positives from broad Unicode detection by defaulting to Latin/Roman Unicode scanning.
+* Fixed File Information path/location behavior so the full file path can be shown and copied.
+* Fixed several Structure View robustness issues around lazy arrays, large containers, and malformed referenced data.
+
 ## 3.2.0 - 2026-07-20
 
 ### Added
