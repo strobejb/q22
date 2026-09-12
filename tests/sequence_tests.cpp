@@ -94,8 +94,9 @@ QVector<ScanHit> scanSequence(const sequence &seq, int minLength = 4, int chunkS
     StringScanState state;
     state.resultLimit = kMaxStringResultBatchLimit;
     state.elapsed.start();
+    const UnicodeScanMode unicodeMode = includeUnicode ? UnicodeScanMode::Latin : UnicodeScanMode::Off;
     if (!scanDevice(device, state, minLength,
-                    StringScanOptions{StringScanMode::PrintableAscii, false, includeUnicode, false}, nullptr,
+                    StringScanOptions{StringScanMode::PrintableAscii, false, unicodeMode, false}, nullptr,
                     chunkSize))
         return {};
 

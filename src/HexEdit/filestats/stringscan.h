@@ -27,6 +27,13 @@ enum class StringScanMode
     CIdentifiers,
 };
 
+enum class UnicodeScanMode
+{
+    Off = 0,
+    Latin,
+    AllScripts,
+};
+
 StringScanMode stringScanModeFromIndex(int index);
 
 struct StringScanState
@@ -50,7 +57,7 @@ struct StringScanOptions
 {
     StringScanMode mode = StringScanMode::PrintableAscii;
     bool includeWhitespace = false;
-    bool includeUnicode = false;
+    UnicodeScanMode unicodeMode = UnicodeScanMode::Off;
     bool prefixHexOffset = false;
 };
 

@@ -3,6 +3,8 @@
 #include <QBuffer>
 #include <QTest>
 
+#include <algorithm>
+
 using namespace stringscan;
 
 // Run a complete scan over `data` in chunks of `chunkSize`, returning all results.
@@ -18,7 +20,7 @@ struct ScanHit
 
 static QVector<ScanHit> runScan(const QByteArray &data, int minLength,
                                 StringScanMode mode = StringScanMode::PrintableAscii, bool includeWhitespace = false,
-                                int chunkSize = 8, bool includeUnicode = false)
+                                int chunkSize = 8, UnicodeScanMode unicodeMode = UnicodeScanMode::Off)
 {
     StringScanState state;
     state.resultLimit = kMaxStringResultBatchLimit;
@@ -28,7 +30,7 @@ static QVector<ScanHit> runScan(const QByteArray &data, int minLength,
     source.setData(data);
     if (!source.open(QIODevice::ReadOnly))
         return {};
-    scanDevice(source, state, minLength, StringScanOptions{mode, includeWhitespace, includeUnicode, false}, nullptr,
+    scanDevice(source, state, minLength, StringScanOptions{mode, includeWhitespace, unicodeMode, false}, nullptr,
                chunkSize);
 
     QVector<ScanHit> hits;
@@ -56,6 +58,13 @@ static QString describeHits(const QVector<ScanHit> &hits)
     return parts.join(QStringLiteral(" | "));
 }
 
+static bool containsHit(const QVector<ScanHit> &hits, const QString &text, const QString &encoding)
+{
+    return std::any_of(hits.cbegin(), hits.cend(), [&](const ScanHit &hit) {
+        return hit.text == text && hit.encoding == encoding;
+    });
+}
+
 class StringScanTests : public QObject
 {
     Q_OBJECT
@@ -70,10 +79,14 @@ class StringScanTests : public QObject
     void cIdentifierModeRequiresNullTerminator();
     void includeWhitespaceToggle();
     void utf8NonAsciiStringFound();
+    void latinUnicodeModeSuppressesUtf8Cjk();
+    void allScriptsUnicodeModeFindsUtf8Cjk();
     void pureAsciiUtf8DuplicateSuppressed();
     void utf16LittleEndianStringFound();
     void utf16BigEndianStringFound();
     void utf16StringSpansChunkBoundary();
+    void latinUnicodeModeSuppressesUtf16Cjk();
+    void allScriptsUnicodeModeFindsUtf16Cjk();
     void unicodeDisabledSkipsUtf16();
     void cIdentifierModeIgnoresUnicodeOption();
 };
@@ -217,7 +230,7 @@ void StringScanTests::utf8NonAsciiStringFound()
     data.append(char(0xA9));
     data.append('\0');
 
-    const auto hits = runScan(data, 4, StringScanMode::PrintableAscii, false, 3, true);
+    const auto hits = runScan(data, 4, StringScanMode::PrintableAscii, false, 3, UnicodeScanMode::Latin);
     QCOMPARE(hits.size(), 1);
     QCOMPARE(hits[0].text, QStringLiteral("café"));
     QCOMPARE(hits[0].offset, 1ULL);
@@ -225,11 +238,29 @@ void StringScanTests::utf8NonAsciiStringFound()
     QCOMPARE(hits[0].encoding, QStringLiteral("UTF-8"));
 }
 
+void StringScanTests::latinUnicodeModeSuppressesUtf8Cjk()
+{
+    const QByteArray data = QByteArray("\0", 1) + QStringLiteral("你好世界").toUtf8() + QByteArray("\0", 1);
+
+    const auto hits = runScan(data, 4, StringScanMode::PrintableAscii, false, 5, UnicodeScanMode::Latin);
+    QCOMPARE(hits.size(), 0);
+}
+
+void StringScanTests::allScriptsUnicodeModeFindsUtf8Cjk()
+{
+    const QByteArray data = QByteArray("\0", 1) + QStringLiteral("你好世界").toUtf8() + QByteArray("\0", 1);
+
+    const auto hits = runScan(data, 4, StringScanMode::PrintableAscii, false, 5, UnicodeScanMode::AllScripts);
+    QVERIFY2(hits.size() == 1, qPrintable(describeHits(hits)));
+    QCOMPARE(hits[0].text, QStringLiteral("你好世界"));
+    QCOMPARE(hits[0].encoding, QStringLiteral("UTF-8"));
+}
+
 void StringScanTests::pureAsciiUtf8DuplicateSuppressed()
 {
     QByteArray data("\0hello\0", 7);
 
-    const auto hits = runScan(data, 4, StringScanMode::PrintableAscii, false, 2, true);
+    const auto hits = runScan(data, 4, StringScanMode::PrintableAscii, false, 2, UnicodeScanMode::Latin);
     QCOMPARE(hits.size(), 1);
     QCOMPARE(hits[0].text, QStringLiteral("hello"));
     QCOMPARE(hits[0].encoding, QStringLiteral("ASCII"));
@@ -247,7 +278,7 @@ void StringScanTests::utf16LittleEndianStringFound()
     data.append('\0');
     data.append('\0');
 
-    const auto hits = runScan(data, 5, StringScanMode::PrintableAscii, false, 7, true);
+    const auto hits = runScan(data, 5, StringScanMode::PrintableAscii, false, 7, UnicodeScanMode::Latin);
     QVERIFY2(hits.size() == 1, qPrintable(describeHits(hits)));
     QCOMPARE(hits[0].text, text);
     QCOMPARE(hits[0].offset, 0ULL);
@@ -267,7 +298,7 @@ void StringScanTests::utf16BigEndianStringFound()
     data.append('\0');
     data.append('\0');
 
-    const auto hits = runScan(data, 5, StringScanMode::PrintableAscii, false, 3, true);
+    const auto hits = runScan(data, 5, StringScanMode::PrintableAscii, false, 3, UnicodeScanMode::Latin);
     QVERIFY2(hits.size() == 1, qPrintable(describeHits(hits)));
     QCOMPARE(hits[0].text, text);
     QCOMPARE(hits[0].offset, 0ULL);
@@ -279,7 +310,7 @@ void StringScanTests::utf16StringSpansChunkBoundary()
 {
     QByteArray data("\0A\0B\0C\0D\0\0", 10);
 
-    const auto hits = runScan(data, 4, StringScanMode::PrintableAscii, false, 3, true);
+    const auto hits = runScan(data, 4, StringScanMode::PrintableAscii, false, 3, UnicodeScanMode::Latin);
     QVERIFY2(hits.size() == 1, qPrintable(describeHits(hits)));
     QCOMPARE(hits[0].text, QStringLiteral("ABCD"));
     QCOMPARE(hits[0].offset, 0ULL);
@@ -287,11 +318,43 @@ void StringScanTests::utf16StringSpansChunkBoundary()
     QCOMPARE(hits[0].encoding, QStringLiteral("UTF-16BE"));
 }
 
+void StringScanTests::latinUnicodeModeSuppressesUtf16Cjk()
+{
+    QByteArray data;
+    const QString text = QStringLiteral("你好世界");
+    for (QChar ch : text)
+    {
+        data.append(static_cast<char>(ch.unicode() & 0xFF));
+        data.append(static_cast<char>((ch.unicode() >> 8) & 0xFF));
+    }
+    data.append('\0');
+    data.append('\0');
+
+    const auto hits = runScan(data, 4, StringScanMode::PrintableAscii, false, 3, UnicodeScanMode::Latin);
+    QVERIFY2(!containsHit(hits, text, QStringLiteral("UTF-16LE")), qPrintable(describeHits(hits)));
+}
+
+void StringScanTests::allScriptsUnicodeModeFindsUtf16Cjk()
+{
+    QByteArray data;
+    const QString text = QStringLiteral("你好世界");
+    for (QChar ch : text)
+    {
+        data.append(static_cast<char>(ch.unicode() & 0xFF));
+        data.append(static_cast<char>((ch.unicode() >> 8) & 0xFF));
+    }
+    data.append('\0');
+    data.append('\0');
+
+    const auto hits = runScan(data, 4, StringScanMode::PrintableAscii, false, 3, UnicodeScanMode::AllScripts);
+    QVERIFY2(containsHit(hits, text, QStringLiteral("UTF-16LE")), qPrintable(describeHits(hits)));
+}
+
 void StringScanTests::unicodeDisabledSkipsUtf16()
 {
     QByteArray data("h\0e\0l\0l\0o\0\0\0", 12);
 
-    const auto hits = runScan(data, 4, StringScanMode::PrintableAscii, false, 4, false);
+    const auto hits = runScan(data, 4, StringScanMode::PrintableAscii, false, 4, UnicodeScanMode::Off);
     QCOMPARE(hits.size(), 0);
 }
 
@@ -299,7 +362,7 @@ void StringScanTests::cIdentifierModeIgnoresUnicodeOption()
 {
     QByteArray data("n\0a\0m\0e\0\0\0", 10);
 
-    const auto hits = runScan(data, 4, StringScanMode::CIdentifiers, false, 2, true);
+    const auto hits = runScan(data, 4, StringScanMode::CIdentifiers, false, 2, UnicodeScanMode::Latin);
     QCOMPARE(hits.size(), 0);
 }
 

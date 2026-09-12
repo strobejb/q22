@@ -175,7 +175,18 @@ bool isUnicodeWhitespace(char32_t codePoint)
     return codePoint == U' ' || codePoint == U'\t';
 }
 
-bool acceptsUnicodeCodePoint(StringScanMode mode, char32_t codePoint, bool includeWhitespace)
+bool isLatinUnicodeCodePoint(char32_t codePoint)
+{
+    return (codePoint >= 0x00A0 && codePoint <= 0x024F) || // Latin-1 + Latin Extended-A/B
+           (codePoint >= 0x0300 && codePoint <= 0x036F) || // combining diacritics
+           (codePoint >= 0x1E00 && codePoint <= 0x1EFF) || // Latin Extended Additional
+           (codePoint >= 0x2C60 && codePoint <= 0x2C7F) || // Latin Extended-C
+           (codePoint >= 0xA720 && codePoint <= 0xA7FF) || // Latin Extended-D
+           (codePoint >= 0xAB30 && codePoint <= 0xAB6F);   // Latin Extended-E
+}
+
+bool acceptsUnicodeCodePoint(StringScanMode mode, char32_t codePoint, bool includeWhitespace,
+                             UnicodeScanMode unicodeMode)
 {
     if (codePoint == 0 || codePoint > 0x10FFFF || (codePoint >= 0xD800 && codePoint <= 0xDFFF))
         return false;
@@ -183,7 +194,13 @@ bool acceptsUnicodeCodePoint(StringScanMode mode, char32_t codePoint, bool inclu
     if (codePoint < 0x80)
         return acceptsByte(mode, static_cast<unsigned char>(codePoint), includeWhitespace);
 
+    if (unicodeMode == UnicodeScanMode::Off)
+        return false;
+
     if (mode == StringScanMode::CIdentifiers)
+        return false;
+
+    if (unicodeMode == UnicodeScanMode::Latin && !isLatinUnicodeCodePoint(codePoint))
         return false;
 
     switch (mode)
@@ -265,10 +282,10 @@ struct Utf8ScanState
     }
 
     void accept(StringScanState &shared, char32_t codePoint, qulonglong startOffset, int encodedLength,
-                int minLength, StringScanMode mode, bool includeWhitespace, QTextStream *exportStream,
-                bool prefixHexOffset)
+                int minLength, StringScanMode mode, bool includeWhitespace, UnicodeScanMode unicodeMode,
+                QTextStream *exportStream, bool prefixHexOffset)
     {
-        if (!acceptsUnicodeCodePoint(mode, codePoint, includeWhitespace))
+        if (!acceptsUnicodeCodePoint(mode, codePoint, includeWhitespace, unicodeMode))
         {
             flush(shared, minLength, startOffset + encodedLength, exportStream, prefixHexOffset);
             return;
@@ -285,13 +302,15 @@ struct Utf8ScanState
     }
 
     bool consume(StringScanState &shared, unsigned char byte, qulonglong offset, int minLength,
-                 StringScanMode mode, bool includeWhitespace, QTextStream *exportStream, bool prefixHexOffset)
+                 StringScanMode mode, bool includeWhitespace, UnicodeScanMode unicodeMode,
+                 QTextStream *exportStream, bool prefixHexOffset)
     {
         if (pendingExpected == 0)
         {
             if (byte < 0x80)
             {
-                accept(shared, byte, offset, 1, minLength, mode, includeWhitespace, exportStream, prefixHexOffset);
+                accept(shared, byte, offset, 1, minLength, mode, includeWhitespace, unicodeMode, exportStream,
+                       prefixHexOffset);
                 return true;
             }
             if (byte >= 0xC2 && byte <= 0xDF)
@@ -352,8 +371,8 @@ struct Utf8ScanState
             return true;
         }
 
-        accept(shared, codePoint, startOffset, encodedLength, minLength, mode, includeWhitespace, exportStream,
-               prefixHexOffset);
+        accept(shared, codePoint, startOffset, encodedLength, minLength, mode, includeWhitespace, unicodeMode,
+               exportStream, prefixHexOffset);
         return true;
     }
 };
@@ -432,9 +451,10 @@ struct Utf16ScanState
 
     void processCodePoint(StringScanState &shared, char32_t codePoint, qulonglong unitOffset, int unitBytes,
                           int evidence, int wrongEvidence, bool nullTerminated, int minLength, StringScanMode mode,
-                          bool includeWhitespace, QTextStream *exportStream, bool prefixHexOffset)
+                          bool includeWhitespace, UnicodeScanMode unicodeMode, QTextStream *exportStream,
+                          bool prefixHexOffset)
     {
-        if (nullTerminated || !acceptsUnicodeCodePoint(mode, codePoint, includeWhitespace))
+        if (nullTerminated || !acceptsUnicodeCodePoint(mode, codePoint, includeWhitespace, unicodeMode))
         {
             flush(shared, minLength, unitOffset + unitBytes, nullTerminated, exportStream, prefixHexOffset);
             return;
@@ -459,7 +479,7 @@ struct Utf16ScanState
 
     void processUnit(StringScanState &shared, quint16 unit, unsigned char lowByte, unsigned char highByte,
                      qulonglong unitOffset, int minLength, StringScanMode mode, bool includeWhitespace,
-                     QTextStream *exportStream, bool prefixHexOffset)
+                     UnicodeScanMode unicodeMode, QTextStream *exportStream, bool prefixHexOffset)
     {
         const bool asciiUnit = unit == '\t' || (unit >= 0x20 && unit <= 0x7E);
         const int evidence = asciiUnit ? 1 : 0;
@@ -498,7 +518,7 @@ struct Utf16ScanState
             const qulonglong combinedOffset = highSurrogateOffset;
             haveHighSurrogate = false;
             processCodePoint(shared, codePoint, combinedOffset, 4, combinedEvidence, combinedWrongEvidence, false,
-                             minLength, mode, includeWhitespace, exportStream, prefixHexOffset);
+                             minLength, mode, includeWhitespace, unicodeMode, exportStream, prefixHexOffset);
             return;
         }
 
@@ -509,11 +529,12 @@ struct Utf16ScanState
         }
 
         processCodePoint(shared, unit, unitOffset, 2, evidence, wrongEvidence, false, minLength, mode,
-                         includeWhitespace, exportStream, prefixHexOffset);
+                         includeWhitespace, unicodeMode, exportStream, prefixHexOffset);
     }
 
     void consume(StringScanState &shared, unsigned char byte, qulonglong offset, int minLength, StringScanMode mode,
-                 bool includeWhitespace, QTextStream *exportStream, bool prefixHexOffset)
+                 bool includeWhitespace, UnicodeScanMode unicodeMode, QTextStream *exportStream,
+                 bool prefixHexOffset)
     {
         if (!haveFirstByte)
         {
@@ -546,7 +567,7 @@ struct Utf16ScanState
         const unsigned char highByte = endian == Endian::Little ? secondByte : firstByte;
         haveFirstByte = false;
         processUnit(shared, unit, lowByte, highByte, firstByteOffset, minLength, mode, includeWhitespace,
-                    exportStream, prefixHexOffset);
+                    unicodeMode, exportStream, prefixHexOffset);
         previousInputByte = byte;
         havePreviousInputByte = true;
     }
@@ -575,7 +596,8 @@ bool scanDevice(QIODevice &source, StringScanState &state, int minLength, const 
         }
     };
 
-    const bool scanUnicode = options.includeUnicode && options.mode != StringScanMode::CIdentifiers;
+    const bool scanUnicode = options.unicodeMode != UnicodeScanMode::Off &&
+                             options.mode != StringScanMode::CIdentifiers;
     Utf8ScanState utf8;
     Utf16ScanState utf16le{Utf16ScanState::Endian::Little, 0, QStringLiteral("UTF-16LE")};
     Utf16ScanState utf16be{Utf16ScanState::Endian::Big, 0, QStringLiteral("UTF-16BE")};
@@ -602,12 +624,12 @@ bool scanDevice(QIODevice &source, StringScanState &state, int minLength, const 
                 do
                 {
                     consumed = utf8.consume(state, byte, offset, minLength, options.mode, options.includeWhitespace,
-                                            exportStream, options.prefixHexOffset);
+                                            options.unicodeMode, exportStream, options.prefixHexOffset);
                 } while (!consumed && !state.capped);
                 utf16le.consume(state, byte, offset, minLength, options.mode, options.includeWhitespace,
-                                exportStream, options.prefixHexOffset);
+                                options.unicodeMode, exportStream, options.prefixHexOffset);
                 utf16be.consume(state, byte, offset, minLength, options.mode, options.includeWhitespace,
-                                exportStream, options.prefixHexOffset);
+                                options.unicodeMode, exportStream, options.prefixHexOffset);
             }
         }
         drainResults();
@@ -643,8 +665,8 @@ bool scanAsciiDevice(QIODevice &source, StringScanState &state, int minLength, S
                      const StringScanDeviceCallbacks &callbacks)
 {
     return scanDevice(source, state, minLength,
-                      StringScanOptions{mode, includeWhitespace, false, prefixHexOffset}, exportStream, chunkSize,
-                      callbacks);
+                      StringScanOptions{mode, includeWhitespace, UnicodeScanMode::Off, prefixHexOffset},
+                      exportStream, chunkSize, callbacks);
 }
 
 } // namespace stringscan
