@@ -24,6 +24,18 @@ qsizetype writeIsoDirectoryRecord(QByteArray *image,
     return length;
 }
 
+QByteArray isoUtf16BeIdentifier(const QByteArray &ascii)
+{
+    QByteArray encoded;
+    encoded.reserve(ascii.size() * 2);
+    for (char ch : ascii)
+    {
+        encoded.append('\0');
+        encoded.append(ch);
+    }
+    return encoded;
+}
+
 void loadLazyChildren(StructureRow *row)
 {
     if (!row || !row->lazyChildLoader)
@@ -48,6 +60,7 @@ class StructViewDiskImageTests : public QObject
 private slots:
     void builderRendersRawImgMbrPartitions();
     void builderRendersIsoVolumeDescriptors();
+    void builderRendersIsoSupplementaryJolietDirectoryNames();
     void builderRendersIsoDirectoryTreesAcrossSectorPadding();
 };
 
@@ -237,12 +250,110 @@ void StructViewDiskImageTests::builderRendersIsoVolumeDescriptors()
 
     StructureRow *fileSystem = findChildNamed(summary, QStringLiteral("FileSystem"));
     QVERIFY2(fileSystem, qPrintable(childNames(summary)));
-    StructureRow *rootDirectory = findChildNamed(fileSystem, QStringLiteral("/"));
-    QVERIFY2(rootDirectory, qPrintable(childNames(fileSystem)));
+    StructureRow *primaryDirectories = findChildNamed(fileSystem, QStringLiteral("Primary"));
+    QVERIFY2(primaryDirectories, qPrintable(childNames(fileSystem)));
+    StructureRow *rootDirectory = findChildNamed(primaryDirectories, QStringLiteral("/"));
+    QVERIFY2(rootDirectory, qPrintable(childNames(primaryDirectories)));
     StructureRow *semanticEntries = findChildNamed(rootDirectory, QStringLiteral("ISO_DIRECTORY_ITEM Entries[]"));
     QVERIFY2(semanticEntries, qPrintable(childNames(rootDirectory)));
     QVERIFY(semanticEntries->lazyChildLoader);
     QVERIFY(semanticEntries->children.empty());
+}
+
+void StructViewDiskImageTests::builderRendersIsoSupplementaryJolietDirectoryNames()
+{
+    // Scenario: Joliet supplementary descriptors store directory identifiers as
+    // UCS-2/UTF-16BE bytes. Expected: the semantic supplementary root uses the
+    // Joliet directory item type so entry rows get readable names.
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("iso.strata")), "iso.strata failed to parse");
+    TypeDecl *isoRoot = exportedNamed(&library, QStringLiteral("ISO_IMAGE"));
+    QVERIFY(isoRoot);
+
+    constexpr qsizetype sectorSize = 2048;
+    constexpr qsizetype pvd = 16 * sectorSize;
+    constexpr qsizetype svd = 17 * sectorSize;
+    constexpr qsizetype terminator = 18 * sectorSize;
+    constexpr quint32 primaryRootSector = 19;
+    constexpr quint32 supplementaryRootSector = 20;
+    constexpr quint32 efiSector = 21;
+    QByteArray iso(22 * sectorSize, '\0');
+
+    iso[pvd] = char(1);
+    writeAscii(&iso, pvd + 1, "CD001");
+    iso[pvd + 6] = char(1);
+    writeLe16(&iso, pvd + 128, sectorSize);
+    writeBe16(&iso, pvd + 130, sectorSize);
+    writeIsoDirectoryRecord(&iso,
+                            pvd + 156,
+                            QByteArray(1, '\0'),
+                            primaryRootSector,
+                            sectorSize,
+                            0x02);
+
+    iso[svd] = char(2);
+    writeAscii(&iso, svd + 1, "CD001");
+    iso[svd + 6] = char(1);
+    writeLe16(&iso, svd + 128, sectorSize);
+    writeBe16(&iso, svd + 130, sectorSize);
+    writeAscii(&iso, svd + 88, "%/E");
+    writeIsoDirectoryRecord(&iso,
+                            svd + 156,
+                            QByteArray(1, '\0'),
+                            supplementaryRootSector,
+                            sectorSize,
+                            0x02);
+
+    iso[terminator] = char(255);
+    writeAscii(&iso, terminator + 1, "CD001");
+    iso[terminator + 6] = char(1);
+
+    qsizetype primaryOffset = primaryRootSector * sectorSize;
+    writeIsoDirectoryRecord(&iso,
+                            primaryOffset,
+                            QByteArray(1, '\0'),
+                            primaryRootSector,
+                            sectorSize,
+                            0x02);
+
+    qsizetype supplementaryOffset = supplementaryRootSector * sectorSize;
+    supplementaryOffset += writeIsoDirectoryRecord(&iso,
+                                                   supplementaryOffset,
+                                                   QByteArray(1, '\0'),
+                                                   supplementaryRootSector,
+                                                   sectorSize,
+                                                   0x02);
+    supplementaryOffset += writeIsoDirectoryRecord(&iso,
+                                                   supplementaryOffset,
+                                                   QByteArray(1, '\1'),
+                                                   supplementaryRootSector,
+                                                   sectorSize,
+                                                   0x02);
+    writeIsoDirectoryRecord(&iso,
+                            supplementaryOffset,
+                            isoUtf16BeIdentifier(QByteArrayLiteral("EFI")),
+                            efiSector,
+                            sectorSize,
+                            0x02);
+
+    auto rows = buildRows(&library, isoRoot, iso);
+    QCOMPARE(rows.size(), size_t(1));
+    StructureRow *summary = findSemanticRootChildNamed(rows, QStringLiteral("ISO Summary"));
+    QVERIFY2(summary, "ISO Summary semantic child row not found");
+    StructureRow *fileSystem = findChildNamed(summary, QStringLiteral("FileSystem"));
+    QVERIFY2(fileSystem, qPrintable(childNames(summary)));
+    StructureRow *supplementaryDirectories = findChildNamed(fileSystem, QStringLiteral("Supplementary"));
+    QVERIFY2(supplementaryDirectories, qPrintable(childNames(fileSystem)));
+    StructureRow *supplementaryRoot = findChildNamed(supplementaryDirectories, QStringLiteral("Supplementary root"));
+    QVERIFY2(supplementaryRoot, qPrintable(childNames(supplementaryDirectories)));
+    StructureRow *semanticEntries = findChildNamed(supplementaryRoot,
+                                                   QStringLiteral("ISO_JOLIET_DIRECTORY_ITEM Entries[]"));
+    QVERIFY2(semanticEntries, qPrintable(childNames(supplementaryRoot)));
+    QVERIFY(semanticEntries->lazyChildLoader);
+    loadLazyChildren(semanticEntries);
+    QCOMPARE(semanticEntries->children.size(), size_t(4));
+    QVERIFY2(semanticEntries->children[2]->name.contains(QStringLiteral("EFI")),
+             qPrintable(semanticEntries->children[2]->name));
 }
 
 void StructViewDiskImageTests::builderRendersIsoDirectoryTreesAcrossSectorPadding()
@@ -409,8 +520,10 @@ void StructViewDiskImageTests::builderRendersIsoDirectoryTreesAcrossSectorPaddin
     QVERIFY2(findChildNamed(summary, QStringLiteral("Volumes")), qPrintable(childNames(summary)));
     StructureRow *fileSystem = findChildNamed(summary, QStringLiteral("FileSystem"));
     QVERIFY2(fileSystem, qPrintable(childNames(summary)));
-    StructureRow *semanticRoot = findChildNamed(fileSystem, QStringLiteral("/"));
-    QVERIFY2(semanticRoot, qPrintable(childNames(fileSystem)));
+    StructureRow *primaryDirectories = findChildNamed(fileSystem, QStringLiteral("Primary"));
+    QVERIFY2(primaryDirectories, qPrintable(childNames(fileSystem)));
+    StructureRow *semanticRoot = findChildNamed(primaryDirectories, QStringLiteral("/"));
+    QVERIFY2(semanticRoot, qPrintable(childNames(primaryDirectories)));
     StructureRow *semanticEntries = findChildNamed(semanticRoot, QStringLiteral("ISO_DIRECTORY_ITEM Entries[]"));
     QVERIFY2(semanticEntries, qPrintable(childNames(semanticRoot)));
     QVERIFY(semanticEntries->lazyChildLoader);
