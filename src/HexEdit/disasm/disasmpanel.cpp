@@ -5,6 +5,8 @@
 #include "combos/menucombobox.h"
 #include "disasm/branchtarget.h"
 #include "disasm/demangle.h"
+#include "disasm/elfmetadata.h"
+#include "disasm/pemetadata.h"
 #include "filestats/widgets.h"
 #include "settings/settings.h"
 #include "theme.h"
@@ -26,6 +28,7 @@
 #include <QPlainTextEdit>
 #include <QProgressBar>
 #include <QRegularExpression>
+#include <QSignalBlocker>
 #include <QStackedWidget>
 #include <QStringList>
 #include <QTextBlock>
@@ -70,6 +73,19 @@ static constexpr int kArchCount = (int)(sizeof(kArchEntries) / sizeof(kArchEntri
 
 static constexpr bool kHighlightCurrentLine = false; // tint the line under the cursor
 
+// ELF_MACHINE values this panel knows how to point Capstone at. Kept in sync
+// with CodeDiscoveryEngine's scanner-side mapping.
+constexpr uint16_t kElfMachineX86     = 3;
+constexpr uint16_t kElfMachineArm     = 40;
+constexpr uint16_t kElfMachineX86_64  = 62;
+constexpr uint16_t kElfMachineAarch64 = 183;
+
+struct InitialDisassemblyTarget
+{
+    uint64_t offset = 0;
+    const char *architectureId = "x86-64";
+};
+
 static QFont disassemblyViewFont(const QFont &hexViewFont)
 {
     QFont font = hexViewFont;
@@ -89,6 +105,62 @@ static QFont disassemblyViewFont(const QFont &hexViewFont)
     return font;
 }
 
+std::optional<InitialDisassemblyTarget> fileEntryPointTarget(HexView *hv)
+{
+    if (!hv)
+        return std::nullopt;
+
+    const PeMetadata pe = readPeMetadata(hv);
+    if (pe.isValid)
+    {
+        if (auto offset = rvaToFileOffset(pe, pe.entryPointRva))
+            return InitialDisassemblyTarget{*offset, pe.is64Bit ? "x86-64" : "x86-32"};
+        return std::nullopt;
+    }
+
+    const ElfMetadata elf = readElfMetadata(hv);
+    if (!elf.isValid)
+        return std::nullopt;
+
+    const char *architectureId = nullptr;
+    switch (elf.machine)
+    {
+    case kElfMachineX86:     architectureId = "x86-32"; break;
+    case kElfMachineX86_64:  architectureId = "x86-64"; break;
+    case kElfMachineArm:     architectureId = "arm";    break;
+    case kElfMachineAarch64: architectureId = "arm64";  break;
+    default: break;
+    }
+    if (!architectureId)
+        return std::nullopt;
+
+    if (auto offset = vaddrToFileOffset(elf, elf.entryVaddr))
+        return InitialDisassemblyTarget{*offset, architectureId};
+    return std::nullopt;
+}
+
+int architectureIndexForId(QLatin1String id)
+{
+    for (int i = 0; i < kArchCount; ++i)
+        if (id == QLatin1String(kArchEntries[i].id))
+            return i;
+    return -1;
+}
+
+bool selectArchitecture(QComboBox *combo, const char *id)
+{
+    if (!combo || !id)
+        return false;
+
+    const int index = architectureIndexForId(QLatin1String(id));
+    if (index < 0)
+        return false;
+
+    const QSignalBlocker blocker(combo);
+    combo->setCurrentIndex(index);
+    return true;
+}
+
 
 // ── DisassemblerPanel ─────────────────────────────────────────────────────────
 
@@ -97,8 +169,18 @@ DisassemblerPanel::DisassemblerPanel(HexView *hv, QWidget *parent)
     , m_hv(hv)
 {
     buildUi();
+
+    const bool cursorAtStart = m_hv && m_hv->cursorOffset() == 0;
+    const std::optional<InitialDisassemblyTarget> initialTarget =
+        cursorAtStart ? fileEntryPointTarget(m_hv) : std::nullopt;
+    if (initialTarget && m_archCombo)
+        selectArchitecture(m_archCombo, initialTarget->architectureId);
+
     openCapstone();
-    disassemble();
+    if (initialTarget)
+        goToOffset(initialTarget->offset);
+    else
+        disassemble();
 }
 
 DisassemblerPanel::~DisassemblerPanel()
@@ -1393,6 +1475,14 @@ QString functionSourceLabel(FunctionSource source)
     }
     return {};
 }
+
+std::optional<uint64_t> discoveredEntryPointOffset(const QList<DiscoveredFunction> &functions)
+{
+    for (const DiscoveredFunction &fn : functions)
+        if (fn.source == FunctionSource::EntryPoint)
+            return fn.startOffset;
+    return std::nullopt;
+}
 } // namespace
 
 void DisassemblerPanel::setDiscoveredFunctions(QList<DiscoveredFunction> functions)
@@ -1413,9 +1503,32 @@ void DisassemblerPanel::setPartialDiscoveredFunctions(QList<DiscoveredFunction> 
 
 void DisassemblerPanel::applyDiscoveredFunctions(QList<DiscoveredFunction> functions)
 {
+    const bool shouldFollowFreshEntrypoint = !m_hasExplicitRange
+        && m_hv
+        && m_hv->cursorOffset() == 0
+        && discoveredEntryPointOffset(functions).has_value();
+
     m_discoveredFunctions = std::move(functions);
     rebuildFunctionsList();
     populateFunctionsCombo();
+
+    // If the panel is already open while a new executable is loaded, the
+    // constructor's initial-entrypoint jump has already happened for the
+    // previous document. MainWindow clears the function list immediately and
+    // the new scan arrives shortly afterward; use that first discovered
+    // entrypoint to move away from the file header instead of continuing to
+    // render address zero.
+    if (shouldFollowFreshEntrypoint)
+    {
+        if (const std::optional<InitialDisassemblyTarget> target = fileEntryPointTarget(m_hv))
+        {
+            if (selectArchitecture(m_archCombo, target->architectureId))
+                openCapstone();
+            goToOffset(target->offset);
+            return;
+        }
+    }
+
     disassemble(); // re-check whether the cursor now falls within a known function
 }
 
@@ -1489,14 +1602,23 @@ void DisassemblerPanel::populateFunctionsCombo()
     m_functionsCombo->clear();
 
     // Entrypoint is always present so the combo's shape never jumps around
-    // as a file loads; only enabled (and only given a real offset to show)
-    // once the entry point is actually known.
-    const bool entryKnown = m_hv && m_hv->hasStructureEntryPoint();
-    const uint64_t entryOffset = entryKnown ? m_hv->structureEntryPoint() : 0;
+    // as a file loads. For PE/ELF, read the executable header directly; a
+    // stale or misdetected Structure View cache can otherwise report a
+    // "valid" offset of zero and override the scanner's real entry point.
+    const std::optional<InitialDisassemblyTarget> fileEntryOffset = fileEntryPointTarget(m_hv);
+    const std::optional<uint64_t> scannerEntryOffset = discoveredEntryPointOffset(m_discoveredFunctions);
+    const bool structureEntryKnown = m_hv && m_hv->hasStructureEntryPoint() && m_hv->structureEntryPoint() != 0;
+    const bool entryKnown = fileEntryOffset.has_value()
+        || scannerEntryOffset.has_value()
+        || structureEntryKnown;
+    const uint64_t entryOffset = fileEntryOffset
+        ? fileEntryOffset->offset
+        : scannerEntryOffset.value_or(structureEntryKnown ? m_hv->structureEntryPoint() : 0);
     const QString entryLabel = entryKnown
         ? QStringLiteral("Entrypoint\t0x%1").arg(QString::number(entryOffset, 16).toUpper().rightJustified(8, QLatin1Char('0')))
         : tr("Entrypoint");
-    m_functionsCombo->addItem(entryLabel, QVariant::fromValue<qulonglong>(entryOffset));
+    m_functionsCombo->addItem(entryLabel,
+                              entryKnown ? QVariant::fromValue<qulonglong>(entryOffset) : QVariant());
 
     if (!m_discoveredFunctions.isEmpty())
         m_functionsCombo->addItem(QString()); // separator
