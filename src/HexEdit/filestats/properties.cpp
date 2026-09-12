@@ -42,7 +42,7 @@ void FilePropertiesPanel::refreshDocumentState(bool contentsChanged)
     const QFileInfo info(path);
 
     m_nameValue->setText(path.isEmpty() ? tr("Untitled") : info.fileName());
-    m_locationValue->setText(path.isEmpty() ? tr("Memory") : info.absolutePath());
+    m_locationValue->setText(path.isEmpty() ? tr("Memory") : info.absoluteFilePath());
     m_sizeValue->setText(formatSize(static_cast<qulonglong>(m_hexView->size())));
     updateStringsOffsetColumnWidth();
 
@@ -164,7 +164,8 @@ void FilePropertiesPanel::buildPropertiesSection(QWidget *parent, QVBoxLayout *c
     auto *card = new SettingsCard(
         {
             new PropertyRow(tr("Name"), &m_nameValue, m_fileSectionBody),
-            new PropertyRow(tr("Location"), &m_locationValue, m_fileSectionBody, PropertyRow::Action::OpenExternal,
+            new PropertyRow(tr("Path"), &m_locationValue, m_fileSectionBody, PropertyRow::Action::CopyValue, {},
+                            nullptr, false, PropertyRow::Action::OpenExternal,
                             [this]()
                             {
                                 if (!m_hexView)

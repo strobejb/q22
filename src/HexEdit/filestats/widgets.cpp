@@ -12,6 +12,7 @@
 #include <QGraphicsOpacityEffect>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QHelpEvent>
 #include <QHideEvent>
 #include <QLabel>
 #include <QLinearGradient>
@@ -27,6 +28,7 @@
 #include <QStyleOptionHeader>
 #include <QTimer>
 #include <QToolButton>
+#include <QToolTip>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
@@ -1228,8 +1230,11 @@ void TabbedContentFrame::paintTab(QPainter *painter, const QRect &rect, const QS
 // â”€â”€ PropertyRow â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 PropertyRow::PropertyRow(const QString &label, QLabel **valueOut, QWidget *parent, Action action,
-                         std::function<void()> actionCallback, QCheckBox **checkBoxOut, bool checked)
-    : QWidget(parent), m_action(action), m_actionCallback(std::move(actionCallback))
+                         std::function<void()> actionCallback, QCheckBox **checkBoxOut, bool checked,
+                         Action secondaryAction, std::function<void()> secondaryActionCallback)
+    : QWidget(parent), m_action(action), m_secondaryAction(secondaryAction),
+      m_actionCallback(std::move(actionCallback)),
+      m_secondaryActionCallback(std::move(secondaryActionCallback))
 {
     setMinimumWidth(0);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
@@ -1288,12 +1293,26 @@ PropertyRow::PropertyRow(const QString &label, QLabel **valueOut, QWidget *paren
     m_actionIcon->setFixedSize(28, 28);
     m_actionIcon->setAlignment(Qt::AlignCenter);
     m_actionIcon->setAttribute(Qt::WA_TransparentForMouseEvents);
-    const QString iconName = action == Action::OpenExternal ? QStringLiteral("actions/external-link-symbolic")
-                                                            : QStringLiteral("actions/edit-copy-symbolic");
-    m_actionIcon->setPixmap(recoloredIcon(iconName, palette().windowText().color(), 16).pixmap(16, 16));
+    m_actionIcon->setToolTip(toolTipForAction(action));
+    m_actionIcon->setPixmap(recoloredIcon(iconNameForAction(action), palette().windowText().color(), 16)
+                                .pixmap(16, 16));
     m_actionIcon->hide();
-    updateActionIconStyle();
     layout->addWidget(m_actionIcon, 0, Qt::AlignVCenter);
+
+    if (secondaryAction != Action::None)
+    {
+        m_secondaryActionIcon = new QLabel(this);
+        m_secondaryActionIcon->setFixedSize(28, 28);
+        m_secondaryActionIcon->setAlignment(Qt::AlignCenter);
+        m_secondaryActionIcon->setAttribute(Qt::WA_TransparentForMouseEvents);
+        m_secondaryActionIcon->setToolTip(toolTipForAction(secondaryAction));
+        m_secondaryActionIcon->setPixmap(recoloredIcon(iconNameForAction(secondaryAction),
+                                                       palette().windowText().color(), 16)
+                                             .pixmap(16, 16));
+        m_secondaryActionIcon->hide();
+        layout->addWidget(m_secondaryActionIcon, 0, Qt::AlignVCenter);
+    }
+    updateActionIconStyle();
 
     m_feedback = new QLabel(QObject::tr("Copied to clipboard"), this);
     m_feedback->setAttribute(Qt::WA_TransparentForMouseEvents);
@@ -1321,8 +1340,7 @@ void PropertyRow::mousePressEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton && rect().contains(event->pos()))
     {
-        if (isActionHit(event->pos()))
-            setActionIconPressed(true);
+        setActionIconPressed(actionSlotAt(event->pos()));
         event->accept();
         return;
     }
@@ -1332,7 +1350,7 @@ void PropertyRow::mousePressEvent(QMouseEvent *event)
 void PropertyRow::leaveEvent(QEvent *event)
 {
     QWidget::leaveEvent(event);
-    setActionIconPressed(false);
+    setActionIconPressed(ActionSlot::None);
     if (!rect().contains(mapFromGlobal(QCursor::pos())))
         clearHoveredRow(this);
 }
@@ -1343,7 +1361,9 @@ void PropertyRow::hideEvent(QHideEvent *event)
     clearHoveredRow(this);
     if (m_actionIcon)
         m_actionIcon->hide();
-    setActionIconPressed(false);
+    if (m_secondaryActionIcon)
+        m_secondaryActionIcon->hide();
+    setActionIconPressed(ActionSlot::None);
     if (m_feedback)
         m_feedback->hide();
 }
@@ -1352,14 +1372,39 @@ void PropertyRow::mouseReleaseEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton && rect().contains(event->pos()))
     {
-        setActionIconPressed(false);
+        setActionIconPressed(ActionSlot::None);
         if (isActionHit(event->pos()))
             triggerAction(event->pos());
         event->accept();
         return;
     }
-    setActionIconPressed(false);
+    setActionIconPressed(ActionSlot::None);
     QWidget::mouseReleaseEvent(event);
+}
+
+bool PropertyRow::event(QEvent *event)
+{
+    if (event->type() == QEvent::ToolTip)
+    {
+        auto            *helpEvent = static_cast<QHelpEvent *>(event);
+        const ActionSlot slot      = actionSlotAt(helpEvent->pos());
+        QString          tip;
+        if (slot == ActionSlot::Primary)
+            tip = toolTipForAction(m_action);
+        else if (slot == ActionSlot::Secondary)
+            tip = toolTipForAction(m_secondaryAction);
+
+        if (!tip.isEmpty())
+        {
+            QToolTip::showText(helpEvent->globalPos(), tip, this);
+            event->accept();
+            return true;
+        }
+        QToolTip::hideText();
+        event->ignore();
+        return true;
+    }
+    return QWidget::event(event);
 }
 
 bool PropertyRow::eventFilter(QObject *obj, QEvent *event)
@@ -1379,7 +1424,7 @@ bool PropertyRow::eventFilter(QObject *obj, QEvent *event)
                 if (isActionHit(rowPos))
                 {
                     updateHoverIcon();
-                    setActionIconPressed(true);
+                    setActionIconPressed(actionSlotAt(rowPos));
                 }
             }
         }
@@ -1392,7 +1437,7 @@ bool PropertyRow::eventFilter(QObject *obj, QEvent *event)
             const QPoint rowPos = mapFromGlobal(eventWidget->mapToGlobal(mouseEvent->pos()));
             if (rect().contains(rowPos))
             {
-                setActionIconPressed(false);
+                setActionIconPressed(ActionSlot::None);
                 if (isActionHit(rowPos))
                     triggerAction(rowPos);
                 return true;
@@ -1425,6 +1470,8 @@ void PropertyRow::updateHoverIcon()
     if (!m_actionIcon)
         return;
     m_actionIcon->setVisible(m_iconHovered);
+    if (m_secondaryActionIcon)
+        m_secondaryActionIcon->setVisible(m_iconHovered);
     updateActionIconStyle();
 }
 
@@ -1447,7 +1494,7 @@ void PropertyRow::setHoveredRow(PropertyRow *row)
     if (current)
     {
         current->m_iconHovered = false;
-        current->setActionIconPressed(false);
+        current->setActionIconPressed(ActionSlot::None);
         current->updateHoverIcon();
     }
 
@@ -1465,16 +1512,16 @@ void PropertyRow::clearHoveredRow(PropertyRow *row)
     if (current != row)
         return;
     current->m_iconHovered = false;
-    current->setActionIconPressed(false);
+    current->setActionIconPressed(ActionSlot::None);
     current->updateHoverIcon();
     current = nullptr;
 }
 
-void PropertyRow::setActionIconPressed(bool pressed)
+void PropertyRow::setActionIconPressed(ActionSlot slot)
 {
     if (!m_actionIcon)
         return;
-    m_iconPressed = pressed;
+    m_pressedAction = slot;
     updateActionIconStyle();
 }
 
@@ -1482,20 +1529,56 @@ void PropertyRow::updateActionIconStyle()
 {
     if (!m_actionIcon)
         return;
+    applyActionIconStyle(m_actionIcon, m_pressedAction == ActionSlot::Primary);
+    applyActionIconStyle(m_secondaryActionIcon, m_pressedAction == ActionSlot::Secondary);
+}
+
+QString PropertyRow::iconNameForAction(Action action) const
+{
+    if (action == Action::OpenExternal)
+        return QStringLiteral("actions/external-link-symbolic");
+    return QStringLiteral("actions/edit-copy-symbolic");
+}
+
+QString PropertyRow::toolTipForAction(Action action) const
+{
+    if (action == Action::OpenExternal)
+        return QObject::tr("Open location");
+    if (action == Action::CopyValue)
+        return QObject::tr("Copy value");
+    return {};
+}
+
+void PropertyRow::applyActionIconStyle(QLabel *icon, bool pressed)
+{
+    if (!icon)
+        return;
     const bool    dark      = qApp->palette().window().color().lightness() < 128;
     const QString pressedBg = dark ? QStringLiteral("rgba(255,255,255,0.25)") : QStringLiteral("rgba(0,0,0,0.18)");
-    m_actionIcon->setStyleSheet(m_iconPressed ? QStringLiteral("border-radius: 6px; background: %1;").arg(pressedBg)
-                                              : QStringLiteral("border-radius: 6px;"));
+    icon->setStyleSheet(pressed ? QStringLiteral("border-radius: 6px; background: %1;").arg(pressedBg)
+                                : QStringLiteral("border-radius: 6px;"));
 }
 
 void PropertyRow::triggerAction(const QPoint &clickPos)
 {
-    if (m_actionCallback)
+    const ActionSlot slot = actionSlotAt(clickPos);
+    if (slot == ActionSlot::Secondary)
     {
-        m_actionCallback();
+        runAction(m_secondaryAction, m_secondaryActionCallback, clickPos);
         return;
     }
-    if (m_valueLabel)
+    if (slot == ActionSlot::Primary)
+        runAction(m_action, m_actionCallback, clickPos);
+}
+
+void PropertyRow::runAction(Action action, const std::function<void()> &callback, const QPoint &clickPos)
+{
+    if (callback)
+    {
+        callback();
+        return;
+    }
+    if (action == Action::CopyValue && m_valueLabel)
     {
         QApplication::clipboard()->setText(m_valueLabel->text());
         showCopiedFeedback(clickPos);
@@ -1504,12 +1587,24 @@ void PropertyRow::triggerAction(const QPoint &clickPos)
 
 bool PropertyRow::isActionHit(const QPoint &pos) const
 {
+    return actionSlotAt(pos) != ActionSlot::None;
+}
+
+PropertyRow::ActionSlot PropertyRow::actionSlotAt(const QPoint &pos) const
+{
     int left = width();
     if (m_nameLabel)
         left = qMin(left, m_nameLabel->geometry().left());
     if (m_valueLabel)
         left = qMin(left, m_valueLabel->geometry().left());
-    return pos.x() >= left;
+    if (m_secondaryActionIcon && m_secondaryActionIcon->isVisible()
+        && m_secondaryActionIcon->geometry().contains(pos))
+        return ActionSlot::Secondary;
+    if (m_actionIcon && m_actionIcon->isVisible() && m_actionIcon->geometry().contains(pos))
+        return ActionSlot::Primary;
+    if (pos.x() >= left)
+        return ActionSlot::Primary;
+    return ActionSlot::None;
 }
 
 void PropertyRow::positionFeedback(const QPoint &clickPos)

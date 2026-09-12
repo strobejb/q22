@@ -348,13 +348,15 @@ class PropertyRow : public QWidget
   public:
     enum class Action
     {
+        None,
         CopyValue,
         OpenExternal
     };
 
     explicit PropertyRow(const QString &label, QLabel **valueOut, QWidget *parent = nullptr,
                          Action action = Action::CopyValue, std::function<void()> actionCallback = {},
-                         QCheckBox **checkBoxOut = nullptr, bool checked = false);
+                         QCheckBox **checkBoxOut = nullptr, bool checked = false,
+                         Action secondaryAction = Action::None, std::function<void()> secondaryActionCallback = {});
 
     QSize sizeHint() const override
     {
@@ -368,17 +370,30 @@ class PropertyRow : public QWidget
     void leaveEvent(QEvent *event) override;
     void hideEvent(QHideEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
+    bool event(QEvent *event) override;
     bool eventFilter(QObject *obj, QEvent *event) override;
 
   private:
+    enum class ActionSlot
+    {
+        None,
+        Primary,
+        Secondary
+    };
+
     void                 updateHoverIcon();
     static PropertyRow *&hoveredRow();
     static void          setHoveredRow(PropertyRow *row);
     static void          clearHoveredRow(PropertyRow *row);
-    void                 setActionIconPressed(bool pressed);
+    void                 setActionIconPressed(ActionSlot slot);
     void                 updateActionIconStyle();
     void                 triggerAction(const QPoint &clickPos);
     bool                 isActionHit(const QPoint &pos) const;
+    ActionSlot           actionSlotAt(const QPoint &pos) const;
+    QString              iconNameForAction(Action action) const;
+    QString              toolTipForAction(Action action) const;
+    void                 applyActionIconStyle(QLabel *icon, bool pressed);
+    void                 runAction(Action action, const std::function<void()> &callback, const QPoint &clickPos);
     void                 positionFeedback(const QPoint &clickPos);
     void                 showCopiedFeedback(const QPoint &clickPos);
     void                 installHoverFilter(QWidget *widget);
@@ -386,14 +401,17 @@ class PropertyRow : public QWidget
     QLabel                 *m_nameLabel       = nullptr;
     QLabel                 *m_valueLabel      = nullptr;
     QLabel                 *m_actionIcon      = nullptr;
+    QLabel                 *m_secondaryActionIcon = nullptr;
     QLabel                 *m_feedback        = nullptr;
     QGraphicsOpacityEffect *m_feedbackOpacity = nullptr;
     QPropertyAnimation     *m_feedbackFadeIn  = nullptr;
     QPropertyAnimation     *m_feedbackFadeOut = nullptr;
     Action                  m_action          = Action::CopyValue;
+    Action                  m_secondaryAction = Action::None;
     bool                    m_iconHovered     = false;
-    bool                    m_iconPressed     = false;
+    ActionSlot              m_pressedAction   = ActionSlot::None;
     std::function<void()>   m_actionCallback;
+    std::function<void()>   m_secondaryActionCallback;
 };
 
 } // namespace filestats
