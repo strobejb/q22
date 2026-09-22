@@ -106,3 +106,10 @@ Q22 is licensed under GPL-3.0-or-later. The full license text is included in
 [LICENSE](LICENSE).
 
 Releases are created manually from the GitHub Actions **Release** workflow using a `MAJOR.MINOR.PATCH` version.
+
+
+## Support
+
+Q22 is open source and actively developed. If you use it and want to help support continued development, you can sponsor the project via [GitHub Sponsors](https://github.com/sponsors/strobejb) or [Ko-fi](https://ko-fi.com/jbcatch22).
+
+Commercial support, custom format work and reverse-engineering services are available through Catch22 Solutions.
