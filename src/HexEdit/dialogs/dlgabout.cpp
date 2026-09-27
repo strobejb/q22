@@ -22,6 +22,30 @@
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 
+namespace {
+
+struct Contributor
+{
+    const char *name;
+    const char *url;
+};
+
+constexpr Contributor kContributors[] = {
+    { "James Brown", "https://github.com/strobejb" },
+};
+
+QList<QWidget *> contributorRows(QWidget *parent)
+{
+    QList<QWidget *> rows;
+    for (const Contributor &contributor : kContributors) {
+        rows.append(new NavigationRow(QLatin1String(contributor.name),
+                                      QUrl(QLatin1String(contributor.url)), parent));
+    }
+    return rows;
+}
+
+} // namespace
+
 void ShowAboutDlg(QWidget *parent)
 {
     QDialog dlg(parent);
@@ -127,15 +151,20 @@ void ShowAboutDlg(QWidget *parent)
         }
 
         auto *codeCard  = new SettingsCard(
-            { new TextRow(QLatin1String("James Brown"), creditsDlg) },
+            contributorRows(creditsDlg),
+            SettingsCard::Style::Compact, creditsDlg);
+        auto *librariesCard = new SettingsCard(
+            { new TextRow(QLatin1String("Capstone Disassembly Framework"),
+                          QLatin1String("Nguyen Anh Quynh"), creditsDlg) },
             SettingsCard::Style::Compact, creditsDlg);
         auto *iconsCard = new SettingsCard(
             { new TextRow(QLatin1String("Icons by GNOME Project"), creditsDlg) },
             SettingsCard::Style::Compact, creditsDlg);
 
-        auto *codeHeader  = new QLabel(QObject::tr("Code by"),  creditsDlg);
-        auto *iconsHeader = new QLabel(QObject::tr("Resources"), creditsDlg);
-        for (auto *h : { codeHeader, iconsHeader }) {
+        auto *codeHeader      = new QLabel(QObject::tr("Contributors"),  creditsDlg);
+        auto *librariesHeader = new QLabel(QObject::tr("Libraries"), creditsDlg);
+        auto *iconsHeader     = new QLabel(QObject::tr("Resources"), creditsDlg);
+        for (auto *h : { codeHeader, librariesHeader, iconsHeader }) {
             QFont f = h->font();
             f.setBold(true);
             h->setFont(f);
@@ -151,6 +180,10 @@ void ShowAboutDlg(QWidget *parent)
         lay->addWidget(codeHeader);
         lay->addSpacing(6);
         lay->addWidget(codeCard);
+        lay->addSpacing(20);
+        lay->addWidget(librariesHeader);
+        lay->addSpacing(6);
+        lay->addWidget(librariesCard);
         lay->addSpacing(20);
         lay->addWidget(iconsHeader);
         lay->addSpacing(6);

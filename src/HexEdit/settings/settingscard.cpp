@@ -358,22 +358,64 @@ void NavigationRow::paintEvent(QPaintEvent *)
 // ── TextRow ───────────────────────────────────────────────────────────────────
 
 TextRow::TextRow(const QString &text, QWidget *parent)
-    : QWidget(parent), m_text(text)
+    : TextRow(text, QString(), parent)
+{
+}
+
+TextRow::TextRow(const QString &text, const QString &detail, QWidget *parent)
+    : QWidget(parent), m_text(text), m_detail(detail)
 {
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 }
 
 QSize TextRow::sizeHint() const
 {
-    return QSize(200, qMax(fontMetrics().height(), ROW_MIN_H) + 2 * ROW_VPAD);
+    const QFontMetrics fm(font());
+    if (m_detail.isEmpty())
+        return QSize(200, qMax(fm.height(), ROW_MIN_H) + 2 * ROW_VPAD);
+
+    QFont detailFont = font();
+    if (detailFont.pointSizeF() > 0)
+        detailFont.setPointSizeF(qMax(1.0, detailFont.pointSizeF() - 1.0));
+    else if (detailFont.pixelSize() > 0)
+        detailFont.setPixelSize(qMax(1, detailFont.pixelSize() - 1));
+
+    const QFontMetrics detailFm(detailFont);
+    return QSize(200, fm.height() + detailFm.height() + 2 * ROW_VPAD + 2);
 }
 
 void TextRow::paintEvent(QPaintEvent *)
 {
     QPainter p(this);
-    p.setPen(palette().color(QPalette::WindowText));
+    const QPalette &pal = palette();
+
+    if (m_detail.isEmpty())
+    {
+        p.setPen(pal.color(QPalette::WindowText));
+        p.setFont(font());
+        p.drawText(rect(), Qt::AlignLeft | Qt::AlignVCenter, m_text);
+        return;
+    }
+
+    QFont detailFont = font();
+    if (detailFont.pointSizeF() > 0)
+        detailFont.setPointSizeF(qMax(1.0, detailFont.pointSizeF() - 1.0));
+    else if (detailFont.pixelSize() > 0)
+        detailFont.setPixelSize(qMax(1, detailFont.pixelSize() - 1));
+
+    const QFontMetrics textFm(font());
+    const QFontMetrics detailFm(detailFont);
+    const int contentHeight = textFm.height() + detailFm.height() + 2;
+    int y = (height() - contentHeight) / 2;
+
+    p.setPen(pal.color(QPalette::WindowText));
     p.setFont(font());
-    p.drawText(rect(), Qt::AlignLeft | Qt::AlignVCenter, m_text);
+    p.drawText(QRect(0, y, width(), textFm.height()), Qt::AlignLeft | Qt::AlignVCenter, m_text);
+    y += textFm.height() + 2;
+
+    p.setPen(pal.color(QPalette::PlaceholderText));
+    p.setFont(detailFont);
+    p.drawText(QRect(0, y, width(), detailFm.height()), Qt::AlignLeft | Qt::AlignVCenter, m_detail);
 }
 
 // ── SettingsToggle ────────────────────────────────────────────────────────────

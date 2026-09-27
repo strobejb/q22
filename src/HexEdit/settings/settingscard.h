@@ -77,13 +77,13 @@ private:
 };
 
 // ── TextRow ───────────────────────────────────────────────────────────────────
-// Non-interactive row showing plain text.  Same height as NavigationRow so it
-// sits flush in a Compact card.
+// Non-interactive row showing plain text with an optional subdued detail line.
 class TextRow : public QWidget
 {
     Q_OBJECT
 public:
     explicit TextRow(const QString &text, QWidget *parent = nullptr);
+    TextRow(const QString &text, const QString &detail, QWidget *parent = nullptr);
     QSize sizeHint() const override;
 
 protected:
@@ -91,6 +91,7 @@ protected:
 
 private:
     QString m_text;
+    QString m_detail;
 };
 
 // ── SettingsToggle ────────────────────────────────────────────────────────────
