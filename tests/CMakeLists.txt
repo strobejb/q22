@@ -145,6 +145,7 @@ set(STRUCTVIEW_TEST_SOURCES
     structview/renderer/dynamic_placement_tests.cpp
     structview/renderer/raw_renderer_tests.cpp
     structview/renderer/semantic_renderer_tests.cpp
+    structview/source_navigation_tests.cpp
     ../src/HexEdit/settings/appconfig.cpp
     ../src/HexEdit/structview/dexsemanticview.cpp
     ../src/HexEdit/structview/elfsemanticview.cpp
@@ -181,6 +182,7 @@ source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" PREFIX "structview_tests" FILES
     structview/renderer/dynamic_placement_tests.cpp
     structview/renderer/raw_renderer_tests.cpp
     structview/renderer/semantic_renderer_tests.cpp
+    structview/source_navigation_tests.cpp
 )
 
 target_include_directories(structview_tests PRIVATE
@@ -218,6 +220,7 @@ set(STRUCTVIEW_TEST_SUITES
     StructViewDynamicPlacementTests
     StructViewRawRendererTests
     StructViewSemanticRendererTests
+    StructViewSourceNavigationTests
 )
 
 foreach(_structview_suite IN LISTS STRUCTVIEW_TEST_SUITES)

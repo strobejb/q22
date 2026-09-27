@@ -124,6 +124,7 @@ set(PROJECT_SOURCES
         structview/structuretreemodel.h
         structview/structurerenderengine.cpp
         structview/structurerenderengine.h
+        structview/structuresourcecoordinates.h
         structview/structurevaluebuilder.cpp
         structview/structurevaluebuilder.h
         structview/structureviewpanel.cpp

@@ -9,6 +9,7 @@
 #include "structview/structuregriditemdelegate.h"
 #include "structview/structurerenderengine.h"
 #include "structview/structurebranchicons.h"
+#include "structview/structuresourcecoordinates.h"
 #include "structview/structuretreemodel.h"
 #include "settings/settings.h"
 #include "theme.h"
@@ -1942,7 +1943,8 @@ bool magicSignatureMatchesFile(HexView *hv, const StructureMagicSignature &signa
     return bytesRead == static_cast<size_t>(fileBytes.size()) && fileBytes == signature.bytes;
 }
 
-bool magicSignatureMatchesSlice(HexView *hv, uint64_t baseOffset, uint64_t byteLength, const StructureMagicSignature &signature)
+bool magicSignatureMatchesViewSlice(HexView *hv, uint64_t baseOffset, uint64_t byteLength,
+                                    const StructureMagicSignature &signature)
 {
     if (!hv || signature.bytes.isEmpty() || signature.offset > byteLength)
         return false;
@@ -1958,9 +1960,9 @@ bool magicSignatureMatchesSlice(HexView *hv, uint64_t baseOffset, uint64_t byteL
         return false;
 
     QByteArray fileBytes(signature.bytes.size(), Qt::Uninitialized);
-    const size_t bytesRead = hv->getSourceData(static_cast<size_w>(absoluteOffset),
-                                               reinterpret_cast<uint8_t *>(fileBytes.data()),
-                                               static_cast<size_t>(fileBytes.size()));
+    const size_t bytesRead = hv->getData(static_cast<size_w>(absoluteOffset),
+                                         reinterpret_cast<uint8_t *>(fileBytes.data()),
+                                         static_cast<size_t>(fileBytes.size()));
     return bytesRead == static_cast<size_t>(fileBytes.size()) && fileBytes == signature.bytes;
 }
 
@@ -2076,9 +2078,9 @@ bool inflateHexViewRangeToFile(HexView *hv,
     {
         const size_t chunk = static_cast<size_t>(qMin<uint64_t>(static_cast<uint64_t>(input.size()),
                                                                sourceLength - consumed));
-        const size_t bytesRead = hv->getSourceData(static_cast<size_w>(sourceOffset + consumed),
-                                                   reinterpret_cast<uint8_t *>(input.data()),
-                                                   chunk);
+        const size_t bytesRead = hv->getData(static_cast<size_w>(sourceOffset + consumed),
+                                             reinterpret_cast<uint8_t *>(input.data()),
+                                             chunk);
         if (bytesRead == 0)
             break;
 
@@ -3016,13 +3018,13 @@ void StructureViewPanel::rebuildRows()
     bool hasSourceExtent = false;
     uint64_t sourceExtentBase = baseOffset;
     uint64_t sourceExtentLength = 0;
-    std::shared_ptr<sequence> transformedSource;
+    std::shared_ptr<sequence> isolatedSource;
     if (m_activeSourceFrame >= 0 && m_activeSourceFrame < m_sourceStack.size())
     {
         const SourceFrame &frame = m_sourceStack[m_activeSourceFrame];
-        if (frame.transformedSource && frame.rootType == rootType)
+        if (frame.isolatedSource && frame.rootType == rootType)
         {
-            transformedSource = frame.transformedSource;
+            isolatedSource = frame.isolatedSource;
             hasSourceExtent = true;
             sourceExtentBase = frame.baseOffset;
             sourceExtentLength = frame.byteLength;
@@ -3038,8 +3040,8 @@ void StructureViewPanel::rebuildRows()
         m_definitions->library(),
         rootType,
         baseOffset,
-        [this, hasSourceExtent, sourceExtentBase, sourceExtentLength, transformedSource](uint64_t offset, uint8_t *buffer, size_t length) -> size_t {
-            if (transformedSource)
+        [this, hasSourceExtent, sourceExtentBase, sourceExtentLength, isolatedSource](uint64_t offset, uint8_t *buffer, size_t length) -> size_t {
+            if (isolatedSource)
             {
                 if (offset < sourceExtentBase)
                     return 0;
@@ -3048,7 +3050,7 @@ void StructureViewPanel::rebuildRows()
                     return 0;
                 length = static_cast<size_t>(qMin<uint64_t>(static_cast<uint64_t>(length),
                                                             sourceExtentLength - relativeOffset));
-                return readSequenceData(transformedSource.get(), relativeOffset, buffer, length);
+                return readSequenceData(isolatedSource.get(), relativeOffset, buffer, length);
             }
             if (!m_hv)
                 return 0;
@@ -3355,10 +3357,12 @@ void StructureViewPanel::showOptionsContextMenu(int column, const QPoint &global
             }
             if (!openAsRow->openAsTransform.isEmpty())
                 label = tr("%1 via %2").arg(label, openAsRow->openAsTransform);
+            uint64_t openAsViewOffset = 0;
             const bool canOpen = m_hv
                 && (autoDetect || (resolvedRootType && rootComboIndexForType(resolvedRootType) >= 0))
                 && openAsRow->openAsByteLength > 0
-                && openAsRow->openAsOffset < m_hv->size();
+                && sourceOffsetToViewOffset(openAsRow->openAsOffset, &openAsViewOffset)
+                && openAsViewOffset < m_hv->size();
             if (!canOpen)
                 label = tr("%1 — unavailable").arg(label);
             QAction *openAs = menu.addAction(label);
@@ -4084,12 +4088,16 @@ TypeDecl *StructureViewPanel::resolvedOpenAsRootType(const StructureRow *row) co
     if (!m_definitions || !m_hv)
         return nullptr;
 
+    uint64_t viewOffset = 0;
+    if (!sourceOffsetToViewOffset(row->openAsOffset, &viewOffset))
+        return nullptr;
+
     const QList<ExportedStructureType> exportedTypes = sortedExportedTypes(m_definitions->exportedTypes());
     for (const ExportedStructureType &exported : exportedTypes)
     {
         for (const StructureMagicSignature &signature : exported.magicSignatures)
         {
-            if (magicSignatureMatchesSlice(m_hv, row->openAsOffset, row->openAsByteLength, signature))
+            if (magicSignatureMatchesViewSlice(m_hv, viewOffset, row->openAsByteLength, signature))
                 return exported.typeDecl;
         }
     }
@@ -4137,6 +4145,14 @@ bool StructureViewPanel::createTransformedOpenAsSource(const StructureRow *row,
     if (!row || !m_hv || row->openAsTransform.isEmpty())
         return false;
 
+    uint64_t viewOffset = 0;
+    if (!sourceOffsetToViewOffset(row->openAsOffset, &viewOffset))
+    {
+        if (errorMessage)
+            *errorMessage = tr("Nested byte range is outside the active source.");
+        return false;
+    }
+
     QTemporaryFile temp(QDir::tempPath() + QStringLiteral("/q22-nested-XXXXXX.bin"));
     temp.setAutoRemove(false);
     if (!temp.open())
@@ -4149,7 +4165,7 @@ bool StructureViewPanel::createTransformedOpenAsSource(const StructureRow *row,
     uint64_t transformedLength = 0;
     QString transformError;
     if (!inflateHexViewRangeToFile(m_hv,
-                                   row->openAsOffset,
+                                   viewOffset,
                                    row->openAsByteLength,
                                    row->openAsTransform,
                                    &temp,
@@ -4194,6 +4210,14 @@ bool StructureViewPanel::createRawOpenAsSource(const StructureRow *row,
     if (!row || !m_hv || row->openAsByteLength == 0)
         return false;
 
+    uint64_t viewOffset = 0;
+    if (!sourceOffsetToViewOffset(row->openAsOffset, &viewOffset))
+    {
+        if (errorMessage)
+            *errorMessage = tr("Nested byte range is outside the active source.");
+        return false;
+    }
+
     QTemporaryFile temp(QDir::tempPath() + QStringLiteral("/q22-nested-XXXXXX.bin"));
     temp.setAutoRemove(false);
     if (!temp.open())
@@ -4203,7 +4227,7 @@ bool StructureViewPanel::createRawOpenAsSource(const StructureRow *row,
         return false;
     }
 
-    if (row->openAsOffset > MAX_SEQUENCE_LENGTH || row->openAsByteLength > MAX_SEQUENCE_LENGTH)
+    if (viewOffset > MAX_SEQUENCE_LENGTH || row->openAsByteLength > MAX_SEQUENCE_LENGTH)
     {
         const QString path = temp.fileName();
         temp.close();
@@ -4213,7 +4237,7 @@ bool StructureViewPanel::createRawOpenAsSource(const StructureRow *row,
         return false;
     }
 
-    auto sourceDevice = m_hv->createReadOnlyDeviceSnapshot(static_cast<size_w>(row->openAsOffset),
+    auto sourceDevice = m_hv->createReadOnlyDeviceSnapshot(static_cast<size_w>(viewOffset),
                                                            static_cast<size_w>(row->openAsByteLength));
     if (!sourceDevice)
     {
@@ -4280,21 +4304,36 @@ bool StructureViewPanel::createRawOpenAsSource(const StructureRow *row,
     return true;
 }
 
+bool StructureViewPanel::sourceOffsetToViewOffset(uint64_t sourceOffset, uint64_t *viewOffset) const
+{
+    if (m_activeSourceFrame < 0 || m_activeSourceFrame >= m_sourceStack.size())
+        return StructureSourceCoordinates::toViewOffset(sourceOffset, false, false, 0, viewOffset);
+
+    const SourceFrame &frame = m_sourceStack[m_activeSourceFrame];
+    return StructureSourceCoordinates::toViewOffset(sourceOffset,
+                                                    frame.sliceRoot,
+                                                    bool(frame.isolatedSource),
+                                                    frame.baseOffset,
+                                                    viewOffset);
+}
+
 void StructureViewPanel::openIndexAsStructure(const QModelIndex &index)
 {
     StructureRow *row = openAsRowForIndex(index);
     if (!row || !m_hv || !m_rootCombo)
         return;
 
-    QString transformedTempPath;
+    QString childTempPath;
     std::shared_ptr<sequence> childSource;
     uint64_t childByteLength = 0;
     uint64_t sourceBase = 0;
     uint64_t sourceSize = static_cast<uint64_t>(m_hv->size());
+    bool isolateRawChild = false;
     if (m_activeSourceFrame >= 0 && m_activeSourceFrame < m_sourceStack.size())
     {
         const SourceFrame &frame = m_sourceStack[m_activeSourceFrame];
-        if (frame.sliceRoot && !frame.transformedSource)
+        isolateRawChild = bool(frame.isolatedSource);
+        if (frame.sliceRoot && !frame.isolatedSource)
         {
             sourceBase = frame.baseOffset;
             sourceSize = frame.byteLength;
@@ -4317,7 +4356,7 @@ void StructureViewPanel::openIndexAsStructure(const QModelIndex &index)
     if (!row->openAsTransform.isEmpty())
     {
         if (!createTransformedOpenAsSource(row,
-                                           &transformedTempPath,
+                                           &childTempPath,
                                            &childSource,
                                            &childByteLength,
                                            &errorMessage))
@@ -4326,6 +4365,26 @@ void StructureViewPanel::openIndexAsStructure(const QModelIndex &index)
                             tr("Cannot open transformed structure slice"),
                             errorMessage.isEmpty()
                                 ? tr("The %1 transform failed.").arg(row->openAsTransform)
+                                : errorMessage,
+                            QMessageBox::Ok,
+                            this);
+            styleMessageBox(&msg);
+            msg.exec();
+            return;
+        }
+    }
+    else if (isolateRawChild)
+    {
+        if (!createRawOpenAsSource(row,
+                                   &childTempPath,
+                                   &childSource,
+                                   &childByteLength,
+                                   &errorMessage))
+        {
+            QMessageBox msg(QMessageBox::Warning,
+                            tr("Cannot open nested structure slice"),
+                            errorMessage.isEmpty()
+                                ? tr("The nested byte range could not be read.")
                                 : errorMessage,
                             QMessageBox::Ok,
                             this);
@@ -4346,10 +4405,10 @@ void StructureViewPanel::openIndexAsStructure(const QModelIndex &index)
     const bool autoDetect = row->openAsRootTypeName.compare(QStringLiteral("auto"), Qt::CaseInsensitive) == 0;
     if (rootIndex < 0 && !autoDetect)
     {
-        if (!transformedTempPath.isEmpty())
+        if (!childTempPath.isEmpty())
         {
             childSource.reset();
-            QFile::remove(transformedTempPath);
+            QFile::remove(childTempPath);
         }
         const QString label = row->openAsName.isEmpty()
             ? row->openAsRootTypeName
@@ -4392,8 +4451,8 @@ void StructureViewPanel::openIndexAsStructure(const QModelIndex &index)
     childFrame.byteLength = childByteLength;
     childFrame.sliceRoot = true;
     childFrame.transform = row->openAsTransform;
-    childFrame.tempFilePath = transformedTempPath;
-    childFrame.transformedSource = childSource;
+    childFrame.tempFilePath = childTempPath;
+    childFrame.isolatedSource = childSource;
     m_sourceStack.push_back(childFrame);
     m_activeSourceFrame = m_sourceStack.size() - 1;
 
@@ -4410,8 +4469,8 @@ void StructureViewPanel::openIndexAsStructure(const QModelIndex &index)
     {
         const QSignalBlocker blocker(m_hv);
         const ScopedBoolFlag updating(m_updatingSourceFrame);
-        if (childFrame.transformedSource)
-            m_hv->setViewSource(childFrame.transformedSource);
+        if (childFrame.isolatedSource)
+            m_hv->setViewSource(childFrame.isolatedSource);
         else
             m_hv->setViewSlice(static_cast<size_w>(childFrame.baseOffset),
                                static_cast<size_w>(childFrame.byteLength));
@@ -4623,11 +4682,11 @@ void StructureViewPanel::navigateToSourceFrame(int index)
         m_pinned = true;
         m_pinnedOffset = frame.baseOffset;
         m_openAsPinnedBase = true;
-        if (frame.transformedSource)
+        if (frame.isolatedSource)
         {
             const QSignalBlocker blocker(m_hv);
             const ScopedBoolFlag updating(m_updatingSourceFrame);
-            m_hv->setViewSource(frame.transformedSource);
+            m_hv->setViewSource(frame.isolatedSource);
         }
         else
         {
@@ -4652,14 +4711,14 @@ void StructureViewPanel::navigateToSourceFrame(int index)
         m_rootCombo->setCurrentIndex(rootIndex);
     }
 
-    if (frame.transformedSource)
+    if (frame.isolatedSource)
     {
         clearHexViewOverlay();
     }
     else if (frame.hasReturnRow)
     {
         restoreSelection(frame.returnRowName, frame.returnRowOffset);
-        const bool rawSlice = frame.sliceRoot && !frame.transformedSource;
+        const bool rawSlice = frame.sliceRoot && !frame.isolatedSource;
         const uint64_t viewReturnOffset = rawSlice && frame.returnRowOffset >= frame.baseOffset
             ? frame.returnRowOffset - frame.baseOffset
             : frame.returnRowOffset;
@@ -4676,7 +4735,7 @@ void StructureViewPanel::navigateToSourceFrame(int index)
     }
     else if (frame.byteLength > 0)
     {
-        const uint64_t viewBase = frame.sliceRoot && !frame.transformedSource ? 0 : frame.baseOffset;
+        const uint64_t viewBase = frame.sliceRoot && !frame.isolatedSource ? 0 : frame.baseOffset;
         if (viewBase < m_hv->size())
         {
             const uint64_t requestedEnd = viewBase > UINT64_MAX - frame.byteLength
@@ -4773,7 +4832,7 @@ void StructureViewPanel::removeSourceFrameAt(int index)
         return;
 
     QString tempFilePath = m_sourceStack[index].tempFilePath;
-    m_sourceStack[index].transformedSource.reset();
+    m_sourceStack[index].isolatedSource.reset();
     m_sourceStack.removeAt(index);
     if (!tempFilePath.isEmpty())
         QFile::remove(tempFilePath);
@@ -4969,12 +5028,15 @@ void StructureViewPanel::updateHexViewSelection(const QModelIndex &current)
 
     emit selectionIdentityChanged(row->name, row->absoluteOffset);
 
-    if (row->byteLength > 0 && row->absoluteOffset < m_hv->size())
+    uint64_t rowViewOffset = 0;
+    if (row->byteLength > 0
+        && sourceOffsetToViewOffset(row->absoluteOffset, &rowViewOffset)
+        && rowViewOffset < m_hv->size())
     {
-        const uint64_t requestedEnd = row->absoluteOffset > UINT64_MAX - row->byteLength
+        const uint64_t requestedEnd = rowViewOffset > UINT64_MAX - row->byteLength
             ? UINT64_MAX
-            : row->absoluteOffset + row->byteLength;
-        const size_w start = static_cast<size_w>(row->absoluteOffset);
+            : rowViewOffset + row->byteLength;
+        const size_w start = static_cast<size_w>(rowViewOffset);
         const size_w end = static_cast<size_w>(qMin<uint64_t>(requestedEnd, m_hv->size()));
         if (end > start)
             setHexViewSelectionFromStructure(start, end);
@@ -4984,14 +5046,17 @@ void StructureViewPanel::updateHexViewSelection(const QModelIndex &current)
     while (scope && scope->parent && scope->byteLength == 0)
         scope = scope->parent;
 
-    if (!scope || !scope->parent || scope->byteLength == 0 || scope->absoluteOffset >= m_hv->size())
+    uint64_t scopeViewOffset = 0;
+    if (!scope || !scope->parent || scope->byteLength == 0
+        || !sourceOffsetToViewOffset(scope->absoluteOffset, &scopeViewOffset)
+        || scopeViewOffset >= m_hv->size())
     {
         clearHexViewOverlay();
         return;
     }
 
     HexView::OverlayRange range;
-    range.offset = static_cast<size_w>(scope->absoluteOffset);
+    range.offset = static_cast<size_w>(scopeViewOffset);
     range.length = static_cast<size_w>(qMin<uint64_t>(scope->byteLength, m_hv->size() - range.offset));
     if (range.length == 0)
     {

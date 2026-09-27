@@ -135,6 +135,7 @@ private:
                                std::shared_ptr<sequence> *source,
                                uint64_t *byteLength,
                                QString *errorMessage) const;
+    bool sourceOffsetToViewOffset(uint64_t sourceOffset, uint64_t *viewOffset) const;
     uint64_t currentRootBaseOffset(TypeDecl *rootType) const;
     void ensureSourceStackRootFrame(TypeDecl *rootType);
     void updateSourceStackWidget();
@@ -226,7 +227,8 @@ private:
         bool sliceRoot = false;
         QString transform;
         QString tempFilePath;
-        std::shared_ptr<sequence> transformedSource;
+        // A transformed child, or a copied raw child of another isolated source.
+        std::shared_ptr<sequence> isolatedSource;
         QList<TreePath> expandedTreePaths;
         TreePath selectedTreePath;
         int treeScrollValue = 0;
