@@ -712,6 +712,7 @@ MainWindow::MainWindow(QWidget *parent)
     // each close/reopen) for its "Functions" tab.
     m_codeDiscoveryEngine = new CodeDiscoveryEngine(this);
     connect(m_codeDiscoveryEngine, &CodeDiscoveryEngine::finished, this, [this](QList<DiscoveredFunction> functions) {
+        m_codeDiscoveryInProgress = false;
         if (m_disasmPanelHost)
             m_disasmPanelHost->setDiscoveredFunctions(std::move(functions));
     });
@@ -723,6 +724,19 @@ MainWindow::MainWindow(QWidget *parent)
             [this](int discoveredCount, int worklistProcessed, int worklistTotal) {
         if (m_disasmPanelHost)
             m_disasmPanelHost->setScanProgress(discoveredCount, worklistProcessed, worklistTotal);
+    });
+    connect(m_disasmPanelHost, &DisassemblerPanelHost::openChanged, this, [this](bool open) {
+        if (open || !m_codeDiscoveryInProgress)
+            return;
+
+        // A completed result remains cached by the host across close/reopen.
+        // Only abort work that is still running and make a future reopen start
+        // a fresh scan from the current logical document.
+        ++m_codeDiscoveryEditGeneration;
+        m_codeDiscoveryEngine->scan(nullptr);
+        m_codeDiscoveryInProgress = false;
+        m_codeDiscoveryStartedForCurrentFile = false;
+        m_disasmPanelHost->setDiscoveredFunctions({});
     });
 
     m_bookmarkDialog = new BookmarkDialog(this);
@@ -984,7 +998,10 @@ MainWindow::MainWindow(QWidget *parent)
     // Keep Edit action enabled-states in sync with HexView and clipboard state.
     connect(m_hv, &HexView::selectionChanged, this, [this](size_w, size_w) { updateEditActions(); });
     connect(m_hv, &HexView::contentChanged,   this, [this](size_w, size_w, uint) { updateEditActions(); });
-    connect(m_hv, &HexView::contentChanged,   this, [this](size_w, size_w, uint) { refreshSidePanel(); });
+    connect(m_hv, &HexView::contentChanged,   this, [this](size_w, size_w, uint) {
+        refreshSidePanel();
+        invalidateCodeDiscovery(/*rescanIfOpen=*/true);
+    });
     connect(m_hv, &HexView::editModeChanged,  this, [this](uint) {
         m_statusBar->update();
         updateEditActions();
@@ -1204,11 +1221,7 @@ MainWindow::MainWindow(QWidget *parent)
         updateWatchedFile(this, QString());
         resetSidePanel();
         m_hv->notifyStructureEntryPoint(false, 0);
-        m_codeDiscoveryStartedForCurrentFile = false;
-        if (m_codeDiscoveryEngine)
-            m_codeDiscoveryEngine->scan(nullptr); // cancels any in-flight scan for the old file
-        if (m_disasmPanelHost)
-            m_disasmPanelHost->setDiscoveredFunctions({});
+        invalidateCodeDiscovery(/*rescanIfOpen=*/false);
     });
 
     connect(ui->actionOpen, &QAction::triggered, this, [this]() {
@@ -1587,11 +1600,7 @@ bool MainWindow::openFile(const QString &path) {
     // visible. The expensive recursive code-discovery scan is started lazily
     // when the disassembler panel is open, not for every file opened in the
     // hex editor.
-    m_codeDiscoveryStartedForCurrentFile = false;
-    if (m_codeDiscoveryEngine)
-        m_codeDiscoveryEngine->scan(nullptr); // cancels any in-flight scan for the old file
-    if (m_disasmPanelHost)
-        m_disasmPanelHost->setDiscoveredFunctions({});
+    invalidateCodeDiscovery(/*rescanIfOpen=*/false);
     scheduleCodeDiscoveryScanIfDisassemblerOpen();
     return true;
 }
@@ -1662,12 +1671,40 @@ void MainWindow::disassembleSelection()
     openDisassemblerRange(offset, length, name);
 }
 
+void MainWindow::invalidateCodeDiscovery(bool rescanIfOpen)
+{
+    ++m_codeDiscoveryEditGeneration;
+    m_codeDiscoveryStartedForCurrentFile = false;
+    m_codeDiscoveryInProgress = false;
+    if (m_codeDiscoveryEngine)
+        m_codeDiscoveryEngine->scan(nullptr);
+    if (m_disasmPanelHost)
+        m_disasmPanelHost->setDiscoveredFunctions({});
+
+    if (!rescanIfOpen || !m_disasmPanelHost || !m_disasmPanelHost->isOpen())
+        return;
+
+    // A burst of byte edits should produce one fresh snapshot/scan, not one
+    // worker per keystroke. No discovery work is scheduled while the panel is
+    // closed, preserving the ordinary editing/browsing fast path.
+    const quint64 generation = m_codeDiscoveryEditGeneration;
+    QTimer::singleShot(250, this, [this, generation]() {
+        if (generation == m_codeDiscoveryEditGeneration
+            && m_disasmPanelHost
+            && m_disasmPanelHost->isOpen())
+        {
+            startCodeDiscoveryScanIfNeeded();
+        }
+    });
+}
+
 void MainWindow::startCodeDiscoveryScanIfNeeded()
 {
     if (!m_codeDiscoveryEngine || !m_hv || m_hv->size() == 0 || m_codeDiscoveryStartedForCurrentFile)
         return;
 
     m_codeDiscoveryStartedForCurrentFile = true;
+    m_codeDiscoveryInProgress = true;
     if (m_disasmPanelHost)
         m_disasmPanelHost->setFunctionsScanInProgress(true);
     m_codeDiscoveryEngine->scan(m_hv);

@@ -202,11 +202,16 @@ QList<DiscoveredFunction> discoverFunctionsFromStrata(const PeByteReader &reader
     if (!rootType)
         return {};
 
+    const PeByteReader cancellableReader = [reader, cancelFlag](uint64_t offset,
+                                                                uint8_t *buffer,
+                                                                size_t length) -> size_t {
+        return cancelFlag->load() ? 0 : reader(offset, buffer, length);
+    };
     StructureValueBuilder builder;
     auto rows = builder.build(definitions.library(),
                               rootType,
                               strataRootBaseOffset(rootType),
-                              reader);
+                              cancellableReader);
     if (cancelFlag->load())
         return {};
 

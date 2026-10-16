@@ -574,10 +574,11 @@ void StructViewDexWasmTests::builderUsesWasmCodeEntrySizePastNestedEnd()
     QVERIFY(wasmRoot);
 
     QByteArray wasm = QByteArray::fromHex("0061736d01000000");
-    // One body with no locals. Its instruction expression contains an empty
-    // block (02 40 0b), followed by i32.const 42 and the function's final end.
-    // The inner 0x0b must not truncate the [code] range.
-    wasm.append(QByteArray::fromHex("0a0901070002400b412a0b"));
+    // One body with one i32 local. Its instruction expression contains an
+    // empty block (02 40 0b), followed by i32.const 42 and the function's
+    // final end. The local declaration must be excluded from the code range,
+    // and the inner 0x0b must not truncate it.
+    wasm.append(QByteArray::fromHex("0a0b010901017f02400b412a0b"));
 
     auto rows = buildRows(&library, wasmRoot, wasm);
     StructureRow *wasmRow = findTopLevelNamed(rows, QStringLiteral("WASM"));
