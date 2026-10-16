@@ -279,7 +279,10 @@ void DisassemblerPanel::buildUi()
     connect(m_functionsCombo, &DataTypeComboBox::selectionChanged, this, [this](int) {
         const QVariant data = m_functionsCombo->selectionData();
         if (!data.isNull())
+        {
+            selectDiscoveredFunctionArchitecture(data.toULongLong());
             goToOffset(data.toULongLong());
+        }
     });
     // Catches up on whatever populateFunctionsCombo() skipped while the
     // dropdown was open (see m_functionsComboNeedsRefresh).
@@ -1482,6 +1485,7 @@ QString functionSourceLabel(FunctionSource source)
     case FunctionSource::EntryPoint: return QObject::tr("Entry point");
     case FunctionSource::Export:     return QObject::tr("Export");
     case FunctionSource::CallTarget: return QObject::tr("Call target");
+    case FunctionSource::Structure:  return QObject::tr("Structure");
     }
     return {};
 }
@@ -1594,6 +1598,23 @@ void DisassemblerPanel::rebuildFunctionsList()
     updateStatusLabelForCurrentTab();
 }
 
+void DisassemblerPanel::selectDiscoveredFunctionArchitecture(uint64_t offset)
+{
+    if (!m_archCombo)
+        return;
+
+    for (const DiscoveredFunction &fn : m_discoveredFunctions)
+    {
+        if (fn.startOffset != offset || fn.architecture.isEmpty())
+            continue;
+
+        const QByteArray architectureId = fn.architecture.toLatin1();
+        if (selectArchitecture(m_archCombo, architectureId.constData()))
+            openCapstone();
+        return;
+    }
+}
+
 void DisassemblerPanel::populateFunctionsCombo()
 {
     if (!m_functionsCombo)
@@ -1685,6 +1706,7 @@ void DisassemblerPanel::onFunctionItemActivated(QTreeWidgetItem *item, int /*col
     const uint64_t start = item->data(0, Qt::UserRole).toULongLong();
     const uint64_t end   = item->data(0, Qt::UserRole + 1).toULongLong();
 
+    selectDiscoveredFunctionArchitecture(start);
     goToOffset(start);
     // goToOffset() only selects/centers line 0's own instruction range;
     // override with the function's full extent now that we have it.

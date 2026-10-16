@@ -97,6 +97,26 @@ QByteArray pe32DllWithLargeTextSectionRetEntry()
     return data;
 }
 
+QByteArray minimalNamedWasmFunction()
+{
+    QByteArray wasm;
+    wasm.append(QByteArray::fromHex("0061736d01000000")); // header
+
+    // name custom section: function 0 is "answer"
+    wasm.append(QByteArray::fromHex("0010"));
+    wasm.append(char(0x04));
+    wasm.append("name", 4);
+    wasm.append(QByteArray::fromHex("0109"));
+    wasm.append(QByteArray::fromHex("010006"));
+    wasm.append("answer", 6);
+
+    wasm.append(QByteArray::fromHex("0105016000017f"));   // type: () -> i32
+    wasm.append(QByteArray::fromHex("03020100"));         // one defined function, type 0
+    wasm.append(QByteArray::fromHex("070a0106616e737765720000")); // export answer, function 0
+    wasm.append(QByteArray::fromHex("0a06010400412a0b")); // body: i32.const 42; end
+    return wasm;
+}
+
 PeByteReader byteArrayReader(const QByteArray &data)
 {
     return [&data](uint64_t offset, uint8_t *buf, size_t len) -> size_t {
@@ -118,6 +138,7 @@ class DisasmTests : public QObject
 private slots:
     void capstoneDecodesWebAssemblyInstructions();
     void codeDiscoveryReadsInMemoryLogicalDocument();
+    void codeDiscoveryUsesStrataForWebAssemblyFunctions();
     void peMetadataMapsPe32DllEntrypointRva();
     void peMetadataReadsOpenedPe32DllEntrypointRva();
     void codeDiscoveryMapsPe32DllEntryPoint();
@@ -178,6 +199,42 @@ void DisasmTests::codeDiscoveryReadsInMemoryLogicalDocument()
     QCOMPARE(functions[0].endOffset, uint64_t(0x201));
     QCOMPARE(functions[0].source, FunctionSource::EntryPoint);
     QCOMPARE(functions[0].name, QStringLiteral("entrypoint"));
+    QCOMPARE(functions[0].architecture, QStringLiteral("x86-64"));
+}
+
+void DisasmTests::codeDiscoveryUsesStrataForWebAssemblyFunctions()
+{
+    const QByteArray data = minimalNamedWasmFunction();
+    HexView hv;
+    QVERIFY(hv.initBuf(reinterpret_cast<const uint8_t *>(data.constData()),
+                       static_cast<size_t>(data.size()),
+                       true,
+                       true));
+
+    CodeDiscoveryEngine engine;
+    QList<DiscoveredFunction> functions;
+    bool finished = false;
+    QEventLoop loop;
+    QObject::connect(&engine, &CodeDiscoveryEngine::finished,
+                     &loop,
+                     [&](QList<DiscoveredFunction> discovered)
+                     {
+                         functions = std::move(discovered);
+                         finished = true;
+                         loop.quit();
+                     });
+    QTimer::singleShot(10000, &loop, &QEventLoop::quit);
+
+    engine.scan(&hv);
+    loop.exec();
+
+    QVERIFY(finished);
+    QCOMPARE(functions.size(), 1);
+    QCOMPARE(functions[0].startOffset, uint64_t(54));
+    QCOMPARE(functions[0].endOffset, uint64_t(57));
+    QCOMPARE(functions[0].name, QStringLiteral("answer"));
+    QCOMPARE(functions[0].architecture, QStringLiteral("wasm"));
+    QCOMPARE(functions[0].source, FunctionSource::Structure);
 }
 
 void DisasmTests::peMetadataMapsPe32DllEntrypointRva()

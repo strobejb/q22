@@ -5,10 +5,15 @@
 #include "disasm/branchtarget.h"
 #include "disasm/elfmetadata.h"
 #include "disasm/pemetadata.h"
+#include "structview/structuredefinitionmanager.h"
+#include "structview/structuretreemodel.h"
+#include "structview/structurevaluebuilder.h"
 
 #include <QByteArray>
 #include <QCoreApplication>
+#include <QDir>
 #include <QElapsedTimer>
+#include <QFileInfo>
 #include <QIODevice>
 #include <QPointer>
 #include <QThread>
@@ -18,6 +23,7 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -53,6 +59,171 @@ constexpr uint16_t kElfMachineArm    = 40;
 constexpr uint16_t kElfMachineX86_64 = 62;
 constexpr uint16_t kElfMachineAarch64 = 183;
 
+QString normalizedAssociation(QString extension)
+{
+    extension = extension.trimmed().toLower();
+    if (!extension.isEmpty() && !extension.startsWith(QLatin1Char('.')))
+        extension.prepend(QLatin1Char('.'));
+    return extension;
+}
+
+TypeDecl *associatedStrataRoot(const QList<ExportedStructureType> &exportedTypes,
+                               const QString &fileName,
+                               const PeByteReader &reader)
+{
+    const QString lowerFileName = fileName.toLower();
+    if (!lowerFileName.isEmpty())
+    {
+        // Prefer an exact suffix, then allow compound extensions such as
+        // .tar.gz. This mirrors Structure View's association policy.
+        for (const ExportedStructureType &exported : exportedTypes)
+            for (QString extension : exported.assocExtensions)
+            {
+                extension = normalizedAssociation(extension);
+                if (!extension.isEmpty() && lowerFileName.endsWith(extension))
+                    return exported.typeDecl;
+            }
+
+        for (const ExportedStructureType &exported : exportedTypes)
+            for (QString extension : exported.assocExtensions)
+            {
+                extension = normalizedAssociation(extension);
+                if (!extension.isEmpty() && lowerFileName.contains(extension + QLatin1Char('.')))
+                    return exported.typeDecl;
+            }
+    }
+
+    for (const ExportedStructureType &exported : exportedTypes)
+    {
+        for (const StructureMagicSignature &signature : exported.magicSignatures)
+        {
+            if (signature.bytes.isEmpty())
+                continue;
+            QByteArray actual(signature.bytes.size(), Qt::Uninitialized);
+            const size_t got = reader(signature.offset,
+                                      reinterpret_cast<uint8_t *>(actual.data()),
+                                      static_cast<size_t>(actual.size()));
+            if (got == static_cast<size_t>(actual.size()) && actual == signature.bytes)
+                return exported.typeDecl;
+        }
+    }
+
+    return nullptr;
+}
+
+uint64_t strataRootBaseOffset(TypeDecl *rootType)
+{
+    ExprNode *offsetExpr = nullptr;
+    if (!rootType || !FindTag(rootType->tagList, TOK_OFFSET, &offsetExpr) || !offsetExpr)
+        return 0;
+
+    switch (offsetExpr->type)
+    {
+    case EXPR_NUMBER:
+    case EXPR_UNARY:
+    case EXPR_BINARY:
+    case EXPR_TERTIARY:
+    {
+        const INUMTYPE value = Evaluate(offsetExpr);
+        return value >= 0 ? static_cast<uint64_t>(value) : 0;
+    }
+    default:
+        return 0;
+    }
+}
+
+struct StrataCodeCandidate
+{
+    DiscoveredFunction function;
+    int quality = 0;
+};
+
+void collectStrataCodeTargets(StructureRow *row,
+                              QHash<QString, StrataCodeCandidate> *candidates)
+{
+    if (!row || !candidates)
+        return;
+
+    if (row->hasCodeTarget && row->codeByteLength > 0 && !row->codeArchitecture.isEmpty())
+    {
+        const bool parentHasSameTarget = row->parent
+            && row->parent->hasCodeTarget
+            && row->parent->codeArchitecture == row->codeArchitecture
+            && row->parent->codeTargetOffset == row->codeTargetOffset
+            && row->parent->codeByteLength == row->codeByteLength;
+
+        // applyCodeTag deliberately propagates a target to descendants so a
+        // context menu works anywhere inside a function. Only the outermost
+        // row in each such subtree is a function candidate.
+        if (!parentHasSameTarget)
+        {
+            const QString key = QStringLiteral("%1:%2:%3")
+                                    .arg(row->codeArchitecture)
+                                    .arg(row->codeTargetOffset)
+                                    .arg(row->codeByteLength);
+            const int quality = row->kind == StructureRowKind::Semantic ? 2 : 1;
+            auto found = candidates->find(key);
+            if (found == candidates->end() || quality > found->quality)
+            {
+                DiscoveredFunction function;
+                function.startOffset = row->codeTargetOffset;
+                function.endOffset = row->codeByteLength > std::numeric_limits<uint64_t>::max() - row->codeTargetOffset
+                    ? std::numeric_limits<uint64_t>::max()
+                    : row->codeTargetOffset + row->codeByteLength;
+                function.name = row->name.trimmed();
+                function.architecture = row->codeArchitecture;
+                function.source = FunctionSource::Structure;
+                candidates->insert(key, StrataCodeCandidate{function, quality});
+            }
+        }
+    }
+
+    for (const auto &child : row->children)
+        collectStrataCodeTargets(child.get(), candidates);
+}
+
+QList<DiscoveredFunction> discoverFunctionsFromStrata(const PeByteReader &reader,
+                                                       const QString &fileName,
+                                                       const std::shared_ptr<std::atomic_bool> &cancelFlag)
+{
+    if (cancelFlag->load())
+        return {};
+
+    StructureDefinitionManager definitions;
+#ifdef CAUSEWAY_TEST_DATA_DIR
+    definitions.setBuiltinStructDirsForTests({QStringLiteral(CAUSEWAY_TEST_DATA_DIR)});
+    definitions.setUserStrataDirForTests(QDir::temp().filePath(QStringLiteral("q22-disasm-tests-strata")));
+#endif
+    definitions.ensureLoaded();
+    if (cancelFlag->load() || !definitions.library())
+        return {};
+
+    TypeDecl *rootType = associatedStrataRoot(definitions.exportedTypes(), fileName, reader);
+    if (!rootType)
+        return {};
+
+    StructureValueBuilder builder;
+    auto rows = builder.build(definitions.library(),
+                              rootType,
+                              strataRootBaseOffset(rootType),
+                              reader);
+    if (cancelFlag->load())
+        return {};
+
+    QHash<QString, StrataCodeCandidate> candidates;
+    for (const auto &row : rows)
+        collectStrataCodeTargets(row.get(), &candidates);
+
+    QList<DiscoveredFunction> functions;
+    functions.reserve(candidates.size());
+    for (auto it = candidates.cbegin(); it != candidates.cend(); ++it)
+        functions.push_back(it->function);
+    std::sort(functions.begin(), functions.end(), [](const DiscoveredFunction &a, const DiscoveredFunction &b) {
+        return a.startOffset < b.startOffset;
+    });
+    return functions;
+}
+
 } // namespace
 
 CodeDiscoveryEngine::CodeDiscoveryEngine(QObject *parent)
@@ -78,6 +249,7 @@ void CodeDiscoveryEngine::scan(HexView *hv)
     m_cancelFlag = cancelFlag;
 
     const uint64_t fileSize = static_cast<uint64_t>(hv->size());
+    const QString fileName = QFileInfo(hv->filePath()).fileName();
     QPointer<CodeDiscoveryEngine> guard(this);
     auto inputDeviceOwner = hv->createReadOnlyDeviceSnapshot();
     if (!inputDeviceOwner)
@@ -90,7 +262,7 @@ void CodeDiscoveryEngine::scan(HexView *hv)
     }
     auto *inputDevice = inputDeviceOwner.release();
 
-    QThread *thread = QThread::create([guard, cancelFlag, inputDevice, fileSize]() {
+    QThread *thread = QThread::create([guard, cancelFlag, inputDevice, fileSize, fileName]() {
         std::unique_ptr<SequenceDevice> inputOwner(inputDevice);
         QIODevice &input = *inputOwner;
 
@@ -113,6 +285,7 @@ void CodeDiscoveryEngine::scan(HexView *hv)
         bool imageValid = false;
         cs_arch arch = CS_ARCH_X86;
         cs_mode mode = CS_MODE_64;
+        QString architectureId;
         std::optional<uint64_t> entryFileOffset;
         std::vector<ExecSection> execSections;
         std::vector<SeedExport> seedExports;
@@ -123,6 +296,7 @@ void CodeDiscoveryEngine::scan(HexView *hv)
             imageValid = true;
             arch = CS_ARCH_X86;
             mode = pe.is64Bit ? CS_MODE_64 : CS_MODE_32;
+            architectureId = pe.is64Bit ? QStringLiteral("x86-64") : QStringLiteral("x86-32");
             entryFileOffset = rvaToFileOffset(pe, pe.entryPointRva);
             for (const PeSection &s : pe.sections)
                 if (s.executable && s.fileSize > 0)
@@ -136,10 +310,10 @@ void CodeDiscoveryEngine::scan(HexView *hv)
             const ElfMetadata elf = readElfMetadata(reader, fileSize);
             bool archKnown = true;
             switch (elf.machine) {
-            case kElfMachineX86:     arch = CS_ARCH_X86;   mode = CS_MODE_32;     break;
-            case kElfMachineX86_64:  arch = CS_ARCH_X86;   mode = CS_MODE_64;     break;
-            case kElfMachineArm:     arch = CS_ARCH_ARM;   mode = CS_MODE_ARM;    break;
-            case kElfMachineAarch64: arch = CS_ARCH_ARM64; mode = (cs_mode)0;     break;
+            case kElfMachineX86:     arch = CS_ARCH_X86;   mode = CS_MODE_32;  architectureId = QStringLiteral("x86-32"); break;
+            case kElfMachineX86_64:  arch = CS_ARCH_X86;   mode = CS_MODE_64;  architectureId = QStringLiteral("x86-64"); break;
+            case kElfMachineArm:     arch = CS_ARCH_ARM;   mode = CS_MODE_ARM; architectureId = QStringLiteral("arm");    break;
+            case kElfMachineAarch64: arch = CS_ARCH_ARM64; mode = (cs_mode)0;  architectureId = QStringLiteral("arm64");  break;
             default:                 archKnown = false;                          break;
             }
             if (elf.isValid && archKnown)
@@ -345,6 +519,7 @@ void CodeDiscoveryEngine::scan(HexView *hv)
                         fn.startOffset = seed.offset;
                         fn.endOffset   = runEnd;
                         fn.name        = seed.name;
+                        fn.architecture = architectureId;
                         fn.source      = seed.source;
                         discovered.emplace(seed.offset, fn);
                     }
@@ -362,6 +537,14 @@ void CodeDiscoveryEngine::scan(HexView *hv)
                     return a.startOffset < b.startOffset;
                 });
             }
+        }
+        else if (!cancelFlag->load())
+        {
+            // Capstone decodes WebAssembly instructions but does not parse a
+            // module or discover its functions. Strata already owns those
+            // exact format boundaries, so consume its declarative [code]
+            // targets instead of adding a second WASM parser here.
+            results = discoverFunctionsFromStrata(reader, fileName, cancelFlag);
         }
 
         if (!cancelFlag->load())

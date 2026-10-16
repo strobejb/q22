@@ -83,6 +83,16 @@ add_executable(disasm_tests
     ../src/HexEdit/disasm/codediscovery.cpp
     ../src/HexEdit/disasm/elfmetadata.cpp
     ../src/HexEdit/disasm/pemetadata.cpp
+    ../src/HexEdit/settings/appconfig.cpp
+    ../src/HexEdit/structview/dexsemanticview.cpp
+    ../src/HexEdit/structview/elfsemanticview.cpp
+    ../src/HexEdit/structview/pesemanticview.cpp
+    ../src/HexEdit/structview/structuredefinitionmanager.cpp
+    ../src/HexEdit/structview/structurerenderengine.cpp
+    ../src/HexEdit/structview/structuresemanticview.cpp
+    ../src/HexEdit/structview/structuretypenameformatter.cpp
+    ../src/HexEdit/structview/structuretreemodel.cpp
+    ../src/HexEdit/structview/structurevaluebuilder.cpp
 )
 
 target_include_directories(disasm_tests PRIVATE
@@ -92,10 +102,17 @@ target_include_directories(disasm_tests PRIVATE
 
 target_link_libraries(disasm_tests PRIVATE
     HexView
+    causeway
     capstone
     Qt${QT_VERSION_MAJOR}::Widgets
     Qt${QT_VERSION_MAJOR}::Test
 )
+target_compile_definitions(disasm_tests PRIVATE
+    CAUSEWAY_TEST_DATA_DIR="${CAUSEWAY_DATA_BINARY_DIR}"
+)
+if(TARGET causewayData)
+    add_dependencies(disasm_tests causewayData)
+endif()
 
 add_test(NAME disasm_tests COMMAND disasm_tests)
 set_tests_properties(disasm_tests PROPERTIES

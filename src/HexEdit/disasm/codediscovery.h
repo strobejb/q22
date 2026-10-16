@@ -12,24 +12,24 @@
 
 class HexView;
 
-enum class FunctionSource { EntryPoint, Export, CallTarget };
+enum class FunctionSource { EntryPoint, Export, CallTarget, Structure };
 
 struct DiscoveredFunction
 {
     uint64_t startOffset = 0;
     uint64_t endOffset   = 0;
     QString  name;
+    QString  architecture;
     FunctionSource source = FunctionSource::CallTarget;
 };
 Q_DECLARE_METATYPE(DiscoveredFunction)
 
-// Recursive-descent code discovery: seeds a worklist from the PE entry point
-// and export table, then follows every direct call/jmp target reachable from
-// there (mirroring how IDA/Ghidra bootstrap a disassembly). Runs entirely on
-// a background thread reading through a stable logical-document snapshot --
-// HexView's live edit buffer is never touched off the GUI thread. Calling scan() again
-// before a prior run finishes cancels the prior run; any result it was about
-// to deliver is discarded instead.
+// Unified, lazy code discovery. Native PE/ELF metadata remains the preferred
+// provider and seeds Capstone recursive descent. Other formats fall back to
+// declarative Strata [code] targets (for example WebAssembly function bodies).
+// Everything runs on one background job over a stable logical-document
+// snapshot; HexView's live edit buffer is never touched off the GUI thread.
+// Calling scan() again cancels the prior run and discards its pending result.
 class CodeDiscoveryEngine : public QObject
 {
     Q_OBJECT

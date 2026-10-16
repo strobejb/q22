@@ -439,7 +439,9 @@ typedef struct _WASM_CODE_BODY
     [count(localDeclCount)]
     WASM_LOCAL_DECL locals[];
 
-    [max_count(size), terminated_by(0x0b)]
+    // Nested block/loop/if expressions contain their own 0x0b end opcodes.
+    // The enclosing code-entry size is the authoritative function boundary.
+    [count(size - extent_of(localDeclCount) - extent_of(locals))]
     byte instructions[];
 } WASM_CODE_BODY, *PWASM_CODE_BODY;
 

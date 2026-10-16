@@ -8496,7 +8496,18 @@ void StructureRenderEngine::linkWasmSemanticFunctionCodeTargets(StructureRow *ro
     {
         if (!child || !hasCodeSize(child.get()) || codeIndex >= codeEntries.size())
             continue;
-        copyTarget(copyTarget, child.get(), codeEntries[codeIndex++]);
+
+        StructureRow *codeEntry = codeEntries[codeIndex++];
+        copyTarget(copyTarget, child.get(), codeEntry);
+
+        // The semantic function table has already reconciled imports,
+        // exports, and the name custom section. Reflect its best available
+        // name onto the visible raw code entry too.
+        if (!child->name.trimmed().isEmpty())
+        {
+            codeEntry->nameIdentifier = arrayAliasPrefix() + child->name.trimmed();
+            codeEntry->name = codeEntry->nameTypePrefix + codeEntry->nameIdentifier;
+        }
     }
 }
 

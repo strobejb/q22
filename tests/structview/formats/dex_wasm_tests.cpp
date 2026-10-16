@@ -8,6 +8,7 @@ private slots:
     void builderRendersDexHeaderAndTables();
     void builderAddsDexSemanticSummaryPastArrayRenderCap();
     void builderRendersWasmHeaderAndSections();
+    void builderUsesWasmCodeEntrySizePastNestedEnd();
     void builderKeepsWasmCodeTargetsPastRawArrayCap();
     void builderRendersWasmStartTagsAndElements();
 };
@@ -460,6 +461,7 @@ void StructViewDexWasmTests::builderRendersWasmHeaderAndSections()
     QVERIFY2(codePayload, qPrintable(childNames(codeSection)));
     StructureRow *functions = findChildNamed(codePayload, QStringLiteral("WASM_CODE_ENTRY functions[]"));
     QVERIFY2(functions, qPrintable(childNames(codePayload)));
+    QCOMPARE(functions->children[0]->name, QStringLiteral("[0]answer"));
     StructureRow *body = findChildNamed(functions->children[0].get(), QStringLiteral("WASM_CODE_BODY body"));
     QVERIFY2(body, qPrintable(childNames(functions->children[0].get())));
     StructureRow *localDeclCount = findChildNamed(body, QStringLiteral("uleb128 localDeclCount"));
@@ -562,6 +564,33 @@ void StructViewDexWasmTests::builderRendersWasmHeaderAndSections()
     QCOMPARE(summaryDefinedFunction->codeByteLength, uint64_t(3));
     QVERIFY(functions->children[0]->hasCodeTarget);
     QCOMPARE(functions->children[0]->codeTargetOffset, summaryDefinedFunction->codeTargetOffset);
+}
+
+void StructViewDexWasmTests::builderUsesWasmCodeEntrySizePastNestedEnd()
+{
+    StrataLibrary library;
+    QVERIFY2(parseStandardDefinition(&library, QStringLiteral("wasm.strata")), "wasm.strata failed to parse");
+    TypeDecl *wasmRoot = exportedNamed(&library, QStringLiteral("WASM"));
+    QVERIFY(wasmRoot);
+
+    QByteArray wasm = QByteArray::fromHex("0061736d01000000");
+    // One body with no locals. Its instruction expression contains an empty
+    // block (02 40 0b), followed by i32.const 42 and the function's final end.
+    // The inner 0x0b must not truncate the [code] range.
+    wasm.append(QByteArray::fromHex("0a0901070002400b412a0b"));
+
+    auto rows = buildRows(&library, wasmRoot, wasm);
+    StructureRow *wasmRow = findTopLevelNamed(rows, QStringLiteral("WASM"));
+    QVERIFY(wasmRow);
+    StructureRow *functions = findDescendantNamed(wasmRow, QStringLiteral("WASM_CODE_ENTRY functions[]"));
+    QVERIFY(functions);
+    QCOMPARE(functions->children.size(), size_t(1));
+    StructureRow *instructions = findDescendantNamed(functions->children[0].get(),
+                                                     QStringLiteral("byte instructions[]"));
+    QVERIFY(instructions);
+    QCOMPARE(instructions->value, QStringLiteral("{ 2, 64, 11, 65, 42, 11 }"));
+    QVERIFY(functions->children[0]->hasCodeTarget);
+    QCOMPARE(functions->children[0]->codeByteLength, uint64_t(6));
 }
 
 void StructViewDexWasmTests::builderKeepsWasmCodeTargetsPastRawArrayCap()

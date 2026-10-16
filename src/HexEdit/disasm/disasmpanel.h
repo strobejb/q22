@@ -85,6 +85,7 @@ private:
     // directly via goToOffset(), with no cross-panel wiring needed.
     void rebuildFunctionsList();
     void onFunctionItemActivated(QTreeWidgetItem *item, int column);
+    void selectDiscoveredFunctionArchitecture(uint64_t offset);
     bool pushJumpSourceForSpan(int spanIndex);
     bool jumpBack();
     void renameCurrentScope();
