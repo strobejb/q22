@@ -13,6 +13,7 @@
 #include "dialogs/dlgimport.h"
 #include "dialogs/dlgpastespecial.h"
 #include "disasm/codediscovery.h"
+#include "filemap/filemapstrip.h"
 #include "disasm/disasmpanel.h"
 #include "fileproperties.h"
 #include "filestats/banner.h"
@@ -682,6 +683,14 @@ MainWindow::MainWindow(QWidget *parent)
     hexColumnLay->addWidget(m_hv, 1);
     contentLay->addWidget(hexColumn, 1);
 
+    // Whole-file overview docked inside HexView, just left of its vertical
+    // scrollbar, so it spans exactly the rows it maps. It builds its map in
+    // the background, and only while visible. Always starts hidden; Ctrl+M
+    // shows it for the session.
+    m_fileMapStrip = new filemap::FileMapStrip(m_hv, m_hv);
+    m_fileMapStrip->setVisible(false);
+    m_hv->setScrollBarGutter(m_fileMapStrip);
+
     m_sidePanelHost      = new SidePanelHost(m_hv, contentRow);
     m_disasmPanelHost    = new DisassemblerPanelHost(m_hv, contentRow);
     m_structurePanelHost = new StructureViewPanelHost(m_hv, contentRow);
@@ -789,6 +798,9 @@ MainWindow::MainWindow(QWidget *parent)
     addAction(ui->actionDisassembleThis);
     connect(ui->actionDisassembleThis, &QAction::triggered,
             this, &MainWindow::disassembleSelection);
+
+    addAction(ui->actionFileMap);
+    connect(ui->actionFileMap, &QAction::toggled, m_fileMapStrip, &QWidget::setVisible);
 
     ui->actionStructureView->setShortcut(structurePanelShortcut());
     addAction(ui->actionStructureView);

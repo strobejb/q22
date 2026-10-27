@@ -294,6 +294,12 @@ public:
     bool   scrollTop(size_w offset);
     bool   scrollCenter(size_w offset);
     bool   scrollCenterIfOffScreen(size_w offset, size_w length = 1);
+    size_w topVisibleOffset() const;   // first byte of the top visible line
+    size_w visibleByteCount() const;   // bytes the window shows (whole lines)
+    // Docks `widget` between the viewport and the vertical scrollbar, at its
+    // sizeHint() width, for the viewport's full height.  The space is only
+    // reserved while the widget is not hidden.  Pass nullptr to remove.
+    void   setScrollBarGutter(QWidget *widget);
     void   scrollHEnd();    // scroll to the far right (note strips visible)
     void   scrollHStart();  // scroll to the far left  (address column visible)
 
@@ -544,6 +550,7 @@ private:
     void   scroll(int dx, int dy);
     void   setupScrollbars();
     void   updatePinnedOffset();
+    void   layoutScrollBarGutter();
     void   pinToOffset(size_w offset);
     bool   pinToBottomCorner();
 
@@ -628,6 +635,8 @@ private:
     int     m_nHScrollPos       = 0;
     int     m_nHScrollMax       = 0;
     size_w  m_nVScrollPinned    = 0;
+    QWidget *m_scrollGutter     = nullptr;  // see setScrollBarGutter()
+    int     m_scrollGutterWidth = 0;        // right viewport margin it reserves
 
     // Column widths (in character units)
     int     m_nAddressWidth     = 0;

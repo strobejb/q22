@@ -123,6 +123,7 @@
     <addaction name="separator"/>
     <addaction name="actionDisassemble"/>
     <addaction name="actionStructureView"/>
+    <addaction name="actionFileMap"/>
     <addaction name="separator"/>
     <addaction name="actionFill"/>
     <addaction name="actionPreferences"/>
@@ -488,6 +489,17 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+D</string>
+   </property>
+  </action>
+  <action name="actionFileMap">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>File Map</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+M</string>
    </property>
   </action>
   <action name="actionStructureView">

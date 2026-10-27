@@ -72,6 +72,63 @@ void HexView::updatePinnedOffset()
     m_nVScrollPinned -= std::min((size_w)m_nDataShift, m_nVScrollPinned);
 }
 
+size_w HexView::topVisibleOffset() const
+{
+    const size_w top = m_nVScrollPos * (size_w)m_nBytesPerLine;
+    return top - std::min((size_w)m_nDataShift, top);
+}
+
+size_w HexView::visibleByteCount() const
+{
+    return (size_w)m_nWindowLines * (size_w)m_nBytesPerLine;
+}
+
+// ── scrollbar gutter ──────────────────────────────────────────────────────────
+
+void HexView::setScrollBarGutter(QWidget *widget)
+{
+    if (m_scrollGutter == widget)
+        return;
+    if (m_scrollGutter)
+    {
+        m_scrollGutter->removeEventFilter(this);
+        disconnect(m_scrollGutter, &QObject::destroyed, this, nullptr);
+    }
+
+    m_scrollGutter = widget;
+    if (widget)
+    {
+        widget->setParent(this);
+        widget->installEventFilter(this);   // Show/Hide -> relayout
+        connect(widget, &QObject::destroyed, this, [this]() {
+            m_scrollGutter = nullptr;
+            layoutScrollBarGutter();
+        });
+    }
+    layoutScrollBarGutter();
+}
+
+void HexView::layoutScrollBarGutter()
+{
+    const bool shown = m_scrollGutter && !m_scrollGutter->isHidden();
+    const int  width = shown ? m_scrollGutter->sizeHint().width() : 0;
+
+    // Only touch the margins on change: setViewportMargins() relayouts the
+    // viewport, which re-enters resizeEvent() and so this function.
+    if (width != m_scrollGutterWidth)
+    {
+        m_scrollGutterWidth = width;
+        setViewportMargins(0, 0, width, 0);
+    }
+
+    if (shown)
+    {
+        const QRect vp = viewport()->geometry();
+        m_scrollGutter->setGeometry(vp.right() + 1, vp.top(), width, vp.height());
+        m_scrollGutter->raise();
+    }
+}
+
 // ── pinToOffset / pinToBottomCorner ───────────────────────────────────────────
 
 void HexView::pinToOffset(size_w offset)

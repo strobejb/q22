@@ -5,6 +5,7 @@
 #include "combos/menucombobox.h"
 #include "filestats/banner.h"
 #include "filestats/widgets.h"
+#include "structview/strataroot.h"
 #include "structview/structuredefinitionmanager.h"
 #include "structview/structuregriditemdelegate.h"
 #include "structview/structurerenderengine.h"
@@ -1931,18 +1932,6 @@ private:
     bool &m_flag;
 };
 
-bool magicSignatureMatchesFile(HexView *hv, const StructureMagicSignature &signature)
-{
-    if (!hv || signature.bytes.isEmpty())
-        return false;
-
-    QByteArray fileBytes(signature.bytes.size(), Qt::Uninitialized);
-    const size_t bytesRead = hv->getData(static_cast<size_w>(signature.offset),
-                                         reinterpret_cast<uint8_t *>(fileBytes.data()),
-                                         static_cast<size_t>(fileBytes.size()));
-    return bytesRead == static_cast<size_t>(fileBytes.size()) && fileBytes == signature.bytes;
-}
-
 bool magicSignatureMatchesViewSlice(HexView *hv, uint64_t baseOffset, uint64_t byteLength,
                                     const StructureMagicSignature &signature)
 {
@@ -2135,121 +2124,7 @@ done:
 #endif
 }
 
-QString normalizedAssocExtension(QString ext)
-{
-    ext = ext.trimmed().toLower();
-    if (!ext.isEmpty() && !ext.startsWith(QLatin1Char('.')))
-        ext.prepend(QLatin1Char('.'));
-    return ext;
-}
-
-int associatedRootTypeIndexForFileName(const QList<ExportedStructureType> &exportedTypes,
-                                       const QString &fileName)
-{
-    const QString lowerFileName = fileName.toLower();
-    if (lowerFileName.isEmpty())
-        return -1;
-
-    for (int i = 0; i < exportedTypes.size(); ++i)
-    {
-        for (QString ext : exportedTypes[i].assocExtensions)
-        {
-            ext = normalizedAssocExtension(ext);
-            if (!ext.isEmpty() && lowerFileName.endsWith(ext))
-                return i;
-        }
-    }
-
-    for (int i = 0; i < exportedTypes.size(); ++i)
-    {
-        for (QString ext : exportedTypes[i].assocExtensions)
-        {
-            ext = normalizedAssocExtension(ext);
-            if (!ext.isEmpty() && lowerFileName.contains(ext + QLatin1Char('.')))
-                return i;
-        }
-    }
-
-    return -1;
-}
-
-TypeDecl *detectAssociatedRootType(const QList<ExportedStructureType> &exportedTypes, HexView *hv)
-{
-    if (!hv || exportedTypes.isEmpty())
-        return nullptr;
-
-    const int associatedIndex = associatedRootTypeIndexForFileName(exportedTypes, QFileInfo(hv->filePath()).fileName());
-    if (associatedIndex >= 0)
-        return exportedTypes[associatedIndex].typeDecl;
-
-    for (const ExportedStructureType &exported : exportedTypes)
-        for (const StructureMagicSignature &signature : exported.magicSignatures)
-            if (magicSignatureMatchesFile(hv, signature))
-                return exported.typeDecl;
-
-    return nullptr;
-}
-
-bool findFirstCodeTargetRow(StructureRow *row, uint64_t *result)
-{
-    if (!row)
-        return false;
-    if (row->hasCodeTarget)
-    {
-        *result = row->codeTargetOffset;
-        return true;
-    }
-    for (const auto &child : row->children)
-        if (findFirstCodeTargetRow(child.get(), result))
-            return true;
-    return false;
-}
-
 } // namespace
-
-bool detectStructureEntryPoint(HexView *hv, uint64_t *fileOffset)
-{
-    if (!hv || !fileOffset)
-        return false;
-
-    StructureDefinitionManager definitions;
-    definitions.ensureLoaded();
-
-    TypeDecl *rootType = detectAssociatedRootType(definitions.exportedTypes(), hv);
-    if (!rootType)
-        return false;
-
-    uint64_t baseOffset = 0;
-    ExprNode *offsetExpr = nullptr;
-    if (FindTag(rootType->tagList, TOK_OFFSET, &offsetExpr) && offsetExpr)
-    {
-        switch (offsetExpr->type)
-        {
-        case EXPR_NUMBER:
-        case EXPR_UNARY:
-        case EXPR_BINARY:
-        case EXPR_TERTIARY:
-            baseOffset = static_cast<uint64_t>(Evaluate(offsetExpr));
-            break;
-        default:
-            break;
-        }
-    }
-
-    StructureValueBuilder builder;
-    auto rows = builder.build(definitions.library(),
-                              rootType,
-                              baseOffset,
-                              [hv](uint64_t offset, uint8_t *buffer, size_t length) -> size_t {
-                                  return hv->getSourceData(static_cast<size_w>(offset), buffer, length);
-                              });
-
-    for (const auto &row : rows)
-        if (findFirstCodeTargetRow(row.get(), fileOffset))
-            return true;
-
-    return false;
-}
 
 StructureViewPanel::StructureViewPanel(HexView *hv, QWidget *parent)
     : QWidget(parent)
@@ -2770,7 +2645,7 @@ void StructureViewPanel::buildUi()
                     return;
                 updateOffsetDisplay();
                 uint64_t explicitOffset = 0;
-                if (!m_pinned && !explicitRootOffset(selectedRootType(), &explicitOffset))
+                if (!m_pinned && !strataRootExplicitOffset(selectedRootType(), &explicitOffset))
                     rebuildRows();
             });
     connect(m_hv, &HexView::contentChanged,
@@ -2939,7 +2814,7 @@ void StructureViewPanel::updateOffsetDisplay()
         return;
 
     uint64_t explicitOffset = 0;
-    const uint64_t offset = explicitRootOffset(selectedRootType(), &explicitOffset)
+    const uint64_t offset = strataRootExplicitOffset(selectedRootType(), &explicitOffset)
         ? explicitOffset
         : m_hv->cursorOffset();
     m_offsetEdit->setText(QString::number(offset, 16).toUpper().rightJustified(8, QLatin1Char('0')));
@@ -3004,7 +2879,7 @@ void StructureViewPanel::rebuildRows()
     }
 
     uint64_t explicitOffset = 0;
-    const bool hasExplicitOffset = explicitRootOffset(rootType, &explicitOffset);
+    const bool hasExplicitOffset = strataRootExplicitOffset(rootType, &explicitOffset);
     if (hasExplicitOffset && m_pinned && !m_openAsPinnedBase)
     {
         m_pinned = false;
@@ -4102,7 +3977,7 @@ TypeDecl *StructureViewPanel::resolvedOpenAsRootType(const StructureRow *row) co
         }
     }
 
-    const int associatedIndex = associatedRootTypeIndexForFileName(exportedTypes, row->openAsName);
+    const int associatedIndex = strataRootIndexForFileName(exportedTypes, row->openAsName);
     if (associatedIndex >= 0)
         return exportedTypes[associatedIndex].typeDecl;
 
@@ -4129,7 +4004,7 @@ TypeDecl *StructureViewPanel::resolvedOpenAsRootType(const StructureRow *row, se
         }
     }
 
-    const int associatedIndex = associatedRootTypeIndexForFileName(exportedTypes, row->openAsName);
+    const int associatedIndex = strataRootIndexForFileName(exportedTypes, row->openAsName);
     if (associatedIndex >= 0)
         return exportedTypes[associatedIndex].typeDecl;
 
@@ -4487,7 +4362,7 @@ uint64_t StructureViewPanel::currentRootBaseOffset(TypeDecl *rootType) const
         return 0;
 
     uint64_t explicitOffset = 0;
-    const bool hasExplicitOffset = explicitRootOffset(rootType, &explicitOffset);
+    const bool hasExplicitOffset = strataRootExplicitOffset(rootType, &explicitOffset);
     if (hasExplicitOffset)
         return m_openAsPinnedBase ? m_pinnedOffset + explicitOffset : explicitOffset;
     return m_pinned ? m_pinnedOffset : m_hv->cursorOffset();
@@ -5085,44 +4960,6 @@ void StructureViewPanel::setHexViewSelectionFromStructure(size_w start, size_w e
     m_updatingHexViewFromStructure = false;
 }
 
-bool StructureViewPanel::explicitRootOffset(TypeDecl *rootType, uint64_t *offset) const
-{
-    if (!rootType || !offset)
-        return false;
-
-    ExprNode *expr = nullptr;
-    if (!FindTag(rootType->tagList, TOK_OFFSET, &expr) || !expr)
-        return false;
-
-    // Root-level offsets are a file-placement hint for exported definitions.
-    // They must be constant here; data-dependent field offsets are handled by
-    // StructureRenderEngine while it walks already-rendered rows.
-    switch (expr->type)
-    {
-    case EXPR_NUMBER:
-    case EXPR_UNARY:
-    case EXPR_BINARY:
-    case EXPR_TERTIARY:
-        *offset = static_cast<uint64_t>(Evaluate(expr));
-        return true;
-    default:
-        return false;
-    }
-}
-
-bool StructureViewPanel::magicSignatureMatches(const StructureMagicSignature &signature) const
-{
-    if (!m_hv || signature.bytes.isEmpty())
-        return false;
-
-    QByteArray fileBytes(signature.bytes.size(), Qt::Uninitialized);
-    const size_t bytesRead = m_hv->getData(static_cast<size_w>(signature.offset),
-                                           reinterpret_cast<uint8_t *>(fileBytes.data()),
-                                           static_cast<size_t>(fileBytes.size()));
-    return bytesRead == static_cast<size_t>(fileBytes.size())
-        && fileBytes == signature.bytes;
-}
-
 bool StructureViewPanel::selectAssociatedRootType(const QList<ExportedStructureType> &exportedTypes)
 {
     if (!m_rootCombo)
@@ -5186,20 +5023,11 @@ int StructureViewPanel::associatedRootTypeIndex(const QList<ExportedStructureTyp
     if (!m_hv || exportedTypes.isEmpty())
         return -1;
 
-    const int associatedIndex = associatedRootTypeIndexForFileName(exportedTypes, QFileInfo(m_hv->filePath()).fileName());
-    if (associatedIndex >= 0)
-        return associatedIndex;
-
-    for (int i = 0; i < exportedTypes.size(); ++i)
-    {
-        for (const StructureMagicSignature &signature : exportedTypes[i].magicSignatures)
-        {
-            if (magicSignatureMatches(signature))
-                return i;
-        }
-    }
-
-    return -1;
+    HexView *hv = m_hv;
+    return associatedStrataRootIndex(exportedTypes, QFileInfo(hv->filePath()).fileName(),
+                                     [hv](uint64_t offset, uint8_t *buf, size_t len) -> size_t {
+                                         return hv->getData(static_cast<size_w>(offset), buf, len);
+                                     });
 }
 
 void StructureViewPanel::refreshForCurrentFileAssociation()

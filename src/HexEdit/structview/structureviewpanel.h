@@ -40,15 +40,6 @@ namespace filestats
 class ActionBanner;
 }
 
-// Detects which exported Strata type matches hv's currently open file (by
-// assoc extension, then magic signature) and locates that type's first
-// [entrypoint]-tagged field. Self-contained -- does not require a
-// StructureViewPanel to exist, so the disassembler's entry point stays
-// correct even when the structure view panel is closed or was never opened
-// for this file (HexView's cached entry point otherwise only gets updated as
-// a side effect of that panel rebuilding).
-bool detectStructureEntryPoint(HexView *hv, uint64_t *fileOffset);
-
 class StructureViewPanel : public QWidget
 {
     Q_OBJECT
@@ -150,8 +141,6 @@ private:
     QModelIndex findIndexByTreePath(const QVector<QPair<QString, uint64_t>> &path) const;
     void clearHexViewOverlay();
     void setHexViewSelectionFromStructure(size_w start, size_w end);
-    bool explicitRootOffset(TypeDecl *rootType, uint64_t *offset) const;
-    bool magicSignatureMatches(const StructureMagicSignature &signature) const;
     int associatedRootTypeIndex(const QList<ExportedStructureType> &exportedTypes) const;
     bool selectAssociatedRootType(const QList<ExportedStructureType> &exportedTypes);
     QList<ExportedStructureType> sortedExportedTypes(const QList<ExportedStructureType> &exportedTypes) const;

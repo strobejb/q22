@@ -152,6 +152,12 @@ HexView::HexView(QWidget *parent)
 
 HexView::~HexView()
 {
+    // The gutter is a child, deleted after this destructor by ~QWidget; its
+    // destroyed() handler must not relayout a half-destroyed HexView.
+    if (m_scrollGutter)
+        disconnect(m_scrollGutter, &QObject::destroyed, this, nullptr);
+    m_scrollGutter = nullptr;
+
     m_pDataSeq = m_primaryDataSeq;
     delete m_primaryDataSeq;
     delete m_lastSnapshot;
@@ -160,6 +166,11 @@ HexView::~HexView()
 
 bool HexView::eventFilter(QObject *obj, QEvent *ev)
 {
+    if (obj == m_scrollGutter && (ev->type() == QEvent::ShowToParent || ev->type() == QEvent::HideToParent)) {
+        layoutScrollBarGutter();
+        return false;
+    }
+
     if (obj == window() && ev->type() == QEvent::WindowBlocked) {
         m_hoverBookmarkIdx = -1;
         m_hoverOnClose     = false;
@@ -826,6 +837,7 @@ int HexView::logToPhyXCoord(int x, int pane) const
 void HexView::resizeEvent(QResizeEvent *event)
 {
     QAbstractScrollArea::resizeEvent(event);
+    layoutScrollBarGutter();
 
     if (checkStyle(HVS_FITTOWINDOW) && m_nFontWidth > 0) {
 

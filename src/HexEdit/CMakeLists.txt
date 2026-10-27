@@ -26,6 +26,12 @@ set(PROJECT_SOURCES
         filestats/datainterpreter.cpp
         filestats/entropy.h
         filestats/entropy.cpp
+        filemap/filemapbuilder.cpp
+        filemap/filemapbuilder.h
+        filemap/filemapengine.cpp
+        filemap/filemapengine.h
+        filemap/filemapstrip.cpp
+        filemap/filemapstrip.h
         filestats/entropyscan.cpp
         filestats/entropyscan.h
         filestats/properties.cpp
@@ -125,6 +131,8 @@ set(PROJECT_SOURCES
         structview/structurerenderengine.cpp
         structview/structurerenderengine.h
         structview/structuresourcecoordinates.h
+        structview/strataroot.cpp
+        structview/strataroot.h
         structview/structurevaluebuilder.cpp
         structview/structurevaluebuilder.h
         structview/structureviewpanel.cpp

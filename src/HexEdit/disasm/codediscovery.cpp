@@ -5,6 +5,7 @@
 #include "disasm/branchtarget.h"
 #include "disasm/elfmetadata.h"
 #include "disasm/pemetadata.h"
+#include "structview/strataroot.h"
 #include "structview/structuredefinitionmanager.h"
 #include "structview/structuretreemodel.h"
 #include "structview/structurevaluebuilder.h"
@@ -58,79 +59,6 @@ constexpr uint16_t kElfMachineX86    = 3;
 constexpr uint16_t kElfMachineArm    = 40;
 constexpr uint16_t kElfMachineX86_64 = 62;
 constexpr uint16_t kElfMachineAarch64 = 183;
-
-QString normalizedAssociation(QString extension)
-{
-    extension = extension.trimmed().toLower();
-    if (!extension.isEmpty() && !extension.startsWith(QLatin1Char('.')))
-        extension.prepend(QLatin1Char('.'));
-    return extension;
-}
-
-TypeDecl *associatedStrataRoot(const QList<ExportedStructureType> &exportedTypes,
-                               const QString &fileName,
-                               const PeByteReader &reader)
-{
-    const QString lowerFileName = fileName.toLower();
-    if (!lowerFileName.isEmpty())
-    {
-        // Prefer an exact suffix, then allow compound extensions such as
-        // .tar.gz. This mirrors Structure View's association policy.
-        for (const ExportedStructureType &exported : exportedTypes)
-            for (QString extension : exported.assocExtensions)
-            {
-                extension = normalizedAssociation(extension);
-                if (!extension.isEmpty() && lowerFileName.endsWith(extension))
-                    return exported.typeDecl;
-            }
-
-        for (const ExportedStructureType &exported : exportedTypes)
-            for (QString extension : exported.assocExtensions)
-            {
-                extension = normalizedAssociation(extension);
-                if (!extension.isEmpty() && lowerFileName.contains(extension + QLatin1Char('.')))
-                    return exported.typeDecl;
-            }
-    }
-
-    for (const ExportedStructureType &exported : exportedTypes)
-    {
-        for (const StructureMagicSignature &signature : exported.magicSignatures)
-        {
-            if (signature.bytes.isEmpty())
-                continue;
-            QByteArray actual(signature.bytes.size(), Qt::Uninitialized);
-            const size_t got = reader(signature.offset,
-                                      reinterpret_cast<uint8_t *>(actual.data()),
-                                      static_cast<size_t>(actual.size()));
-            if (got == static_cast<size_t>(actual.size()) && actual == signature.bytes)
-                return exported.typeDecl;
-        }
-    }
-
-    return nullptr;
-}
-
-uint64_t strataRootBaseOffset(TypeDecl *rootType)
-{
-    ExprNode *offsetExpr = nullptr;
-    if (!rootType || !FindTag(rootType->tagList, TOK_OFFSET, &offsetExpr) || !offsetExpr)
-        return 0;
-
-    switch (offsetExpr->type)
-    {
-    case EXPR_NUMBER:
-    case EXPR_UNARY:
-    case EXPR_BINARY:
-    case EXPR_TERTIARY:
-    {
-        const INUMTYPE value = Evaluate(offsetExpr);
-        return value >= 0 ? static_cast<uint64_t>(value) : 0;
-    }
-    default:
-        return 0;
-    }
-}
 
 struct StrataCodeCandidate
 {

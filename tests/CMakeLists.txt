@@ -89,6 +89,7 @@ add_executable(disasm_tests
     ../src/HexEdit/structview/pesemanticview.cpp
     ../src/HexEdit/structview/structuredefinitionmanager.cpp
     ../src/HexEdit/structview/structurerenderengine.cpp
+    ../src/HexEdit/structview/strataroot.cpp
     ../src/HexEdit/structview/structuresemanticview.cpp
     ../src/HexEdit/structview/structuretypenameformatter.cpp
     ../src/HexEdit/structview/structuretreemodel.cpp
@@ -119,6 +120,61 @@ set_tests_properties(disasm_tests PROPERTIES
     ENVIRONMENT_MODIFICATION
         "PATH=path_list_prepend:${QT_RUNTIME_BIN_DIR};QT_QPA_PLATFORM=set:offscreen"
 )
+
+set(FILEMAP_SOURCES
+    ../src/HexEdit/filemap/filemapbuilder.cpp
+    ../src/HexEdit/settings/appconfig.cpp
+    ../src/HexEdit/structview/dexsemanticview.cpp
+    ../src/HexEdit/structview/elfsemanticview.cpp
+    ../src/HexEdit/structview/pesemanticview.cpp
+    ../src/HexEdit/structview/strataroot.cpp
+    ../src/HexEdit/structview/structuredefinitionmanager.cpp
+    ../src/HexEdit/structview/structurerenderengine.cpp
+    ../src/HexEdit/structview/structuresemanticview.cpp
+    ../src/HexEdit/structview/structuretypenameformatter.cpp
+    ../src/HexEdit/structview/structuretreemodel.cpp
+    ../src/HexEdit/structview/structurevaluebuilder.cpp
+)
+
+add_executable(filemap_tests filemap_tests.cpp ${FILEMAP_SOURCES})
+target_include_directories(filemap_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/src/HexEdit
+)
+target_link_libraries(filemap_tests PRIVATE
+    causeway
+    Qt${QT_VERSION_MAJOR}::Widgets
+    Qt${QT_VERSION_MAJOR}::Test
+)
+target_compile_definitions(filemap_tests PRIVATE
+    CAUSEWAY_TEST_DATA_DIR="${CAUSEWAY_DATA_BINARY_DIR}"
+)
+if(TARGET causewayData)
+    add_dependencies(filemap_tests causewayData)
+endif()
+
+add_test(NAME filemap_tests COMMAND filemap_tests)
+set_tests_properties(filemap_tests PROPERTIES
+    ENVIRONMENT_MODIFICATION
+        "PATH=path_list_prepend:${QT_RUNTIME_BIN_DIR};QT_QPA_PLATFORM=set:offscreen"
+)
+
+# Developer tool, not a test: prints inferred file maps for files on disk.
+add_executable(filemap_dump filemap_dump.cpp ${FILEMAP_SOURCES})
+target_include_directories(filemap_dump PRIVATE
+    ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/src/HexEdit
+)
+target_link_libraries(filemap_dump PRIVATE
+    causeway
+    Qt${QT_VERSION_MAJOR}::Widgets
+)
+target_compile_definitions(filemap_dump PRIVATE
+    CAUSEWAY_TEST_DATA_DIR="${CAUSEWAY_DATA_BINARY_DIR}"
+)
+if(TARGET causewayData)
+    add_dependencies(filemap_dump causewayData)
+endif()
 
 add_executable(causeway_tests
     causeway_tests.cpp

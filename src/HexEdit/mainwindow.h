@@ -15,6 +15,7 @@ class BookmarkDialog;
 class CodeDiscoveryEngine;
 class DisassemblerPanelHost;
 class StructureViewPanelHost;
+namespace filemap { class FileMapStrip; }
 class SidePanelHost;
 class SidePanelSlot;
 class FindPanel;
@@ -95,6 +96,7 @@ private:
     SidePanelHost         *m_sidePanelHost  = nullptr;
     DisassemblerPanelHost *m_disasmPanelHost = nullptr;
     StructureViewPanelHost *m_structurePanelHost = nullptr;
+    filemap::FileMapStrip  *m_fileMapStrip       = nullptr;
     CodeDiscoveryEngine   *m_codeDiscoveryEngine = nullptr;
     SourceBreadcrumbBar *m_sourceBreadcrumbBar = nullptr;
     PreferencesDialog *m_prefsDialog    = nullptr;
