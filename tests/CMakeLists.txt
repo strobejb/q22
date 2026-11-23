@@ -314,6 +314,7 @@ set(STRUCTVIEW_DEFINITION_MANAGER_TEST_FUNCTIONS
     brokenDefinitionFileIsReportedWithoutDroppingValidOnes
     fixingABrokenDefinitionFileRestoresItsTypes
     partiallyParsedFileDoesNotExposeStaleExportedType
+    canonicalPathAliasesPreserveUserDefinitionState
     exportedTypesUseExplicitExportTagsOnly
     exportedTypesIgnoreExportsFromIncludedFiles
     exportedTypesExposeAssocExtensions

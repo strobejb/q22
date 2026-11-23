@@ -13,6 +13,7 @@ private slots:
     void brokenDefinitionFileIsReportedWithoutDroppingValidOnes();
     void fixingABrokenDefinitionFileRestoresItsTypes();
     void partiallyParsedFileDoesNotExposeStaleExportedType();
+    void canonicalPathAliasesPreserveUserDefinitionState();
     void exportedTypesUseExplicitExportTagsOnly();
     void exportedTypesIgnoreExportsFromIncludedFiles();
     void exportedTypesExposeAssocExtensions();
@@ -248,6 +249,46 @@ void StructViewDefinitionManagerTests::partiallyParsedFileDoesNotExposeStaleExpo
     QCOMPARE(manager.failedFiles().size(), 1);
     QCOMPARE(manager.library()->globalTypeDeclList.size(), size_t(1));
     QVERIFY(manager.exportedTypes().isEmpty());
+}
+
+void StructViewDefinitionManagerTests::canonicalPathAliasesPreserveUserDefinitionState()
+{
+#ifdef Q_OS_WIN
+    QSKIP("Directory symlink creation is not reliably available on Windows test runners");
+#else
+    // macOS exposes temporary directories through /var even though realpath()
+    // resolves them below /private/var. Reproduce that aliasing on every POSIX
+    // host so Linux CI catches path comparisons that accidentally use spelling
+    // instead of file identity.
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+
+    const QString realUserDir = temp.filePath(QStringLiteral("user-strata-real"));
+    const QString aliasUserDir = temp.filePath(QStringLiteral("user-strata-alias"));
+    QVERIFY(QDir().mkpath(realUserDir));
+    QVERIFY(QFile::link(realUserDir, aliasUserDir));
+
+    const QString filePath = QDir(aliasUserDir).filePath(QStringLiteral("types.struct"));
+    writeTextFile(filePath,
+                  "[export]\n"
+                  "struct Good { byte b; } good;\n");
+
+    StructureDefinitionManager manager;
+    manager.setBuiltinStructDirsForTests({});
+    manager.setUserStrataDirForTests(aliasUserDir);
+
+    QVERIFY2(manager.reload(), qPrintable(manager.lastError()));
+    QCOMPARE(manager.exportedTypes().size(), 1);
+    QVERIFY(manager.exportedTypes().first().userDefinition);
+
+    writeTextFile(filePath,
+                  "[export]\n"
+                  "struct Good { byte b; } good;\n"
+                  "this is not valid Strata syntax\n");
+    QVERIFY(!manager.reload());
+    QCOMPARE(manager.failedFiles().size(), 1);
+    QVERIFY(manager.exportedTypes().isEmpty());
+#endif
 }
 
 void StructViewDefinitionManagerTests::exportedTypesUseExplicitExportTagsOnly()

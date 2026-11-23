@@ -168,6 +168,29 @@ QString exportedRootName(TypeDecl *decl)
     return {};
 }
 
+QString normalizedPathKey(const QString &path)
+{
+    const QFileInfo info(path);
+    QString normalized = info.canonicalFilePath();
+    if (normalized.isEmpty())
+        normalized = info.absoluteFilePath();
+
+    normalized = QDir::cleanPath(QDir::fromNativeSeparators(normalized));
+#ifdef Q_OS_WIN
+    normalized = normalized.toCaseFolded();
+#endif
+    return normalized;
+}
+
+bool pathIsInDirectory(const QString &path, const QString &directory)
+{
+    const QString pathKey = normalizedPathKey(path);
+    QString directoryKey = normalizedPathKey(directory);
+    if (!directoryKey.endsWith(QLatin1Char('/')))
+        directoryKey += QLatin1Char('/');
+    return pathKey.startsWith(directoryKey);
+}
+
 QStringList existingDefinitionFilesInDir(const QString &dirPath, bool includeLegacyExtensions)
 {
     QDir dir(dirPath);
@@ -213,14 +236,12 @@ bool fileAlreadyLoadedAsInclude(StrataLibrary *library, const QString &filePath)
     if (!library)
         return false;
 
-    const QString canonical = QDir::toNativeSeparators(QFileInfo(filePath).canonicalFilePath());
-    const QString absolute = QDir::toNativeSeparators(QFileInfo(filePath).absoluteFilePath());
+    const QString filePathKey = normalizedPathKey(filePath);
     for (FILE_DESC *fileDesc : library->globalFileHistory)
     {
         if (!fileDesc || !fileDesc->included)
             continue;
-        const QString loadedPath = QDir::toNativeSeparators(QString::fromLocal8Bit(fileDesc->filePath));
-        if (loadedPath == canonical || loadedPath == absolute)
+        if (normalizedPathKey(QString::fromLocal8Bit(fileDesc->filePath)) == filePathKey)
             return true;
     }
 
@@ -236,7 +257,6 @@ void appendDuplicateDefinitionFileLog(const QStringList &selectedFiles,
     if (!log)
         return;
 
-    const QString userDir = QFileInfo(userDirPath).absoluteFilePath();
     QMap<QString, QStringList> builtinsByName;
     QMap<QString, QStringList> usersByName;
     QSet<QString> pickedPaths;
@@ -244,10 +264,10 @@ void appendDuplicateDefinitionFileLog(const QStringList &selectedFiles,
 
     for (const ExportedStructureType &type : activeExports)
         if (!type.filePath.isEmpty())
-            pickedPaths.insert(QDir::toNativeSeparators(QFileInfo(type.filePath).absoluteFilePath()));
+            pickedPaths.insert(normalizedPathKey(type.filePath));
 
     for (const QString &file : selectedFiles)
-        selectedPaths.insert(QDir::toNativeSeparators(QFileInfo(file).absoluteFilePath()));
+        selectedPaths.insert(normalizedPathKey(file));
 
     QStringList candidateFiles;
     for (const QString &dir : builtinDirs)
@@ -265,7 +285,7 @@ void appendDuplicateDefinitionFileLog(const QStringList &selectedFiles,
         const QFileInfo info(file);
         const QString name = info.completeBaseName();
         const QString path = QDir::toNativeSeparators(info.absoluteFilePath());
-        if (info.absoluteFilePath().startsWith(userDir + QLatin1Char('/')))
+        if (pathIsInDirectory(file, userDirPath))
             usersByName[name].push_back(path);
         else
             builtinsByName[name].push_back(path);
@@ -280,15 +300,17 @@ void appendDuplicateDefinitionFileLog(const QStringList &selectedFiles,
         log->push_back(QObject::tr("Definition file %1: user and built-in copies are both present").arg(name));
         for (const QString &path : builtinsByName.value(name))
         {
-            const QString prefix = pickedPaths.contains(path) ? QObject::tr("picked")
-                : selectedPaths.contains(path) ? QObject::tr("loaded")
+            const QString pathKey = normalizedPathKey(path);
+            const QString prefix = pickedPaths.contains(pathKey) ? QObject::tr("picked")
+                : selectedPaths.contains(pathKey) ? QObject::tr("loaded")
                                                : QObject::tr("ignored");
             log->push_back(QObject::tr("  built-in(%1): %2").arg(prefix, path));
         }
         for (const QString &path : it.value())
         {
-            const QString prefix = pickedPaths.contains(path) ? QObject::tr("picked")
-                : selectedPaths.contains(path) ? QObject::tr("loaded")
+            const QString pathKey = normalizedPathKey(path);
+            const QString prefix = pickedPaths.contains(pathKey) ? QObject::tr("picked")
+                : selectedPaths.contains(pathKey) ? QObject::tr("loaded")
                                                : QObject::tr("ignored");
             log->push_back(QObject::tr("  user(%1): %2").arg(prefix, path));
         }
@@ -338,9 +360,7 @@ QList<ExportedStructureType> StructureDefinitionManager::resolvedExportedTypes(Q
     // stale/partial type alongside its own "failed to load" entry.
     QSet<QString> failedFilePaths;
     for (const FailedStructureFile &failure : m_failedFiles)
-        failedFilePaths.insert(QDir::fromNativeSeparators(QFileInfo(failure.filePath).absoluteFilePath()));
-
-    const QString userDir = QFileInfo(userStrataDir()).absoluteFilePath();
+        failedFilePaths.insert(normalizedPathKey(failure.filePath));
 
     for (TypeDecl *decl : m_library->globalTypeDeclList)
     {
@@ -351,7 +371,7 @@ QList<ExportedStructureType> StructureDefinitionManager::resolvedExportedTypes(Q
         if (fileDesc && fileDesc->included)
             continue;
         if (fileDesc
-            && failedFilePaths.contains(QDir::fromNativeSeparators(QFileInfo(QString::fromLocal8Bit(fileDesc->filePath)).absoluteFilePath())))
+            && failedFilePaths.contains(normalizedPathKey(QString::fromLocal8Bit(fileDesc->filePath))))
         {
             continue;
         }
@@ -367,7 +387,7 @@ QList<ExportedStructureType> StructureDefinitionManager::resolvedExportedTypes(Q
         type.category = categoryFromTags(decl->tagList);
         type.version = versionFromTags(decl->tagList);
         type.userDefinition = !type.filePath.isEmpty()
-            && QFileInfo(type.filePath).absoluteFilePath().startsWith(userDir + QLatin1Char('/'));
+            && pathIsInDirectory(type.filePath, userStrataDir());
 
         ExprNode *assocExpr = nullptr;
         if (FindTag(decl->tagList, TOK_ASSOC, &assocExpr))
