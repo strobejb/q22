@@ -1789,9 +1789,7 @@ void themeMenu(QMenu *menu)
 #elif defined(Q_OS_LINUX)
     menu->setWindowFlags(Qt::Popup | Qt::FramelessWindowHint);
 #endif
-#ifndef Q_OS_MACOS
     menu->setAttribute(Qt::WA_TranslucentBackground);
-#endif
     // Apply the compact check-column style.  widget::setStyle() does not
     // transfer ownership, so we use a long-lived singleton parented to qApp.
     menu->setStyle(tightMenuStyle());
@@ -1818,9 +1816,7 @@ void themePopupWidget(QWidget *popup)
 #elif defined(Q_OS_LINUX)
     popup->setWindowFlags(Qt::Popup | Qt::FramelessWindowHint);
 #endif
-#ifndef Q_OS_MACOS
     popup->setAttribute(Qt::WA_TranslucentBackground);
-#endif
     popup->setAttribute(Qt::WA_StyledBackground, true);
 #ifndef Q_OS_MACOS
     popup->installEventFilter(menuShadowFilter());
@@ -1912,7 +1908,7 @@ public:
         if (e->type() == QEvent::Polish) {
             if (QMenu *menu = qobject_cast<QMenu *>(obj)) {
                 if (!menu->testAttribute(Qt::WA_TranslucentBackground)) {
-#ifdef Q_OS_WIN
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
                     themeMenu(menu);
 #elif defined(Q_OS_LINUX)
                     menu->setWindowFlags(menu->windowFlags() | Qt::FramelessWindowHint);

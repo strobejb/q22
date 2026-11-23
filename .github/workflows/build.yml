@@ -49,6 +49,7 @@ jobs:
           test -x build/q22.app/Contents/MacOS/q22
           test -d build/q22.app/Contents/Resources/strata
           test -f build/q22.app/Contents/Resources/strata/basetypes.strata
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' build/q22.app/Contents/Info.plist)" = "q22"
 
       - name: Deploy Qt frameworks
         run: "$QT_ROOT_DIR/bin/macdeployqt build/q22.app -always-overwrite"

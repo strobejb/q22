@@ -62,7 +62,8 @@ UX:
 - Built-in palettes plus custom palette creation and editing.
 - Custom titlebar, docked panels, and platform-specific window chrome for
   Windows, KDE/KWin, and GNOME/Mutter.
-- Windows and Linux build/release workflows.
+- Native macOS application menus and file dialogs.
+- Windows, Linux, and macOS build-and-test workflows.
 
 ## Build
 
@@ -93,10 +94,14 @@ ctest --test-dir build --output-on-failure
 
 ## Supported Platforms
 
-* Linux (Fedora currently)
-* Windows
+- Linux (Fedora currently)
+- Windows
+- macOS on Apple silicon
 
-more to come!
+The macOS CI artifact is currently an unsigned `.app` bundle packaged in a ZIP
+for testing. It is not yet a signed and notarized release, so Gatekeeper may
+block it after download. A Developer ID-signed and notarized macOS package is
+planned for release distribution.
 
 ## License
 
