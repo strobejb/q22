@@ -179,6 +179,17 @@ static void fullpath(char *dest, const char *name, size_t destlen)
 #endif
 }
 
+static bool canonicalizeIfExists(char *path, size_t pathlen)
+{
+	if(!exists(path))
+		return false;
+
+	char canonical[_MAX_PATH];
+	fullpath(canonical, path, sizeof(canonical));
+	strcpy_s(path, pathlen, canonical);
+	return true;
+}
+
 static void joinpath(char *dest, size_t destlen, const char *dir, const char *name)
 {
 	size_t len    = strlen(dir);
@@ -202,7 +213,7 @@ static bool searchenv(const char *envname, const char *name, char *fullname, siz
 		while(tok && !found)
 		{
 			joinpath(fullname, fullnamelen, tok, name);
-			found = exists(fullname);
+			found = canonicalizeIfExists(fullname, fullnamelen);
 			tok   = strtok(NULL, PATHSEP);
 		}
 
@@ -249,7 +260,7 @@ static bool getfullname(const char *curpath, const char *name, char *fullname, s
 	}
 
 	// 1. search local directory
-	if(exists(fullname))
+	if(canonicalizeIfExists(fullname, fullnamelen))
 	{
 		//strcpy(fullname, name);
 		return true;
@@ -261,7 +272,7 @@ static bool getfullname(const char *curpath, const char *name, char *fullname, s
 		for(i = 0; i < includePaths->size(); i++)
 		{
 			joinpath(fullname, fullnamelen, (*includePaths)[i].c_str(), name);
-			if(exists(fullname))
+			if(canonicalizeIfExists(fullname, fullnamelen))
 				return true;
 		}
 	}
@@ -288,7 +299,7 @@ static bool getfullname(const char *curpath, const char *name, char *fullname, s
 			//printf("searching in %s\n", opt);
 			joinpath(fullname, fullnamelen, opt, name);
 
-			if(exists(fullname))
+			if(canonicalizeIfExists(fullname, fullnamelen))
 				return true;
 		}
 	}
@@ -660,6 +671,11 @@ TOKEN Lexer::parse_number()
 		else
 		{
 			token.base = OCT;
+			// Preserve the leading zero.  Besides making the token text complete,
+			// this ensures a standalone zero is passed to strtoul as "0" rather
+			// than an empty string.  Darwin's libc reports EINVAL for the empty
+			// string, which was incorrectly surfaced as a numeric overflow.
+			numstr[i++] = '0';
 
 			// collect all digits together. Invalid octal sequences
 			// will be caught when we call strtoul
@@ -758,7 +774,7 @@ TOKEN Lexer::parse_number()
 			Error(ERROR_ILLEGAL_DIGIT, *ep, base[token.base]);
 		}
 
-		if(errno)
+		if(errno == ERANGE)
 		{
 			Error(ERROR_OVERFLOW);
 		}
