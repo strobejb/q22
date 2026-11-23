@@ -209,7 +209,7 @@ void CausewayTests::includeParserSearchesLibraryPathsAfterLocalDirectory()
 
 	QCOMPARE(library.globalFileHistory.size(), size_t(2));
 	QCOMPARE(library.globalTypeDeclList.size(), size_t(2));
-	QCOMPARE(QString::fromLocal8Bit(library.globalFileHistory[1]->filePath),
+	QCOMPARE(QFileInfo(QString::fromLocal8Bit(library.globalFileHistory[1]->filePath)).canonicalFilePath(),
 	         QFileInfo(includeFile).canonicalFilePath());
 }
 

@@ -179,17 +179,6 @@ static void fullpath(char *dest, const char *name, size_t destlen)
 #endif
 }
 
-static bool canonicalizeIfExists(char *path, size_t pathlen)
-{
-	if(!exists(path))
-		return false;
-
-	char canonical[_MAX_PATH];
-	fullpath(canonical, path, sizeof(canonical));
-	strcpy_s(path, pathlen, canonical);
-	return true;
-}
-
 static void joinpath(char *dest, size_t destlen, const char *dir, const char *name)
 {
 	size_t len    = strlen(dir);
@@ -213,7 +202,7 @@ static bool searchenv(const char *envname, const char *name, char *fullname, siz
 		while(tok && !found)
 		{
 			joinpath(fullname, fullnamelen, tok, name);
-			found = canonicalizeIfExists(fullname, fullnamelen);
+			found = exists(fullname);
 			tok   = strtok(NULL, PATHSEP);
 		}
 
@@ -260,7 +249,7 @@ static bool getfullname(const char *curpath, const char *name, char *fullname, s
 	}
 
 	// 1. search local directory
-	if(canonicalizeIfExists(fullname, fullnamelen))
+	if(exists(fullname))
 	{
 		//strcpy(fullname, name);
 		return true;
@@ -272,7 +261,7 @@ static bool getfullname(const char *curpath, const char *name, char *fullname, s
 		for(i = 0; i < includePaths->size(); i++)
 		{
 			joinpath(fullname, fullnamelen, (*includePaths)[i].c_str(), name);
-			if(canonicalizeIfExists(fullname, fullnamelen))
+			if(exists(fullname))
 				return true;
 		}
 	}
@@ -299,7 +288,7 @@ static bool getfullname(const char *curpath, const char *name, char *fullname, s
 			//printf("searching in %s\n", opt);
 			joinpath(fullname, fullnamelen, opt, name);
 
-			if(canonicalizeIfExists(fullname, fullnamelen))
+			if(exists(fullname))
 				return true;
 		}
 	}
