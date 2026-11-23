@@ -471,8 +471,12 @@ QStringList StructureDefinitionManager::builtinStructDirs() const
 
     QStringList dirs;
     const QString appDir = QCoreApplication::applicationDirPath();
-    if (!appDir.isEmpty())
+    if (!appDir.isEmpty()) {
         dirs.push_back(QDir(appDir).filePath(QStringLiteral("strata")));
+#ifdef Q_OS_MACOS
+        dirs.push_back(QDir(appDir).absoluteFilePath(QStringLiteral("../Resources/strata")));
+#endif
+    }
 
     for (const QString &relativePath : {QStringLiteral("q22/strata"),
                                         QStringLiteral("hexedit/strata")}) {

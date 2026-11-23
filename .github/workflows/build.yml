@@ -8,6 +8,60 @@ on:
   workflow_dispatch:
 
 jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stamp version
+        shell: python
+        run: |
+          import os
+          import subprocess
+          import sys
+
+          subprocess.check_call([
+              sys.executable, "scripts/stamp_version.py",
+              "--build-count", os.environ["GITHUB_RUN_NUMBER"],
+              "--ref-name", os.environ["GITHUB_REF_NAME"],
+          ])
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.10.*'
+          host: mac
+          target: desktop
+          arch: clang_64
+          cache: true
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --parallel 2
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Verify application bundle
+        run: |
+          test -x build/q22.app/Contents/MacOS/q22
+          test -d build/q22.app/Contents/Resources/strata
+          test -f build/q22.app/Contents/Resources/strata/basetypes.strata
+
+      - name: Deploy Qt frameworks
+        run: "$QT_ROOT_DIR/bin/macdeployqt build/q22.app -always-overwrite"
+
+      - name: Package unsigned application bundle
+        run: ditto -c -k --sequesterRsrc --keepParent build/q22.app q22-macos-unsigned.zip
+
+      - name: Upload application bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: q22-macos-unsigned
+          path: q22-macos-unsigned.zip
+
   build-linux:
     runs-on: ubuntu-latest
     steps:

@@ -170,7 +170,12 @@ void AppSettings::setPrefNativeMenu(bool on)
 bool AppSettings::prefNativeFileDialogs()
 {
     OPEN_SETTINGS;
-    return s.value("window/nativeFilePicker", false).toBool();
+#ifdef Q_OS_MACOS
+    constexpr bool defaultValue = true;
+#else
+    constexpr bool defaultValue = false;
+#endif
+    return s.value("window/nativeFilePicker", defaultValue).toBool();
 }
 
 void AppSettings::setPrefNativeFileDialogs(bool on)
@@ -182,7 +187,12 @@ void AppSettings::setPrefNativeFileDialogs(bool on)
 bool AppSettings::prefNativeDialogs()
 {
     OPEN_SETTINGS;
-    return s.value("window/nativeDialogs", false).toBool();
+#ifdef Q_OS_MACOS
+    constexpr bool defaultValue = true;
+#else
+    constexpr bool defaultValue = false;
+#endif
+    return s.value("window/nativeDialogs", defaultValue).toBool();
 }
 
 void AppSettings::setPrefNativeDialogs(bool on)

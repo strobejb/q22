@@ -152,11 +152,11 @@ class QMessageBox;
 void removeDialogIcon(QDialog *dlg);
 void styleMessageBox(QMessageBox *box);
 
-#if !defined(Q_OS_WIN)
+#ifdef Q_OS_LINUX
 // Requests the compositor shadow for a frameless window on KDE/KWin by
 // dynamically loading libKF6WindowSystem or libKF5WindowSystem and calling
 // KWindowEffects::enableShadow().  Silent no-op if neither library is present
-// (GNOME, other DEs) so the call is safe on any Linux/BSD desktop.
+// (GNOME, other DEs) so the call is safe on any Linux desktop.
 // Must be called after the window's native handle exists (i.e. post-show).
 void enableKWinShadow(QWidget *w);
 #endif

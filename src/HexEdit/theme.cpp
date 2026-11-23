@@ -39,7 +39,7 @@
 #include <QDBusInterface>
 #include <QDBusReply>
 #endif
-#ifndef Q_OS_WIN
+#ifdef Q_OS_LINUX
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QSettings>
@@ -258,7 +258,7 @@ struct MenuShadowFilter : public QObject
                 }
             }
         }
-#else
+#elif defined(Q_OS_LINUX)
         // The QSS shadow margin shifts the visible menu content inward by
         // kMenuShadowMargin px on every side.  Compensate so the menu appears
         // exactly where Qt placed it rather than offset down and to the right.
@@ -564,14 +564,14 @@ QPoint smartMenuPos(const QWidget *anchor, const QWidget *popup, bool rightAlign
 
 int themedMenuRightAlignOffset()
 {
-#ifdef Q_OS_WIN
-    return 0;
-#else
+#ifdef Q_OS_LINUX
     // The Linux QMenu shadow is drawn in an 8px QSS margin. menuShadowFilter()
     // moves the popup window left by that margin on show, so right-aligned menus
     // must be placed two margins to the right: one to cancel that move, one so
     // the visible frame's right edge, not the transparent shadow ring, aligns.
     return 2 * kMenuShadowMargin;
+#else
+    return 0;
 #endif
 }
 
@@ -1121,12 +1121,12 @@ QFileDialog QTreeView::item {
     ss.replace("{statusComboOpen}",  statusComboOpen);
     ss.replace("{sbHover}",          sbHover);
     ss.replace("{sbPressed}",        sbPressed);
-#ifdef Q_OS_WIN
-    ss.replace("{menuMargin}",  QString());
-    ss.replace("{tooltipPad}",  "1px 6px");
-#else
+#ifdef Q_OS_LINUX
     ss.replace("{menuMargin}",  "margin: 8px;");
     ss.replace("{tooltipPad}",  "2px 6px");
+#else
+    ss.replace("{menuMargin}",  QString());
+    ss.replace("{tooltipPad}",  "1px 6px");
 #endif
 
     // Fill the scrollbar geometry tokens used in the QSS template above.
@@ -1200,7 +1200,7 @@ QFileDialog QTreeView::item {
 // MenuShadowOverlay is a child widget that paints a soft shadow into that ring,
 // clipping away the content area so the menu items show through underneath.
 // This mirrors exactly how GTK draws shadows on its own popup menus.
-#ifndef Q_OS_WIN
+#ifdef Q_OS_LINUX
 namespace {
 struct MenuShadowOverlay : public QWidget
 {
@@ -1786,17 +1786,21 @@ void themeMenu(QMenu *menu)
     // popup windows, which already respects the window shape.
 #ifdef Q_OS_WIN
     menu->setWindowFlags(Qt::Popup | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint);
-#else
+#elif defined(Q_OS_LINUX)
     menu->setWindowFlags(Qt::Popup | Qt::FramelessWindowHint);
 #endif
+#ifndef Q_OS_MACOS
     menu->setAttribute(Qt::WA_TranslucentBackground);
+#endif
     // Apply the compact check-column style.  widget::setStyle() does not
     // transfer ownership, so we use a long-lived singleton parented to qApp.
     menu->setStyle(tightMenuStyle());
     // On Windows, install an event filter that applies DWM shadow when the
     // popup's native surface is created.
+#ifndef Q_OS_MACOS
     menu->installEventFilter(menuShadowFilter());
-#ifndef Q_OS_WIN
+#endif
+#ifdef Q_OS_LINUX
     // Self-drawn shadow: child overlay paints into the 8px transparent QSS margin.
     auto *overlay = new MenuShadowOverlay(menu);
     overlay->setObjectName(QStringLiteral("qexedMenuShadowOverlay"));
@@ -1811,13 +1815,17 @@ void themePopupWidget(QWidget *popup)
     // TightMenuStyle (which only handles check-column spacing inside QMenu items).
 #ifdef Q_OS_WIN
     popup->setWindowFlags(Qt::Popup | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint);
-#else
+#elif defined(Q_OS_LINUX)
     popup->setWindowFlags(Qt::Popup | Qt::FramelessWindowHint);
 #endif
+#ifndef Q_OS_MACOS
     popup->setAttribute(Qt::WA_TranslucentBackground);
+#endif
     popup->setAttribute(Qt::WA_StyledBackground, true);
+#ifndef Q_OS_MACOS
     popup->installEventFilter(menuShadowFilter());
-#ifndef Q_OS_WIN
+#endif
+#ifdef Q_OS_LINUX
     auto *overlay = new MenuShadowOverlay(popup);
     overlay->show();
     overlay->raise();
@@ -1857,7 +1865,7 @@ public:
         } else if (e->type() == QEvent::Resize) {
             applyRoundedMask(w);
         }
-#else
+#elif defined(Q_OS_LINUX)
         if (e->type() == QEvent::Polish) {
             w->setAttribute(Qt::WA_TranslucentBackground);
         }
@@ -1906,7 +1914,7 @@ public:
                 if (!menu->testAttribute(Qt::WA_TranslucentBackground)) {
 #ifdef Q_OS_WIN
                     themeMenu(menu);
-#else
+#elif defined(Q_OS_LINUX)
                     menu->setWindowFlags(menu->windowFlags() | Qt::FramelessWindowHint);
                     menu->setAttribute(Qt::WA_TranslucentBackground);
                     menu->setStyle(tightMenuStyle());
@@ -1922,7 +1930,7 @@ public:
 };
 
 
-#ifndef Q_OS_WIN
+#ifdef Q_OS_LINUX
 // Reads the system UI font from whichever desktop environment is active.
 // On KDE, kdeglobals stores the font in QFont::toString() wire format so it
 // can be loaded directly.  On GNOME, gsettings returns "Family Size" as a
@@ -2031,7 +2039,7 @@ void applyAdwaitaTheme(ColorScheme scheme)
     static bool firstRun = true;
     if (firstRun) {
         firstRun = false;
-#ifndef Q_OS_WIN
+#ifdef Q_OS_LINUX
         QApplication::setFont(detectSystemFont());
 #endif
         qApp->installEventFilter(new TooltipFilter(qApp));
@@ -2230,7 +2238,7 @@ void styleMessageBox(QMessageBox *box)
     });
 }
 
-#ifndef Q_OS_WIN
+#ifdef Q_OS_LINUX
 #include <QLibrary>
 void enableKWinShadow(QWidget *w)
 {

@@ -482,6 +482,11 @@ void MainWindow::createPreferencesDialog()
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), ui(new Ui::MainWindow) {
     ui->setupUi(this);
+    // Explicit roles let macOS move these actions into the application menu.
+    // Other platforms keep their existing menu placement.
+    ui->actionExit->setMenuRole(QAction::QuitRole);
+    ui->actionPreferences->setMenuRole(QAction::PreferencesRole);
+    ui->actionAbout->setMenuRole(QAction::AboutRole);
     const QKeySequence ctrlQ(QStringLiteral("Ctrl+Q"));
     QList<QKeySequence> quitShortcuts{ctrlQ};
     for (const QKeySequence &shortcut : QKeySequence::keyBindings(QKeySequence::Quit))

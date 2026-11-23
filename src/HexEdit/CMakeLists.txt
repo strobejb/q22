@@ -269,6 +269,17 @@ if(TARGET causewayData)
     add_dependencies(hexedit causewayData)
 endif()
 
+if(APPLE)
+    # Keep the built-in Strata definitions inside the application bundle.
+    # applicationDirPath() points at Contents/MacOS, while data files belong in
+    # Contents/Resources so macdeployqt and code signing can treat the .app as a
+    # self-contained unit.
+    set_source_files_properties(${CAUSEWAY_STANDARD_FILES} PROPERTIES
+        MACOSX_PACKAGE_LOCATION "Resources/strata"
+    )
+    target_sources(hexedit PRIVATE ${CAUSEWAY_STANDARD_FILES})
+endif()
+
 find_file(ADWAITA_QT6_PLUGIN adwaita.so
     PATH_SUFFIXES styles
     PATHS
@@ -289,14 +300,8 @@ if(ADWAITA_QT6_PLUGIN)
         "${_adwaita_lib_dir}/libadwaitaqt6priv.so")
 endif()
 
-# Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
-# If you are developing for iOS or macOS you should consider setting an
-# explicit, fixed bundle identifier manually though.
-if(${QT_VERSION} VERSION_LESS 6.1.0)
-  set(BUNDLE_ID_OPTION MACOSX_BUNDLE_GUI_IDENTIFIER net.catch22.q22)
-endif()
 set_target_properties(hexedit PROPERTIES
-    ${BUNDLE_ID_OPTION}
+    MACOSX_BUNDLE_GUI_IDENTIFIER net.catch22.q22
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
     MACOSX_BUNDLE TRUE
